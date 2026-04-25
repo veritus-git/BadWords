@@ -19,7 +19,7 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-VERSION = "2.0.3"
+VERSION = "3.0"
 POSTHOG_API_KEY = "phc_NRFaTKhPJJE8cBa3o9gXYo2mlktR5qup5tn7PdxuRsr"
 POSTHOG_HOST = "https://eu.i.posthog.com"
 
