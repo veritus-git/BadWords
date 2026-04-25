@@ -192,7 +192,9 @@ class AudioEngine:
             result = subprocess.run(
                 ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
                 capture_output=True, 
-                text=True
+                text=True,
+                encoding='utf-8',
+                errors='replace'
             )
             output = result.stdout.strip()
             if not output: return "int8"
@@ -257,7 +259,8 @@ except Exception as e:
         
         try:
             process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, startupinfo=startup_info, env=env
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, 
+                encoding='utf-8', errors='replace', startupinfo=startup_info, env=env
             )
             while True:
                 line = process.stdout.readline()
@@ -433,6 +436,8 @@ except Exception as e:
                 cmd, 
                 capture_output=True, 
                 text=True, 
+                encoding='utf-8',
+                errors='replace',
                 env=env, 
                 startupinfo=startup_info
             )
@@ -500,6 +505,7 @@ except Exception as e:
                f"silencedetect=noise={threshold_db}dB:d={min_dur}", "-f", "null", "-"]
         try:
             res = subprocess.run(cmd, stderr=subprocess.PIPE, text=True, 
+                                 encoding='utf-8', errors='replace',
                                  startupinfo=self.os_doc.get_startup_info())
             output = res.stderr
             starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', output)]
