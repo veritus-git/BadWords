@@ -33,10 +33,14 @@ NC='\033[0m'
 APP_NAME="BadWords"
 SOURCE_FOLDER_NAME="src" 
 ASSETS_FOLDER_NAME="assets"
-REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip"
-# Dynamicznie pobierz najnowszy release (tag) przez API GitLaba. Fallback do 'main'.
-#LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
-#REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
+LATEST_TAG=$(curl -s "https://api.github.com/repos/veritus-git/BadWords/releases/latest" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data.get("tag_name", ""))' 2>/dev/null)
+
+if [ -n "$LATEST_TAG" ]; then
+    REPO_ZIP_URL="https://github.com/veritus-git/BadWords/archive/refs/tags/${LATEST_TAG}.zip"
+else
+    LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
+    REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
+fi
 
 RESOLVE_SCRIPT_DIR="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility"
 WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords.py"

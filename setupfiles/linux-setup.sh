@@ -209,11 +209,15 @@ fi
 # ==========================================
 # 3. SOURCE FETCH (Local vs Web)
 # ==========================================
-REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip"
-# Zamiast hardcodowanego main, użyjemy API GitLaba do pobrania tagu najnowszego release.
-# Fallback do 'main' jeśli API nie zadziała.
-#LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
-#REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
+
+LATEST_TAG=$(curl -s "https://api.github.com/repos/veritus-git/BadWords/releases/latest" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data.get("tag_name", ""))' 2>/dev/null)
+
+if [ -n "$LATEST_TAG" ]; then
+    REPO_ZIP_URL="https://github.com/veritus-git/BadWords/archive/refs/tags/${LATEST_TAG}.zip"
+else
+    LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
+    REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
+fi
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOCAL_SRC="$DIR/$SOURCE_FOLDER_NAME"
