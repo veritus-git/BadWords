@@ -1709,7 +1709,7 @@ class SettingsDialog(QDialog):
         _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', self.dropdown_lang.setText)
         
         self.combo_view = QComboBox()
-        self.combo_view.addItems(["Continuous Flow", "Segmented Blocks"])
+        self.combo_view.addItems(["Continuous Flow", self.txt("opt_segmented_blocks")])
         self.combo_view.setCurrentText(prefs.get('view_mode', self.DEFAULTS['view_mode']))
         _add_row(form_gen, self.txt("lbl_display_mode"), self.combo_view, self.DEFAULTS['view_mode'], self.combo_view.setCurrentText)
         self.tabs.addTab(tab_gen, self.txt("tab_general"))
@@ -1753,7 +1753,7 @@ class SettingsDialog(QDialog):
         _add_row(form_app, self.txt("lbl_line_spacing_px"), self.spin_lheight, self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
         l_app.addLayout(form_app)
         
-        self.lbl_preview = QLabel(self.txt("lbl_aa_nbb"))
+        self.lbl_preview = QLabel(self.txt("lbl_font_preview"))
         self.lbl_preview.setAlignment(Qt.AlignCenter)
         self.lbl_preview.setMinimumHeight(90)
         self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR};")
@@ -1968,6 +1968,7 @@ class BadWordsGUI(QMainWindow):
         # Restore pinned favorites
         for fav_id in prefs.get('favorites', []):
             if fav_id in self._pin_buttons:
+                self._pin_buttons[fav_id].setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
                 self._pin_buttons[fav_id].click()
 
     def resizeEvent(self, event):
@@ -2385,7 +2386,7 @@ class BadWordsGUI(QMainWindow):
         filler_tools_layout = QHBoxLayout()
         filler_tools_layout.setContentsMargins(0, 2, 0, 0)
         
-        self.lbl_filler_count = QLabel(self.txt("lbl_0_150_words"))
+        self.lbl_filler_count = QLabel(self.txt("lbl_words"))
         self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
         filler_tools_layout.addWidget(self.lbl_filler_count)
         
@@ -2432,7 +2433,7 @@ class BadWordsGUI(QMainWindow):
         row_marking_title = QHBoxLayout()
         row_marking_title.addWidget(QLabel(self.txt("lbl_marking_mode")))
         row_marking_title.addStretch()
-        self.btn_clear_transcript = QPushButton(self.txt("btn_"))
+        self.btn_clear_transcript = QPushButton("🧹")
         self.btn_clear_transcript.setFixedSize(26, 26)
         self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
         self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2507,7 +2508,7 @@ class BadWordsGUI(QMainWindow):
         l_assembly.setSpacing(15)
         
         def _pin_btn(fav_id: str):
-            btn = QPushButton(self.txt("btn_"))
+            btn = QPushButton("★")
             btn.setFixedSize(20, 20)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
@@ -2714,7 +2715,7 @@ class BadWordsGUI(QMainWindow):
         words = [w.strip() for w in raw_text.split(',') if w.strip()]
         count = len(words)
         
-        self.lbl_filler_count.setText(f"{count} / 150 words")
+        self.lbl_filler_count.setText(f"{count} / 150 {self.txt('lbl_words')}")
         
         if count > 150:
             self.lbl_filler_count.setStyleSheet("color: #ed4245; font-size: 9pt; font-weight: bold;")
@@ -3097,6 +3098,7 @@ class BadWordsGUI(QMainWindow):
             row_layout.addStretch()
 
             proxy_toggle = ToggleSwitch()
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
             proxy_toggle.setChecked(source_toggle.isChecked(), animated=False)
             row_layout.addWidget(proxy_toggle)
 
@@ -3353,7 +3355,7 @@ class BadWordsGUI(QMainWindow):
         btn_row_t = QHBoxLayout()
         btn_row_t.setSpacing(8)
 
-        btn_import = QPushButton(self.txt("btn_import_proj"))
+        btn_import = QPushButton(self.txt("btn_import_project"))
         btn_import.setObjectName("btn_ghost")
         btn_import.setCursor(Qt.PointingHandCursor)
         btn_import.setFixedHeight(30)
@@ -3369,7 +3371,7 @@ class BadWordsGUI(QMainWindow):
         btn_import.clicked.connect(self._on_import_project)
         btn_row_t.addWidget(btn_import)
 
-        btn_analyze = QPushButton(self.txt("btn_u25b6") + self.txt("btn_analyze"))
+        btn_analyze = QPushButton("▶ " + self.txt("btn_analyze"))
         btn_analyze.setObjectName("btn_primary")
         btn_analyze.setCursor(Qt.PointingHandCursor)
         btn_analyze.setFixedHeight(30)
@@ -3388,7 +3390,7 @@ class BadWordsGUI(QMainWindow):
         l_trans.addSpacing(14)
 
         # ── Link to fast silence sub-page
-        btn_switch_fast = QPushButton(self.txt("btn_fast_silence_detection_re"))
+        btn_switch_fast = QPushButton(self.txt("btn_fast_silence_detection"))
         btn_switch_fast.setCursor(Qt.PointingHandCursor)
         btn_switch_fast.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
@@ -3505,7 +3507,7 @@ class BadWordsGUI(QMainWindow):
         l_fast.addSpacing(20)
 
         # BACK BUTTON
-        btn_back = QPushButton(self.txt("btn_u2190_back_to_transcripti"))
+        btn_back = QPushButton(f"← {self.txt('btn_back_to_transcription')}")
         btn_back.setCursor(Qt.PointingHandCursor)
         btn_back.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
