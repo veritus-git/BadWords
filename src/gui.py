@@ -2186,15 +2186,23 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
             self._tb._lbl_title.setText(self._t("title_telemetry"))
 
+        # ── Size calculation ──────────────────────────────────────────────
+        # The dialog uses a shadow outer wrapper (15px each side) and a content
+        # area with 20px horizontal padding each side. Total horizontal overhead:
+        # 15 + 15 + 20 + 20 = 70px.  We must tell the word-wrapped label its
+        # exact available width BEFORE calling adjustSize(), otherwise Qt
+        # computes height without accounting for wrapping and the bottom text
+        # gets clipped.
+        DIALOG_W      = 580
+        HORIZ_MARGINS = 15 + 15 + 20 + 20   # shadow margins + content margins
+        self._lbl_msg.setMaximumWidth(DIALOG_W - HORIZ_MARGINS)
 
-        # Adjust height to fit content and re-center
-        self.adjustSize()
-        # Fix width so word-wrap calculations are stable
-        w = 580
-        self.setFixedWidth(w)
-        self.adjustSize()
-        h = self.sizeHint().height()
-        _center_on_screen(self, w, h)
+        # Now constrain the dialog width and let height grow freely
+        self.setFixedWidth(DIALOG_W)
+        self.adjustSize()    # height is now computed correctly with wrapped text
+        h = max(self.sizeHint().height(), self.height())
+        _center_on_screen(self, DIALOG_W, h)
+
 
     def _show_lang_picker(self):
         """Open a floating language picker anchored below the lang button."""
@@ -3036,6 +3044,10 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
             self._color_key_map[t] = c
             translated_options.append(t)
         self._color_combo = CustomDropdown(translated_options)
+        # CustomDropdown defaults to self.txt("txt_select") which resolves to English
+        # at creation time (no parent window yet). Override with the correct lang immediately.
+        if not (prefill_color and prefill_color in config.RESOLVE_COLORS):
+            self._color_combo.setText(_txt(lang, "txt_select"))
         # Set prefill value — find its translated equivalent
         if prefill_color and prefill_color in config.RESOLVE_COLORS:
             prefill_t = _txt(lang, f"resolve_color_{prefill_color.lower()}")
@@ -3713,9 +3725,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         l_shorts = QVBoxLayout(page_shorts)
         l_shorts.setContentsMargins(24, 20, 24, 16)
         l_shorts.setSpacing(0)
-        form_shorts = QFormLayout()
-        form_shorts.setSpacing(14)
-        form_shorts.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
 
         default_shortcuts = getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {})
         # Merge defaults with saved prefs, keeping only keys present in DEFAULT_SETTINGS
@@ -3745,7 +3755,8 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 w.set_conflict(bool(is_conflict))
 
 
-        def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
+        # Builds label + field container for one shortcut row (used for addRow and insertRow)
+        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False):
             container = QWidget()
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
@@ -3758,7 +3769,6 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 btn_clear.setFixedSize(26, 26)
                 btn_clear.setCursor(Qt.PointingHandCursor)
                 btn_clear.setObjectName("btn_ghost_sm")
-                # Tooltip for clearing could be localized, but fallback to en for now if no specific key exists
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
                 btn_clear.clicked.connect(lambda: setter_func(""))
                 row.addWidget(btn_clear)
@@ -3776,54 +3786,78 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             lbl = QLabel(label_text)
             lbl.setWordWrap(True)
             lbl.setMinimumWidth(200)
+            return lbl, container
+
+        def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
+            lbl, container = _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display)
             form.addRow(lbl, container)
 
-        for key, value in current_shortcuts.items():
-            # Basic view: hide jump_to_word and play_stop (display-only shortcuts)
-            if is_basic and key in ('jump_to_word', 'play_stop'):
+        # Keys and their ordering in the final form
+        MARKER_KEYS  = {'mark_red', 'mark_blue', 'mark_green', 'mark_eraser',
+                        'jump_to_word', 'play_stop'}
+        NAV_KEYS     = {'search', 'open_settings'}
+        DISPLAY_ONLY = {'jump_to_word', 'play_stop'}
+        KEY_ORDER    = ['mark_red', 'mark_blue', 'mark_green', 'mark_eraser',
+                        'jump_to_word', 'play_stop', 'search', 'open_settings']
+
+        def make_setter(w, check_fn):
+            def _setter(v):
+                w.set_sequence(str(v))
+                check_fn()
+            return _setter
+
+        # ── ONE unified QFormLayout ───────────────────────────────────────────
+        # Custom markers inserted via insertRow() at _custom_sc_insert_pos so
+        # spacing is always identical (14px) between EVERY row.
+        form = QFormLayout()
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Marker shortcuts (red … eraser)
+        for key in KEY_ORDER:
+            if key not in MARKER_KEYS or key not in current_shortcuts:
                 continue
-            i18n_key = f'shortcut_{key}'
+            is_disp = key in DISPLAY_ONLY
+            if is_basic and is_disp:
+                continue
+            value      = current_shortcuts[key]
+            i18n_key   = f'shortcut_{key}'
             label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
-
-            widget = ShortcutCaptureButton(str(value), display_only=False)
-
+            widget = ShortcutCaptureButton(str(value), display_only=is_disp)
             widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
-
-            # Setter for revert and clear buttons
-            def make_setter(w, check_fn):
-                def _setter(v):
-                    w.set_sequence(str(v))
-                    check_fn()
-                return _setter
-
-            default_val = default_shortcuts.get(key, '')
-            _add_shortcut_row(form_shorts, label_text, widget, default_val, make_setter(widget, _check_shortcut_conflicts), is_display=False)
-
+            lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, ''),
+                                                     make_setter(widget, _check_shortcut_conflicts),
+                                                     is_display=is_disp)
+            form.addRow(lbl, container)
             self.shortcut_inputs[key] = widget
 
-        # ── Custom Marker shortcuts (dynamic) ─────────────────────────────
-        # Save references so _refresh_custom_marker_shortcuts() can rebuild them
-        self._form_shorts = form_shorts
-        self._add_shortcut_row_fn = _add_shortcut_row
+        # Position where custom marker rows will be inserted (after last marker row)
+        self._custom_sc_insert_pos       = form.rowCount()
+        self._custom_sc_unified          = form
+        self._make_shortcut_widgets_fn   = _make_shortcut_widgets
         self._check_shortcut_conflicts_fn = _check_shortcut_conflicts
+        self._add_shortcut_row_fn         = _add_shortcut_row
         self.custom_marker_shortcut_inputs = {}
 
-        # Separator before custom marker shortcuts
-        self._sep_custom_markers = QFrame()
-        self._sep_custom_markers.setFrameShape(QFrame.Shape.HLine)
-        self._sep_custom_markers.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
-        form_shorts.addRow(self._sep_custom_markers)
+        # Nav shortcuts (search, open_settings)
+        for key in KEY_ORDER:
+            if key not in NAV_KEYS or key not in current_shortcuts:
+                continue
+            value      = current_shortcuts[key]
+            i18n_key   = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            widget = ShortcutCaptureButton(str(value), display_only=False)
+            widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+            lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, ''),
+                                                     make_setter(widget, _check_shortcut_conflicts),
+                                                     is_display=False)
+            form.addRow(lbl, container)
+            self.shortcut_inputs[key] = widget
 
-        # Initial render of custom marker shortcut rows
-        # (current_custom_markers is populated in PAGE 2 below, but _refresh_custom_marker_shortcuts
-        # uses getattr fallback so it is safe to call here — it will be called again from PAGE 2 init)
-        self._refresh_custom_marker_shortcuts()
-
-        # Initial conflict check in case loaded prefs already have duplicates
-        _check_shortcut_conflicts()
-
-        l_shorts.addLayout(form_shorts)
+        l_shorts.addLayout(form)
         l_shorts.addStretch()
+
+        _check_shortcut_conflicts()
         _add_page_to_stack(page_shorts)
 
 
@@ -3874,8 +3908,24 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         btn_add_m.setCursor(Qt.PointingHandCursor)
         btn_add_m.clicked.connect(self._on_add_marker)
         marker_btn_row.addWidget(btn_add_m)
+
+        btn_export_m = QPushButton(self.txt("btn_export_markers"))
+        btn_export_m.setObjectName("btn_ghost_sm")
+        btn_export_m.setFixedHeight(30)
+        btn_export_m.setCursor(Qt.PointingHandCursor)
+        btn_export_m.clicked.connect(self._on_export_markers)
+        marker_btn_row.addWidget(btn_export_m)
+
+        btn_import_m = QPushButton(self.txt("btn_import_markers"))
+        btn_import_m.setObjectName("btn_ghost_sm")
+        btn_import_m.setFixedHeight(30)
+        btn_import_m.setCursor(Qt.PointingHandCursor)
+        btn_import_m.clicked.connect(self._on_import_markers)
+        marker_btn_row.addWidget(btn_import_m)
+
         marker_btn_row.addStretch()
         l_markers.addLayout(marker_btn_row)
+
 
         _add_page_to_stack(page_markers)
 
@@ -4427,15 +4477,30 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         prefs['custom_markers'] = list(self.current_custom_markers)
         self.engine.save_preferences(prefs)
 
-        # Rebuild main window sidebar and shortcuts if accessible
-        main_win = self.parent()
-        if main_win is None:
-            # Try walking up the parent chain
-            main_win = self.window()
-        if main_win and hasattr(main_win, '_build_marker_radio_buttons'):
-            main_win._build_marker_radio_buttons()
-        if main_win and hasattr(main_win, '_apply_dynamic_shortcuts'):
-            main_win._apply_dynamic_shortcuts()
+        # Walk the widget parent hierarchy to find BadWordsGUI
+        # (self.parent() alone is not reliable when SettingsDialog is modal)
+        w = self
+        main_win = None
+        while w is not None:
+            try:
+                if hasattr(w, '_build_marker_radio_buttons') \
+                        and hasattr(w, '_apply_dynamic_shortcuts'):
+                    main_win = w
+                    break
+                w = w.parent()
+            except RuntimeError:
+                break
+
+        if main_win is not None:
+            try:
+                main_win._build_marker_radio_buttons()
+            except Exception:
+                pass
+            try:
+                main_win._apply_dynamic_shortcuts()
+            except Exception:
+                pass
+
 
     def _on_add_marker(self):
         lang = self.engine.load_preferences().get('gui_lang', 'en')
@@ -4478,56 +4543,136 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         """Legacy method — kept for safety but no longer wired to any button."""
         pass
 
+    def _on_export_markers(self):
+        """Export custom markers to a JSON file."""
+        from PySide6.QtWidgets import QFileDialog
+        import json, os
+
+        if not self.current_custom_markers:
+            lang = self.engine.load_preferences().get('gui_lang', 'en')
+            CustomMsgBox(
+                self,
+                _txt(lang, 'btn_export_markers'),
+                _txt(lang, 'msg_no_markers_to_export'),
+                _txt(lang, 'btn_ok'),
+            ).exec()
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.txt('btn_export_markers'),
+            os.path.expanduser('~/badwords_markers.json'),
+            'JSON Files (*.json)',
+        )
+        if not path:
+            return
+
+        data = {
+            'version': 1,
+            'app': 'BadWords',
+            'custom_markers': list(self.current_custom_markers),
+        }
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                import json
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            lang = self.engine.load_preferences().get('gui_lang', 'en')
+            CustomMsgBox(self, 'Error', str(e), _txt(lang, 'btn_ok')).exec()
+
+    def _on_import_markers(self):
+        """Import custom markers from a JSON file (replaces current list)."""
+        from PySide6.QtWidgets import QFileDialog
+        import json
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.txt('btn_import_markers'),
+            '',
+            'JSON Files (*.json)',
+        )
+        if not path:
+            return
+
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            CustomMsgBox(self, 'Error', str(e), _txt(lang, 'btn_ok')).exec()
+            return
+
+        # Accept both {"custom_markers": [...]} and plain lists
+        if isinstance(data, list):
+            imported = data
+        elif isinstance(data, dict):
+            imported = data.get('custom_markers', [])
+        else:
+            CustomMsgBox(
+                self, 'Error', _txt(lang, 'msg_import_invalid_format'), _txt(lang, 'btn_ok')
+            ).exec()
+            return
+
+        # Validate: each entry must have at least a non-empty 'name'
+        valid = []
+        for entry in imported:
+            if isinstance(entry, dict) and entry.get('name', '').strip():
+                valid.append({
+                    'name':  entry['name'].strip(),
+                    'color': entry.get('color', 'Blue'),
+                })
+
+        if not valid:
+            CustomMsgBox(
+                self, 'Error', _txt(lang, 'msg_import_no_valid_markers'), _txt(lang, 'btn_ok')
+            ).exec()
+            return
+
+        self.current_custom_markers = valid
+        self._refresh_markers_list()
+        self._refresh_custom_marker_shortcuts()
+        self._save_markers_and_refresh_main()
+
 
     def _refresh_custom_marker_shortcuts(self):
         """
-        Rebuilds the custom-marker shortcut rows in the Shortcuts tab.
-        Called after adding, editing, or removing a custom marker.
+        Rebuilds the custom-marker shortcut rows in the unified Shortcuts form.
+        Uses insertRow(pos) / removeRow(pos) on the single QFormLayout so all
+        rows always have identical 14px spacing — no separate widget needed.
         """
-        form = getattr(self, '_form_shorts', None)
-        if form is None:
-            return
-
-        add_row_fn = getattr(self, '_add_shortcut_row_fn', None)
+        form       = getattr(self, '_custom_sc_unified', None)
+        make_fn    = getattr(self, '_make_shortcut_widgets_fn', None)
         check_fn   = getattr(self, '_check_shortcut_conflicts_fn', None)
-        if add_row_fn is None or check_fn is None:
+        insert_pos = getattr(self, '_custom_sc_insert_pos', None)
+
+        if form is None or make_fn is None or check_fn is None or insert_pos is None:
             return
 
-        # Remove previous custom marker rows from the form
-        old_inputs = getattr(self, 'custom_marker_shortcut_inputs', {})
-        for key in list(old_inputs.keys()):
-            w = old_inputs.pop(key)
-            # Find and remove the row containing this widget
-            for r in range(form.rowCount()):
-                field = form.itemAt(r, form.FieldRole)
-                if field and field.widget() and hasattr(field.widget(), 'layout'):
-                    lay = field.widget().layout()
-                    if lay:
-                        for ci in range(lay.count()):
-                            child = lay.itemAt(ci)
-                            if child and child.widget() is w:
-                                form.removeRow(r)
-                                break
+        # ── Remove previous custom rows ─────────────────────────────────────
+        old_count = len(getattr(self, 'custom_marker_shortcut_inputs', {}))
+        for _ in range(old_count):
+            # Always remove at the same index; rows shift up after each removal
+            try:
+                form.removeRow(insert_pos)
+            except Exception:
+                break
 
         self.custom_marker_shortcut_inputs = {}
 
+        # ── Insert new custom rows at insert_pos ────────────────────────────
         prefs = self.engine.load_preferences() or {}
         saved_shortcuts = prefs.get('shortcuts', {})
         markers = getattr(self, 'current_custom_markers', [])
 
-        for m in markers:
-            name  = m.get('name', '')
+        for i, m in enumerate(markers):
+            name = m.get('name', '')
             if not name:
                 continue
             s_key = f'custom_marker_{name}'
 
-            # Build label using i18n format key
             fmt = self.txt('shortcut_custom_marker_fmt')
-            # If key missing fall back gracefully
-            if fmt == 'shortcut_custom_marker_fmt':
-                label_text = f'Switch to "{name}" Marker'
-            else:
-                label_text = fmt.format(name=name)
+            label_text = fmt.format(name=name) if fmt != 'shortcut_custom_marker_fmt' \
+                         else f'Switch to "{name}" Marker'
 
             current_seq = saved_shortcuts.get(s_key, '')
             widget = ShortcutCaptureButton(str(current_seq), display_only=False)
@@ -4539,10 +4684,14 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                     check()
                 return _setter
 
-            add_row_fn(form, label_text, widget, '', make_setter(widget, check_fn), is_display=False)
+            lbl, container = make_fn(label_text, widget, '',
+                                     make_setter(widget, check_fn),
+                                     is_display=False)
+            form.insertRow(insert_pos + i, lbl, container)
             self.custom_marker_shortcut_inputs[s_key] = widget
 
         check_fn()
+
 
     def _update_preview(self):
 
