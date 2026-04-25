@@ -1082,6 +1082,7 @@ class ResolveHandler:
                 log_error("build_edit_xml_from_ops: no ops to assemble after filtering.")
                 return False, {}
 
+
             # ── 5. Helper: map one op range onto source clips ─────────────────
             def op_to_clipitems(op, clip_map):
                 """
@@ -1415,8 +1416,22 @@ class ResolveHandler:
                             if not item:
                                 continue
                             item_start     = int(item.GetStart())
+                            item_dur       = int(item.GetDuration()) if hasattr(item, 'GetDuration') else -1
                             expected_color = sched_color(item_start)
                             if expected_color is False:
+                                # ── DIAGNOSTIC: log unknown clips so we can trace ghost clips ──
+                                try:
+                                    pool_item = item.GetMediaPoolItem()
+                                    fp = (pool_item.GetClipProperty("File Path") or "??") if pool_item else "<no pool item>"
+                                except Exception:
+                                    fp = "<err>"
+                                log_error(
+                                    f"reapply_clip_colors: UNKNOWN CLIP on {track_type}{ti} "
+                                    f"| start={item_start} (adj={item_start - tl_start}) "
+                                    f"| dur={item_dur}f "
+                                    f"| file={fp} "
+                                    f"| schedule_keys={sorted(color_schedule.keys())[:10]}..."
+                                )
                                 missed += 1
                                 continue
                             if not expected_color:

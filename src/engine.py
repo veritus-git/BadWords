@@ -1724,15 +1724,15 @@ except Exception as e:
                     set_status(self.txt("status_assembly_xml_import"))
                     set_progress(-1)
 
-                    # Switch to Media page to reduce Resolve UI overhead on import
-                    if self.resolve_handler.resolve:
-                        self.resolve_handler.resolve.OpenPage("media")
-
-                    # Set folder to Edits before import
-                    edits_bin = self.resolve_handler.get_badwords_edits_bin()
-                    if edits_bin:
+                    # ── SET FOLDER: Resources for source clips, Edits for the TL ─────
+                    # Source clips from the XML import land in the CURRENT folder.
+                    # We want source clips in BadWords/Resources, not Edits.
+                    # After import, we move only the timeline's MediaPoolItem to Edits.
+                    resources_bin = self.resolve_handler.get_badwords_resources_bin()
+                    edits_bin     = self.resolve_handler.get_badwords_edits_bin()
+                    if resources_bin:
                         try:
-                            self.resolve_handler.media_pool.SetCurrentFolder(edits_bin)
+                            self.resolve_handler.media_pool.SetCurrentFolder(resources_bin)
                         except Exception:
                             pass
 
@@ -1749,7 +1749,22 @@ except Exception as e:
                         log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
                         xml_tl_name = actual_name
 
-                        # ── Phase: Verify/correct clip colors (precise schedule) ───
+                        # Move the assembled timeline to Edits bin.
+                        # Source clips stay in Resources (where they landed on import).
+                        if edits_bin:
+                            try:
+                                tl_item = self.resolve_handler.find_timeline_item_recursive(
+                                    self.resolve_handler.media_pool.GetRootFolder(), actual_name
+                                )
+                                if tl_item:
+                                    self.resolve_handler.media_pool.MoveClips([tl_item], edits_bin)
+                                    log_info(f"assemble_timeline: moved '{actual_name}' → BadWords/Edits")
+                                else:
+                                    log_error("assemble_timeline: could not locate timeline item in pool")
+                            except Exception as move_err:
+                                log_error(f"assemble_timeline: MoveClips error: {move_err}")
+
+                        # ── Verify/correct clip colors (precise schedule) ──────────
                         set_status(self.txt("status_assembly_colors"))
                         self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
 

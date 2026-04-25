@@ -7669,12 +7669,11 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
     def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
-        
+
         from PySide6.QtWidgets import QApplication
-        import copy
-        
+
         prefs = self.engine.load_preferences() or {}
-        
+
         # GATHER UI STATES
         if hasattr(self, 'tgl_silence_cut'): prefs['silence_cut'] = self.tgl_silence_cut.isChecked()
         if hasattr(self, 'tgl_silence_mark'): prefs['silence_mark'] = self.tgl_silence_mark.isChecked()
@@ -7683,28 +7682,17 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
         if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
         if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
-        
+
         checked_btn = getattr(self, 'marker_btn_group', None) and self.marker_btn_group.checkedButton()
         if checked_btn:
             prefs['mark_tool'] = checked_btn.property("status_id")
-        
+
         self.engine.save_preferences(prefs)
-        
-        # UI Prep
-        self._panel_left.hide()
-        self._panel_right.hide()
-        self.go_to_page(1)
-        self.lbl_processing_status.setText(self.txt("txt_initializing_assembly"))
-        self.bar_processing.set_value(0)
-        
-        # Force UI update immediately before the heavy processing begins
-        QApplication.processEvents()
-        
-        # SANITIZE EXPORT DATA (Prevents C++ QRect deepcopy memory leaks)
-        export_data = self._get_clean_words_data()
-        show_typos = prefs.get('show_typos', True)
+
+        # SANITIZE EXPORT DATA (prevents C++ QRect deepcopy memory leaks)
+        export_data    = self._get_clean_words_data()
+        show_typos     = prefs.get('show_typos', True)
         mark_inaudible = prefs.get('mark_inaudible', True)
-        
         for w in export_data:
             if w.get('status') == 'typo' and not show_typos:
                 if w.get('manual_status') != 'typo' or w.get('is_auto', False):
@@ -7712,21 +7700,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             if w.get('status') == 'inaudible' and not mark_inaudible:
                 w['status'] = None
 
-        from PySide6.QtCore import QEventLoop
-        
-        # EVENT-PUMP CALLBACKS: Keep UI fluid but block rogue clicks
-        def pump_status(msg):
-            self.lbl_processing_status.setText(msg)
-            QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
-
-        def pump_progress(val):
-            self.bar_processing.set_value(val)
-            QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
-            
-        # ── INJECT SOURCE SNAPSHOT into prefs for engine ────────────────────
+        # INJECT SOURCE SNAPSHOT
         src = getattr(self, '_transcription_source', None)
         if not src:
-            # Try to recover from persisted prefs
             saved_src = (self.engine.load_preferences() or {}).get('transcription_source')
             if saved_src:
                 src = saved_src
@@ -7734,18 +7710,67 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if src:
             prefs["source_snapshot"] = src
 
-        # EXECUTE TRULY SYNCHRONOUSLY ON MAIN THREAD
-        # We bypass the threaded wrapper and call the core method directly
-        success, warning, new_tl_name, clean_ops = self.engine.assemble_timeline(
-            export_data, 
-            prefs, 
-            callback_status=pump_status, 
-            callback_progress=pump_progress
+        # UI PREP — infinite bar starts immediately so it animates during assembly
+        self._panel_left.hide()
+        self._panel_right.hide()
+        self.go_to_page(1)
+        self.lbl_processing_status.setText(self.txt("txt_initializing_assembly"))
+        self.bar_processing.set_value(-1)   # infinite sweep animation
+        QApplication.processEvents()
+
+        # ── WORKER SIGNALS ────────────────────────────────────────────────────
+        from PySide6.QtCore import QThread, Signal as _Signal, QObject as _QObject
+
+        class _AssemblySignals(_QObject):
+            status   = _Signal(str)
+            finished = _Signal(object)   # carries result tuple
+
+        _sigs = _AssemblySignals()
+        _sigs.status.connect(self.lbl_processing_status.setText)
+        _sigs.finished.connect(self._on_assemble_done)
+
+        # ── WORKER THREAD ─────────────────────────────────────────────────────
+        class _AssemblyThread(QThread):
+            def __init__(self, engine, export_data, prefs, sigs):
+                super().__init__()
+                self._engine = engine
+                self._data   = export_data
+                self._prefs  = prefs
+                self._sigs   = sigs
+
+            def run(self):
+                try:
+                    result = self._engine.assemble_timeline(
+                        self._data,
+                        self._prefs,
+                        callback_status   = self._sigs.status.emit,
+                        callback_progress = lambda v: None,  # bar stays infinite
+                    )
+                except Exception as _e:
+                    import traceback as _tb
+                    from badwords_log import log_error as _le
+                    _le(f"_AssemblyThread: {_e}\n{_tb.format_exc()}")
+                    result = (False, None, None, None)
+                self._sigs.finished.emit(result)
+
+        self._assembly_thread = _AssemblyThread(self.engine, export_data, prefs, _sigs)
+        self._assembly_sigs   = _sigs   # keep alive until finished signal fires
+        self._assembly_prefs  = prefs
+        self._assembly_thread.start()
+
+    def _on_assemble_done(self, result):
+        """Called on main thread when assembly QThread finishes."""
+        from PySide6.QtWidgets import QApplication
+
+        self.bar_processing.set_value(100)
+
+        success, warning, new_tl_name, clean_ops = (
+            result if (isinstance(result, tuple) and len(result) == 4)
+            else (False, None, None, None)
         )
 
-        # ── SYNC SNAPSHOT BACK: persist filtered_tl_name if engine set it ──────
-        # engine.assemble_timeline mutates prefs["source_snapshot"] in-place
-        # (adds filtered_tl_name on first run). Sync that back to the GUI state.
+        # Sync snapshot back (engine mutates prefs["source_snapshot"] in-place)
+        prefs = getattr(self, '_assembly_prefs', {}) or {}
         updated_snapshot = prefs.get("source_snapshot")
         if updated_snapshot and hasattr(self, '_transcription_source'):
             new_filtered = updated_snapshot.get("filtered_tl_name")
@@ -7758,17 +7783,17 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 except Exception:
                     pass
 
-        # AGGRESSIVE RAM CLEANUP: Free memory immediately after assembly finishes
+        # RAM cleanup
         try:
-            del export_data
             import gc
+            self._assembly_thread = None
+            self._assembly_sigs   = None
+            self._assembly_prefs  = None
             gc.collect()
-        except:
+        except Exception:
             pass
-            
-        # HANDLE RESULTS SEQUENTIALLY
+
         if success:
-            self.bar_processing.set_value(100)
             self.lbl_processing_status.setText(self.txt("txt_finishing"))
             QApplication.processEvents()
             self._on_assembly_success(new_tl_name, clean_ops)
