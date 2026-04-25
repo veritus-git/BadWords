@@ -1809,6 +1809,47 @@ class BadWordsGUI(QMainWindow):
 
         # --- Telemetry check fires 500 ms after first paint ---
         QTimer.singleShot(500, self.check_telemetry)
+        
+        self._bind_prefs()
+
+    def _save_single_pref(self, key: str, value):
+        prefs = self.engine.load_preferences() or {}
+        prefs[key] = value
+        self.engine.save_preferences(prefs)
+
+    def _bind_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        
+        toggles = [
+            ('ui_tgl_silence_cut', 'tgl_silence_cut'),
+            ('ui_tgl_silence_mark', 'tgl_silence_mark'),
+            ('ui_tgl_show_inaudible', 'tgl_show_inaudible'),
+            ('ui_tgl_mark_inaudible', 'tgl_mark_inaudible'),
+            ('ui_tgl_show_typos', 'tgl_show_typos'),
+            ('ui_tgl_ripple_delete', 'tgl_ripple_delete')
+        ]
+        
+        for key, attr_name in toggles:
+            if hasattr(self, attr_name):
+                toggle = getattr(self, attr_name)
+                if key in prefs:
+                    toggle.setChecked(prefs[key], animated=False)
+                toggle.toggled.connect(lambda v, k=key: self._save_single_pref(k, v))
+                
+        if hasattr(self, 'spin_thresh'):
+            if 'ui_spin_thresh' in prefs:
+                self.spin_thresh.setValue(prefs['ui_spin_thresh'])
+            self.spin_thresh.valueChanged.connect(lambda v: self._save_single_pref('ui_spin_thresh', v))
+            
+        if hasattr(self, 'spin_pad'):
+            if 'ui_spin_pad' in prefs:
+                self.spin_pad.setValue(prefs['ui_spin_pad'])
+            self.spin_pad.valueChanged.connect(lambda v: self._save_single_pref('ui_spin_pad', v))
+        
+        # Restore pinned favorites
+        for fav_id in prefs.get('favorites', []):
+            if fav_id in self._pin_buttons:
+                self._pin_buttons[fav_id].click()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2128,14 +2169,18 @@ class BadWordsGUI(QMainWindow):
         l_silence.addLayout(form_silence)
         
         row_silence_cut = QHBoxLayout()
-        row_silence_cut.addWidget(QLabel("Detect and cut silence"))
+        lbl_cut = QLabel("Detect and cut silence")
+        lbl_cut.setWordWrap(True)
+        row_silence_cut.addWidget(lbl_cut)
         row_silence_cut.addStretch()
         self.tgl_silence_cut = ToggleSwitch()
         row_silence_cut.addWidget(self.tgl_silence_cut)
         l_silence.addLayout(row_silence_cut)
         
         row_silence_mark = QHBoxLayout()
-        row_silence_mark.addWidget(QLabel("Detect and mark silence"))
+        lbl_mark = QLabel("Detect and mark silence")
+        lbl_mark.setWordWrap(True)
+        row_silence_mark.addWidget(lbl_mark)
         row_silence_mark.addStretch()
         self.tgl_silence_mark = ToggleSwitch()
         row_silence_mark.addWidget(self.tgl_silence_mark)
@@ -2223,6 +2268,7 @@ class BadWordsGUI(QMainWindow):
         l_main.addLayout(row_marking_title)
         
         self.rb_red = QRadioButton("RED (Cut/Filler)")
+        self.rb_red.setChecked(True)
         self.rb_red.setCursor(Qt.CursorShape.PointingHandCursor)
         style_rb(self.rb_red, config.WORD_BAD_BG)
         l_main.addWidget(self.rb_red)
@@ -2249,6 +2295,15 @@ class BadWordsGUI(QMainWindow):
         # Middle
         l_main.addStretch(1)
         
+        # Favorites section
+        lbl_favs = QLabel("Pinned Favorites:")
+        lbl_favs.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
+        l_main.addWidget(lbl_favs)
+        
+        self.layout_favorites = QVBoxLayout()
+        self.layout_favorites.setSpacing(10)
+        l_main.addLayout(self.layout_favorites)
+        
         # Bottom Section removed!
         
         row_proj = QHBoxLayout()
@@ -2268,45 +2323,75 @@ class BadWordsGUI(QMainWindow):
         
         self.activities["main_panel"] = _wrap_activity(p_main)
         
+        self._favorite_proxies = {}
+        self._pin_buttons = {}
+        
         # E. assembly
         p_assembly = QWidget()
         l_assembly = QVBoxLayout(p_assembly)
         l_assembly.setContentsMargins(15, 15, 15, 15)
         l_assembly.setSpacing(15)
         
+        def _pin_btn(fav_id: str):
+            btn = QPushButton("★")
+            btn.setFixedSize(20, 20)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            self._pin_buttons[fav_id] = btn
+            return btn
+        
         row_show_inaudible = QHBoxLayout()
-        row_show_inaudible.addWidget(QLabel("Show inaudible fragments"))
+        lbl_show_inaud = QLabel("Show inaudible fragments")
+        lbl_show_inaud.setWordWrap(True)
+        row_show_inaudible.addWidget(lbl_show_inaud)
         row_show_inaudible.addStretch()
         self.tgl_show_inaudible = ToggleSwitch()
         self.tgl_show_inaudible.setChecked(True)
         self.tgl_show_inaudible.toggled.connect(self._on_inaudible_toggled)
         row_show_inaudible.addWidget(self.tgl_show_inaudible)
+        pin_show_inaud = _pin_btn('show_inaudible')
+        row_show_inaudible.addWidget(pin_show_inaud)
         l_assembly.addLayout(row_show_inaudible)
+        pin_show_inaud.clicked.connect(lambda: self._toggle_favorite('show_inaudible', self.tgl_show_inaudible, 'Show inaudible', pin_show_inaud))
         
         row_mark_inaudible = QHBoxLayout()
-        row_mark_inaudible.addWidget(QLabel("Mark inaudible fragments with brown"))
+        lbl_mark_inaud = QLabel("Mark inaudible fragments with brown")
+        lbl_mark_inaud.setWordWrap(True)
+        row_mark_inaudible.addWidget(lbl_mark_inaud)
         row_mark_inaudible.addStretch()
         self.tgl_mark_inaudible = ToggleSwitch()
         self.tgl_mark_inaudible.toggled.connect(self._on_mark_inaudible_toggled)
         row_mark_inaudible.addWidget(self.tgl_mark_inaudible)
+        pin_mark_inaud = _pin_btn('mark_inaudible')
+        row_mark_inaudible.addWidget(pin_mark_inaud)
         l_assembly.addLayout(row_mark_inaudible)
+        pin_mark_inaud.clicked.connect(lambda: self._toggle_favorite('mark_inaudible', self.tgl_mark_inaudible, 'Mark inaudible', pin_mark_inaud))
         
         row_show_typos = QHBoxLayout()
-        row_show_typos.addWidget(QLabel("Show detected typos"))
+        lbl_show_typos = QLabel("Show detected typos")
+        lbl_show_typos.setWordWrap(True)
+        row_show_typos.addWidget(lbl_show_typos)
         row_show_typos.addStretch()
         self.tgl_show_typos = ToggleSwitch()
         self.tgl_show_typos.setChecked(True)
         self.tgl_show_typos.toggled.connect(self._on_typos_toggled)
         row_show_typos.addWidget(self.tgl_show_typos)
+        pin_show_typos = _pin_btn('show_typos')
+        row_show_typos.addWidget(pin_show_typos)
         l_assembly.addLayout(row_show_typos)
+        pin_show_typos.clicked.connect(lambda: self._toggle_favorite('show_typos', self.tgl_show_typos, 'Show typos', pin_show_typos))
         
         row_ripple_delete = QHBoxLayout()
         lbl_ripple = QLabel("<span style='color: #ed4245; font-weight: bold;'>Ripple delete</span> red clips")
+        lbl_ripple.setWordWrap(True)
         row_ripple_delete.addWidget(lbl_ripple)
         row_ripple_delete.addStretch()
         self.tgl_ripple_delete = ToggleSwitch()
         row_ripple_delete.addWidget(self.tgl_ripple_delete)
+        pin_ripple = _pin_btn('ripple_delete')
+        row_ripple_delete.addWidget(pin_ripple)
         l_assembly.addLayout(row_ripple_delete)
+        pin_ripple.clicked.connect(lambda: self._toggle_favorite('ripple_delete', self.tgl_ripple_delete, 'Ripple delete', pin_ripple))
         
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
@@ -2484,26 +2569,56 @@ class BadWordsGUI(QMainWindow):
         saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
         os.makedirs(saves_dir, exist_ok=True)
         
-        path, _ = QFileDialog.getSaveFileName(self, "Export Project", os.path.join(saves_dir, f"BadWords_Project_{int(time.time())}.json"), "JSON Files (*.json)")
+        # SMART TIMELINE NAMING
+        timeline_name = "Project"
+        try:
+            if hasattr(self, 'resolve_handler') and self.resolve_handler:
+                project = self.resolve_handler.project_manager.GetCurrentProject()
+                if project:
+                    timeline_name = project.GetName()
+                    tl = project.GetCurrentTimeline()
+                    if tl:
+                        timeline_name = tl.GetName()
+        except Exception:
+            pass
+        safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        default_filename = f"BadWords_{safe_name}.json"
+        
+        path, _ = QFileDialog.getSaveFileName(self, "Export Project", os.path.join(saves_dir, default_filename), "JSON Files (*.json)")
         if not path: return
         
         prefs = self.engine.load_preferences() or {}
-        
-        # USE SANITIZED DATA TO PREVENT JSON ENCODER CRASHES
+
+        # GATHER ACTIVE PANELS (Using correct attribute names)
+        active_panels = []
+        nav_btns = [
+            getattr(self, 'btn_nav_script',   None), getattr(self, 'btn_nav_silence', None),
+            getattr(self, 'btn_nav_fillers',  None), getattr(self, 'btn_nav_main',    None),
+            getattr(self, 'btn_nav_assembly', None)
+        ]
+        for btn in nav_btns:
+            if btn and getattr(btn, 'is_active', False):
+                active_panels.append(btn.activity_id)
+
+        # SMUGGLE LAYOUT DATA INTO PREFS TO BYPASS ENGINE RESTRICTIONS
+        prefs['ui_active_panels']  = active_panels
+        prefs['ui_splitter_sizes'] = self._main_h_splitter.sizes() if hasattr(self, '_main_h_splitter') else []
+
         clean_words = self._get_clean_words_data()
-        
+
         data_packet = {
-            "lang_code": prefs.get('lang', 'Auto'),
-            "settings": prefs,
-            "filler_words": prefs.get('filler_words', config.DEFAULT_BAD_WORDS),
-            "words_data": clean_words,
-            "script_content": getattr(self, 'txt_script', None).toPlainText() if hasattr(self, 'txt_script') else ""
+            "lang_code":      prefs.get('lang', 'Auto'),
+            "settings":       prefs,
+            "filler_words":   prefs.get('filler_words', config.DEFAULT_BAD_WORDS),
+            "words_data":     clean_words,
+            "script_content": getattr(self, 'text_script', None).toPlainText() if hasattr(self, 'text_script') else ""
         }
+        # Note: layout state is inside 'settings', not at the root level
         self.engine.save_project_state(path, data_packet)
 
     def _on_import_project(self):
         try:
-            from PySide6.QtWidgets import QFileDialog
+            from PySide6.QtWidgets import QFileDialog, QApplication
             import os
             
             saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
@@ -2513,16 +2628,88 @@ class BadWordsGUI(QMainWindow):
             if not path: return
             
             state, _ = self.engine.load_project_state(path)
-            
+
+            from PySide6.QtCore import QTimer
+
+            # --- 1. SYNC UI PREFERENCES ---
+            imported_prefs = state.get('settings', {})
+            if imported_prefs:
+                self.engine.save_preferences(imported_prefs)
+
+                # Update Toggle Switches
+                toggles = [
+                    ('ui_tgl_silence_cut',    getattr(self, 'tgl_silence_cut',    None)),
+                    ('ui_tgl_silence_mark',   getattr(self, 'tgl_silence_mark',   None)),
+                    ('ui_tgl_show_inaudible', getattr(self, 'tgl_show_inaudible', None)),
+                    ('ui_tgl_mark_inaudible', getattr(self, 'tgl_mark_inaudible', None)),
+                    ('ui_tgl_show_typos',     getattr(self, 'tgl_show_typos',     None)),
+                    ('ui_tgl_ripple_delete',  getattr(self, 'tgl_ripple_delete',  None)),
+                    ('ui_tgl_auto_filler',    getattr(self, 'tgl_auto_filler',    None)),
+                ]
+                for key, widget in toggles:
+                    if widget and key in imported_prefs:
+                        widget.setChecked(imported_prefs[key], animated=False)
+
+                # Update SpinBoxes
+                if hasattr(self, 'spin_thresh') and 'ui_spin_thresh' in imported_prefs:
+                    self.spin_thresh.setValue(imported_prefs['ui_spin_thresh'])
+                if hasattr(self, 'spin_pad') and 'ui_spin_pad' in imported_prefs:
+                    self.spin_pad.setValue(imported_prefs['ui_spin_pad'])
+
+                # Restore pinned favorites visually
+                for fav_id in imported_prefs.get('favorites', []):
+                    if hasattr(self, '_pin_buttons') and fav_id in self._pin_buttons:
+                        if not hasattr(self, '_favorite_proxies') or fav_id not in self._favorite_proxies:
+                            self._pin_buttons[fav_id].click()
+
             # Restore Script
-            if hasattr(self, 'txt_script') and 'script_content' in state:
-                self.txt_script.setText(state['script_content'])
-                
-            # Restore Data
-            if hasattr(self, 'go_to_page'): self.go_to_page(2)
-            if hasattr(self, '_panel_left'): self._panel_left.show()
-            if hasattr(self, '_panel_right'): self._panel_right.show()
-            if hasattr(self, 'text_canvas'): self.text_canvas.load_data(state.get('words_data', []))
+            if hasattr(self, 'text_script') and 'script_content' in state:
+                self.text_script.setText(state['script_content'])
+
+            # --- 2. SWITCH TO EDITOR CONTEXT ---
+            if hasattr(self, 'go_to_page'):
+                self.go_to_page(2)
+
+            # EXTRACT SMUGGLED UI STATE FROM PREFS
+            saved_panels = imported_prefs.get('ui_active_panels', [])
+            saved_sizes  = imported_prefs.get('ui_splitter_sizes', [])
+
+            # --- 3. BULLETPROOF PANEL RESTORATION ---
+            if hasattr(self, '_panel_left'):  self._panel_left.hide()
+            if hasattr(self, '_panel_right'): self._panel_right.hide()
+
+            # STRICT MAPPING: exact activity_id string -> actual button instance
+            nav_map = {
+                'script_analysis': getattr(self, 'btn_nav_script',   None),
+                'silence':         getattr(self, 'btn_nav_silence',  None),
+                'fillers':         getattr(self, 'btn_nav_fillers',  None),
+                'main_panel':      getattr(self, 'btn_nav_main',     None),
+                'assembly':        getattr(self, 'btn_nav_assembly', None),
+            }
+
+            # Force all buttons off safely
+            for act_id, btn in nav_map.items():
+                if btn:
+                    btn.is_active = False
+                    btn.style().unpolish(btn)
+                    btn.style().polish(btn)
+
+            QApplication.processEvents()
+
+            # Forcefully trigger saved panels
+            for act_id in saved_panels:
+                if act_id in nav_map and nav_map[act_id] is not None:
+                    self._toggle_activity(act_id)
+
+            QApplication.processEvents()
+
+            # Load Words Data
+            if hasattr(self, 'text_canvas'):
+                self.text_canvas.load_data(state.get('words_data', []))
+
+            # Apply splitter sizes
+            if saved_sizes and hasattr(self, '_main_h_splitter'):
+                QTimer.singleShot(150, lambda: self._main_h_splitter.setSizes(saved_sizes))
         except Exception as e:
             from osdoc import log_error
             log_error(f"Failed to load project: {e}")
@@ -2624,6 +2811,143 @@ class BadWordsGUI(QMainWindow):
         self.text_canvas._calculate_layout()
         self.text_canvas.update()
 
+    def _on_fast_silence(self):
+        """Fast Silence Cut: runs FFmpeg pipeline then directly assembles the timeline."""
+        if hasattr(self, '_panel_left'): self._panel_left.hide()
+        if hasattr(self, '_panel_right'): self._panel_right.hide()
+
+        self.go_to_page(1)
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText("Initializing Fast Silence Cut...")
+
+        # Read from page-1 spinboxes (if available), fall back to prefs
+        if hasattr(self, '_fs_spin_thresh') and hasattr(self, '_fs_spin_pad'):
+            thresh = self._fs_spin_thresh.value()
+            pad    = self._fs_spin_pad.value()
+        else:
+            prefs  = self.engine.load_preferences() or {}
+            thresh = prefs.get('ui_spin_thresh', -42.0)
+            pad    = prefs.get('ui_spin_pad', 0.05)
+
+        settings = {'threshold_db': thresh, 'padding_s': pad}
+
+        self._worker_signals = WorkerSignals()
+        self._worker_signals.progress.connect(self._on_analysis_progress)
+        self._worker_signals.status.connect(self._on_analysis_status)
+        # Route to fast-silence-specific finished handler
+        self._worker_signals.finished.connect(self._on_fs_finished)
+        self._worker_signals.error.connect(self._on_analysis_error)
+
+        def worker_func():
+            try:
+                words_data, segments_data = self.engine.run_fast_silence_pipeline(
+                    settings,
+                    callback_status=self._worker_signals.status.emit,
+                    callback_progress=self._worker_signals.progress.emit
+                )
+                self._worker_signals.finished.emit(words_data, segments_data)
+            except Exception as e:
+                self._worker_signals.error.emit(str(e))
+
+        self._analysis_thread = threading.Thread(target=worker_func, daemon=True)
+        self._analysis_thread.start()
+
+    def _on_fs_finished(self, words_data, segments_data):
+        """Called when run_fast_silence_pipeline completes. Directly assembles the timeline."""
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        if not words_data:
+            QMessageBox.critical(self, "Fast Silence", "No silence segments detected. Check your threshold setting.")
+            self.go_to_page(0)
+            if hasattr(self, 'welcome_stack'): self.welcome_stack.setCurrentIndex(0)
+            return
+
+        self.lbl_processing_status.setText("Assembling Timeline...")
+        QApplication.processEvents()
+
+        fs_prefs = self.engine.load_preferences() or {}
+        fs_prefs['silence_cut']  = getattr(self, 'rb_fs_cut',  None) and self.rb_fs_cut.isChecked()
+        fs_prefs['silence_mark'] = getattr(self, 'rb_fs_mark', None) and self.rb_fs_mark.isChecked()
+
+        success, err = self.engine.assemble_timeline(
+            words_data, fs_prefs,
+            callback_status=self.lbl_processing_status.setText,
+            callback_progress=self.bar_processing.set_value
+        )
+
+        if success:
+            QMessageBox.information(self, "Fast Silence", "Fast Silence processing complete!")
+        else:
+            QMessageBox.critical(self, "Fast Silence Error", f"Assembly failed: {err}")
+
+        self.go_to_page(0)
+        if hasattr(self, 'welcome_stack'):
+            self.welcome_stack.setCurrentIndex(0)
+
+    def _toggle_favorite(self, target_id: str, source_toggle, label_text: str, pin_btn):
+        """Proxy Favorites system — creates or destroys a mirrored ToggleSwitch in layout_favorites."""
+        if not hasattr(self, 'layout_favorites') or not hasattr(self, '_favorite_proxies'):
+            return
+
+        if target_id in self._favorite_proxies:
+            # --- REMOVE favorite ---
+            entry = self._favorite_proxies.pop(target_id)
+            try: source_toggle.toggled.disconnect(entry['src_conn'])
+            except: pass
+            try: entry['proxy'].toggled.disconnect(entry['prx_conn'])
+            except: pass
+            proxy_row = entry['row_widget']
+            self.layout_favorites.removeWidget(proxy_row)
+            proxy_row.deleteLater()
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            # Persist removal
+            prefs = self.engine.load_preferences() or {}
+            favs = prefs.get('favorites', [])
+            if target_id in favs: favs.remove(target_id)
+            prefs['favorites'] = favs
+            self.engine.save_preferences(prefs)
+        else:
+            # --- ADD favorite ---
+            from PySide6.QtWidgets import QWidget as _QWidget
+            row_widget = _QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+
+            row_layout.addWidget(QLabel(label_text))
+            row_layout.addStretch()
+
+            proxy_toggle = ToggleSwitch()
+            proxy_toggle.setChecked(source_toggle.isChecked(), animated=False)
+            row_layout.addWidget(proxy_toggle)
+
+            self.layout_favorites.addWidget(row_widget)
+
+            # Two-way binding (loop-safe)
+            def prx_to_src(v, src=source_toggle, prx=proxy_toggle):
+                if src.isChecked() != v: src.setChecked(v)
+            def src_to_prx(v, src=source_toggle, prx=proxy_toggle):
+                if prx.isChecked() != v: prx.setChecked(v)
+
+            prx_conn = proxy_toggle.toggled.connect(prx_to_src)
+            src_conn = source_toggle.toggled.connect(src_to_prx)
+
+            self._favorite_proxies[target_id] = {
+                'row_widget': row_widget,
+                'proxy': proxy_toggle,
+                'prx_conn': prx_conn,
+                'src_conn': src_conn,
+            }
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
+            # Persist addition
+            prefs = self.engine.load_preferences() or {}
+            favs = prefs.get('favorites', [])
+            if target_id not in favs: favs.append(target_id)
+            prefs['favorites'] = favs
+            self.engine.save_preferences(prefs)
+
     def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
         
@@ -2723,12 +3047,10 @@ class BadWordsGUI(QMainWindow):
 
     def _build_welcome_screen(self) -> QWidget:
         """
-        Page 0: flat Welcome / Config screen.
-        - 36px / weight 900 title
-        - Vertical form: label ABOVE each input
-        - Native QComboBox (editable=True, maxVisibleItems=4) with an event
-          filter on its lineEdit() that calls showPopup() on click, giving
-          perfect searchable combo-box behaviour
+        Page 0 of the main stack: Welcome / Config screen.
+        Contains a local QStackedWidget (self.welcome_stack):
+          - sub-page 0: Transcription workflow (existing dropdowns + Analyze button)
+          - sub-page 1: Fast Silence settings + Run button
         """
         page = QWidget()
         page.setObjectName("page_welcome")
@@ -2748,21 +3070,7 @@ class BadWordsGUI(QMainWindow):
         inner_layout.setContentsMargins(0, 0, 0, 0)
         inner_layout.setSpacing(0)
 
-        def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
-            """Label directly above the input."""
-            row = QVBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(3)
-            lbl = QLabel(label_text)
-            lbl.setStyleSheet(
-                f"color: {config.NOTE_COL}; font-size: 9pt;"
-                f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
-            )
-            row.addWidget(lbl)
-            row.addWidget(widget)
-            return row
-
-        # ── Title ────────────────────────────────────────────────────────
+        # ── Shared Title ─────────────────────────────────────────────────
         lbl_title = QLabel("BadWords", inner)
         lbl_title.setObjectName("welcome_title")
         lbl_title.setAlignment(Qt.AlignCenter)
@@ -2777,34 +3085,58 @@ class BadWordsGUI(QMainWindow):
             }}
         """)
         inner_layout.addWidget(lbl_title)
+        inner_layout.addSpacing(24)
 
-        lbl_sub = QLabel("Transcription workspace", inner)
+        # ── Local stacked widget ──────────────────────────────────────────
+        self.welcome_stack = QStackedWidget()
+        self.welcome_stack.setStyleSheet("background: transparent;")
+        inner_layout.addWidget(self.welcome_stack)
+
+        prefs = self.engine.load_preferences() or {}
+
+        def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
+            """Label directly above the input."""
+            row = QVBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(3)
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(
+                f"color: {config.NOTE_COL}; font-size: 9pt;"
+                f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+            )
+            row.addWidget(lbl)
+            row.addWidget(widget)
+            return row
+
+        # ═══════════════════════════════════════════════════════════════
+        # SUB-PAGE 0: TRANSCRIPTION
+        # ═══════════════════════════════════════════════════════════════
+        p_transcription = QWidget()
+        p_transcription.setStyleSheet("background: transparent;")
+        l_trans = QVBoxLayout(p_transcription)
+        l_trans.setContentsMargins(0, 0, 0, 0)
+        l_trans.setSpacing(0)
+
+        lbl_sub = QLabel("Transcription workspace")
         lbl_sub.setAlignment(Qt.AlignCenter)
         lbl_sub.setStyleSheet(
             f"color: {config.NOTE_COL}; font-size: 10pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
-        inner_layout.addWidget(lbl_sub)
-        inner_layout.addSpacing(28)
+        l_trans.addWidget(lbl_sub)
+        l_trans.addSpacing(20)
 
-        # ── Language — editable SearchableDropdown ────────────────────────────
+        # ── Language
         lang_items = list(config.SUPPORTED_LANGUAGES.values())
         self._combo_lang = SearchableDropdown(lang_items)
-        prefs = self.engine.load_preferences() or {}
-        
         saved_lang = prefs.get('lang', 'Auto')
         display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
-        
-        if display_name in lang_items or display_name == 'Auto':
-            self._combo_lang.setText(display_name)
-        else:
-            self._combo_lang.setText("Auto")
-        
+        self._combo_lang.setText(display_name if (display_name in lang_items or display_name == 'Auto') else "Auto")
         self._combo_lang.valueChanged.connect(lambda v: self.engine.save_preferences({"lang": v}))
-        inner_layout.addLayout(_row(self.txt("lbl_lang"), self._combo_lang))
-        inner_layout.addSpacing(10)
+        l_trans.addLayout(_row(self.txt("lbl_lang"), self._combo_lang))
+        l_trans.addSpacing(10)
 
-        # ── Model — non-editable CustomDropdown ───────────────────────────
+        # ── Model
         model_items = [
             "Tiny  (Fast, <1 GB)",
             "Base  (Balanced, 1 GB)",
@@ -2814,28 +3146,22 @@ class BadWordsGUI(QMainWindow):
             "Large  (Accurate, 10 GB)",
         ]
         self._combo_model = CustomDropdown(model_items)
-        if "model" in prefs and prefs["model"] in model_items:
-            self._combo_model.setText(prefs["model"])
-        else:
-            self._combo_model.setText(model_items[4])
+        self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[4])
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
-        inner_layout.addLayout(_row(self.txt("lbl_model"), self._combo_model))
-        inner_layout.addSpacing(10)
+        l_trans.addLayout(_row(self.txt("lbl_model"), self._combo_model))
+        l_trans.addSpacing(10)
 
-        # ── Device — non-editable CustomDropdown ──────────────────────────
+        # ── Device
         device_items = ["Auto", "CPU", "GPU (CUDA)"]
         self._combo_device = CustomDropdown(device_items)
-        if "device" in prefs and prefs["device"] in device_items:
-            self._combo_device.setText(prefs["device"])
-        else:
-            self._combo_device.setText("Auto")
+        self._combo_device.setText(prefs["device"] if "device" in prefs and prefs["device"] in device_items else "Auto")
         self._combo_device.valueChanged.connect(lambda v: self.engine.save_preferences({"device": v}))
-        inner_layout.addLayout(_row(self.txt("lbl_device"), self._combo_device))
-        inner_layout.addSpacing(24)
+        l_trans.addLayout(_row(self.txt("lbl_device"), self._combo_device))
+        l_trans.addSpacing(24)
 
-        # ── Buttons ──────────────────────────────────────────────────
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        # ── Action buttons
+        btn_row_t = QHBoxLayout()
+        btn_row_t.setSpacing(8)
 
         btn_import = QPushButton(self.txt("btn_import_proj"))
         btn_import.setObjectName("btn_ghost")
@@ -2843,19 +3169,15 @@ class BadWordsGUI(QMainWindow):
         btn_import.setFixedHeight(30)
         btn_import.setStyleSheet(f"""
             QPushButton#btn_ghost {{
-                background-color: #1e1e1e;
-                color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                padding: 0 12px;
+                background-color: #1e1e1e; color: {config.FG_COLOR};
+                font-family: "{config.UI_FONT_NAME}"; font-size: 10pt;
+                border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
             }}
             QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
             QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
         """)
         btn_import.clicked.connect(self._on_import_project)
-        btn_row.addWidget(btn_import)
+        btn_row_t.addWidget(btn_import)
 
         btn_analyze = QPushButton("\u25b6  " + self.txt("btn_analyze"))
         btn_analyze.setObjectName("btn_primary")
@@ -2863,22 +3185,134 @@ class BadWordsGUI(QMainWindow):
         btn_analyze.setFixedHeight(30)
         btn_analyze.setStyleSheet(f"""
             QPushButton#btn_primary {{
-                background-color: {config.BTN_BG};
-                color: #ffffff;
-                font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
-                font-weight: bold;
-                border: none;
-                border-radius: 3px;
-                padding: 0 18px;
+                background-color: {config.BTN_BG}; color: #ffffff;
+                font-family: "{config.UI_FONT_NAME}"; font-size: 10pt; font-weight: bold;
+                border: none; border-radius: 3px; padding: 0 18px;
             }}
             QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
             QPushButton#btn_primary:pressed {{ background-color: #176e38; }}
         """)
         btn_analyze.clicked.connect(self._on_start_analysis)
-        btn_row.addWidget(btn_analyze)
+        btn_row_t.addWidget(btn_analyze)
+        l_trans.addLayout(btn_row_t)
+        l_trans.addSpacing(14)
 
-        inner_layout.addLayout(btn_row)
+        # ── Link to fast silence sub-page
+        btn_switch_fast = QPushButton("Fast silence detection / removal...")
+        btn_switch_fast.setCursor(Qt.PointingHandCursor)
+        btn_switch_fast.setStyleSheet(
+            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0;"
+        )
+        btn_switch_fast.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(1))
+        l_trans.addWidget(btn_switch_fast, 0, Qt.AlignCenter)
+
+        self.welcome_stack.addWidget(p_transcription)  # index 0
+
+        # ═══════════════════════════════════════════════════════════════
+        # SUB-PAGE 1: FAST SILENCE
+        # ═══════════════════════════════════════════════════════════════
+        p_fast = QWidget()
+        p_fast.setStyleSheet("background: transparent;")
+        l_fast_outer = QVBoxLayout(p_fast)
+        l_fast_outer.setContentsMargins(0, 0, 0, 0)
+        l_fast_outer.setSpacing(0)
+
+        # Back link (above the card)
+        btn_back = QPushButton("< Back to transcription")
+        btn_back.setCursor(Qt.PointingHandCursor)
+        btn_back.setStyleSheet(
+            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0;"
+        )
+        btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
+        l_fast_outer.addWidget(btn_back)
+        l_fast_outer.addSpacing(10)
+
+        # Inner card frame
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
+            }
+        """)
+        l_card = QVBoxLayout(card)
+        l_card.setContentsMargins(20, 20, 20, 20)
+        l_card.setSpacing(0)
+
+        lbl_fast_title = QLabel("Fast Silence Cut")
+        lbl_fast_title.setAlignment(Qt.AlignCenter)
+        lbl_fast_title.setStyleSheet(
+            f"color: #cccccc; font-size: 13pt; font-weight: bold;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
+        )
+        l_card.addWidget(lbl_fast_title)
+        l_card.addSpacing(4)
+
+        lbl_fast_sub = QLabel("Detects and removes silence using FFmpeg only \u2014 no Whisper required.")
+        lbl_fast_sub.setAlignment(Qt.AlignCenter)
+        lbl_fast_sub.setWordWrap(True)
+        lbl_fast_sub.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
+        )
+        l_card.addWidget(lbl_fast_sub)
+        l_card.addSpacing(18)
+
+        # Threshold spinbox
+        self._fs_spin_thresh = QDoubleSpinBox()
+        self._fs_spin_thresh.setRange(-100, 0)
+        self._fs_spin_thresh.setSuffix(" dB")
+        self._fs_spin_thresh.setValue(prefs.get('ui_spin_thresh', -42.0))
+        l_card.addLayout(_row("Silence Threshold:", self._fs_spin_thresh))
+        l_card.addSpacing(10)
+
+        # Padding spinbox
+        self._fs_spin_pad = QDoubleSpinBox()
+        self._fs_spin_pad.setRange(0, 5)
+        self._fs_spin_pad.setSingleStep(0.05)
+        self._fs_spin_pad.setSuffix(" s")
+        self._fs_spin_pad.setValue(prefs.get('ui_spin_pad', 0.05))
+        l_card.addLayout(_row("Padding:", self._fs_spin_pad))
+        l_card.addSpacing(16)
+
+        # Mode radio buttons
+        from PySide6.QtWidgets import QButtonGroup
+        fs_mode_group = QButtonGroup(card)
+        self.rb_fs_cut = QRadioButton("Cut silence directly")
+        self.rb_fs_cut.setChecked(True)
+        self.rb_fs_cut.setCursor(Qt.PointingHandCursor)
+        self.rb_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent; border: none;")
+        self.rb_fs_mark = QRadioButton("Mark silence with color")
+        self.rb_fs_mark.setCursor(Qt.PointingHandCursor)
+        self.rb_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent; border: none;")
+        fs_mode_group.addButton(self.rb_fs_cut)
+        fs_mode_group.addButton(self.rb_fs_mark)
+        l_card.addWidget(self.rb_fs_cut)
+        l_card.addWidget(self.rb_fs_mark)
+        l_card.addSpacing(20)
+
+        # Run button — same green style as #btn_primary
+        self.btn_run_fs = QPushButton("\u26a1  RUN FAST SILENCE")
+        self.btn_run_fs.setCursor(Qt.PointingHandCursor)
+        self.btn_run_fs.setFixedHeight(36)
+        self.btn_run_fs.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {config.BTN_BG}; color: #ffffff;
+                font-family: "{config.UI_FONT_NAME}"; font-size: 11pt; font-weight: bold;
+                border: none; border-radius: 4px;
+            }}
+            QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton:pressed {{ background-color: #176e38; }}
+        """)
+        self.btn_run_fs.clicked.connect(self._on_fast_silence)
+        l_card.addWidget(self.btn_run_fs)
+
+        l_fast_outer.addWidget(card)
+
+        self.welcome_stack.addWidget(p_fast)   # index 1
 
         # ── Centre horizontally ──────────────────────────────────────────
         h = QHBoxLayout()

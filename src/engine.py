@@ -624,6 +624,71 @@ except Exception as e:
     # 3. MAIN ANALYSIS PIPELINE
     # ==========================================
 
+    def run_fast_silence_pipeline(self, settings, callback_status=None, callback_progress=None):
+        """
+        Fast Silence Cut: render audio, run FFmpeg silencedetect, build a minimal
+        words_data list of 'silence' segments — no Whisper involved.
+        """
+        def update_status(msg):
+            if callback_status: callback_status(msg)
+        def update_progress(val):
+            if callback_progress: callback_progress(val)
+
+        try:
+            threshold_db = settings.get('threshold_db', -42.0)
+            padding_s    = settings.get('padding_s', 0.05)
+
+            unique_id = f"BW_FSC_{int(time.time())}"
+            update_status("Rendering audio...")
+            update_progress(10)
+
+            temp_dir = self.os_doc.get_temp_folder()
+            os.makedirs(temp_dir, exist_ok=True)
+
+            wav_path = self.resolve_handler.render_audio(unique_id, temp_dir)
+            if not wav_path:
+                log_error("Fast Silence: render failed.")
+                return None, None
+
+            update_progress(40)
+            update_status("Detecting silence (FFmpeg)...")
+
+            raw_silences = self.detect_silence(wav_path, threshold_db, 0.1)
+
+            update_progress(80)
+            update_status("Building data structure...")
+
+            words_data = []
+            for i, s in enumerate(raw_silences):
+                start = round(s['s'] + padding_s, 3)
+                end   = round(s['e'] - padding_s, 3)
+                if end <= start:
+                    continue
+                words_data.append({
+                    'text':             '[SILENCE]',
+                    'start':            start,
+                    'end':              end,
+                    'type':             'silence',
+                    'status':           'silence',
+                    'selected':         False,
+                    'seg_start':        start,
+                    'seg_end':          end,
+                    'is_segment_start': i == 0,
+                    'id':               i,
+                })
+
+            # Cleanup temp file
+            try: os.remove(wav_path)
+            except: pass
+
+            update_progress(100)
+            update_status("Fast Silence complete.")
+            return words_data, []
+
+        except Exception as e:
+            log_error(f"run_fast_silence_pipeline error: {traceback.format_exc()}")
+            return None, None
+
     def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None):
         def update_status(msg):
             if callback_status: callback_status(msg)
