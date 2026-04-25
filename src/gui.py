@@ -1733,7 +1733,7 @@ class SettingsDialog(QDialog):
                 background-color: {config.BG_COLOR};
             }}
             QPushButton {{
-                padding: 4px 12px;
+                padding: 6px 16px;
             }}
             QLabel {{
                 color: {config.FG_COLOR};
@@ -1851,6 +1851,10 @@ class SettingsDialog(QDialog):
         self.category_list.addItem(self.txt("tab_transcript"))
         self.category_list.addItem(self.txt("tab_ai_engine"))
         self.category_list.addItem(self.txt("tab_interface"))
+        self.category_list.addItem(self.txt("tab_algorithms"))
+        self.category_list.addItem(self.txt("tab_shortcuts"))
+        self.category_list.addItem(self.txt("tab_custom_markers"))
+        self.category_list.addItem(self.txt("tab_telemetry"))
         self.category_list.setCurrentRow(0)
         root.addWidget(self.category_list)
 
@@ -2162,10 +2166,10 @@ class SettingsDialog(QDialog):
         form_iface.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Always on top
-        self.chk_ontop = QCheckBox()
-        self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)))
+        self.chk_ontop = ToggleSwitch()
+        self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)), animated=False)
         _add_row(form_iface, self.txt("lbl_always_on_top"), self.chk_ontop,
-                 False, self.chk_ontop.setChecked)
+                 False, lambda v: self.chk_ontop.setChecked(v, animated=False))
 
         # Hidden panels (multi-select)
         _panel_options = ["Script Analysis", "Silence", "Filler Words", "Assembly"]
@@ -2183,6 +2187,162 @@ class SettingsDialog(QDialog):
         l_iface.addLayout(form_iface)
         l_iface.addStretch()
         self.stack.addWidget(page_iface)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 5 — ALGORITHMS
+        # ─────────────────────────────────────────────────────────────────
+        page_algo = QWidget()
+        page_algo.setStyleSheet("background: transparent;")
+        l_algo = QVBoxLayout(page_algo)
+        l_algo.setContentsMargins(24, 20, 24, 16)
+        l_algo.setSpacing(0)
+        form_algo = QFormLayout()
+        form_algo.setSpacing(14)
+        form_algo.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.spin_fuzzy = QSpinBox()
+        self.spin_fuzzy.setRange(0, 100)
+        self.spin_fuzzy.setSuffix(" %")
+        self.spin_fuzzy.setValue(int(prefs.get('algo_fuzzy_threshold', 80)))
+        _add_row(form_algo, self.txt("lbl_algo_fuzzy"), self.spin_fuzzy, 80, self.spin_fuzzy.setValue)
+
+        self.spin_lookahead = QSpinBox()
+        self.spin_lookahead.setRange(1, 50)
+        self.spin_lookahead.setValue(int(prefs.get('algo_retake_lookahead', 15)))
+        _add_row(form_algo, self.txt("lbl_algo_lookahead"), self.spin_lookahead, 15, self.spin_lookahead.setValue)
+
+        self.spin_penalty = QDoubleSpinBox()
+        self.spin_penalty.setRange(0.0, 10.0)
+        self.spin_penalty.setSingleStep(0.1)
+        self.spin_penalty.setDecimals(1)
+        self.spin_penalty.setValue(float(prefs.get('algo_distance_penalty', 2.0)))
+        _add_row(form_algo, self.txt("lbl_algo_penalty"), self.spin_penalty, 2.0, self.spin_penalty.setValue)
+
+        self.spin_anchor = QSpinBox()
+        self.spin_anchor.setRange(1, 10)
+        self.spin_anchor.setValue(int(prefs.get('algo_anchor_depth', 3)))
+        _add_row(form_algo, self.txt("lbl_algo_anchor"), self.spin_anchor, 3, self.spin_anchor.setValue)
+
+        l_algo.addLayout(form_algo)
+        l_algo.addStretch()
+        self.stack.addWidget(page_algo)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 6 — SHORTCUTS
+        # ─────────────────────────────────────────────────────────────────
+        page_shorts = QWidget()
+        page_shorts.setStyleSheet("background: transparent;")
+        l_shorts = QVBoxLayout(page_shorts)
+        l_shorts.setContentsMargins(24, 20, 24, 16)
+        l_shorts.setSpacing(0)
+        form_shorts = QFormLayout()
+        form_shorts.setSpacing(14)
+        form_shorts.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        from PySide6.QtGui import QKeySequence
+        from PySide6.QtWidgets import QKeySequenceEdit
+
+        current_shortcuts = prefs.get('shortcuts', config.DEFAULT_SETTINGS['shortcuts'])
+        self.shortcut_inputs = {}
+
+        for key, value in current_shortcuts.items():
+            i18n_key = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            widget = QKeySequenceEdit()
+            widget.setKeySequence(QKeySequence(str(value)))
+            widget.setFixedHeight(30)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            lbl.setMinimumWidth(200)
+            form_shorts.addRow(lbl, widget)
+            self.shortcut_inputs[key] = widget
+
+        l_shorts.addLayout(form_shorts)
+        l_shorts.addStretch()
+        self.stack.addWidget(page_shorts)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 7 — CUSTOM MARKERS
+        # ─────────────────────────────────────────────────────────────────
+        page_markers = QWidget()
+        page_markers.setStyleSheet("background: transparent;")
+        l_markers = QVBoxLayout(page_markers)
+        l_markers.setContentsMargins(24, 20, 24, 16)
+        l_markers.setSpacing(10)
+
+        self.current_custom_markers = list(prefs.get('custom_markers', []))
+
+        self.markers_list = QListWidget()
+        self.markers_list.setAlternatingRowColors(True)
+        self.markers_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                color: {config.FG_COLOR};
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+            }}
+            QListWidget::item:alternate {{ background-color: #1a1a1a; }}
+            QListWidget::item:selected {{ background-color: {config.BTN_BG}; color: white; }}
+        """)
+        self._refresh_markers_list()
+        l_markers.addWidget(self.markers_list)
+
+        marker_btn_row = QHBoxLayout()
+        marker_btn_row.setSpacing(8)
+        btn_add_m = QPushButton(self.txt("btn_add_marker"))
+        btn_add_m.setObjectName("btn_secondary")
+        btn_add_m.setFixedHeight(30)
+        btn_add_m.setCursor(Qt.PointingHandCursor)
+        btn_add_m.clicked.connect(self._on_add_marker)
+        marker_btn_row.addWidget(btn_add_m)
+
+        btn_rem_m = QPushButton(self.txt("btn_remove_marker"))
+        btn_rem_m.setObjectName("btn_secondary")
+        btn_rem_m.setFixedHeight(30)
+        btn_rem_m.setCursor(Qt.PointingHandCursor)
+        btn_rem_m.clicked.connect(self._on_remove_marker)
+        marker_btn_row.addWidget(btn_rem_m)
+        marker_btn_row.addStretch()
+        l_markers.addLayout(marker_btn_row)
+        self.stack.addWidget(page_markers)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 8 — TELEMETRY
+        # ─────────────────────────────────────────────────────────────────
+        page_telem = QWidget()
+        page_telem.setStyleSheet("background: transparent;")
+        l_telem = QVBoxLayout(page_telem)
+        l_telem.setContentsMargins(24, 20, 24, 16)
+        l_telem.setSpacing(12)
+
+        # Info label
+        lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
+        lbl_telem_info.setWordWrap(True)
+        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        l_telem.addWidget(lbl_telem_info)
+
+        form_telem = QFormLayout()
+        form_telem.setSpacing(14)
+        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        user_data = getattr(self.engine.os_doc, 'user_data', {})
+
+        self.chk_telemetry_opt_in = ToggleSwitch()
+        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), self.chk_telemetry_opt_in,
+                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
+
+        self.chk_telemetry_geo = ToggleSwitch()
+        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
+        _add_row(form_telem, self.txt("chk_telemetry_geo"), self.chk_telemetry_geo,
+                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
+
+        l_telem.addLayout(form_telem)
+        l_telem.addStretch()
+        self.stack.addWidget(page_telem)
 
         # ─────────────────────────────────────────────────────────────────
         # BOTTOM BUTTON BAR (separator + row)
@@ -2232,6 +2392,68 @@ class SettingsDialog(QDialog):
         if msg_box.exec() == QDialog.Accepted:
             for f in self.revert_funcs:
                 f()
+
+    # ── Custom Markers helpers ─────────────────────────────────────────────
+
+    def _refresh_markers_list(self):
+        self.markers_list.clear()
+        for m in self.current_custom_markers:
+            name  = m.get('name', '?')
+            color = m.get('color', '')
+            item = QListWidgetItem(f"{name}  [{color}]")
+            hex_col = config.RESOLVE_COLORS_HEX.get(color, '#FFFFFF')
+            item.setForeground(QColor(hex_col))
+            self.markers_list.addItem(item)
+
+    def _on_add_marker(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle(self.txt("btn_add_marker"))
+        dlg.setModal(True)
+        dlg.setMinimumWidth(320)
+        dlg.setStyleSheet(self.styleSheet())
+
+        lay = QFormLayout(dlg)
+        lay.setSpacing(12)
+        lay.setContentsMargins(16, 16, 16, 12)
+
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("e.g. Retake")
+        lay.addRow(QLabel(self.txt("lbl_marker_name")), name_edit)
+
+        color_combo = QComboBox()
+        _reserved = {"Red", "Yellow", "Cyan", "Blue"}
+        color_combo.addItems([c for c in config.RESOLVE_COLORS if c not in _reserved])
+        lay.addRow(QLabel(self.txt("lbl_marker_color")), color_combo)
+
+        btn_row = QHBoxLayout()
+        btn_ok  = QPushButton(self.txt("btn_apply"))
+        btn_ok.setObjectName("btn_apply")
+        btn_ok.setFixedHeight(28)
+        btn_ok.clicked.connect(dlg.accept)
+        btn_cancel = QPushButton(self.txt("btn_close"))
+        btn_cancel.setObjectName("btn_secondary")
+        btn_cancel.setFixedHeight(28)
+        btn_cancel.clicked.connect(dlg.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_ok)
+        lay.addRow(btn_row)
+
+        if dlg.exec() == QDialog.Accepted:
+            name = name_edit.text().strip()
+            if name:
+                self.current_custom_markers.append({
+                    "name":  name,
+                    "color": color_combo.currentText(),
+                })
+                self._refresh_markers_list()
+
+    def _on_remove_marker(self):
+        row = self.markers_list.currentRow()
+        if 0 <= row < len(self.current_custom_markers):
+            self.current_custom_markers.pop(row)
+            self._refresh_markers_list()
+
 
     def _update_preview(self):
         ff = self.combo_font.currentText()
@@ -2319,10 +2541,22 @@ class SettingsDialog(QDialog):
             'chunk_min_chars':    self.spin_chunk_min.value(),
             'device':             device_val,
             'ai_compute_type':    compute_val,
-            'compute_type':       compute_val,  # keep legacy alias in sync
+            'compute_type':       compute_val,
             'ai_initial_prompt':  self.textedit_prompt.toPlainText(),
             'always_on_top':      self.chk_ontop.isChecked(),
             'hidden_panels':      hidden_items,
+            # Algorithms
+            'algo_fuzzy_threshold':  self.spin_fuzzy.value(),
+            'algo_retake_lookahead': self.spin_lookahead.value(),
+            'algo_distance_penalty': self.spin_penalty.value(),
+            'algo_anchor_depth':     self.spin_anchor.value(),
+            # Shortcuts
+            'shortcuts': {k: v.keySequence().toString() for k, v in self.shortcut_inputs.items()},
+            # Telemetry (routes to user.json via osdoc save_all_prefs)
+            'telemetry_opt_in': self.chk_telemetry_opt_in.isChecked(),
+            'telemetry_geo':    self.chk_telemetry_geo.isChecked(),
+            # Custom markers
+            'custom_markers':   self.current_custom_markers,
         }
 
         # Detect which restart-required keys actually changed
