@@ -804,9 +804,22 @@ class TranscriptionCanvas(QWidget):
                 curr_state = None
         if curr_group: groups.append((curr_group, curr_state))
 
+        # Uproszczone wygaszanie kolorów
+        def get_dimmed_center(color):
+            h, s, v, a = color.getHsv()
+            if h == -1: h = 0
+            return QColor.fromHsv(h, s, max(0, int(v * 0.90)), a)
+
+        def get_dimmed_edge(color):
+            h, s, v, a = color.getHsv()
+            if h == -1: h = 0
+            return QColor.fromHsv(h, s, max(0, int(v * 0.70)), a) 
+
         from PySide6.QtGui import QRadialGradient, QBrush, QTransform
         
         active_underlines = []
+        active_line_rect = None
+        active_line_color = None
 
         for grp_words, state in groups:
             is_active = (state == 'active')
@@ -815,6 +828,15 @@ class TranscriptionCanvas(QWidget):
             min_x = grp_words[0]['_rect'].left()
             max_x = grp_words[-1]['_rect'].right()
             r0 = grp_words[0]['_rect']
+            
+            if is_active:
+                # Obliczamy prostokąt obejmujący całą szerokość płótna
+                active_line_rect = QRectF(0, r0.top() - 4, self.width(), r0.height() + 8)
+                # Dynamiczny kolor linii
+                if is_neutral:
+                    active_line_color = QColor(255, 200, 50, 15) # Domyślny, delikatny żółty
+                else:
+                    active_line_color = QColor(bg.red(), bg.green(), bg.blue(), 18) # 7% przezroczystości natywnego koloru markera
             
             if is_neutral:
                 # KLON VS CODE: Jeden zbiorczy prostokąt dla całej frazy (Brak Alpha Stacking!)
@@ -833,8 +855,8 @@ class TranscriptionCanvas(QWidget):
                 grad = QRadialGradient(0, 0, 1.0)
                 h, s, v, a = bg.getHsv()
                 if h == -1: h = 0
-                grad.setColorAt(0.0, QColor.fromHsv(h, s, max(0, int(v * 0.90)), a))
-                grad.setColorAt(1.0, QColor.fromHsv(h, s, max(0, int(v * 0.70)), a))
+                grad.setColorAt(0.0, get_dimmed_center(bg))
+                grad.setColorAt(1.0, get_dimmed_edge(bg))
                     
                 brush = QBrush(grad)
                 brush.setTransform(QTransform().translate(center_x, center_y).scale(half_w, half_h))
@@ -845,8 +867,13 @@ class TranscriptionCanvas(QWidget):
                     w['_is_bold'] = is_active
                     
                 if is_active:
-                    # Zapisujemy koordynaty ciągłej linii podkreślenia blisko tekstu (r0.bottom() - 3)
                     active_underlines.append(QRectF(min_x, r0.bottom() - 3, max_x - min_x, 2))
+
+        # PASS 0: Podświetlenie aktywnej linii
+        if active_line_rect and active_line_color:
+            p.setPen(Qt.NoPen)
+            p.setBrush(active_line_color)
+            p.drawRect(active_line_rect)
 
         # PASS 1: Base Backgrounds
         for w in visible_words:
