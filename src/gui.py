@@ -212,7 +212,7 @@ def _app_icon() -> QIcon:
                 data = json.load(f)
                 icon_name = data.get('app_icon', 'default')
 
-        icon_path = os.path.join(install_dir, "assets", f"icon_{icon_name}{ext}")
+        icon_path = os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}")
         if not os.path.exists(icon_path):
             icon_path = os.path.join(install_dir, f"icon{ext}")
 
@@ -2212,7 +2212,7 @@ class SettingsDialog(QDialog):
         for i, name in enumerate(icon_names):
             btn = QPushButton()
             ext = ".ico" if self.engine.os_doc.is_win else ".png"
-            icon_path = os.path.join(self.engine.os_doc.install_dir, "assets", f"icon_{name}{ext}")
+            icon_path = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}{ext}")
             
             if os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))

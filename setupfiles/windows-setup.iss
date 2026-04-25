@@ -211,6 +211,7 @@ Name: "nvidia"; Description: "{cm:CompNvidia}"; Types: gpu
 
 [Files]
 Source: "src\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "assets\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "setup_windows.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]

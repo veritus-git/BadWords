@@ -33,6 +33,7 @@ NC='\033[0m'
 # ==========================================
 APP_NAME="BadWords"
 SOURCE_FOLDER_NAME="src" 
+ASSETS_FOLDER_NAME="assets"
 RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
 WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
 
@@ -171,6 +172,7 @@ fi
 # ==========================================
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SOURCE_PATH="$DIR/$SOURCE_FOLDER_NAME"
+ASSETS_PATH="$DIR/$ASSETS_FOLDER_NAME"
 
 if [ ! -d "$SOURCE_PATH" ]; then
     echo -e "${RED}[ERROR] Folder '$SOURCE_FOLDER_NAME' not found in '$DIR'!${NC}"
@@ -350,34 +352,37 @@ def get_hash(filepath):
     except Exception:
         return None
 
-src = '$SOURCE_PATH'
+src_paths = ['$SOURCE_PATH', '$ASSETS_PATH']
 dst = '$INSTALL_DIR_BASH'
 
 # 1. Update/Add files from src to dst
-for root, dirs, files in os.walk(src):
-    rel_path = os.path.relpath(root, src)
-    if rel_path == '.':
-        dst_dir = dst
-    else:
-        dst_dir = os.path.join(dst, rel_path)
-        
-    if not os.path.exists(dst_dir):
-        os.makedirs(dst_dir)
-        print(f' - Created directory: {rel_path}')
-
-    for file in files:
-        s_path = os.path.join(root, file)
-        d_path = os.path.join(dst_dir, file)
-        
-        s_hash = get_hash(s_path)
-        d_hash = get_hash(d_path) if os.path.exists(d_path) else None
-        
-        rel_file = os.path.join(rel_path, file) if rel_path != '.' else file
-        if s_hash != d_hash:
-            print(f' - Updating/Adding: {rel_file}')
-            shutil.copy2(s_path, d_path)
+for src in src_paths:
+    if not os.path.exists(src):
+        continue
+    for root, dirs, files in os.walk(src):
+        rel_path = os.path.relpath(root, src)
+        if rel_path == '.':
+            dst_dir = dst
         else:
-            print(f' - Skipped (identical): {rel_file}')
+            dst_dir = os.path.join(dst, rel_path)
+            
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir)
+            print(f' - Created directory: {rel_path}')
+    
+        for file in files:
+            s_path = os.path.join(root, file)
+            d_path = os.path.join(dst_dir, file)
+            
+            s_hash = get_hash(s_path)
+            d_hash = get_hash(d_path) if os.path.exists(d_path) else None
+            
+            rel_file = os.path.join(rel_path, file) if rel_path != '.' else file
+            if s_hash != d_hash:
+                print(f' - Updating/Adding: {rel_file}')
+                shutil.copy2(s_path, d_path)
+            else:
+                print(f' - Skipped (identical): {rel_file}')
 
 # 2. Cleanup obsolete files from dst that are no longer in src
 protected_files = ['pref.json', 'user.json', 'settings.json', 'badwords_debug.log', 'ffmpeg_static.tar.xz']
@@ -385,20 +390,21 @@ protected_dirs = ['models', 'saves', 'venv', 'bin', 'libs']
 
 for item in os.listdir(dst):
     d_path = os.path.join(dst, item)
-    s_path = os.path.join(src, item)
+    exists_in_src = any(os.path.exists(os.path.join(s, item)) for s in src_paths)
     
     if os.path.isdir(d_path):
-        if item not in protected_dirs and not os.path.exists(s_path):
+        if item not in protected_dirs and not exists_in_src:
             print(f' - Removing obsolete directory: {item}')
             shutil.rmtree(d_path)
     else:
-        if item not in protected_files and not os.path.exists(s_path):
+        if item not in protected_files and not exists_in_src:
             print(f' - Removing obsolete file: {item}')
             os.remove(d_path)
 "
 else
     echo -e "${YELLOW}[INFO] Copying new source files...${NC}"
     cp -r "$SOURCE_PATH/"* "$INSTALL_DIR_BASH/"
+    if [ -d "$ASSETS_PATH" ]; then cp -r "$ASSETS_PATH/"* "$INSTALL_DIR_BASH/"; fi
 fi
 
 # ==========================================
