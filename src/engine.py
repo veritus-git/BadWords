@@ -616,17 +616,28 @@ except Exception as e:
         """
         Fast Silence Cut: render audio, run FFmpeg silencedetect, build a minimal
         words_data list of 'silence' segments — no Whisper involved.
-        FIXED: Now applies normalize_audio() before detect_silence() to match
-        the transcription pipeline's audio pre-processing, ensuring identical
-        FFmpeg analysis conditions and preserving gap bridging.
+
+        PARITY FIX: Audio pipeline now mirrors run_analysis_pipeline exactly:
+          1. Slow motion pass (atempo=0.90) — stretches silence windows,
+             giving FFmpeg the same precision as the transcription path.
+          2. normalize_audio() — identical filter chain.
+          3. detect_silence(min_dur=0.2) — same threshold as transcription path,
+             eliminates false positives from sub-100ms micro-pauses.
+          4. Timestamps are scaled back by SLOW_FACTOR so meta_global_silence
+             is always in real (source) time for calculate_timeline_structure.
         """
         def update_status(msg):
             if callback_status: callback_status(msg)
         def update_progress(val):
             if callback_progress: callback_progress(val)
 
-        wav_path = None
+        wav_path      = None
+        slow_wav      = None
         normalized_wav = None
+
+        # Mirror the same constants used in run_analysis_pipeline
+        SLOW_FACTOR = 0.90
+
         try:
             threshold_db = settings.get('threshold_db', -42.0)
             padding_s    = settings.get('padding_s', 0.05)
@@ -643,21 +654,38 @@ except Exception as e:
                 log_error("Fast Silence: render failed.")
                 return None, None
 
-            update_progress(30)
+            update_progress(25)
 
-            # FIXED: Normalize audio BEFORE silence detection — matches transcription pipeline.
-            # Without this step, silence is detected against the raw unprocessed waveform,
-            # giving different (less precise) results than the transcription pass.
+            # STEP 1: Slow motion — identical to run_analysis_pipeline.
+            # Stretches silence windows so FFmpeg can detect them with the same
+            # precision as the transcription path.
             update_status(self.txt("status_slow"))
-            normalized_wav = self.normalize_audio(wav_path)
+            slow_wav = self.create_slow_motion_audio(wav_path, SLOW_FACTOR)
+            analysis_wav = slow_wav if slow_wav != wav_path else wav_path
+
+            update_progress(40)
+
+            # STEP 2: Normalize — same filter chain as transcription path.
+            normalized_wav = self.normalize_audio(analysis_wav)
             target_wav = normalized_wav
 
-            update_progress(50)
+            update_progress(55)
             update_status(self.txt("status_silence"))
 
-            raw_silences = self.detect_silence(target_wav, threshold_db, 0.1)
+            # STEP 3: Detect silence with min_dur=0.2 (matches transcription path).
+            # Was 0.1 (100ms) — that caused 2x more false positives than the
+            # transcription path which uses 0.2 (200ms).
+            raw_silences_slow = self.detect_silence(target_wav, threshold_db, 0.2)
 
-            update_progress(80)
+            # STEP 4: Scale timestamps back to real (source) time.
+            # slow_wav stretches all timestamps by 1/SLOW_FACTOR; we must invert
+            # this so that meta_global_silence is aligned with the original timeline.
+            raw_silences = [
+                {'s': s['s'] * SLOW_FACTOR, 'e': s['e'] * SLOW_FACTOR}
+                for s in raw_silences_slow
+            ]
+
+            update_progress(75)
             update_status(self.txt("status_process"))
 
             # --- Gap Bridging (matches _build_data_structure logic) ---
@@ -712,11 +740,14 @@ except Exception as e:
             log_error(f"run_fast_silence_pipeline error: {traceback.format_exc()}")
             return None, None
         finally:
-            # Cleanup temp files safely
-            for p in [wav_path, normalized_wav]:
-                if p and os.path.exists(p):
+            # Cleanup temp files safely (slow_wav is an extra file to clean up)
+            for p in [normalized_wav, slow_wav, wav_path]:
+                if p and p != wav_path and os.path.exists(p):
                     try: os.remove(p)
                     except: pass
+            if wav_path and os.path.exists(wav_path):
+                try: os.remove(wav_path)
+                except: pass
 
 
     def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None):
