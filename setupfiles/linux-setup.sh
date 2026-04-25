@@ -162,6 +162,11 @@ if [ "$WIPE_CHOICE" -eq 4 ]; then
         rm "$WRAPPER_FILE"
         echo -e " - Removed wrapper from DaVinci Resolve."
     fi
+    # Czyszczenie legacy nazwy z Linuxa:
+    if [ -f "$RESOLVE_SCRIPT_DIR/BadWords (Linux).py" ]; then
+        rm "$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
+        echo -e " - Removed legacy wrapper (BadWords (Linux).py)."
+    fi
     
     echo -e "${RED}[UNINSTALL] Complete. BadWords has been removed.${NC}"
     exit 0
@@ -223,46 +228,31 @@ if [ ! -f "$SOURCE_PATH/main.py" ]; then
 fi
 
 # ==========================================
-# 4. GPU ACCELERATION MODE SELECTION
+# 4. GPU ACCELERATION MODE SELECTION (AUTO-DETECT)
 # ==========================================
 NVIDIA_PACKAGES=""
 MODE_NAME=""
 
-if [ "$WIPE_CHOICE" -eq 1 ] && [ -d "$OLD_INSTALL_DIR/venv" ]; then
-    # True Update: auto-detect GPU from the existing venv
-    if find "$OLD_INSTALL_DIR/venv/lib" -type d -name "nvidia" | grep -q .; then
-        GPU_CHOICE=1
-    else
-        GPU_CHOICE=2
-    fi
-    echo -e "\n${GREEN}[INFO] Update mode: Auto-detected previous GPU setting${NC}"
-else
-    # New install or Wipe: ask the user
-    echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
-    echo -e "${YELLOW}Please select your hardware acceleration mode:${NC}"
-    echo -e "${GREEN}1) NVIDIA: NVIDIA GPUs acceleration${NC}"
-    echo -e "${CYAN}2) OTHER:  AMD/Intel GPUs, or pure CPU processing${NC}"
-    echo ""
-    read -p "Select [1-2]: " GPU_CHOICE
-    if [ -z "$GPU_CHOICE" ]; then GPU_CHOICE="1"; fi
+echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
+echo -e "${YELLOW}[INFO] Detecting system hardware for AI acceleration...${NC}"
+
+# Auto-detect Nvidia GPU presence
+HAS_NVIDIA=0
+if command -v lspci &> /dev/null && lspci | grep -i nvidia &> /dev/null; then
+    HAS_NVIDIA=1
+elif command -v lshw &> /dev/null && sudo lshw -C display 2>/dev/null | grep -i nvidia &> /dev/null; then
+    HAS_NVIDIA=1
 fi
 
-case "$GPU_CHOICE" in
-    1)
-        MODE_NAME="NVIDIA (CUDA 12)"
-        NVIDIA_PACKAGES="nvidia-cublas-cu12 nvidia-cudnn-cu12"
-        ;;
-    2)
-        MODE_NAME="CPU (AMD/Intel)"
-        NVIDIA_PACKAGES=""
-        ;;
-    *)
-        echo -e "${RED}[ERROR] Invalid choice. Exiting.${NC}"
-        exit 1
-        ;;
-esac
-
-echo -e "${YELLOW}[INFO] Selected GPU Mode: $MODE_NAME${NC}"
+if [ "$HAS_NVIDIA" -eq 1 ]; then
+    MODE_NAME="NVIDIA (CUDA 12)"
+    NVIDIA_PACKAGES="nvidia-cublas-cu12 nvidia-cudnn-cu12"
+    echo -e "${GREEN}[OK] NVIDIA GPU detected. Selected Mode: $MODE_NAME${NC}"
+else
+    MODE_NAME="CPU (AMD/Intel)"
+    NVIDIA_PACKAGES=""
+    echo -e "${CYAN}[OK] No NVIDIA GPU detected. Selected Mode: $MODE_NAME${NC}"
+fi
 
 # ==========================================
 # 5. SMART PYTHON SELECTION (COMPATIBILITY)
@@ -527,7 +517,7 @@ echo -e "\n${CYAN}[INSTALL] Checking PySide6...${NC}"
 if "$VENV_DIR/bin/python" -c "import PySide6" 2>/dev/null; then
     echo -e "${GREEN}[INFO] PySide6 is already installed. Skipping...${NC}"
 else
-    echo -e "${YELLOW}[WARN] PySide6 not found. Downloading this large library may take a while...${NC}"
+    echo -e "${YELLOW}[WARN] PySide6 not found. Downloading this GUI library...${NC}"
     "$VENV_PIP" install PySide6 || { echo -e "${RED}[ERROR] PySide6 Install failed.${NC}"; exit 1; }
 fi
 
