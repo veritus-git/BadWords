@@ -2982,8 +2982,8 @@ class IDETooltip(QLabel):
         self.move(pos.x(), pos.y() + 15)
         self.show()
 
-class GlobalTooltipFilter(QObject):
-    """Intercepts native QEvent.ToolTip globally and uses the shared IDETooltip."""
+class GlobalAppFilter(QObject):
+    """Intercepts native QEvent.ToolTip globally and handles global input focus management."""
     def __init__(self, shared_tooltip):
         super().__init__()
         self.shared_tooltip = shared_tooltip
@@ -2995,6 +2995,21 @@ class GlobalTooltipFilter(QObject):
         self.active_widget = None
 
     def eventFilter(self, obj, event):
+        # 1. Global Focus Management: clear focus from QLineEdit on click anywhere outside
+        if event.type() == QEvent.MouseButtonPress:
+            focused = QApplication.focusWidget()
+            if isinstance(focused, QLineEdit):
+                global_pos = QCursor.pos()
+                focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
+                if not focused_global_rect.contains(global_pos):
+                    focused.clearFocus()
+                    
+        # 2. Enter/Return removes focus from QLineEdit
+        if event.type() == QEvent.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                obj.clearFocus()
+
+        # 3. Tooltip handling
         if event.type() == QEvent.ToolTip:
             if isinstance(obj, QWidget):
                 text = obj.toolTip()
@@ -3007,7 +3022,8 @@ class GlobalTooltipFilter(QObject):
         elif event.type() in (QEvent.Leave, QEvent.Hide, QEvent.MouseButtonPress, QEvent.WindowDeactivate):
             if obj == self.active_widget or self.active_widget is None:
                 self.tooltip_timer.stop()
-                self.shared_tooltip.hide()
+                if hasattr(self, 'shared_tooltip'):
+                    self.shared_tooltip.hide()
                 self.active_widget = None
         return False
 
@@ -6186,9 +6202,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.shared_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.shared_tooltip.setWindowFlag(Qt.WindowTransparentForInput, True)
         
-        # Install global tooltip filter to route all tooltips through IDETooltip
-        self._global_tooltip_filter = GlobalTooltipFilter(self.shared_tooltip)
-        QApplication.instance().installEventFilter(self._global_tooltip_filter)
+        # Install global app filter to route all tooltips through IDETooltip and handle globals
+        self._global_app_filter = GlobalAppFilter(self.shared_tooltip)
+        QApplication.instance().installEventFilter(self._global_app_filter)
         
         # Declare panel containers early for Pyre inference
         self._sidebar_right: SidebarFrame = None
@@ -6378,10 +6394,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.btn_nav_fillers = SidebarButton("\U0001f4ac", self.txt("tool_filler_words"), "fillers", tooltip_widget=self.shared_tooltip)
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
         drag_layout_left.addWidget(self.btn_nav_fillers)
-        
-        self.btn_nav_quit = SidebarButton("\u2716", self.txt("tool_quit"), "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
-        self.btn_nav_quit.clicked.connect(self.close)
-        left_layout.addWidget(self.btn_nav_quit)
         
         self.btn_nav_settings = SidebarButton("\u2699", self.txt("tool_settings"), "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_settings.clicked.connect(self._on_settings)
@@ -8801,6 +8813,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         for sc in getattr(self, '_active_shortcuts', []):
             try:
                 sc.setEnabled(False)
+                sc.setKey(QKeySequence())
+                sc.setParent(None)
                 sc.deleteLater()
             except RuntimeError:
                 pass
@@ -8883,6 +8897,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._build_marker_radio_buttons()
         self._apply_dynamic_shortcuts()
         self.text_canvas.update()
+        
+        # Explicitly reactivate the main window to ensure ApplicationShortcut context binds properly
+        self.activateWindow()
+        self.setFocus()
 
 
 
