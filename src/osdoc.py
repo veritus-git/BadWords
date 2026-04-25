@@ -180,6 +180,11 @@ class OSDoctor:
             prefs["last_pinged_version"] = ""
             needs_save = True
             
+        # Domyślnie zgoda na geolokalizację (użytkownik może odznączyć w popupie)
+        if "telemetry_allow_geo" not in prefs:
+            prefs["telemetry_allow_geo"] = True
+            needs_save = True
+            
         if needs_save:
             try:
                 with open(self.pref_file, 'w', encoding='utf-8') as f:

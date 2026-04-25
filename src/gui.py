@@ -668,21 +668,20 @@ class BadWordsGUI:
         container.pack(fill="both", expand=True)
         
         header_frame = tk.Frame(container, bg=config.BG_COLOR)
-        header_frame.pack(fill="x", padx=15, pady=(15, 5))
-        
-        # Pusty frame po lewej stronie do zrównoważenia przycisku po prawej
-        # Dzięki temu główny tytuł będzie IDEALNIE na środku.
-        dummy_left = tk.Frame(header_frame, bg=config.BG_COLOR, width=25)
-        dummy_left.pack(side="left")
+        header_frame.pack(fill="x", padx=20, pady=(25, 5))
         
         lang_btn = tk.Label(header_frame, text="", font=(config.UI_FONT_NAME, 11, "bold"), bg=config.BG_COLOR, fg=config.GEAR_COLOR, cursor="hand2", bd=0)
         lang_btn.pack(side="right", anchor="e")
         
-        lbl_title = tk.Label(header_frame, text="", bg=config.BG_COLOR, fg="white", font=(config.UI_FONT_NAME, 12, "bold"))
-        lbl_title.pack(expand=True, anchor="center")
+        lbl_title = tk.Label(header_frame, text="", bg=config.BG_COLOR, fg="white", font=(config.UI_FONT_NAME, 16, "bold"))
+        lbl_title.pack(side="left", anchor="w")
         
-        lbl_msg = tk.Label(container, text="", bg=config.BG_COLOR, fg=config.FG_COLOR, font=(config.UI_FONT_NAME, 10), wraplength=400, justify="center")
-        lbl_msg.pack(pady=(15, 20), padx=20)
+        lbl_msg = tk.Label(container, text="", bg=config.BG_COLOR, fg=config.FG_COLOR, font=(config.UI_FONT_NAME, 10), wraplength=400, justify="left")
+        lbl_msg.pack(pady=(15, 10), padx=20)
+        
+        geo_var = tk.BooleanVar(value=True)
+        chk_geo = tk.Checkbutton(container, variable=geo_var, bg=config.BG_COLOR, fg="#aaaaaa", selectcolor="black", activebackground=config.BG_COLOR, activeforeground="white", cursor="hand2", font=(config.UI_FONT_NAME, 9), highlightthickness=0, bd=0)
+        chk_geo.pack(pady=(10, 25), padx=20)
         
         btn_frame = tk.Frame(container, bg=config.BG_COLOR)
         btn_frame.pack(side="bottom", pady=(0, 20))
@@ -700,6 +699,7 @@ class BadWordsGUI:
             btn_yes.config(text=self.txt("btn_telemetry_yes"))
             btn_no.config(text=self.txt("btn_telemetry_no"))
             lang_btn.config(text=self.lang.upper())
+            chk_geo.config(text=self.txt("chk_telemetry_geo"))
             
             # --- DYNAMICZNE SKALOWANIE OKNA ---
             popup.update_idletasks()
@@ -727,6 +727,7 @@ class BadWordsGUI:
         
         def on_yes():
             self.engine.os_doc.set_telemetry_pref("telemetry_opt_in", True)
+            self.engine.os_doc.set_telemetry_pref("telemetry_allow_geo", geo_var.get())
             self.engine.send_telemetry_ping("app_started")
             popup.destroy()
             

@@ -19,8 +19,8 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-VERSION = "2.0.2"
-POSTHOG_API_KEY = "phc_gSONi06SQLOiNeagPaUobqvm98IyXiaF91PJ0Xu9lbx" 
+VERSION = "2.0.3"
+POSTHOG_API_KEY = "phc_NRFaTKhPJJE8cBa3o9gXYo2mlktR5qup5tn7PdxuRsr" 
 POSTHOG_HOST = "https://eu.i.posthog.com" 
 
 # ==========================================
@@ -342,9 +342,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "BadWords Analytics",
-        "msg_telemetry": "Hi! 👋\n\nTo help me improve BadWords, do you agree to send a one-time, 100% anonymous ping after installation / update?\n\nOnly the app version, OS type, and your general location (country/city) are sent. No audio files, scripts, or personal data are EVER collected.",
+        "msg_telemetry": "Hi! 👋\n\nTo help me improve BadWords, do you agree to send a one-time, 100% anonymous ping after installation / update?\n\nOnly the app version and OS type are sent. No audio files, scripts, or personal data are EVER collected.\n\nGeolocation (country/city) is optional — uncheck the box below to disable it.",
         "btn_telemetry_yes": "I Agree",
-        "btn_telemetry_no": "No, thanks"
+        "btn_telemetry_no": "No, thanks",
+        "chk_telemetry_geo": "Share your general location (country/city)"
     },
 
     "pl": {
@@ -459,9 +460,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Statystyki BadWords",
-        "msg_telemetry": "Cześć! 👋\n\nAby pomóc mi w rozwoju BadWords, czy zgadzasz się na wysłanie jednorazowego, w 100% anonimowego pingu po instalacji / aktualizacji?\n\nWysyłana jest tylko wersja aplikacji, typ systemu (np. Windows) oraz Twoja ogólna lokalizacja (państwo/miasto). Żadne pliki audio, scenariusze ani dane osobiste NIGDY nie są zbierane.",
+        "msg_telemetry": "Cześć! 👋\n\nAby pomóc mi w rozwoju BadWords, czy zgadzasz się na wysłanie jednorazowego, w 100% anonimowego pingu po instalacji / aktualizacji?\n\nWysyłane są tylko wersja aplikacji i typ systemu (np. Windows). Żadne pliki audio, scenariusze ani dane osobiste NIGDY nie są zbierane.\n\nGeolokalizacja (państwo/miasto) jest opcjonalna — odznacz pole poniżej, aby ją wyłączyć.",
         "btn_telemetry_yes": "Zgadzam się",
-        "btn_telemetry_no": "Nie, dzięki"
+        "btn_telemetry_no": "Nie, dzięki",
+        "chk_telemetry_geo": "Udostępnij swoją ogólną lokalizację (państwo/miasto)"
     },
 
     "de": {
@@ -575,9 +577,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "BadWords Analytik",
-        "msg_telemetry": "Hallo! 👋\n\nUm mir bei der Verbesserung von BadWords zu helfen, stimmen Sie zu, nach der Installation / dem Update einen einmaligen, 100% anonymen Ping zu senden?\n\nEs werden nur die App-Version, das Betriebssystem und Ihr allgemeiner Standort (Land/Stadt) gesendet. Es werden NIEMALS Audiodateien, Skripte oder persönliche Daten gesammelt.",
+        "msg_telemetry": "Hallo! 👋\n\nUm mir bei der Verbesserung von BadWords zu helfen, stimmen Sie zu, nach der Installation / dem Update einen einmaligen, 100% anonymen Ping zu senden?\n\nEs werden nur die App-Version und das Betriebssystem gesendet. Es werden NIEMALS Audiodateien, Skripte oder persönliche Daten gesammelt.\n\nDer Standort (Land/Stadt) ist optional — deaktivieren Sie das Kästchen unten, um ihn zu deaktivieren.",
         "btn_telemetry_yes": "Ich stimme zu",
-        "btn_telemetry_no": "Nein, danke"
+        "btn_telemetry_no": "Nein, danke",
+        "chk_telemetry_geo": "Allgemeinen Standort teilen (Land/Stadt)"
     },
 
     "es": {
@@ -691,9 +694,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Analítica de BadWords",
-        "msg_telemetry": "¡Hola! 👋\n\nPara ayudarme a mejorar BadWords, ¿aceptas enviar un ping único y 100% anónimo después de la instalación o actualización?\n\nSolo se envían la versión de la aplicación, el sistema operativo y tu ubicación general (país/ciudad). NUNCA se recopilan archivos de audio, guiones ni datos personales.",
+        "msg_telemetry": "¡Hola! 👋\n\nPara ayudarme a mejorar BadWords, ¿aceptas enviar un ping único y 100% anónimo después de la instalación o actualización?\n\nSolo se envían la versión de la aplicación y el sistema operativo. NUNCA se recopilan archivos de audio, guiones ni datos personales.\n\nLa geolocalización (país/ciudad) es opcional — desmarca la casilla de abajo para desactivarla.",
         "btn_telemetry_yes": "Acepto",
-        "btn_telemetry_no": "No, gracias"
+        "btn_telemetry_no": "No, gracias",
+        "chk_telemetry_geo": "Compartir ubicación general (país/ciudad)"
     },
 
     "fr": {
@@ -807,9 +811,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Analytique BadWords",
-        "msg_telemetry": "Bonjour ! 👋\n\nPour m'aider à améliorer BadWords, acceptez-vous d'envoyer un ping unique et 100% anonyme après l'installation / la mise à jour ?\n\nSeuls la version de l'application, le système d'exploitation et votre emplacement général (pays/ville) sont envoyés. AUCUN fichier audio, script ou donnée personnelle n'est JAMAIS collecté.",
+        "msg_telemetry": "Bonjour ! 👋\n\nPour m'aider à améliorer BadWords, acceptez-vous d'envoyer un ping unique et 100% anonyme après l'installation / la mise à jour ?\n\nSeuls la version de l'application et le système d'exploitation sont envoyés. AUCUN fichier audio, script ou donnée personnelle n'est JAMAIS collecté.\n\nLa géolocalisation (pays/ville) est facultative — décochez la case ci-dessous pour la désactiver.",
         "btn_telemetry_yes": "J'accepte",
-        "btn_telemetry_no": "Non, merci"
+        "btn_telemetry_no": "Non, merci",
+        "chk_telemetry_geo": "Partager votre emplacement général (pays/ville)"
     },
 
     "it": {
@@ -923,9 +928,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Analitica BadWords",
-        "msg_telemetry": "Ciao! 👋\n\nPer aiutarmi a migliorare BadWords, accetti di inviare un ping singolo e anonimo al 100% dopo l'installazione o l'aggiornamento?\n\nVengono inviati solo la versione dell'app, il sistema operativo e la tua posizione generale (paese/città). NON vengono MAI raccolti file audio, script o dati personali.",
+        "msg_telemetry": "Ciao! 👋\n\nPer aiutarmi a migliorare BadWords, accetti di inviare un ping singolo e anonimo al 100% dopo l'installazione o l'aggiornamento?\n\nVengono inviati solo la versione dell'app e il sistema operativo. NON vengono MAI raccolti file audio, script o dati personali.\n\nLa geolocalizzazione (paese/città) è facoltativa — deseleziona la casella qui sotto per disattivarla.",
         "btn_telemetry_yes": "Accetto",
-        "btn_telemetry_no": "No, grazie"
+        "btn_telemetry_no": "No, grazie",
+        "chk_telemetry_geo": "Condividi la tua posizione generale (paese/città)"
     },
 
     "pt": {
@@ -1039,9 +1045,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Análise BadWords",
-        "msg_telemetry": "Olá! 👋\n\nPara me ajudar a melhorar o BadWords, você concorda em enviar um ping único e 100% anônimo após a instalação / atualização?\n\nApenas a versão do aplicativo, o sistema operacional e sua localização geral (país/cidade) são enviados. NUNCA são coletados arquivos de áudio, scripts ou dados pessoais.",
+        "msg_telemetry": "Olá! 👋\n\nPara me ajudar a melhorar o BadWords, você concorda em enviar um ping único e 100% anônimo após a instalação / atualização?\n\nApenas a versão do aplicativo e o sistema operacional são enviados. NUNCA são coletados arquivos de áudio, scripts ou dados pessoais.\n\nA geolocalização (país/cidade) é opcional — desmarque a caixa abaixo para desativá-la.",
         "btn_telemetry_yes": "Eu concordo",
-        "btn_telemetry_no": "Não, obrigado"
+        "btn_telemetry_no": "Não, obrigado",
+        "chk_telemetry_geo": "Compartilhar localização geral (país/cidade)"
     },
 
     "uk": {
@@ -1155,9 +1162,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Аналітика BadWords",
-        "msg_telemetry": "Привіт! 👋\n\nЩоб допомогти мені покращити BadWords, чи погоджуєтесь ви надіслати одноразовий, 100% анонімний пінг після встановлення / оновлення?\n\nНадсилаються лише версія програми, тип ОС та ваше загальне місцезнаходження (країна/місто). Жодні аудіофайли, сценарії чи особисті дані НІКОЛИ не збираються.",
+        "msg_telemetry": "Привіт! 👋\n\nЩоб допомогти мені покращити BadWords, чи погоджуєтесь ви надіслати одноразовий, 100% анонімний пінг після встановлення / оновлення?\n\nНадсилаються лише версія програми та тип ОС. Жодні аудіофайли, сценарії чи особисті дані НІКОЛИ не збираються.\n\nГеолокація (країна/місто) є необов'язковою — зніміть позначку нижче, щоб вимкнути її.",
         "btn_telemetry_yes": "Я згоден",
-        "btn_telemetry_no": "Ні, дякую"
+        "btn_telemetry_no": "Ні, дякую",
+        "chk_telemetry_geo": "Поділитися загальним місцезнаходженням (країна/місто)"
     },
 
     "nl": {
@@ -1271,9 +1279,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "BadWords Analytica",
-        "msg_telemetry": "Hallo! 👋\n\nOm me te helpen BadWords te verbeteren, ga je ermee akkoord om na de installatie / update een eenmalige, 100% anonieme ping te sturen?\n\nAlleen de app-versie, het besturingssysteem en je algemene locatie (land/stad) worden verzonden. Er worden NOOIT audiobestanden, scripts of persoonlijke gegevens verzameld.",
+        "msg_telemetry": "Hallo! 👋\n\nOm me te helpen BadWords te verbeteren, ga je ermee akkoord om na de installatie / update een eenmalige, 100% anonieme ping te sturen?\n\nAlleen de app-versie en het besturingssysteem worden verzonden. Er worden NOOIT audiobestanden, scripts of persoonlijke gegevens verzameld.\n\nGeolocatie (land/stad) is optioneel — verwijder het vinkje hieronder om het uit te schakelen.",
         "btn_telemetry_yes": "Ik ga akkoord",
-        "btn_telemetry_no": "Nee, bedankt"
+        "btn_telemetry_no": "Nee, bedankt",
+        "chk_telemetry_geo": "Deel je algemene locatie (land/stad)"
     },
 
     "ru": {
@@ -1387,9 +1396,10 @@ TRANS = {
         
         # TELEMETRY POPUP
         "title_telemetry": "Аналитика BadWords",
-        "msg_telemetry": "Привет! 👋\n\nЧтобы помочь мне улучшить BadWords, согласны ли вы отправить одноразовый, 100% анонимный пинг после установки / обновления?\n\nОтправляются только версия приложения, тип ОС и ваше общее местоположение (страна/город). Аудиофайлы, сценарии или личные данные НИКОГДА не собираются.",
+        "msg_telemetry": "Привет! 👋\n\nЧтобы помочь мне улучшить BadWords, согласны ли вы отправить одноразовый, 100% анонимный пинг после установки / обновления?\n\nОтправляются только версия приложения и тип ОС. Аудиофайлы, сценарии или личные данные НИКОГДА не собираются.\n\nГеолокация (страна/город) необязательна — снимите флажок ниже, чтобы отключить её.",
         "btn_telemetry_yes": "Я согласен",
-        "btn_telemetry_no": "Нет, спасибо"
+        "btn_telemetry_no": "Нет, спасибо",
+        "chk_telemetry_geo": "Поделиться общим местоположением (страна/город)"
     }
 }
 
