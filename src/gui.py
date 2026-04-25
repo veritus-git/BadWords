@@ -769,6 +769,7 @@ class UndoManager:
             reverse_changes[wid] = {
                 'status': word_obj.get('status'),
                 'manual_status': word_obj.get('manual_status'),
+                'algo_status': word_obj.get('algo_status'),
                 'is_auto': word_obj.get('is_auto'),
                 'selected': word_obj.get('selected')
             }
@@ -776,6 +777,8 @@ class UndoManager:
             # Apply restored state
             word_obj['status'] = state.get('status')
             word_obj['manual_status'] = state.get('manual_status')
+            if 'algo_status' in state:
+                word_obj['algo_status'] = state.get('algo_status')
             word_obj['is_auto'] = state.get('is_auto')
             word_obj['selected'] = state.get('selected')
             word_obj['overlay_suppressed'] = True
@@ -1161,6 +1164,7 @@ class TranscriptionCanvas(QWidget):
                                 changes[wid] = {
                                     'status': old_w.get('status'),
                                     'manual_status': old_w.get('manual_status'),
+                                    'algo_status': old_w.get('algo_status'),
                                     'is_auto': old_w.get('is_auto'),
                                     'selected': old_w.get('selected')
                                 }
@@ -4097,6 +4101,12 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         l_telem.addLayout(form_telem)
         l_telem.addStretch()
         _add_page_to_stack(page_telem)
+
+        # FIX: Capture the exact UI state right after full construction
+        # This prevents false-positive unsaved changes warnings when disk JSON
+        # lacks keys that are correctly populated with defaults by the UI.
+        self._initial_state = self._get_current_state_dict()
+
     def _restore_all_defaults(self):
         msg_box = CustomMsgBox(
             self, 
@@ -4484,7 +4494,9 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             ).exec()
 
     def reject(self):
-        old_prefs = self.engine.load_preferences() or {}
+        # FIX: Validate against the exact snapshot of how the UI was built
+        # rather than the raw preferences file which may be missing keys.
+        old_prefs = getattr(self, '_initial_state', self.engine.load_preferences() or {})
         new_prefs = self._get_current_state_dict()
         diff = {}
         for k, new_val in new_prefs.items():
@@ -4494,8 +4506,16 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 elif k == 'gui_lang': old_val = 'en'
                 elif k == 'hidden_panels': old_val = []
                 elif k == 'custom_markers': old_val = []
-            if str(new_val) != str(old_val) and new_val != old_val:
-                diff[k] = (old_val, new_val)
+            
+            if k == 'shortcuts':
+                old_dict = old_val if old_val is not None else {}
+                for sub_k, sub_new in new_val.items():
+                    sub_old = old_dict.get(sub_k, '')
+                    if sub_old != sub_new:
+                        diff[f"shortcuts.{sub_k}"] = (sub_old, sub_new)
+            else:
+                if str(new_val) != str(old_val) and new_val != old_val:
+                    diff[k] = (old_val, new_val)
                 
         if diff:
             key_name_map = {
@@ -4526,12 +4546,25 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}"
             }
             
+            # Map dynamic shortcut composite keys
+            for diff_k in diff.keys():
+                if diff_k.startswith('shortcuts.'):
+                    sub_k = diff_k.split('.', 1)[1]
+                    sub_name = self.txt(f"shortcut_{sub_k}")
+                    if sub_name == f"shortcut_{sub_k}": # Fallback if not translated
+                        sub_name = sub_k.replace('_', ' ').title()
+                    key_name_map[diff_k] = f"{self.txt('tab_shortcuts')}: {sub_name}"
+            
             dlg = UnsavedChangesDialog(self, diff, key_name_map)
             if dlg.exec() == QDialog.Accepted:
                 save_needed = False
                 for k, action in dlg.decisions.items():
                     if action == 'discard':
-                        new_prefs[k] = diff[k][0] 
+                        if k.startswith('shortcuts.'):
+                            sub_k = k.split('.', 1)[1]
+                            new_prefs['shortcuts'][sub_k] = diff[k][0]
+                        else:
+                            new_prefs[k] = diff[k][0] 
                     else:
                         save_needed = True
                 
@@ -6431,12 +6464,25 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             
         msg_box = CustomMsgBox(self, self.txt("msg_clear_title"), self.txt("msg_clear_desc"), self.txt("btn_yes"), self.txt("btn_no"))
         if msg_box.exec() == QDialog.Accepted:
+            undo_action = {"type": "paint", "changes": {}}
             for w in self.text_canvas.words_data:
-                w['status'] = None
-                w['manual_status'] = None
-                w['algo_status'] = None
-                w['is_auto'] = False
-                w['selected'] = False
+                if w.get('status') or w.get('manual_status') or w.get('algo_status') or w.get('is_auto') or w.get('selected'):
+                    undo_action["changes"][w['id']] = {
+                        'status': w.get('status'),
+                        'manual_status': w.get('manual_status'),
+                        'algo_status': w.get('algo_status'),
+                        'is_auto': w.get('is_auto'),
+                        'selected': w.get('selected')
+                    }
+                    w['status'] = None
+                    w['manual_status'] = None
+                    w['algo_status'] = None
+                    w['is_auto'] = False
+                    w['selected'] = False
+
+            if hasattr(self, 'undo_manager') and undo_action["changes"]:
+                self.undo_manager.push(undo_action)
+                
             self.text_canvas.update()
 
     def _on_add_custom_marker(self):
