@@ -815,7 +815,9 @@ def absorb_inaudible_into_repeats(words_data):
             i += 1
     return words_data
 
-def analyze_repeats(words_data, show_inaudible=True):
+def analyze_repeats(words_data, show_inaudible=True, algo_settings=None):
+    if algo_settings is None:
+        algo_settings = {}
     """Legacy Standalone Analyzer (Without Script)."""
     # 1. Smart Reset - Wipeout omijający halucynacje, inaudible i ręczne poprawki
     for w in words_data:
@@ -844,7 +846,7 @@ def analyze_repeats(words_data, show_inaudible=True):
     
     # 3. N-gram
     i = 0
-    LOOKAHEAD = 30
+    LOOKAHEAD = int(algo_settings.get('algo_retake_lookahead', 30))
     MIN_LEN = 2
     
     while i < n_flow:

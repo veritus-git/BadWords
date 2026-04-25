@@ -730,14 +730,14 @@ except Exception as e:
 
             fw_compute = "int8"
             if "GPU" in device_mode:
-                if saved_compute:
+                if saved_compute and saved_compute.lower() != "auto":
                     fw_compute = saved_compute
                     log_info(f"Compute Type (user setting): {fw_compute}")
                 else:
                     fw_compute = self._get_optimal_compute_type()
                     log_info(f"Auto-Detected Compute Type: {fw_compute}")
             else:
-                if saved_compute:
+                if saved_compute and saved_compute.lower() != "auto":
                     fw_compute = saved_compute
                     log_info(f"Compute Type (user setting, CPU): {fw_compute}")
                 else:
@@ -902,22 +902,26 @@ except Exception as e:
         c_max = int(prefs.get('chunk_max_words', 30))
         c_look = int(prefs.get('chunk_lookahead', 3))
         c_min = int(prefs.get('chunk_min_chars', 7))
+        c_punct_target = int(prefs.get('chunk_punct_count', 1))
         c_hard_limit = c_max + c_look
 
         chunks = []
         curr_chunk = []
+        punct_seen = 0
         for i, w in enumerate(compressed_words):
             curr_chunk.append(w)
             
             last_word_text = w['word'].strip()
             has_punct = last_word_text.endswith(('.', '?', '!'))
+            if has_punct:
+                punct_seen += 1
             should_break = False
             
             # Absolute maximum hard limit to prevent infinite run-ons
             if len(curr_chunk) >= c_hard_limit:
                 should_break = True
             elif len(curr_chunk) >= c_max:
-                if has_punct:
+                if punct_seen >= c_punct_target:
                     should_break = True # Break immediately if current word has punctuation
                 else:
                     # Look ahead up to remaining allowance (c_hard_limit - current_length)
@@ -935,12 +939,13 @@ except Exception as e:
                     # If we DID find it, we keep going (should_break = False) until we hit it in next loops.
                     if not found_punct:
                         should_break = True
-            elif len(curr_chunk) >= c_min and has_punct:
+            elif len(curr_chunk) >= c_min and punct_seen >= c_punct_target:
                 should_break = True # Normal soft break mid-sentence
                 
             if should_break:
                 chunks.append(curr_chunk)
                 curr_chunk = []
+                punct_seen = 0
                 
         if curr_chunk:
             chunks.append(curr_chunk)
@@ -1382,7 +1387,9 @@ except Exception as e:
     # ==========================================
 
     def run_standalone_analysis(self, words_data, show_inaudible=True):
-        processed_words, count = algorythms.analyze_repeats(words_data, show_inaudible=show_inaudible)
+        prefs = self.os_doc.get_all_prefs()
+        algo_settings = {k: prefs[k] for k in ('algo_fuzzy_threshold', 'algo_retake_lookahead', 'algo_distance_penalty', 'algo_anchor_depth') if k in prefs}
+        processed_words, count = algorythms.analyze_repeats(words_data, show_inaudible=show_inaudible, algo_settings=algo_settings)
         processed_words = algorythms.absorb_inaudible_into_repeats(processed_words)
         # FIX: Force hallucination status after manual re-analysis
         processed_words = self._enforce_hallucination_status(processed_words)

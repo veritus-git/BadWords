@@ -103,6 +103,8 @@ DEFAULT_SETTINGS = {
     "transcript_line_height": 12,
     "transcript_layout":      "segmented",
     "view_mode":              "segmented",
+    "settings_view_mode":     "basic",
+    "chunk_punct_count":      1,
     "chunk_max_words":        30,
     "chunk_lookahead":        3,
     "chunk_min_chars":        7,
@@ -154,46 +156,75 @@ RESTART_REQUIRED_KEYS = ["theme", "compute_type", "device", "gui_lang", "ai_comp
 # ==========================================
 # COLOR PALETTE
 # ==========================================
-# Main Layout (Dark Theme)
-BG_COLOR = "#1c1c1c"
-SIDEBAR_BG = "#262626"
-INPUT_BG = "#333333"
-INPUT_FG = "#ffffff"
-FG_COLOR = "#d9d9d9"
-NOTE_COL = "#808080"
-SEPARATOR_COL = "#404040"
-FOOTER_COLOR = "#1c1c1c"
-DISCLAIMER_FG = "#555555"
 
-# Scrollbar
-SCROLL_BG = "#2b2b2b"
-SCROLL_FG = "#555555"
-SCROLL_ACTIVE = "#777777"
+DARK_PALETTE = {
+    "BG_COLOR": "#1c1c1c",
+    "SIDEBAR_BG": "#262626",
+    "INPUT_BG": "#333333",
+    "INPUT_FG": "#ffffff",
+    "FG_COLOR": "#d9d9d9",
+    "NOTE_COL": "#808080",
+    "SEPARATOR_COL": "#404040",
+    "FOOTER_COLOR": "#1c1c1c",
+    "DISCLAIMER_FG": "#555555",
+    "SCROLL_BG": "#2b2b2b",
+    "SCROLL_FG": "#555555",
+    "SCROLL_ACTIVE": "#777777",
+    "MENU_BG": "#2b2b2b",
+    "MENU_FG": "#ffffff",
+    "GEAR_COLOR": "#a0a0a0",
+    "BTN_BG": "#23a559",
+    "BTN_FG": "#ffffff",
+    "BTN_ACTIVE": "#1e8f4c",
+    "BTN_GHOST_BG": "#404040",
+    "BTN_GHOST_ACTIVE": "#505050",
+    "CANCEL_BG": "#b33a3a",
+    "CANCEL_ACTIVE": "#8f2e2e",
+    "CHECKBOX_BG": "white",
+    "PROGRESS_HEIGHT": 24,
+    "PROGRESS_TRACK_COLOR": "#333333",
+    "PROGRESS_FILL_COLOR": "#23a559",
+    "STATUS_TEXT_COLOR": "#eeeeee"
+}
 
-# Menu
-MENU_BG = "#2b2b2b"
-MENU_FG = "#ffffff"
-GEAR_COLOR = "#a0a0a0"
+LIGHT_PALETTE = {
+    "BG_COLOR": "#f5f5f5",
+    "SIDEBAR_BG": "#e0e0e0",
+    "INPUT_BG": "#ffffff",
+    "INPUT_FG": "#000000",
+    "FG_COLOR": "#1a1a1a",
+    "NOTE_COL": "#666666",
+    "SEPARATOR_COL": "#cccccc",
+    "FOOTER_COLOR": "#ececec",
+    "DISCLAIMER_FG": "#777777",
+    "SCROLL_BG": "#d9d9d9",
+    "SCROLL_FG": "#aaaaaa",
+    "SCROLL_ACTIVE": "#888888",
+    "MENU_BG": "#e0e0e0",
+    "MENU_FG": "#1a1a1a",
+    "GEAR_COLOR": "#555555",
+    "BTN_BG": "#23a559",
+    "BTN_FG": "#ffffff",
+    "BTN_ACTIVE": "#1e8f4c",
+    "BTN_GHOST_BG": "#dddddd",
+    "BTN_GHOST_ACTIVE": "#cccccc",
+    "CANCEL_BG": "#b33a3a",
+    "CANCEL_ACTIVE": "#8f2e2e",
+    "CHECKBOX_BG": "black",
+    "PROGRESS_HEIGHT": 24,
+    "PROGRESS_TRACK_COLOR": "#cccccc",
+    "PROGRESS_FILL_COLOR": "#23a559",
+    "STATUS_TEXT_COLOR": "#1a1a1a"
+}
 
-# Buttons
-BTN_BG = "#23a559"
-BTN_FG = "#ffffff"
-BTN_ACTIVE = "#1e8f4c"
+# Module-level defaults populated right away
+for _k, _v in DARK_PALETTE.items():
+    globals()[_k] = _v
 
-BTN_GHOST_BG = "#404040"
-BTN_GHOST_ACTIVE = "#505050"
-
-CANCEL_BG = "#b33a3a"
-CANCEL_ACTIVE = "#8f2e2e"
-
-# Checkbox
-CHECKBOX_BG = "white"
-
-# Progress Bar
-PROGRESS_HEIGHT = 24
-PROGRESS_TRACK_COLOR = "#333333"
-PROGRESS_FILL_COLOR = "#23a559"
-STATUS_TEXT_COLOR = "#eeeeee"
+def set_palette(theme_mode: str):
+    palette = LIGHT_PALETTE if theme_mode == "light" else DARK_PALETTE
+    for k, v in palette.items():
+        globals()[k] = v
 
 # --- Word Marking Colors ---
 WORD_NORMAL_FG    = "#dcddde"
@@ -366,6 +397,7 @@ TRANS = {
         "lbl_initializing": "Initializing...",
         "lbl_lang": "Language",
         "lbl_language": "Language",
+        "lbl_view_mode": "Settings View (Basic/Advanced)",
         "lbl_line_spacing_px": "Line spacing (px)",
         "lbl_loading": "Loading...",
         "lbl_mark_filler_words_automat": "Mark filler words automatically",
@@ -459,6 +491,9 @@ TRANS = {
         "msg_engine_assembly_source": "Detecting optimal source...",
         "msg_engine_slow_audio": "Slowing audio...",
         "btn_ok": "OK",
+        "btn_view_basic": "Basic View",
+        "btn_view_advanced": "Advanced View",
+        "lbl_chunk_punct_count": "Punctuation marks per block",
         "msg_restart_lang": "Changes saved. To see the results, please restart BadWords.",
         "msg_restore_title": "Restore Defaults",
         "msg_restore_desc": "Are you sure you want to reset all settings to their default values?",
@@ -573,6 +608,7 @@ TRANS = {
         "lbl_initializing": "Inicjalizowanie...",
         "lbl_lang": "Język",
         "lbl_language": "Język",
+        "lbl_view_mode": "Widok Ustawień (Podstawowy/Zaawansowany)",
         "lbl_line_spacing_px": "Odstępy linii (px)",
         "lbl_loading": "Ładowanie...",
         "lbl_mark_filler_words_automat": "Oznaczaj wypełniacze automatycznie",
@@ -653,6 +689,9 @@ TRANS = {
         "msg_engine_assembly_source": "Wykrywanie optymalnego źródła...",
         "msg_engine_slow_audio": "Spowalnianie audio...",
         "btn_ok": "OK",
+        "btn_view_basic": "Widok Podstawowy",
+        "btn_view_advanced": "Widok Zaawansowany",
+        "lbl_chunk_punct_count": "Znaki interpunkcyjne na blok",
         "msg_restart_lang": "Zmiana została zapisana. Aby zobaczyć rezultaty, uruchom BadWords ponownie.",
         "msg_restore_title": "Przywróć Domyślne",
         "msg_restore_desc": "Czy na pewno chcesz zresetować wszystkie ustawienia do wartości domyślnych?",
@@ -767,6 +806,7 @@ TRANS = {
         "lbl_initializing": "Initialisiere...",
         "lbl_lang": "Sprache",
         "lbl_language": "Sprache",
+        "lbl_view_mode": "Einstellungsansicht (Einfach/Erweitert)",
         "lbl_line_spacing_px": "Zeilenabstand (px)",
         "lbl_loading": "Lade...",
         "lbl_mark_filler_words_automat": "Füllwörter automatisch markieren",
@@ -1519,6 +1559,7 @@ TRANS = {
         "lbl_initializing": "Inicializando...",
         "lbl_lang": "Idioma",
         "lbl_language": "Idioma",
+        "lbl_view_mode": "Exibição de Configurações (Básico/Avançado)",
         "lbl_line_spacing_px": "Espaçamento de linha (px)",
         "lbl_loading": "Carregando...",
         "lbl_mark_filler_words_automat": "Marcar preenchimentos automaticamente",
@@ -1707,6 +1748,7 @@ TRANS = {
         "lbl_initializing": "Ініціалізація...",
         "lbl_lang": "Мова",
         "lbl_language": "Мова",
+        "lbl_view_mode": "Вигляд Налаштувань (Основний/Розширений)",
         "lbl_line_spacing_px": "Міжрядковий інтервал (px)",
         "lbl_loading": "Завантаження...",
         "lbl_mark_filler_words_automat": "Автоматично позначати паразити",
@@ -1787,6 +1829,9 @@ TRANS = {
         "msg_engine_assembly_source": "Виявлення оптимального джерела...",
         "msg_engine_slow_audio": "Уповільнення аудіо...",
         "btn_ok": "ОК",
+        "btn_view_basic": "Базовий Вигляд",
+        "btn_view_advanced": "Розширений Вигляд",
+        "lbl_chunk_punct_count": "Знаки пунктуації на блок",
         "msg_restart_lang": "Зміни збережено. Щоб побачити результати, перезапустіть BadWords.",
         "msg_restore_title": "Відновити типові",
         "msg_restore_desc": "Ви впевнені, що хочете скинути всі налаштування до типових значень?",
@@ -1895,6 +1940,7 @@ TRANS = {
         "lbl_initializing": "Initialiseren...",
         "lbl_lang": "Taal",
         "lbl_language": "Taal",
+        "lbl_view_mode": "Instellingen Weergave (Basis/Geavanceerd)",
         "lbl_line_spacing_px": "Regelafstand (px)",
         "lbl_loading": "Laden...",
         "lbl_mark_filler_words_automat": "Opvulwoorden automatisch markeren",
@@ -2083,6 +2129,7 @@ TRANS = {
         "lbl_initializing": "Инициализация...",
         "lbl_lang": "Язык",
         "lbl_language": "Язык",
+        "lbl_view_mode": "Вид Настроек (Базовый/Расширенный)",
         "lbl_line_spacing_px": "Межстрочный интервал (px)",
         "lbl_loading": "Загрузка...",
         "lbl_mark_filler_words_automat": "Автоматически помечать слова-паразиты",
@@ -2163,6 +2210,9 @@ TRANS = {
         "msg_engine_assembly_source": "Определение оптимального источника...",
         "msg_engine_slow_audio": "Замедление аудио...",
         "btn_ok": "ОК",
+        "btn_view_basic": "Базовый Вид",
+        "btn_view_advanced": "Расширенный Вид",
+        "lbl_chunk_punct_count": "Знаки препинания на блок",
         "msg_restart_lang": "Изменения сохранены. Чтобы увидеть результаты, перезапустите BadWords.",
         "msg_restore_title": "По умолчанию",
         "msg_restore_desc": "Вы уверены, что хотите сбросить все настройки к значениям по умолчанию?",

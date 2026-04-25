@@ -1857,16 +1857,6 @@ class SettingsDialog(QDialog):
         self.category_list = QListWidget()
         self.category_list.setFixedWidth(155)
         self.category_list.setFocusPolicy(Qt.NoFocus)
-        self.category_list.addItem(self.txt("tab_general"))
-        self.category_list.addItem(self.txt("tab_audio_sync"))
-        self.category_list.addItem(self.txt("tab_transcript"))
-        self.category_list.addItem(self.txt("tab_ai_engine"))
-        self.category_list.addItem(self.txt("tab_interface"))
-        self.category_list.addItem(self.txt("tab_algorithms"))
-        self.category_list.addItem(self.txt("tab_shortcuts"))
-        self.category_list.addItem(self.txt("tab_custom_markers"))
-        self.category_list.addItem(self.txt("tab_telemetry"))
-        self.category_list.setCurrentRow(0)
         root.addWidget(self.category_list)
 
         # ── RIGHT: stacked pages + bottom bar ────────────────────────────
@@ -1875,17 +1865,97 @@ class SettingsDialog(QDialog):
         right_layout.setSpacing(0)
         root.addLayout(right_layout)
 
+
         self.stack = QStackedWidget()
         right_layout.addWidget(self.stack)
 
         # Connect list → stack
         self.category_list.currentRowChanged.connect(self.stack.setCurrentIndex)
 
+        self._build_ui()
+
+        # ─────────────────────────────────────────────────────────────────
+        # BOTTOM BUTTON BAR (separator + row)
+        # ─────────────────────────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"background: {config.SEPARATOR_COL}; max-height: 1px; border: none;")
+        right_layout.addWidget(sep)
+
+        btn_bar = QHBoxLayout()
+        btn_bar.setContentsMargins(16, 10, 16, 12)
+        btn_bar.setSpacing(8)
+
+        btn_bar.addStretch()
+
+        # Right: Restore / Close / Apply
+        btn_restore = QPushButton(self.txt("btn_restore_defaults"))
+        btn_restore.setObjectName("btn_secondary")
+        btn_restore.setFixedHeight(30)
+        btn_restore.setCursor(Qt.PointingHandCursor)
+        btn_restore.clicked.connect(self._restore_all_defaults)
+        btn_bar.addWidget(btn_restore)
+
+        btn_close = QPushButton(self.txt("btn_close"))
+        btn_close.setObjectName("btn_secondary")
+        btn_close.setFixedWidth(80)
+        btn_close.setFixedHeight(30)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.clicked.connect(self.reject)
+        btn_bar.addWidget(btn_close)
+
+        btn_apply = QPushButton(self.txt("btn_apply"))
+        btn_apply.setObjectName("btn_apply")
+        btn_apply.setFixedWidth(90)
+        btn_apply.setFixedHeight(30)
+        btn_apply.setCursor(Qt.PointingHandCursor)
+        btn_apply.clicked.connect(self._apply_settings)
+        btn_bar.addWidget(btn_apply)
+
+        right_layout.addLayout(btn_bar)
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+
+    def _set_view_mode(self, mode):
+        self.engine.save_preferences({'settings_view_mode': mode})
+        self._build_ui()
+
+    def _build_ui(self):
+        self._advanced_widgets = []
+        self.category_list.clear()
+        while self.stack.count() > 0:
+            w = self.stack.widget(0)
+            self.stack.removeWidget(w)
+            w.deleteLater()
+
+        prefs = self.engine.load_preferences() or {}
+        view_mode = prefs.get('settings_view_mode', 'basic')
+        is_basic = (view_mode == 'basic')
+
+        if is_basic:
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+        else:
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_audio_sync"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_ai_engine"))
+            self.category_list.addItem(self.txt("tab_interface"))
+            self.category_list.addItem(self.txt("tab_algorithms"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+            self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_telemetry"))
+
+        self.category_list.setCurrentRow(0)
+
         # ── Revert helper ─────────────────────────────────────────────────
         self.revert_funcs = []
 
         def _add_row(form, label_text, widget, default_val, setter_func):
-            row = QHBoxLayout()
+            container = QWidget()
+            row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(6)
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -1900,8 +1970,9 @@ class SettingsDialog(QDialog):
             lbl = QLabel(label_text)
             lbl.setWordWrap(True)
             lbl.setMinimumWidth(200)
-            form.addRow(lbl, row)
+            form.addRow(lbl, container)
             self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl, container
 
         def _add_page_to_stack(page_widget):
             scroll = QScrollArea()
@@ -1922,6 +1993,38 @@ class SettingsDialog(QDialog):
         form_gen = QFormLayout()
         form_gen.setSpacing(14)
         form_gen.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Basic/Advanced view switch
+        view_btn_row = QHBoxLayout()
+        view_btn_row.setContentsMargins(0, 0, 0, 16)
+        view_btn_row.setSpacing(10)
+        
+        btn_view_basic = QPushButton(self.txt("btn_view_basic"))
+        btn_view_basic.setFixedHeight(30)
+        btn_view_basic.setCursor(Qt.PointingHandCursor)
+        active_btn_style = "background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold;"
+        inactive_btn_style = "background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal;"
+        
+        if is_basic:
+            btn_view_basic.setStyleSheet(active_btn_style)
+        else:
+            btn_view_basic.setStyleSheet(inactive_btn_style)
+        btn_view_basic.clicked.connect(lambda: self._set_view_mode('basic'))
+        
+        btn_view_advanced = QPushButton(self.txt("btn_view_advanced"))
+        btn_view_advanced.setFixedHeight(30)
+        btn_view_advanced.setCursor(Qt.PointingHandCursor)
+        
+        if view_mode == 'advanced':
+            btn_view_advanced.setStyleSheet(active_btn_style)
+        else:
+            btn_view_advanced.setStyleSheet(inactive_btn_style)
+        btn_view_advanced.clicked.connect(lambda: self._set_view_mode('advanced'))
+
+        view_btn_row.addWidget(btn_view_basic)
+        view_btn_row.addWidget(btn_view_advanced)
+        l_gen.addLayout(view_btn_row)
+
 
         # Language
         self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
@@ -1952,7 +2055,6 @@ class SettingsDialog(QDialog):
 
         l_gen.addLayout(form_gen)
 
-        # ── Import / Export (inside General tab) ──────────────────────────
         sep_io = QFrame()
         sep_io.setFrameShape(QFrame.Shape.HLine)
         sep_io.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
@@ -1960,24 +2062,24 @@ class SettingsDialog(QDialog):
         l_gen.addWidget(sep_io)
         l_gen.addSpacing(10)
 
+        # Import/Export settings
         io_row = QHBoxLayout()
-        io_row.setContentsMargins(0, 0, 0, 0)
+        io_row.setContentsMargins(0, 0, 0, 16)
         io_row.setSpacing(8)
 
         btn_import_s = QPushButton(self.txt("btn_import_settings"))
         btn_import_s.setObjectName("btn_ghost_sm")
-        btn_import_s.setFixedHeight(28)
+        btn_import_s.setStyleSheet("padding: 4px 12px;")
         btn_import_s.setCursor(Qt.PointingHandCursor)
         btn_import_s.clicked.connect(self._on_import_settings)
         io_row.addWidget(btn_import_s)
 
         btn_export_s = QPushButton(self.txt("btn_export_settings"))
         btn_export_s.setObjectName("btn_ghost_sm")
-        btn_export_s.setFixedHeight(28)
+        btn_export_s.setStyleSheet("padding: 4px 12px;")
         btn_export_s.setCursor(Qt.PointingHandCursor)
         btn_export_s.clicked.connect(self._on_export_settings)
         io_row.addWidget(btn_export_s)
-
         io_row.addStretch()
         l_gen.addLayout(io_row)
 
@@ -1985,41 +2087,42 @@ class SettingsDialog(QDialog):
         _add_page_to_stack(page_gen)
 
         # ─────────────────────────────────────────────────────────────────
-        # PAGE 1 — AUDIO SYNC
-        # ─────────────────────────────────────────────────────────────────
-        page_sync = QWidget()
-        page_sync.setStyleSheet("background: transparent;")
-        l_sync = QVBoxLayout(page_sync)
-        l_sync.setContentsMargins(24, 20, 24, 16)
-        l_sync.setSpacing(0)
-        form_sync = QFormLayout()
-        form_sync.setSpacing(14)
-        form_sync.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        if not is_basic:
+                # PAGE 1 — AUDIO SYNC
+            # ─────────────────────────────────────────────────────────────────
+            page_sync = QWidget()
+            page_sync.setStyleSheet("background: transparent;")
+            l_sync = QVBoxLayout(page_sync)
+            l_sync.setContentsMargins(24, 20, 24, 16)
+            l_sync.setSpacing(0)
+            form_sync = QFormLayout()
+            form_sync.setSpacing(14)
+            form_sync.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        self.spin_offset = QDoubleSpinBox()
-        self.spin_offset.setRange(-10, 10)
-        self.spin_offset.setSingleStep(0.1)
-        self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
+            self.spin_offset = QDoubleSpinBox()
+            self.spin_offset.setRange(-10, 10)
+            self.spin_offset.setSingleStep(0.1)
+            self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
 
-        self.spin_pad = QDoubleSpinBox()
-        self.spin_pad.setRange(0, 5)
-        self.spin_pad.setSingleStep(0.1)
-        self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
+            self.spin_pad = QDoubleSpinBox()
+            self.spin_pad.setRange(0, 5)
+            self.spin_pad.setSingleStep(0.1)
+            self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
 
-        self.spin_snap = QDoubleSpinBox()
-        self.spin_snap.setRange(0, 5)
-        self.spin_snap.setSingleStep(0.1)
-        self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
+            self.spin_snap = QDoubleSpinBox()
+            self.spin_snap.setRange(0, 5)
+            self.spin_snap.setSingleStep(0.1)
+            self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
 
-        _add_row(form_sync, self.txt("lbl_offset_s"),   self.spin_offset, self.DEFAULTS['offset'],   self.spin_offset.setValue)
-        _add_row(form_sync, self.txt("lbl_padding_s"),  self.spin_pad,    self.DEFAULTS['pad'],       self.spin_pad.setValue)
-        _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap,   self.DEFAULTS['snap_max'],  self.spin_snap.setValue)
+            _add_row(form_sync, self.txt("lbl_offset_s"),   self.spin_offset, self.DEFAULTS['offset'],   self.spin_offset.setValue)
+            _add_row(form_sync, self.txt("lbl_padding_s"),  self.spin_pad,    self.DEFAULTS['pad'],       self.spin_pad.setValue)
+            _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap,   self.DEFAULTS['snap_max'],  self.spin_snap.setValue)
 
-        l_sync.addLayout(form_sync)
-        l_sync.addStretch()
-        _add_page_to_stack(page_sync)
+            l_sync.addLayout(form_sync)
+            l_sync.addStretch()
+            _add_page_to_stack(page_sync)
 
-        # ─────────────────────────────────────────────────────────────────
+            # ─────────────────────────────────────────────────────────────────
         # PAGE 2 — TRANSCRIPT
         # ─────────────────────────────────────────────────────────────────
         page_transcript = QWidget()
@@ -2076,6 +2179,7 @@ class SettingsDialog(QDialog):
         l_transcript.addSpacing(12)
         l_transcript.addWidget(sep_chunk)
         l_transcript.addSpacing(10)
+        self._advanced_widgets.append(sep_chunk)
 
         # Chunking spinboxes
         form_chunk = QFormLayout()
@@ -2085,17 +2189,17 @@ class SettingsDialog(QDialog):
         self.spin_chunk_max = QSpinBox()
         self.spin_chunk_max.setRange(5, 200)
         self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
-        _add_row(form_chunk, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue)
+        self._advanced_widgets.extend(_add_row(form_chunk, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue))
 
         self.spin_chunk_look = QSpinBox()
         self.spin_chunk_look.setRange(0, 20)
         self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
-        _add_row(form_chunk, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue)
+        self._advanced_widgets.extend(_add_row(form_chunk, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue))
 
         self.spin_chunk_min = QSpinBox()
         self.spin_chunk_min.setRange(1, 50)
         self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
-        _add_row(form_chunk, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue)
+        self._advanced_widgets.extend(_add_row(form_chunk, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue))
 
         l_transcript.addLayout(form_chunk)
         l_transcript.addStretch()
@@ -2116,242 +2220,246 @@ class SettingsDialog(QDialog):
         _add_page_to_stack(page_transcript)
 
         # ─────────────────────────────────────────────────────────────────
-        # PAGE 3 — AI ENGINE
-        # ─────────────────────────────────────────────────────────────────
-        page_ai = QWidget()
-        page_ai.setStyleSheet("background: transparent;")
-        l_ai = QVBoxLayout(page_ai)
-        l_ai.setContentsMargins(24, 20, 24, 16)
-        l_ai.setSpacing(0)
-        form_ai = QFormLayout()
-        form_ai.setSpacing(14)
-        form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        if not is_basic:
+                # PAGE 3 — AI ENGINE
+            # ─────────────────────────────────────────────────────────────────
+            page_ai = QWidget()
+            page_ai.setStyleSheet("background: transparent;")
+            l_ai = QVBoxLayout(page_ai)
+            l_ai.setContentsMargins(24, 20, 24, 16)
+            l_ai.setSpacing(0)
+            form_ai = QFormLayout()
+            form_ai.setSpacing(14)
+            form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        # Device
-        _device_items = ["Auto", "CPU", "GPU"]
-        self.dropdown_device = CustomDropdown(_device_items)
-        self.dropdown_device.setFixedHeight(30)
-        saved_device = prefs.get('device', 'auto').capitalize()
-        if saved_device.upper() == 'AUTO': saved_device = 'Auto'
-        self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
-        _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setText)
+            # Device
+            _device_items = ["Auto", "CPU", "GPU"]
+            self.dropdown_device = CustomDropdown(_device_items)
+            self.dropdown_device.setFixedHeight(30)
+            saved_device = prefs.get('device', 'auto').capitalize()
+            if saved_device.upper() == 'AUTO': saved_device = 'Auto'
+            self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
+            _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setText)
 
-        # Compute type
-        _compute_items = ["Auto", "float16", "int8", "float32"]
-        self.dropdown_compute = CustomDropdown(_compute_items)
-        self.dropdown_compute.setFixedHeight(30)
-        saved_compute = prefs.get('ai_compute_type', 'Auto')
-        self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
-        _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setText)
+            # Compute type
+            _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
+            self.dropdown_compute = CustomDropdown(_compute_items)
+            self.dropdown_compute.setFixedHeight(30)
+            saved_compute = prefs.get('ai_compute_type', 'Auto')
+            self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
+            _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setText)
 
-        l_ai.addLayout(form_ai)
-        l_ai.addSpacing(14)
+            l_ai.addLayout(form_ai)
+            l_ai.addSpacing(14)
 
-        # Initial prompt label + QTextEdit
-        lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
-        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
-        l_ai.addWidget(lbl_prompt)
-        l_ai.addSpacing(4)
+            # Initial prompt label + QTextEdit
+            lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
+            lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+            l_ai.addWidget(lbl_prompt)
+            l_ai.addSpacing(4)
 
-        self.textedit_prompt = QTextEdit()
-        self.textedit_prompt.setMaximumHeight(80)
-        self.textedit_prompt.setPlaceholderText("e.g. Transcribe film dialogue with punctuation.")
-        self.textedit_prompt.setPlainText(prefs.get('ai_initial_prompt', config.DEFAULT_WHISPER_PROMPT))
-        self.textedit_prompt.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                padding: 6px 8px;
-                font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
-            }}
-        """)
-        l_ai.addWidget(self.textedit_prompt)
+            self.textedit_prompt = QTextEdit()
+            self.textedit_prompt.setMaximumHeight(80)
+            self.textedit_prompt.setPlaceholderText("e.g. Transcribe film dialogue with punctuation.")
+            self.textedit_prompt.setPlainText(prefs.get('ai_initial_prompt', config.DEFAULT_WHISPER_PROMPT))
+            self.textedit_prompt.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: #1e1e1e;
+                    color: #d4d4d4;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 3px;
+                    padding: 6px 8px;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: 10pt;
+                }}
+            """)
+            l_ai.addWidget(self.textedit_prompt)
 
-        # ── Advanced Whisper Parameters ─────────────────────────
-        sep_whisper = QFrame()
-        sep_whisper.setFrameShape(QFrame.Shape.HLine)
-        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
-        l_ai.addSpacing(14)
-        l_ai.addWidget(sep_whisper)
-        l_ai.addSpacing(10)
+            # ── Advanced Whisper Parameters ─────────────────────────
+            sep_whisper = QFrame()
+            sep_whisper.setFrameShape(QFrame.Shape.HLine)
+            sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+            l_ai.addSpacing(14)
+            l_ai.addWidget(sep_whisper)
+            l_ai.addSpacing(10)
+            self._advanced_widgets.append(sep_whisper)
 
-        form_whisper = QFormLayout()
-        form_whisper.setSpacing(14)
-        form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            form_whisper = QFormLayout()
+            form_whisper.setSpacing(14)
+            form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        self.chk_vad_filter = ToggleSwitch()
-        self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
-        _add_row(form_whisper, self.txt("lbl_vad_filter"), self.chk_vad_filter,
-                 False, lambda v: self.chk_vad_filter.setChecked(v, animated=False))
+            self.chk_vad_filter = ToggleSwitch()
+            self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_vad_filter"), self.chk_vad_filter,
+                     False, lambda v: self.chk_vad_filter.setChecked(v, animated=False)))
 
-        self.chk_condition_prev = ToggleSwitch()
-        self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
-        _add_row(form_whisper, self.txt("lbl_condition_prev"), self.chk_condition_prev,
-                 False, lambda v: self.chk_condition_prev.setChecked(v, animated=False))
+            self.chk_condition_prev = ToggleSwitch()
+            self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_condition_prev"), self.chk_condition_prev,
+                     False, lambda v: self.chk_condition_prev.setChecked(v, animated=False)))
 
-        self.spin_beam_size = QSpinBox()
-        self.spin_beam_size.setRange(1, 10)
-        self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', 1)))
-        _add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, 1, self.spin_beam_size.setValue)
+            self.spin_beam_size = QSpinBox()
+            self.spin_beam_size.setRange(1, 10)
+            self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', 1)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, 1, self.spin_beam_size.setValue))
 
-        self.spin_temperature = QDoubleSpinBox()
-        self.spin_temperature.setRange(0.0, 1.0)
-        self.spin_temperature.setSingleStep(0.1)
-        self.spin_temperature.setDecimals(2)
-        self.spin_temperature.setValue(float(prefs.get('ai_temperature', 0.0)))
-        _add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, 0.0, self.spin_temperature.setValue)
+            self.spin_temperature = QDoubleSpinBox()
+            self.spin_temperature.setRange(0.0, 1.0)
+            self.spin_temperature.setSingleStep(0.1)
+            self.spin_temperature.setDecimals(2)
+            self.spin_temperature.setValue(float(prefs.get('ai_temperature', 0.0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, 0.0, self.spin_temperature.setValue))
 
-        self.spin_logprob = QDoubleSpinBox()
-        self.spin_logprob.setRange(-3.0, 0.0)
-        self.spin_logprob.setSingleStep(0.1)
-        self.spin_logprob.setDecimals(2)
-        self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', -1.0)))
-        _add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, -1.0, self.spin_logprob.setValue)
+            self.spin_logprob = QDoubleSpinBox()
+            self.spin_logprob.setRange(-3.0, 0.0)
+            self.spin_logprob.setSingleStep(0.1)
+            self.spin_logprob.setDecimals(2)
+            self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', -1.0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, -1.0, self.spin_logprob.setValue))
 
-        self.spin_no_speech = QDoubleSpinBox()
-        self.spin_no_speech.setRange(0.0, 1.0)
-        self.spin_no_speech.setSingleStep(0.1)
-        self.spin_no_speech.setDecimals(2)
-        self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', 0.2)))
-        _add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, 0.2, self.spin_no_speech.setValue)
+            self.spin_no_speech = QDoubleSpinBox()
+            self.spin_no_speech.setRange(0.0, 1.0)
+            self.spin_no_speech.setSingleStep(0.1)
+            self.spin_no_speech.setDecimals(2)
+            self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', 0.2)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, 0.2, self.spin_no_speech.setValue))
 
-        self.spin_patience = QDoubleSpinBox()
-        self.spin_patience.setRange(0.0, 10.0)
-        self.spin_patience.setSingleStep(0.1)
-        self.spin_patience.setDecimals(2)
-        self.spin_patience.setValue(float(prefs.get('ai_patience', 1.0)))
-        _add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, 1.0, self.spin_patience.setValue)
+            self.spin_patience = QDoubleSpinBox()
+            self.spin_patience.setRange(0.0, 10.0)
+            self.spin_patience.setSingleStep(0.1)
+            self.spin_patience.setDecimals(2)
+            self.spin_patience.setValue(float(prefs.get('ai_patience', 1.0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, 1.0, self.spin_patience.setValue))
 
-        self.spin_compression = QDoubleSpinBox()
-        self.spin_compression.setRange(0.0, 100.0)
-        self.spin_compression.setSingleStep(0.1)
-        self.spin_compression.setDecimals(2)
-        self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', 10.0)))
-        _add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, 10.0, self.spin_compression.setValue)
+            self.spin_compression = QDoubleSpinBox()
+            self.spin_compression.setRange(0.0, 100.0)
+            self.spin_compression.setSingleStep(0.1)
+            self.spin_compression.setDecimals(2)
+            self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', 10.0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, 10.0, self.spin_compression.setValue))
 
-        self.spin_no_repeat = QSpinBox()
-        self.spin_no_repeat.setRange(0, 100)
-        self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', 0)))
-        _add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, 0, self.spin_no_repeat.setValue)
+            self.spin_no_repeat = QSpinBox()
+            self.spin_no_repeat.setRange(0, 100)
+            self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', 0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, 0, self.spin_no_repeat.setValue))
 
-        self.chk_regroup = ToggleSwitch()
-        self.chk_regroup.setChecked(bool(prefs.get('ai_regroup', False)), animated=False)
-        _add_row(form_whisper, self.txt("lbl_regroup"), self.chk_regroup,
-                 False, lambda v: self.chk_regroup.setChecked(v, animated=False))
+            self.chk_regroup = ToggleSwitch()
+            self.chk_regroup.setChecked(bool(prefs.get('ai_regroup', False)), animated=False)
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_regroup"), self.chk_regroup,
+                     False, lambda v: self.chk_regroup.setChecked(v, animated=False)))
 
-        self.chk_suppress_silence = ToggleSwitch()
-        self.chk_suppress_silence.setChecked(bool(prefs.get('ai_suppress_silence', False)), animated=False)
-        _add_row(form_whisper, self.txt("lbl_suppress_silence"), self.chk_suppress_silence,
-                 False, lambda v: self.chk_suppress_silence.setChecked(v, animated=False))
+            self.chk_suppress_silence = ToggleSwitch()
+            self.chk_suppress_silence.setChecked(bool(prefs.get('ai_suppress_silence', False)), animated=False)
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_suppress_silence"), self.chk_suppress_silence,
+                     False, lambda v: self.chk_suppress_silence.setChecked(v, animated=False)))
 
-        self.spin_q_levels = QSpinBox()
-        self.spin_q_levels.setRange(0, 100)
-        self.spin_q_levels.setValue(int(prefs.get('ai_q_levels', 20)))
-        _add_row(form_whisper, self.txt("lbl_q_levels"), self.spin_q_levels, 20, self.spin_q_levels.setValue)
+            self.spin_q_levels = QSpinBox()
+            self.spin_q_levels.setRange(0, 100)
+            self.spin_q_levels.setValue(int(prefs.get('ai_q_levels', 20)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_q_levels"), self.spin_q_levels, 20, self.spin_q_levels.setValue))
 
-        self.spin_k_size = QSpinBox()
-        self.spin_k_size.setRange(0, 100)
-        self.spin_k_size.setValue(int(prefs.get('ai_k_size', 5)))
-        _add_row(form_whisper, self.txt("lbl_k_size"), self.spin_k_size, 5, self.spin_k_size.setValue)
+            self.spin_k_size = QSpinBox()
+            self.spin_k_size.setRange(0, 100)
+            self.spin_k_size.setValue(int(prefs.get('ai_k_size', 5)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_k_size"), self.spin_k_size, 5, self.spin_k_size.setValue))
 
-        l_ai.addLayout(form_whisper)
-        l_ai.addStretch()
-        _add_page_to_stack(page_ai)
+            l_ai.addLayout(form_whisper)
+            l_ai.addStretch()
+            _add_page_to_stack(page_ai)
 
-        # ─────────────────────────────────────────────────────────────────
-        # PAGE 3 — INTERFACE
-        # ─────────────────────────────────────────────────────────────────
-        page_iface = QWidget()
-        page_iface.setStyleSheet("background: transparent;")
-        l_iface = QVBoxLayout(page_iface)
-        l_iface.setContentsMargins(24, 20, 24, 16)
-        l_iface.setSpacing(0)
-        form_iface = QFormLayout()
-        form_iface.setSpacing(14)
-        form_iface.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            # ─────────────────────────────────────────────────────────────────
+        if not is_basic:
+                # PAGE 3 — INTERFACE
+            # ─────────────────────────────────────────────────────────────────
+            page_iface = QWidget()
+            page_iface.setStyleSheet("background: transparent;")
+            l_iface = QVBoxLayout(page_iface)
+            l_iface.setContentsMargins(24, 20, 24, 16)
+            l_iface.setSpacing(0)
+            form_iface = QFormLayout()
+            form_iface.setSpacing(14)
+            form_iface.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        # Always on top
-        self.chk_ontop = ToggleSwitch()
-        self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)), animated=False)
-        _add_row(form_iface, self.txt("lbl_always_on_top"), self.chk_ontop,
-                 False, lambda v: self.chk_ontop.setChecked(v, animated=False))
+            # Always on top
+            self.chk_ontop = ToggleSwitch()
+            self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)), animated=False)
+            _add_row(form_iface, self.txt("lbl_always_on_top"), self.chk_ontop,
+                     False, lambda v: self.chk_ontop.setChecked(v, animated=False))
 
-        # Hidden panels (multi-select)
-        _panel_options = ["Script Analysis", "Silence", "Filler Words", "Assembly"]
-        self.dropdown_hidden = MultiSelectDropdown(_panel_options)
-        self.dropdown_hidden.setFixedHeight(30)
-        saved_hidden = prefs.get('hidden_panels', [])
-        if isinstance(saved_hidden, list) and saved_hidden:
-            self.dropdown_hidden.selected_items = set(saved_hidden)
-            self.dropdown_hidden.setText(", ".join(sorted(saved_hidden)))
-        else:
-            self.dropdown_hidden.setText(self.txt("txt_select"))
-        _add_row(form_iface, self.txt("lbl_hidden_panels"), self.dropdown_hidden,
-                 [], lambda v: None)  # revert placeholder — clear handled by Restore Defaults
+            # Hidden panels (multi-select)
+            _panel_options = ["Script Analysis", "Silence", "Filler Words", "Assembly"]
+            self.dropdown_hidden = MultiSelectDropdown(_panel_options)
+            self.dropdown_hidden.setFixedHeight(30)
+            saved_hidden = prefs.get('hidden_panels', [])
+            if isinstance(saved_hidden, list) and saved_hidden:
+                self.dropdown_hidden.selected_items = set(saved_hidden)
+                self.dropdown_hidden.setText(", ".join(sorted(saved_hidden)))
+            else:
+                self.dropdown_hidden.setText(self.txt("txt_select"))
+            _add_row(form_iface, self.txt("lbl_hidden_panels"), self.dropdown_hidden,
+                     [], lambda v: None)  # revert placeholder — clear handled by Restore Defaults
 
-        # Accent Color
-        _accent_items = ["green", "blue", "purple", "orange"]
-        self.dropdown_accent = CustomDropdown(_accent_items)
-        self.dropdown_accent.setFixedHeight(30)
-        saved_accent = prefs.get('accent_color', 'green')
-        self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
-        _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
+            # Accent Color
+            _accent_items = ["green", "blue", "purple", "orange"]
+            self.dropdown_accent = CustomDropdown(_accent_items)
+            self.dropdown_accent.setFixedHeight(30)
+            saved_accent = prefs.get('accent_color', 'green')
+            self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
+            _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
 
-        # App Icon
-        _icon_items = ["default", "dark", "light", "color"]
-        self.dropdown_icon = CustomDropdown(_icon_items)
-        self.dropdown_icon.setFixedHeight(30)
-        saved_icon = prefs.get('app_icon', 'default')
-        self.dropdown_icon.setText(saved_icon if saved_icon in _icon_items else 'default')
-        _add_row(form_iface, self.txt("lbl_app_icon"), self.dropdown_icon, 'default', self.dropdown_icon.setText)
+            # App Icon
+            _icon_items = ["default", "dark", "light", "color"]
+            self.dropdown_icon = CustomDropdown(_icon_items)
+            self.dropdown_icon.setFixedHeight(30)
+            saved_icon = prefs.get('app_icon', 'default')
+            self.dropdown_icon.setText(saved_icon if saved_icon in _icon_items else 'default')
+            _add_row(form_iface, self.txt("lbl_app_icon"), self.dropdown_icon, 'default', self.dropdown_icon.setText)
 
-        l_iface.addLayout(form_iface)
-        l_iface.addStretch()
-        _add_page_to_stack(page_iface)
+            l_iface.addLayout(form_iface)
+            l_iface.addStretch()
+            _add_page_to_stack(page_iface)
 
-        # ─────────────────────────────────────────────────────────────────
-        # PAGE 5 — ALGORITHMS
-        # ─────────────────────────────────────────────────────────────────
-        page_algo = QWidget()
-        page_algo.setStyleSheet("background: transparent;")
-        l_algo = QVBoxLayout(page_algo)
-        l_algo.setContentsMargins(24, 20, 24, 16)
-        l_algo.setSpacing(0)
-        form_algo = QFormLayout()
-        form_algo.setSpacing(14)
-        form_algo.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            # ─────────────────────────────────────────────────────────────────
+        if not is_basic:
+                # PAGE 5 — ALGORITHMS
+            # ─────────────────────────────────────────────────────────────────
+            page_algo = QWidget()
+            page_algo.setStyleSheet("background: transparent;")
+            l_algo = QVBoxLayout(page_algo)
+            l_algo.setContentsMargins(24, 20, 24, 16)
+            l_algo.setSpacing(0)
+            form_algo = QFormLayout()
+            form_algo.setSpacing(14)
+            form_algo.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        self.spin_fuzzy = QSpinBox()
-        self.spin_fuzzy.setRange(0, 100)
-        self.spin_fuzzy.setSuffix(" %")
-        self.spin_fuzzy.setValue(int(prefs.get('algo_fuzzy_threshold', 80)))
-        _add_row(form_algo, self.txt("lbl_algo_fuzzy"), self.spin_fuzzy, 80, self.spin_fuzzy.setValue)
+            self.spin_fuzzy = QSpinBox()
+            self.spin_fuzzy.setRange(0, 100)
+            self.spin_fuzzy.setSuffix(" %")
+            self.spin_fuzzy.setValue(int(prefs.get('algo_fuzzy_threshold', 80)))
+            self._advanced_widgets.extend(_add_row(form_algo, self.txt("lbl_algo_fuzzy"), self.spin_fuzzy, 80, self.spin_fuzzy.setValue))
 
-        self.spin_lookahead = QSpinBox()
-        self.spin_lookahead.setRange(1, 300)
-        self.spin_lookahead.setValue(int(prefs.get('algo_retake_lookahead', 80)))
-        _add_row(form_algo, self.txt("lbl_algo_lookahead"), self.spin_lookahead, 15, self.spin_lookahead.setValue)
+            self.spin_lookahead = QSpinBox()
+            self.spin_lookahead.setRange(1, 300)
+            self.spin_lookahead.setValue(int(prefs.get('algo_retake_lookahead', 80)))
+            self._advanced_widgets.extend(_add_row(form_algo, self.txt("lbl_algo_lookahead"), self.spin_lookahead, 15, self.spin_lookahead.setValue))
 
-        self.spin_penalty = QDoubleSpinBox()
-        self.spin_penalty.setRange(0.0, 10.0)
-        self.spin_penalty.setSingleStep(0.1)
-        self.spin_penalty.setDecimals(1)
-        self.spin_penalty.setValue(float(prefs.get('algo_distance_penalty', 2.0)))
-        _add_row(form_algo, self.txt("lbl_algo_penalty"), self.spin_penalty, 2.0, self.spin_penalty.setValue)
+            self.spin_penalty = QDoubleSpinBox()
+            self.spin_penalty.setRange(0.0, 10.0)
+            self.spin_penalty.setSingleStep(0.1)
+            self.spin_penalty.setDecimals(1)
+            self.spin_penalty.setValue(float(prefs.get('algo_distance_penalty', 2.0)))
+            self._advanced_widgets.extend(_add_row(form_algo, self.txt("lbl_algo_penalty"), self.spin_penalty, 2.0, self.spin_penalty.setValue))
 
-        self.spin_anchor = QSpinBox()
-        self.spin_anchor.setRange(1, 10)
-        self.spin_anchor.setValue(int(prefs.get('algo_anchor_depth', 3)))
-        _add_row(form_algo, self.txt("lbl_algo_anchor"), self.spin_anchor, 3, self.spin_anchor.setValue)
+            self.spin_anchor = QSpinBox()
+            self.spin_anchor.setRange(1, 10)
+            self.spin_anchor.setValue(int(prefs.get('algo_anchor_depth', 3)))
+            self._advanced_widgets.extend(_add_row(form_algo, self.txt("lbl_algo_anchor"), self.spin_anchor, 3, self.spin_anchor.setValue))
 
-        l_algo.addLayout(form_algo)
-        l_algo.addStretch()
-        _add_page_to_stack(page_algo)
+            l_algo.addLayout(form_algo)
+            l_algo.addStretch()
+            _add_page_to_stack(page_algo)
 
-        # ─────────────────────────────────────────────────────────────────
+            # ─────────────────────────────────────────────────────────────────
         # PAGE 6 — SHORTCUTS
         # ─────────────────────────────────────────────────────────────────
         page_shorts = QWidget()
@@ -2387,129 +2495,88 @@ class SettingsDialog(QDialog):
         _add_page_to_stack(page_shorts)
 
         # ─────────────────────────────────────────────────────────────────
-        # PAGE 7 — CUSTOM MARKERS
-        # ─────────────────────────────────────────────────────────────────
-        page_markers = QWidget()
-        page_markers.setStyleSheet("background: transparent;")
-        l_markers = QVBoxLayout(page_markers)
-        l_markers.setContentsMargins(24, 20, 24, 16)
-        l_markers.setSpacing(10)
+        if not is_basic:
+                # PAGE 7 — CUSTOM MARKERS
+            # ─────────────────────────────────────────────────────────────────
+            page_markers = QWidget()
+            page_markers.setStyleSheet("background: transparent;")
+            l_markers = QVBoxLayout(page_markers)
+            l_markers.setContentsMargins(24, 20, 24, 16)
+            l_markers.setSpacing(10)
 
-        self.current_custom_markers = list(prefs.get('custom_markers', []))
+            self.current_custom_markers = list(prefs.get('custom_markers', []))
 
-        self.markers_list = QListWidget()
-        self.markers_list.setAlternatingRowColors(True)
-        self.markers_list.setStyleSheet(f"""
-            QListWidget {{
-                background-color: #1e1e1e;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
-            }}
-            QListWidget::item:alternate {{ background-color: #1a1a1a; }}
-            QListWidget::item:selected {{ background-color: {config.BTN_BG}; color: white; }}
-        """)
-        self._refresh_markers_list()
-        l_markers.addWidget(self.markers_list)
+            self.markers_list = QListWidget()
+            self.markers_list.setAlternatingRowColors(True)
+            self.markers_list.setStyleSheet(f"""
+                QListWidget {{
+                    background-color: #1e1e1e;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 3px;
+                    color: {config.FG_COLOR};
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: 10pt;
+                }}
+                QListWidget::item:alternate {{ background-color: #1a1a1a; }}
+                QListWidget::item:selected {{ background-color: {config.BTN_BG}; color: white; }}
+            """)
+            self._refresh_markers_list()
+            l_markers.addWidget(self.markers_list)
 
-        marker_btn_row = QHBoxLayout()
-        marker_btn_row.setSpacing(8)
-        btn_add_m = QPushButton(self.txt("btn_add_marker"))
-        btn_add_m.setObjectName("btn_secondary")
-        btn_add_m.setFixedHeight(30)
-        btn_add_m.setCursor(Qt.PointingHandCursor)
-        btn_add_m.clicked.connect(self._on_add_marker)
-        marker_btn_row.addWidget(btn_add_m)
+            marker_btn_row = QHBoxLayout()
+            marker_btn_row.setSpacing(8)
+            btn_add_m = QPushButton(self.txt("btn_add_marker"))
+            btn_add_m.setObjectName("btn_secondary")
+            btn_add_m.setFixedHeight(30)
+            btn_add_m.setCursor(Qt.PointingHandCursor)
+            btn_add_m.clicked.connect(self._on_add_marker)
+            marker_btn_row.addWidget(btn_add_m)
 
-        btn_rem_m = QPushButton(self.txt("btn_remove_marker"))
-        btn_rem_m.setObjectName("btn_secondary")
-        btn_rem_m.setFixedHeight(30)
-        btn_rem_m.setCursor(Qt.PointingHandCursor)
-        btn_rem_m.clicked.connect(self._on_remove_marker)
-        marker_btn_row.addWidget(btn_rem_m)
-        marker_btn_row.addStretch()
-        l_markers.addLayout(marker_btn_row)
-        _add_page_to_stack(page_markers)
+            btn_rem_m = QPushButton(self.txt("btn_remove_marker"))
+            btn_rem_m.setObjectName("btn_secondary")
+            btn_rem_m.setFixedHeight(30)
+            btn_rem_m.setCursor(Qt.PointingHandCursor)
+            btn_rem_m.clicked.connect(self._on_remove_marker)
+            marker_btn_row.addWidget(btn_rem_m)
+            marker_btn_row.addStretch()
+            l_markers.addLayout(marker_btn_row)
+            _add_page_to_stack(page_markers)
 
-        # ─────────────────────────────────────────────────────────────────
-        # PAGE 8 — TELEMETRY
-        # ─────────────────────────────────────────────────────────────────
-        page_telem = QWidget()
-        page_telem.setStyleSheet("background: transparent;")
-        l_telem = QVBoxLayout(page_telem)
-        l_telem.setContentsMargins(24, 20, 24, 16)
-        l_telem.setSpacing(12)
+            # ─────────────────────────────────────────────────────────────────
+        if not is_basic:
+                # PAGE 8 — TELEMETRY
+            # ─────────────────────────────────────────────────────────────────
+            page_telem = QWidget()
+            page_telem.setStyleSheet("background: transparent;")
+            l_telem = QVBoxLayout(page_telem)
+            l_telem.setContentsMargins(24, 20, 24, 16)
+            l_telem.setSpacing(12)
 
-        # Info label
-        lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
-        lbl_telem_info.setWordWrap(True)
-        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
-        l_telem.addWidget(lbl_telem_info)
+            # Info label
+            lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
+            lbl_telem_info.setWordWrap(True)
+            lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+            l_telem.addWidget(lbl_telem_info)
 
-        form_telem = QFormLayout()
-        form_telem.setSpacing(14)
-        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            form_telem = QFormLayout()
+            form_telem.setSpacing(14)
+            form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        user_data = getattr(self.engine.os_doc, 'user_data', {})
+            user_data = getattr(self.engine.os_doc, 'user_data', {})
 
-        self.chk_telemetry_opt_in = ToggleSwitch()
-        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
-        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), self.chk_telemetry_opt_in,
-                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
+            self.chk_telemetry_opt_in = ToggleSwitch()
+            self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+            _add_row(form_telem, self.txt("chk_telemetry_opt_in"), self.chk_telemetry_opt_in,
+                     False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
 
-        self.chk_telemetry_geo = ToggleSwitch()
-        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
-        _add_row(form_telem, self.txt("chk_telemetry_geo"), self.chk_telemetry_geo,
-                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
+            self.chk_telemetry_geo = ToggleSwitch()
+            self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
+            _add_row(form_telem, self.txt("chk_telemetry_geo"), self.chk_telemetry_geo,
+                     True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
 
-        l_telem.addLayout(form_telem)
-        l_telem.addStretch()
-        _add_page_to_stack(page_telem)
-
-        # ─────────────────────────────────────────────────────────────────
-        # BOTTOM BUTTON BAR (separator + row)
-        # ─────────────────────────────────────────────────────────────────
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"background: {config.SEPARATOR_COL}; max-height: 1px; border: none;")
-        right_layout.addWidget(sep)
-
-        btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(16, 10, 16, 12)
-        btn_bar.setSpacing(8)
-
-        btn_bar.addStretch()
-
-        # Right: Restore / Close / Apply
-        btn_restore = QPushButton(self.txt("btn_restore_defaults"))
-        btn_restore.setObjectName("btn_secondary")
-        btn_restore.setFixedHeight(30)
-        btn_restore.setCursor(Qt.PointingHandCursor)
-        btn_restore.clicked.connect(self._restore_all_defaults)
-        btn_bar.addWidget(btn_restore)
-
-        btn_close = QPushButton(self.txt("btn_close"))
-        btn_close.setObjectName("btn_secondary")
-        btn_close.setFixedWidth(80)
-        btn_close.setFixedHeight(30)
-        btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.clicked.connect(self.reject)
-        btn_bar.addWidget(btn_close)
-
-        btn_apply = QPushButton(self.txt("btn_apply"))
-        btn_apply.setObjectName("btn_apply")
-        btn_apply.setFixedWidth(90)
-        btn_apply.setFixedHeight(30)
-        btn_apply.setCursor(Qt.PointingHandCursor)
-        btn_apply.clicked.connect(self._apply_settings)
-        btn_bar.addWidget(btn_apply)
-
-        right_layout.addLayout(btn_bar)
-
-    # ── Helpers ───────────────────────────────────────────────────────────
-
+            l_telem.addLayout(form_telem)
+            l_telem.addStretch()
+            _add_page_to_stack(page_telem)
     def _restore_all_defaults(self):
         msg_box = CustomMsgBox(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"),
                                self.txt("btn_yes"), self.txt("btn_no"))
@@ -2577,7 +2644,6 @@ class SettingsDialog(QDialog):
         if 0 <= row < len(self.current_custom_markers):
             self.current_custom_markers.pop(row)
             self._refresh_markers_list()
-
 
     def _update_preview(self):
         ff = self.combo_font.currentText()
