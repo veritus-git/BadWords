@@ -537,6 +537,7 @@ class BadWordsGUI:
             self.current_progress_val = 0.0
             self.indeterminate_anim_job = None
             self.indeterminate_pos = 0.0
+            self.is_processing_active = False
             
             self.current_frame = None
             self.current_stage_name = "config"
@@ -862,7 +863,7 @@ class BadWordsGUI:
                 canvas_width = self.status_canvas.winfo_width()
                 if canvas_width < 10: canvas_width = 400 
                 new_width = (self.current_progress_val / 100.0) * canvas_width
-                if self.current_progress_val <= 0:
+                if self.current_progress_val <= 0 and not self.is_processing_active:
                     self.status_canvas.configure(bg=config.BG_COLOR)
                     self.status_canvas.itemconfig(self.status_rect_id, fill=config.BG_COLOR, width=0)
                 else:
@@ -879,7 +880,7 @@ class BadWordsGUI:
                 w = self.sidebar_status_canvas.winfo_width()
                 if w < 10: w = 260
                 new_w = (self.current_progress_val / 100.0) * w
-                if self.current_progress_val <= 0:
+                if self.current_progress_val <= 0 and not self.is_processing_active:
                     self.sidebar_status_canvas.configure(bg=config.SIDEBAR_BG)
                     self.sidebar_status_canvas.itemconfig(self.sb_rect_id, fill=config.SIDEBAR_BG, width=0)
                 else:
@@ -1517,6 +1518,8 @@ class BadWordsGUI:
         }
         self.btn_analyze.config(state="disabled", bg=config.INPUT_BG)
         def run_thread():
+            start_time = time.time()
+            self.is_processing_active = True
             def safe_status(msg):
                 self.root.after(0, lambda: self.set_status(msg))
             def safe_progress(val):
@@ -1545,13 +1548,20 @@ class BadWordsGUI:
                 
                 self.words_data = words
                 self.segments_data = segments
-                self.root.after(0, self.show_reviewer_stage)
+                self.is_processing_active = False
+                elapsed_sec = int(time.time() - start_time)
+                mins = elapsed_sec // 60
+                secs = elapsed_sec % 60
+                formatted_time = f"{mins}:{secs:02d} min"
+                done_msg = self.txt("status_done_time", time=formatted_time)
+                self.root.after(0, lambda: self.show_reviewer_stage(custom_status=done_msg))
             else:
+                self.is_processing_active = False
                 self.root.after(0, lambda: self.btn_analyze.config(state="normal", bg=config.BTN_BG))
                 self.root.after(0, lambda: self.set_status("Error."))
         threading.Thread(target=run_thread, daemon=True).start()
 
-    def show_reviewer_stage(self):
+    def show_reviewer_stage(self, custom_status=None):
         self.current_stage_name = "reviewer"
         self.clear_window()
         
@@ -1858,7 +1868,10 @@ class BadWordsGUI:
             self.root.after(200, lambda: self.root.attributes('-topmost', False))
             self.root.after(300, lambda: self.root.focus_force())
             
-        self.set_status(self.txt("status_ready"))
+        if custom_status:
+            self.set_status(custom_status)
+        else:
+            self.set_status(self.txt("status_ready"))
         self.set_progress(0)
 
     def _add_gear_button(self, parent, bg_color):
