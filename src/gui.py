@@ -990,9 +990,12 @@ class TelemetryPopup(QDialog):
 
     def _show_lang_picker(self):
         """Open a floating language picker anchored below the lang button."""
-        if self._lang_picker and self._lang_picker.isVisible():
-            self._lang_picker.close()
-            return
+        try:
+            if self._lang_picker and self._lang_picker.isVisible():
+                self._lang_picker.close()
+                return
+        except RuntimeError:
+            self._lang_picker = None # Object was deleted by Qt
 
         self._lang_picker = _LangPickerDialog(self)
         self._lang_picker.lang_selected.connect(self._on_lang_selected)
@@ -1619,6 +1622,73 @@ class SearchableDropdown(QPushButton):
         popup.close()
 
 
+class CustomMsgBox(QDialog):
+    def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None):
+        super().__init__(parent)
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        apply_dark_title_bar(self)
+        
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
+            QLabel {{ color: {config.FG_COLOR}; }}
+            QLabel#lbl_title {{ font-size: 14pt; font-weight: bold; }}
+            QLabel#lbl_msg {{ font-size: 11pt; }}
+            QPushButton {{
+                background-color: {config.BTN_GHOST_BG};
+                color: {config.BTN_FG};
+                padding: 6px 16px;
+                border-radius: 4px;
+                min-width: 80px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton#btn_yes {{ background-color: {config.BTN_BG}; }}
+            QPushButton#btn_yes:hover {{ background-color: {config.BTN_ACTIVE}; }}
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        container = QWidget(self)
+        v_layout = QVBoxLayout(container)
+        v_layout.setContentsMargins(20, 25, 20, 20)
+        v_layout.setSpacing(15)
+        
+        lbl_title = QLabel(title)
+        lbl_title.setObjectName("lbl_title")
+        v_layout.addWidget(lbl_title)
+        
+        lbl_msg = QLabel(message)
+        lbl_msg.setObjectName("lbl_msg")
+        lbl_msg.setWordWrap(True)
+        lbl_msg.setFixedWidth(380)
+        lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        v_layout.addWidget(lbl_msg)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        if btn_no_text:
+            btn_no = QPushButton(btn_no_text)
+            btn_no.clicked.connect(self.reject)
+            btn_layout.addWidget(btn_no)
+            btn_layout.addSpacing(10)
+            
+        btn_yes = QPushButton(btn_yes_text)
+        btn_yes.setObjectName("btn_yes")
+        btn_yes.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_yes)
+        
+        v_layout.addLayout(btn_layout)
+        layout.addWidget(container)
+        
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height())
+
+
 class SettingsDialog(QDialog):
     DEFAULTS = {
         'view_mode': 'Continuous Flow',
@@ -1702,11 +1772,8 @@ class SettingsDialog(QDialog):
             title = target_lang_dict.get('msg_title_language_changed', 'Language Changed')
             message = target_lang_dict.get('msg_restart_lang', 'Language changed. Please restart BadWords.')
             
-            from PySide6.QtWidgets import QMessageBox
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle(title)
-            msg_box.setText(message)
-            msg_box.setIcon(QMessageBox.Information)
+            # CLose the settings dialog first
+            self.accept()
             
             try:
                 # Try to use the localized "Ok" or fallback to english "Ok"
@@ -1714,7 +1781,7 @@ class SettingsDialog(QDialog):
             except:
                 ok_text = "OK"
                 
-            btn_ok = msg_box.addButton(ok_text, QMessageBox.AcceptRole)
+            msg_box = CustomMsgBox(self.parent(), title, message, ok_text)
             msg_box.exec()
             
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)
@@ -1805,9 +1872,8 @@ class SettingsDialog(QDialog):
         main_layout.addLayout(btn_box)
 
     def _restore_all_defaults(self):
-        from PySide6.QtWidgets import QMessageBox
-        ans = QMessageBox.question(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"), QMessageBox.Yes | QMessageBox.No)
-        if ans == QMessageBox.Yes:
+        msg_box = CustomMsgBox(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"), self.txt("btn_yes"), self.txt("btn_no"))
+        if msg_box.exec() == QDialog.Accepted:
             for f in self.revert_funcs: 
                 f()
 
@@ -1900,7 +1966,7 @@ class BadWordsGUI(QMainWindow):
         self.setWindowIcon(_app_icon())
         self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
         self.setMinimumSize(config.CFG_WINDOW_W_BASE, 400)
-        apply_dark_title_bar(self)
+        self.engine.os_doc.force_dark_titlebar(int(self.winId()))
 
         # --- Global QSS ---
         self.setStyleSheet(f"""
@@ -1987,13 +2053,6 @@ class BadWordsGUI(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
 
-    def closeEvent(self, event):
-        """Native PySide6 close event override."""
-        if self.closeEvent_callback:
-            self.closeEvent_callback(event)
-        else:
-            event.accept()
-
     # ------------------------------------------------------------------
     # UI Construction
     # ------------------------------------------------------------------
@@ -2025,7 +2084,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
         drag_layout_left.addWidget(self.btn_nav_fillers)
         
-        self.btn_nav_quit = SidebarButton("\U000023FB", self.txt("tool_quit"), "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_quit = SidebarButton("\u2716", self.txt("tool_quit"), "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_quit.clicked.connect(self.close)
         left_layout.addWidget(self.btn_nav_quit)
         
@@ -3720,12 +3779,11 @@ class BadWordsGUI(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_clear_transcript(self):
-        from PySide6.QtWidgets import QMessageBox
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
             return
             
-        ans = QMessageBox.question(self, self.txt("msg_clear_title"), self.txt("msg_clear_desc"), QMessageBox.Yes | QMessageBox.No)
-        if ans == QMessageBox.Yes:
+        msg_box = CustomMsgBox(self, self.txt("msg_clear_title"), self.txt("msg_clear_desc"), self.txt("btn_yes"), self.txt("btn_no"))
+        if msg_box.exec() == QDialog.Accepted:
             for w in self.text_canvas.words_data:
                 w['status'] = None
                 w['manual_status'] = None
@@ -3761,6 +3819,7 @@ class BadWordsGUI(QMainWindow):
         opt_in = self.engine.os_doc.get_telemetry_pref("telemetry_opt_in")
         if opt_in is None:
             popup = TelemetryPopup(self.engine, parent=self)
+            self.engine.os_doc.force_dark_titlebar(int(popup.winId()))
             popup.exec()  # ApplicationModal — blocks until user responds
         elif opt_in is True:
             self.engine.send_telemetry_ping("app_started")
@@ -3777,6 +3836,10 @@ class BadWordsGUI(QMainWindow):
     # ------------------------------------------------------------------
 
     def closeEvent(self, event):
-        if self.closeEvent_callback:
-            self.closeEvent_callback()
-        super().closeEvent(event)
+        msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
+        if msg_box.exec() == QDialog.Accepted:
+            event.accept()
+            if self.closeEvent_callback:
+                self.closeEvent_callback()
+        else:
+            event.ignore()

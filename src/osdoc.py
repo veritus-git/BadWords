@@ -25,6 +25,7 @@ import tempfile
 import uuid
 import json
 import hashlib
+import ctypes
 
 # ==========================================
 # 1. LOGGING & STREAM PROXY
@@ -77,6 +78,7 @@ class OSDoctor:
         Now forces paths to be relative to the installation folder (Self-Contained).
         """
         self.os_type = platform.system()
+        self.is_mac = (self.os_type == "Darwin")
         self.is_win = (self.os_type == "Windows")
         self.is_linux = (self.os_type == "Linux")
         
@@ -276,19 +278,34 @@ class OSDoctor:
     # PATHS & RESOLVE API
     # ==========================
 
-    def get_resolve_api_path(self):
+    def get_resolve_api_path(self) -> str:
         """Returns the standard path for DaVinci Resolve Scripting API modules."""
-        if self.is_win:
-            program_data = os.environ.get("PROGRAMDATA", "C:\\ProgramData")
-            return os.path.join(
-                program_data,
+        paths = []
+        if self.is_mac:
+            paths.append("/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules")
+        elif self.is_win:
+            paths.append(os.path.join(
+                os.environ.get("PROGRAMDATA", "C:\\ProgramData"),
                 "Blackmagic Design", "DaVinci Resolve", "Support",
-                "Developer", "Scripting", "Modules", ""
-            )
+                "Developer", "Scripting", "Modules"
+            ))
         elif self.is_linux:
-            return "/opt/resolve/Developer/Scripting/Modules/"
-        else:
-             return "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules/"
+            paths.append("/opt/resolve/Developer/Scripting/Modules")
+            
+        for p in paths:
+            if os.path.exists(p):
+                return p
+                
+        # Fallback to environment variables if paths don't exist
+        env_paths = [
+            os.environ.get("RESOLVE_SCRIPT_API"),
+            os.environ.get("RESOLVE_SCRIPT_LIB")
+        ]
+        for p in env_paths:
+            if p and os.path.exists(p):
+                return os.path.dirname(p) if os.path.isfile(p) else p
+                
+        return paths[0] if paths else ""
 
     def get_ffmpeg_cmd(self):
         """
@@ -324,16 +341,30 @@ class OSDoctor:
         log_error("[FFMPEG] Critical: FFmpeg not found anywhere.")
         return None
 
-    def get_startup_info(self):
+    def get_subprocess_kwargs(self) -> dict:
         """
-        Returns subprocess configuration for Windows to hide console.
+        Returns cross-platform subprocess kwargs, abstracting Windows startupinfo.
         """
         if self.is_win:
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             si.wShowWindow = subprocess.SW_HIDE
-            return si
-        return None
+            return {"startupinfo": si}
+        return {}
+
+    def force_dark_titlebar(self, window_id: int):
+        """Forces the native Windows title bar to dark mode via DWM API."""
+        if not self.is_win:
+            return
+        try:
+            set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            # Try attribute 20 (Windows 10 20H1 and newer)
+            res = set_window_attribute(window_id, 20, ctypes.byref(ctypes.c_int(2)), ctypes.sizeof(ctypes.c_int))
+            if res != 0:
+                # Try attribute 19 for older Windows 10 versions
+                set_window_attribute(window_id, 19, ctypes.byref(ctypes.c_int(2)), ctypes.sizeof(ctypes.c_int))
+        except Exception:
+            pass
 
     # ==========================
     # FILE MANAGEMENT
@@ -441,7 +472,7 @@ class OSDoctor:
                 stdout=subprocess.DEVNULL, 
                 stderr=subprocess.DEVNULL, 
                 check=True,
-                startupinfo=self.get_startup_info()
+                **self.get_subprocess_kwargs()
             )
             has_hardware = True
         except Exception:

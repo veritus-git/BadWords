@@ -257,7 +257,8 @@ class AudioEngine:
                 capture_output=True, 
                 text=True,
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                **self.os_doc.get_subprocess_kwargs()
             )
             output = result.stdout.strip()
             if not output: return "int8"
@@ -316,14 +317,13 @@ except Exception as e:
 
         python_exec = self._get_python_executable()
         cmd = [python_exec, runner_path]
-        startup_info = self.os_doc.get_startup_info()
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
         
         try:
             process = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, 
-                encoding='utf-8', errors='replace', startupinfo=startup_info, env=env
+                encoding='utf-8', errors='replace', env=env, **self.os_doc.get_subprocess_kwargs()
             )
             while True:
                 line = process.stdout.readline()
@@ -493,7 +493,6 @@ except Exception as e:
 
         python_exec = self._get_python_executable()
         cmd = [python_exec, runner_script_path]
-        startup_info = self.os_doc.get_startup_info()
         
         log_info(f"Running Whisper Runner (Stable-TS). Script: {runner_script_path}")
         
@@ -509,7 +508,7 @@ except Exception as e:
                 bufsize=1,
                 universal_newlines=True,
                 env=env,
-                startupinfo=startup_info
+                **self.os_doc.get_subprocess_kwargs()
             )
             
             segments_count = 0
@@ -570,7 +569,7 @@ except Exception as e:
                "-ar", "48000", "-ac", "1", norm_path]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=True, startupinfo=self.os_doc.get_startup_info())
+                           check=True, **self.os_doc.get_subprocess_kwargs())
             return norm_path
         except:
             return input_path
@@ -584,7 +583,7 @@ except Exception as e:
         cmd = [self.ffmpeg_cmd, "-y", "-i", input_path, "-filter:a", filter_chain, "-vn", slow_path]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=True, startupinfo=self.os_doc.get_startup_info())
+                           check=True, **self.os_doc.get_subprocess_kwargs())
             return slow_path
         except Exception as e:
             log_error(f"Slow Motion Generation Failed: {e}")
@@ -596,7 +595,7 @@ except Exception as e:
         try:
             res = subprocess.run(cmd, stderr=subprocess.PIPE, text=True, 
                                  encoding='utf-8', errors='replace',
-                                 startupinfo=self.os_doc.get_startup_info())
+                                 **self.os_doc.get_subprocess_kwargs())
             output = res.stderr
             starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', output)]
             ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', output)]

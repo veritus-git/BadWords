@@ -20,15 +20,15 @@ import platform
 # ==========================================
 APP_NAME = "BadWords"
 VERSION = "2.0.3"
-POSTHOG_API_KEY = "phc_NRFaTKhPJJE8cBa3o9gXYo2mlktR5qup5tn7PdxuRsr" 
-POSTHOG_HOST = "https://eu.i.posthog.com" 
+POSTHOG_API_KEY = "phc_NRFaTKhPJJE8cBa3o9gXYo2mlktR5qup5tn7PdxuRsr"
+POSTHOG_HOST = "https://eu.i.posthog.com"
 
 # ==========================================
 # WINDOW & GUI SETTINGS
 # ==========================================
 # Base dimensions for 100% DPI (96 PPI)
 CFG_WINDOW_W_BASE = 400
-CFG_WINDOW_H_BASE = 740 
+CFG_WINDOW_H_BASE = 740
 
 def get_system_font_name():
     """
@@ -76,7 +76,7 @@ MENU_FG = "#ffffff"
 GEAR_COLOR = "#a0a0a0"
 
 # Buttons
-BTN_BG = "#23a559"             
+BTN_BG = "#23a559"
 BTN_FG = "#ffffff"
 BTN_ACTIVE = "#1e8f4c"
 
@@ -220,7 +220,7 @@ SUPPORTED_LANGUAGES = {
 # ==========================================
 # TRANSLATIONS (I18N)
 # ==========================================
-# Supported Languages: English (en), Polish (pl), German (de), Spanish (es), 
+# Supported Languages: English (en), Polish (pl), German (de), Spanish (es),
 # French (fr), Italian (it), Portuguese (pt), Ukrainian (uk), Dutch (nl), Russian (ru)
 
 SUPPORTED_LANGS = {
@@ -377,7 +377,16 @@ TRANS = {
         "status_assembly_source": "Detecting optimal source...",
         "status_calc_cuts": "Calculating Cuts...",
         "status_assembly_resolve": "Assembling in Resolve...",
-        "status_assembly_clips": "Assembling clips..."
+        "status_assembly_clips": "Assembling clips...",
+        "msg_quit_title": "Quit BadWords",
+        "msg_quit_desc": "Are you sure you want to quit?",
+        "btn_yes": "Yes",
+        "btn_no": "No",
+        "title_telemetry": "BadWords Analytics",
+        "msg_telemetry": "Hi! 👋\n\nTo help me improve BadWords, do you agree to send a one-time, 100% anonymous ping after installation / update?\n\nOnly the app version and OS type (e.g., Windows) are sent. Audio files, scripts, or personal data are NEVER collected.\n\nGeolocation (country/city) is optional — uncheck the box below to disable it.",
+        "btn_telemetry_yes": "I Agree",
+        "btn_telemetry_no": "No thanks",
+        "chk_telemetry_geo": "Share your general location (country/city)"
 
     },
     'pl': {
@@ -508,7 +517,16 @@ TRANS = {
         "status_assembly_source": "Wykrywanie optymalnego źródła...",
         "status_calc_cuts": "Obliczanie cięć...",
         "status_assembly_resolve": "Montowanie w Resolve...",
-        "status_assembly_clips": "Montowanie klipów..."
+        "status_assembly_clips": "Montowanie klipów...",
+        "msg_quit_title": "Zamykanie BadWords",
+        "msg_quit_desc": "Czy na pewno chcesz wyjść?",
+        "btn_yes": "Tak",
+        "btn_no": "Nie",
+        "title_telemetry": "Statystyki BadWords",
+        "msg_telemetry": "Cześć! 👋\n\nAby pomóc mi w rozwoju BadWords, czy zgadzasz się na wysłanie jednorazowego, w 100% anonimowego pingu po instalacji / aktualizacji?\n\nWysyłane są tylko wersja aplikacji i typ systemu (np. Windows). Żadne pliki audio, scenariusze ani dane osobiste NIGDY nie są zbierane.\n\nGeolokalizacja (państwo/miasto) jest opcjonalna — odznacz pole poniżej, aby ją wyłączyć.",
+        "btn_telemetry_yes": "Zgadzam się",
+        "btn_telemetry_no": "Nie, dzięki",
+        "chk_telemetry_geo": "Udostępnij swoją ogólną lokalizację (państwo/miasto)"
 
 },
     'de': {
@@ -639,7 +657,16 @@ TRANS = {
         "status_assembly_source": "Optimale Quelle wird erkannt...",
         "status_calc_cuts": "Schnitte werden berechnet...",
         "status_assembly_resolve": "Montage in Resolve...",
-        "status_assembly_clips": "Clips werden montiert..."
+        "status_assembly_clips": "Clips werden montiert...",
+        "msg_quit_title": "BadWords beenden",
+        "msg_quit_desc": "Möchten Sie das Programm wirklich beenden?",
+        "btn_yes": "Ja",
+        "btn_no": "Nein",
+        "title_telemetry": "BadWords Statistiken",
+        "msg_telemetry": "Hallo! 👋\n\nUm mir bei der Entwicklung von BadWords zu helfen, stimmen Sie zu, nach der Installation / einem Update einen einmaligen, zu 100 % anonymen Ping zu senden?\n\nEs werden nur die App-Version und der OS-Typ gesendet. Audio-Dateien, Skripte oder persönliche Daten werden NIEMALS gesammelt.\n\nDie Geolokalisierung ist optional — deaktivieren Sie das Kästchen unten, um sie auszuschalten.",
+        "btn_telemetry_yes": "Ich stimme zu",
+        "btn_telemetry_no": "Nein, danke",
+        "chk_telemetry_geo": "Allgemeinen Standort teilen (Land/Stadt)"
 
 },
     'es': {
@@ -770,7 +797,16 @@ TRANS = {
         "status_assembly_source": "Detectando fuente óptima...",
         "status_calc_cuts": "Calculando cortes...",
         "status_assembly_resolve": "Ensamblando en Resolve...",
-        "status_assembly_clips": "Ensamblando clips..."
+        "status_assembly_clips": "Ensamblando clips...",
+        "msg_quit_title": "Salir de BadWords",
+        "msg_quit_desc": "¿Estás seguro de que quieres salir?",
+        "btn_yes": "Sí",
+        "btn_no": "No",
+        "title_telemetry": "Estadísticas de BadWords",
+        "msg_telemetry": "¡Hola! 👋\n\nPara ayudarme a mejorar BadWords, ¿aceptas enviar un ping único y 100 % anónimo después de la instalación / actualización?\n\nSolo se envían la versión de la aplicación y el tipo de SO. NUNCA se recopilan archivos de audio, guiones ni datos personales.\n\nLa geolocalización es opcional; desmarca la casilla de abajo para desactivarla.",
+        "btn_telemetry_yes": "Acepto",
+        "btn_telemetry_no": "No, gracias",
+        "chk_telemetry_geo": "Compartir tu ubicación general (país/ciudad)"
 
     },
     'fr': {
@@ -901,7 +937,16 @@ TRANS = {
         "status_assembly_source": "Détection de la source optimale...",
         "status_calc_cuts": "Calcul des coupes...",
         "status_assembly_resolve": "Assemblage dans Resolve...",
-        "status_assembly_clips": "Assemblage des clips..."
+        "status_assembly_clips": "Assemblage des clips...",
+        "msg_quit_title": "Quitter BadWords",
+        "msg_quit_desc": "Êtes-vous sûr de vouloir quitter ?",
+        "btn_yes": "Oui",
+        "btn_no": "Non",
+        "title_telemetry": "Statistiques BadWords",
+        "msg_telemetry": "Bonjour ! 👋\n\nPour m'aider à améliorer BadWords, acceptez-vous d'envoyer un ping unique et 100 % anonyme après l'installation / la mise à jour ?\n\nSeules la version de l'application et le type d'OS sont envoyés. Aucun fichier audio ou donnée personnelle n'est JAMAIS collecté.\n\nLa géolocalisation est facultative — décochez la case ci-dessous pour la désactiver.",
+        "btn_telemetry_yes": "J'accepte",
+        "btn_telemetry_no": "Non merci",
+        "chk_telemetry_geo": "Partager votre position générale (pays/ville)"
 
     },
     'it': {
@@ -1032,7 +1077,16 @@ TRANS = {
         "status_assembly_source": "Rilevamento sorgente ottimale...",
         "status_calc_cuts": "Calcolo Tagli...",
         "status_assembly_resolve": "Assemblaggio in Resolve...",
-        "status_assembly_clips": "Assemblaggio clip..."
+        "status_assembly_clips": "Assemblaggio clip...",
+        "msg_quit_title": "Esci da BadWords",
+        "msg_quit_desc": "Sei sicuro di voler uscire?",
+        "btn_yes": "Sì",
+        "btn_no": "No",
+        "title_telemetry": "Statistiche BadWords",
+        "msg_telemetry": "Ciao! 👋\n\nPer aiutarmi a migliorare BadWords, accetti di inviare un ping singolo e al 100% anonimo dopo l'installazione / l'aggiornamento?\n\nVengono inviati solo la versione dell'app e il tipo di SO. NESSUN file audio, script o dato personale viene MAI raccolto.\n\nLa geolocalizzazione è facoltativa — deseleziona la casella qui sotto per disabilitarla.",
+        "btn_telemetry_yes": "Accetto",
+        "btn_telemetry_no": "No, grazie",
+        "chk_telemetry_geo": "Condividi la tua posizione generale (paese/città)"
 
     },
     'pt': {
@@ -1163,11 +1217,18 @@ TRANS = {
         "status_assembly_source": "Detectando fonte ideal...",
         "status_calc_cuts": "Calculando Cortes...",
         "status_assembly_resolve": "Montando no Resolve...",
-        "status_assembly_clips": "Montando clipes..."
+        "status_assembly_clips": "Montando clipes...",
+        "msg_quit_title": "Sair do BadWords",
+        "msg_quit_desc": "Tem certeza de que deseja sair?",
+        "btn_yes": "Sim",
+        "btn_no": "Não",
+        "title_telemetry": "Estatísticas do BadWords",
+        "msg_telemetry": "Olá! 👋\n\nPara me ajudar a melhorar o BadWords, você concorda em enviar um ping único e 100% anônimo após a instalação / atualização?\n\nApenas a versão do aplicativo e o SO são enviados. NENHUM arquivo de áudio, script ou dado pessoal é coletado NUNCA.\n\nA geolocalização é opcional — desmarque a caixa abaixo para desativá-la.",
+        "btn_telemetry_yes": "Eu concordo",
+        "btn_telemetry_no": "Não, obrigado",
+        "chk_telemetry_geo": "Compartilhe sua localização geral (país/cidade)"
 
-    }
-
-,
+    },
     'uk': {
         "btn_analyze": "Аналізувати",
         "btn_analyze_compare": "Аналіз (Порівняння)",
@@ -1296,7 +1357,16 @@ TRANS = {
         "status_assembly_source": "Виявлення оптимального джерела...",
         "status_calc_cuts": "Обчислення Зрізів...",
         "status_assembly_resolve": "Монтування в Resolve...",
-        "status_assembly_clips": "Монтування кліпів..."
+        "status_assembly_clips": "Монтування кліпів...",
+        "msg_quit_title": "Вийти з BadWords",
+        "msg_quit_desc": "Ви впевнені, що хочете вийти?",
+        "btn_yes": "Так",
+        "btn_no": "Ні",
+        "title_telemetry": "Статистика BadWords",
+        "msg_telemetry": "Привіт! 👋\n\nЩоб допомогти покращити BadWords, чи погоджуєтесь ви надіслати одноразовий 100% анонімний пінг після встановлення / оновлення?\n\nНадсилаються лише версія програми та тип ОС. Жодні аудіофайли чи особисті дані НІКОЛИ не збираються.\n\nГеолокація є необов’язковою — зніміть прапорець нижче, щоб вимкнути її.",
+        "btn_telemetry_yes": "Я погоджуюсь",
+        "btn_telemetry_no": "Ні, дякую",
+        "chk_telemetry_geo": "Поділитися своїм загальним місцем розташування"
 
     },
     'nl': {
@@ -1427,7 +1497,16 @@ TRANS = {
         "status_assembly_source": "Optimale bron detecteren...",
         "status_calc_cuts": "Snitten Berekenen...",
         "status_assembly_resolve": "Monteren in Resolve...",
-        "status_assembly_clips": "Clips monteren..."
+        "status_assembly_clips": "Clips monteren...",
+        "msg_quit_title": "BadWords afsluiten",
+        "msg_quit_desc": "Weet je zeker dat je wilt afsluiten?",
+        "btn_yes": "Ja",
+        "btn_no": "Nee",
+        "title_telemetry": "BadWords Statistieken",
+        "msg_telemetry": "Hallo! 👋\n\nOm me te helpen BadWords te verbeteren, ga je ermee akkoord om na de installatie / update een eenmalige, 100% anonieme ping te sturen?\n\nAlleen de app-versie en het besturingssysteem worden verzonden. Er worden NOOIT audiobestanden of persoonlijke gegevens verzameld.\n\nGeolocatie is optioneel — vink het onderstaande vakje uit om het uit te schakelen.",
+        "btn_telemetry_yes": "Ik ga akkoord",
+        "btn_telemetry_no": "Nee, bedankt",
+        "chk_telemetry_geo": "Deel je algemene locatie (land/stad)"
 
     },
     'ru': {
@@ -1558,7 +1637,16 @@ TRANS = {
         "status_assembly_source": "Обнаружение оптимального источника...",
         "status_calc_cuts": "Вычисление разрезов...",
         "status_assembly_resolve": "Сборка в Resolve...",
-        "status_assembly_clips": "Сборка клипов..."
+        "status_assembly_clips": "Сборка клипов...",
+        "msg_quit_title": "Выйти из BadWords",
+        "msg_quit_desc": "Вы уверены, что хотите выйти?",
+        "btn_yes": "Да",
+        "btn_no": "Нет",
+        "title_telemetry": "Статистика BadWords",
+        "msg_telemetry": "Привет! 👋\n\nЧтобы помочь улучшить BadWords, вы согласны отправить одноразовый, 100% анонимный пинг после установки / обновления?\n\nОтправляются только версия приложения и тип ОС. Никакие аудиофайлы или личные данные НИКОГДА не собираются.\n\nГеолокация не является обязательной — снимите флажок ниже, чтобы отключить ее.",
+        "btn_telemetry_yes": "Я согласен",
+        "btn_telemetry_no": "Нет, спасибо",
+        "chk_telemetry_geo": "Поделиться своим общим местоположением"
 
     }
 }

@@ -467,6 +467,14 @@ else
     "$VENV_PIP" install faster-whisper stable-ts pypdf $NVIDIA_PACKAGES || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
 fi
 
+echo -e "\n${CYAN}[INSTALL] Checking PySide6...${NC}"
+if "$VENV_DIR/bin/python" -c "import PySide6" 2>/dev/null; then
+    echo -e "${GREEN}[INFO] PySide6 is already installed. Skipping...${NC}"
+else
+    echo -e "${YELLOW}[WARN] PySide6 not found. Downloading this large library may take a while...${NC}"
+    "$VENV_PIP" install PySide6 || { echo -e "${RED}[ERROR] PySide6 Install failed.${NC}"; exit 1; }
+fi
+
 echo -e "${GREEN}[SUCCESS] Dependencies installed in VENV.${NC}"
 
 # ==========================================

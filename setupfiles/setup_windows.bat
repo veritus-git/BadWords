@@ -163,6 +163,22 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
+:: --- PYSIDE6 SMART INSTALL ---
+echo.
+echo [INFO] Checking PySide6...
+"%VENV_DIR%\Scripts\python.exe" -c "import PySide6" >nul 2>&1
+if !errorlevel! equ 0 (
+    echo [INFO] PySide6 is already installed. Skipping...
+) else (
+    echo [WARN] PySide6 not found. Downloading this large library may take a while...
+    "%VENV_PYTHON%" -m pip install PySide6 %PIP_FLAGS%
+    if !errorlevel! neq 0 (
+        echo [ERROR] PySide6 Install failed.
+        pause
+        exit /b 1
+    )
+)
+
 :: ==========================================
 :: 4. FFMPEG & FINALIZE
 :: ==========================================
@@ -222,7 +238,10 @@ echo import traceback>> "!WRAPPER_FILE!"
 :: DEBUG FIX: TRIPLE QUOTES PROTECT AGAINST APOSTROPHE ERRORS IN USERNAMES!
 echo INSTALL_DIR = r"""%INSTALL_DIR%""">> "!WRAPPER_FILE!"
 echo LIBS_DIR = os.path.join(INSTALL_DIR, 'libs')>> "!WRAPPER_FILE!"
+echo VENV_LIBS = os.path.join(INSTALL_DIR, 'venv', 'Lib', 'site-packages')>> "!WRAPPER_FILE!"
 echo MAIN_SCRIPT = os.path.join(INSTALL_DIR, 'main.py')>> "!WRAPPER_FILE!"
+echo if os.path.exists(VENV_LIBS) and VENV_LIBS not in sys.path:>> "!WRAPPER_FILE!"
+echo     sys.path.insert(0, VENV_LIBS)>> "!WRAPPER_FILE!"
 echo if os.path.exists(LIBS_DIR) and LIBS_DIR not in sys.path:>> "!WRAPPER_FILE!"
 echo     sys.path.insert(0, LIBS_DIR)>> "!WRAPPER_FILE!"
 echo if INSTALL_DIR not in sys.path:>> "!WRAPPER_FILE!"
