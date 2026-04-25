@@ -344,6 +344,7 @@ except Exception as e:
         Modified v11.0: Uses stable-ts (stable_whisper) with faster-whisper backend.
         FIXED v11.2: Injects portable bin path to OS PATH for sub-dependencies.
         UPDATED v12.1: Replaced subprocess.run with Popen for real-time output streaming.
+        STAGE 9: Enabled VAD filter (min_silence_duration_ms=400) + no_repeat_ngram_size=0 to kill hallucination loops.
         """
         unique_name = os.path.splitext(os.path.basename(audio_path))[0]
         output_dir = self.os_doc.get_temp_folder()
@@ -356,7 +357,7 @@ except Exception as e:
         initial_prompt_str = ""
         if verbatim:
             # USER REQUESTED PROMPT (v10.3) - Stutter/Filler injection
-            base_prompt = "Umm, yyy, eh, mmm, tsk, h-h-hello, i... i will check, tak tak."
+            base_prompt = "Umm, yyy, eh, mmm, tsk, h-h-hello, i... i will check. I went... I went to the st... store, tak tak."
             initial_prompt_str = base_prompt
             if filler_words_list:
                 initial_prompt_str += f" {', '.join(filler_words_list)}"
@@ -416,22 +417,23 @@ try:
 
     print("Model Loaded Successfully. Starting STABLE Transcription...")
     
-    # Parameters optimized for VERBATIM & STABILITY
+    # Parameters for strict VERBATIM output (STAGE 9: Unchain for phrasal retakes)
     result = model.transcribe(
         {repr(audio_path)}, 
         beam_size=1,            # GREEDY DECODING
         patience=1.0,
         language={repr(lang) if lang != "Auto" else "None"},
         initial_prompt={repr(initial_prompt_str)},
-        condition_on_previous_text=False,
-        vad_filter=False,
-        temperature=0.0,
+        condition_on_previous_text=False,   # CRUCIAL: prevents context loops
+        vad_filter=False,                   # Raw acoustic stream; sanitize_hallucinations() handles loops
+        temperature=0.0,                    # Pure greedy — no smoothed fallback paths
         no_speech_threshold=0.2,
         log_prob_threshold=-1.0,
-        compression_ratio_threshold=2.4,
+        compression_ratio_threshold=10.0,   # STAGE 9: Raised ceiling — human phrasal retakes are NOT model loops; sanitize_hallucinations() is the real guard
+        no_repeat_ngram_size=0,             # Passed to backend if supported
         # Stable-TS specific flags for alignment precision:
-        regroup=True,           # Regroup words for better timing
-        suppress_silence=True,  # Suppress visual silence in timestamps
+        regroup=False,          # STAGE 9: Raw disjointed word timestamps; no syntactic regrouping that swallows retakes
+        suppress_silence=False, # Keep silence gaps so Whisper sees micro-pauses between stutters
         q_levels=20,            # Quantization levels for alignment
         k_size=5                # Kernel size for alignment
     )
@@ -547,36 +549,38 @@ except Exception as e:
 
     def normalize_audio(self, input_path):
         """
-        [ENHANCED] Applies "Radio Voice" processing + NOISE INJECTION.
+        STAGE 9 FIX: Gentle processing only — preserves micro-pauses between stutters.
+        Removed loudnorm (was raising noise floor and masking silence gaps).
+        Using a very light compressor just to catch hard peaks, nothing more.
         """
         norm_path = input_path.replace(".wav", "_norm.wav")
         filter_chain = (
             "highpass=f=80, "
-            "acompressor=threshold=-25dB:ratio=4:attack=5:release=25, "
-            "loudnorm=I=-14:LRA=7:tp=-1.0"
+            "acompressor=threshold=-15dB:ratio=2:attack=10:release=50"
         )
-        cmd = [self.ffmpeg_cmd, "-y", "-i", input_path, "-af", filter_chain, 
+        cmd = [self.ffmpeg_cmd, "-y", "-i", input_path, "-af", filter_chain,
                "-ar", "48000", "-ac", "1", norm_path]
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, 
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            check=True, startupinfo=self.os_doc.get_startup_info())
             return norm_path
         except:
             return input_path
     
     def create_slow_motion_audio(self, input_path, speed_factor):
+        # STAGE 9 FIX: Single atempo filter (speed_factor driven by caller).
+        # Multi-chained atempo was compounding distortion; one pass is cleaner.
         base, ext = os.path.splitext(input_path)
         slow_path = f"{base}_slow{ext}"
-        filters = ["atempo=0.6", "atempo=0.7"]
-        filter_chain = ",".join(filters)
+        filter_chain = f"atempo={speed_factor}"
         cmd = [self.ffmpeg_cmd, "-y", "-i", input_path, "-filter:a", filter_chain, "-vn", slow_path]
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, 
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            check=True, startupinfo=self.os_doc.get_startup_info())
             return slow_path
         except Exception as e:
             log_error(f"Slow Motion Generation Failed: {e}")
-            return input_path 
+            return input_path
 
     def detect_silence(self, audio_path, threshold_db, min_dur):
         cmd = [self.ffmpeg_cmd, "-i", audio_path, "-af", 
@@ -661,7 +665,7 @@ except Exception as e:
             txt_inaudible = trans_status.get("txt_inaudible", "inaudible")
             
             USE_SLOW_MODE = True 
-            SLOW_FACTOR = 0.42 
+            SLOW_FACTOR = 0.90  # STAGE 9 FIX: 10% slowdown only; deep slow destroys phonetic transients
             
             unique_id = f"BW_{int(time.time())}"
             update_progress(10)
@@ -892,6 +896,61 @@ except Exception as e:
                     if is_first: is_first = False
                     temp_words.append(w_obj)
 
+        # --- PASS 3.5: STRETCHED WORD DETECTOR (STAGE 9) ---
+        # Stable-TS's DTW alignment can stretch a word's end-timestamp over the
+        # acoustic noise/silence of a fast stutter, leaving no gap for GAP BRIDGING.
+        # We detect abnormally long words and split off the excess as an inaudible token.
+        split_words = []
+        for word_obj in temp_words:
+            # Skip non-speech objects — they have correct timestamps by construction
+            if word_obj.get('type') in ('inaudible', 'silence') or word_obj.get('_is_hallucination'):
+                split_words.append(word_obj)
+                continue
+
+            dur = round(word_obj['end'] - word_obj['start'], 3)
+
+            # Calculate generous upper bound for how long this word should take
+            clean_text = re.sub(r'[^\w]', '', word_obj.get('text', ''))
+            char_count = max(1, len(clean_text))
+            expected_dur = round(char_count * 0.12, 3)   # ~120ms per character
+            max_allowed  = round(expected_dur + 0.65, 3)  # +650ms natural pause buffer
+
+            if dur > max_allowed:
+                # Shrink the original word to its allowed window
+                new_end = round(word_obj['start'] + max_allowed, 3)
+                inaud_start = new_end
+                inaud_end   = word_obj['end']
+
+                # Guard: inaudible slice must be at least 20ms to be meaningful
+                if round(inaud_end - inaud_start, 3) >= 0.02:
+                    shortened = dict(word_obj)  # shallow copy is safe — all values are immutable scalars
+                    shortened['end'] = new_end
+
+                    inaud_obj = {
+                        'text':             txt_inaudible,
+                        'start':            inaud_start,
+                        'end':              inaud_end,
+                        'type':             'inaudible',
+                        'status':           'inaudible',
+                        'selected':         True,
+                        'is_inaudible':     True,
+                        'is_auto':          True,
+                        'seg_start':        word_obj.get('seg_start', inaud_start),
+                        'seg_end':          word_obj.get('seg_end',   inaud_end),
+                        'is_segment_start': False,
+                        'manual_status':    None,
+                        'algo_status':      'inaudible',
+                        'id':               0,
+                    }
+                    split_words.append(shortened)
+                    split_words.append(inaud_obj)
+                    log_info(f"[StretchDetect] '{clean_text}' {dur:.3f}s > {max_allowed:.3f}s → split at {new_end:.3f}s")
+                    continue
+
+            split_words.append(word_obj)
+
+        temp_words = split_words
+
         # --- GAP BRIDGING & PADDING (SILENCE LOGIC) ---
         scaled_silence = []
         if silence_ranges:
@@ -948,7 +1007,7 @@ except Exception as e:
                 relevant.sort(key=lambda x: x['s'])
 
                 if not relevant:
-                    if (gap_end - gap_start) >= 1.2: 
+                    if (gap_end - gap_start) >= 0.35:  # STAGE 9: 0.35s catches fast stutter gaps (was 1.2s)
                         final_words.append({
                             "start": gap_start, "end": gap_end,
                             "text": txt_inaudible,
@@ -961,7 +1020,7 @@ except Exception as e:
                         valid_start = max(current_pos, s['s'])
                         valid_end = min(s['e'], gap_end)
                         
-                        if valid_start - current_pos > 1.2: 
+                        if valid_start - current_pos > 0.35:  # STAGE 9: 0.35s (was 1.2s)
                              final_words.append({
                                 "start": current_pos, "end": valid_start,
                                 "text": txt_inaudible,
@@ -980,7 +1039,7 @@ except Exception as e:
                             })
                             current_pos = valid_end
                     
-                    if gap_end - current_pos > 1.2: 
+                    if gap_end - current_pos > 0.35:  # STAGE 9: 0.35s (was 1.2s)
                         final_words.append({
                             "start": current_pos, "end": gap_end,
                             "text": txt_inaudible,

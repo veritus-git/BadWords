@@ -28,6 +28,8 @@ Features:
 - Document readers (PDF/DOCX)
 - [NEW] GUI Helpers (Logic extracted from presentation layer)
 - [NEW] HALLUCINATION SHIELD: Algorithms explicitly ignore _is_hallucination tags to preserve them.
+- [STAGE 9] HALLUCINATION SANITIZER: sanitize_hallucinations() strips model repetition loops before alignment.
+- [STAGE 9] RETAKE SENSITIVITY: Short-word (< 4 chars) retake anchors use lowered fuzzy threshold (0.40).
 """
 
 import re
@@ -35,6 +37,7 @@ import difflib
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from osdoc import log_info
 
 # ==========================================
 # CONSTANTS & CONFIG
@@ -46,6 +49,61 @@ STOP_WORDS = {"a", "an", "the", "in", "on", "at", "to", "of", "i", "you", "he", 
 THRESH_SHORT = 0.50  # < 4 chars
 THRESH_MID   = 0.65  # 4-7 chars
 THRESH_LONG  = 0.75  # > 7 chars
+
+# ==========================================
+# 0. HALLUCINATION SANITIZER (STAGE 9)
+# ==========================================
+
+def sanitize_hallucinations(transcript_words):
+    """
+    STAGE 9: Removes technical hallucination loops from raw Whisper output.
+    A hallucination run is defined as: the same word repeating > 3 times
+    consecutively AND each occurrence lasting < 0.2 seconds (suspiciously fast).
+    Action: keep the first 2 instances, drop the rest, log a warning.
+    """
+    if not transcript_words:
+        return transcript_words
+
+    cleaned = []
+    i = 0
+    total_dropped = 0
+
+    while i < len(transcript_words):
+        w = transcript_words[i]
+        raw_text = re.sub(r'[^\w]', '', w.get('text', '')).lower()
+
+        # Count identical consecutive words
+        run_count = 1
+        while (i + run_count < len(transcript_words)):
+            cand_text = re.sub(r'[^\w]', '', transcript_words[i + run_count].get('text', '')).lower()
+            if cand_text == raw_text:
+                run_count += 1
+            else:
+                break
+
+        if run_count > 3:
+            # Hallucination criterion: all words in the run are suspiciously short (< 0.2 s)
+            all_short = all(
+                (transcript_words[i + k].get('end', 0) - transcript_words[i + k].get('start', 0)) < 0.2
+                for k in range(run_count)
+            )
+            if all_short:
+                # Keep the first 2 instances, drop the rest
+                cleaned.extend(transcript_words[i:i + 2])
+                dropped = run_count - 2
+                total_dropped += dropped
+                i += run_count
+                continue
+
+        # Normal path: keep the word and advance
+        cleaned.append(w)
+        i += 1
+
+    if total_dropped > 0:
+        log_info(f"Sanitizer removed {total_dropped} hallucinated words.")
+
+    return cleaned
+
 
 # ==========================================
 # 1. FILE HANDLING (Helpers)
@@ -455,8 +513,17 @@ class CompareEngineV5:
                 
                 # Weryfikacja kotwicy (Anchor Check)
                 is_anchor_candidate = self.super_compare(s_candidate, t_word)
-                if not is_anchor_candidate and len(s_candidate) > 3:
-                     is_anchor_candidate = check_fuzzy_match(s_candidate, t_word)
+                if not is_anchor_candidate:
+                    c_cand = super_clean(s_candidate)
+                    c_tword = super_clean(t_word)
+                    if len(c_cand) >= 4:
+                        # Normal words: use standard fuzzy matching
+                        is_anchor_candidate = check_fuzzy_match(s_candidate, t_word)
+                    else:
+                        # STAGE 9: Short words (< 4 chars) get a lower threshold (0.40)
+                        # so real human stutters ("hi... hi world") are caught as 'repeat'
+                        sim = calculate_similarity(c_cand, c_tword)
+                        is_anchor_candidate = (sim >= 0.40)
                 
                 if is_anchor_candidate:
                     confirmed = False
@@ -642,6 +709,7 @@ def compare_script_to_transcript(script_text, words_data):
     """
     Wrapper dla silnika v5.0.
     Includes Debug Interceptor for "$ R G B" code.
+    STAGE 9: Applies sanitize_hallucinations() before alignment to strip model loops.
     """
     
     # --- DEBUG INTERCEPTOR ---
@@ -649,6 +717,9 @@ def compare_script_to_transcript(script_text, words_data):
     if clean_code == "$RGB":
         return apply_debug_rgb_pattern(words_data)
     # -------------------------
+
+    # STAGE 9: Strip hallucination loops from raw transcript before analysis
+    words_data = sanitize_hallucinations(words_data)
 
     engine = CompareEngineV5(script_text, words_data)
     # PATCH v6.4: ANTI-FREEZE

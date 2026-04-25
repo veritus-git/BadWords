@@ -348,20 +348,36 @@ class TranscriptionCanvas(QWidget):
         self.update()
 
     def _get_visible_words(self):
-        """Returns a filtered list of only the words that should physically render."""
+        """Returns a filtered list of only the words that should physically render.
+        STAGE 9: Consecutive inaudible tokens are deduplicated in the view layer —
+        only the first (...) of a run is shown; data remains intact in memory.
+        """
         if not self.words_data: return []
         
         vis = []
+        previous_was_inaudible = False
+
         for w in self.words_data:
-            if w.get('type') == 'silence': 
+            if w.get('type') == 'silence':
                 continue
                 
             is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
-            if is_inaudible and hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
-                continue
-                
+
+            if is_inaudible:
+                # Hide if the user toggled inaudible off
+                if hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
+                    previous_was_inaudible = True
+                    continue
+                # STAGE 9: Skip consecutive (...) clutter — show only the first of a run
+                if previous_was_inaudible:
+                    continue
+                previous_was_inaudible = True
+            else:
+                previous_was_inaudible = False
+
             vis.append(w)
         return vis
+
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
