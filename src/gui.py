@@ -726,6 +726,65 @@ class LiquidProgressBar(QWidget):
             p.drawRoundedRect(fill_rect, 4, 4)
 
 
+class UndoManager:
+    def __init__(self, main_window, canvas):
+        self.main_window = main_window
+        self.canvas = canvas
+        self.undo_stack = []
+        self.redo_stack = []
+        self.max_size = 50
+
+    def push(self, action):
+        if not action or not action.get('changes'):
+            return
+        self.undo_stack.append(action)
+        if len(self.undo_stack) > self.max_size:
+            self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def undo(self):
+        if not self.undo_stack: return
+        action = self.undo_stack.pop()
+        redo_action = self._apply_action(action)
+        self.redo_stack.append(redo_action)
+        self.canvas.update()
+
+    def redo(self):
+        if not self.redo_stack: return
+        action = self.redo_stack.pop()
+        undo_action = self._apply_action(action)
+        self.undo_stack.append(undo_action)
+        self.canvas.update()
+
+    def _apply_action(self, action):
+        reverse_changes = {}
+        id_map = {wo['id']: wo for wo in self.canvas.words_data}
+        layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
+
+        for wid, state in action['changes'].items():
+            word_obj = id_map.get(wid)
+            if not word_obj: continue
+
+            # Save current state for reverse action
+            reverse_changes[wid] = {
+                'status': word_obj.get('status'),
+                'manual_status': word_obj.get('manual_status'),
+                'is_auto': word_obj.get('is_auto'),
+                'selected': word_obj.get('selected')
+            }
+
+            # Apply restored state
+            word_obj['status'] = state.get('status')
+            word_obj['manual_status'] = state.get('manual_status')
+            word_obj['is_auto'] = state.get('is_auto')
+            word_obj['selected'] = state.get('selected')
+            word_obj['overlay_suppressed'] = True
+
+            if layer_engine:
+                layer_engine(word_obj)
+
+        return {"type": "paint", "changes": reverse_changes}
+
 class TranscriptionCanvas(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
@@ -1085,6 +1144,27 @@ class TranscriptionCanvas(QWidget):
                     if status == 'eraser': status = None
                     # rb_eraser → status stays None → propagate_status_change clears
 
+                    # UNDO SUPPORT: Save old state before algorythms modifies words_data
+                    if getattr(self, '_current_undo_action', None) is not None:
+                        ids_to_save = [w['id']]
+                        if w.get('is_inaudible'):
+                            start = w['id']
+                            while start > 0 and (self.words_data[start-1].get('is_inaudible') or self.words_data[start-1].get('type') == 'silence'): start -= 1
+                            end = w['id']
+                            while end < len(self.words_data)-1 and (self.words_data[end+1].get('is_inaudible') or self.words_data[end+1].get('type') == 'silence'): end += 1
+                            ids_to_save = range(start, end + 1)
+                        
+                        changes = self._current_undo_action['changes']
+                        for wid in ids_to_save:
+                            if wid not in changes: # Save only the first state observed during this drag session
+                                old_w = self.words_data[wid]
+                                changes[wid] = {
+                                    'status': old_w.get('status'),
+                                    'manual_status': old_w.get('manual_status'),
+                                    'is_auto': old_w.get('is_auto'),
+                                    'selected': old_w.get('selected')
+                                }
+
                     import algorythms
                     updates = algorythms.propagate_status_change(self.words_data, w['id'], status)
 
@@ -1112,11 +1192,20 @@ class TranscriptionCanvas(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._last_dragged_id = -1
+            self._current_undo_action = {"type": "paint", "changes": {}}
             self._handle_mouse(event.pos())
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
             self._handle_mouse(event.pos())
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            action = getattr(self, '_current_undo_action', None)
+            if action and action.get('changes'):
+                if hasattr(self.main_window, 'undo_manager'):
+                    self.main_window.undo_manager.push(action)
+            self._current_undo_action = None
 
 # ==========================================
 # CSD — CLIENT-SIDE DECORATION CLASSES
@@ -4559,6 +4648,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         self.search_overlay = SearchOverlayWidget(self.scroll_area, self)
 
+        self.undo_manager = UndoManager(self, self.text_canvas)
+        self._setup_hardcoded_shortcuts()
+
         self._active_shortcuts = []  # track dynamic QShortcuts for cleanup
         self._apply_dynamic_shortcuts()
 
@@ -6406,6 +6498,28 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.rb_mark_typo      = rb_green
         self.rb_mark_inaudible = rb_eraser  # closest available; no dedicated inaudible radio
         rb_red.setChecked(True)
+
+    def _setup_hardcoded_shortcuts(self):
+        from PySide6.QtGui import QShortcut, QKeySequence
+        
+        # Export
+        self.sc_export = QShortcut(QKeySequence.Save, self, context=Qt.ApplicationShortcut)
+        self.sc_export.activated.connect(self._on_export_project)
+        
+        # Undo
+        self.sc_undo = QShortcut(QKeySequence.Undo, self, context=Qt.ApplicationShortcut)
+        self.sc_undo.activated.connect(self.undo_manager.undo)
+        
+        # Redo (OS Default)
+        self.sc_redo = QShortcut(QKeySequence.Redo, self, context=Qt.ApplicationShortcut)
+        self.sc_redo.activated.connect(self.undo_manager.redo)
+        
+        # Redo Explicit Overrides (ensures Ctrl+Y natively works on Linux even if OS wants Ctrl+Shift+Z)
+        self.sc_redo_y = QShortcut(QKeySequence("Ctrl+Y"), self, context=Qt.ApplicationShortcut)
+        self.sc_redo_y.activated.connect(self.undo_manager.redo)
+        
+        self.sc_redo_shift_z = QShortcut(QKeySequence("Ctrl+Shift+Z"), self, context=Qt.ApplicationShortcut)
+        self.sc_redo_shift_z.activated.connect(self.undo_manager.redo)
 
     def _apply_dynamic_shortcuts(self):
         """
