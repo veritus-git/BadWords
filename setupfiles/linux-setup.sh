@@ -579,11 +579,11 @@ fi
 # ==========================================
 # 12. DAVINCI RESOLVE CONFIGURATION
 # ==========================================
+export WRAPPER_TARGET_DIR="$RESOLVE_SCRIPT_DIR"
 echo -e "\n${YELLOW}[INFO] Configuring DaVinci Resolve integration...${NC}"
 if [ ! -d "$RESOLVE_SCRIPT_DIR" ]; then
     mkdir -p "$RESOLVE_SCRIPT_DIR"
 fi
-export WRAPPER_TARGET_DIR="$RESOLVE_SCRIPT_DIR"
 
 if [ -f "$RESOLVE_SCRIPT_DIR/BadWords (Linux).py" ]; then
     rm "$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
@@ -593,32 +593,61 @@ fi
 # ==========================================
 # 13. WRAPPER GENERATION
 # ==========================================
+# NOTE: We use a quoted heredoc delimiter ('PYEOF') so bash does NOT perform
+# variable/brace expansion inside the Python script body. Path variables that
+# the wrapper needs are pre-computed as bash variables and substituted by bash
+# before writing the file, which is why we reference them *outside* any quoted
+# block (see the assignments below).
 echo -e "${YELLOW}[INFO] Generating wrapper script...${NC}"
 
-python3 -c "
-import os
+WRAPPER_PATH="$RESOLVE_SCRIPT_DIR/BadWords.py"
+BW_LIBS_DIR="$INSTALL_DIR_BASH/libs"
+BW_QT_DIR="$INSTALL_DIR_BASH/libs/PySide6/Qt/lib"
+BW_INSTALL_DIR="$INSTALL_DIR_BASH"
+BW_MAIN_SCRIPT="$INSTALL_DIR_BASH/main.py"
+
+# Single-quoted PYEOF = no bash expansion inside the body.
+# We use sed to inject the pre-computed bash path variables into the script.
+sed \
+    -e "s|__BW_QT_DIR__|${BW_QT_DIR}|g" \
+    -e "s|__BW_LIBS_DIR__|${BW_LIBS_DIR}|g" \
+    -e "s|__BW_INSTALL_DIR__|${BW_INSTALL_DIR}|g" \
+    -e "s|__BW_MAIN_SCRIPT__|${BW_MAIN_SCRIPT}|g" \
+    > "$WRAPPER_PATH" <<'PYEOF'
 import sys
-import stat
-
-APP_NAME = \"$APP_NAME\"
-WRAPPER_NAME = \"BadWords.py\"
-
-INSTALL_DIR = r\"$INSTALL_DIR_BASH\"
-LIBS_DIR = os.path.join(INSTALL_DIR, \"libs\")
-
-RESOLVE_DIR = os.environ.get('WRAPPER_TARGET_DIR')
-if not RESOLVE_DIR:
-    RESOLVE_DIR = os.getcwd()
-
-TARGET_FILE = os.path.join(RESOLVE_DIR, WRAPPER_NAME)
-
-content = f\"\"\"import sys
 import os
 import traceback
 
-INSTALL_DIR = r'{INSTALL_DIR}'
-LIBS_DIR = r'{LIBS_DIR}'
-MAIN_SCRIPT = os.path.join(INSTALL_DIR, 'main.py')
+# ---------------------------------------------------------------------------
+# Linux Qt isolation fix (env-restart pattern)
+# ---------------------------------------------------------------------------
+# DaVinci Resolve's embedded Python runs under the system interpreter.  The
+# dynamic linker resolves Qt6 .so files from system paths (/usr/lib64, etc.)
+# BEFORE our bundled PySide6 Qt6 lib directory appears on LD_LIBRARY_PATH.
+# This causes a fatal symbol-version mismatch when the bundled libQt6Core
+# (e.g. Qt 6.10) no longer provides the private-API symbol that an older
+# system libQt6DBus.so.6 (e.g. Qt 6.7) was linked against.
+#
+# Fix: prepend our Qt lib path to LD_LIBRARY_PATH and re-exec this process
+# via os.execv() so the dynamic linker honours the variable from process
+# start, i.e. before it loads _any_ Qt shared library.
+# The _BW_ENV_READY sentinel prevents infinite re-exec loops.
+# ---------------------------------------------------------------------------
+if sys.platform.startswith('linux') and '_BW_ENV_READY' not in os.environ:
+    _qt_lib_dir = r'__BW_QT_DIR__'
+    if os.path.isdir(_qt_lib_dir):
+        _existing = os.environ.get('LD_LIBRARY_PATH', '')
+        os.environ['LD_LIBRARY_PATH'] = (_qt_lib_dir + ':' + _existing) if _existing else _qt_lib_dir
+        os.environ['_BW_ENV_READY'] = '1'
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as _e:
+            # execv failed; log and fall through – the import might still work.
+            print(f'[BadWords] env-restart failed ({_e}), continuing without isolation.')
+
+INSTALL_DIR = r'__BW_INSTALL_DIR__'
+LIBS_DIR    = r'__BW_LIBS_DIR__'
+MAIN_SCRIPT = r'__BW_MAIN_SCRIPT__'
 
 if os.path.exists(LIBS_DIR):
     if LIBS_DIR in sys.path:
@@ -636,24 +665,14 @@ if os.path.exists(MAIN_SCRIPT):
         global_vars['__file__'] = MAIN_SCRIPT
         exec(code, global_vars)
     except Exception as e:
-        print(f'Error executing BadWords: {{e}}')
+        print(f'Error executing BadWords: {e}')
         traceback.print_exc()
 else:
-    print(f'CRITICAL: Script not found at {{MAIN_SCRIPT}}')
-\"\"\"
+    print(f'CRITICAL: Script not found at {MAIN_SCRIPT}')
+PYEOF
 
-try:
-    with open(TARGET_FILE, 'w', encoding='utf-8') as f:
-        f.write(content)
-    
-    st = os.stat(TARGET_FILE)
-    os.chmod(TARGET_FILE, st.st_mode | stat.S_IEXEC)
-    
-    print(f\"[PYTHON] Wrapper created: {TARGET_FILE}\")
-except Exception as e:
-    print(f\"[ERROR] Wrapper creation failed: {e}\")
-    sys.exit(1)
-"
+chmod +x "$WRAPPER_PATH"
+echo -e "${GREEN}[OK] Wrapper created: $WRAPPER_PATH${NC}"
 
 # 14. LOG PREPARATION
 echo -e "\n${YELLOW}[INFO] Initializing Log File...${NC}"
