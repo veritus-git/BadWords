@@ -379,18 +379,33 @@ class OSDoctor:
 
     def has_nvidia_support(self):
         """
-        Checks if NVIDIA libraries (cuBLAS) are installed in the local venv.
-        Used by GUI to determine if 'GPU' mode should be enabled.
+        Checks if physical NVIDIA hardware is present AND libraries are installed.
+        Used by GUI and Engine to determine if 'GPU' mode is safe.
         """
+        # 1. Weryfikacja sprzętowa (Cross-platform z ukryciem konsoli na Win)
+        has_hardware = False
+        try:
+            subprocess.run(
+                ['nvidia-smi'], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL, 
+                check=True,
+                startupinfo=self.get_startup_info()
+            )
+            has_hardware = True
+        except Exception:
+            has_hardware = False
+
+        if not has_hardware:
+            return False
+
         if self.is_win:
-            return True # Assume windows usually has drivers, hard to check portable
+            return True # Na Windowsie polegamy na sterownikach systemowych, jeśli karta istnieje
             
-        # Check inside 'libs' (symlink to venv site-packages)
+        # 2. Weryfikacja bibliotek (Linux)
         libs_path = os.path.join(self.install_dir, "libs")
-        nvidia_path = os.path.join(libs_path, "nvidia")
-        cublas_path = os.path.join(nvidia_path, "cublas")
+        cublas_path = os.path.join(libs_path, "nvidia", "cublas")
         
-        # If the 'nvidia/cublas' folder exists, the installer downloaded the packages.
         return os.path.exists(cublas_path)
 
     def needs_manual_model_install(self):
