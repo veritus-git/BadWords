@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
     QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
     QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox
+    QTabWidget, QSpinBox, QButtonGroup
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
@@ -1434,6 +1434,9 @@ class CustomDropdown(QPushButton):
         self.valueChanged.emit(item.text())
         popup.close()
 
+    def currentText(self):
+        return self.text()
+
 class MultiSelectDropdown(QPushButton):
     valueChanged = Signal(list)
     def __init__(self, options_list, parent=None):
@@ -1631,6 +1634,9 @@ class SearchableDropdown(QPushButton):
         self.setText(item.text())
         self.valueChanged.emit(item.text())
         popup.close()
+
+    def currentText(self):
+        return self.text()
 
 
 class CustomMsgBox(QDialog):
@@ -1967,7 +1973,7 @@ class SettingsDialog(QDialog):
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setObjectName("btn_ghost_sm")
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
-            btn_rev.clicked.connect(lambda checked=False, d=default_val, s=setter_func: s(d))
+            btn_rev.clicked.connect(lambda checked, d=default_val, s=setter_func: s(d))
             row.addWidget(btn_rev)
             lbl = QLabel(label_text)
             lbl.setWordWrap(True)
@@ -2047,13 +2053,47 @@ class SettingsDialog(QDialog):
         _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang,
                  'English', self.dropdown_lang.setText)
 
-        # Theme
-        self.combo_theme = QComboBox()
-        self.combo_theme.addItems([self.txt("opt_dark"), self.txt("opt_light")])
-        current_theme = prefs.get('theme', 'dark')
-        self.combo_theme.setCurrentIndex(0 if current_theme == 'dark' else 1)
-        _add_row(form_gen, self.txt("lbl_theme"), self.combo_theme,
-                 0, self.combo_theme.setCurrentIndex)
+        # App Icon (Visual Selector)
+        icon_row = QHBoxLayout()
+        icon_row.setSpacing(10)
+        self.icon_group = QButtonGroup(self)
+        self.icon_group.setExclusive(True)
+        
+        icon_names = ["default", "monochrome", "whiteb", "white"]
+        saved_icon = prefs.get('app_icon', 'default')
+        
+        from PySide6.QtGui import QIcon
+        from PySide6.QtCore import QSize
+        import os
+        
+        for i, name in enumerate(icon_names):
+            btn = QPushButton()
+            ext = ".ico" if self.engine.os_doc.is_win else ".png"
+            icon_path = os.path.join(self.engine.os_doc.install_dir, "assets", f"icon_{name}{ext}")
+            
+            if os.path.exists(icon_path):
+                btn.setIcon(QIcon(icon_path))
+                btn.setIconSize(QSize(48, 48))
+            btn.setCheckable(True)
+            if name == saved_icon:
+                btn.setChecked(True)
+                
+            btn.setProperty("icon_name", name)
+            
+            btn.setStyleSheet("""
+                QPushButton { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px; }
+                QPushButton:checked { background: #262626; border: 1px solid #404040; }
+                QPushButton:hover { background: #333333; }
+            """)
+            self.icon_group.addButton(btn, i)
+            icon_row.addWidget(btn)
+            
+        icon_row.addStretch()
+        
+        icon_container = QWidget()
+        icon_container.setLayout(icon_row)
+        icon_container.layout().setContentsMargins(0, 0, 0, 0)
+        _add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
 
         l_gen.addLayout(form_gen)
 
@@ -2183,18 +2223,17 @@ class SettingsDialog(QDialog):
         form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Display Mode (moved from General)
-        self.combo_view = QComboBox()
-        self.combo_view.addItems([self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")])
+        view_items = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+        self.combo_view = CustomDropdown(view_items)
         is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
-        self.combo_view.setCurrentIndex(1 if is_seg else 0)
+        self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
         _add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
-                 1, self.combo_view.setCurrentIndex)
+                 self.txt("opt_segmented_blocks"), self.combo_view.setText)
 
         # Font family, size, line height
         from PySide6.QtGui import QFontDatabase
-        self.combo_font = QComboBox()
-        self.combo_font.addItems(QFontDatabase.families())
-        self.combo_font.setCurrentText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
+        self.combo_font = CustomDropdown(QFontDatabase.families())
+        self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
 
         self.spin_fsize = QSpinBox()
         self.spin_fsize.setRange(8, 48)
@@ -2205,7 +2244,7 @@ class SettingsDialog(QDialog):
         self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
 
         _add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
-                 self.DEFAULTS['editor_font_family'], self.combo_font.setCurrentText)
+                 self.DEFAULTS['editor_font_family'], self.combo_font.setText)
         _add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
                  self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
         _add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
@@ -2258,10 +2297,10 @@ class SettingsDialog(QDialog):
             self.spin_chunk_max.setEnabled(enabled)
             self.spin_chunk_look.setEnabled(enabled)
             self.spin_chunk_min.setEnabled(enabled)
-        self.combo_view.currentIndexChanged.connect(_update_chunk_state)
-        _update_chunk_state(self.combo_view.currentIndex())
+        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
+        _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
 
-        self.combo_font.currentTextChanged.connect(self._update_preview)
+        self.combo_font.valueChanged.connect(self._update_preview)
         self.spin_fsize.valueChanged.connect(self._update_preview)
         self.spin_lheight.valueChanged.connect(self._update_preview)
         self._update_preview()
@@ -2307,13 +2346,7 @@ class SettingsDialog(QDialog):
             self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
             _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
 
-            # App Icon
-            _icon_items = ["default", "dark", "light", "color"]
-            self.dropdown_icon = CustomDropdown(_icon_items)
-            self.dropdown_icon.setFixedHeight(30)
-            saved_icon = prefs.get('app_icon', 'default')
-            self.dropdown_icon.setText(saved_icon if saved_icon in _icon_items else 'default')
-            _add_row(form_iface, self.txt("lbl_app_icon"), self.dropdown_icon, 'default', self.dropdown_icon.setText)
+
 
             l_iface.addLayout(form_iface)
             l_iface.addStretch()
@@ -2619,9 +2652,8 @@ class SettingsDialog(QDialog):
         name_edit.setPlaceholderText("e.g. Retake")
         lay.addRow(QLabel(self.txt("lbl_marker_name")), name_edit)
 
-        color_combo = QComboBox()
         _reserved = {"Red", "Yellow", "Cyan", "Blue"}
-        color_combo.addItems([c for c in config.RESOLVE_COLORS if c not in _reserved])
+        color_combo = CustomDropdown([c for c in config.RESOLVE_COLORS if c not in _reserved])
         lay.addRow(QLabel(self.txt("lbl_marker_color")), color_combo)
 
         btn_row = QHBoxLayout()
@@ -2717,62 +2749,68 @@ class SettingsDialog(QDialog):
 
     def _apply_settings(self):
         old_prefs = self.engine.load_preferences() or {}
+        is_basic = old_prefs.get('settings_view_mode', 'basic') == 'basic'
 
-        # Gather current UI state
-        theme_val    = 'dark' if self.combo_theme.currentIndex() == 0 else 'light'
-        view_val     = 'segmented' if self.combo_view.currentIndex() == 1 else 'continuous'
+        # Gather current UI state (Global/Basic widgets)
         hidden_items = sorted(self.dropdown_hidden.selected_items)
-        device_val   = self.dropdown_device.text().lower()
-        compute_val  = self.dropdown_compute.text()
+        checked_btn = self.icon_group.checkedButton()
+        icon_val = checked_btn.property("icon_name") if checked_btn else "default"
 
         new_prefs = {
-            'theme':              theme_val,
-            'view_mode':          view_val,
             'offset':             self.spin_offset.value(),
             'pad':                self.spin_pad.value(),
             'snap_max':           self.spin_snap.value(),
-            'editor_font_family': self.combo_font.currentText(),
-            'editor_font_size':   self.spin_fsize.value(),
-            'editor_line_height': self.spin_lheight.value(),
-            'chunk_max_words':    self.spin_chunk_max.value(),
-            'chunk_lookahead':    self.spin_chunk_look.value(),
-            'chunk_min_chars':    self.spin_chunk_min.value(),
-            'device':             device_val,
-            'ai_compute_type':    compute_val,
-            'compute_type':       compute_val,
-            'ai_initial_prompt':  self.textedit_prompt.toPlainText(),
             'always_on_top':      self.chk_ontop.isChecked(),
             'hidden_panels':      hidden_items,
-            # Algorithms
-            'algo_fuzzy_threshold':  self.spin_fuzzy.value(),
-            'algo_retake_lookahead': self.spin_lookahead.value(),
-            'algo_distance_penalty': self.spin_penalty.value(),
-            'algo_anchor_depth':     self.spin_anchor.value(),
+            'app_icon':           icon_val,
             # Shortcuts
             'shortcuts': {k: v.keySequence().toString() for k, v in self.shortcut_inputs.items()},
             # Telemetry (routes to user.json via osdoc save_all_prefs)
             'telemetry_opt_in': self.chk_telemetry_opt_in.isChecked(),
             'telemetry_geo':    self.chk_telemetry_geo.isChecked(),
-            # Custom markers
-            'custom_markers':   self.current_custom_markers,
-            # Interface appearance
-            'accent_color':     self.dropdown_accent.text(),
-            'app_icon':         self.dropdown_icon.text(),
-            # Advanced Whisper params
-            'ai_vad_filter':            self.chk_vad_filter.isChecked(),
-            'ai_beam_size':             self.spin_beam_size.value(),
-            'ai_temperature':           self.spin_temperature.value(),
-            'ai_condition_on_prev':     self.chk_condition_prev.isChecked(),
-            'ai_logprob_threshold':     self.spin_logprob.value(),
-            'ai_no_speech_threshold':   self.spin_no_speech.value(),
-            'ai_patience':              self.spin_patience.value(),
-            'ai_compression_ratio_threshold': self.spin_compression.value(),
-            'ai_no_repeat_ngram_size':  self.spin_no_repeat.value(),
-            'ai_regroup':               self.chk_regroup.isChecked(),
-            'ai_suppress_silence':      self.chk_suppress_silence.isChecked(),
-            'ai_q_levels':              self.spin_q_levels.value(),
-            'ai_k_size':                self.spin_k_size.value(),
         }
+        
+        if not is_basic:
+            view_val     = 'segmented' if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 'continuous'
+            device_val   = self.dropdown_device.currentText().lower()
+            compute_val  = self.dropdown_compute.currentText()
+            
+            new_prefs.update({
+                'view_mode':          view_val,
+                'editor_font_family': self.combo_font.currentText(),
+                'editor_font_size':   self.spin_fsize.value(),
+                'editor_line_height': self.spin_lheight.value(),
+                'chunk_max_words':    self.spin_chunk_max.value(),
+                'chunk_lookahead':    self.spin_chunk_look.value(),
+                'chunk_min_chars':    self.spin_chunk_min.value(),
+                'device':             device_val,
+                'ai_compute_type':    compute_val,
+                'compute_type':       compute_val,
+                'ai_initial_prompt':  self.textedit_prompt.toPlainText(),
+                # Algorithms
+                'algo_fuzzy_threshold':  self.spin_fuzzy.value(),
+                'algo_retake_lookahead': self.spin_lookahead.value(),
+                'algo_distance_penalty': self.spin_penalty.value(),
+                'algo_anchor_depth':     self.spin_anchor.value(),
+                # Custom markers
+                'custom_markers':   self.current_custom_markers,
+                # Interface appearance
+                'accent_color':     self.dropdown_accent.currentText(),
+                # Advanced Whisper params
+                'ai_vad_filter':            self.chk_vad_filter.isChecked(),
+                'ai_beam_size':             self.spin_beam_size.value(),
+                'ai_temperature':           self.spin_temperature.value(),
+                'ai_condition_on_prev':     self.chk_condition_prev.isChecked(),
+                'ai_logprob_threshold':     self.spin_logprob.value(),
+                'ai_no_speech_threshold':   self.spin_no_speech.value(),
+                'ai_patience':              self.spin_patience.value(),
+                'ai_compression_ratio_threshold': self.spin_compression.value(),
+                'ai_no_repeat_ngram_size':  self.spin_no_repeat.value(),
+                'ai_regroup':               self.chk_regroup.isChecked(),
+                'ai_suppress_silence':      self.chk_suppress_silence.isChecked(),
+                'ai_q_levels':              self.spin_q_levels.value(),
+                'ai_k_size':                self.spin_k_size.value(),
+            })
 
         # ── Stage 6A v2 (optimized): Hardware pre-validation ────────────────
         selected_device  = new_prefs.get('device', 'auto')

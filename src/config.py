@@ -98,7 +98,6 @@ DEFAULT_USER_DATA = {
 # DO NOT include track/timeline/model selections here — those belong to main UI state.
 # ==========================================
 DEFAULT_SETTINGS = {
-    "theme":                  "dark",
     "transcript_font_size":   12,
     "transcript_line_height": 12,
     "transcript_layout":      "segmented",
@@ -151,7 +150,7 @@ DEFAULT_SETTINGS = {
 }
 
 # Keys in DEFAULT_SETTINGS whose change requires an application restart.
-RESTART_REQUIRED_KEYS = ["theme", "compute_type", "device", "gui_lang", "ai_compute_type"]
+RESTART_REQUIRED_KEYS = ["compute_type", "device", "gui_lang", "ai_compute_type"]
 
 # ==========================================
 # COLOR PALETTE
@@ -187,44 +186,9 @@ DARK_PALETTE = {
     "STATUS_TEXT_COLOR": "#eeeeee"
 }
 
-LIGHT_PALETTE = {
-    "BG_COLOR": "#f5f5f5",
-    "SIDEBAR_BG": "#e0e0e0",
-    "INPUT_BG": "#ffffff",
-    "INPUT_FG": "#000000",
-    "FG_COLOR": "#1a1a1a",
-    "NOTE_COL": "#666666",
-    "SEPARATOR_COL": "#cccccc",
-    "FOOTER_COLOR": "#ececec",
-    "DISCLAIMER_FG": "#777777",
-    "SCROLL_BG": "#d9d9d9",
-    "SCROLL_FG": "#aaaaaa",
-    "SCROLL_ACTIVE": "#888888",
-    "MENU_BG": "#e0e0e0",
-    "MENU_FG": "#1a1a1a",
-    "GEAR_COLOR": "#555555",
-    "BTN_BG": "#23a559",
-    "BTN_FG": "#ffffff",
-    "BTN_ACTIVE": "#1e8f4c",
-    "BTN_GHOST_BG": "#dddddd",
-    "BTN_GHOST_ACTIVE": "#cccccc",
-    "CANCEL_BG": "#b33a3a",
-    "CANCEL_ACTIVE": "#8f2e2e",
-    "CHECKBOX_BG": "black",
-    "PROGRESS_HEIGHT": 24,
-    "PROGRESS_TRACK_COLOR": "#cccccc",
-    "PROGRESS_FILL_COLOR": "#23a559",
-    "STATUS_TEXT_COLOR": "#1a1a1a"
-}
-
 # Module-level defaults populated right away
 for _k, _v in DARK_PALETTE.items():
     globals()[_k] = _v
-
-def set_palette(theme_mode: str):
-    palette = LIGHT_PALETTE if theme_mode == "light" else DARK_PALETTE
-    for k, v in palette.items():
-        globals()[k] = v
 
 # --- Word Marking Colors ---
 WORD_NORMAL_FG    = "#dcddde"
@@ -523,9 +487,6 @@ TRANS = {
         "btn_telemetry_no": "No thanks",
         "chk_telemetry_geo": "Share your general location (country/city)",
         "tab_interface": "Interface",
-        "lbl_theme": "Theme",
-        "opt_dark": "Dark",
-        "opt_light": "Light",
         "lbl_always_on_top": "Always on top",
         "lbl_hidden_panels": "Hidden panels",
         "btn_export_settings": "Export Settings",
@@ -721,9 +682,6 @@ TRANS = {
         "btn_telemetry_no": "Nie, dzięki",
         "chk_telemetry_geo": "Udostępnij swoją ogólną lokalizację (państwo/miasto)",
         "tab_interface": "Interfejs",
-        "lbl_theme": "Motyw",
-        "opt_dark": "Ciemny",
-        "opt_light": "Jasny",
         "lbl_always_on_top": "Zawsze na wierzchu",
         "lbl_hidden_panels": "Ukryte panele",
         "btn_export_settings": "Eksportuj Ustawienia",
@@ -887,6 +845,8 @@ TRANS = {
         "msg_engine_assembly_source": "Optimale Quelle erkennen...",
         "msg_engine_slow_audio": "Audio verlangsamen...",
         "btn_ok": "OK",
+        "btn_view_basic": "Einfache Ansicht",
+        "btn_view_advanced": "Erweiterte Ansicht",
         "msg_restart_lang": "Änderungen gespeichert. Bitte starten Sie BadWords neu, um die Ergebnisse zu sehen.",
         "msg_restore_title": "Standard wiederherstellen",
         "msg_restore_desc": "Möchten Sie wirklich alle Einstellungen auf ihre Standardwerte zurücksetzen?",
@@ -916,9 +876,6 @@ TRANS = {
         "btn_telemetry_no": "Nein, danke",
         "chk_telemetry_geo": "Allgemeinen Standort teilen (Land/Stadt)",
         "tab_interface": "Oberfläche",
-        "lbl_theme": "Design",
-        "opt_dark": "Dunkel",
-        "opt_light": "Hell",
         "lbl_always_on_top": "Immer im Vordergrund",
         "lbl_hidden_panels": "Ausgeblendete Panels",
         "btn_export_settings": "Einstellungen exportieren",
@@ -1075,6 +1032,8 @@ TRANS = {
         "msg_engine_assembly_source": "Detectando origen óptimo...",
         "msg_engine_slow_audio": "Ralentizando audio...",
         "btn_ok": "OK",
+        "btn_view_basic": "Vista Básica",
+        "btn_view_advanced": "Vista Avanzada",
         "msg_restart_lang": "Cambios guardados. Para ver los resultados, reinicia BadWords.",
         "msg_restore_title": "Restaurar Predeterminados",
         "msg_restore_desc": "¿Estás seguro de que deseas restablecer todas las configuraciones a sus valores predeterminados?",
@@ -1104,9 +1063,6 @@ TRANS = {
         "btn_telemetry_no": "No, gracias",
         "chk_telemetry_geo": "Compartir tu ubicación general (país/ciudad)",
         "tab_interface": "Interfaz",
-        "lbl_theme": "Tema",
-        "opt_dark": "Oscuro",
-        "opt_light": "Claro",
         "lbl_always_on_top": "Siempre visible",
         "lbl_hidden_panels": "Paneles ocultos",
         "btn_export_settings": "Exportar configuración",
@@ -1263,6 +1219,8 @@ TRANS = {
         "msg_engine_assembly_source": "Détection de la source optimale...",
         "msg_engine_slow_audio": "Ralentissement audio...",
         "btn_ok": "OK",
+        "btn_view_basic": "Vue de base",
+        "btn_view_advanced": "Vue avancée",
         "msg_restart_lang": "Modifications enregistrées. Veuillez redémarrer BadWords pour voir les résultats.",
         "msg_restore_title": "Restaurer par défaut",
         "msg_restore_desc": "Êtes-vous sûr de vouloir réinitialiser tous les paramètres à leurs valeurs par défaut ?",
@@ -1292,9 +1250,6 @@ TRANS = {
         "btn_telemetry_no": "Non merci",
         "chk_telemetry_geo": "Partager votre position générale (pays/ville)",
         "tab_interface": "Interface",
-        "lbl_theme": "Thème",
-        "opt_dark": "Sombre",
-        "opt_light": "Clair",
         "lbl_always_on_top": "Toujours au premier plan",
         "lbl_hidden_panels": "Panneaux masqués",
         "btn_export_settings": "Exporter les paramètres",
@@ -1451,6 +1406,8 @@ TRANS = {
         "msg_engine_assembly_source": "Rilevamento sorgente ottimale...",
         "msg_engine_slow_audio": "Rallentamento audio...",
         "btn_ok": "OK",
+        "btn_view_basic": "Vista Base",
+        "btn_view_advanced": "Vista Avanzata",
         "msg_restart_lang": "Modifiche salvate. Riavvia BadWords per vedere i risultati.",
         "msg_restore_title": "Ripristina Predefiniti",
         "msg_restore_desc": "Sei sicuro di voler ripristinare tutte le impostazioni ai valori predefiniti?",
@@ -1480,9 +1437,6 @@ TRANS = {
         "btn_telemetry_no": "No, grazie",
         "chk_telemetry_geo": "Condividi la tua posizione generale (paese/città)",
         "tab_interface": "Interfaccia",
-        "lbl_theme": "Tema",
-        "opt_dark": "Scuro",
-        "opt_light": "Chiaro",
         "lbl_always_on_top": "Sempre in primo piano",
         "lbl_hidden_panels": "Pannelli nascosti",
         "btn_export_settings": "Esporta impostazioni",
@@ -1640,6 +1594,8 @@ TRANS = {
         "msg_engine_assembly_source": "Detectando origem ideal...",
         "msg_engine_slow_audio": "Desacelerando áudio...",
         "btn_ok": "OK",
+        "btn_view_basic": "Vista Básica",
+        "btn_view_advanced": "Vista Avançada",
         "msg_restart_lang": "Alterações salvas. Reinicie o BadWords para ver os resultados.",
         "msg_restore_title": "Restaurar Padrões",
         "msg_restore_desc": "Tem certeza de que deseja redefinir todas as configurações para os valores padrão?",
@@ -1669,9 +1625,6 @@ TRANS = {
         "btn_telemetry_no": "Não, obrigado",
         "chk_telemetry_geo": "Compartilhe sua localização geral (país/cidade)",
         "tab_interface": "Interface",
-        "lbl_theme": "Tema",
-        "opt_dark": "Escuro",
-        "opt_light": "Claro",
         "lbl_always_on_top": "Sempre visível",
         "lbl_hidden_panels": "Painéis ocultos",
         "btn_export_settings": "Exportar configurações",
@@ -1861,9 +1814,6 @@ TRANS = {
         "btn_telemetry_no": "Ні, дякую",
         "chk_telemetry_geo": "Поділитися своїм загальним місцем розташування",
         "tab_interface": "Інтерфейс",
-        "lbl_theme": "Тема",
-        "opt_dark": "Темна",
-        "opt_light": "Світла",
         "lbl_always_on_top": "Завжди поверх",
         "lbl_hidden_panels": "Приховані панелі",
         "btn_export_settings": "Експортувати налаштування",
@@ -2021,6 +1971,8 @@ TRANS = {
         "msg_engine_assembly_source": "Optimale bron detecteren...",
         "msg_engine_slow_audio": "Audio vertragen...",
         "btn_ok": "OK",
+        "btn_view_basic": "Basisweergave",
+        "btn_view_advanced": "Geavanceerde weergave",
         "msg_restart_lang": "Wijzigingen opgeslagen. Start BadWords opnieuw op om de resultaten te zien.",
         "msg_restore_title": "Standaard Herstellen",
         "msg_restore_desc": "Weet u zeker dat u alle instellingen wilt resetten naar hun standaardwaarden?",
@@ -2050,9 +2002,6 @@ TRANS = {
         "btn_telemetry_no": "Nee, bedankt",
         "chk_telemetry_geo": "Deel je algemene locatie (land/stad)",
         "tab_interface": "Interface",
-        "lbl_theme": "Thema",
-        "opt_dark": "Donker",
-        "opt_light": "Licht",
         "lbl_always_on_top": "Altijd bovenaan",
         "lbl_hidden_panels": "Verborgen panelen",
         "btn_export_settings": "Instellingen exporteren",
@@ -2197,7 +2146,7 @@ TRANS = {
         "txt_select": "Выбрать...",
         "txt_select_tracks": "Выбрать дорожки...",
         "msg_engine_render": "Рендеринг аудио...",
-        "msg_engine_check_model": "Проверка модели...",
+        "msg_engine_check_model": "Перевірка моделі...",
         "msg_engine_whisper_run": "Запуск Whisper...",
         "msg_engine_whisper_init": "Инициализация транскрипции...",
         "msg_engine_silence": "Обнаружение тишины...",
@@ -2242,9 +2191,6 @@ TRANS = {
         "btn_telemetry_no": "Нет, спасибо",
         "chk_telemetry_geo": "Поделиться своим общим местоположением",
         "tab_interface": "Интерфейс",
-        "lbl_theme": "Тема",
-        "opt_dark": "Тёмная",
-        "opt_light": "Светлая",
         "lbl_always_on_top": "Всегда поверх окон",
         "lbl_hidden_panels": "Скрытые панели",
         "btn_export_settings": "Экспорт настроек",
