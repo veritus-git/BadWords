@@ -186,17 +186,27 @@ fi
 # ==========================================
 # 4. GPU ACCELERATION MODE SELECTION
 # ==========================================
-echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
-echo -e "${YELLOW}Please select your hardware acceleration mode:${NC}"
-echo -e "${GREEN}1) NVIDIA: NVIDIA GPUs acceleration${NC}"
-echo -e "${CYAN}2) OTHER:  AMD/Intel GPUs, or pure CPU processing${NC}"
-echo ""
-read -p "Select [1-2]: " GPU_CHOICE
-
-if [ -z "$GPU_CHOICE" ]; then GPU_CHOICE="1"; fi
-
 NVIDIA_PACKAGES=""
 MODE_NAME=""
+
+if [ "$WIPE_CHOICE" -eq 1 ] && [ -d "$OLD_INSTALL_DIR/venv" ]; then
+    # True Update: auto-detect GPU from the existing venv
+    if find "$OLD_INSTALL_DIR/venv/lib" -type d -name "nvidia" | grep -q .; then
+        GPU_CHOICE=1
+    else
+        GPU_CHOICE=2
+    fi
+    echo -e "\n${GREEN}[INFO] Update mode: Auto-detected previous GPU setting${NC}"
+else
+    # New install or Wipe: ask the user
+    echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
+    echo -e "${YELLOW}Please select your hardware acceleration mode:${NC}"
+    echo -e "${GREEN}1) NVIDIA: NVIDIA GPUs acceleration${NC}"
+    echo -e "${CYAN}2) OTHER:  AMD/Intel GPUs, or pure CPU processing${NC}"
+    echo ""
+    read -p "Select [1-2]: " GPU_CHOICE
+    if [ -z "$GPU_CHOICE" ]; then GPU_CHOICE="1"; fi
+fi
 
 case "$GPU_CHOICE" in
     1)
@@ -441,28 +451,20 @@ VENV_PIP="$VENV_DIR/bin/pip"
 "$VENV_PIP" install --upgrade pip >/dev/null 2>&1
 
 # Install dependencies based on selection
-if [ -z "$NVIDIA_PACKAGES" ]; then
+if [ "$WIPE_CHOICE" -eq 1 ] && "$VENV_PIP" show torch >/dev/null 2>&1; then
+    # UPDATE + torch already installed: skip heavy PyTorch downloads
+    echo -e "${GREEN}[INFO] AI libraries already installed. Skipping heavy PyTorch downloads...${NC}"
+    "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
+elif [ -z "$NVIDIA_PACKAGES" ]; then
     # CPU OPTIMIZATION LOGIC
     echo -e "${CYAN}[INSTALL] Downloading CPU-optimized PyTorch to save disk space...${NC}"
-    
-    if [ "$WIPE_CHOICE" -eq 1 ]; then
-        "$VENV_PIP" install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cpu || { echo -e "${RED}[ERROR] PyTorch Install failed.${NC}"; exit 1; }
-        echo -e "${CYAN}[INSTALL] Upgrading Faster-Whisper + Stable-TS (CPU Mode)...${NC}"
-        "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
-    else
-        "$VENV_PIP" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu || { echo -e "${RED}[ERROR] PyTorch Install failed.${NC}"; exit 1; }
-        echo -e "${CYAN}[INSTALL] Installing Faster-Whisper + Stable-TS (CPU Mode)...${NC}"
-        "$VENV_PIP" install faster-whisper stable-ts pypdf || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
-    fi
+    "$VENV_PIP" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu || { echo -e "${RED}[ERROR] PyTorch Install failed.${NC}"; exit 1; }
+    echo -e "${CYAN}[INSTALL] Installing Faster-Whisper + Stable-TS (CPU Mode)...${NC}"
+    "$VENV_PIP" install faster-whisper stable-ts pypdf || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
 else
     # NVIDIA CUDA LOGIC
-    if [ "$WIPE_CHOICE" -eq 1 ]; then
-        echo -e "${CYAN}[INSTALL] Upgrading Faster-Whisper + Stable-TS + $MODE_NAME Support...${NC}"
-        "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf $NVIDIA_PACKAGES || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
-    else
-        echo -e "${CYAN}[INSTALL] Installing Faster-Whisper + Stable-TS + $MODE_NAME Support...${NC}"
-        "$VENV_PIP" install faster-whisper stable-ts pypdf $NVIDIA_PACKAGES || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
-    fi
+    echo -e "${CYAN}[INSTALL] Installing Faster-Whisper + Stable-TS + $MODE_NAME Support...${NC}"
+    "$VENV_PIP" install faster-whisper stable-ts pypdf $NVIDIA_PACKAGES || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
 fi
 
 echo -e "${GREEN}[SUCCESS] Dependencies installed in VENV.${NC}"
