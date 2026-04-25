@@ -1,14 +1,14 @@
-# <img src="source files/icon.png" align="right" width="100" style="margin-left: 200px; margin-bottom: 20px;" alt="Logo"> BadWords - Cleaner Timelines, Faster
+# <img src="assets/icon.png" align="right" width="100" style="margin-left: 200px; margin-bottom: 20px;" alt="Logo"> BadWords - Cleaner Timelines, Faster
 Automatically **detect, mark and/or remove filler words, silence, and retakes** <br>
 in DaVinci Resolve using OpenAI Whisper and FFmpeg.
 
 <br>
-![Preview](source%20files/editor_preview.png)
+![Preview](assets/editor_preview.png)
 
 ## Quick access shortcuts:
 ### Installation guides:
-**[Linux (any distro)](source%20files/Linux%20GUIDE.md)** <br>
-**[Windows](source%20files/Windows%20GUIDE.md)**
+**[Linux (any distro)](assets/Linux%20GUIDE.md)** <br>
+**[Windows](assets/Windows%20GUIDE.md)**
 
 ### Downloads:
 
@@ -46,7 +46,7 @@ in DaVinci Resolve using OpenAI Whisper and FFmpeg.
 - **Interactive Review** - Review cuts before applying them to the timeline.
 - **Heat map** - Mark timeline with colors instead of invasive rough cutting
 
-![Timeline Heatmap](source%20files/heatmap.png)
+![Timeline Heatmap](assets/heatmap.png)
 
 ## ⭐️ Core Capabilities
 
