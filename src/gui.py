@@ -4816,7 +4816,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
         default_filename = f"BadWords_{safe_name}.json"
         
-        path, _ = QFileDialog.getSaveFileName(self, "Export Project", os.path.join(saves_dir, default_filename), "JSON Files (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, self.txt("btn_export_project"), os.path.join(saves_dir, default_filename), "JSON Files (*.json)")
         if not path: return
         
         prefs = self.engine.load_preferences() or {}
@@ -4856,7 +4856,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
             os.makedirs(saves_dir, exist_ok=True)
             
-            path, _ = QFileDialog.getOpenFileName(self, "Import Project", saves_dir, "JSON Files (*.json)")
+            path, _ = QFileDialog.getOpenFileName(self, self.txt("btn_import_project"), saves_dir, "JSON Files (*.json)")
             if not path: return
             
             state, _ = self.engine.load_project_state(path)
@@ -4946,7 +4946,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             from osdoc import log_error
             log_error(f"Failed to load project: {e}")
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Error", f"Failed to load project: {e}")
+            QMessageBox.critical(self, self.txt("lbl_error"), f"{self.txt('msg_load_project_failed')}: {e}")
 
     def _refresh_canvas_view(self):
         if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
@@ -5115,7 +5115,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if success:
             QMessageBox.information(self, self.txt("msg_fast_silence"), self.txt("msg_fast_silence_processing_c"))
         else:
-            QMessageBox.critical(self, "Fast Silence Error", f"Assembly failed: {err}")
+            QMessageBox.critical(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}: {err}")
 
         self.go_to_page(0)
         if hasattr(self, 'welcome_stack'):
@@ -5264,7 +5264,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             QApplication.processEvents()
             self._on_assembly_success()
         else:
-            self._on_assembly_error("Assembly failed. Check logs.")
+            self._on_assembly_error(self.txt("msg_assembly_failed"))
 
     def _on_assembly_success(self):
         from PySide6.QtWidgets import QMessageBox
@@ -5278,7 +5278,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
         if hasattr(self, '_panel_left'): self._panel_left.show()
         if hasattr(self, '_panel_right'): self._panel_right.show()
-        QMessageBox.critical(self, "Error", err_msg)
+        QMessageBox.critical(self, self.txt("lbl_error"), err_msg)
 
     def _build_welcome_screen(self) -> QWidget:
         """

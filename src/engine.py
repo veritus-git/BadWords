@@ -616,12 +616,17 @@ except Exception as e:
         """
         Fast Silence Cut: render audio, run FFmpeg silencedetect, build a minimal
         words_data list of 'silence' segments — no Whisper involved.
+        FIXED: Now applies normalize_audio() before detect_silence() to match
+        the transcription pipeline's audio pre-processing, ensuring identical
+        FFmpeg analysis conditions and preserving gap bridging.
         """
         def update_status(msg):
             if callback_status: callback_status(msg)
         def update_progress(val):
             if callback_progress: callback_progress(val)
 
+        wav_path = None
+        normalized_wav = None
         try:
             threshold_db = settings.get('threshold_db', -42.0)
             padding_s    = settings.get('padding_s', 0.05)
@@ -638,31 +643,53 @@ except Exception as e:
                 log_error("Fast Silence: render failed.")
                 return None, None
 
-            update_progress(40)
+            update_progress(30)
+
+            # FIXED: Normalize audio BEFORE silence detection — matches transcription pipeline.
+            # Without this step, silence is detected against the raw unprocessed waveform,
+            # giving different (less precise) results than the transcription pass.
+            update_status(self.txt("status_slow"))
+            normalized_wav = self.normalize_audio(wav_path)
+            target_wav = normalized_wav
+
+            update_progress(50)
             update_status(self.txt("status_silence"))
 
-            raw_silences = self.detect_silence(wav_path, threshold_db, 0.1)
+            raw_silences = self.detect_silence(target_wav, threshold_db, 0.1)
 
             update_progress(80)
             update_status(self.txt("status_process"))
 
-            # --- Fake Word Injection approach ---
-            # Compute audio duration from Resolve timeline
-            fps = self.resolve_handler.fps
-            tl_start = self.resolve_handler.get_timeline_start_frame()
-            tl_end = self.resolve_handler.timeline.GetEndFrame()
-            duration_s = (tl_end - tl_start) / fps
+            # --- Gap Bridging (matches _build_data_structure logic) ---
+            # Merge adjacent silence regions separated by less than 150ms.
+            # Without bridging, very short speech islands create false positives.
+            bridged = []
+            if raw_silences:
+                curr = dict(raw_silences[0])
+                for next_s in raw_silences[1:]:
+                    if next_s['s'] - curr['e'] < 0.15:
+                        curr['e'] = next_s['e']
+                    else:
+                        bridged.append(curr)
+                        curr = dict(next_s)
+                bridged.append(curr)
 
             # Apply padding to each detected silence
             padded_silences = []
-            for s in raw_silences:
+            for s in bridged:
                 new_start = s['s'] + padding_s
                 new_end   = s['e'] - padding_s
                 if new_end > new_start:
                     padded_silences.append({'s': new_start, 'e': new_end})
 
+            # --- Compute audio duration from Resolve timeline ---
+            fps = self.resolve_handler.fps
+            tl_start = self.resolve_handler.get_timeline_start_frame()
+            tl_end = self.resolve_handler.timeline.GetEndFrame()
+            duration_s = (tl_end - tl_start) / fps
+
             # Single fake word that spans the entire audio;
-            # calculate_timeline_structure will use _meta_global_silence for precise cuts.
+            # calculate_timeline_structure will use meta_global_silence for precise cuts.
             words_data = [{
                 'text':             '[FAST_SILENCE_TRACK]',
                 'start':            0.0,
@@ -677,10 +704,6 @@ except Exception as e:
                 'meta_global_silence': padded_silences,
             }]
 
-            # Cleanup temp file
-            try: os.remove(wav_path)
-            except: pass
-
             update_progress(100)
             update_status(self.txt("status_finalize"))
             return words_data, []
@@ -688,6 +711,13 @@ except Exception as e:
         except Exception as e:
             log_error(f"run_fast_silence_pipeline error: {traceback.format_exc()}")
             return None, None
+        finally:
+            # Cleanup temp files safely
+            for p in [wav_path, normalized_wav]:
+                if p and os.path.exists(p):
+                    try: os.remove(p)
+                    except: pass
+
 
     def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None):
         def update_status(msg):
@@ -901,7 +931,8 @@ except Exception as e:
         # --- PASS 2: SMART CHUNKING (Z LOOKAHEAD) ---
         c_max = int(prefs.get('chunk_max_words', 30))
         c_look = int(prefs.get('chunk_lookahead', 3))
-        c_min = int(prefs.get('chunk_min_chars', 7))
+        # GOLDEN fix: use chunk_min_words (word count) not chunk_min_chars (char count)
+        c_min = int(prefs.get('chunk_min_words', prefs.get('chunk_min_chars', 7)))
         c_punct_target = int(prefs.get('chunk_punct_count', 1))
         c_hard_limit = c_max + c_look
 
@@ -921,8 +952,10 @@ except Exception as e:
             if len(curr_chunk) >= c_hard_limit:
                 should_break = True
             elif len(curr_chunk) >= c_max:
-                if punct_seen >= c_punct_target:
-                    should_break = True # Break immediately if current word has punctuation
+                # GOLDEN fix: break if the CURRENT word has punctuation (not accumulated count).
+                # In src_old: `if has_punct: should_break = True` — per-word check.
+                if has_punct:
+                    should_break = True  # Break immediately if current word has punctuation
                 else:
                     # Look ahead up to remaining allowance (c_hard_limit - current_length)
                     allowance = c_hard_limit - len(curr_chunk)
@@ -939,8 +972,9 @@ except Exception as e:
                     # If we DID find it, we keep going (should_break = False) until we hit it in next loops.
                     if not found_punct:
                         should_break = True
-            elif len(curr_chunk) >= c_min and punct_seen >= c_punct_target:
-                should_break = True # Normal soft break mid-sentence
+            # GOLDEN fix: normal soft break — require current word has punct (has_punct), not cumulative count.
+            elif len(curr_chunk) >= c_min and has_punct:
+                should_break = True  # Normal soft break mid-sentence
                 
             if should_break:
                 chunks.append(curr_chunk)
@@ -1020,8 +1054,11 @@ except Exception as e:
                 inaud_start = new_end
                 inaud_end   = word_obj['end']
 
-                # Guard: inaudible head must be at least 150ms to avoid sub-frame micro-cuts on the timeline
-                if round(inaud_end - inaud_start, 3) >= 0.15:
+                # Guard: inaudible token must meet minimum duration to avoid sub-frame micro-cuts.
+                # GOLDEN fix: was hardcoded 0.15s (150ms) in new, restored to configurable inaud_min_dur
+                # which defaults to 0.02s (20ms) — matching src_old's original 20ms threshold.
+                inaud_min = float(prefs.get('inaud_min_dur', 0.02))
+                if round(inaud_end - inaud_start, 3) >= inaud_min:
                     shortened = dict(word_obj)  # shallow copy is safe — all values are immutable scalars
                     shortened['end'] = new_end
 

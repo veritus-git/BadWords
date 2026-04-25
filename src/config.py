@@ -54,6 +54,16 @@ SIMILARITY_THRESHOLD = 0.45
 # Default filler/hesitation initial prompt for Whisper transcription
 DEFAULT_WHISPER_PROMPT = "yyy, eee, uuu, yhm, yyyy, eeee, aaaa, mhm, aha, umm, uh, ah"
 
+# GOLDEN Verbatim Initial Prompt — DO NOT CHANGE.
+# This is the exact prompt from the validated src_old that forces Whisper into
+# raw acoustic capture mode: stutters, withdrawals, and broken words are transcribed
+# as-is instead of being smoothed into grammatical sentences.
+# Used as the default for ai_initial_prompt.
+GOLDEN_INITIAL_PROMPT = (
+    "Umm, yyy, eh, mmm, tsk, h-h-hello, i... i will check. "
+    "I went... I went to the st... store, tak tak."
+)
+
 # Official DaVinci Resolve marker colors
 RESOLVE_COLORS = [
     "Orange", "Apricot", "Yellow", "Lime", "Apple", "Forest",
@@ -106,16 +116,18 @@ DEFAULT_SETTINGS = {
     "chunk_punct_count":      1,
     "chunk_max_words":        30,
     "chunk_lookahead":        3,
-    "chunk_min_chars":        7,
+    "chunk_min_chars":        7,   # legacy (chars) — kept for JSON compat
+    "chunk_min_words":        7,   # GOLDEN: minimum words before a soft-break can occur
+    "inaud_min_dur":          0.02, # GOLDEN: min duration (s) for a split inaudible token
     "compute_type":           "int8",
     "ai_compute_type":        "Auto",
     "device":                 "auto",
-    "ai_initial_prompt":      DEFAULT_WHISPER_PROMPT,
+    "ai_initial_prompt":      GOLDEN_INITIAL_PROMPT,  # GOLDEN stutter-tuned prompt
     "gui_lang":               "en",
     "always_on_top":          True,
     "hidden_panels":          [],
     # Algorithm tuning
-    "algo_fuzzy_threshold":   80,
+    "algo_fuzzy_threshold":   75,  # GOLDEN: matches THRESH_LONG=0.75 from src_old
     "algo_retake_lookahead":  80,
     "algo_distance_penalty":  2.0,
     "algo_anchor_depth":      3,
@@ -551,6 +563,10 @@ TRANS = {
         "btn_discard_all": "Discard All",
         "btn_cancel": "Cancel",
         "txt_saved": "Saved!",
+        # R6: Keys previously hardcoded in gui.py
+        "msg_assembly_failed": "Assembly failed. Check the log file.",
+        "msg_load_project_failed": "Failed to load project",
+        "msg_fs_error": "Fast Silence Error",
     },
     'pl': {
         "btn_analyze": "Analizuj",
@@ -762,6 +778,9 @@ TRANS = {
         "btn_save_all": "Zapisz wszystkie",
         "btn_discard_all": "Odrzuć wszystkie",
         "btn_cancel": "Anuluj",
+        "msg_assembly_failed": "Montaż nie powiódł się. Sprawdź plik dziennika.",
+        "msg_load_project_failed": "Nie udało się załadować projektu",
+        "msg_fs_error": "Błąd Szybkiej Ciszy",
     },
     'de': {
         "btn_analyze": "Analysieren",
@@ -973,6 +992,9 @@ TRANS = {
         "btn_save_all": "Alle speichern",
         "btn_discard_all": "Alle verwerfen",
         "btn_cancel": "Abbrechen",
+        "msg_assembly_failed": "Montage fehlgeschlagen. Prüfen Sie das Protokoll.",
+        "msg_load_project_failed": "Projekt konnte nicht geladen werden",
+        "msg_fs_error": "Schnelle-Stille-Fehler",
     },
     'es': {
         "btn_analyze": "Analizar",
@@ -1184,6 +1206,9 @@ TRANS = {
         "btn_save_all": "Guardar todo",
         "btn_discard_all": "Descartar todo",
         "btn_cancel": "Cancelar",
+        "msg_assembly_failed": "Montaje fallido. Revise el registro.",
+        "msg_load_project_failed": "Error al cargar el proyecto",
+        "msg_fs_error": "Error de Silencio Rápido",
     },
     'fr': {
         "btn_analyze": "Analyser",
@@ -1395,6 +1420,9 @@ TRANS = {
         "btn_save_all": "Tout enregistrer",
         "btn_discard_all": "Tout ignorer",
         "btn_cancel": "Annuler",
+        "msg_assembly_failed": "Montage échoué. Vérifiez le journal.",
+        "msg_load_project_failed": "Impossible de charger le projet",
+        "msg_fs_error": "Erreur Silence Rapide",
     },
     'it': {
         "btn_analyze": "Analizza",
@@ -1606,6 +1634,9 @@ TRANS = {
         "btn_save_all": "Salva tutto",
         "btn_discard_all": "Scarta tutto",
         "btn_cancel": "Annulla",
+        "msg_assembly_failed": "Assemblaggio fallito. Controlla il registro.",
+        "msg_load_project_failed": "Impossibile caricare il progetto",
+        "msg_fs_error": "Errore Silenzio Rapido",
     },
     'pt': {
         "btn_analyze": "Analisar",
@@ -1817,6 +1848,9 @@ TRANS = {
         "btn_save_all": "Salvar tudo",
         "btn_discard_all": "Descartar tudo",
         "btn_cancel": "Cancelar",
+        "msg_assembly_failed": "Montagem falhou. Verifique o registro.",
+        "msg_load_project_failed": "Não foi possível carregar o projeto",
+        "msg_fs_error": "Erro Silêncio Rápido",
     },
     'uk': {
         "btn_analyze": "Аналізувати",
@@ -2028,6 +2062,9 @@ TRANS = {
         "btn_save_all": "Зберегти все",
         "btn_discard_all": "Відхилити все",
         "btn_cancel": "Скасувати",
+        "msg_assembly_failed": "Монтаж не вдався. Перевірте журнал.",
+        "msg_load_project_failed": "Не вдалося завантажити проєкт",
+        "msg_fs_error": "Помилка Швидкої Тиші",
     },
     'nl': {
         "btn_analyze": "Analyseren",
@@ -2239,6 +2276,9 @@ TRANS = {
         "btn_save_all": "Alles opslaan",
         "btn_discard_all": "Alles weggooien",
         "btn_cancel": "Annuleren",
+        "msg_assembly_failed": "Montage mislukt. Controleer het logbestand.",
+        "msg_load_project_failed": "Project kon niet worden geladen",
+        "msg_fs_error": "Snel Stilte Fout",
     },
     'ru': {
         "btn_analyze": "Анализ",
@@ -2450,6 +2490,9 @@ TRANS = {
         "btn_save_all": "Сохранить все",
         "btn_discard_all": "Отменить все",
         "btn_cancel": "Отмена",
+        "msg_assembly_failed": "Монтаж не удался. Проверьте журнал.",
+        "msg_load_project_failed": "Не удалось загрузить проект",
+        "msg_fs_error": "Ошибка Быстрой Тишины",
     },
 }
 
