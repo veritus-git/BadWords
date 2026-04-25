@@ -26,7 +26,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Installer icon (must be in .ico format in the same folder as the script)
-SetupIconFile=icon.ico
+SetupIconFile=assets/icons/icon_default.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
