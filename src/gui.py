@@ -843,6 +843,7 @@ class ShortcutCaptureButton(QPushButton):
             border: 1px solid {border};
             border-radius: 3px;
             padding: 0px 8px;
+            min-width: 80px;
             min-height: 26px;
             max-height: 26px;
             text-align: center;
@@ -1992,38 +1993,14 @@ class CustomTitleBar(QWidget):
         win = self._win
         if not getattr(win, '_is_root', False):
             return
-        
-        is_mac = platform.system() == "Darwin"
-        
-        if is_mac:
-            # Na macOS showMaximized() z FramelessWindowHint wchodzi w tryb pełnoekranowy
-            # lub zostawia dziwne marginesy. Używamy geometry-based podejścia.
-            if getattr(win, '_mac_is_maximized', False):
-                win._mac_is_maximized = False
-                saved_geo = getattr(win, '_pre_max_geometry', None)
-                if saved_geo and saved_geo.isValid():
-                    win.setGeometry(saved_geo)
-                    win.showNormal()
-                win._refresh_max_state()
-                win._update_grips()
-            else:
-                win._pre_max_geometry = win.geometry()
-                win._mac_is_maximized = True
-                screen = QGuiApplication.screenAt(win.geometry().center()) or QGuiApplication.primaryScreen()
-                if screen:
-                    ag = screen.availableGeometry()
-                    win.setGeometry(ag)
-                win._refresh_max_state()
-                win._update_grips()
+        if win.isMaximized():
+            win.showNormal()
+            saved_geo = getattr(win, '_pre_max_geometry', None)
+            if saved_geo and saved_geo.isValid():
+                win.setGeometry(saved_geo)
         else:
-            if win.isMaximized():
-                win.showNormal()
-                saved_geo = getattr(win, '_pre_max_geometry', None)
-                if saved_geo and saved_geo.isValid():
-                    win.setGeometry(saved_geo)
-            else:
-                win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
-                win.showMaximized()
+            win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
+            win.showMaximized()
 
     def mousePressEvent(self, event):
         # Windows root window: OS handles dragging via HTCAPTION in nativeEvent.
@@ -2187,6 +2164,7 @@ class FramelessWindowMixin:
         import platform
         from PySide6.QtGui import QGuiApplication
         self._is_win = platform.system() == "Windows"
+        self._is_mac = platform.system() == "Darwin"
         self._is_wayland = QGuiApplication.platformName() == 'wayland'
         # Sprawdzamy, czy to jest główne okno (root)
         self._is_root = self.__class__.__name__ == "BadWordsGUI"
@@ -2194,29 +2172,35 @@ class FramelessWindowMixin:
         if self._is_win:
             if self._is_root:
                 # Root window: uses a native HWND frame so DWM can handle Aero Snap,
-                # shadows, and the snap-layout preview. We do NOT set
-                # WA_TranslucentBackground here — combining it with a native frame
-                # causes Windows to composite a white NC area that flashes on every
-                # repaint / activation.
+                # shadows, and the snap-layout preview.
                 self.setWindowFlags(
                     self.windowFlags()
                     | Qt.Window
                     | Qt.CustomizeWindowHint
                     | Qt.WindowMinMaxButtonsHint
                 )
-                # Do NOT set WA_TranslucentBackground for the root on Windows.
             else:
                 # Popups are genuinely frameless — translucency is safe here.
                 self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.Dialog)
                 self.setAttribute(Qt.WA_TranslucentBackground, True)
+        elif self._is_mac and self._is_root:
+            # macOS root window: use native title bar with traffic lights.
+            # This gives us the green fullscreen button which hides Dock + Menu Bar.
+            # The custom CSD title bar widget is hidden in BadWordsGUI.__init__.
+            self.setWindowFlags(
+                Qt.Window
+                | Qt.WindowMinMaxButtonsHint
+                | Qt.WindowCloseButtonHint
+                | Qt.WindowFullscreenButtonHint
+            )
         else:
-            # Linux / macOS: fully frameless + translucent (rounded corners via QSS).
+            # Linux and macOS popups: fully frameless + translucent (rounded corners via QSS).
             self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
             self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self._is_popup = is_popup
 
-        if not self._is_win:
+        if not self._is_win and not (self._is_mac and self._is_root):
             self._setup_grips()
 
     def _get_root_frame(self):
@@ -2249,7 +2233,7 @@ class FramelessWindowMixin:
                 grip.raise_()
 
     def _refresh_max_state(self):
-        is_max = self.isMaximized() or getattr(self, '_mac_is_maximized', False)
+        is_max = self.isMaximized()
 
         # Szukamy paska pod obiema nazwami (główne okno: _title_bar, dialogi: _tb)
         title_bar = getattr(self, '_title_bar', getattr(self, '_tb', None))
@@ -2291,7 +2275,7 @@ class FramelessWindowMixin:
     def _update_grips(self):
         if not hasattr(self, '_grips'): return
 
-        is_max = self.isMaximized() or getattr(self, '_mac_is_maximized', False)
+        is_max = self.isMaximized()
 
         b = 6 
         w, h = self.width(), self.height()
@@ -6101,10 +6085,12 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # ── CSD: root frame (wraps title bar + content, owns border-radius) ──
         self._root_frame = QFrame()
         self._root_frame.setObjectName("RootFrame")
+        _is_mac_root = platform.system() == "Darwin"
+        _root_radius = "0px" if _is_mac_root else "12px"
         self._root_frame.setStyleSheet(f"""
             QFrame#RootFrame {{
                 background-color: {config.BG_COLOR};
-                border-radius: 12px;
+                border-radius: {_root_radius};
             }}
         """)
         self._root_layout = QVBoxLayout(self._root_frame)
@@ -6116,9 +6102,16 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._title_bar.chapter_dropdown.valueChanged.connect(self._switch_chapter)
         self._root_layout.addWidget(self._title_bar)
 
+        # On macOS: hide custom CSD title bar — native title bar handles close/min/max/fullscreen.
+        # The native window title is set to show source timeline info (updated dynamically).
+        if _is_mac_root:
+            self._title_bar.setVisible(False)
+            self._title_bar.setFixedHeight(0)
+
         # --- Build UI --- (sidebars + central workspace sit below title bar)
         self._build_sidebars()         # left + right activity frames
         self._build_central_workspace() # QStackedWidget central area + panels
+
 
         self.search_overlay = SearchOverlayWidget(self.scroll_area, self)
 
@@ -8390,6 +8383,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if msg and "{tl}" in msg:
             new_title = msg.replace("{tl}", selected_tl_name).replace("{tr}", tracks_str)
             self._title_bar.set_title(new_title)
+            # On macOS native title bar: update the OS window title too
+            if platform.system() == "Darwin":
+                self.setWindowTitle(new_title)
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)
@@ -8426,33 +8422,24 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
     def _maximize_on_active_screen(self):
         """
         Move the window to the monitor that currently has the cursor and maximize.
-        On macOS with FramelessWindowHint, showMaximized() is unreliable — it can
-        trigger native fullscreen (removes Dock/menu bar) or leave unexpected margins.
-        We use setGeometry(availableGeometry) instead for macOS.
-        On other platforms, we position 580x670 centered first so the WM remembers
-        that as the restore geometry.
+        DWM / the WM remembers the geometry that was set IMMEDIATELY before
+        showMaximized() as the "restore" size used when drag-to-unmaximizing.
+        We position 580x670 centered on the target screen first, THEN maximize,
+        so the restore size is always 580x670 regardless of previous session state.
         """
-        import platform as _platform
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             self.resize(580, 670)
             self.showMaximized()
             return
         sg = screen.availableGeometry()
-        
-        if _platform.system() == "Darwin":
-            # macOS: direct geometry-based maximize, respects Dock + Menu Bar
-            self._mac_is_maximized = True
-            self._pre_max_geometry = None  # no restore geometry at startup
-            self.setGeometry(sg)
-        else:
-            # Center 580x670 on the target screen — this becomes the DWM restore geometry
-            self.setGeometry(
-                sg.x() + (sg.width()  - 580) // 2,
-                sg.y() + (sg.height() - 670) // 2,
-                580, 670
-            )
-            self.showMaximized()
+        # Center 580x670 on the target screen — this becomes the restore geometry
+        self.setGeometry(
+            sg.x() + (sg.width()  - 580) // 2,
+            sg.y() + (sg.height() - 670) // 2,
+            580, 670
+        )
+        self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)

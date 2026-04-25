@@ -112,7 +112,7 @@ DEFAULT_USER_DATA = {
 # ==========================================
 DEFAULT_SETTINGS = {
     # ── Transcript / Editor ──────────────────────────────────────────────────
-    "editor_font_family":   "Segoe UI",
+    "editor_font_family":   get_system_font_name(),
     "editor_font_size":     12,
     "editor_line_height":   12,
     "transcript_font_size":   12,       # legacy alias kept for compatibility
