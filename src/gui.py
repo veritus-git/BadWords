@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
     QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
     QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter
+    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
@@ -38,7 +38,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter
+    QCursor, QDrag, QPainter, QPen
 )
 from PySide6.QtCore import QMimeData
 
@@ -55,6 +55,53 @@ RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Language
 # HELPERS
 # ==========================================
 
+class GripHandle(QSplitterHandle):
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        w = self.width()
+        h = self.height()
+        
+        # Fill entirely with workspace background first
+        painter.fillRect(self.rect(), QColor("#1c1c1c"))
+        
+        is_left_handle = self.geometry().x() < (self.parent().width() / 2)
+        
+        pill_width = 8
+        pill_height = 42
+        y = (h - pill_height) // 2
+        
+        # Extend panel color and anchor the pill
+        if is_left_handle:
+            # Panel is on the left.
+            painter.fillRect(0, 0, w // 2 + 2, h, QColor("#212121"))
+            x = (w // 2 + 2) - pill_width # Anchor pill to the right edge of the panel color
+        else:
+            # Panel is on the right.
+            painter.fillRect(w // 2 - 2, 0, w - (w // 2 - 2), h, QColor("#212121"))
+            x = w // 2 - 2 # Anchor pill to the left edge of the panel color
+            
+        # Draw Grip Pill
+        painter.setBrush(QColor("#444444"))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(x, y, pill_width, pill_height, 3, 3)
+        
+        # Draw 3 Dots
+        painter.setBrush(QColor("#999999"))
+        dot_size = 2
+        dot_x = x + (pill_width - dot_size) // 2
+        
+        painter.drawEllipse(dot_x, y + 8, dot_size, dot_size)
+        painter.drawEllipse(dot_x, y + 20, dot_size, dot_size)
+        painter.drawEllipse(dot_x, y + 32, dot_size, dot_size)
+
+class GripSplitter(QSplitter):
+    def createHandle(self):
+        handle = GripHandle(self.orientation(), self)
+        handle.setCursor(Qt.CursorShape.SplitHCursor)
+        return handle
+
 class ToggleSwitch(QWidget):
     """
     iOS-style animated toggle switch inheriting from QWidget.
@@ -64,7 +111,7 @@ class ToggleSwitch(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(36, 20)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._is_checked = False
 
         # Internal animation states
@@ -99,11 +146,19 @@ class ToggleSwitch(QWidget):
     def isChecked(self) -> bool:
         return self._is_checked
 
-    def setChecked(self, checked: bool):
+    def setChecked(self, checked: bool, animated: bool = True):
+        if self._is_checked == checked:
+            return
         self._is_checked = checked
-        self._bg_color = QColor(config.BTN_BG) if checked else QColor("#555555")
-        self._thumb_x = self.width() - 20 if checked else 4
-        self.update()
+
+        if animated:
+            self._update_animation()
+        else:
+            self._bg_color = QColor(config.BTN_BG) if checked else QColor("#555555")
+            self._thumb_x = self.width() - 20 if checked else 4
+            self.update()
+        
+        self.toggled.emit(self._is_checked)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -1143,6 +1198,8 @@ class BadWordsGUI(QMainWindow):
         # This callback is injected by AppController in main.py
         self.closeEvent_callback = None
         self.shared_tooltip = IDETooltip()
+        self.shared_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.shared_tooltip.setWindowFlag(Qt.WindowTransparentForInput, True)
         
         # Declare panel containers early for Pyre inference
         self._sidebar_right: SidebarFrame = None
@@ -1225,27 +1282,27 @@ class BadWordsGUI(QMainWindow):
         left_layout.setContentsMargins(5, 6, 5, 6)
         left_layout.setSpacing(6)
         
-        btn_script = SidebarButton("\U0001f4dd", "Script & Analysis", "script_analysis", tooltip_widget=self.shared_tooltip)
-        btn_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
-        left_layout.addWidget(btn_script)
+        self.btn_nav_script = SidebarButton("\U0001f4dd", "Script & Analysis", "script_analysis", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
+        left_layout.addWidget(self.btn_nav_script)
         
-        btn_silence = SidebarButton("\U0001f507", "Silence", "silence", tooltip_widget=self.shared_tooltip)
-        btn_silence.clicked.connect(lambda: self._toggle_activity("silence"))
-        left_layout.addWidget(btn_silence)
+        self.btn_nav_silence = SidebarButton("\U0001f507", "Silence", "silence", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_silence.clicked.connect(lambda: self._toggle_activity("silence"))
+        left_layout.addWidget(self.btn_nav_silence)
 
-        btn_fillers = SidebarButton("\U0001f4ac", "Filler Words", "fillers", tooltip_widget=self.shared_tooltip)
-        btn_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
-        left_layout.addWidget(btn_fillers)
+        self.btn_nav_fillers = SidebarButton("\U0001f4ac", "Filler Words", "fillers", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
+        left_layout.addWidget(self.btn_nav_fillers)
         
         left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
-        btn_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip)
-        btn_quit.clicked.connect(self.close)
-        left_layout.addWidget(btn_quit)
+        self.btn_nav_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_quit.clicked.connect(self.close)
+        left_layout.addWidget(self.btn_nav_quit)
         
-        btn_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip)
-        btn_settings.clicked.connect(self._on_settings)
-        left_layout.addWidget(btn_settings)
+        self.btn_nav_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_settings.clicked.connect(self._on_settings)
+        left_layout.addWidget(self.btn_nav_settings)
         
         self._sidebar_left.show()
 
@@ -1256,13 +1313,13 @@ class BadWordsGUI(QMainWindow):
         right_layout.setContentsMargins(5, 6, 5, 6)
         right_layout.setSpacing(6)
         
-        btn_main_panel = SidebarButton("\U0001f6e0\ufe0f", "Main Panel", "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
-        btn_main_panel.clicked.connect(lambda: self._toggle_activity("main_panel"))
-        right_layout.addWidget(btn_main_panel)
+        self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", "Main Panel", "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
+        right_layout.addWidget(self.btn_nav_main)
         
-        btn_assembly = SidebarButton("\u2699\ufe0f", "Assembly", "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
-        btn_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
-        right_layout.addWidget(btn_assembly)
+        self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", "Assembly", "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
+        right_layout.addWidget(self.btn_nav_assembly)
         
         right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
@@ -1277,7 +1334,7 @@ class BadWordsGUI(QMainWindow):
 
         # Build Panels
         self._panel_left = QFrame()
-        self._panel_left.setFixedWidth(280)
+        self._panel_left.setMinimumWidth(150)
         self._panel_left.setObjectName("leftPanel")
         self._panel_left.setStyleSheet("QFrame#leftPanel { background: transparent; } QFrame#ActivityPanel { background-color: #212121; border-radius: 6px; }")
         QVBoxLayout(self._panel_left).setContentsMargins(0, 0, 0, 0)
@@ -1292,7 +1349,7 @@ class BadWordsGUI(QMainWindow):
         self._stack.setCurrentIndex(0)
 
         self._panel_right = QFrame()
-        self._panel_right.setFixedWidth(280)
+        self._panel_right.setMinimumWidth(150)
         self._panel_right.setObjectName("rightPanel")
         self._panel_right.setStyleSheet("QFrame#rightPanel { background: transparent; } QFrame#ActivityPanel { background-color: #212121; border-radius: 6px; }")
         QVBoxLayout(self._panel_right).setContentsMargins(0, 0, 0, 0)
@@ -1303,11 +1360,12 @@ class BadWordsGUI(QMainWindow):
         self._build_activities()
 
         # Splitter layout for panels and stack
-        self._main_h_splitter = QSplitter(Qt.Horizontal)
+        self._main_h_splitter = GripSplitter(Qt.Horizontal)
+        self._main_h_splitter.setChildrenCollapsible(False)
         self._main_h_splitter.addWidget(self._panel_left)
         self._main_h_splitter.addWidget(self._stack)
         self._main_h_splitter.addWidget(self._panel_right)
-        self._main_h_splitter.setHandleWidth(1)
+        self._main_h_splitter.setHandleWidth(12)
         self._main_h_splitter.setStyleSheet("QSplitter::handle { background-color: #1a1a1a; }")
 
         # Add everything to main layout in exact order
@@ -1316,8 +1374,6 @@ class BadWordsGUI(QMainWindow):
         main_layout.addWidget(self._sidebar_right)
 
         self.setCentralWidget(main_container)
-        
-        self._toggle_activity("script_analysis")
 
     def _toggle_activity(self, activity_id: str):
         target_btn = None
@@ -1370,7 +1426,7 @@ class BadWordsGUI(QMainWindow):
             layout.addWidget(activity_widget)
             activity_widget.show()
             target_splitter.show()
-            self._main_h_splitter.setSizes([280, 2000, 280])
+            self._main_h_splitter.setSizes([480, 2000, 480])
 
     def _build_activities(self):
         def _wrap_activity(widget: QWidget) -> QFrame:
@@ -1381,8 +1437,8 @@ class BadWordsGUI(QMainWindow):
             container.setStyleSheet("""
                 QFrame#ActivityPanel {
                     background-color: #212121;
-                    border-radius: 6px;
-                    margin: 2px;
+                    border-radius: 0px;
+                    margin: 0px;
                 }
                 /* Force all generic children to be transparent so the grey shows through */
                 QFrame#ActivityPanel QWidget {
@@ -1404,21 +1460,27 @@ class BadWordsGUI(QMainWindow):
                     color: #d9d9d9;
                 }
                 QFrame#ActivityPanel QPushButton:hover { background-color: #404040; border-color: #555555; }
-                QFrame#ActivityPanel QRadioButton::indicator {
-                    width: 12px; height: 12px;
-                    border-radius: 7px;
-                    border: 2px solid #666;
-                    background: transparent;
-                }
-                QFrame#ActivityPanel QRadioButton::indicator:checked {
-                    background: #d9d9d9;
-                    border: 3px solid #212121;
-                }
+                QFrame#ActivityPanel QPushButton:disabled { background-color: #2a2a2a; border-color: #222; color: #555555; }
             """)
             layout = QVBoxLayout(container)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(widget)
             return container
+
+        def style_rb(rb, color):
+            rb.setStyleSheet(f"""
+                QRadioButton {{ color: {color}; font-weight: bold; }}
+                QRadioButton::indicator {{
+                    width: 12px; height: 12px;
+                    border-radius: 7px;
+                    border: 2px solid #555555;
+                    background: transparent;
+                }}
+                QRadioButton::indicator:checked {{
+                    border: 2px solid #555555;
+                    background: qradialgradient(cx:0.5, cy:0.5, radius:0.45, fx:0.5, fy:0.5, stop:0 {color}, stop:0.8 {color}, stop:1 transparent);
+                }}
+            """)
 
         # A. script_analysis
         p_script_analysis = QWidget()
@@ -1432,24 +1494,55 @@ class BadWordsGUI(QMainWindow):
         
         btn_row_script = QHBoxLayout()
         self.btn_import_script = QPushButton("Import Script")
+        self.btn_import_script.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear_script = QPushButton("Clear")
+        self.btn_clear_script.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_row_script.addWidget(self.btn_import_script)
         btn_row_script.addWidget(self.btn_clear_script)
         l_script_analysis.addLayout(btn_row_script)
         
         self.btn_analyze_compare = QPushButton("ANALYZE (Compare)")
+        self.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_analyze_compare.setFixedHeight(35)
         self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 14px; border: none; border-radius: 4px; padding: 10px;")
-        self.btn_analyze_compare.setEnabled(False)
         l_script_analysis.addWidget(self.btn_analyze_compare)
         
+        self._analyze_color_anim = QVariantAnimation(self)
+        self._analyze_color_anim.setDuration(250)
+
+        def update_btn_style(color):
+            self.btn_analyze_compare.setStyleSheet(f"QPushButton {{ background-color: {color.name()}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }}")
+        self._analyze_color_anim.valueChanged.connect(update_btn_style)
+        
         self.btn_analyze_standalone = QPushButton("ANALYZE (Standalone)")
+        self.btn_analyze_standalone.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_analyze_standalone.setFixedHeight(35)
         self.btn_analyze_standalone.setEnabled(False)
         l_script_analysis.addWidget(self.btn_analyze_standalone)
         
         self.activities["script_analysis"] = _wrap_activity(p_script_analysis)
         
         # Connect text change logic
-        self.text_script.textChanged.connect(lambda: self.btn_analyze_compare.setEnabled(bool(self.text_script.toPlainText().strip())))
+        def update_compare_btn():
+            has_text = bool(self.text_script.toPlainText().strip())
+            
+            # Check if state actually changed to prevent animation loop on every keystroke
+            if getattr(self, '_analyze_last_state', None) == has_text:
+                return 
+            self._analyze_last_state = has_text
+            
+            self.btn_analyze_compare.setEnabled(has_text)
+            
+            start_color = QColor("#2a2a2a") if has_text else QColor(config.BTN_BG)
+            end_color = QColor(config.BTN_BG) if has_text else QColor("#2a2a2a")
+
+            self._analyze_color_anim.stop()
+            self._analyze_color_anim.setStartValue(start_color)
+            self._analyze_color_anim.setEndValue(end_color)
+            self._analyze_color_anim.start()
+            
+        self.text_script.textChanged.connect(update_compare_btn)
+        update_compare_btn()
 
         # B. silence
         p_silence = QWidget()
@@ -1485,6 +1578,9 @@ class BadWordsGUI(QMainWindow):
         
         l_silence.addStretch(1)
         self.activities["silence"] = _wrap_activity(p_silence)
+        
+        self.tgl_silence_cut.toggled.connect(lambda checked: self.tgl_silence_mark.setChecked(False) if checked else None)
+        self.tgl_silence_mark.toggled.connect(lambda checked: self.tgl_silence_cut.setChecked(False) if checked else None)
 
         # C. fillers
         p_fillers = QWidget()
@@ -1498,6 +1594,7 @@ class BadWordsGUI(QMainWindow):
         l_fillers.addWidget(self.text_fillers)
         
         self.btn_save_fillers = QPushButton("Save")
+        self.btn_save_fillers.setCursor(Qt.CursorShape.PointingHandCursor)
         l_fillers.addWidget(self.btn_save_fillers)
         
         row_auto_filler = QHBoxLayout()
@@ -1518,30 +1615,40 @@ class BadWordsGUI(QMainWindow):
         l_main.setSpacing(10)
         
         # Top Section (Markers)
-        l_main.addWidget(QLabel("Marking Mode:"))
+        row_marking_title = QHBoxLayout()
+        row_marking_title.addWidget(QLabel("Marking Mode:"))
+        row_marking_title.addStretch()
+        self.btn_clear_transcript = QPushButton("🧹")
+        self.btn_clear_transcript.setFixedSize(26, 26)
+        self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
+        self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear_transcript.setStyleSheet("background: transparent; border: none; font-size: 14px; padding: 2px;")
+        row_marking_title.addWidget(self.btn_clear_transcript)
+        l_main.addLayout(row_marking_title)
         
         self.rb_red = QRadioButton("RED (Cut/Filler)")
-        self.rb_red.setStyleSheet(f"color: {config.WORD_BAD_BG}; font-weight: bold;")
+        self.rb_red.setCursor(Qt.CursorShape.PointingHandCursor)
+        style_rb(self.rb_red, config.WORD_BAD_BG)
         l_main.addWidget(self.rb_red)
         
         self.rb_blue = QRadioButton("BLUE (Retake)")
-        self.rb_blue.setStyleSheet(f"color: {config.WORD_REPEAT_BG}; font-weight: bold;")
+        self.rb_blue.setCursor(Qt.CursorShape.PointingHandCursor)
+        style_rb(self.rb_blue, config.WORD_REPEAT_BG)
         l_main.addWidget(self.rb_blue)
         
         self.rb_green = QRadioButton("GREEN (Typo)")
-        self.rb_green.setStyleSheet(f"color: {config.WORD_TYPO_BG}; font-weight: bold;")
+        self.rb_green.setCursor(Qt.CursorShape.PointingHandCursor)
+        style_rb(self.rb_green, config.WORD_TYPO_BG)
         l_main.addWidget(self.rb_green)
         
         self.rb_eraser = QRadioButton("ERASER (Clear)")
-        self.rb_eraser.setStyleSheet("color: white; font-weight: bold;")
+        self.rb_eraser.setCursor(Qt.CursorShape.PointingHandCursor)
+        style_rb(self.rb_eraser, "#ffffff")
         l_main.addWidget(self.rb_eraser)
         
         lbl_dummy = QLabel("+ add custom marker...")
         lbl_dummy.setStyleSheet("color: #808080; font-size: 9px; text-decoration: underline;")
         l_main.addWidget(lbl_dummy)
-        
-        self.btn_clear_transcript = QPushButton("Clear Transcript")
-        l_main.addWidget(self.btn_clear_transcript)
         
         # Middle
         l_main.addStretch(1)
@@ -1561,14 +1668,17 @@ class BadWordsGUI(QMainWindow):
         
         row_proj = QHBoxLayout()
         self.btn_import_proj = QPushButton("Import Project")
+        self.btn_import_proj.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_export_proj = QPushButton("Export Project")
+        self.btn_export_proj.setCursor(Qt.CursorShape.PointingHandCursor)
         row_proj.addWidget(self.btn_import_proj)
         row_proj.addWidget(self.btn_export_proj)
         l_main.addLayout(row_proj)
         
         self.btn_assemble = QPushButton("ASSEMBLE")
         self.btn_assemble.setFixedHeight(35)
-        self.btn_assemble.setStyleSheet("background-color: #1e1e1e; border: 1px solid #444; font-weight: bold;")
+        self.btn_assemble.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_assemble.setStyleSheet("QPushButton { background-color: #11703c; color: white; font-weight: bold; border-radius: 4px; border: 1px solid #0a4d28; } QPushButton:hover { background-color: #168f4d; } QPushButton:pressed { background-color: #0d5c31; }")
         l_main.addWidget(self.btn_assemble)
         
         self.activities["main_panel"] = _wrap_activity(p_main)
@@ -1604,6 +1714,22 @@ class BadWordsGUI(QMainWindow):
         
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
+        
+        self.btn_analyze_standalone.installEventFilter(self)
+        self.btn_clear_transcript.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Enter:
+            if watched == getattr(self, 'btn_analyze_standalone', None):
+                self.shared_tooltip.show_at(watched, self.txt("tooltip_dev"), is_right_side=False)
+            elif watched == getattr(self, 'btn_clear_transcript', None):
+                # CRITICAL: is_right_side=True forces it to render to the left of the button!
+                self.shared_tooltip.show_at(watched, "Clear all markings", is_right_side=True)
+        elif event.type() == QEvent.Type.Leave:
+            if watched in (getattr(self, 'btn_analyze_standalone', None), getattr(self, 'btn_clear_transcript', None)):
+                self.shared_tooltip.hide()
+                
+        return super().eventFilter(watched, event)
 
 
     # Removed deprecated _on_nav_script and _on_nav_analysis
@@ -1756,7 +1882,7 @@ class BadWordsGUI(QMainWindow):
                 padding: 0 18px;
             }}
             QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
-            QPushButton#btn_primary:pressed {{ background-color: #3b44a8; }}
+            QPushButton#btn_primary:pressed {{ background-color: #176e38; }}
         """)
         btn_analyze.clicked.connect(self._on_start_analysis)
         btn_row.addWidget(btn_analyze)
@@ -1820,6 +1946,15 @@ class BadWordsGUI(QMainWindow):
 
     def _on_nav_analysis(self):
         """Navigate to the Analysis / Processing page."""
+        self.go_to_page(1)
+
+    def _on_start_analysis(self):
+        print("[BadWordsGUI] Start Analysis triggered (Stage 4 TODO)")
+        # Auto-open panels if they aren't already open
+        if hasattr(self, 'btn_nav_script') and not getattr(self.btn_nav_script, 'is_active', False):
+            self._toggle_activity("script_analysis")
+        if hasattr(self, 'btn_nav_main') and not getattr(self.btn_nav_main, 'is_active', False):
+            self._toggle_activity("main_panel")
         self.go_to_page(1)
 
     def _on_nav_markers(self):
