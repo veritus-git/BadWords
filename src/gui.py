@@ -659,8 +659,28 @@ class AnimatedTitleButton(QPushButton):
         self._anim.setDuration(150)
         self._anim.setEasingCurve(QEasingCurve.InOutQuad)
         self._anim.valueChanged.connect(self._on_color_changed)
+        self._icon_path = icon_path
 
         self._update_style()
+
+    def change_base_icon(self, new_icon_path):
+        if hasattr(self, 'icon_path'):
+            self.icon_path = new_icon_path
+        elif hasattr(self, '_icon_path'):
+            self._icon_path = new_icon_path
+            
+        # Bezpieczna aktualizacja ikony
+        self.setIcon(QIcon(new_icon_path))
+        
+        # Jeśli ikona jest przypisywana przez QSS w metodzie aktualizującej (np. _update_style),
+        # upewnij się, że wywołujesz tę metodę, aby odświeżyć style!
+        if hasattr(self, '_update_style'):
+            self._update_style()
+            
+        # Wymuszenie przerysowania przez silnik Qt
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
     # ── internal ─────────────────────────────────────────────────────────────
     def _on_color_changed(self, color):
@@ -748,22 +768,30 @@ class CustomTitleBar(QWidget):
         _src_dir    = os.path.dirname(os.path.abspath(__file__))
         _assets_dir = os.path.join(_src_dir, "layout")
 
-        self.btn_minimize = AnimatedTitleButton(
+        self.btn_min = AnimatedTitleButton(
             os.path.join(_assets_dir, "minimize.png"),
             "btn_minimize", lang, parent=self)
-        self.btn_maximize = AnimatedTitleButton(
+        self.btn_max = AnimatedTitleButton(
             os.path.join(_assets_dir, "maximize.png"),
             "btn_maximize", lang, parent=self)
         self.btn_close    = AnimatedTitleButton(
             os.path.join(_assets_dir, "exit.png"),
             "btn_close",    lang, parent=self)
 
-        self.btn_minimize.clicked.connect(lambda: self._win.showMinimized())
-        self.btn_maximize.clicked.connect(self._toggle_maximize)
+        self.btn_min.clicked.connect(lambda: self._win.showMinimized())
+        self.btn_max.clicked.connect(self._toggle_maximize)
         self.btn_close.clicked.connect(self._win.close)
 
-        for btn in (self.btn_minimize, self.btn_maximize, self.btn_close):
+        for btn in (self.btn_min, self.btn_max, self.btn_close):
             lay.addWidget(btn)
+
+    def update_maximize_icon(self, is_maximized):
+        icon_name = 'windowed.png' if is_maximized else 'maximize.png'
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'layout', icon_name)
+
+        # Używamy nowej metody, która zabezpiecza ikonę przed resetem przez animację hover!
+        self.btn_max.change_base_icon(icon_path)
+        self.btn_max.setIconSize(QSize(14, 14))
 
     # ── helpers ───────────────────────────────────────────────────────────────
     def _toggle_maximize(self):
@@ -772,22 +800,78 @@ class CustomTitleBar(QWidget):
         else:
             self._win.showMaximized()
 
-    # ── macOS / Linux native move & toggle ────────────────────────────────────
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            win_handle = self._win.windowHandle()
-            if win_handle:
-                try:
-                    win_handle.startSystemMove()
-                except Exception:
-                    pass
-        super().mousePressEvent(event)
+            self._is_dragging = True
+            # Zapisujemy pozycję lokalną kliknięcia (względem paska tytułowego)
+            self._click_pos = event.position().toPoint()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not getattr(self, '_is_dragging', False):
+            super().mouseMoveEvent(event)
+            return
+
+        win = self.window()
+
+        # Filtr drgań myszki (zapobiega odpalaniu drag przy zwykłym kliknięciu)
+        if (event.position().toPoint() - self._click_pos).manhattanLength() < 5:
+            return
+
+        self._is_dragging = False # Przekazujemy pałeczkę do systemu operacyjnego
+
+        if win.isMaximized():
+            # 1. Obliczamy procentowe miejsce chwycenia paska (np. 0.5 to środek)
+            ratio = self._click_pos.x() / self.width()
+            
+            # 2. Odpinamy okno z maksymalizacji
+            win.showNormal()
+            
+            # 3. Korygujemy pozycję okna tak, aby pasek nie "uciekł" spod kursora
+            new_width = win.width()
+            global_mouse_pos = event.globalPosition().toPoint()
+            
+            new_x = global_mouse_pos.x() - int(new_width * ratio)
+            new_y = global_mouse_pos.y() - self._click_pos.y()
+            win.move(new_x, new_y)
+            
+        # Niezależnie od trybu okna, oddajemy kontrolę menedżerowi okien (Aero Snap itp.)
+        if hasattr(win, 'windowHandle') and win.windowHandle():
+            win.windowHandle().startSystemMove()
+            
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._is_dragging = False
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._toggle_maximize()
         super().mouseDoubleClickEvent(event)
 
+
+class ResizeGrip(QWidget):
+    def __init__(self, parent, edge):
+        super().__init__(parent)
+        self.edge = edge
+        self.setStyleSheet("background: transparent;")
+        
+        if self.edge == Qt.TopEdge or self.edge == Qt.BottomEdge: 
+            self.setCursor(Qt.SizeVerCursor)
+        elif self.edge == Qt.LeftEdge or self.edge == Qt.RightEdge: 
+            self.setCursor(Qt.SizeHorCursor)
+        elif self.edge == (Qt.TopEdge | Qt.LeftEdge) or self.edge == (Qt.BottomEdge | Qt.RightEdge): 
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif self.edge == (Qt.TopEdge | Qt.RightEdge) or self.edge == (Qt.BottomEdge | Qt.LeftEdge): 
+            self.setCursor(Qt.SizeBDiagCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.window().windowHandle().startSystemResize(self.edge)
+            event.accept()
 
 class FramelessWindowMixin:
     """
@@ -819,132 +903,118 @@ class FramelessWindowMixin:
         self.setWindowFlag(Qt.FramelessWindowHint, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self._is_popup              = is_popup
-        self._current_corner_state  = None   # (tl, tr, bl, br) cache
+        
+        # Determine if we are running on Windows
+        import platform
+        _engine = getattr(self, 'engine', None)
+        _os_doc = getattr(_engine, 'os_doc', None) if _engine else None
+        self._is_win = _os_doc.is_win if _os_doc else (platform.system() == "Windows")
+
+        if not self._is_win:
+            self._setup_grips()
 
     def _get_root_frame(self):
         """Return the topmost styled QFrame to apply border-radius to."""
         return getattr(self, 'inner_frame', getattr(self, '_root_frame', None))
 
-    # ── Smart Corners ─────────────────────────────────────────────────────────
-    def _apply_smart_corners(self):
-        """
-        Rounds every corner that does NOT touch a screen edge (tolerance ±2 px).
-        Only rewrites QSS when the state actually changes.
-        """
-        screen = self.screen()
-        if not screen:
-            return
-        avail = screen.availableGeometry()
-        fg    = self.frameGeometry()
-        tol   = 2
+    def changeEvent(self, event):
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._refresh_max_state()
+        super().changeEvent(event)
 
-        t_top    = abs(fg.top()    - avail.top())    <= tol
-        t_bottom = abs(fg.bottom() - avail.bottom()) <= tol
-        t_left   = abs(fg.left()   - avail.left())   <= tol
-        t_right  = abs(fg.right()  - avail.right())  <= tol
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Wynosimy gripy na wierzch dopiero po zbudowaniu i wyrenderowaniu całego UI (CentralWidget)
+        if hasattr(self, '_grips'):
+            for grip in self._grips:
+                grip.raise_()
 
-        r = 12   # corner radius in px
-        tl = 0 if (t_top    or t_left)  else r
-        tr = 0 if (t_top    or t_right) else r
-        bl = 0 if (t_bottom or t_left)  else r
-        br = 0 if (t_bottom or t_right) else r
+    def _refresh_max_state(self):
+        is_max = self.isMaximized()
+        
+        # Szukamy paska pod obiema nazwami (główne okno: _title_bar, dialogi: _tb)
+        title_bar = getattr(self, '_title_bar', getattr(self, '_tb', None))
+        
+        if title_bar and hasattr(title_bar, 'update_maximize_icon'):
+            title_bar.update_maximize_icon(is_max)
 
-        state = (tl, tr, bl, br)
-        if state == self._current_corner_state:
-            return
-        self._current_corner_state = state
-
-        target = self._get_root_frame()
-        if target is None:
-            return
-
-        existing = target.styleSheet()
-        # Strip any previous border-radius rule and append the new one
-        lines = [l for l in existing.split('\n')
-                 if 'border-radius' not in l and l.strip()]
-        clean = '\n'.join(lines)
-        if clean and not clean.endswith('{'):
-            target.setStyleSheet(
-                clean + f"\n    border-radius: {tl}px {tr}px {br}px {bl}px;"
-            )
-
-    def moveEvent(self, event):
-        super().moveEvent(event)
-        self._apply_smart_corners()
+    def _setup_grips(self):
+        self._grips = []
+        edges = [
+            Qt.TopEdge, Qt.BottomEdge, Qt.LeftEdge, Qt.RightEdge, 
+            Qt.TopEdge | Qt.LeftEdge, 
+            Qt.TopEdge | Qt.RightEdge, 
+            Qt.BottomEdge | Qt.LeftEdge, 
+            Qt.BottomEdge | Qt.RightEdge
+        ]
+        for edge in edges:
+            grip = ResizeGrip(self, edge)
+            self._grips.append(grip)
+            grip.raise_() # <-- ZMIANA: Podnosimy Z-index tylko raz przy tworzeniu
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._apply_smart_corners()
+        self._update_grips()
+
+    def _update_grips(self):
+        if not hasattr(self, '_grips'): return
+
+        is_max = self.isMaximized()
+
+        b = 6 
+        w, h = self.width(), self.height()
+
+        for grip in self._grips:
+            if is_max:
+                if not grip.isHidden(): grip.hide()
+                continue
+            else:
+                if grip.isHidden(): grip.show()
+
+            if grip.edge == Qt.TopEdge: grip.setGeometry(b, 0, w - 2*b, b)
+            elif grip.edge == Qt.BottomEdge: grip.setGeometry(b, h - b, w - 2*b, b)
+            elif grip.edge == Qt.LeftEdge: grip.setGeometry(0, b, b, h - 2*b)
+            elif grip.edge == Qt.RightEdge: grip.setGeometry(w - b, b, b, h - 2*b)
+            elif grip.edge == (Qt.TopEdge | Qt.LeftEdge): grip.setGeometry(0, 0, b, b)
+            elif grip.edge == (Qt.TopEdge | Qt.RightEdge): grip.setGeometry(w - b, 0, b, b)
+            elif grip.edge == (Qt.BottomEdge | Qt.LeftEdge): grip.setGeometry(0, h - b, b, b)
+            elif grip.edge == (Qt.BottomEdge | Qt.RightEdge): grip.setGeometry(w - b, h - b, b, b)
 
     # ── Windows WM_NCHITTEST ──────────────────────────────────────────────────
     def nativeEvent(self, eventType, message):
         try:
-            # Determine if we are running on Windows
-            _engine = getattr(self, 'engine', None)
-            _os_doc = getattr(_engine, 'os_doc', None) if _engine else None
-            _is_win = _os_doc.is_win if _os_doc else (platform.system() == "Windows")
-
+            _is_win = getattr(self, '_is_win', platform.system() == "Windows")
             if _is_win and eventType == b"windows_generic_MSG":
                 import ctypes.wintypes as _wt
                 msg = _wt.MSG.from_address(int(message))
-                if msg.message != 0x0084:              # WM_NCHITTEST
-                    return super().nativeEvent(eventType, message)
-
-                # Cursor position in screen coordinates
-                lp    = msg.lParam
-                sx    = ctypes.c_int16(lp & 0xFFFF).value
-                sy    = ctypes.c_int16((lp >> 16) & 0xFFFF).value
-                local = self.mapFromGlobal(QPoint(sx, sy))
-                lx, ly  = local.x(), local.y()
-                w,  h   = self.width(), self.height()
-                b       = self._RESIZE_BORDER
-
-                on_l = lx < b
-                on_r = lx >= w - b
-                on_t = ly < b
-                on_b = ly >= h - b
-
-                # fmt: off
-                _HT = {
-                    (True,  False, True,  False): 13,  # HTTOPLEFT
-                    (False, True,  True,  False): 14,  # HTTOPRIGHT
-                    (True,  False, False, True ): 16,  # HTBOTTOMLEFT
-                    (False, True,  False, True ): 17,  # HTBOTTOMRIGHT
-                    (False, False, True,  False): 12,  # HTTOP
-                    (False, False, False, True ): 15,  # HTBOTTOM
-                    (True,  False, False, False): 10,  # HTLEFT
-                    (False, True,  False, False): 11,  # HTRIGHT
-                }
-                # fmt: on
-                hit = _HT.get((on_l, on_r, on_t, on_b))
-                if hit:
-                    return True, hit
-
-                # Check title bar region
-                _tb = getattr(self, '_title_bar', None)
-                if _tb is not None:
-                    tb_tl = _tb.mapToGlobal(_tb.rect().topLeft())
-                    tb_br = _tb.mapToGlobal(_tb.rect().bottomRight())
-                    if (tb_tl.x() <= sx <= tb_br.x() and
-                            tb_tl.y() <= sy <= tb_br.y()):
-                        # If cursor is over a window-control button → HTCLIENT
-                        for _btn in (_tb.btn_minimize,
-                                     _tb.btn_maximize,
-                                     _tb.btn_close):
-                            _bl = _btn.mapToGlobal(_btn.rect().topLeft())
-                            _br = _btn.mapToGlobal(_btn.rect().bottomRight())
-                            if (_bl.x() <= sx <= _br.x() and
-                                    _bl.y() <= sy <= _br.y()):
-                                return True, 1   # HTCLIENT
-                        return True, 2           # HTCAPTION → OS drag/snap
-
-                return True, 1                   # HTCLIENT
-
-        except Exception as _e:
-            try:
-                osdoc.log_error(f"[CSD] nativeEvent: {_e}")
-            except Exception:
-                pass
+                if msg.message == 0x0084: # WM_NCHITTEST
+                    x = msg.lParam & 0xFFFF
+                    if x & 0x8000: x -= 0x10000
+                    y = (msg.lParam >> 16) & 0xFFFF
+                    if y & 0x8000: y -= 0x10000
+                    
+                    pos = self.mapFromGlobal(QPoint(x, y))
+                    w, h = self.width(), self.height()
+                    b = 6 # Grubość strefy zmiany rozmiaru okna
+                    
+                    left, right = pos.x() < b, pos.x() > w - b
+                    top, bottom = pos.y() < b, pos.y() > h - b
+                    
+                    # TYLKO krawędzie dla zmiany rozmiaru. Zero HTCAPTION (powodowało blokadę DWM)
+                    if top and left: return True, 13
+                    if top and right: return True, 14
+                    if bottom and left: return True, 16
+                    if bottom and right: return True, 17
+                    if left: return True, 10
+                    if right: return True, 11
+                    if top: return True, 12
+                    if bottom: return True, 15
+                    
+                    # Przekazanie do PySide (przyciski będą działać, przeciąganie w mouseMoveEvent)
+                    return True, 1 
+        except Exception:
+            pass
 
         return super().nativeEvent(eventType, message)
 
@@ -2036,8 +2106,8 @@ class CustomMsgBox(FramelessWindowMixin, QDialog):
         root_layout.setContentsMargins(0, 0, 0, 0)
         
         self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
-        self._tb.btn_minimize.hide()
-        self._tb.btn_maximize.hide()
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
         root_layout.addWidget(self._tb)
         
         content_layout = QVBoxLayout()
@@ -2114,8 +2184,8 @@ class UnsavedChangesDialog(FramelessWindowMixin, QDialog):
         root_layout.setContentsMargins(0, 0, 0, 0)
         
         self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
-        self._tb.btn_minimize.hide()
-        self._tb.btn_maximize.hide()
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
         root_layout.addWidget(self._tb)
         
         content_layout = QVBoxLayout()
@@ -2389,8 +2459,8 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         # Manually force the title into toolbars that normally get theirs from windowTitle()
         if hasattr(self._tb, "_lbl_title"):
             self._tb._lbl_title.setText(self.txt("tool_settings"))
-        self._tb.btn_minimize.hide()
-        self._tb.btn_maximize.hide()
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
         outer_layout.addWidget(self._tb)
         
         root = QHBoxLayout()
