@@ -24,3 +24,15 @@ chmod \+x setup_file_name.sh
 2. Open your Project and Timeline.  
 3. Go to Workspace → Scripts → BadWords  
 4. Enjoy easier editing\!
+
+### 4\) Uninstallation
+
+To remove the program, open a terminal in the folder where the setup script is located and run it again:
+
+**Run the installer**  
+./setup_file_name.sh
+
+**Then:**
+
+1. From the main menu, select option **4** (Uninstall).  
+2. When prompted, type `yes` and press Enter to confirm the complete removal of all files.

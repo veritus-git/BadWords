@@ -6,7 +6,7 @@ in DaVinci Resolve using OpenAI Whisper and FFmpeg.
 ![Preview](assets/editor_preview.png)
 
 ## Quick access shortcuts:
-### Installation guides:
+### Installation & Deinstalation guides:
 **[Linux (any distro)](assets/Linux%20GUIDE.md)** <br>
 **[Windows](assets/Windows%20GUIDE.md)**
 
@@ -22,19 +22,14 @@ in DaVinci Resolve using OpenAI Whisper and FFmpeg.
 
 <a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" align="top" width="30%" style="margin-left: 20px; margin-bottom: 20px;" alt="Logo"></a>
 
-## 🛠️ What's new in 2.0.2?
+## 🛠️ What's new in 2.0.3?
 
-- Precise cuts: I implemented stable-ts, this is the biggest change. It makes timestamps way more accurate so it finally stops cutting words in half.
-- "Lazy assemble": In 2.0.1 and older versions clicking "Assemble" just froze the app until it was done. Now it "thinks" for a sec and smoothly spits out clips onto your timeline. Looks and feels way better.
-- Performance/compatibility: The app now automatically picks the best compute type (float16/float32/int8) for your hardware. Should boost speed on new GPUs and fix crashes on older ones (AMD/Intel cards still not supported - use CPU instead).
-- Whisper hallucinations: Sometimes Whisper breaks and types "mhm" 100 times in a row. I fixed it by making GUI just show "mhm [x100]" instead of spamming your whole screen.
-- UI & Bug fixes: I fixed the annoying appearing white title bar on Windows, cleaned up the interface when you aren't using a "script reviewer mode" and fixed some weird coloring behavior with typos/inaudible fragments (unchecking their visibility now properly ignores them during assembly).
-- Better status updates: Added a proper checking/downloading stage on Windows so you actually know what's happening under the hood.
-- Optimized Verbatim: Tweaked the transcription logic for slightly better detection of repetitions and slip-ups.
-- Better installers: You can now choose to just Update, do a Clean Install (refreshes core files but keeps your settings/models, use it if bugs appear), or do a Full Wipe.
-- Official Logo: Added the branding icon! I decided to stick with the color version but improved it a bit. You'll finally see a proper logo on your taskbar.
-- Telemetry (Optional): I added an optional stats ping in the installer. If you leave it on it sends a completely anonymous ping when you install/update (just OS, app version, and country). No files, no audio, zero personal data.
-- Auto-Sourcing: I completely removed the confusing "Compound Clip Fix Mode" checkbox. BadWords now does "Auto-Sourcing" in the background and automatically figures out how to safely assemble your timeline, even if you have unsynced video or multiple cuts.
+- Percentage Progress Bar: Transcription now shows a precise, real-time percentage progress bar so you always know exactly how far along Whisper is.
+- Full Uninstallers: Both Windows and Linux now ship with complete, scorched-earth uninstallers that cleanly remove all associated files, hidden folders, and registry entries — no leftovers.
+- Linux Install Path Selection: The Linux installer now lets you choose a custom installation path instead of forcing a single fixed location.
+- Geolocation opt-out in Telemetry: You can now disable geolocation in the optional telemetry ping. Opting out strips all location data from the anonymous install/update signal.
+- Subprocess stability fixes: Resolved edge-case crashes and race conditions in background subprocess handling for more reliable transcription runs.
+- Installer optimisations: Both installers are smarter — the Linux script skips redundant PyTorch downloads when updating, and the GPU acceleration mode is auto-detected on updates so you don't have to pick it again.
 
 
 ## 🚀 Features
