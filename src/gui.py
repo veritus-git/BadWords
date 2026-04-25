@@ -23,6 +23,7 @@ import os
 import time
 import traceback
 import ctypes
+import threading
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
@@ -39,7 +40,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen
+    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
 )
 from PySide6.QtCore import QMimeData
 
@@ -227,6 +228,176 @@ def _txt(lang: str, key: str, **kwargs) -> str:
         return text.format(**kwargs)
     return text
 
+
+# ==========================================
+# PHASE 7 CLASSES: WORKER, PROGRESS BAR, CANVAS
+# ==========================================
+
+class WorkerSignals(QObject):
+    progress = Signal(int)
+    status = Signal(str)
+    finished = Signal(object, object)
+    error = Signal(str)
+
+class LiquidProgressBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._value = 0.0
+        self.setFixedHeight(8)
+        self._anim = QPropertyAnimation(self, b"value")
+        self._anim.setDuration(300)
+        self._anim.setEasingCurve(QEasingCurve.OutQuad)
+
+    @Property(float)
+    def value(self): return self._value
+
+    @value.setter
+    def value(self, val):
+        self._value = val
+        self.update()
+
+    def set_value(self, val):
+        self._anim.stop()
+        self._anim.setEndValue(float(val))
+        self._anim.start()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QLinearGradient
+        from PySide6.QtCore import QRectF
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        
+        rect = self.rect()
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#2b2b2b"))
+        p.drawRoundedRect(rect, 4, 4)
+        
+        if self._value > 0:
+            fill_width = (self._value / 100.0) * rect.width()
+            fill_rect = QRectF(0, 0, fill_width, rect.height())
+            
+            grad = QLinearGradient(0, 0, fill_width, 0)
+            grad.setColorAt(0.0, QColor("#1a7a3e"))
+            grad.setColorAt(1.0, QColor("#b8d035"))
+            
+            p.setBrush(grad)
+            p.drawRoundedRect(fill_rect, 4, 4)
+
+
+class TranscriptionCanvas(QWidget):
+    def __init__(self, main_window, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.words_data = []
+        self.setCursor(Qt.ArrowCursor)
+        self.setMouseTracking(True)
+        self._last_dragged_id = -1
+        self.setFont(QFont(config.UI_FONT_NAME, 13))
+
+    def load_data(self, words_data):
+        self.words_data = words_data
+        self._calculate_layout()
+        self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._calculate_layout()
+
+    def _calculate_layout(self):
+        if not self.words_data: return
+        from PySide6.QtGui import QFontMetrics
+        
+        metrics = QFontMetrics(self.font())
+        space_w = metrics.horizontalAdvance(" ")
+        line_height = metrics.height() + 14
+        x, y = 15, 15
+        max_w = self.width() - 30
+        
+        for w in self.words_data:
+            if w.get('type') == 'silence': continue
+            
+            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+            if is_inaudible and hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
+                continue
+
+            text = w.get('text', '')
+            word_w = metrics.horizontalAdvance(text)
+            
+            if x + word_w > max_w and x > 15:
+                x = 15
+                y += line_height
+                
+            w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+            x += word_w + space_w
+            
+        self.setMinimumHeight(y + line_height + 30)
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setFont(self.font())
+        
+        color_map = {
+            'bad': (QColor(config.WORD_BAD_BG), QColor(config.WORD_BAD_FG)),
+            'repeat': (QColor(config.WORD_REPEAT_BG), QColor(config.WORD_REPEAT_FG)),
+            'typo': (QColor(config.WORD_TYPO_BG), QColor(config.WORD_TYPO_FG)),
+            'inaudible': (QColor(config.WORD_INAUDIBLE_BG), QColor(config.WORD_INAUDIBLE_FG))
+        }
+        
+        p.setPen(Qt.NoPen)
+        for i, w in enumerate(self.words_data):
+            if '_rect' not in w: continue
+            status = w.get('status')
+            
+            if status == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
+                status = None
+                
+            if status in color_map:
+                bg_color = color_map[status][0]
+                p.setBrush(bg_color)
+                rect = w['_rect']
+                p.drawRoundedRect(rect.adjusted(-2, 0, 2, 0), 3, 3)
+                
+                # Anti-Island Bridging
+                if i + 1 < len(self.words_data):
+                    next_w = self.words_data[i+1]
+                    if '_rect' in next_w and next_w.get('status') == status and next_w['_rect'].y() == rect.y():
+                        bridge_rect = QRect(rect.right(), rect.y(), next_w['_rect'].left() - rect.right(), rect.height())
+                        p.drawRect(bridge_rect)
+                        
+        for w in self.words_data:
+            if '_rect' not in w: continue
+            status = w.get('status')
+            if status == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
+                status = None
+            fg_color = color_map[status][1] if status in color_map else QColor(config.WORD_NORMAL_FG)
+            p.setPen(fg_color)
+            p.drawText(w['_rect'], Qt.AlignCenter, w.get('text', ''))
+
+    def _handle_mouse(self, pos):
+        for w in self.words_data:
+            if '_rect' in w and w['_rect'].adjusted(-2,0,2,0).contains(pos):
+                if w['id'] != self._last_dragged_id:
+                    self._last_dragged_id = w['id']
+                    status = None
+                    if getattr(self.main_window, 'rb_red', None) and self.main_window.rb_red.isChecked(): status = 'bad'
+                    elif getattr(self.main_window, 'rb_blue', None) and self.main_window.rb_blue.isChecked(): status = 'repeat'
+                    elif getattr(self.main_window, 'rb_green', None) and self.main_window.rb_green.isChecked(): status = 'typo'
+                    
+                    import algorythms
+                    updates = algorythms.propagate_status_change(self.words_data, w['id'], status)
+                    if updates: self.update()
+                break
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._last_dragged_id = -1
+            self._handle_mouse(event.pos())
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton:
+            self._handle_mouse(event.pos())
 
 # ==========================================
 # CLASS 1: SPLASH SCREEN
@@ -1976,40 +2147,53 @@ class BadWordsGUI(QMainWindow):
         return page
 
     def _build_page_processing(self) -> QWidget:
-        """Page 1: Processing / progress placeholder."""
         page = QWidget()
         page.setObjectName("page_processing")
-        page.setStyleSheet(
-            f"QWidget#page_processing {{ background-color: {config.BG_COLOR}; }}"
-        )
+        page.setStyleSheet(f"QWidget#page_processing {{ background-color: {config.BG_COLOR}; }}")
+        
         layout = QVBoxLayout(page)
         layout.setAlignment(Qt.AlignCenter)
-        lbl = QLabel("Processing...", page)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 14pt;"
+        
+        self.lbl_processing_status = QLabel("Initializing...", page)
+        self.lbl_processing_status.setAlignment(Qt.AlignCenter)
+        self.lbl_processing_status.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 13pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
-        layout.addWidget(lbl)
+        layout.addWidget(self.lbl_processing_status)
+        layout.addSpacing(15)
+        
+        self.bar_processing = LiquidProgressBar(page)
+        self.bar_processing.setFixedWidth(400)
+        layout.addWidget(self.bar_processing, 0, Qt.AlignCenter)
         return page
 
+    def _update_processing_progress(self, val: int):
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(val)
+
     def _build_page_editor(self) -> QWidget:
-        """Page 2: Editor area placeholder."""
         page = QWidget()
         page.setObjectName("page_editor")
-        page.setStyleSheet(
-            f"QWidget#page_editor {{ background-color: {config.BG_COLOR}; }}"
-        )
+        page.setStyleSheet(f"QWidget#page_editor {{ background-color: {config.BG_COLOR}; }}")
         layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignCenter)
-        lbl = QLabel("Editor Area", page)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 14pt;"
-            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
-        )
-        layout.addWidget(lbl)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        self.scroll_area = QScrollArea(page)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setStyleSheet(f"QScrollArea {{ background-color: {config.BG_COLOR}; border: none; }}")
+        
+        self.text_canvas = TranscriptionCanvas(main_window=self)
+        self.scroll_area.setWidget(self.text_canvas)
+        layout.addWidget(self.scroll_area)
+        
         return page
+
+    def _populate_editor(self, words_data, segments_data):
+        if hasattr(self, 'text_canvas'):
+            self.text_canvas.load_data(words_data)
 
     # ------------------------------------------------------------------
     # Sidebar navigation stubs
@@ -2024,13 +2208,74 @@ class BadWordsGUI(QMainWindow):
         self.go_to_page(1)
 
     def _on_start_analysis(self):
-        print("[BadWordsGUI] Start Analysis triggered (Stage 4 TODO)")
-        # Auto-open panels if they aren't already open
-        if hasattr(self, 'btn_nav_script') and not getattr(self.btn_nav_script, 'is_active', False):
-            self._toggle_activity("script_analysis")
-        if hasattr(self, 'btn_nav_main') and not getattr(self.btn_nav_main, 'is_active', False):
-            self._toggle_activity("main_panel")
+        # 1. Hide side panels
+        if hasattr(self, '_panel_left'): self._panel_left.hide()
+        if hasattr(self, '_panel_right'): self._panel_right.hide()
+        
+        # Un-toggle the sidebar buttons so they don't look active
+        if hasattr(self, 'btn_nav_script'): self.btn_nav_script.set_active(False)
+        if hasattr(self, 'btn_nav_main'): self.btn_nav_main.set_active(False)
+
+        # 2. Switch stack to index 1 (Processing page)
         self.go_to_page(1)
+        
+        # Reset progress bar UI
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText("Initializing analysis...")
+
+        # 3. Gather settings
+        lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
+        raw_model = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
+        model = raw_model.split()[0].lower() # Fixes capital letter issue for Whisper
+        
+        settings = {
+            "lang": lang,
+            "model": model,
+            "device": "Auto",
+            "filler_words": config.DEFAULT_BAD_WORDS
+        }
+        
+        # 4. Start thread targeting self.engine.run_analysis_pipeline()
+        self._worker_signals = WorkerSignals()
+        self._worker_signals.progress.connect(self._on_analysis_progress)
+        self._worker_signals.status.connect(self._on_analysis_status)
+        self._worker_signals.finished.connect(self._on_analysis_finished)
+        self._worker_signals.error.connect(self._on_analysis_error)
+        
+        def worker_func():
+            try:
+                words_data, segments_data = self.engine.run_analysis_pipeline(
+                    settings, 
+                    callback_status=self._worker_signals.status.emit, 
+                    callback_progress=self._worker_signals.progress.emit
+                )
+                self._worker_signals.finished.emit(words_data, segments_data)
+            except Exception as e:
+                self._worker_signals.error.emit(str(e))
+                
+        self._analysis_thread = threading.Thread(target=worker_func, daemon=True)
+        self._analysis_thread.start()
+
+    def _on_analysis_progress(self, val):
+        self._update_processing_progress(val)
+
+    def _on_analysis_status(self, msg):
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(msg)
+
+    def _on_analysis_error(self, err):
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(f"Error: {err}")
+
+    def _on_analysis_finished(self, words_data, segments_data):
+        self.go_to_page(2)
+        
+        self._toggle_activity("script_analysis")
+        self._toggle_activity("main_panel")
+        
+        self._populate_editor(words_data, segments_data)
 
     def _on_nav_markers(self):
         """Toggle the right panel (placeholder)."""
@@ -2066,10 +2311,7 @@ class BadWordsGUI(QMainWindow):
         """Placeholder: import project (Stage 4+)."""
         print("[BadWordsGUI] Import Project triggered (Stage 4 TODO)")
 
-    def _on_start_analysis(self):
-        """Placeholder: begin analysis flow, switch to processing page."""
-        print("[BadWordsGUI] Start Analysis triggered (Stage 4 TODO)")
-        self.go_to_page(1)  # Jump to Processing page
+
 
     # ------------------------------------------------------------------
     # Page navigation
