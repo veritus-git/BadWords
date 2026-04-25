@@ -85,6 +85,11 @@ class QPushButton(_QPushButton):
             return orig
         return super().text()
 
+    def _mq_text_area_width(self):
+        """Returns the pixel width actually available for text rendering,
+        derived from the widget's contentsRect (excludes QSS padding/margins)."""
+        return self.contentsRect().width()
+
     def enterEvent(self, event):
         super().enterEvent(event)
         orig = self.property("_mq_original_text")
@@ -97,9 +102,8 @@ class QPushButton(_QPushButton):
             if not orig or len(orig.strip()) <= 3:
                 self._mq_is_squeezed = False
                 return
-                
             fm = self.fontMetrics()
-            if fm.horizontalAdvance(orig) > self.width() - 16:
+            if fm.horizontalAdvance(orig) > self._mq_text_area_width():
                 self._mq_is_squeezed = True
                 self._mq_pos = 0.0
                 self._mq_alpha = 1.0
@@ -124,44 +128,37 @@ class QPushButton(_QPushButton):
         orig = self.property("_mq_original_text")
         if not orig: return
         fm = self.fontMetrics()
-        
-        clip_w = self.width() - 16
-        max_scroll = float(fm.horizontalAdvance(orig) - clip_w)
-        if max_scroll < 0: max_scroll = 0.0
+        clip_w = self._mq_text_area_width()
+        max_scroll = float(max(0, fm.horizontalAdvance(orig) - clip_w))
 
         if self._mq_state == "START_DELAY":
             self._mq_ticks += 1
             if self._mq_ticks > 40:  # ~640ms
                 self._mq_state = "SCROLL"
                 self._mq_ticks = 0
-                
         elif self._mq_state == "SCROLL":
-            self._mq_pos += 0.5  # Slower scroll (approx 30px/s)
+            self._mq_pos += 0.5
             if self._mq_pos >= max_scroll:
                 self._mq_pos = max_scroll
                 self._mq_state = "END_DELAY"
                 self._mq_ticks = 0
-                
         elif self._mq_state == "END_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:  # ~640ms wait at the end
+            if self._mq_ticks > 40:
                 self._mq_state = "FADEOUT"
                 self._mq_ticks = 0
-                
         elif self._mq_state == "FADEOUT":
             self._mq_alpha -= 0.05
             if self._mq_alpha <= 0.0:
                 self._mq_alpha = 0.0
                 self._mq_pos = 0.0
                 self._mq_state = "FADEIN"
-                
         elif self._mq_state == "FADEIN":
             self._mq_alpha += 0.05
             if self._mq_alpha >= 1.0:
                 self._mq_alpha = 1.0
                 self._mq_state = "START_DELAY"
                 self._mq_ticks = 0
-        
         self.update()
 
     def paintEvent(self, event):
@@ -170,31 +167,273 @@ class QPushButton(_QPushButton):
             return
 
         from PySide6.QtWidgets import QStyleOptionButton, QStyle
-
         opt = QStyleOptionButton()
         self.initStyleOption(opt)
-        
         orig = self.property("_mq_original_text") or ""
         opt.text = ""  # Hide native text to draw our own
-        
         painter = QPainter(self)
         self.style().drawControl(QStyle.CE_PushButton, opt, painter, self)
-        
-        padding = 8
-        clip_rect = self.rect().adjusted(padding, 0, -padding, 0)
-        painter.setClipRect(clip_rect)
-        
+
+        cr = self.contentsRect()
+        painter.setClipRect(cr)
         color = opt.palette.buttonText().color()
         if self._mq_alpha < 1.0:
-            alpha = max(0.0, min(1.0, self._mq_alpha))
-            color.setAlphaF(alpha)
-            
+            color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
-        
-        draw_rect = clip_rect.translated(-int(self._mq_pos), 0)
-        draw_rect.setWidth(9999) # Prevent wrapping
-        
+        draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
         painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
+
+
+_QRadioButton = QRadioButton
+class MarqueeRadioButton(_QRadioButton):
+    """QRadioButton with smooth marquee (scroll) effect on hover when text is truncated.
+    Uses QStyle.SE_RadioButtonContents to get the exact text rect Qt uses internally."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._mq_timer = QTimer(self)
+        self._mq_timer.timeout.connect(self._mq_scroll)
+        self._mq_timer.setInterval(16)
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        self._mq_hovered = False
+        self._mq_is_squeezed = False
+        self._mq_state = "START_DELAY"
+        self._mq_ticks = 0
+        self._mq_original_text = None
+
+    def setText(self, txt):
+        self._mq_original_text = txt
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        super().setText(txt)
+
+    def text(self):
+        if self._mq_original_text is not None:
+            return self._mq_original_text
+        return super().text()
+
+    def _mq_text_rect(self):
+        """Returns the exact QRect where Qt would render the radio button text.
+        Uses the style's SE_RadioButtonContents sub-element — 100% accurate,
+        no magic offset constants, works with any style/DPI/font."""
+        from PySide6.QtWidgets import QStyleOptionButton, QStyle
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        return self.style().subElementRect(QStyle.SE_RadioButtonContents, opt, self)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        orig = self._mq_original_text
+        if orig is None:
+            orig = super().text()
+            self._mq_original_text = orig
+
+        self._mq_hovered = True
+        try:
+            if not orig or len(orig.strip()) <= 3:
+                self._mq_is_squeezed = False
+                return
+            fm = self.fontMetrics()
+            if fm.horizontalAdvance(orig) > self._mq_text_rect().width():
+                self._mq_is_squeezed = True
+                self._mq_pos = 0.0
+                self._mq_alpha = 1.0
+                self._mq_state = "START_DELAY"
+                self._mq_ticks = 0
+                self._mq_timer.start()
+            else:
+                self._mq_is_squeezed = False
+        except Exception:
+            pass
+
+    def leaveEvent(self, event):
+        self._mq_hovered = False
+        self._mq_is_squeezed = False
+        self._mq_timer.stop()
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        self.update()
+        super().leaveEvent(event)
+
+    def _mq_scroll(self):
+        orig = self._mq_original_text
+        if not orig:
+            return
+        fm = self.fontMetrics()
+        tr = self._mq_text_rect()
+        max_scroll = float(max(0, fm.horizontalAdvance(orig) - tr.width()))
+
+        if self._mq_state == "START_DELAY":
+            self._mq_ticks += 1
+            if self._mq_ticks > 40:
+                self._mq_state = "SCROLL"
+                self._mq_ticks = 0
+        elif self._mq_state == "SCROLL":
+            self._mq_pos += 0.5
+            if self._mq_pos >= max_scroll:
+                self._mq_pos = max_scroll
+                self._mq_state = "END_DELAY"
+                self._mq_ticks = 0
+        elif self._mq_state == "END_DELAY":
+            self._mq_ticks += 1
+            if self._mq_ticks > 40:
+                self._mq_state = "FADEOUT"
+                self._mq_ticks = 0
+        elif self._mq_state == "FADEOUT":
+            self._mq_alpha -= 0.05
+            if self._mq_alpha <= 0.0:
+                self._mq_alpha = 0.0
+                self._mq_pos = 0.0
+                self._mq_state = "FADEIN"
+        elif self._mq_state == "FADEIN":
+            self._mq_alpha += 0.05
+            if self._mq_alpha >= 1.0:
+                self._mq_alpha = 1.0
+                self._mq_state = "START_DELAY"
+                self._mq_ticks = 0
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._mq_hovered or not self._mq_is_squeezed:
+            super().paintEvent(event)
+            return
+
+        from PySide6.QtWidgets import QStyleOptionButton, QStyle
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        opt.text = ""
+        painter = QPainter(self)
+        self.style().drawControl(QStyle.CE_RadioButton, opt, painter, self)
+
+        tr = self._mq_text_rect()
+        painter.setClipRect(tr)
+
+        color = opt.palette.buttonText().color()
+        if self._mq_alpha < 1.0:
+            color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
+        painter.setPen(color)
+        painter.setFont(self.font())
+        draw_rect = QRect(tr.left() - int(self._mq_pos), tr.top(), 9999, tr.height())
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, self._mq_original_text or "")
+
+
+_QLabel = QLabel
+class QLabel(_QLabel):
+    """Patched QLabel — shows a smooth marquee on hover whenever its text is wider
+    than the label's display area (single-line labels only; wordWrap ignored)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._mq_timer = QTimer(self)
+        self._mq_timer.timeout.connect(self._mq_scroll)
+        self._mq_timer.setInterval(16)
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        self._mq_hovered = False
+        self._mq_is_squeezed = False
+        self._mq_state = "START_DELAY"
+        self._mq_ticks = 0
+
+    def _mq_get_text(self):
+        t = super().text()
+        # Strip HTML tags for advance measurement
+        import re as _re
+        return _re.sub(r'<[^>]+>', '', t)
+
+    def _mq_active(self):
+        """Only run marquee for single-line, non-wrapping labels with enough text."""
+        if self.wordWrap():
+            return False
+        t = self._mq_get_text()
+        return bool(t) and len(t.strip()) > 3
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        if not self._mq_active():
+            return
+        self._mq_hovered = True
+        try:
+            fm = self.fontMetrics()
+            avail = self.contentsRect().width()
+            if fm.horizontalAdvance(self._mq_get_text()) > avail:
+                self._mq_is_squeezed = True
+                self._mq_pos = 0.0
+                self._mq_alpha = 1.0
+                self._mq_state = "START_DELAY"
+                self._mq_ticks = 0
+                self._mq_timer.start()
+            else:
+                self._mq_is_squeezed = False
+        except Exception:
+            pass
+
+    def leaveEvent(self, event):
+        self._mq_hovered = False
+        self._mq_is_squeezed = False
+        self._mq_timer.stop()
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        self.update()
+        super().leaveEvent(event)
+
+    def _mq_scroll(self):
+        fm = self.fontMetrics()
+        avail = self.contentsRect().width()
+        text = self._mq_get_text()
+        max_scroll = float(max(0, fm.horizontalAdvance(text) - avail))
+
+        if self._mq_state == "START_DELAY":
+            self._mq_ticks += 1
+            if self._mq_ticks > 40:
+                self._mq_state = "SCROLL"
+                self._mq_ticks = 0
+        elif self._mq_state == "SCROLL":
+            self._mq_pos += 0.5
+            if self._mq_pos >= max_scroll:
+                self._mq_pos = max_scroll
+                self._mq_state = "END_DELAY"
+                self._mq_ticks = 0
+        elif self._mq_state == "END_DELAY":
+            self._mq_ticks += 1
+            if self._mq_ticks > 40:
+                self._mq_state = "FADEOUT"
+                self._mq_ticks = 0
+        elif self._mq_state == "FADEOUT":
+            self._mq_alpha -= 0.05
+            if self._mq_alpha <= 0.0:
+                self._mq_alpha = 0.0
+                self._mq_pos = 0.0
+                self._mq_state = "FADEIN"
+        elif self._mq_state == "FADEIN":
+            self._mq_alpha += 0.05
+            if self._mq_alpha >= 1.0:
+                self._mq_alpha = 1.0
+                self._mq_state = "START_DELAY"
+                self._mq_ticks = 0
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._mq_hovered or not self._mq_is_squeezed:
+            super().paintEvent(event)
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        cr = self.contentsRect()
+        painter.setClipRect(cr)
+
+        color = self.palette().windowText().color()
+        if self._mq_alpha < 1.0:
+            color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
+        painter.setPen(color)
+        painter.setFont(self.font())
+
+        text = self._mq_get_text()
+        draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, text)
+
+
 
 
 class GripHandle(QSplitterHandle):
@@ -242,6 +481,189 @@ class GripSplitter(QSplitter):
         handle = GripHandle(self.orientation(), self)
         handle.setCursor(Qt.CursorShape.SplitHCursor)
         return handle
+
+
+from PySide6.QtWidgets import QStyledItemDelegate, QStyle
+from PySide6.QtCore import QModelIndex
+
+class MarqueeItemDelegate(QStyledItemDelegate):
+    """Delegate for QListWidget that draws item text with a smooth marquee
+    animation on hover when the text is wider than the available column width.
+    Completely replaces the default item renderer — no horizontal scrollbar needed.
+    """
+    _PADDING = 16  # must match QSS padding: 10px 16px
+
+    def __init__(self, list_widget):
+        super().__init__(list_widget)
+        self._lw = list_widget
+        # State per row index
+        self._mq_pos   = {}   # float offset
+        self._mq_alpha = {}   # 0.0–1.0 fade
+        self._mq_state = {}   # str state machine
+        self._mq_ticks = {}   # int tick counter
+        self._hovered_row = -1
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)  # ~60fps
+        self._timer.timeout.connect(self._tick)
+
+        # Install event filter on the viewport to catch mouse moves
+        self._lw.viewport().installEventFilter(self)
+        self._lw.viewport().setMouseTracking(True)
+
+    def _row_state(self, row):
+        if row not in self._mq_state:
+            self._mq_pos[row]   = 0.0
+            self._mq_alpha[row] = 1.0
+            self._mq_state[row] = "START_DELAY"
+            self._mq_ticks[row] = 0
+        return self._mq_state[row]
+
+    def _reset_row(self, row):
+        self._mq_pos[row]   = 0.0
+        self._mq_alpha[row] = 1.0
+        self._mq_state[row] = "START_DELAY"
+        self._mq_ticks[row] = 0
+
+    def _available_width(self):
+        """Pixel width available for text inside the list (minus padding)."""
+        return self._lw.viewport().width() - self._PADDING * 2
+
+    def _text_overflows(self, row):
+        item = self._lw.item(row)
+        if item is None:
+            return False
+        fm = self._lw.fontMetrics()
+        return fm.horizontalAdvance(item.text()) > self._available_width()
+
+    def eventFilter(self, obj, event):
+        if obj is self._lw.viewport():
+            if event.type() == QEvent.Type.MouseMove:
+                pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
+                idx = self._lw.indexAt(pos)
+                new_row = idx.row() if idx.isValid() else -1
+                if new_row != self._hovered_row:
+                    old = self._hovered_row
+                    self._hovered_row = new_row
+                    # Reset old row animation
+                    if old >= 0:
+                        self._reset_row(old)
+                        self._lw.update(self._lw.model().index(old, 0))
+                    # Start new row animation if text overflows
+                    if new_row >= 0 and self._text_overflows(new_row):
+                        self._row_state(new_row)  # ensure initialised
+                        if not self._timer.isActive():
+                            self._timer.start()
+                    elif not self._timer.isActive():
+                        pass  # nothing to animate
+            elif event.type() == QEvent.Type.Leave:
+                old = self._hovered_row
+                self._hovered_row = -1
+                if old >= 0:
+                    self._reset_row(old)
+                    self._lw.update(self._lw.model().index(old, 0))
+                self._timer.stop()
+        return super().eventFilter(obj, event)
+
+    def _tick(self):
+        row = self._hovered_row
+        if row < 0 or not self._text_overflows(row):
+            self._timer.stop()
+            return
+
+        item = self._lw.item(row)
+        fm = self._lw.fontMetrics()
+        avail = self._available_width()
+        max_scroll = float(max(0, fm.horizontalAdvance(item.text()) - avail))
+
+        state = self._row_state(row)
+
+        if state == "START_DELAY":
+            self._mq_ticks[row] += 1
+            if self._mq_ticks[row] > 40:
+                self._mq_state[row] = "SCROLL"
+                self._mq_ticks[row] = 0
+        elif state == "SCROLL":
+            self._mq_pos[row] += 0.5
+            if self._mq_pos[row] >= max_scroll:
+                self._mq_pos[row] = max_scroll
+                self._mq_state[row] = "END_DELAY"
+                self._mq_ticks[row] = 0
+        elif state == "END_DELAY":
+            self._mq_ticks[row] += 1
+            if self._mq_ticks[row] > 40:
+                self._mq_state[row] = "FADEOUT"
+                self._mq_ticks[row] = 0
+        elif state == "FADEOUT":
+            self._mq_alpha[row] -= 0.05
+            if self._mq_alpha[row] <= 0.0:
+                self._mq_alpha[row] = 0.0
+                self._mq_pos[row] = 0.0
+                self._mq_state[row] = "FADEIN"
+        elif state == "FADEIN":
+            self._mq_alpha[row] += 0.05
+            if self._mq_alpha[row] >= 1.0:
+                self._mq_alpha[row] = 1.0
+                self._mq_state[row] = "START_DELAY"
+                self._mq_ticks[row] = 0
+
+        self._lw.update(self._lw.model().index(row, 0))
+
+    def paint(self, painter, option, index):
+        # Draw selection/hover background using the standard style
+        from PySide6.QtWidgets import QStyleOptionViewItem
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""  # suppress native text drawing
+        self._lw.style().drawControl(QStyle.CE_ItemViewItem, opt, painter, self._lw)
+
+        row = index.row()
+        item = self._lw.item(row)
+        if item is None:
+            return
+
+        text = item.text()
+        fm = painter.fontMetrics()
+        avail = self._available_width()
+        overflows = fm.horizontalAdvance(text) > avail
+
+        # Determine text colour based on selection state
+        is_selected = bool(option.state & QStyle.State_Selected)
+        palette = option.palette
+        color = palette.highlightedText().color() if is_selected else palette.windowText().color()
+
+        is_animating = overflows and row == self._hovered_row
+        if is_animating:
+            alpha = self._mq_alpha.get(row, 1.0)
+            if alpha < 1.0:
+                color.setAlphaF(max(0.0, min(1.0, alpha)))
+
+        painter.save()
+        painter.setPen(color)
+        painter.setFont(option.font)
+
+        # Clip to the content rect to hide overflow
+        text_rect = option.rect.adjusted(self._PADDING, 0, -self._PADDING, 0)
+        painter.setClipRect(text_rect)
+
+        offset = int(self._mq_pos.get(row, 0.0)) if is_animating else 0
+
+        # Show elided text with "…" when overflowing but not yet scrolling,
+        # and draw full text once the marquee animation has started moving.
+        scrolling = is_animating and offset > 0
+        if overflows and not scrolling:
+            # Use Qt's built-in elider to clip+append "…"
+            display_text = fm.elidedText(text, Qt.ElideRight, avail)
+        else:
+            display_text = text
+
+        draw_rect = QRect(text_rect.left() - offset, text_rect.top(), 9999, text_rect.height())
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, display_text)
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        return hint
 
 class ToggleSwitch(QWidget):
     """
@@ -3566,6 +3988,10 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         self.category_list = QListWidget()
         self.category_list.setFixedWidth(155)
         self.category_list.setFocusPolicy(Qt.NoFocus)
+        # Disable horizontal scrollbar — marquee handles overflow instead
+        self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._marquee_delegate = MarqueeItemDelegate(self.category_list)
+        self.category_list.setItemDelegate(self._marquee_delegate)
         root.addWidget(self.category_list)
 
         # ── RIGHT: stacked pages + bottom bar ────────────────────────────
@@ -7309,7 +7735,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.text_canvas.update()
 
     def _build_marker_radio_buttons(self):
-        from PySide6.QtWidgets import QRadioButton, QButtonGroup
         # Clear layout
         while self.markers_layout.count():
             item = self.markers_layout.takeAt(0)
@@ -7346,19 +7771,19 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         self.marker_btn_group = QButtonGroup(self)
         
-        rb_red = QRadioButton(self.txt("rad_red_cut_filler"))
+        rb_red = MarqueeRadioButton(self.txt("rad_red_cut_filler"))
         rb_red.setProperty("status_id", "bad")
         style_rb(rb_red, config.WORD_BAD_BG)
         
-        rb_blue = QRadioButton(self.txt("rad_blue_retake"))
+        rb_blue = MarqueeRadioButton(self.txt("rad_blue_retake"))
         rb_blue.setProperty("status_id", "repeat")
         style_rb(rb_blue, config.WORD_REPEAT_BG)
         
-        rb_green = QRadioButton(self.txt("rad_green_typo"))
+        rb_green = MarqueeRadioButton(self.txt("rad_green_typo"))
         rb_green.setProperty("status_id", "typo")
         style_rb(rb_green, config.WORD_TYPO_BG)
         
-        rb_eraser = QRadioButton(self.txt("rad_eraser_clear"))
+        rb_eraser = MarqueeRadioButton(self.txt("rad_eraser_clear"))
         rb_eraser.setProperty("status_id", "eraser")
         rb_eraser.setStyleSheet("""
             QRadioButton {
@@ -7397,7 +7822,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             # Translate the color name for display; keep English key in status_id
             translated_color = self.txt(f"resolve_color_{color.lower()}")
             # Format: TranslatedColor (Name)
-            rb = QRadioButton(f"{translated_color} ({name})")
+            rb = MarqueeRadioButton(f"{translated_color} ({name})")
             rb.setProperty("status_id", f"custom_{color}")
             style_rb(rb, config.RESOLVE_COLORS_HEX.get(color, '#ffffff'))
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
