@@ -705,7 +705,7 @@ class SidebarButton(QPushButton):
     Static sidebar item with a fixed 40x40 size and VS Code style static tooltip.
     Now draggable to allow panel repositioning.
     """
-    def __init__(self, icon_text: str, label_text: str, activity_id: str, tooltip_widget=None, is_right_side: bool = False, parent=None):
+    def __init__(self, icon_text: str, label_text: str, activity_id: str, tooltip_widget=None, is_right_side: bool = False, is_draggable: bool = True, parent=None):
         super().__init__()
         if parent:
             self.setParent(parent)
@@ -715,6 +715,7 @@ class SidebarButton(QPushButton):
         self.setCursor(Qt.PointingHandCursor)
         self.custom_tooltip_text = label_text
         self.is_right_side = is_right_side
+        self.is_draggable = is_draggable
         self.tooltip_widget = tooltip_widget
         self.drag_start_pos = None
         
@@ -773,6 +774,7 @@ class SidebarButton(QPushButton):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if not self.is_draggable: return
         if not (event.buttons() & Qt.LeftButton):
             return
         if not self.drag_start_pos:
@@ -791,10 +793,15 @@ class SidebarButton(QPushButton):
         drag.setHotSpot(event.position().toPoint())
         
         # Execute drag
+        if self.is_active and self.window() and hasattr(self.window(), "_toggle_activity"):
+            self.window()._toggle_activity(self.activity_id)
+            
+        self.hide()
         drag.exec(Qt.MoveAction)
+        self.show()
 
 
-class SidebarFrame(QFrame):
+class SidebarDragZone(QFrame):
     """
     A drop-zone container for SidebarButtons
     """
@@ -803,23 +810,18 @@ class SidebarFrame(QFrame):
         if parent:
             self.setParent(parent)
         self.setAcceptDrops(True)
-        self.drop_indicator = QFrame()
-        self.drop_indicator.setStyleSheet("background-color: transparent; border: 1px dashed #555; border-radius: 4px;")
-        self.drop_indicator.setMinimumHeight(0)
-        self.drop_indicator.hide()
-        self.anim = QPropertyAnimation(self.drop_indicator, b"minimumHeight")
-        self.anim.setDuration(150)
-        self.current_drop_idx = -1
-        self._last_drop_index = -1
+        self._drop_line_y = -1
         
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._drop_line_y >= 0:
+            p = QPainter(self)
+            p.setPen(QPen(QColor("#11703c"), 3))
+            p.drawLine(0, self._drop_line_y, self.width(), self._drop_line_y)
+            
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
             event.acceptProposedAction()
-            self.drop_indicator.show()
-            self.anim.stop()
-            self.anim.setStartValue(self.drop_indicator.minimumHeight())
-            self.anim.setEndValue(40)
-            self.anim.start()
             
     def dragMoveEvent(self, event):
         if not event.mimeData().hasText():
@@ -829,13 +831,15 @@ class SidebarFrame(QFrame):
         drop_y = event.position().y()
         target_idx = 0
         
+        source_btn = event.source()
+        target_widget = None
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item and item.widget():
                 widget = item.widget()
-                if widget is None or widget == self.drop_indicator:
-                    continue
+                if not widget or widget.isHidden() or widget == source_btn: continue
                 if drop_y < widget.geometry().center().y():
+                    target_widget = widget
                     break
                 else:
                     target_idx += 1
@@ -843,34 +847,21 @@ class SidebarFrame(QFrame):
         max_idx = layout.count() - 2
         target_idx = min(target_idx, max_idx)
                     
-        if target_idx != self._last_drop_index:
-            self._last_drop_index = target_idx
-            layout.insertWidget(target_idx, self.drop_indicator)
-            self.anim.stop()
-            self.anim.setStartValue(self.drop_indicator.minimumHeight())
-            self.anim.setEndValue(40)
-            self.anim.start()
+        if target_widget:
+            self._drop_line_y = target_widget.geometry().top()
+        elif layout.count() > 0:
+            last_item = layout.itemAt(layout.count() - 1)
+            if last_item and last_item.widget():
+                self._drop_line_y = last_item.widget().geometry().bottom()
+        self.update()
             
         event.accept()
 
     def dragLeaveEvent(self, event):
-        self.anim.stop()
-        self.anim.setStartValue(self.drop_indicator.minimumHeight())
-        self.anim.setEndValue(0)
-        try:
-            self.anim.finished.disconnect()
-        except RuntimeError:
-            pass
-        self.anim.finished.connect(self.drop_indicator.hide)
-        self.anim.start()
+        self._drop_line_y = -1
+        self.update()
 
     def dropEvent(self, event):
-        self.anim.stop()
-        self.drop_indicator.hide()
-        self.drop_indicator.setMinimumHeight(0)
-        self.drop_indicator.setParent(None)
-        self.current_drop_idx = -1
-        self._last_drop_index = -1
         
         activity_id = event.mimeData().text()
         source_btn = event.source()
@@ -883,6 +874,7 @@ class SidebarFrame(QFrame):
                 item = layout.itemAt(i)
                 if item and item.widget():
                     widget = item.widget()
+                    if not widget or widget.isHidden() or widget == source_btn: continue
                     if drop_y < widget.geometry().center().y():
                         target_idx = i
                         break
@@ -894,10 +886,12 @@ class SidebarFrame(QFrame):
             event.acceptProposedAction()
             
             main_window = self.window()
-            is_right = (hasattr(main_window, "_sidebar_right") and self == main_window._sidebar_right)
+            is_right = (hasattr(main_window, "_sidebar_right") and self == main_window._drag_zone_right)
             source_btn.is_right_side = is_right
-            if getattr(source_btn, "is_active", False):
-                source_btn.set_active(True)
+            source_btn.set_active(False)
+            
+            self._drop_line_y = -1
+            self.update()
 
 
 class CustomDropdown(QPushButton):
@@ -1274,51 +1268,63 @@ class BadWordsGUI(QMainWindow):
         """
         Left and right vertical activity frames overlaying the main window.
         """
-        self._sidebar_left = SidebarFrame(self)
+        self._sidebar_left = QFrame(self)
         self._sidebar_left.setFixedWidth(50)
         self._sidebar_left.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         left_layout = QVBoxLayout(self._sidebar_left)
         left_layout.setContentsMargins(5, 6, 5, 6)
         left_layout.setSpacing(6)
         
+        self._drag_zone_left = SidebarDragZone(self._sidebar_left)
+        drag_layout_left = QVBoxLayout(self._drag_zone_left)
+        drag_layout_left.setContentsMargins(0, 0, 0, 0)
+        drag_layout_left.setSpacing(6)
+        left_layout.addWidget(self._drag_zone_left)
+        
         self.btn_nav_script = SidebarButton("\U0001f4dd", "Script & Analysis", "script_analysis", tooltip_widget=self.shared_tooltip)
         self.btn_nav_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
-        left_layout.addWidget(self.btn_nav_script)
+        drag_layout_left.addWidget(self.btn_nav_script)
         
         self.btn_nav_silence = SidebarButton("\U0001f507", "Silence", "silence", tooltip_widget=self.shared_tooltip)
         self.btn_nav_silence.clicked.connect(lambda: self._toggle_activity("silence"))
-        left_layout.addWidget(self.btn_nav_silence)
+        drag_layout_left.addWidget(self.btn_nav_silence)
 
         self.btn_nav_fillers = SidebarButton("\U0001f4ac", "Filler Words", "fillers", tooltip_widget=self.shared_tooltip)
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
-        left_layout.addWidget(self.btn_nav_fillers)
+        drag_layout_left.addWidget(self.btn_nav_fillers)
         
         left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
-        self.btn_nav_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip)
-        self.btn_nav_quit.clicked.connect(self.close)
-        left_layout.addWidget(self.btn_nav_quit)
-        
-        self.btn_nav_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_settings.clicked.connect(self._on_settings)
         left_layout.addWidget(self.btn_nav_settings)
         
+        self.btn_nav_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_quit.clicked.connect(self.close)
+        left_layout.addWidget(self.btn_nav_quit)
+        
         self._sidebar_left.show()
 
-        self._sidebar_right = SidebarFrame(self)
+        self._sidebar_right = QFrame(self)
         self._sidebar_right.setFixedWidth(50)
         self._sidebar_right.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         right_layout = QVBoxLayout(self._sidebar_right)
         right_layout.setContentsMargins(5, 6, 5, 6)
         right_layout.setSpacing(6)
         
+        self._drag_zone_right = SidebarDragZone(self._sidebar_right)
+        drag_layout_right = QVBoxLayout(self._drag_zone_right)
+        drag_layout_right.setContentsMargins(0, 0, 0, 0)
+        drag_layout_right.setSpacing(6)
+        right_layout.addWidget(self._drag_zone_right)
+        
         self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", "Main Panel", "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
-        right_layout.addWidget(self.btn_nav_main)
+        drag_layout_right.addWidget(self.btn_nav_main)
         
         self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", "Assembly", "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
-        right_layout.addWidget(self.btn_nav_assembly)
+        drag_layout_right.addWidget(self.btn_nav_assembly)
         
         right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
@@ -1364,6 +1370,9 @@ class BadWordsGUI(QMainWindow):
         self._main_h_splitter.addWidget(self._panel_left)
         self._main_h_splitter.addWidget(self._stack)
         self._main_h_splitter.addWidget(self._panel_right)
+        self._main_h_splitter.setStretchFactor(0, 0)
+        self._main_h_splitter.setStretchFactor(1, 1)
+        self._main_h_splitter.setStretchFactor(2, 0)
         self._main_h_splitter.setHandleWidth(10)
         self._main_h_splitter.setStyleSheet("QSplitter { border: none; background: transparent; }")
 
@@ -1378,20 +1387,11 @@ class BadWordsGUI(QMainWindow):
         target_btn = None
         target_splitter = None
         
-        for i in range(self._sidebar_left.layout().count()):
-            widget = self._sidebar_left.layout().itemAt(i).widget()
-            if isinstance(widget, SidebarButton) and widget.activity_id == activity_id:
+        for widget in self.findChildren(SidebarButton):
+            if widget.activity_id == activity_id:
                 target_btn = widget
-                target_splitter = self._panel_left
+                target_splitter = self._panel_right if widget.is_right_side else self._panel_left
                 break
-                
-        if not target_btn:
-            for i in range(self._sidebar_right.layout().count()):
-                widget = self._sidebar_right.layout().itemAt(i).widget()
-                if isinstance(widget, SidebarButton) and widget.activity_id == activity_id:
-                    target_btn = widget
-                    target_splitter = self._panel_right
-                    break
                     
         if not target_btn or not target_splitter:
             return  # Activity button not found in sidebars
@@ -1408,10 +1408,9 @@ class BadWordsGUI(QMainWindow):
             target_splitter.hide()
             target_btn.set_active(False)
         else:
-            for i in range(sidebar.layout().count()):
-                btn = sidebar.layout().itemAt(i).widget()
-                if isinstance(btn, SidebarButton):
-                    btn.set_active(False)
+            for widget in self.findChildren(SidebarButton):
+                if widget.is_right_side == target_btn.is_right_side:
+                    widget.set_active(False)
                     
             target_btn.set_active(True)
             layout = target_splitter.layout()
@@ -1424,8 +1423,21 @@ class BadWordsGUI(QMainWindow):
                     
             layout.addWidget(activity_widget)
             activity_widget.show()
+            
+            was_hidden = not target_splitter.isVisible()
             target_splitter.show()
-            self._main_h_splitter.setSizes([480, 2000, 480])
+            if was_hidden:
+                sizes = self._main_h_splitter.sizes()
+                target_w = 280
+                if target_splitter == self._panel_left:
+                    diff = target_w - sizes[0]
+                    sizes[0] = target_w
+                    sizes[1] = max(0, sizes[1] - diff)
+                elif target_splitter == self._panel_right:
+                    diff = target_w - sizes[2]
+                    sizes[2] = target_w
+                    sizes[1] = max(0, sizes[1] - diff)
+                self._main_h_splitter.setSizes(sizes)
 
     def _build_activities(self):
         def _wrap_activity(widget: QWidget) -> QFrame:
@@ -1711,6 +1723,14 @@ class BadWordsGUI(QMainWindow):
         self.tgl_show_typos.setChecked(True)
         row_show_typos.addWidget(self.tgl_show_typos)
         l_assembly.addLayout(row_show_typos)
+        
+        row_ripple_delete = QHBoxLayout()
+        lbl_ripple = QLabel("<span style='color: #ed4245; font-weight: bold;'>Ripple delete</span> red clips")
+        row_ripple_delete.addWidget(lbl_ripple)
+        row_ripple_delete.addStretch()
+        self.tgl_ripple_delete = ToggleSwitch()
+        row_ripple_delete.addWidget(self.tgl_ripple_delete)
+        l_assembly.addLayout(row_ripple_delete)
         
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
