@@ -1,6 +1,6 @@
-# <img src="assets/icon.png" align="right" width="100" style="margin-left: 200px; margin-bottom: 20px;" alt="Logo"> BadWords - Cleaner Timelines, Faster
+# BadWords - Cleaner Timelines, Faster
 Automatically **detect, mark and/or remove filler words, silence, and retakes** <br>
-in DaVinci Resolve using OpenAI Whisper and FFmpeg.
+in DaVinci Resolve using OpenAI Whisper, FFmpeg and Python.
 
 <br>
 ![Preview](assets/editor_preview.png)
