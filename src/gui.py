@@ -471,7 +471,8 @@ class TranscriptionCanvas(QWidget):
         def get_status(w):
             s = w.get('status')
             if s == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
-                return None
+                if w.get('manual_status') != 'inaudible' or w.get('is_auto', False):
+                    return None
             if s == 'typo' and hasattr(self.main_window, 'tgl_show_typos') and not self.main_window.tgl_show_typos.isChecked():
                 # Keep 'typo' visible if it was manually marked by the user
                 if w.get('manual_status') != 'typo' or w.get('is_auto', False):
@@ -2286,7 +2287,7 @@ class BadWordsGUI(QMainWindow):
         row_mark_inaudible.addWidget(QLabel("Mark inaudible fragments with brown"))
         row_mark_inaudible.addStretch()
         self.tgl_mark_inaudible = ToggleSwitch()
-        self.tgl_mark_inaudible.toggled.connect(self._refresh_canvas_view)
+        self.tgl_mark_inaudible.toggled.connect(self._on_mark_inaudible_toggled)
         row_mark_inaudible.addWidget(self.tgl_mark_inaudible)
         l_assembly.addLayout(row_mark_inaudible)
         
@@ -2563,10 +2564,10 @@ class BadWordsGUI(QMainWindow):
         overlay = None
         if not word_obj.get('overlay_suppressed', False):
             show_typos = hasattr(self, 'tgl_show_typos') and self.tgl_show_typos.isChecked()
-            show_inaud = hasattr(self, 'tgl_show_inaudible') and self.tgl_show_inaudible.isChecked()
+            mark_inaud = hasattr(self, 'tgl_mark_inaudible') and self.tgl_mark_inaudible.isChecked()
             if show_typos and word_obj.get('algo_status') == 'typo':
                 overlay = 'typo'
-            elif show_inaud and (word_obj.get('is_inaudible') or word_obj.get('type') == 'inaudible'):
+            elif mark_inaud and (word_obj.get('is_inaudible') or word_obj.get('type') == 'inaudible'):
                 overlay = 'inaudible'
 
         final = overlay if overlay is not None else base
@@ -2575,8 +2576,13 @@ class BadWordsGUI(QMainWindow):
         return final
 
     def _on_inaudible_toggled(self, is_checked: bool):
+        if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
+
+    def _on_mark_inaudible_toggled(self, is_checked: bool):
         """
-        Reload for 'Show inaudible fragments'.
+        Reload for 'Mark inaudible fragments with brown'.
         Turning ON: clears overlay_suppressed so the brown overlay resurfaces on top.
         manual_status is NEVER touched — base layer stays intact.
         """
