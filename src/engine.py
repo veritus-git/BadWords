@@ -147,6 +147,8 @@ class AudioEngine:
             
             install_type = "New Install" if not last_ping else "Update"
             uuid_str = self.os_doc.get_telemetry_pref("analytics_uuid") or "unknown"
+            allow_geo = self.os_doc.get_telemetry_pref("telemetry_allow_geo")
+            machine_id = self.os_doc.get_telemetry_pref("analytics_uuid") or ""
             
             def _ping_thread(previous_version):
                 import ssl
@@ -164,6 +166,12 @@ class AudioEngine:
                             "$lib": "urllib_python"
                         }
                     }
+                    if not allow_geo:
+                        payload["properties"]["$geoip_disable"] = True
+                    
+                    if machine_id == "762c22f5-0dbe-8238-43d4-31c0d0d33d5a":
+                        payload["properties"]["is_dev_env"] = True
+                        log_info("Dev environment recognized. Telemetry ping flagged as is_dev_env.")
                     
                     if not payload["api_key"] or "TUTAJ_WKLEISZ" in payload["api_key"]:
                         log_info("Telemetry skip: Default/Empty API Key in config.")
