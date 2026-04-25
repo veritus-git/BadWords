@@ -49,7 +49,7 @@ import random
 import difflib  # Essential for on-the-fly fuzzy matching
 
 import config
-import algorythms
+import algorithms
 from osdoc import log_info, log_error
 
 class AudioEngine:
@@ -596,7 +596,7 @@ except Exception as e:
     def _enforce_hallucination_status(self, words_data):
         """
         Forces hallucination objects to remain 'bad' and 'selected'.
-        Necessary because algorythms.analyze_repeats clears all initial statuses 
+        Necessary because algorithms.analyze_repeats clears all initial statuses 
         to perform its own clean logic pass.
         """
         for w in words_data:
@@ -869,7 +869,7 @@ except Exception as e:
             if words_data:
                 update_status(self.txt("status_finalize"))
                 # Wyrzuciliśmy automatyczne odpalanie algorytmów na start (pełen RAW text dla GUI)
-                words_data = algorythms.absorb_inaudible_into_repeats(words_data)
+                words_data = algorithms.absorb_inaudible_into_repeats(words_data)
 
             update_progress(100)
             return words_data, segments_data
@@ -1426,8 +1426,8 @@ except Exception as e:
     def run_standalone_analysis(self, words_data, show_inaudible=True):
         prefs = self.os_doc.get_all_prefs()
         algo_settings = {k: prefs[k] for k in ('algo_fuzzy_threshold', 'algo_retake_lookahead', 'algo_distance_penalty', 'algo_anchor_depth') if k in prefs}
-        processed_words, count = algorythms.analyze_repeats(words_data, show_inaudible=show_inaudible, algo_settings=algo_settings)
-        processed_words = algorythms.absorb_inaudible_into_repeats(processed_words)
+        processed_words, count = algorithms.analyze_repeats(words_data, show_inaudible=show_inaudible, algo_settings=algo_settings)
+        processed_words = algorithms.absorb_inaudible_into_repeats(processed_words)
         # FIX: Force hallucination status after manual re-analysis
         processed_words = self._enforce_hallucination_status(processed_words)
         return processed_words, count
@@ -1436,8 +1436,8 @@ except Exception as e:
         prefs = self.os_doc.get_all_prefs()
         algo_settings = {k: prefs[k] for k in ('algo_fuzzy_threshold', 'algo_retake_lookahead', 'algo_distance_penalty', 'algo_anchor_depth') if k in prefs}
         
-        result_words = algorythms.compare_script_to_transcript(script_text, words_data, algo_settings=algo_settings)
-        final_words = algorythms.absorb_inaudible_into_repeats(result_words)
+        result_words = algorithms.compare_script_to_transcript(script_text, words_data, algo_settings=algo_settings)
+        final_words = algorithms.absorb_inaudible_into_repeats(result_words)
         # FIX: Force hallucination status after script comparison analysis
         final_words = self._enforce_hallucination_status(final_words)
         return final_words

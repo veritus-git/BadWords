@@ -1286,7 +1286,7 @@ class TranscriptionCanvas(QWidget):
                     if status == 'eraser': status = None
                     # rb_eraser → status stays None → propagate_status_change clears
 
-                    # UNDO SUPPORT: Save old state before algorythms modifies words_data
+                    # UNDO SUPPORT: Save old state before algorithms modifies words_data
                     if getattr(self, '_current_undo_action', None) is not None:
                         ids_to_save = [w['id']]
                         if w.get('is_inaudible'):
@@ -1308,8 +1308,8 @@ class TranscriptionCanvas(QWidget):
                                     'selected': old_w.get('selected')
                                 }
 
-                    import algorythms
-                    updates = algorythms.propagate_status_change(self.words_data, w['id'], status)
+                    import algorithms
+                    updates = algorithms.propagate_status_change(self.words_data, w['id'], status)
 
                     if updates:
                         # Build a fast O(1) lookup: id → word_obj
@@ -6011,7 +6011,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
     def _on_import_script(self):
         from PySide6.QtWidgets import QFileDialog
-        import algorythms
+        import algorithms
         
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Import Script", "", 
@@ -6026,11 +6026,11 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         elif ext == 'docx':
-            if hasattr(algorythms, 'read_docx_text'):
-                content = algorythms.read_docx_text(file_path)
+            if hasattr(algorithms, 'read_docx_text'):
+                content = algorithms.read_docx_text(file_path)
         elif ext == 'pdf':
-            if hasattr(algorythms, 'read_pdf_text'):
-                content = algorythms.read_pdf_text(file_path)
+            if hasattr(algorithms, 'read_pdf_text'):
+                content = algorithms.read_pdf_text(file_path)
             
         self.text_script.setText(content)
 
@@ -6067,13 +6067,13 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
     def _on_auto_filler_toggled(self, is_checked):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
-        import algorythms
+        import algorithms
         prefs = self.engine.load_preferences() or {}
         fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
         
         # Apply filler logic directly to the current state
-        if hasattr(algorythms, 'apply_auto_filler_logic'):
-            updated_words = algorythms.apply_auto_filler_logic(self.text_canvas.words_data, fillers, is_checked)
+        if hasattr(algorithms, 'apply_auto_filler_logic'):
+            updated_words = algorithms.apply_auto_filler_logic(self.text_canvas.words_data, fillers, is_checked)
             self.text_canvas.words_data = updated_words
             self.text_canvas.update()
 
@@ -6092,9 +6092,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         
         # Trigger real-time update if auto filler is currently active
         if hasattr(self, 'tgl_auto_filler') and self.tgl_auto_filler.isChecked() and hasattr(self, 'text_canvas') and self.text_canvas.words_data:
-            import algorythms
-            if hasattr(algorythms, 'apply_auto_filler_logic'):
-                updated_words = algorythms.apply_auto_filler_logic(self.text_canvas.words_data, new_fillers, True)
+            import algorithms
+            if hasattr(algorithms, 'apply_auto_filler_logic'):
+                updated_words = algorithms.apply_auto_filler_logic(self.text_canvas.words_data, new_fillers, True)
                 self.text_canvas.words_data = updated_words
                 self.text_canvas.update()
 

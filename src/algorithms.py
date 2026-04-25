@@ -5,7 +5,7 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: algorythms.py
+MODULE: algorithms.py
 ROLE: Tool Layer
 DESCRIPTION:
 CORE LOGIC v6.7 (COVERAGE VALIDATION) - Script vs Transcript Alignment.
