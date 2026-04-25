@@ -25,7 +25,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
-; Ikona instalatora (musi być w formacie .ico w tym samym folderze co skrypt)
+; Installer icon (must be in .ico format in the same folder as the script)
 SetupIconFile=icon.ico
 
 [Languages]
@@ -256,13 +256,13 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
   
-  // Wrzucamy pakiety do pobrania tuż przed stroną "Gotowy do instalacji" (wpReady)
+  // Queue packages for download right before the "Ready to install" page (wpReady)
   if (CurPageID = wpReady) and not DownloadsQueued then
   begin
     if NeedsPythonInstallation() then 
       idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
       
-    // SMART FFmpeg: Pobierz TYLKO jeśli wybrano Reset lub ffmpeg nie istnieje
+    // SMART FFmpeg: Download ONLY if Reset is chosen or ffmpeg doesn't exist
     if InstallModePage.Values[2] or not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
       idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
       
@@ -338,7 +338,7 @@ begin
       
     WizardForm.StatusLabel.Caption := CustomMessage('StatusConfig');
     
-    // Uruchomienie trybu okienkowego aby wymusić czekanie jeśli batch ma komendę 'pause'
+    // Run windowed mode to force waiting if batch has a 'pause' command
     if not Exec(ExpandConstant('{app}\setup_windows.bat'), 
                 '"' + ExpandConstant('{app}') + '" "' + GpuFlag + '" "' + FFmpegZip + '" "' + WipeMode + '"', 
                 '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
