@@ -1891,6 +1891,7 @@ class CustomTitleBar(QWidget):
 
         # Title text
         self._lbl_title = QLabel(config.APP_NAME)
+        self._lbl_title.setTextFormat(Qt.RichText)
         self._lbl_title.setStyleSheet(
             f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
             f"font-size: 9pt; background: transparent;"
@@ -1918,6 +1919,9 @@ class CustomTitleBar(QWidget):
 
         for btn in (self.btn_min, self.btn_max, self.btn_close):
             lay.addWidget(btn)
+
+    def set_title(self, text):
+        self._lbl_title.setText(text)
 
     def update_maximize_icon(self, is_maximized):
         icon_name = 'windowed.png' if is_maximized else 'maximize.png'
@@ -2463,6 +2467,7 @@ class _LangPickerDialog(QDialog):
             QListWidget::item {{
                 padding: 5px 8px;
             }}
+            QListWidget::item:focus { border: none; outline: none; }
             QListWidget::item:hover, QListWidget::item:selected {{
                 background-color: #4a4e56;
                 color: #ffffff;
@@ -3154,6 +3159,7 @@ class CustomDropdown(QPushButton):
             QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
             QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
             QListWidget::item:selected { background-color: #2a5f8f; }
+            QListWidget::item:focus { border: none; outline: none; }
             QListWidget::item:hover { background-color: #333333; }
         """)
         list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
@@ -3213,7 +3219,7 @@ class MultiSelectDropdown(QPushButton):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
         self.selected_items = set()
-        self.setText(self.txt("txt_select_tracks"))
+        self.setText(self.txt("txt_all_tracks"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -3237,32 +3243,66 @@ class MultiSelectDropdown(QPushButton):
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
         list_widget.setStyleSheet("""
             QListWidget { border: none; outline: none; background: transparent; }
-            QListWidget::item { border-bottom: 1px solid #2a2a2a; }
+            QListWidget::item { border: none; outline: none; }
+            QListWidget::item:focus { border: none; outline: none; }
             QListWidget::item:hover { background-color: #2a2d2e; }
         """)
 
+
+        class CustomCheckItemWidget(QWidget):
+            def __init__(self, text, is_checked, parent=None):
+                from PySide6.QtWidgets import QHBoxLayout, QLabel
+                from PySide6.QtCore import Qt
+                super().__init__(parent)
+                self.is_checked = is_checked
+                self.opt_text = text
+                
+                lay = QHBoxLayout(self)
+                lay.setContentsMargins(8, 0, 8, 0)
+                lay.setSpacing(8)
+                
+                self.tick_box = QLabel()
+                self.tick_box.setFixedSize(14, 14)
+                self.tick_box.setAlignment(Qt.AlignCenter)
+                
+                self.lbl = QLabel(text)
+                self.lbl.setStyleSheet("border: none; outline: none; color: #d4d4d4; font-size: 10pt; background: transparent;")
+                
+                lay.addWidget(self.tick_box)
+                lay.addWidget(self.lbl)
+                lay.addStretch()
+                self.update_ui()
+                
+            def update_ui(self):
+                if self.is_checked:
+                    self.tick_box.setText("✔")
+                    self.tick_box.setStyleSheet("background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: 11px;")
+                else:
+                    self.tick_box.setText("")
+                    self.tick_box.setStyleSheet("background: #111; border: 1px solid #333;")
+                    
+            def toggle(self):
+                self.is_checked = not self.is_checked
+                self.update_ui()
+
         from PySide6.QtCore import QSize
+        from PySide6.QtWidgets import QSizePolicy
         for opt in self.options_list:
             item = QListWidgetItem(list_widget)
-            item.setSizeHint(QSize(0, 28))  # TWARDE WYMUSZENIE 28px
-            widget = QCheckBox(opt)
+            item.setSizeHint(QSize(0, 28))
+            widget = CustomCheckItemWidget(opt, opt in self.selected_items)
             widget.setCursor(Qt.PointingHandCursor)
-            widget.setChecked(opt in self.selected_items)
-            widget.setStyleSheet("""
-                QCheckBox { color: #d4d4d4; padding: 0px 8px; margin: 0px; font-size: 10pt; background: transparent; }
-                QCheckBox::indicator {
-                    width: 14px; height: 14px; border-radius: 7px; background-color: #111111; border: 1px solid #333;
-                }
-                QCheckBox::indicator:checked {
-                    background: qradialgradient(cx:0.5, cy:0.5, radius:0.4, fx:0.5, fy:0.5, stop:0 #1a7a3e, stop:0.8 #1a7a3e, stop:1 transparent);
-                    border: 1px solid #1a7a3e;
-                }
-            """)
-            widget.toggled.connect(lambda checked, text=opt: self._on_toggled(text, checked))
             list_widget.setItemWidget(item, widget)
 
         layout.addWidget(list_widget)
-
+        
+        # Enable clicking anywhere on the item to toggle the checkbox
+        def _on_item_clicked(it):
+            w = list_widget.itemWidget(it)
+            if w:
+                w.toggle()
+                self._on_toggled(w.opt_text, w.is_checked)
+        list_widget.itemClicked.connect(_on_item_clicked)
         # PERFEKCYJNA MATEMATYKA WYSOKOŚCI
         display_count = min(5, len(self.options_list))
         list_height = display_count * 28
@@ -3278,8 +3318,10 @@ class MultiSelectDropdown(QPushButton):
         if checked: self.selected_items.add(text)
         else: self.selected_items.discard(text)
 
-        if not self.selected_items: self.setText(self.txt("txt_select_tracks"))
-        else: self.setText(", ".join(sorted(self.selected_items)))
+        if not self.selected_items or len(self.selected_items) == len(self.options_list):
+            self.setText(self.txt("txt_all_tracks"))
+        else:
+            self.setText(", ".join(sorted(self.selected_items)))
         self.valueChanged.emit(list(self.selected_items))
 
 
@@ -3329,6 +3371,7 @@ class SearchableDropdown(QPushButton):
             QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
             QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
             QListWidget::item:selected { background-color: #2a5f8f; }
+            QListWidget::item:focus { border: none; outline: none; }
             QListWidget::item:hover { background-color: #333333; }
         """)
         self.list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, self.popup))
@@ -3872,6 +3915,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 color: {config.FG_COLOR};
                 border-left: 2px solid {config.BTN_BG};
             }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
             QListWidget::item:hover:!selected {{
                 background-color: #222222;
                 color: {config.FG_COLOR};
@@ -5777,8 +5821,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # --- Telemetry check fires 500 ms after first paint ---
         QTimer.singleShot(500, self.check_telemetry)
 
-        # --- Populate timeline/track dropdowns once Resolve has connected ---
-        QTimer.singleShot(800, self._populate_timeline_track_combos)
+        # --- Populate timeline/track dropdowns synchronously since Resolve API is fast ---
+        self._populate_timeline_track_combos()
         
         self._bind_prefs()
 
@@ -6694,6 +6738,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         data_packet = {
             "lang_code":      prefs.get('lang', 'Auto'),
             "settings":       prefs,
+            "title_bar_text": getattr(self, '_title_bar', None)._lbl_title.text() if hasattr(self, '_title_bar') else "BadWords",
             "filler_words":   prefs.get('filler_words', config.DEFAULT_BAD_WORDS),
             "words_data":     clean_words,
             "script_content": getattr(self, 'text_script', None).toPlainText() if hasattr(self, 'text_script') else ""
@@ -6718,6 +6763,19 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
             # --- 1. SYNC UI PREFERENCES ---
             imported_prefs = state.get('settings', {})
+            
+            # --- Restore Title Bar ---
+            title_text = state.get('title_bar_text', '')
+            if title_text and title_text != "BadWords":
+                if hasattr(self, '_title_bar'):
+                    self._title_bar.set_title(title_text)
+            else:
+                if hasattr(self, '_title_bar'):
+                    msg = self.txt("msg_transcription_source")
+                    if msg:
+                        fallback_title = msg.replace("{tl}", "Imported Project").replace("{tr}", self.txt("txt_all"))
+                        self._title_bar.set_title(fallback_title)
+
             if imported_prefs:
                 self.engine.save_preferences(imported_prefs)
 
@@ -6969,7 +7027,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             else:
                 track_combo.options_list = list(tracks)
                 track_combo.selected_items = set()
-                track_combo.setText(self.txt("txt_select_tracks"))
+                track_combo.setText(self.txt("txt_all_tracks"))
 
             # Mirror the timeline selection to the other page's dropdown
             if mirror_tl_combo is not None:
@@ -7849,6 +7907,25 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         
         self._toggle_activity("script_analysis")
         self._toggle_activity("main_panel")
+        
+        # Read selected timeline/tracks to format the new title
+        selected_tl = getattr(self, 'combo_tl_0', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        selected_tracks_combo = getattr(self, 'combo_tr_0', None)
+        
+        if not selected_tracks_combo:
+            tracks_str = self.txt("txt_all")
+        else:
+            tracks = list(selected_tracks_combo.selected_items)
+            if not tracks or (len(tracks) == len(selected_tracks_combo.options_list)):
+                tracks_str = self.txt("txt_all")
+            else:
+                tracks_str = ", ".join(sorted(tracks))
+
+        msg = self.txt("msg_transcription_source")
+        if msg and "{tl}" in msg:
+            new_title = msg.replace("{tl}", selected_tl_name).replace("{tr}", tracks_str)
+            self._title_bar.set_title(new_title)
         
         self._populate_editor(words_data, segments_data)
 

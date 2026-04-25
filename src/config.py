@@ -627,7 +627,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "No timelines detected",
         "msg_no_audio_tracks_detected": "No audio tracks detected",
-        "txt_all_tracks": "All tracks (default)",
+        "txt_all_tracks": "All tracks",
+        "msg_transcription_source": "BadWords - Source Timeline: <i>{tl}</i> - Tracks: <i>{tr}</i>",
+        "txt_all": "All",
     },
     'pl': {
         "btn_analyze": "Analizuj",
@@ -887,7 +889,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Nie wykryto osi czasu",
         "msg_no_audio_tracks_detected": "Nie wykryto ścieżek audio",
-        "txt_all_tracks": "Wszystkie ścieżki (domyślnie)",
+        "txt_all_tracks": "Wszystkie ścieżki",
+        "msg_transcription_source": "BadWords - Źródłowa oś czasu: <i>{tl}</i> - Ścieżki: <i>{tr}</i>",
+        "txt_all": "Wszystkie",
     },
     'de': {
         "btn_analyze": "Analysieren",
@@ -1147,7 +1151,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Keine Timelines erkannt",
         "msg_no_audio_tracks_detected": "Keine Audiospuren erkannt",
-        "txt_all_tracks": "Alle Spuren (Standard)",
+        "txt_all_tracks": "Alle Spuren",
+        "msg_transcription_source": "BadWords - Quell-Timeline: <i>{tl}</i> - Spuren: <i>{tr}</i>",
+        "txt_all": "Alle",
     },
     'es': {
         "btn_analyze": "Analizar",
@@ -1406,7 +1412,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "No se detectaron timelines",
         "msg_no_audio_tracks_detected": "No se detectaron pistas de audio",
-        "txt_all_tracks": "Todas las pistas (predeterminado)",
+        "txt_all_tracks": "Todas las pistas",
+        "msg_transcription_source": "BadWords - Timeline de origen: <i>{tl}</i> - Pistas: <i>{tr}</i>",
+        "txt_all": "Todas",
     },
     'fr': {
         "btn_analyze": "Analyser",
@@ -1666,7 +1674,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Aucune timeline détectée",
         "msg_no_audio_tracks_detected": "Aucune piste audio détectée",
-        "txt_all_tracks": "Toutes les pistes (par défaut)",
+        "txt_all_tracks": "Toutes les pistes",
+        "msg_transcription_source": "BadWords - Timeline source: <i>{tl}</i> - Pistes: <i>{tr}</i>",
+        "txt_all": "Toutes",
     },
     'it': {
         "btn_analyze": "Analizza",
@@ -1926,7 +1936,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Nessuna timeline rilevata",
         "msg_no_audio_tracks_detected": "Nessuna traccia audio rilevata",
-        "txt_all_tracks": "Tutte le tracce (predefinito)",
+        "txt_all_tracks": "Tutte le tracce",
+        "msg_transcription_source": "BadWords - Timeline di origine: <i>{tl}</i> - Tracce: <i>{tr}</i>",
+        "txt_all": "Tutte",
     },
     'pt': {
         "btn_analyze": "Analisar",
@@ -2186,7 +2198,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Nenhuma timeline detectada",
         "msg_no_audio_tracks_detected": "Nenhuma faixa de áudio detectada",
-        "txt_all_tracks": "Todas as faixas (padrão)",
+        "txt_all_tracks": "Todas as faixas",
+        "msg_transcription_source": "BadWords - Timeline de origem: <i>{tl}</i> - Faixas: <i>{tr}</i>",
+        "txt_all": "Todas",
     },
     'uk': {
         "btn_analyze": "Аналізувати",
@@ -2446,7 +2460,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Таймлайни не виявлено",
         "msg_no_audio_tracks_detected": "Аудіодоріжки не виявлено",
-        "txt_all_tracks": "Усі доріжки (за замовчуванням)",
+        "txt_all_tracks": "Усі доріжки",
+        "msg_transcription_source": "BadWords - Вихідний таймлайн: <i>{tl}</i> - Доріжки: <i>{tr}</i>",
+        "txt_all": "Усі",
     },
     'nl': {
         "btn_analyze": "Analyseren",
@@ -2706,7 +2722,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Geen timelines gedetecteerd",
         "msg_no_audio_tracks_detected": "Geen audiosporen gedetecteerd",
-        "txt_all_tracks": "Alle sporen (standaard)",
+        "txt_all_tracks": "Alle sporen",
+        "msg_transcription_source": "BadWords - Bron timeline: <i>{tl}</i> - Sporen: <i>{tr}</i>",
+        "txt_all": "Alle",
     },
     'ru': {
         "btn_analyze": "Анализ",
@@ -2968,7 +2986,9 @@ TRANS = {
         # ── Timeline / Track selection ──────────────────────────────────────────
         "msg_no_timelines_detected": "Таймлайны не обнаружены",
         "msg_no_audio_tracks_detected": "Аудиодорожки не обнаружены",
-        "txt_all_tracks": "Все дорожки (по умолчанию)",
+        "txt_all_tracks": "Все дорожки",
+        "msg_transcription_source": "BadWords - Исходный таймлайн: <i>{tl}</i> - Дорожки: <i>{tr}</i>",
+        "txt_all": "Все",
     },
 }
 

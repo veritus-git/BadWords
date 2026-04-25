@@ -1447,6 +1447,7 @@ except Exception as e:
                 "timestamp": time.time(),
                 "lang_code": data_packet.get("lang_code", "en"),
                 "settings": data_packet.get("settings", {}),
+                "title_bar_text": data_packet.get("title_bar_text", ""),
                 "filler_words": data_packet.get("filler_words", []),
                 "words_data": optimized_words,
                 "script_content": data_packet.get("script_content", "")

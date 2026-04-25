@@ -168,44 +168,47 @@ class ResolveHandler:
         render_timeline = self.timeline
 
         # ── 2. Mute / solo audio tracks (if specific tracks were requested) ───
-        mute_state_backup = {}  # {track_idx: original_enabled_state}
+        mute_state_backup = []  # List of indices we explicitly muted
         track_isolated = False
+        working_set_name = None
 
         if track_indices:
             a_track_count = render_timeline.GetTrackCount("audio")
+            
+            # If all tracks are selected, we skip isolation entirely!
+            if len(track_indices) == a_track_count:
+                track_indices = None
 
-            # Resolve's SWIG binding returns None for unknown attributes AND
-            # calling None raises TypeError — so we use try/except throughout.
-            # Try both known spellings across Resolve versions:
-            #   SetTrackEnable  — documented in newer builds
-            #   SetTrackEnabled — used in some earlier/custom builds
-            for _set_name, _get_name in (
+        if track_indices:
+            for _set_name, _get_name in [
+                ("SetTrackEnable",   "GetTrackEnable"),
                 ("SetTrackEnable",   "GetIsTrackEnabled"),
                 ("SetTrackEnabled",  "GetIsTrackEnabled"),
-            ):
+                ("SetTrackEnabled",  "GetTrackEnable"),
+            ]:
                 if track_isolated:
                     break
                 try:
                     _set = getattr(render_timeline, _set_name)
                     _get = getattr(render_timeline, _get_name)
+                    if not callable(_set) or not callable(_get):
+                        continue
+
+                    # Only mute tracks that are CURRENTLY enabled AND NOT in track_indices
                     for idx in range(1, a_track_count + 1):
-                        mute_state_backup[idx] = _get("audio", idx)
-                        _set("audio", idx, False)   # mute all
-                    for idx in track_indices:
-                        if 1 <= idx <= a_track_count:
-                            _set("audio", idx, True)  # unmute selected
+                        is_enabled = bool(_get("audio", idx))
+                        if is_enabled and (idx not in track_indices):
+                            _set("audio", idx, False)
+                            mute_state_backup.append(idx)
+
                     track_isolated = True
-                    log_info(f"Track isolation via {_set_name}: {track_indices}")
+                    working_set_name = _set_name
+                    log_info(f"Track isolation via {_set_name} / {_get_name}: {track_indices}")
                 except Exception:
-                    # Either the method doesn't exist (None callable) or the
-                    # call itself raised — clear backup and try next name.
                     mute_state_backup.clear()
 
             if not track_isolated:
-                log_error(
-                    "Track isolation unavailable in this Resolve version — "
-                    "rendering all audio tracks instead."
-                )
+                log_error("Track isolation unavailable in this Resolve version — rendering all audio tracks instead.")
 
         # ── 3. Configure render and execute ──────────────────────────────────
         render_ok = False
@@ -224,14 +227,10 @@ class ResolveHandler:
             })
 
             pid = self.project.AddRenderJob()
-
-            # Some Resolve builds on Linux ignore StartRendering(pid);
-            # calling it without args starts all Ready jobs reliably.
             started = self.project.StartRendering(pid)
             if not started:
                 self.project.StartRendering()
 
-            # Give Resolve a brief moment to transition from Ready → Rendering
             time.sleep(0.5)
 
             while self.project.IsRenderingInProgress():
@@ -249,31 +248,33 @@ class ResolveHandler:
             render_ok = False
 
         finally:
-            # ── 4. Restore muted tracks ──────────────────────────────────────
-            if mute_state_backup:
-                for _set_name in ("SetTrackEnable", "SetTrackEnabled"):
-                    try:
-                        _set = getattr(render_timeline, _set_name)
-                        for idx, was_enabled in mute_state_backup.items():
-                            _set("audio", idx, was_enabled)
-                        break  # success — stop trying
-                    except Exception as restore_err:
-                        log_error(f"Track restore via {_set_name} failed: {restore_err}")
+            # ── 4. Always return to Edit page FIRST ───────────────────────────
+            # Resolve silently ignores timeline manipulations if the active page
+            # is Deliver (which StartRendering may switch to).
+            if self.resolve:
+                try:
+                    self.resolve.OpenPage("edit")
+                    time.sleep(1.0) # slightly longer wait to ensure UI is ready
+                except Exception:
+                    pass
 
-            # ── 5. Restore original timeline ──────────────────────────────────
+            # ── 5. Restore muted tracks ──────────────────────────────────────
+            if mute_state_backup and working_set_name:
+                try:
+                    _set = getattr(render_timeline, working_set_name)
+                    if callable(_set):
+                        for idx in mute_state_backup:
+                            _set("audio", idx, True) # we only muted them, so we unmute them
+                except Exception as restore_err:
+                    log_error(f"Track restore via {working_set_name} failed: {restore_err}")
+
+            # ── 6. Restore original timeline ──────────────────────────────────
             if switched_timeline and original_timeline:
                 try:
                     self.project.SetCurrentTimeline(original_timeline)
                     self.timeline = original_timeline
                 except Exception as tl_err:
                     log_error(f"Could not restore original timeline: {tl_err}")
-
-            # ── 6. Always return to Edit page ─────────────────────────────────
-            if self.resolve:
-                try:
-                    self.resolve.OpenPage("edit")
-                except Exception:
-                    pass
 
         return target_file if render_ok else None
 
@@ -329,13 +330,27 @@ class ResolveHandler:
 
             a_count = target_tl.GetTrackCount("audio")
             populated = []
+            
+            # Resolve's SWIG objects might return None for unknown methods
+            _get_name_fn = getattr(target_tl, "GetTrackName", None)
+            
             for i in range(1, a_count + 1):
                 try:
                     items = target_tl.GetItemListInTrack("audio", i)
-                    # GetItemListInTrack returns a list or None / empty dict
-                    has_content = bool(items)  # [] / {} / None all evaluate False
+                    has_content = bool(items)
                     if has_content:
-                        populated.append(f"A{i}")
+                        # Try to get the actual user-defined track name
+                        track_name = ""
+                        if callable(_get_name_fn):
+                            try:
+                                track_name = _get_name_fn("audio", i)
+                            except Exception:
+                                pass
+                                
+                        if not track_name:
+                            track_name = f"Audio {i}"
+                            
+                        populated.append(track_name)
                 except Exception:
                     # If the call fails, skip this track safely
                     pass

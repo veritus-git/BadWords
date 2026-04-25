@@ -366,6 +366,10 @@ class OSDoctor:
         settings_modified = False
 
         for key, value in prefs_dict.items():
+            if not isinstance(key, str):
+                log_error(f"save_all_prefs: Filtered out invalid non-string key: {type(key)}")
+                continue
+
             if key in _cfg.DEFAULT_USER_DATA:
                 self.user_data[key] = value
                 user_modified = True
