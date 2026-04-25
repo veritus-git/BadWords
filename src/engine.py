@@ -1700,8 +1700,8 @@ except Exception as e:
                 "xml_preserve_track_order",
                 config.DEFAULT_SETTINGS["xml_preserve_track_order"]
             ))
-            # auto_del (Ripple Delete) is passed directly in settings from gui._on_assemble()
-            auto_del = bool(settings.get("auto_del", False))
+            # auto_del is already baked into clean_ops by calculate_timeline_structure().
+            # No need to pass it further down the XML pipeline.
 
             # ──────────────────────────────────────────────────────────────────
             # PRIMARY PATH: XML BUILD + IMPORT
@@ -1726,7 +1726,6 @@ except Exception as e:
                     audio_only_mode      = audio_only_mode,
                     output_path          = xml_path,
                     preserve_track_order = preserve_track_order,
-                    auto_del             = auto_del,
                 )
 
                 if ok_build:

@@ -4927,7 +4927,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         )
         self.tgl_xml_preserve_track_order.setToolTip(self.txt("tt_xml_preserve_track_order"))
         self.tgl_xml_preserve_track_order.toggled.connect(
-            lambda checked: self._save_single_pref("xml_preserve_track_order", checked)
+            lambda checked: self.engine.save_preferences({"xml_preserve_track_order": checked})
         )
         w_xml_track = QWidget()
         l_xml_track = QHBoxLayout(w_xml_track)

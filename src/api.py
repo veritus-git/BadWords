@@ -989,7 +989,7 @@ class ResolveHandler:
 
     def build_edit_xml_from_ops(self, ops, source_tl_name, new_tl_name,
                                  track_indices, audio_only_mode, output_path,
-                                 preserve_track_order=False, auto_del=False):
+                                 preserve_track_order=False):
         """
         Constructs a complete FCP7 XML file ready to be imported as a new
         DaVinci Resolve timeline.
@@ -1064,19 +1064,18 @@ class ResolveHandler:
                      f"{len(audio_clip_maps)} audio track(s), tl_start={tl_start_frame}")
 
             # ── 4. Filter ops ─────────────────────────────────────────────────
-            #   silence_cut:  ALWAYS skipped (silence that was cut)
-            #   bad:          skipped only when auto_del (Ripple Delete) is ON;
-            #                 when OFF, bad clips appear with Violet color via API
-            #   silence_mark: always kept (marked but not cut)
-            skip_types = {"silence_cut"}
-            if auto_del:
-                skip_types.add("bad")
+            # IMPORTANT: `ops` (clean_ops from engine) is ALREADY filtered by
+            # calculate_timeline_structure() which respects do_auto_del, do_silence_cut etc.
+            # The ONLY thing we skip here is 'silence_cut' — a cut-point marker with
+            # zero payload that AppendToTimeline also never placed on the timeline.
+            # We do NOT touch 'bad' here — if auto_del was ON, they’re already gone.
+            # If auto_del was OFF, red clips MUST appear in the output (Violet color).
             kept_ops = [op for op in ops
-                        if op["type"] not in skip_types and (op["e"] - op["s"]) >= 2]
+                        if op["type"] != "silence_cut" and (op["e"] - op["s"]) >= 2]
 
             if not kept_ops:
                 log_error("build_edit_xml_from_ops: no ops to assemble after filtering.")
-                return False
+                return False, {}
 
             # ── 5. Helper: map one op range onto source clips ─────────────────
             def op_to_clipitems(op, clip_map):
@@ -1098,11 +1097,16 @@ class ResolveHandler:
                     src_in  = clip["src_in"] + offset
                     dur     = overlap_end - overlap_start
                     src_out = src_in + dur
+                    # op_offset: how many frames into the op this segment starts.
+                    # CRITICAL for correct dest_pos placement when a clip boundary
+                    # falls inside an op (prevents zakładka / timeline desync).
+                    op_offset = overlap_start - op["s"]
                     result.append({
                         "src_in":    src_in,
                         "src_out":   src_out,
                         "duration":  dur,
                         "file_path": clip["file_path"],
+                        "op_offset": op_offset,
                     })
                 return result
 
@@ -1236,27 +1240,29 @@ class ResolveHandler:
                     v_track_el = ET.SubElement(video_el, "track")
                     dest_pos = 0
                     for op in kept_ops:
-                        color = COLOR_MAP.get(op["type"])
+                        op_dur = op["e"] - op["s"]
+                        color  = COLOR_MAP.get(op["type"])
                         if not color and str(op["type"]).startswith("custom_"):
                             color = op["type"].split("_")[1]
                         segs = op_to_clipitems(op, vclips)
-                        if not segs:
-                            dest_pos += op["e"] - op["s"]
-                            continue
                         for seg in segs:
+                            # dest_start accounts for where in the op this segment begins
+                            # (op_offset > 0 when a clip boundary falls inside the op)
+                            ci_dest_start = dest_pos + seg["op_offset"]
                             ci_counter[0] += 1
                             make_clipitem(
                                 v_track_el,
                                 ci_id      = f"clipitem-v{vi_src}-{ci_counter[0]}",
-                                dest_start = dest_pos,
-                                dest_end   = dest_pos + seg["duration"],
+                                dest_start = ci_dest_start,
+                                dest_end   = ci_dest_start + seg["duration"],
                                 src_in     = seg["src_in"],
                                 src_out    = seg["src_out"],
                                 duration   = seg["duration"],
                                 file_path  = seg["file_path"],
                                 color      = color,
                             )
-                            dest_pos += seg["duration"]
+                        # ALWAYS advance by full op duration — keeps all tracks in sync
+                        dest_pos += op_dur
             else:
                 # Empty video track placeholder (required by FCP7 XML schema)
                 ET.SubElement(video_el, "track")
@@ -1266,36 +1272,62 @@ class ResolveHandler:
 
             if audio_clip_maps:
                 ci_counter_a = [0]
-                for out_idx, ai_src in enumerate(sorted(audio_clip_maps.keys()), start=1):
-                    # Track index in output timeline
-                    dest_track_idx = ai_src if preserve_track_order else out_idx
-                    aclips = audio_clip_maps[ai_src]
+                sorted_src_tracks = sorted(audio_clip_maps.keys())
+
+                if preserve_track_order:
+                    # Emit one <track> per position from 1 to max selected source track.
+                    # Non-selected positions get an empty <track> element (gap placeholder).
+                    # sourcetrack_idx uses out_idx (sequential channel of source file),
+                    # NOT ai_src — because trackindex refers to the source FILE's audio
+                    # channel, not the source timeline track number.
+                    max_src_track  = sorted_src_tracks[-1]
+                    track_positions = range(1, max_src_track + 1)
+                else:
+                    # Pack tracks sequentially: A1→1, A4→2, etc.
+                    track_positions = range(1, len(sorted_src_tracks) + 1)
+
+                for track_pos in track_positions:
                     a_track_el = ET.SubElement(audio_el, "track")
+
+                    if preserve_track_order:
+                        ai_src = track_pos
+                    else:
+                        ai_src = sorted_src_tracks[track_pos - 1]
+
+                    if ai_src not in audio_clip_maps:
+                        # Gap placeholder — empty track, no clipitems
+                        continue
+
+                    aclips  = audio_clip_maps[ai_src]
+                    # out_idx = sequential rank among selected tracks (1-based).
+                    # This is the SOURCE FILE's channel index — NOT the TL track number.
+                    out_idx = sorted_src_tracks.index(ai_src) + 1
+
                     dest_pos = 0
                     for op in kept_ops:
-                        color = COLOR_MAP.get(op["type"])
+                        op_dur = op["e"] - op["s"]
+                        color  = COLOR_MAP.get(op["type"])
                         if not color and str(op["type"]).startswith("custom_"):
                             color = op["type"].split("_")[1]
                         segs = op_to_clipitems(op, aclips)
-                        if not segs:
-                            dest_pos += op["e"] - op["s"]
-                            continue
                         for seg in segs:
+                            ci_dest_start = dest_pos + seg["op_offset"]
                             ci_counter_a[0] += 1
                             make_clipitem(
                                 a_track_el,
                                 ci_id            = f"clipitem-a{ai_src}-{ci_counter_a[0]}",
-                                dest_start       = dest_pos,
-                                dest_end         = dest_pos + seg["duration"],
+                                dest_start       = ci_dest_start,
+                                dest_end         = ci_dest_start + seg["duration"],
                                 src_in           = seg["src_in"],
                                 src_out          = seg["src_out"],
                                 duration         = seg["duration"],
                                 file_path        = seg["file_path"],
                                 color            = color,
                                 sourcetrack_type = "audio",
-                                sourcetrack_idx  = dest_track_idx,
+                                sourcetrack_idx  = out_idx,
                             )
-                            dest_pos += seg["duration"]
+                        # ALWAYS advance by full op duration — keeps all tracks in sync
+                        dest_pos += op_dur
             else:
                 ET.SubElement(audio_el, "track")
 
