@@ -264,6 +264,262 @@ QWidget.txt = _qwidget_txt
 # PHASE 7 CLASSES: WORKER, PROGRESS BAR, CANVAS
 # ==========================================
 
+class SearchOverlayWidget(QFrame):
+    def __init__(self, parent_widget, main_window):
+        super().__init__(parent_widget)
+        self.main_window = main_window
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect
+        from PySide6.QtCore import Qt, QTimer, QEvent
+        from PySide6.QtGui import QColor, QAction, QIcon
+        
+        self.setObjectName("SearchOverlay")
+        self.setStyleSheet("""
+            QFrame#SearchOverlay {
+                background-color: #252525;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+            }
+            QLineEdit, QLabel, QPushButton {
+                background: transparent;
+                border: none;
+                color: #dddddd;
+            }
+            QLineEdit {
+                padding: 4px;
+            }
+            QLabel {
+                padding-right: 8px;
+            }
+            QPushButton {
+                font-weight: bold;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                color: #ffffff;
+                background-color: #333333;
+                border-radius: 4px;
+            }
+        """)
+        
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        self.setGraphicsEffect(shadow)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(self.main_window.txt("search_placeholder"))
+        self.search_input.setMinimumWidth(180)
+        
+        self.counter_label = QLabel(self.main_window.txt("search_results_counter_empty"))
+        
+        self.btn_prev = QPushButton("▲")
+        self.btn_prev.setToolTip(self.main_window.txt("search_tooltip_prev"))
+        self.btn_prev.setFixedSize(24, 24)
+        
+        self.btn_next = QPushButton("▼")
+        self.btn_next.setToolTip(self.main_window.txt("search_tooltip_next"))
+        self.btn_next.setFixedSize(24, 24)
+        
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setToolTip(self.main_window.txt("search_tooltip_close"))
+        self.btn_close.setFixedSize(24, 24)
+        
+        layout.addWidget(self.search_input)
+        layout.addWidget(self.counter_label)
+        layout.addWidget(self.btn_prev)
+        layout.addWidget(self.btn_next)
+        layout.addWidget(self.btn_close)
+        
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(300)
+        self.search_timer.timeout.connect(self._perform_search)
+        
+        self.search_input.textChanged.connect(self._on_text_changed)
+        self.search_input.returnPressed.connect(self._on_enter_pressed)
+        
+        self.btn_prev.clicked.connect(self.prev_match)
+        self.btn_next.clicked.connect(self.next_match)
+        self.btn_close.clicked.connect(self.close_search)
+        
+        self.matches = []
+        self.current_index = -1
+        self.hide()
+        
+        if parent_widget:
+            parent_widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if obj == self.parentWidget() and event.type() == QEvent.Resize:
+            self._reposition()
+        return super().eventFilter(obj, event)
+
+    def _on_text_changed(self, text):
+        self.search_timer.start()
+
+    def _on_enter_pressed(self):
+        from PySide6.QtGui import QGuiApplication
+        mods = QGuiApplication.keyboardModifiers()
+        from PySide6.QtCore import Qt
+        if mods & Qt.ShiftModifier:
+            self.prev_match()
+        else:
+            self.next_match()
+
+    def _perform_search(self):
+        query = self.search_input.text().strip()
+        self.matches.clear()
+        self.current_index = -1
+        
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or getattr(canvas, 'words_data', None) is None:
+            self._update_counter()
+            return
+            
+        # Clean flags
+        for w in canvas.words_data:
+            w.pop('_search_match', None)
+            w.pop('_search_active', None)
+            
+        if not query:
+            canvas.update()
+            self._update_counter()
+            return
+            
+        import re
+        q_lower = query.lower()
+        # Break query into words removing special chars for matching
+        q_words = [re.sub(r'[^\w\s]', '', q) for q in q_lower.split() if q]
+        if not q_words:
+            # If all were special chars, just use the raw query tokens
+            q_words = [q for q in q_lower.split() if q]
+            if not q_words:
+                canvas.update()
+                self._update_counter()
+                return
+        
+        # Build searchable list
+        searchable = []
+        for idx, w in enumerate(canvas.words_data):
+            if w.get('type') == 'silence' or w.get('_hidden'):
+                continue
+            d_text = w.get('_display_text', w.get('text', ''))
+            if not d_text.strip():
+                continue
+            clean_text = re.sub(r'[^\w\s]', '', d_text).lower()
+            raw_text = d_text.lower()
+            searchable.append((idx, clean_text, raw_text))
+            
+        # Sliding window
+        q_len = len(q_words)
+        for i in range(len(searchable) - q_len + 1):
+            match = True
+            matched_indices = []
+            
+            for j in range(q_len):
+                idx, clean_text, raw_text = searchable[i + j]
+                q_word = q_words[j]
+                
+                # Full match required for all except the last word
+                if j < q_len - 1:
+                    # check exact match on clean text or raw text
+                    if q_word != clean_text and q_word != raw_text:
+                        match = False
+                        break
+                else:
+                    # Last word can be a partial (contains) match
+                    if q_word not in clean_text and q_word not in raw_text:
+                        match = False
+                        break
+                        
+                matched_indices.append(idx)
+                
+            if match:
+                self.matches.append(matched_indices)
+                for idx in matched_indices:
+                    canvas.words_data[idx]['_search_match'] = True
+
+        if self.matches:
+            self.current_index = 0
+            self._apply_active_highlight()
+            
+        self._update_counter()
+        canvas.update()
+
+    def _apply_active_highlight(self):
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or not getattr(canvas, 'words_data', None): return
+        
+        for matched_indices in self.matches:
+            for idx in matched_indices:
+                canvas.words_data[idx].pop('_search_active', None)
+            
+        if 0 <= self.current_index < len(self.matches):
+            active_indices = self.matches[self.current_index]
+            for idx in active_indices:
+                canvas.words_data[idx]['_search_active'] = True
+            
+            w = canvas.words_data[active_indices[0]]
+            if '_rect' in w:
+                rect = w['_rect']
+                if hasattr(self.main_window, 'scroll_area'):
+                    self.main_window.scroll_area.ensureVisible(rect.x(), rect.y(), 0, 50)
+                
+        canvas.update()
+
+    def _update_counter(self):
+        if not self.matches:
+            self.counter_label.setText(self.main_window.txt("search_results_counter_empty"))
+        else:
+            self.counter_label.setText(f"{self.current_index + 1}/{len(self.matches)}")
+
+    def next_match(self):
+        if not self.matches: return
+        self.current_index = (self.current_index + 1) % len(self.matches)
+        self._apply_active_highlight()
+        self._update_counter()
+
+    def prev_match(self):
+        if not self.matches: return
+        self.current_index = (self.current_index - 1) % len(self.matches)
+        self._apply_active_highlight()
+        self._update_counter()
+
+    def close_search(self):
+        self.hide()
+        self.search_input.clear()
+        
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if canvas and canvas.words_data:
+            for w in canvas.words_data:
+                w.pop('_search_match', None)
+                w.pop('_search_active', None)
+            canvas.update()
+
+    def open_search(self):
+        self.show()
+        self.raise_()
+        self.search_input.setFocus()
+        self.search_input.selectAll()
+        self._reposition()
+        
+    def _reposition(self):
+        try:
+            if not self.parentWidget(): return
+            parent_w = self.parentWidget().width()
+            self.resize(self.sizeHint())
+            self.move(parent_w - self.width() - 20, 20)
+        except Exception as e:
+            import osdoc
+            osdoc.log_error(f"Search positioning error: {str(e)}")
+
 
 class WorkerSignals(QObject):
     progress = Signal(int)
@@ -470,8 +726,8 @@ class TranscriptionCanvas(QWidget):
         self.setMinimumHeight(y + line_height + 40)
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter, QColor, QFont
-        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QPainter, QColor, QFont, QPen, QLinearGradient
+        from PySide6.QtCore import QRectF, Qt
         
         prefs = self.main_window.engine.load_preferences() or {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
@@ -494,40 +750,116 @@ class TranscriptionCanvas(QWidget):
                 if w.get('manual_status') != 'inaudible' or w.get('is_auto', False):
                     return None
             if s == 'typo' and hasattr(self.main_window, 'tgl_show_typos') and not self.main_window.tgl_show_typos.isChecked():
-                # Keep 'typo' visible if it was manually marked by the user
                 if w.get('manual_status') != 'typo' or w.get('is_auto', False):
                     return None
             return s
 
-        p.setPen(Qt.NoPen)
-        visible_words = self._get_visible_words()
-        
-        # PASS 0: Horizontal Separator Lines
-        p.setPen(QPen(QColor("#333333"), 1))
-        for w in visible_words:
-            if '_separator_y' in w:
-                sep_y = w['_separator_y']
-                p.drawLine(20, sep_y, self.width() - 20, sep_y)
-        
-        p.setPen(Qt.NoPen) # Reset pen for Pass 1
-        
         def get_color_tuple(status_val):
             if status_val in color_map: return color_map[status_val]
             if status_val and str(status_val).startswith("custom_"):
                 c_name = status_val.split("_")[1]
                 return (QColor(config.RESOLVE_COLORS_HEX.get(c_name, "#ffffff")), QColor("#000000"))
             return None
+            
+        def get_base_bg_fg(w):
+            status = get_status(w)
+            c_res = get_color_tuple(status)
+            if c_res: return c_res[0], c_res[1], False
+            return None, QColor(config.WORD_NORMAL_FG), True
+
+        p.setPen(Qt.NoPen)
+        visible_words = self._get_visible_words()
+        
+        # Oś Y separatorów
+        p.setPen(QPen(QColor("#333333"), 1))
+        for w in visible_words:
+            if '_separator_y' in w:
+                sep_y = w['_separator_y']
+                p.drawLine(20, sep_y, self.width() - 20, sep_y)
+        p.setPen(Qt.NoPen)
+        
+        # 1. CZYSZCZENIE ŚMIECI PO POPRZEDNICH ITERACJACH
+        for w in visible_words:
+            for key in ['_search_brush', '_search_fg', '_is_bold']:
+                w.pop(key, None)
+            
+        groups = []
+        curr_group = []
+        curr_state = None
+        
+        for w in visible_words:
+            if '_rect' not in w: continue
+            state = 'active' if w.get('_search_active') else ('match' if w.get('_search_match') else None)
+            
+            if state:
+                if curr_state == state and curr_group and w['_rect'].y() == curr_group[-1]['_rect'].y():
+                    curr_group.append(w)
+                else:
+                    if curr_group: groups.append((curr_group, curr_state))
+                    curr_group = [w]
+                    curr_state = state
+            else:
+                if curr_group: groups.append((curr_group, curr_state))
+                curr_group = []
+                curr_state = None
+        if curr_group: groups.append((curr_group, curr_state))
+
+        from PySide6.QtGui import QRadialGradient, QBrush, QTransform
+        
+        active_underlines = []
+
+        for grp_words, state in groups:
+            is_active = (state == 'active')
+            bg, fg, is_neutral = get_base_bg_fg(grp_words[0])
+            
+            min_x = grp_words[0]['_rect'].left()
+            max_x = grp_words[-1]['_rect'].right()
+            r0 = grp_words[0]['_rect']
+            
+            if is_neutral:
+                # KLON VS CODE: Jeden zbiorczy prostokąt dla całej frazy (Brak Alpha Stacking!)
+                p.setBrush(QColor(255, 140, 0, 120) if is_active else QColor(255, 200, 50, 60))
+                p.drawRoundedRect(QRectF(min_x - 2, r0.top() - 1, (max_x - min_x) + 4, r0.height() + 2), 3, 3)
+                for w in grp_words:
+                    w['_search_fg'] = fg 
+                    w['_is_bold'] = False
+            else:
+                # KOLOROWE TAGI: Wygaszony gradient
+                center_x = (min_x + max_x) / 2.0
+                center_y = r0.center().y()
+                half_w = max(1.0, (max_x - min_x) / 2.0 + 6)
+                half_h = max(1.0, r0.height() / 2.0 + 1)
+                
+                grad = QRadialGradient(0, 0, 1.0)
+                h, s, v, a = bg.getHsv()
+                if h == -1: h = 0
+                grad.setColorAt(0.0, QColor.fromHsv(h, s, max(0, int(v * 0.90)), a))
+                grad.setColorAt(1.0, QColor.fromHsv(h, s, max(0, int(v * 0.70)), a))
+                    
+                brush = QBrush(grad)
+                brush.setTransform(QTransform().translate(center_x, center_y).scale(half_w, half_h))
+                
+                for w in grp_words:
+                    w['_search_brush'] = brush
+                    w['_search_fg'] = QColor("#ffffff") if is_active else fg
+                    w['_is_bold'] = is_active
+                    
+                if is_active:
+                    # Zapisujemy koordynaty ciągłej linii podkreślenia blisko tekstu (r0.bottom() - 3)
+                    active_underlines.append(QRectF(min_x, r0.bottom() - 3, max_x - min_x, 2))
 
         # PASS 1: Base Backgrounds
         for w in visible_words:
             if '_rect' not in w: continue
-            status = get_status(w)
-            color_res = get_color_tuple(status)
-            if color_res:
-                p.setBrush(color_res[0])
-                p.drawRoundedRect(w['_rect'].adjusted(-3, -1, 3, 1), 5, 5)
-                
+            bg, _, _ = get_base_bg_fg(w)
+            brush = w.get('_search_brush', bg)
+            if brush:
+                p.setBrush(brush)
+                expand = 6 if '_search_brush' in w else 3
+                p.drawRoundedRect(w['_rect'].adjusted(-expand, -1, expand, 1), 5, 5)
+
         # PASS 2: Sharp Bridges
+        p.setPen(Qt.NoPen)
         for i in range(len(visible_words) - 1):
             w1 = visible_words[i]
             w2 = visible_words[i+1]
@@ -535,50 +867,61 @@ class TranscriptionCanvas(QWidget):
             if '_rect' not in w1 or '_rect' not in w2: continue
             if w1['_rect'].y() != w2['_rect'].y(): continue 
             
-            s1 = get_status(w1)
-            s2 = get_status(w2)
+            bg1, _, _ = get_base_bg_fg(w1)
+            bg2, _, _ = get_base_bg_fg(w2)
             
-            c1_res = get_color_tuple(s1)
-            c2_res = get_color_tuple(s2)
+            brush1 = w1.get('_search_brush', bg1)
+            brush2 = w2.get('_search_brush', bg2)
             
-            if c1_res and c2_res:
-                r1 = w1['_rect'].adjusted(-3, -1, 3, 1)
-                r2 = w2['_rect'].adjusted(-3, -1, 3, 1)
-                c1 = c1_res[0]
-                c2 = c2_res[0]
+            if brush1 and brush2:
+                expand1 = 6 if '_search_brush' in w1 else 3
+                expand2 = 6 if '_search_brush' in w2 else 3
                 
-                if s1 == s2:
-                    p.setBrush(c1)
+                r1 = w1['_rect'].adjusted(-expand1, -1, expand1, 1)
+                r2 = w2['_rect'].adjusted(-expand2, -1, expand2, 1)
+                
+                if brush1 == brush2:
+                    p.setBrush(brush1)
                     bridge_rect = QRectF(r1.right() - 5, r1.y(), r2.left() - r1.right() + 10, r1.height())
                     p.drawRect(bridge_rect)
                 else:
                     p.setRenderHint(QPainter.Antialiasing, False)
                     gap_mid = int(r1.right() + (r2.left() - r1.right()) / 2.0)
-                    p.setBrush(c1)
+                    p.setBrush(brush1)
                     p.drawRect(QRectF(r1.right() - 5, r1.y(), gap_mid - r1.right() + 6, r1.height()))
-                    p.setBrush(c2)
+                    p.setBrush(brush2)
                     p.drawRect(QRectF(gap_mid, r2.y(), r2.left() - gap_mid + 5, r2.height()))
                     p.setRenderHint(QPainter.Antialiasing, True)
-                
+                    
         # PASS 3: Timestamps & Text
         ts_font = QFont(config.UI_FONT_NAME, 10)
         ts_color = QColor("#666666")
         
         for w in visible_words:
-            # Draw Timestamp if exists
             if '_ts_rect' in w:
                 p.setFont(ts_font)
                 p.setPen(ts_color)
                 p.drawText(w['_ts_rect'], Qt.AlignLeft | Qt.AlignVCenter, w.get('_ts_text', ''))
                 
-            # Draw Word Text
             if '_rect' not in w: continue
-            p.setFont(active_font)
-            status = get_status(w)
-            c_res = get_color_tuple(status)
-            fg_color = c_res[1] if c_res else QColor(config.WORD_NORMAL_FG)
-            p.setPen(fg_color)
+            
+            _, fg, _ = get_base_bg_fg(w)
+            final_fg = w.get('_search_fg', fg)
+            
+            font = QFont(active_font)
+            if w.get('_is_bold'):
+                font.setBold(True)
+                
+            p.setFont(font)
+            p.setPen(final_fg)
             p.drawText(w['_rect'], Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
+            
+        # PASS 4: Active Underlines
+        if active_underlines:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#ffffff"))
+            for rect in active_underlines:
+                p.drawRoundedRect(rect, 1, 1)
 
     def _handle_mouse(self, pos):
         visible_words = self._get_visible_words()
@@ -2976,7 +3319,9 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         from PySide6.QtGui import QKeySequence
         from PySide6.QtWidgets import QKeySequenceEdit
 
-        current_shortcuts = prefs.get('shortcuts', config.DEFAULT_SETTINGS['shortcuts'])
+        current_shortcuts = prefs.get('shortcuts', getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {})).copy()
+        if 'search' not in current_shortcuts:
+            current_shortcuts['search'] = 'Ctrl+F'
         self.shortcut_inputs = {}
 
         for key, value in current_shortcuts.items():
@@ -3998,6 +4343,15 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # --- Build UI --- (sidebars + central workspace sit below title bar)
         self._build_sidebars()         # left + right activity frames
         self._build_central_workspace() # QStackedWidget central area + panels
+
+        self.search_overlay = SearchOverlayWidget(self.scroll_area, self)
+        
+        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtCore import Qt as _Qt
+        
+        search_seq = prefs.get('shortcuts', {}).get('search', 'Ctrl+F')
+        QShortcut(QKeySequence(search_seq), self, context=_Qt.ApplicationShortcut).activated.connect(self.search_overlay.open_search)
+        QShortcut(_Qt.Key_Escape, self, context=_Qt.ApplicationShortcut).activated.connect(self.search_overlay.close_search)
 
         # --- Maximize on the monitor the cursor is on ---
         self._maximize_on_active_screen()
