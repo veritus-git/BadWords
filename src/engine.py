@@ -1718,7 +1718,7 @@ except Exception as e:
                 set_status(self.txt("status_assembly_xml_build"))
                 set_progress(-1)
 
-                ok_build = self.resolve_handler.build_edit_xml_from_ops(
+                ok_build, color_schedule = self.resolve_handler.build_edit_xml_from_ops(
                     ops                  = clean_ops,
                     source_tl_name       = original_tl_name,
                     new_tl_name          = new_tl_name,
@@ -1758,9 +1758,9 @@ except Exception as e:
                         log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
                         xml_tl_name = actual_name
 
-                        # ── Phase: Apply clip colors (failsafe) ───────────────
+                        # ── Phase: Verify/correct clip colors (precise schedule) ───
                         set_status(self.txt("status_assembly_colors"))
-                        self.resolve_handler.reapply_clip_colors(xml_tl_name, clean_ops, fps, auto_del=auto_del)
+                        self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
 
                         xml_success = True
                     else:

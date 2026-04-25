@@ -956,19 +956,29 @@ class ResolveHandler:
                     pool_item = item.GetMediaPoolItem()
                     if not pool_item:
                         continue
-                    fp        = pool_item.GetClipProperty("File Path") or ""
-                    abs_start = int(item.GetStart())
-                    duration  = int(item.GetDuration())
-                    src_in    = int(item.GetLeftOffset())  # frames from media head to in-point
-                    rel_start = abs_start - tl_start_frame
+                    fp          = pool_item.GetClipProperty("File Path") or ""
+                    abs_start   = int(item.GetStart())
+                    duration    = int(item.GetDuration())
+                    src_in      = int(item.GetLeftOffset())  # frames from media head to in-point
+                    rel_start   = abs_start - tl_start_frame
+                    # CRITICAL: total source file duration prevents Freeze Time in FCP7 XML.
+                    # When src_in > 0 and <file><duration> < src_out, Resolve freezes the clip.
+                    try:
+                        total_frames = int(pool_item.GetClipProperty("Frames") or 0)
+                    except Exception:
+                        total_frames = 0
+                    if total_frames <= 0:
+                        # Fallback: at minimum must be >= src_in + duration
+                        total_frames = src_in + duration
                     clips.append({
-                        "abs_start": abs_start,
-                        "abs_end":   abs_start + duration,
-                        "rel_start": rel_start,              # KEY: 0-based from TL start
-                        "rel_end":   rel_start + duration,   # KEY: 0-based from TL start
-                        "src_in":    src_in,
-                        "src_out":   src_in + duration,
-                        "file_path": fp,
+                        "abs_start":    abs_start,
+                        "abs_end":      abs_start + duration,
+                        "rel_start":    rel_start,              # KEY: 0-based from TL start
+                        "rel_end":      rel_start + duration,   # KEY: 0-based from TL start
+                        "src_in":       src_in,
+                        "src_out":      src_in + duration,
+                        "file_path":    fp,
+                        "total_frames": total_frames,           # KEY: full source file length
                     })
                 except Exception as ci_err:
                     log_error(f"_build_source_clip_map: skipping clip: {ci_err}")
@@ -984,16 +994,10 @@ class ResolveHandler:
         Constructs a complete FCP7 XML file ready to be imported as a new
         DaVinci Resolve timeline.
 
-        ops               – list of {s, e, type} in 0-based frames relative to
-                            the source TL start (same space as calculate_timeline_structure)
-        source_tl_name    – name of the existing source timeline to read from
-        new_tl_name       – desired name for the imported timeline
-        track_indices     – 1-based list of audio tracks to include; [] = all
-        audio_only_mode   – True: omit all video tracks from output
-        output_path       – filesystem path where the XML will be written
-        preserve_track_order – False (default): remap audio to A1,A2,A3...
-                               True: keep original source track indices
-        Returns True on success, False on any error.
+        Returns: (success: bool, color_schedule: dict)
+          color_schedule maps dest_start_frame → color_string (or None for normal clips).
+          This schedule covers EVERY clipitem (including multi-clip-source splits),
+          enabling reapply_clip_colors() to verify/correct colors with 100% coverage.
         """
         import xml.etree.ElementTree as ET
 
@@ -1113,6 +1117,21 @@ class ResolveHandler:
                     file_registry[path] = f"file-{file_id_counter[0]}"
                 return file_registry[path]
 
+            # Build file_total_frames map: path → max known total frames
+            # Used in <file> elements to prevent Freeze Time when src_in > 0
+            file_total_frames = {}
+            for cm_dict in list(video_clip_maps.values()) + list(audio_clip_maps.values()):
+                for clip in cm_dict:
+                    fp = clip["file_path"]
+                    tf = clip.get("total_frames", 0)
+                    if tf > file_total_frames.get(fp, 0):
+                        file_total_frames[fp] = tf
+
+            # color_schedule: dest_start_frame → color_string|None
+            # Every clipitem (including multi-clip splits) gets an entry.
+            # This is the source of truth for reapply_clip_colors().
+            color_schedule = {}
+
             # Pre-walk all ops to register files in order
             for op in kept_ops:
                 for vm in video_clip_maps.values():
@@ -1132,6 +1151,8 @@ class ResolveHandler:
                 """
                 Emits <file id="file-N"> with full content (first time),
                 or a self-closing reference <file id="file-N"/> (subsequent).
+                Includes <duration> = total source frames to prevent Freeze Time
+                when src_in > 0 (trimmed clips).
                 """
                 fid = get_file_id(path)
                 file_el = ET.SubElement(parent, "file", id=fid)
@@ -1139,6 +1160,11 @@ class ResolveHandler:
                     ET.SubElement(file_el, "name").text = path.split("/")[-1].split("\\")[-1]
                     ET.SubElement(file_el, "pathurl").text = self._path_to_fileurl(path)
                     make_rate_elem(file_el)
+                    # Full source file duration — MUST be >= max(src_out) for all clips
+                    # using this file, otherwise Resolve shows Freeze Time.
+                    tf = file_total_frames.get(path, 0)
+                    if tf > 0:
+                        ET.SubElement(file_el, "duration").text = str(tf)
                 # else: empty element = reference only
 
             def make_clipitem(parent, ci_id, dest_start, dest_end,
@@ -1169,6 +1195,8 @@ class ResolveHandler:
                     ET.SubElement(st, "mediatype").text = sourcetrack_type
                     if sourcetrack_idx is not None:
                         ET.SubElement(st, "trackindex").text = str(sourcetrack_idx)
+                # Record in color_schedule for reapply verification
+                color_schedule[dest_start] = color
                 return ci
 
             # Reset statics
@@ -1279,46 +1307,37 @@ class ResolveHandler:
                 f.write(raw_bytes)
 
             log_info(f"build_edit_xml_from_ops: wrote {output_path} "
-                     f"({len(kept_ops)} ops, {total_dest_frames} frames)")
-            return True
+                     f"({len(kept_ops)} ops, {total_dest_frames} frames, "
+                     f"{len(color_schedule)} colored clipitems)")
+            return True, color_schedule
 
         except Exception as e:
             import traceback
             log_error(f"build_edit_xml_from_ops error: {e}\n{traceback.format_exc()}")
-            return False
+            return False, {}
 
-    def reapply_clip_colors(self, tl_name, ops, fps, auto_del=False):
+    def reapply_clip_colors(self, tl_name, color_schedule):
         """
         POST-IMPORT COLOR VERIFICATION & CORRECTION.
 
-        After importing the XML (which already embeds <logginginfo><clipcolor>),
-        this method walks all clips on the new timeline and verifies that each
-        clip has the correct color set.  If any clip's color is wrong or missing
-        (e.g. because a particular Resolve version ignored the XML color element),
-        it is corrected via SetClipColor().
+        Receives the color_schedule built during XML generation — a dict of
+        {dest_start_frame: color_string|None} covering EVERY clipitem in the
+        imported timeline (including multi-clip-source splits).
 
-        Matching strategy:
-          - Reconstruct the running dest_pos from kept_ops  (MUST use the same
-            auto_del flag as build_edit_xml_from_ops so the ops_map is identical)
-          - Match each timeline item by its GetStart() position with ±2 frame tol.
-          - "normal" type clips get no color (SetClipColor is not called).
-          - Clips that already have the correct color are skipped silently.
+        Strategy:
+          1. For each clip on every track, look up its GetStart() in color_schedule.
+          2. If expected color is None (normal clip) — don’t touch it.
+          3. If expected color is set:
+             - GetClipColor() to check current color.
+             - If already correct: count as OK (XML did its job).
+             - If wrong/missing: SetClipColor() to correct it.
+          4. Log summary: X correct from XML, Y corrected via API.
         """
-        COLOR_MAP = {
-            "bad":          "Violet",
-            "repeat":       "Navy",
-            "typo":         "Olive",
-            "inaudible":    "Chocolate",
-            "silence_mark": "Tan",
-        }
-
-        # MUST mirror build_edit_xml_from_ops skip logic exactly
-        skip_types = {"silence_cut"}
-        if auto_del:
-            skip_types.add("bad")
+        if not color_schedule:
+            log_info("reapply_clip_colors: empty schedule, skipping.")
+            return
 
         try:
-            # Find the newly imported timeline
             target_tl = None
             count = self.project.GetTimelineCount()
             for i in range(1, count + 1):
@@ -1330,68 +1349,51 @@ class ResolveHandler:
                 log_error(f"reapply_clip_colors: timeline '{tl_name}' not found.")
                 return
 
-            # Reconstruct ops_map identical to what was written to XML
-            kept_ops = [op for op in ops
-                        if op["type"] not in skip_types and (op["e"] - op["s"]) >= 2]
-            if not kept_ops:
-                log_info("reapply_clip_colors: no kept ops, nothing to verify.")
-                return
-
             tl_start = int(target_tl.GetStartFrame())
-
-            # Build positional index: dest_start → (op_type, expected_color)
-            # Key insight: positions in the imported TL start at tl_start (not 0)
-            # because FCP7 XML <start>=0 maps to frame tl_start after import
-            ops_map = []   # ordered list of {dest_start, type, color}
-            dest_pos = tl_start
-            for op in kept_ops:
-                dur = op["e"] - op["s"]
-                op_type = op["type"]
-                color = COLOR_MAP.get(op_type)
-                if not color and str(op_type).startswith("custom_"):
-                    color = op_type.split("_")[1]
-                ops_map.append({
-                    "dest_start": dest_pos,
-                    "type":       op_type,
-                    "color":      color,      # None = no color (normal)
-                })
-                dest_pos += dur
+            # The schedule was built with dest_start=0 as sequence frame 0;
+            # after import, frame 0 of the sequence maps to tl_start of the new TL.
+            # Build an adjusted lookup: (tl_start + schedule_key) → color
+            # But also keep original keys in case TL start is 0.
+            def sched_color(item_start):
+                """Returns expected color for a clip at item_start, or False if not found."""
+                c = color_schedule.get(item_start)
+                if c is not None or item_start in color_schedule:
+                    return c  # None means 'normal' (no color)
+                # Try offset by tl_start in case XML=0-based but TL has timecode offset
+                adjusted = item_start - tl_start
+                if adjusted in color_schedule:
+                    return color_schedule[adjusted]
+                return False  # not found
 
             corrected = 0
             ok_count  = 0
+            missed    = 0
 
             def verify_track(track_type, track_count):
-                nonlocal corrected, ok_count
+                nonlocal corrected, ok_count, missed
                 for ti in range(1, track_count + 1):
                     try:
                         items = target_tl.GetItemListInTrack(track_type, ti) or []
                         for item in items:
                             if not item:
                                 continue
-                            item_start = int(item.GetStart())
-                            # Find matching op by start position (±2 frames tolerance)
-                            match = next(
-                                (m for m in ops_map
-                                 if abs(m["dest_start"] - item_start) <= 2),
-                                None
-                            )
-                            if not match:
-                                # Clip at unknown position — skip silently
+                            item_start     = int(item.GetStart())
+                            expected_color = sched_color(item_start)
+                            if expected_color is False:
+                                missed += 1
                                 continue
-                            expected_color = match["color"]
                             if not expected_color:
-                                # "normal" clips: no color expected, don't touch
+                                # Normal clip — no color expected, skip
                                 ok_count += 1
                                 continue
-                            # Verify current color against expected
+                            # Check what color is currently set
                             try:
-                                actual_color = item.GetClipColor()
+                                actual_color = item.GetClipColor() or ""
                             except Exception:
-                                actual_color = None
-                            if actual_color and actual_color.lower() == expected_color.lower():
-                                ok_count += 1  # already correct from XML
+                                actual_color = ""
+                            if actual_color.lower() == expected_color.lower():
+                                ok_count += 1  # XML set it correctly
                             else:
-                                # Mismatch or missing — correct it
                                 item.SetClipColor(expected_color)
                                 corrected += 1
                     except Exception as te:
@@ -1403,7 +1405,8 @@ class ResolveHandler:
             verify_track("audio", a_count)
 
             log_info(f"reapply_clip_colors: '{tl_name}' — "
-                     f"{ok_count} correct, {corrected} corrected via API.")
+                     f"{ok_count} ok from XML, {corrected} corrected via API"
+                     + (f", {missed} unmatched (normal)" if missed else "."))
 
         except Exception as e:
             log_error(f"reapply_clip_colors error: {e}")

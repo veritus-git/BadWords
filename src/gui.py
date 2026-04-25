@@ -4851,16 +4851,6 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         l_transcript.addSpacing(10)
         l_transcript.addWidget(self.lbl_preview)
 
-        # Sync DaVinci Timeline on Chapter Switch
-        self.chk_sync_davinci = ToggleSwitch()
-        self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
-        w_sync = QWidget()
-        l_sync = QHBoxLayout(w_sync)
-        l_sync.setContentsMargins(0, 0, 0, 0)
-        l_sync.addStretch()
-        l_sync.addWidget(self.chk_sync_davinci)
-        _add_row(form_transcript, self.txt("chk_sync_davinci"), w_sync,
-                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=False))
 
         if not is_basic:
             # Separator before chunking settings
@@ -4903,6 +4893,51 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
             _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
 
+        # ── Sync DaVinci timeline on chapter switch ─ BOTTOM of Transcript tab
+        # (below font preview and chunking settings, applies to both basic/advanced)
+        l_transcript.addSpacing(12)
+        sep_sync = QFrame()
+        sep_sync.setFrameShape(QFrame.Shape.HLine)
+        sep_sync.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_transcript.addWidget(sep_sync)
+        l_transcript.addSpacing(10)
+
+        form_bottom = QFormLayout()
+        form_bottom.setSpacing(14)
+        form_bottom.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.chk_sync_davinci = ToggleSwitch()
+        self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
+        w_sync = QWidget()
+        l_sync = QHBoxLayout(w_sync)
+        l_sync.setContentsMargins(0, 0, 0, 0)
+        l_sync.addStretch()
+        l_sync.addWidget(self.chk_sync_davinci)
+        _add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
+                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=False))
+
+        # Track order toggle — directly below sync davinci
+        import config as _cfg_bot
+        _bot_prefs = self.engine.load_preferences() or {}
+        self.tgl_xml_preserve_track_order = ToggleSwitch()
+        self.tgl_xml_preserve_track_order.setChecked(
+            bool(_bot_prefs.get("xml_preserve_track_order",
+                                _cfg_bot.DEFAULT_SETTINGS["xml_preserve_track_order"])),
+            animated=False
+        )
+        self.tgl_xml_preserve_track_order.setToolTip(self.txt("tt_xml_preserve_track_order"))
+        self.tgl_xml_preserve_track_order.toggled.connect(
+            lambda checked: self._save_single_pref("xml_preserve_track_order", checked)
+        )
+        w_xml_track = QWidget()
+        l_xml_track = QHBoxLayout(w_xml_track)
+        l_xml_track.setContentsMargins(0, 0, 0, 0)
+        l_xml_track.addStretch()
+        l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
+        _add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
+                 False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=False))
+
+        l_transcript.addLayout(form_bottom)
         l_transcript.addStretch()
 
         self.combo_font.valueChanged.connect(self._update_preview)
@@ -6827,28 +6862,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         row_ripple_delete.addWidget(pin_ripple)
         l_assembly.addLayout(row_ripple_delete)
         pin_ripple.clicked.connect(lambda: self._toggle_favorite('ripple_delete', self.tgl_ripple_delete, self.txt("tool_ripple_delete"), pin_ripple))
-
-        # ── XML track order toggle ─────────────────────────────────────────
-        row_xml_track_order = QHBoxLayout()
-        lbl_xml_order = QLabel(self.txt("lbl_xml_preserve_track_order"))
-        lbl_xml_order.setWordWrap(True)
-        lbl_xml_order.setToolTip(self.txt("tt_xml_preserve_track_order"))
-        row_xml_track_order.addWidget(lbl_xml_order)
-        row_xml_track_order.addStretch()
-        _xml_prefs = self.engine.load_preferences() or {}
-        self.tgl_xml_preserve_track_order = ToggleSwitch()
-        import config as _cfg_tgl
-        self.tgl_xml_preserve_track_order.setChecked(
-            bool(_xml_prefs.get("xml_preserve_track_order",
-                                _cfg_tgl.DEFAULT_SETTINGS["xml_preserve_track_order"])),
-            animated=False
-        )
-        self.tgl_xml_preserve_track_order.setToolTip(self.txt("tt_xml_preserve_track_order"))
-        self.tgl_xml_preserve_track_order.toggled.connect(
-            lambda checked: self._save_single_pref("xml_preserve_track_order", checked)
-        )
-        row_xml_track_order.addWidget(self.tgl_xml_preserve_track_order)
-        l_assembly.addLayout(row_xml_track_order)
 
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
