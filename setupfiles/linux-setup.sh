@@ -1,14 +1,13 @@
 #!/bin/bash
 set -e
 
-# --- BADWORDS LINUX INSTALLER v9.6.1 (UX & UNINSTALL FIXED + PATHS HOTFIX) ---
+# --- BADWORDS LINUX INSTALLER v9.6.3 (CUSTOM PATH & SMART VALIDATION) ---
 # Copyright (c) 2026 Szymon Wolarz
 #
-# CHANGES v9.6.1:
-# - Reordered logic: Main menu is now first.
-# - Uninstall mode bypasses source checks and GPU prompts.
-# - Added true two-way sync for Update mode (deletes obsolete source files).
-# - HOTFIX: Restored missing directory variables.
+# CHANGES v9.6.3:
+# - Added Smart Path Detection & Validation: verified against main.py existence.
+# - Delayed Warning: Path validation messages now appear after the header.
+# - Custom Path Suffix: ensures custom paths always end with /BadWords folder.
 
 PROCESS_NAME="Installation"
 
@@ -34,9 +33,33 @@ NC='\033[0m'
 # ==========================================
 APP_NAME="BadWords"
 SOURCE_FOLDER_NAME="src" 
-INSTALL_DIR_BASH="$HOME/.local/share/$APP_NAME"
 RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
+WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
 
+# --- SMART PATH DETECTION & VALIDATION ---
+DEFAULT_INSTALL_DIR="$HOME/.local/share/$APP_NAME"
+INSTALL_DIR_BASH="$DEFAULT_INSTALL_DIR"
+DETECTION_MSG=""
+
+if [ -f "$WRAPPER_FILE" ]; then
+    DETECTED_PATH=$(grep -E "^INSTALL_DIR\s*=\s*" "$WRAPPER_FILE" | head -n 1 | sed -E "s/^INSTALL_DIR\s*=\s*r?['\"](.*)['\"]/\1/")
+    
+    # Walidacja: ścieżka musi istnieć i posiadać main.py
+    if [ -n "$DETECTED_PATH" ] && [ -d "$DETECTED_PATH" ] && [ -f "$DETECTED_PATH/main.py" ]; then
+        INSTALL_DIR_BASH="$DETECTED_PATH"
+        DETECTION_MSG="${GREEN}[INFO] Valid installation detected at: $INSTALL_DIR_BASH${NC}"
+    else
+        INSTALL_DIR_BASH="$DEFAULT_INSTALL_DIR"
+        if [ -n "$DETECTED_PATH" ]; then
+            DETECTION_MSG="${YELLOW}[WARN] Wrapper points to an invalid location ($DETECTED_PATH). Using default path.${NC}"
+        fi
+    fi
+fi
+
+# Pamiętamy starą ścieżkę do celów sprzątania
+OLD_INSTALL_DIR="$INSTALL_DIR_BASH"
+
+# Zmienne zależne (początkowe)
 VENV_DIR="$INSTALL_DIR_BASH/venv"
 LIBS_LINK="$INSTALL_DIR_BASH/libs"
 MODELS_DIR="$INSTALL_DIR_BASH/models"
@@ -46,6 +69,11 @@ LOG_FILE="$INSTALL_DIR_BASH/badwords_debug.log"
 echo -e "${BLUE}================================================================================${NC}"
 echo -e "${BLUE}                   BadWords - PORTABLE INSTALLER (Linux)                        ${NC}"
 echo -e "${BLUE}================================================================================${NC}"
+
+# Wyświetlamy informację o wykrytej ścieżce po nagłówku, a nie przed nim
+if [ -n "$DETECTION_MSG" ]; then
+    echo -e "$DETECTION_MSG"
+fi
 
 # ==========================================
 # 1. MAIN MENU: INSTALLATION MODE SELECTION
@@ -71,6 +99,45 @@ esac
 echo -e "${YELLOW}[INFO] Selected Action: $MODE_INSTALL${NC}"
 
 # ==========================================
+# 1.5 CUSTOM INSTALLATION PATH PROMPT
+# ==========================================
+# Pytamy o ścieżkę tylko przy pełnym wipe LUB gdy to pierwsza instalacja
+if [ "$WIPE_CHOICE" -eq 3 ] || [ ! -d "$OLD_INSTALL_DIR" ]; then
+    if [ "$WIPE_CHOICE" -ne 4 ]; then
+        echo -e "\n${YELLOW}========================== INSTALLATION PATH ==========================${NC}"
+        echo -e "\n${YELLOW}You can choose where to install BadWords${NC}"
+        echo -e "${GREEN}Default/Current Path: $OLD_INSTALL_DIR${NC}"
+        echo -e "${CYAN}Press [ENTER] to use this path, or type a custom absolute path (e.g. ~/Documents)${NC}"
+        read -p "Path: " CUSTOM_PATH
+
+        if [ -n "$CUSTOM_PATH" ]; then
+            # Podmiana tyldy (~) na zmienną domową
+            CUSTOM_PATH="${CUSTOM_PATH/#\~/$HOME}"
+            
+            # Zabezpieczenie przed "luźnym" wypakowaniem plików (Suffix Protection)
+            if [[ "$CUSTOM_PATH" != *"/$APP_NAME" ]] && [[ "$CUSTOM_PATH" != *"/$APP_NAME/" ]]; then
+                # Usuwamy ewentualny ukośnik na końcu i doklejamy folder BadWords
+                CUSTOM_PATH="${CUSTOM_PATH%/}/$APP_NAME"
+            fi
+            
+            INSTALL_DIR_BASH="$CUSTOM_PATH"
+            echo -e "${GREEN}[INFO] Target path set to: $INSTALL_DIR_BASH${NC}"
+            
+            # Re-kalkulacja zmiennych zależnych na nową ścieżkę
+            VENV_DIR="$INSTALL_DIR_BASH/venv"
+            LIBS_LINK="$INSTALL_DIR_BASH/libs"
+            MODELS_DIR="$INSTALL_DIR_BASH/models"
+            BIN_DIR="$INSTALL_DIR_BASH/bin"
+            LOG_FILE="$INSTALL_DIR_BASH/badwords_debug.log"
+        fi
+    fi
+else
+    if [ "$WIPE_CHOICE" -ne 4 ]; then
+        echo -e "${GREEN}[INFO] Using detected path: $OLD_INSTALL_DIR${NC}"
+    fi
+fi
+
+# ==========================================
 # 2. UNINSTALL HANDLER (EXECUTE & EXIT)
 # ==========================================
 if [ "$WIPE_CHOICE" -eq 4 ]; then
@@ -85,12 +152,11 @@ if [ "$WIPE_CHOICE" -eq 4 ]; then
     fi
 
     echo -e "\n${RED}[UNINSTALL] Removing BadWords...${NC}"
-    if [ -d "$INSTALL_DIR_BASH" ]; then
-        rm -rf "$INSTALL_DIR_BASH"
-        echo -e " - Removed app directory: $INSTALL_DIR_BASH"
+    if [ -d "$OLD_INSTALL_DIR" ]; then
+        rm -rf "$OLD_INSTALL_DIR"
+        echo -e " - Removed app directory: $OLD_INSTALL_DIR"
     fi
     
-    WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
     if [ -f "$WRAPPER_FILE" ]; then
         rm "$WRAPPER_FILE"
         echo -e " - Removed wrapper from DaVinci Resolve."
@@ -121,7 +187,7 @@ fi
 # 4. GPU ACCELERATION MODE SELECTION
 # ==========================================
 echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
-echo -e "${YELLOW}[CONFIG] Please select your hardware acceleration mode:${NC}"
+echo -e "${YELLOW}Please select your hardware acceleration mode:${NC}"
 echo -e "${GREEN}1) NVIDIA: NVIDIA GPUs acceleration${NC}"
 echo -e "${CYAN}2) OTHER:  AMD/Intel GPUs, or pure CPU processing${NC}"
 echo ""
@@ -213,19 +279,19 @@ fi
 echo -e "${GREEN}[INFO] Using Python interpreter: $TARGET_PYTHON${NC}"
 
 # ==========================================
-# 6. IN-PLACE CLEANUP (Instead of backups)
+# 6. IN-PLACE CLEANUP (Using OLD_INSTALL_DIR)
 # ==========================================
 OLD_WHISPER_CACHE="$HOME/.cache/whisper"
 echo -e "\n${RED}[CLEANUP] Processing old installation...${NC}"
 
-if [ -d "$INSTALL_DIR_BASH" ]; then
+if [ -d "$OLD_INSTALL_DIR" ]; then
     if [ "$WIPE_CHOICE" -eq 3 ]; then
-        echo -e " - FULL WIPE selected. Deleting entire directory..."
-        rm -rf "$INSTALL_DIR_BASH"
+        echo -e " - FULL WIPE selected. Deleting entire directory ($OLD_INSTALL_DIR)..."
+        rm -rf "$OLD_INSTALL_DIR"
     elif [ "$WIPE_CHOICE" -eq 2 ]; then
-        echo -e " - CLEAN INSTALL selected. Wiping environment (keeping models, saves, prefs)..."
+        echo -e " - CLEAN INSTALL selected. Wiping environment in $OLD_INSTALL_DIR..."
         # Deletes everything EXCEPT the specified folders
-        find "$INSTALL_DIR_BASH" -mindepth 1 -maxdepth 1 \
+        find "$OLD_INSTALL_DIR" -mindepth 1 -maxdepth 1 \
             ! -name "models" \
             ! -name "saves" \
             ! -name "pref.json" \
@@ -438,8 +504,7 @@ import stat
 APP_NAME = \"$APP_NAME\"
 WRAPPER_NAME = \"BadWords (Linux).py\"
 
-HOME = os.path.expanduser(\"~\")
-INSTALL_DIR = os.path.join(HOME, \".local\", \"share\", APP_NAME)
+INSTALL_DIR = r\"$INSTALL_DIR_BASH\"
 LIBS_DIR = os.path.join(INSTALL_DIR, \"libs\")
 
 RESOLVE_DIR = os.environ.get('WRAPPER_TARGET_DIR')
@@ -504,6 +569,7 @@ echo -e "${GREEN}                            INSTALLATION SUCCESSFUL!${NC}"
 echo -e "${GREEN}                     Find the script in Workspace -> Scripts${NC}"
 echo ""
 echo -e "${GREEN}          MODE: $MODE_NAME${NC}"
+echo -e "${GREEN}          PATH: $INSTALL_DIR_BASH${NC}"
 echo -e "${GREEN}          LOGS: $LOG_FILE${NC}"
 echo ""
 echo -e "${GREEN}================================================================================${NC}"
