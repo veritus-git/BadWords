@@ -400,7 +400,7 @@ class TranscriptionCanvas(QWidget):
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
         pref_size = prefs.get('editor_font_size', 12)
         pref_lh = prefs.get('editor_line_height', 8)
-        view_mode = prefs.get('view_mode', 'Continuous Flow')
+        view_mode = prefs.get('view_mode', 'continuous')
         
         active_font = QFont(pref_family, pref_size)
         metrics = QFontMetrics(active_font)
@@ -422,7 +422,7 @@ class TranscriptionCanvas(QWidget):
             w.pop('_separator_y', None)
             
             # Paragraph formatting based on Engine's Chunking
-            if view_mode == 'Segmented Blocks' and w.get('is_segment_start'):
+            if view_mode == 'segmented' and w.get('is_segment_start'):
                 if x > 20: 
                     y += line_height
                 if y > 20: 
@@ -1630,10 +1630,18 @@ class SettingsDialog(QDialog):
         'editor_line_height': 12
     }
 
+    def txt(self, key: str, **kwargs) -> str:
+        import config
+        prefs = self.engine.load_preferences() or {}
+        lang = prefs.get("gui_lang", "en")
+        text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
+        if kwargs: return text.format(**kwargs)
+        return text
+
     def __init__(self, engine, parent=None):
         super().__init__(parent)
         self.engine = engine
-        self.setWindowTitle("Settings")
+        self.setWindowTitle(self.txt("tool_settings"))
         self.setWindowFlags(Qt.Dialog)
         self.setFixedSize(480, 420)
         apply_dark_title_bar(self)
@@ -1688,30 +1696,35 @@ class SettingsDialog(QDialog):
         def _on_lang_changed(val):
             code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), 'en')
             self.engine.save_preferences({'gui_lang': code})
+            
+            # Fetch directly from target config instead of current runtime self.txt()
+            target_lang_dict = config.TRANS.get(code, config.TRANS['en'])
+            title = target_lang_dict.get('msg_title_language_changed', 'Language Changed')
+            message = target_lang_dict.get('msg_restart_lang', 'Language changed. Please restart BadWords.')
+            
             from PySide6.QtWidgets import QMessageBox
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle(self.txt("msg_title_language_changed"))
-            msg_box.setText(self.txt("msg_restart_lang"))
+            msg_box.setWindowTitle(title)
+            msg_box.setText(message)
             msg_box.setIcon(QMessageBox.Information)
             
-            btn_now = msg_box.addButton(self.txt("btn_restart_now"), QMessageBox.AcceptRole)
-            btn_later = msg_box.addButton(self.txt("btn_restart_later"), QMessageBox.RejectRole)
-            
+            try:
+                # Try to use the localized "Ok" or fallback to english "Ok"
+                ok_text = target_lang_dict.get('btn_ok', 'OK') 
+            except:
+                ok_text = "OK"
+                
+            btn_ok = msg_box.addButton(ok_text, QMessageBox.AcceptRole)
             msg_box.exec()
-            if msg_box.clickedButton() == btn_now:
-                import sys
-                from PySide6.QtCore import QProcess
-                from PySide6.QtWidgets import QApplication
-                QProcess.startDetached(sys.executable, sys.argv)
-                QApplication.instance().quit()
             
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)
         _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', self.dropdown_lang.setText)
         
         self.combo_view = QComboBox()
-        self.combo_view.addItems(["Continuous Flow", self.txt("opt_segmented_blocks")])
-        self.combo_view.setCurrentText(prefs.get('view_mode', self.DEFAULTS['view_mode']))
-        _add_row(form_gen, self.txt("lbl_display_mode"), self.combo_view, self.DEFAULTS['view_mode'], self.combo_view.setCurrentText)
+        self.combo_view.addItems([self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")])
+        is_segmented = prefs.get('view_mode', 'continuous') == 'segmented'
+        self.combo_view.setCurrentIndex(1 if is_segmented else 0)
+        _add_row(form_gen, self.txt("lbl_display_mode"), self.combo_view, 0, self.combo_view.setCurrentIndex)
         self.tabs.addTab(tab_gen, self.txt("tab_general"))
         
         # TAB 2: Audio Sync
@@ -1793,7 +1806,7 @@ class SettingsDialog(QDialog):
 
     def _restore_all_defaults(self):
         from PySide6.QtWidgets import QMessageBox
-        ans = QMessageBox.question(self, "Restore Defaults", "Are you sure you want to reset all settings to their default values?", QMessageBox.Yes | QMessageBox.No)
+        ans = QMessageBox.question(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"), QMessageBox.Yes | QMessageBox.No)
         if ans == QMessageBox.Yes:
             for f in self.revert_funcs: 
                 f()
@@ -1827,7 +1840,7 @@ class SettingsDialog(QDialog):
 
     def _apply_settings(self):
         prefs = self.engine.load_preferences() or {}
-        prefs['view_mode'] = self.combo_view.currentText()
+        prefs['view_mode'] = 'segmented' if self.combo_view.currentIndex() == 1 else 'continuous'
         prefs['offset'] = self.spin_offset.value()
         prefs['pad'] = self.spin_pad.value()
         prefs['snap_max'] = self.spin_snap.value()
@@ -3711,7 +3724,7 @@ class BadWordsGUI(QMainWindow):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
             return
             
-        ans = QMessageBox.question(self, "Clear Transcript", "Are you sure you want to clear all markings?", QMessageBox.Yes | QMessageBox.No)
+        ans = QMessageBox.question(self, self.txt("msg_clear_title"), self.txt("msg_clear_desc"), QMessageBox.Yes | QMessageBox.No)
         if ans == QMessageBox.Yes:
             for w in self.text_canvas.words_data:
                 w['status'] = None

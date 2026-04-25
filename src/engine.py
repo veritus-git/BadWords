@@ -72,6 +72,14 @@ class AudioEngine:
     # PREFERENCES MANAGEMENT
     # ==========================================
 
+    def txt(self, key: str, **kwargs) -> str:
+        import config
+        prefs = self.load_preferences() or {}
+        lang = prefs.get("gui_lang", "en")
+        text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
+        if kwargs: return text.format(**kwargs)
+        return text
+
     def save_preferences(self, settings_dict):
         """
         Saves the configuration window settings to a JSON file.
@@ -639,7 +647,7 @@ except Exception as e:
             padding_s    = settings.get('padding_s', 0.05)
 
             unique_id = f"BW_FSC_{int(time.time())}"
-            update_status("Rendering audio...")
+            update_status(self.txt("status_render"))
             update_progress(10)
 
             temp_dir = self.os_doc.get_temp_folder()
@@ -651,12 +659,12 @@ except Exception as e:
                 return None, None
 
             update_progress(40)
-            update_status("Detecting silence (FFmpeg)...")
+            update_status(self.txt("status_silence"))
 
             raw_silences = self.detect_silence(wav_path, threshold_db, 0.1)
 
             update_progress(80)
-            update_status("Building data structure...")
+            update_status(self.txt("status_process"))
 
             # --- Fake Word Injection approach ---
             # Compute audio duration from Resolve timeline
@@ -694,7 +702,7 @@ except Exception as e:
             except: pass
 
             update_progress(100)
-            update_status("Fast Silence complete.")
+            update_status(self.txt("status_finalize"))
             return words_data, []
 
         except Exception as e:
@@ -706,10 +714,6 @@ except Exception as e:
             if callback_status: callback_status(msg)
         def update_progress(val):
             if callback_progress: callback_progress(val)
-
-        trans_status = settings.get("trans_status", {})
-        def get_status_msg(key, fallback="..."):
-            return trans_status.get(key, fallback)
 
         try:
             lang = settings.get('lang')
@@ -739,7 +743,7 @@ except Exception as e:
 
             filler_words = settings.get('filler_words', [])
             fps = self.resolve_handler.fps
-            txt_inaudible = trans_status.get("txt_inaudible", "inaudible")
+            txt_inaudible = "inaudible"
             
             USE_SLOW_MODE = True 
             SLOW_FACTOR = 0.90  # STAGE 9 FIX: 10% slowdown only; deep slow destroys phonetic transients
@@ -747,7 +751,7 @@ except Exception as e:
             unique_id = f"BW_{int(time.time())}"
             update_progress(10)
 
-            update_status(get_status_msg("render", "Rendering..."))
+            update_status(self.txt("status_render"))
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
             
@@ -763,7 +767,7 @@ except Exception as e:
             time_scale_correction = 1.0
             
             if USE_SLOW_MODE:
-                update_status("Slowing audio (0.42x Tuned)...")
+                update_status(self.txt("status_slow"))
                 slow_wav = self.create_slow_motion_audio(wav_path, SLOW_FACTOR)
                 if slow_wav != wav_path:
                     current_wav_path = slow_wav
@@ -772,14 +776,14 @@ except Exception as e:
             update_progress(75)
 
             # 2. NORMALIZE
-            update_status("Enhancing audio (Radio Voice)...")
+            # (Silently normalizes audio under the fast motion process without flashing screen)
             normalized_wav = self.normalize_audio(current_wav_path)
             target_wav = normalized_wav
 
             update_progress(100)
             time.sleep(0.3) # Let user see 100% completion of Phase 1
 
-            update_status(get_status_msg("check_model", f"Checking {model}..."))
+            update_status(self.txt("status_check_model"))
             
             # Switch to Indeterminate (Phase 2)
             update_progress(-1) 
@@ -790,13 +794,13 @@ except Exception as e:
             if self.os_doc.needs_manual_model_install():
                 self.download_whisper_model_interactive(model, dl_progress_cb)
             
-            update_status(get_status_msg("whisper_run", f"Faster-Whisper {model}..."))
+            update_status(self.txt("status_whisper_init"))
             update_progress(-1)  # Indeterminate bar during init
-            update_status(get_status_msg("whisper_init", "Initializing transcription..."))
+            update_status(self.txt("status_whisper_init"))
             
             def whisper_live_progress(pct):
                 update_progress(int(pct))
-                update_status(f"Transcribing... {pct}%")
+                update_status(f"{self.txt('status_transcribing')} {pct}%")
             
             # Execute Faster-Whisper via Runner with RESOLVED parameters
             json_path = self.run_whisper(target_wav, model, lang, True, device_mode, fw_compute, filler_words, progress_callback=whisper_live_progress)
@@ -805,7 +809,7 @@ except Exception as e:
                 log_error("Whisper failed.")
                 return None, None
 
-            update_status(get_status_msg("silence", "Silence detection..."))
+            update_status(self.txt("status_silence"))
             silence_ranges = self.detect_silence(target_wav, -42, 0.2)
             
             # Cleanup
@@ -816,7 +820,7 @@ except Exception as e:
             try: os.remove(wav_path)
             except: pass
 
-            update_status(get_status_msg("processing", "Processing..."))
+            update_status(self.txt("status_process"))
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
@@ -826,7 +830,7 @@ except Exception as e:
             )
             
             if words_data:
-                update_status(get_status_msg("init_analysis", "Finalizing data..."))
+                update_status(self.txt("status_finalize"))
                 # Wyrzuciliśmy automatyczne odpalanie algorytmów na start (pełen RAW text dla GUI)
                 words_data = algorythms.absorb_inaudible_into_repeats(words_data)
 
@@ -1422,7 +1426,7 @@ except Exception as e:
             if callback_progress: callback_progress(val)
 
         try:
-            set_status("Initializing Assembly...")
+            set_status(self.txt("status_assembly_init"))
             set_progress(10)
             
             self.resolve_handler.refresh_context()
@@ -1435,7 +1439,7 @@ except Exception as e:
             if not original_tl_name:
                 original_tl_name = self.resolve_handler.timeline.GetName()
                 
-            set_status("Detecting optimal source...")
+            set_status(self.txt("status_assembly_source"))
             source_item, context_type = self.resolve_handler.get_optimal_source_item(original_tl_name)
             
             if not source_item:
@@ -1446,13 +1450,13 @@ except Exception as e:
             
             set_progress(30)
             
-            set_status("Calculating Cuts...")
+            set_status(self.txt("status_calc_cuts"))
             fps = self.resolve_handler.fps
             clean_ops = self.calculate_timeline_structure(words_data, fps, settings)
             
             set_progress(50)
             
-            set_status("Assembling in Resolve...")
+            set_status(self.txt("status_assembly_resolve"))
             
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
             new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
@@ -1463,7 +1467,7 @@ except Exception as e:
                 perc = 50 + int((current / max(1, total)) * 40)
                 set_progress(perc)
                 # Dynamiczna zmiana tekstu w UI
-                set_status(f"Assembling {current}/{total} clips...")
+                set_status(f"{self.txt('status_assembly_clips')} {current}/{total}...")
 
             success = self.resolve_handler.generate_timeline_from_ops(
                 clean_ops, 
