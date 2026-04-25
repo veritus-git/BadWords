@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
     QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation,
+    QPropertyAnimation, Property
 )
 from PySide6.QtGui import (
     QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
@@ -54,6 +54,92 @@ RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Language
 # ==========================================
 # HELPERS
 # ==========================================
+
+class ToggleSwitch(QWidget):
+    """
+    iOS-style animated toggle switch inheriting from QWidget.
+    """
+    toggled = Signal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(36, 20)
+        self.setCursor(Qt.PointingHandCursor)
+        self._is_checked = False
+
+        # Internal animation states
+        self._thumb_x = 2
+        self._bg_color = QColor("#555555")
+        
+        # Animators
+        self._anim_group = QPropertyAnimation(self, b"thumb_x")
+        self._anim_group.setDuration(150)
+        
+        self._color_anim = QPropertyAnimation(self, b"bg_color")
+        self._color_anim.setDuration(150)
+
+    @Property(float)
+    def thumb_x(self):
+        return self._thumb_x
+
+    @thumb_x.setter
+    def thumb_x(self, value):
+        self._thumb_x = value
+        self.update()
+        
+    @Property(QColor)
+    def bg_color(self):
+        return self._bg_color
+
+    @bg_color.setter
+    def bg_color(self, value):
+        self._bg_color = value
+        self.update()
+
+    def isChecked(self) -> bool:
+        return self._is_checked
+
+    def setChecked(self, checked: bool):
+        self._is_checked = checked
+        self._bg_color = QColor(config.BTN_BG) if checked else QColor("#555555")
+        self._thumb_x = self.width() - 20 if checked else 4
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._is_checked = not self._is_checked
+            self._update_animation()
+            self.toggled.emit(self._is_checked)
+        super().mouseReleaseEvent(event)
+
+    def _update_animation(self):
+        self._anim_group.stop()
+        self._color_anim.stop()
+        
+        end_x = 18 if self._is_checked else 2
+        end_color = QColor(config.BTN_BG) if self._is_checked else QColor("#555555")
+        
+        self._anim_group.setEndValue(float(end_x))
+        self._color_anim.setEndValue(end_color)
+        
+        self._anim_group.start()
+        self._color_anim.start()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw background capsule
+        p.setPen(Qt.NoPen)
+        p.setBrush(self._bg_color)
+        rect = QRect(0, 0, self.width(), self.height())
+        p.drawRoundedRect(rect, 10, 10)
+        
+        # Draw white thumb
+        p.setBrush(QColor("white"))
+        thumb_rect = QRect(int(self._thumb_x), 2, 16, 16)
+        p.drawEllipse(thumb_rect)
+
 
 def _app_icon() -> QIcon:
     """Load application icon from the install directory (icon.ico on Windows, icon.png elsewhere)."""
@@ -1059,13 +1145,9 @@ class BadWordsGUI(QMainWindow):
         self.shared_tooltip = IDETooltip()
         
         # Declare panel containers early for Pyre inference
-        self._sidebar_left: SidebarFrame = None
         self._sidebar_right: SidebarFrame = None
-        self._panel_left: QSplitter = None
-        self._panel_right: QSplitter = None
-        
-        self._open_left = []
-        self._open_right = []
+        self._panel_left: QFrame = None
+        self._panel_right: QFrame = None
 
         # --- Language preference ---
         prefs     = engine.load_preferences() or {}
@@ -1143,15 +1225,23 @@ class BadWordsGUI(QMainWindow):
         left_layout.setContentsMargins(5, 6, 5, 6)
         left_layout.setSpacing(6)
         
-        btn_script = SidebarButton("\U0001f4dd", "Script", "script", tooltip_widget=self.shared_tooltip)
-        btn_script.clicked.connect(lambda: self._toggle_activity("script"))
+        btn_script = SidebarButton("\U0001f4dd", "Script & Analysis", "script_analysis", tooltip_widget=self.shared_tooltip)
+        btn_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
         left_layout.addWidget(btn_script)
         
-        btn_analysis = SidebarButton("\U0001f4ca", "Analysis", "analyze", tooltip_widget=self.shared_tooltip)
-        btn_analysis.clicked.connect(lambda: self._toggle_activity("analyze"))
-        left_layout.addWidget(btn_analysis)
+        btn_silence = SidebarButton("\U0001f507", "Silence", "silence", tooltip_widget=self.shared_tooltip)
+        btn_silence.clicked.connect(lambda: self._toggle_activity("silence"))
+        left_layout.addWidget(btn_silence)
+
+        btn_fillers = SidebarButton("\U0001f4ac", "Filler Words", "fillers", tooltip_widget=self.shared_tooltip)
+        btn_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
+        left_layout.addWidget(btn_fillers)
         
         left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        
+        btn_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip)
+        btn_quit.clicked.connect(self.close)
+        left_layout.addWidget(btn_quit)
         
         btn_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip)
         btn_settings.clicked.connect(self._on_settings)
@@ -1166,13 +1256,13 @@ class BadWordsGUI(QMainWindow):
         right_layout.setContentsMargins(5, 6, 5, 6)
         right_layout.setSpacing(6)
         
-        btn_markers = SidebarButton("\u2702", "Markers", "toolbox", tooltip_widget=self.shared_tooltip, is_right_side=True)
-        btn_markers.clicked.connect(lambda: self._toggle_activity("toolbox"))
-        right_layout.addWidget(btn_markers)
+        btn_main_panel = SidebarButton("\U0001f6e0\ufe0f", "Main Panel", "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        btn_main_panel.clicked.connect(lambda: self._toggle_activity("main_panel"))
+        right_layout.addWidget(btn_main_panel)
         
-        btn_automation = SidebarButton("\U0001f5e8", "Automation", "automation", tooltip_widget=self.shared_tooltip, is_right_side=True)
-        btn_automation.clicked.connect(lambda: self._toggle_activity("automation"))
-        right_layout.addWidget(btn_automation)
+        btn_assembly = SidebarButton("\u2699\ufe0f", "Assembly", "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        btn_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
+        right_layout.addWidget(btn_assembly)
         
         right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
@@ -1186,10 +1276,11 @@ class BadWordsGUI(QMainWindow):
         main_layout.setSpacing(0)
 
         # Build Panels
-        self._panel_left = QSplitter(Qt.Vertical)
+        self._panel_left = QFrame()
         self._panel_left.setFixedWidth(280)
         self._panel_left.setObjectName("leftPanel")
-        self._panel_left.setStyleSheet("QSplitter { background: transparent; } QSplitter::handle { background: transparent; height: 6px; }")
+        self._panel_left.setStyleSheet("QFrame#leftPanel { background: transparent; } QFrame#ActivityPanel { background-color: #212121; border-radius: 6px; }")
+        QVBoxLayout(self._panel_left).setContentsMargins(0, 0, 0, 0)
         self._panel_left.hide()
 
         self._stack = QStackedWidget()
@@ -1200,10 +1291,11 @@ class BadWordsGUI(QMainWindow):
         self._stack.addWidget(self._build_page_editor())      # index 2
         self._stack.setCurrentIndex(0)
 
-        self._panel_right = QSplitter(Qt.Vertical)
+        self._panel_right = QFrame()
         self._panel_right.setFixedWidth(280)
         self._panel_right.setObjectName("rightPanel")
-        self._panel_right.setStyleSheet("QSplitter { background: transparent; } QSplitter::handle { background: transparent; height: 6px; }")
+        self._panel_right.setStyleSheet("QFrame#rightPanel { background: transparent; } QFrame#ActivityPanel { background-color: #212121; border-radius: 6px; }")
+        QVBoxLayout(self._panel_right).setContentsMargins(0, 0, 0, 0)
         self._panel_right.hide()
         
         self.activities = {}
@@ -1224,6 +1316,8 @@ class BadWordsGUI(QMainWindow):
         main_layout.addWidget(self._sidebar_right)
 
         self.setCentralWidget(main_container)
+        
+        self._toggle_activity("script_analysis")
 
     def _toggle_activity(self, activity_id: str):
         target_btn = None
@@ -1251,46 +1345,32 @@ class BadWordsGUI(QMainWindow):
         assert target_splitter is not None
 
         activity_widget = self.activities[activity_id]
+        sidebar = self._sidebar_left if not target_btn.is_right_side else self._sidebar_right
         
-        # Check if the widget is currently inside a visible splitter
-        is_open = activity_widget.parent() in (self._panel_left, self._panel_right) and activity_widget.isVisible()
+        is_already_active = target_btn.is_active
         
-        if is_open:
-            activity_widget.setParent(None)
-            activity_widget.hide()
+        if is_already_active:
+            target_splitter.hide()
             target_btn.set_active(False)
-            if target_splitter.count() == 0:
-                target_splitter.hide()
-                
-            if target_splitter == self._panel_left and activity_id in self._open_left:
-                self._open_left.remove(activity_id)
-            elif target_splitter == self._panel_right and activity_id in self._open_right:
-                self._open_right.remove(activity_id)
         else:
-            if activity_widget.parent():
-                activity_widget.setParent(None)
-                
-            target_splitter.addWidget(activity_widget)
-            activity_widget.show()
+            for i in range(sidebar.layout().count()):
+                btn = sidebar.layout().itemAt(i).widget()
+                if isinstance(btn, SidebarButton):
+                    btn.set_active(False)
+                    
             target_btn.set_active(True)
+            layout = target_splitter.layout()
+            
+            # Clear existing items safely
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
+                    
+            layout.addWidget(activity_widget)
+            activity_widget.show()
             target_splitter.show()
             self._main_h_splitter.setSizes([280, 2000, 280])
-            
-            active_list = self._open_left if target_splitter == self._panel_left else self._open_right
-            active_list.append(activity_id)
-            
-            if len(active_list) > 3:
-                oldest_id = active_list.pop(0)
-                oldest_widget = self.activities[oldest_id]
-                oldest_widget.setParent(None)
-                oldest_widget.hide()
-                
-                sidebar = self._sidebar_left if target_splitter == self._panel_left else self._sidebar_right
-                for i in range(sidebar.layout().count()):
-                    btn = sidebar.layout().itemAt(i).widget()
-                    if isinstance(btn, SidebarButton) and getattr(btn, "activity_id", None) == oldest_id:
-                        btn.set_active(False)
-                        break
 
     def _build_activities(self):
         def _wrap_activity(widget: QWidget) -> QFrame:
@@ -1316,106 +1396,215 @@ class BadWordsGUI(QMainWindow):
                     border: 1px solid #3a3a3a;
                     color: #ffffff;
                 }
+                QFrame#ActivityPanel QPushButton {
+                    background-color: #333333;
+                    border: 1px solid #454545;
+                    border-radius: 4px;
+                    padding: 5px;
+                    color: #d9d9d9;
+                }
+                QFrame#ActivityPanel QPushButton:hover { background-color: #404040; border-color: #555555; }
+                QFrame#ActivityPanel QRadioButton::indicator {
+                    width: 12px; height: 12px;
+                    border-radius: 7px;
+                    border: 2px solid #666;
+                    background: transparent;
+                }
+                QFrame#ActivityPanel QRadioButton::indicator:checked {
+                    background: #d9d9d9;
+                    border: 3px solid #212121;
+                }
             """)
             layout = QVBoxLayout(container)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(widget)
             return container
 
-        # Activity 1: Script
-        p_script = QWidget()
-        l_script = QVBoxLayout(p_script)
-        text_edit = QTextEdit()
-        text_edit.setStyleSheet("QTextEdit { background-color: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 3px; padding: 5px; color: #ffffff; }")
-        text_edit.setPlaceholderText("Paste script here...")
-        text_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        l_script.addWidget(text_edit)
+        # A. script_analysis
+        p_script_analysis = QWidget()
+        l_script_analysis = QVBoxLayout(p_script_analysis)
+        l_script_analysis.setContentsMargins(15, 15, 15, 15)
+        l_script_analysis.setSpacing(10)
         
-        btn_row = QHBoxLayout()
-        btn_import = QPushButton("Import Script")
-        btn_import.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; padding: 4px; border: 1px solid #3a3a3a;")
-        btn_clear = QPushButton("Clear")
-        btn_clear.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; padding: 4px; border: 1px solid #3a3a3a;")
-        btn_row.addWidget(btn_import)
-        btn_row.addWidget(btn_clear)
-        l_script.addLayout(btn_row)
-        self.activities["script"] = _wrap_activity(p_script)
+        self.text_script = QTextEdit()
+        self.text_script.setPlaceholderText("Paste script here...")
+        l_script_analysis.addWidget(self.text_script)
         
-        # Activity 2: Analyze
-        p_analyze = QWidget()
-        l_analyze = QVBoxLayout(p_analyze)
-        l_analyze.addStretch(1)
-        l_analyze.setSpacing(15)
+        btn_row_script = QHBoxLayout()
+        self.btn_import_script = QPushButton("Import Script")
+        self.btn_clear_script = QPushButton("Clear")
+        btn_row_script.addWidget(self.btn_import_script)
+        btn_row_script.addWidget(self.btn_clear_script)
+        l_script_analysis.addLayout(btn_row_script)
         
-        btn_analyze = QPushButton("ANALYZE")
-        btn_analyze.setMinimumHeight(40)
-        btn_analyze.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 14px; border: none; border-radius: 4px;")
-        l_analyze.addWidget(btn_analyze)
+        self.btn_analyze_compare = QPushButton("ANALYZE (Compare)")
+        self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 14px; border: none; border-radius: 4px; padding: 10px;")
+        self.btn_analyze_compare.setEnabled(False)
+        l_script_analysis.addWidget(self.btn_analyze_compare)
         
-        btn_replace = QPushButton("Replace typos in transcript\nwith text from script")
-        btn_replace.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; padding: 4px; border: 1px solid #3a3a3a;")
-        l_analyze.addWidget(btn_replace)
+        self.btn_analyze_standalone = QPushButton("ANALYZE (Standalone)")
+        self.btn_analyze_standalone.setEnabled(False)
+        l_script_analysis.addWidget(self.btn_analyze_standalone)
         
-        btn_undo = QPushButton("Undo Replace")
-        btn_undo.setStyleSheet(f"background-color: #444444; color: #aaaaaa; padding: 2px; border: none;")
-        l_analyze.addWidget(btn_undo)
+        self.activities["script_analysis"] = _wrap_activity(p_script_analysis)
         
-        btn_clear_transcript = QPushButton("Clear Transcript")
-        btn_clear_transcript.setStyleSheet(f"background-color: #1e1e1e; color: #e74c3c; padding: 4px; border: 1px solid #3a3a3a;")
-        l_analyze.addWidget(btn_clear_transcript)
+        # Connect text change logic
+        self.text_script.textChanged.connect(lambda: self.btn_analyze_compare.setEnabled(bool(self.text_script.toPlainText().strip())))
+
+        # B. silence
+        p_silence = QWidget()
+        l_silence = QVBoxLayout(p_silence)
+        l_silence.setContentsMargins(15, 15, 15, 15)
+        l_silence.setSpacing(10)
         
-        l_analyze.addStretch(1)
-        self.activities["analyze"] = _wrap_activity(p_analyze)
+        form_silence = QFormLayout()
+        self.spin_thresh = QDoubleSpinBox()
+        self.spin_thresh.setRange(-100, 0)
+        self.spin_thresh.setValue(-42.0)
+        self.spin_pad = QDoubleSpinBox()
+        self.spin_pad.setRange(0, 5)
+        self.spin_pad.setSingleStep(0.05)
+        self.spin_pad.setValue(0.05)
+        form_silence.addRow("Threshold (dB):", self.spin_thresh)
+        form_silence.addRow("Padding (s):", self.spin_pad)
+        l_silence.addLayout(form_silence)
         
-        # Activity 3: Toolbox
-        p_toolbox = QWidget()
-        l_toolbox = QVBoxLayout(p_toolbox)
-        l_toolbox.addStretch(1)
-        l_toolbox.setSpacing(15)
+        row_silence_cut = QHBoxLayout()
+        row_silence_cut.addWidget(QLabel("Detect and cut silence"))
+        row_silence_cut.addStretch()
+        self.tgl_silence_cut = ToggleSwitch()
+        row_silence_cut.addWidget(self.tgl_silence_cut)
+        l_silence.addLayout(row_silence_cut)
         
-        l_toolbox.addWidget(QRadioButton("RED - Cut/Filler"))
-        l_toolbox.addWidget(QRadioButton("BLUE - Retake"))
-        l_toolbox.addWidget(QRadioButton("GREEN - Typo"))
-        l_toolbox.addWidget(QRadioButton("ERASER - Clear"))
+        row_silence_mark = QHBoxLayout()
+        row_silence_mark.addWidget(QLabel("Detect and mark silence"))
+        row_silence_mark.addStretch()
+        self.tgl_silence_mark = ToggleSwitch()
+        row_silence_mark.addWidget(self.tgl_silence_mark)
+        l_silence.addLayout(row_silence_mark)
         
-        lbl_dummy = QLabel("add custom marker...")
-        lbl_dummy.setStyleSheet(f"color: #888888; text-decoration: underline;")
-        l_toolbox.addWidget(lbl_dummy)
+        l_silence.addStretch(1)
+        self.activities["silence"] = _wrap_activity(p_silence)
+
+        # C. fillers
+        p_fillers = QWidget()
+        l_fillers = QVBoxLayout(p_fillers)
+        l_fillers.setContentsMargins(15, 15, 15, 15)
+        l_fillers.setSpacing(10)
         
-        l_toolbox.addWidget(QCheckBox("Delete red clips automatically"))
+        l_fillers.addWidget(QLabel("Filler Words (comma separated):"))
+        self.text_fillers = QTextEdit()
+        self.text_fillers.setFixedHeight(80)
+        l_fillers.addWidget(self.text_fillers)
         
-        l_toolbox.addStretch(1)
-        self.activities["toolbox"] = _wrap_activity(p_toolbox)
+        self.btn_save_fillers = QPushButton("Save")
+        l_fillers.addWidget(self.btn_save_fillers)
         
-        # Activity 4: Automation
-        p_automation = QWidget()
-        l_automation = QVBoxLayout(p_automation)
-        l_automation.addStretch(1)
-        l_automation.setSpacing(15)
+        row_auto_filler = QHBoxLayout()
+        row_auto_filler.addWidget(QLabel("Mark filler words automatically"))
+        row_auto_filler.addStretch()
+        self.tgl_auto_filler = ToggleSwitch()
+        self.tgl_auto_filler.setChecked(True)
+        row_auto_filler.addWidget(self.tgl_auto_filler)
+        l_fillers.addLayout(row_auto_filler)
         
-        fillers_edit = QTextEdit()
-        fillers_edit.setStyleSheet("QTextEdit { background-color: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 3px; padding: 5px; color: #ffffff; }")
-        fillers_edit.setMaximumHeight(60)
-        l_automation.addWidget(QLabel("Filler Words:"))
-        l_automation.addWidget(fillers_edit)
-        l_automation.addWidget(QCheckBox("Mark filler words automatically"))
+        l_fillers.addStretch(1)
+        self.activities["fillers"] = _wrap_activity(p_fillers)
+
+        # D. main_panel
+        p_main = QWidget()
+        l_main = QVBoxLayout(p_main)
+        l_main.setContentsMargins(15, 15, 15, 15)
+        l_main.setSpacing(10)
         
-        form = QFormLayout()
-        spin_threshold = QDoubleSpinBox()
-        spin_threshold.setRange(-100, 0)
-        spin_threshold.setStyleSheet("QDoubleSpinBox { background-color: #1e1e1e; color: #ffffff; border: 1px solid #3a3a3a; padding: 3px; }")
-        spin_padding = QDoubleSpinBox()
-        spin_padding.setRange(0, 10)
-        spin_padding.setStyleSheet("QDoubleSpinBox { background-color: #1e1e1e; color: #ffffff; border: 1px solid #3a3a3a; padding: 3px; }")
-        form.addRow("Threshold (dB):", spin_threshold)
-        form.addRow("Padding (s):", spin_padding)
-        l_automation.addLayout(form)
+        # Top Section (Markers)
+        l_main.addWidget(QLabel("Marking Mode:"))
         
-        l_automation.addWidget(QCheckBox("Detect and cut silence"))
-        l_automation.addWidget(QCheckBox("Detect and mark silence"))
+        self.rb_red = QRadioButton("RED (Cut/Filler)")
+        self.rb_red.setStyleSheet(f"color: {config.WORD_BAD_BG}; font-weight: bold;")
+        l_main.addWidget(self.rb_red)
         
-        l_automation.addStretch(1)
-        self.activities["automation"] = _wrap_activity(p_automation)
+        self.rb_blue = QRadioButton("BLUE (Retake)")
+        self.rb_blue.setStyleSheet(f"color: {config.WORD_REPEAT_BG}; font-weight: bold;")
+        l_main.addWidget(self.rb_blue)
+        
+        self.rb_green = QRadioButton("GREEN (Typo)")
+        self.rb_green.setStyleSheet(f"color: {config.WORD_TYPO_BG}; font-weight: bold;")
+        l_main.addWidget(self.rb_green)
+        
+        self.rb_eraser = QRadioButton("ERASER (Clear)")
+        self.rb_eraser.setStyleSheet("color: white; font-weight: bold;")
+        l_main.addWidget(self.rb_eraser)
+        
+        lbl_dummy = QLabel("+ add custom marker...")
+        lbl_dummy.setStyleSheet("color: #808080; font-size: 9px; text-decoration: underline;")
+        l_main.addWidget(lbl_dummy)
+        
+        self.btn_clear_transcript = QPushButton("Clear Transcript")
+        l_main.addWidget(self.btn_clear_transcript)
+        
+        # Middle
+        l_main.addStretch(1)
+        
+        # Bottom Section
+        self.lbl_progress = QLabel("Ready.")
+        self.lbl_progress.setAlignment(Qt.AlignCenter)
+        self.lbl_progress.setStyleSheet("font-size: 9px;")
+        l_main.addWidget(self.lbl_progress)
+        
+        from PySide6.QtWidgets import QProgressBar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {config.PROGRESS_FILL_COLOR}; }}")
+        l_main.addWidget(self.progress_bar)
+        
+        row_proj = QHBoxLayout()
+        self.btn_import_proj = QPushButton("Import Project")
+        self.btn_export_proj = QPushButton("Export Project")
+        row_proj.addWidget(self.btn_import_proj)
+        row_proj.addWidget(self.btn_export_proj)
+        l_main.addLayout(row_proj)
+        
+        self.btn_assemble = QPushButton("ASSEMBLE")
+        self.btn_assemble.setFixedHeight(35)
+        self.btn_assemble.setStyleSheet("background-color: #1e1e1e; border: 1px solid #444; font-weight: bold;")
+        l_main.addWidget(self.btn_assemble)
+        
+        self.activities["main_panel"] = _wrap_activity(p_main)
+        
+        # E. assembly
+        p_assembly = QWidget()
+        l_assembly = QVBoxLayout(p_assembly)
+        l_assembly.setContentsMargins(15, 15, 15, 15)
+        l_assembly.setSpacing(15)
+        
+        row_show_inaudible = QHBoxLayout()
+        row_show_inaudible.addWidget(QLabel("Show inaudible fragments"))
+        row_show_inaudible.addStretch()
+        self.tgl_show_inaudible = ToggleSwitch()
+        self.tgl_show_inaudible.setChecked(True)
+        row_show_inaudible.addWidget(self.tgl_show_inaudible)
+        l_assembly.addLayout(row_show_inaudible)
+        
+        row_mark_inaudible = QHBoxLayout()
+        row_mark_inaudible.addWidget(QLabel("Mark inaudible fragments with brown"))
+        row_mark_inaudible.addStretch()
+        self.tgl_mark_inaudible = ToggleSwitch()
+        row_mark_inaudible.addWidget(self.tgl_mark_inaudible)
+        l_assembly.addLayout(row_mark_inaudible)
+        
+        row_show_typos = QHBoxLayout()
+        row_show_typos.addWidget(QLabel("Show detected typos"))
+        row_show_typos.addStretch()
+        self.tgl_show_typos = ToggleSwitch()
+        self.tgl_show_typos.setChecked(True)
+        row_show_typos.addWidget(self.tgl_show_typos)
+        l_assembly.addLayout(row_show_typos)
+        
+        l_assembly.addStretch(1)
+        self.activities["assembly"] = _wrap_activity(p_assembly)
+
 
     # Removed deprecated _on_nav_script and _on_nav_analysis
 
