@@ -96,7 +96,14 @@ class AudioEngine:
             with open(pref_path, 'w', encoding='utf-8') as f:
                 json.dump(existing_prefs, f, indent=4)
                 
-            log_info(f"Preferences saved to: {pref_path}")
+            try:
+                from osdoc import log_info
+                log_parts = [f"{k}={v}" for k, v in settings_dict.items() if k not in ['filler_words', 'telemetry_uuid']]
+                summary = ", ".join(log_parts)
+                log_info(f"Settings saved successfully: {summary}")
+            except:
+                pass
+                
             return True
         except Exception as e:
             log_error(f"Failed to save preferences: {e}")
@@ -110,14 +117,32 @@ class AudioEngine:
         try:
             pref_path = getattr(self.os_doc, 'pref_file', os.path.join(self.os_doc.install_dir, "pref.json"))
             if not os.path.exists(pref_path):
-                return None
+                return {}
             with open(pref_path, 'r', encoding='utf-8') as f:
                 prefs = json.load(f)
-            log_info(f"Preferences loaded from: {pref_path}")
+                
+            # --- MIGRATION: Flatten and destroy legacy "settings" ---
+            needs_save = False
+            if 'settings' in prefs:
+                if isinstance(prefs['settings'], dict):
+                    legacy_settings = prefs['settings']
+                    for k, v in legacy_settings.items():
+                        if k not in prefs:
+                            prefs[k] = v
+                
+                # Absolutely destroy the legacy key
+                prefs.pop('settings', None)
+                needs_save = True
+                
+            if needs_save:
+                # Save the sanitized, flat dictionary back to disk
+                self.save_preferences(prefs)
+                
             return prefs
         except Exception as e:
+            from osdoc import log_error
             log_error(f"Failed to load preferences: {e}")
-            return None
+            return {}
 
     # ==========================================
     # TELEMETRY (POSTHOG)
@@ -139,7 +164,7 @@ class AudioEngine:
             current_version = config.VERSION
             
             if last_ping == current_version:
-                log_info(f"Telemetry: Ping dla wersji {current_version} juz zostal wyslany. Pomijam.")
+                log_info(f"Telemetry: Ping for version {current_version} already sent. Skipping.")
                 return 
                 
             # Natychmiastowe nadpisanie zabezpieczające przed dublowaniem żądań z innych wątków/okien

@@ -41,8 +41,9 @@ class ResolveStreamProxy:
     
     def write(self, data):
         try:
-            if data.strip(): 
-                self.log_func(f"[STDOUT/ERR] {data.strip()}")
+            txt = data.strip()
+            if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt: 
+                self.log_func(f"[STDOUT/ERR] {txt}")
             self.stream.write(data)
         except: 
             pass 

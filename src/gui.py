@@ -31,7 +31,8 @@ from PySide6.QtWidgets import (
     QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
     QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
     QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle
+    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
+    QTabWidget, QSpinBox
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
@@ -211,6 +212,16 @@ def _app_icon() -> QIcon:
     return QIcon()
 
 
+def apply_dark_title_bar(window: QWidget):
+    """Forces the native Windows title bar to dark mode."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            # 20 is DWMWA_USE_IMMERSIVE_DARK_MODE in Windows 10/11
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(window.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4)
+        except Exception:
+            pass
+
 def _center_on_screen(widget: QWidget, w: int, h: int):
     """Center *widget* on the primary screen (or active monitor if detectable)."""
     screen = QApplication.primaryScreen()
@@ -329,10 +340,6 @@ class TranscriptionCanvas(QWidget):
         self.setCursor(Qt.ArrowCursor)
         self.setMouseTracking(True)
         self._last_dragged_id = -1
-        
-        # 14pt is approx 25% larger than the default 11pt GUI font
-        self.editor_font = QFont(config.UI_FONT_NAME, 14)
-        self.setFont(self.editor_font)
 
     def load_data(self, words_data):
         self.words_data = words_data
@@ -341,6 +348,8 @@ class TranscriptionCanvas(QWidget):
 
     def _get_visible_words(self):
         """Returns a filtered list of only the words that should physically render."""
+        if not self.words_data: return []
+        
         vis = []
         for w in self.words_data:
             if w.get('type') == 'silence': 
@@ -359,11 +368,21 @@ class TranscriptionCanvas(QWidget):
 
     def _calculate_layout(self):
         if not self.words_data: return
-        from PySide6.QtGui import QFontMetrics
+        from PySide6.QtGui import QFontMetrics, QFont
         
-        metrics = QFontMetrics(self.editor_font)
+        prefs = self.main_window.engine.load_preferences() or {}
+        pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
+        pref_size = prefs.get('editor_font_size', 12)
+        pref_lh = prefs.get('editor_line_height', 8)
+        view_mode = prefs.get('view_mode', 'Continuous Flow')
+        
+        active_font = QFont(pref_family, pref_size)
+        metrics = QFontMetrics(active_font)
+        ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
+        ts_metrics = QFontMetrics(ts_font)
+        
         space_w = metrics.horizontalAdvance(" ") + 2
-        line_height = metrics.height() + 16 # Tighter line spacing
+        line_height = metrics.height() + pref_lh
         
         x, y = 20, 20
         max_w = self.width() - 40
@@ -371,6 +390,33 @@ class TranscriptionCanvas(QWidget):
         visible_words = self._get_visible_words()
         
         for w in visible_words:
+            # Clean previous iteration markers
+            w.pop('_ts_rect', None)
+            w.pop('_ts_text', None)
+            w.pop('_separator_y', None)
+            
+            # Paragraph formatting based on Engine's Chunking
+            if view_mode == 'Segmented Blocks' and w.get('is_segment_start'):
+                if x > 20: 
+                    y += line_height
+                if y > 20: 
+                    w['_separator_y'] = y + 10 # Store Y coordinate for the line
+                    y += 20 # Gap between paragraphs
+                x = 20
+                
+                # Generate Timestamp
+                secs = w.get('start', 0)
+                m = int(secs // 60)
+                s = int(secs % 60)
+                ms = int((secs - int(secs)) * 1000)
+                ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
+                
+                ts_w = ts_metrics.horizontalAdvance(ts_text)
+                w['_ts_text'] = ts_text
+                w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
+                x += ts_w + space_w + 5
+            
+            # Standard word layout
             text = w.get('text', '')
             word_w = metrics.horizontalAdvance(text)
             
@@ -384,12 +430,16 @@ class TranscriptionCanvas(QWidget):
         self.setMinimumHeight(y + line_height + 40)
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtGui import QPainter, QColor, QFont
         from PySide6.QtCore import QRectF
+        
+        prefs = self.main_window.engine.load_preferences() or {}
+        pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
+        pref_size = prefs.get('editor_font_size', 12)
+        active_font = QFont(pref_family, pref_size)
         
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        p.setFont(self.editor_font)
         
         color_map = {
             'bad': (QColor(config.WORD_BAD_BG), QColor(config.WORD_BAD_FG)),
@@ -407,7 +457,16 @@ class TranscriptionCanvas(QWidget):
         p.setPen(Qt.NoPen)
         visible_words = self._get_visible_words()
         
-        # --- PASS 1: Base Rounded Backgrounds ---
+        # PASS 0: Horizontal Separator Lines
+        p.setPen(QPen(QColor("#333333"), 1))
+        for w in visible_words:
+            if '_separator_y' in w:
+                sep_y = w['_separator_y']
+                p.drawLine(20, sep_y, self.width() - 20, sep_y)
+        
+        p.setPen(Qt.NoPen) # Reset pen for Pass 1
+        
+        # PASS 1: Base Backgrounds
         for w in visible_words:
             if '_rect' not in w: continue
             status = get_status(w)
@@ -415,7 +474,7 @@ class TranscriptionCanvas(QWidget):
                 p.setBrush(color_map[status][0])
                 p.drawRoundedRect(w['_rect'].adjusted(-3, -1, 3, 1), 5, 5)
                 
-        # --- PASS 2: Sharp Bridges (Anti-Island) ---
+        # PASS 2: Sharp Bridges
         for i in range(len(visible_words) - 1):
             w1 = visible_words[i]
             w2 = visible_words[i+1]
@@ -429,33 +488,36 @@ class TranscriptionCanvas(QWidget):
             if s1 in color_map and s2 in color_map:
                 r1 = w1['_rect'].adjusted(-3, -1, 3, 1)
                 r2 = w2['_rect'].adjusted(-3, -1, 3, 1)
-                
                 c1 = color_map[s1][0]
                 c2 = color_map[s2][0]
                 
                 if s1 == s2:
-                    # SAME COLOR: Draw one massive seamless block
                     p.setBrush(c1)
                     bridge_rect = QRectF(r1.right() - 5, r1.y(), r2.left() - r1.right() + 10, r1.height())
                     p.drawRect(bridge_rect)
                 else:
-                    # DIFFERENT COLORS: Disable antialiasing to prevent blurry hairline artifacts
                     p.setRenderHint(QPainter.Antialiasing, False)
                     gap_mid = int(r1.right() + (r2.left() - r1.right()) / 2.0)
-                    
                     p.setBrush(c1)
-                    # +1 to width to ensure pixel overlap and eliminate hairlines
                     p.drawRect(QRectF(r1.right() - 5, r1.y(), gap_mid - r1.right() + 6, r1.height()))
-                    
                     p.setBrush(c2)
                     p.drawRect(QRectF(gap_mid, r2.y(), r2.left() - gap_mid + 5, r2.height()))
-                    
-                    # Re-enable Antialiasing for the rest of the canvas
                     p.setRenderHint(QPainter.Antialiasing, True)
                 
-        # --- PASS 3: Text Render (Always on top) ---
+        # PASS 3: Timestamps & Text
+        ts_font = QFont(config.UI_FONT_NAME, 10)
+        ts_color = QColor("#666666")
+        
         for w in visible_words:
+            # Draw Timestamp if exists
+            if '_ts_rect' in w:
+                p.setFont(ts_font)
+                p.setPen(ts_color)
+                p.drawText(w['_ts_rect'], Qt.AlignLeft | Qt.AlignVCenter, w.get('_ts_text', ''))
+                
+            # Draw Word Text
             if '_rect' not in w: continue
+            p.setFont(active_font)
             status = get_status(w)
             fg_color = color_map[status][1] if status in color_map else QColor(config.WORD_NORMAL_FG)
             p.setPen(fg_color)
@@ -508,6 +570,7 @@ class SplashScreen(QDialog):
         )
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
+        apply_dark_title_bar(self)
 
         W, H = 300, 150
         self.setFixedSize(W, H)
@@ -693,6 +756,7 @@ class TelemetryPopup(QDialog):
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setWindowModality(Qt.ApplicationModal)
         self.setWindowIcon(_app_icon())
+        apply_dark_title_bar(self)
 
         # --- Root QSS ---
         self.setStyleSheet(f"""
@@ -1422,61 +1486,198 @@ class SearchableDropdown(QPushButton):
 
 
 class SettingsDialog(QDialog):
-    """
-    Stage 5: Audio Sync and Options Dialog
-    """
+    DEFAULTS = {
+        'view_mode': 'Continuous Flow',
+        'offset': -0.05,
+        'pad': 0.05,
+        'snap_max': 0.25,
+        'editor_font_family': config.UI_FONT_NAME,
+        'editor_font_size': 12,
+        'editor_line_height': 12
+    }
+
     def __init__(self, engine, parent=None):
         super().__init__(parent)
         self.engine = engine
         self.setWindowTitle("Settings")
-        self.setWindowFlags(Qt.Tool | Qt.Dialog)
-        self.setFixedSize(300, 250)
+        self.setWindowFlags(Qt.Dialog)
+        self.setFixedSize(480, 420)
+        apply_dark_title_bar(self)
+        
         self.setStyleSheet(f"""
             QDialog {{ background-color: {config.BG_COLOR}; }}
-            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 10pt; }}
-            QCheckBox {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 10pt; }}
-            QDoubleSpinBox {{ background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; padding: 3px; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11pt; }}
+            QDoubleSpinBox, QSpinBox, QComboBox {{ background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; padding: 4px; border-radius: 3px; min-height: 24px; }}
+            QTabWidget::pane {{ border: 1px solid #3a3a3a; background: #212121; border-radius: 4px; }}
+            QTabBar::tab {{ background: #2b2b2b; color: #aaaaaa; padding: 8px 16px; border: 1px solid #3a3a3a; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }}
+            QTabBar::tab:selected {{ background: #212121; color: #ffffff; font-weight: bold; border-bottom: 1px solid #212121; }}
+            QPushButton.revert-btn {{ background: transparent; border: 1px solid #444; border-radius: 3px; color: #888; font-size: 12pt; font-weight: bold; }}
+            QPushButton.revert-btn:hover {{ background: #333; color: #fff; border-color: #666; }}
         """)
         
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        prefs = self.engine.load_preferences() or {}
         
-        # Audio Sync Settings
-        lbl_sync = QLabel("<b>Audio Sync (Seconds)</b>")
-        layout.addWidget(lbl_sync)
+        main_layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
         
-        form = QFormLayout()
-        self.spin_offset = QDoubleSpinBox()
-        self.spin_offset.setRange(-10, 10)
-        self.spin_offset.setSingleStep(0.1)
-        self.spin_pad = QDoubleSpinBox()
-        self.spin_pad.setRange(0, 5)
-        self.spin_pad.setSingleStep(0.1)
-        self.spin_snap = QDoubleSpinBox()
-        self.spin_snap.setRange(0, 5)
-        self.spin_snap.setSingleStep(0.1)
+        def _add_row(form, label_text, widget, default_val, setter_func):
+            row_layout = QHBoxLayout()
+            row_layout.setContentsMargins(0,0,0,0)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row_layout.addWidget(widget)
+            
+            btn_rev = QPushButton("↺")
+            btn_rev.setFixedSize(28, 28)
+            btn_rev.setCursor(Qt.PointingHandCursor)
+            btn_rev.setProperty("class", "revert-btn")
+            btn_rev.setToolTip("Revert to default")
+            btn_rev.clicked.connect(lambda: setter_func(default_val))
+            
+            row_layout.addWidget(btn_rev)
+            form.addRow(label_text, row_layout)
+            self.revert_funcs.append(lambda: setter_func(default_val))
+            
+        self.revert_funcs = []
         
-        form.addRow("Offset (s):", self.spin_offset)
-        form.addRow("Padding (s):", self.spin_pad)
-        form.addRow("Snap Max (s):", self.spin_snap)
-        layout.addLayout(form)
+        # TAB 1: General
+        tab_gen = QWidget()
+        form_gen = QFormLayout(tab_gen)
+        form_gen.setSpacing(15)
+        self.combo_view = QComboBox()
+        self.combo_view.addItems(["Continuous Flow", "Segmented Blocks"])
+        self.combo_view.setCurrentText(prefs.get('view_mode', self.DEFAULTS['view_mode']))
+        _add_row(form_gen, "Display Mode:", self.combo_view, self.DEFAULTS['view_mode'], self.combo_view.setCurrentText)
+        self.tabs.addTab(tab_gen, "General")
         
-        # Advanced View Options
-        self.chk_show_inaudible = QCheckBox("Show inaudible fragments")
-        self.chk_mark_inaudible = QCheckBox("Mark inaudible fragments with brown")
-        layout.addWidget(self.chk_show_inaudible)
-        layout.addWidget(self.chk_mark_inaudible)
+        # TAB 2: Audio Sync
+        tab_sync = QWidget()
+        form_sync = QFormLayout(tab_sync)
+        form_sync.setSpacing(15)
+        self.spin_offset = QDoubleSpinBox(); self.spin_offset.setRange(-10, 10); self.spin_offset.setSingleStep(0.1)
+        self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
         
-        # Save Button
+        self.spin_pad = QDoubleSpinBox(); self.spin_pad.setRange(0, 5); self.spin_pad.setSingleStep(0.1)
+        self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
+        
+        self.spin_snap = QDoubleSpinBox(); self.spin_snap.setRange(0, 5); self.spin_snap.setSingleStep(0.1)
+        self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
+        
+        _add_row(form_sync, "Offset (s):", self.spin_offset, self.DEFAULTS['offset'], self.spin_offset.setValue)
+        _add_row(form_sync, "Padding (s):", self.spin_pad, self.DEFAULTS['pad'], self.spin_pad.setValue)
+        _add_row(form_sync, "Snap Max (s):", self.spin_snap, self.DEFAULTS['snap_max'], self.spin_snap.setValue)
+        self.tabs.addTab(tab_sync, "Audio Sync")
+        
+        # TAB 3: Appearance
+        tab_app = QWidget()
+        l_app = QVBoxLayout(tab_app)
+        form_app = QFormLayout()
+        
+        from PySide6.QtGui import QFontDatabase
+        self.combo_font = QComboBox()
+        self.combo_font.addItems(QFontDatabase.families())
+        self.combo_font.setCurrentText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
+        
+        self.spin_fsize = QSpinBox(); self.spin_fsize.setRange(8, 48)
+        self.spin_fsize.setValue(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])))
+        
+        self.spin_lheight = QSpinBox(); self.spin_lheight.setRange(0, 40)
+        self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
+        
+        _add_row(form_app, "Transcript Font:", self.combo_font, self.DEFAULTS['editor_font_family'], self.combo_font.setCurrentText)
+        _add_row(form_app, "Font Size (pt):", self.spin_fsize, self.DEFAULTS['editor_font_size'], self.spin_fsize.setValue)
+        _add_row(form_app, "Line Spacing (px):", self.spin_lheight, self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
+        l_app.addLayout(form_app)
+        
+        self.lbl_preview = QLabel("Aa\nBb")
+        self.lbl_preview.setAlignment(Qt.AlignCenter)
+        self.lbl_preview.setMinimumHeight(90)
+        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR};")
+        l_app.addWidget(self.lbl_preview)
+        l_app.addStretch()
+        self.tabs.addTab(tab_app, "Appearance")
+        
+        self.combo_font.currentTextChanged.connect(self._update_preview)
+        self.spin_fsize.valueChanged.connect(self._update_preview)
+        self.spin_lheight.valueChanged.connect(self._update_preview)
+        self._update_preview()
+        
+        # Save Button Area
         btn_box = QHBoxLayout()
+        btn_restore = QPushButton("Restore Defaults")
+        btn_restore.setCursor(Qt.PointingHandCursor)
+        btn_restore.setStyleSheet(f"background-color: transparent; color: #aaaaaa; border: 1px solid #555; padding: 6px 12px; border-radius: 4px;")
+        btn_restore.clicked.connect(self._restore_all_defaults)
+        btn_box.addWidget(btn_restore)
+        
         btn_box.addStretch()
-        btn_ok = QPushButton("Save")
-        btn_ok.setFixedSize(80, 30)
-        btn_ok.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; border-radius: 4px;")
-        btn_ok.clicked.connect(self.accept)
+        
+        btn_close = QPushButton("Close")
+        btn_close.setFixedSize(90, 32)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet(f"background-color: transparent; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; font-weight: bold;")
+        btn_close.clicked.connect(self.reject)
+        btn_box.addWidget(btn_close)
+        
+        btn_ok = QPushButton("Apply")
+        btn_ok.setFixedSize(100, 32)
+        btn_ok.setCursor(Qt.PointingHandCursor)
+        btn_ok.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; border-radius: 4px; font-weight: bold;")
+        btn_ok.clicked.connect(self._apply_settings)
         btn_box.addWidget(btn_ok)
-        layout.addLayout(btn_box)
+        main_layout.addLayout(btn_box)
 
+    def _restore_all_defaults(self):
+        from PySide6.QtWidgets import QMessageBox
+        ans = QMessageBox.question(self, "Restore Defaults", "Are you sure you want to reset all settings to their default values?", QMessageBox.Yes | QMessageBox.No)
+        if ans == QMessageBox.Yes:
+            for f in self.revert_funcs: 
+                f()
+
+    def _update_preview(self):
+        ff = self.combo_font.currentText()
+        fs = self.spin_fsize.value()
+        lh = self.spin_lheight.value()
+        
+        # Override global CSS with explicit inline style to guarantee preview update
+        self.lbl_preview.setStyleSheet(f"""
+            background-color: #1a1a1a; 
+            border: 1px solid #333; 
+            border-radius: 4px; 
+            color: {config.FG_COLOR};
+            font-family: "{ff}";
+            font-size: {fs}pt;
+        """)
+        
+        # Use HTML to simulate the custom line height visually
+        # Convert pt to px roughly (1pt ~= 1.33px) for line-height math
+        px_size = int(fs * 1.33)
+        total_lh = px_size + lh
+        
+        html = f"""
+        <div style="line-height: {total_lh}px; text-align: center;">
+            Aa<br>Bb
+        </div>
+        """
+        self.lbl_preview.setText(html)
+
+    def _apply_settings(self):
+        prefs = self.engine.load_preferences() or {}
+        prefs['view_mode'] = self.combo_view.currentText()
+        prefs['offset'] = self.spin_offset.value()
+        prefs['pad'] = self.spin_pad.value()
+        prefs['snap_max'] = self.spin_snap.value()
+        prefs['editor_font_family'] = self.combo_font.currentText()
+        prefs['editor_font_size'] = self.spin_fsize.value()
+        prefs['editor_line_height'] = self.spin_lheight.value()
+        if 'settings' in prefs: del prefs['settings']
+        self.engine.save_preferences(prefs)
+        
+        # Real-time update of canvas without closing
+        main_win = self.parent()
+        if hasattr(main_win, 'text_canvas'):
+            main_win.text_canvas._calculate_layout()
+            main_win.text_canvas.update()
 
 # ==========================================
 # CLASS 3: MAIN APPLICATION WINDOW
@@ -1521,12 +1722,7 @@ class BadWordsGUI(QMainWindow):
         self.setWindowIcon(_app_icon())
         self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
         self.setMinimumSize(config.CFG_WINDOW_W_BASE, 400)
-
-        if platform.system() == "Windows":
-            try:
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(int(self.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4)
-            except Exception:
-                pass
+        apply_dark_title_bar(self)
 
         # --- Global QSS ---
         self.setStyleSheet(f"""
@@ -1945,6 +2141,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
         self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear_transcript.setStyleSheet("background: transparent; border: none; font-size: 12pt; padding: 2px;")
+        self.btn_clear_transcript.clicked.connect(self._on_clear_transcript)
         row_marking_title.addWidget(self.btn_clear_transcript)
         l_main.addLayout(row_marking_title)
         
@@ -2138,11 +2335,16 @@ class BadWordsGUI(QMainWindow):
         lang_items = list(config.SUPPORTED_LANGUAGES.values())
         self._combo_lang = SearchableDropdown(lang_items)
         prefs = self.engine.load_preferences() or {}
-        if "lang" in prefs and prefs["lang"] in lang_items:
-            self._combo_lang.setText(prefs["lang"])
+        
+        saved_lang = prefs.get('lang', 'Auto')
+        display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
+        
+        if display_name in lang_items or display_name == 'Auto':
+            self._combo_lang.setText(display_name)
         else:
             self._combo_lang.setText("Auto")
-        self._combo_lang.valueChanged.connect(lambda v: self.engine.save_preferences({"gui_lang": v}))
+        
+        self._combo_lang.valueChanged.connect(lambda v: self.engine.save_preferences({"lang": v}))
         inner_layout.addLayout(_row(self.txt("lbl_lang"), self._combo_lang))
         inner_layout.addSpacing(10)
 
@@ -2313,12 +2515,21 @@ class BadWordsGUI(QMainWindow):
             self.lbl_processing_status.setText("Initializing analysis...")
 
         # 3. Gather settings
-        lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
+        raw_lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
+        lang_code = "auto"
+        
+        if raw_lang != "Auto":
+            import config
+            for code, name in config.SUPPORTED_LANGUAGES.items():
+                if name.lower() == raw_lang.lower():
+                    lang_code = code
+                    break
+                    
         raw_model = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
         model = raw_model.split()[0].lower() # Fixes capital letter issue for Whisper
         
         settings = {
-            "lang": lang,
+            "lang": lang_code,
             "model": model,
             "device": "Auto",
             "filler_words": config.DEFAULT_BAD_WORDS
@@ -2357,6 +2568,16 @@ class BadWordsGUI(QMainWindow):
             self.lbl_processing_status.setText(f"Error: {err}")
 
     def _on_analysis_finished(self, words_data, segments_data):
+        if not words_data:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Analysis Failed", "The transcription process failed or was interrupted.\nPlease check the logs for more details.")
+            
+            # Reset UI to Page 0 and show panels again
+            self.go_to_page(0)
+            self._panel_left.show()
+            self._panel_right.show()
+            return
+            
         self.go_to_page(2)
         
         self._toggle_activity("script_analysis")
@@ -2388,6 +2609,21 @@ class BadWordsGUI(QMainWindow):
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)
     # ------------------------------------------------------------------
+
+    def _on_clear_transcript(self):
+        from PySide6.QtWidgets import QMessageBox
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            return
+            
+        ans = QMessageBox.question(self, "Clear Transcript", "Are you sure you want to clear all markings?", QMessageBox.Yes | QMessageBox.No)
+        if ans == QMessageBox.Yes:
+            for w in self.text_canvas.words_data:
+                w['status'] = None
+                w['manual_status'] = None
+                w['algo_status'] = None
+                w['is_auto'] = False
+                w['selected'] = False
+            self.text_canvas.update()
 
     def _on_settings(self):
         """Open settings panel."""
