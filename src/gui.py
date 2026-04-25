@@ -60,41 +60,40 @@ class GripHandle(QSplitterHandle):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        w = self.width()
+        w = self.width() # Expected to be 10
         h = self.height()
+        half_w = w // 2  # Exactly 5
         
-        # Fill entirely with workspace background first
-        painter.fillRect(self.rect(), QColor("#1c1c1c"))
+        # BULLETPROOF CHECK: handle(1) is always between LeftPanel and Stack.
+        # If self is handle(1), it's the left sidebar grip. Else, it's the right one.
+        is_left_handle = (self == self.splitter().handle(1))
         
-        is_left_handle = self.geometry().x() < (self.parent().width() / 2)
-        
-        pill_width = 8
-        pill_height = 42
+        # 1. 50/50 Seamless Background Split
+        if is_left_handle:
+            painter.fillRect(0, 0, half_w, h, QColor("#212121")) # Left half touches panel
+            painter.fillRect(half_w, 0, w - half_w, h, QColor("#1c1c1c")) # Right half touches workspace
+        else:
+            painter.fillRect(0, 0, half_w, h, QColor("#1c1c1c")) # Left half touches workspace
+            painter.fillRect(half_w, 0, w - half_w, h, QColor("#212121")) # Right half touches panel
+            
+        # 2. Draw the Grip Pill (Centered, perfectly bisected by the background split)
+        pill_width = 6
+        pill_height = 36
+        x = (w - pill_width) // 2
         y = (h - pill_height) // 2
         
-        # Extend panel color and anchor the pill
-        if is_left_handle:
-            # Panel is on the left.
-            painter.fillRect(0, 0, w // 2 + 2, h, QColor("#212121"))
-            x = (w // 2 + 2) - pill_width # Anchor pill to the right edge of the panel color
-        else:
-            # Panel is on the right.
-            painter.fillRect(w // 2 - 2, 0, w - (w // 2 - 2), h, QColor("#212121"))
-            x = w // 2 - 2 # Anchor pill to the left edge of the panel color
-            
-        # Draw Grip Pill
-        painter.setBrush(QColor("#444444"))
+        painter.setBrush(QColor("#555555"))
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(x, y, pill_width, pill_height, 3, 3)
         
-        # Draw 3 Dots
-        painter.setBrush(QColor("#999999"))
+        # 3. Draw 3 Centered Dots
+        painter.setBrush(QColor("#aaaaaa"))
         dot_size = 2
         dot_x = x + (pill_width - dot_size) // 2
         
         painter.drawEllipse(dot_x, y + 8, dot_size, dot_size)
-        painter.drawEllipse(dot_x, y + 20, dot_size, dot_size)
-        painter.drawEllipse(dot_x, y + 32, dot_size, dot_size)
+        painter.drawEllipse(dot_x, y + 17, dot_size, dot_size)
+        painter.drawEllipse(dot_x, y + 26, dot_size, dot_size)
 
 class GripSplitter(QSplitter):
     def createHandle(self):
@@ -1365,8 +1364,8 @@ class BadWordsGUI(QMainWindow):
         self._main_h_splitter.addWidget(self._panel_left)
         self._main_h_splitter.addWidget(self._stack)
         self._main_h_splitter.addWidget(self._panel_right)
-        self._main_h_splitter.setHandleWidth(12)
-        self._main_h_splitter.setStyleSheet("QSplitter::handle { background-color: #1a1a1a; }")
+        self._main_h_splitter.setHandleWidth(10)
+        self._main_h_splitter.setStyleSheet("QSplitter { border: none; background: transparent; }")
 
         # Add everything to main layout in exact order
         main_layout.addWidget(self._sidebar_left)
@@ -1439,6 +1438,7 @@ class BadWordsGUI(QMainWindow):
                     background-color: #212121;
                     border-radius: 0px;
                     margin: 0px;
+                    border: none;
                 }
                 /* Force all generic children to be transparent so the grey shows through */
                 QFrame#ActivityPanel QWidget {
