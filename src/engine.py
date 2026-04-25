@@ -649,10 +649,26 @@ except Exception as e:
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
 
+            # ── Pre-render: calculate track end frame to limit render range ───
+            # If specific tracks are selected, we only need to render up to where
+            # THOSE tracks end — no need to render silence from longer other tracks.
+            track_indices_for_render = settings.get('track_indices') or None
+            end_frame_override = None
+            if track_indices_for_render:
+                end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
+                    settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
+                    track_indices_for_render
+                )
+                if end_seconds:
+                    fps = self.resolve_handler.fps or 60.0
+                    end_frame_override = int(round(end_seconds * fps))
+                    log_info(f"transcribe_audio: render end_frame_override={end_frame_override} ({end_seconds:.2f}s)")
+
             wav_path = self.resolve_handler.render_audio(
                 unique_id, temp_dir,
                 timeline_name=settings.get('timeline_name'),
-                track_indices=settings.get('track_indices') or None
+                track_indices=track_indices_for_render,
+                end_frame_override=end_frame_override,
             )
             if not wav_path:
                 log_error("Fast Silence: render failed.")
@@ -823,14 +839,29 @@ except Exception as e:
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
             
+            # ── Pre-render: calculate track end frame to limit render range ───
+            track_indices_for_render = settings.get('track_indices') or None
+            end_frame_override_tx = None
+            if track_indices_for_render:
+                _end_s = self.resolve_handler.get_selected_tracks_end_seconds(
+                    settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
+                    track_indices_for_render
+                )
+                if _end_s:
+                    _fps = self.resolve_handler.fps or 60.0
+                    end_frame_override_tx = int(round(_end_s * _fps))
+                    log_info(f"transcribe_audio: render end_frame_override={end_frame_override_tx} ({_end_s:.2f}s)")
+
             wav_path = self.resolve_handler.render_audio(
                 unique_id, temp_dir,
                 timeline_name=settings.get('timeline_name'),
-                track_indices=settings.get('track_indices') or None
+                track_indices=track_indices_for_render,
+                end_frame_override=end_frame_override_tx,
             )
             if not wav_path:
                 log_error("Render failed.")
                 return None, None
+
             
             update_progress(50)
 
@@ -1281,7 +1312,28 @@ except Exception as e:
             _audio_end_s = max(_audio_end_s, raw_silence[-1]['e'])
         audio_end_f = t2f(_audio_end_s)
 
+        # ── CAP to selected track duration (prevents long tail from other tracks) ──
+        audio_end_cap_s = settings.get("audio_end_cap_s")
+        if audio_end_cap_s:
+            cap_f = t2f(audio_end_cap_s)
+            log_info(f"calculate_timeline_structure: audio_end_f={audio_end_f} cap_f={cap_f} audio_end_cap_s={audio_end_cap_s:.3f}s")
+            if cap_f < audio_end_f:
+                log_info(f"calculate_timeline_structure: capping audio_end_f {audio_end_f} → {cap_f}.")
+                audio_end_f = cap_f
+            else:
+                log_info(f"calculate_timeline_structure: cap ({cap_f}) >= audio_end_f ({audio_end_f}) — cap has no effect, check offset calculation!")
+            # Also trim raw_silence to not extend beyond cap
+            if raw_silence:
+                raw_silence = [s for s in raw_silence if s['s'] < audio_end_cap_s]
+                # Clamp end of last partial silence block
+                if raw_silence and raw_silence[-1]['e'] > audio_end_cap_s:
+                    raw_silence[-1] = dict(raw_silence[-1])
+                    raw_silence[-1]['e'] = audio_end_cap_s
+            # Trim words_data entries whose start is beyond the cap
+            words_data = [w for w in words_data if w.get('start', 0.0) < audio_end_cap_s]
+
         silence_blocks_for_snap = [w for w in words_data if w.get('type') == 'silence']
+
         
         chunks = []
         current_chunk = None
@@ -1350,8 +1402,15 @@ except Exception as e:
             else:
                 # FIX #2 (TAIL SILENCE): Last block must extend to the actual end
                 # of the source audio, not just the last word's timestamp.
-                # audio_end_f was computed above from meta_global_silence or words[-1].end.
-                block_end_f = max(audio_end_f, t2f(chunk_end_w)) + pad_f
+                # If a track duration cap is active, clamp to it exactly (no pad_f
+                # beyond the cap) so we don't produce silent tail frames.
+                raw_block_end = max(audio_end_f, t2f(chunk_end_w)) + pad_f
+                if audio_end_cap_s:
+                    # Never exceed the hard cap — the tail silence IS the cap boundary
+                    block_end_f = min(raw_block_end, audio_end_f)
+                else:
+                    block_end_f = raw_block_end
+
             
             ops_raw.append({
                 's': block_start_f,
@@ -1582,39 +1641,69 @@ except Exception as e:
 
             all_tracks_selected = (not track_indices) or (a_track_count > 0 and len(track_indices) >= a_track_count)
 
-            # ── XML PRE-FILTER: Only when a subset of tracks was selected ──────────
+            # ── FILTERED TIMELINE: Cache per transcription session ────────────────
+            # If source_snapshot already carries a filtered TL name AND it still
+            # exists in Resolve, reuse it — no need to redo XML export/import.
             xml_filtered_tl_name = None
-            if track_indices and not all_tracks_selected:
-                log_info(f"assemble_timeline: Track subset selected ({track_indices}), running XML pre-filter...")
-                set_status("Preparing filtered source timeline...")
-                try:
-                    temp_dir = self.os_doc.get_temp_folder()
-                    os.makedirs(temp_dir, exist_ok=True)
-                    safe_name = "".join(c for c in original_tl_name if c.isalnum() or c in '_-')
-                    raw_xml_path      = os.path.join(temp_dir, f"bw_raw_{safe_name}.xml")
-                    filtered_xml_path = os.path.join(temp_dir, f"bw_filtered_{safe_name}.xml")
+            audio_end_cap_s = None  # will cap ops to actual track duration
 
-                    ok_export = self.resolve_handler.export_timeline_xml(original_tl_name, raw_xml_path)
-                    if ok_export:
-                        ok_filter = self.resolve_handler.filter_xml_tracks(raw_xml_path, filtered_xml_path, track_indices)
-                        if ok_filter:
-                            xml_filtered_tl_name = self.resolve_handler.import_xml_as_timeline(filtered_xml_path)
-                            if xml_filtered_tl_name:
-                                log_info(f"assemble_timeline: Using filtered timeline '{xml_filtered_tl_name}' as source.")
-                                original_tl_name = xml_filtered_tl_name
+            if track_indices and not all_tracks_selected:
+                cached_filtered = source_snapshot.get("filtered_tl_name")
+                if cached_filtered and self.resolve_handler.timeline_exists(cached_filtered):
+                    log_info(f"assemble_timeline: Reusing cached filtered timeline '{cached_filtered}'.")
+                    xml_filtered_tl_name = cached_filtered
+                    source_tl_for_assembly = cached_filtered
+                else:
+                    log_info(f"assemble_timeline: Track subset selected ({track_indices}), building filtered timeline...")
+                    set_status("Preparing filtered source timeline...")
+                    try:
+                        temp_dir = self.os_doc.get_temp_folder()
+                        os.makedirs(temp_dir, exist_ok=True)
+                        safe_name = "".join(c for c in original_tl_name if c.isalnum() or c in '_-')
+                        raw_xml_path      = os.path.join(temp_dir, f"bw_raw_{safe_name}.xml")
+                        filtered_xml_path = os.path.join(temp_dir, f"bw_filtered_{safe_name}.xml")
+
+                        ok_export = self.resolve_handler.export_timeline_xml(original_tl_name, raw_xml_path)
+                        if ok_export:
+                            ok_filter = self.resolve_handler.filter_xml_tracks(raw_xml_path, filtered_xml_path, track_indices)
+                            if ok_filter:
+                                xml_filtered_tl_name = self.resolve_handler.import_xml_as_timeline(
+                                    filtered_xml_path, original_tl_name
+                                )
+                                if xml_filtered_tl_name:
+                                    log_info(f"assemble_timeline: Created filtered timeline '{xml_filtered_tl_name}'.")
+                                    source_tl_for_assembly = xml_filtered_tl_name
+                                    # Persist in snapshot so next assembly reuses it
+                                    source_snapshot["filtered_tl_name"] = xml_filtered_tl_name
+                                else:
+                                    log_error("assemble_timeline: XML import failed, falling back to original timeline.")
+                                    source_tl_for_assembly = original_tl_name
                             else:
-                                log_error("assemble_timeline: XML import failed, falling back to original timeline.")
+                                log_error("assemble_timeline: XML filter failed, falling back.")
+                                source_tl_for_assembly = original_tl_name
                         else:
-                            log_error("assemble_timeline: XML filter failed, falling back to original timeline.")
-                    else:
-                        log_error("assemble_timeline: XML export failed, falling back to original timeline.")
-                except Exception as xml_err:
-                    log_error(f"assemble_timeline: XML pre-filter exception: {xml_err}")
+                            log_error("assemble_timeline: XML export failed, falling back.")
+                            source_tl_for_assembly = original_tl_name
+                    except Exception as xml_err:
+                        log_error(f"assemble_timeline: XML pre-filter exception: {xml_err}")
+                        source_tl_for_assembly = original_tl_name
+
+                # ── Get the actual track end time to cap ops ──────────────────
+                # This is the real fix for timeline length: the WAV rendered with
+                # muting includes silence for the full TL duration, so ops would
+                # extend to the end of the long TL. Querying Resolve directly gives
+                # the true end of the selected track(s).
+                audio_end_cap_s = self.resolve_handler.get_selected_tracks_end_seconds(
+                    original_tl_name, track_indices
+                )
+                if audio_end_cap_s:
+                    log_info(f"assemble_timeline: Capping audio ops at {audio_end_cap_s:.3f}s (selected track end).")
             else:
-                log_info(f"assemble_timeline: All tracks selected or no filter needed, using full timeline.")
+                log_info("assemble_timeline: All tracks selected or no filter needed, using full timeline.")
+                source_tl_for_assembly = original_tl_name
 
             set_status(self.txt("status_assembly_source"))
-            source_item, context_type = self.resolve_handler.get_optimal_source_item(original_tl_name)
+            source_item, context_type = self.resolve_handler.get_optimal_source_item(source_tl_for_assembly)
 
             if not source_item:
                 log_error("Could not find optimal source clip or timeline.")
@@ -1623,17 +1712,24 @@ except Exception as e:
             audio_only_mode = (context_type == 'audio')
 
             set_progress(30)
-            
+
             set_status(self.txt("status_calc_cuts"))
             fps = self.resolve_handler.fps
-            clean_ops = self.calculate_timeline_structure(words_data, fps, settings)
-            
+            # Pass audio_end_cap_s so the last block is capped to the selected track's end
+            calc_settings = dict(settings)
+            if audio_end_cap_s:
+                calc_settings["audio_end_cap_s"] = audio_end_cap_s
+            clean_ops = self.calculate_timeline_structure(words_data, fps, calc_settings)
+
             set_progress(50)
-            
+
             set_status(self.txt("status_assembly_resolve"))
-            
+
+            # Always use original source timeline name for Edit numbering (not XML filtered name)
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
             new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
+
+
             
             # --- ZMIANA: Przekazanie paczkowego callbacku do api.py ---
             def assembly_progress_cb(current, total):

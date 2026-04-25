@@ -7332,7 +7332,22 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             callback_status=pump_status, 
             callback_progress=pump_progress
         )
-        
+
+        # ── SYNC SNAPSHOT BACK: persist filtered_tl_name if engine set it ──────
+        # engine.assemble_timeline mutates prefs["source_snapshot"] in-place
+        # (adds filtered_tl_name on first run). Sync that back to the GUI state.
+        updated_snapshot = prefs.get("source_snapshot")
+        if updated_snapshot and hasattr(self, '_transcription_source'):
+            new_filtered = updated_snapshot.get("filtered_tl_name")
+            if new_filtered and self._transcription_source.get("filtered_tl_name") != new_filtered:
+                self._transcription_source["filtered_tl_name"] = new_filtered
+                try:
+                    _p = self.engine.load_preferences() or {}
+                    _p["transcription_source"] = self._transcription_source
+                    self.engine.save_preferences(_p)
+                except Exception:
+                    pass
+
         # AGGRESSIVE RAM CLEANUP: Free memory immediately after assembly finishes
         try:
             del export_data
@@ -7349,6 +7364,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._on_assembly_success()
         else:
             self._on_assembly_error(self.txt("msg_assembly_failed"))
+
 
     def _on_assembly_success(self):
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
