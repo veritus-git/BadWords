@@ -619,31 +619,50 @@ import os
 import traceback
 
 # ---------------------------------------------------------------------------
-# Linux Qt isolation fix (env-restart pattern)
+# Linux Qt isolation fix (ctypes pre-load technique)
 # ---------------------------------------------------------------------------
-# DaVinci Resolve's embedded Python runs under the system interpreter.  The
-# dynamic linker resolves Qt6 .so files from system paths (/usr/lib64, etc.)
-# BEFORE our bundled PySide6 Qt6 lib directory appears on LD_LIBRARY_PATH.
-# This causes a fatal symbol-version mismatch when the bundled libQt6Core
-# (e.g. Qt 6.10) no longer provides the private-API symbol that an older
-# system libQt6DBus.so.6 (e.g. Qt 6.7) was linked against.
+# Problem: DaVinci Resolve runs scripts inside its own Python interpreter.
+# The dynamic linker finds Qt6 .so files from system paths (/usr/lib64, etc.)
+# BEFORE our bundled PySide6 Qt6 lib directory. This causes a fatal
+# symbol-version mismatch: the newer bundled libQt6Core.so.6 exports private
+# API symbols (e.g. Qt_6.10_PRIVATE_API) that the system libQt6DBus.so.6
+# from an older distro Qt6 tries to satisfy from its OWN libQt6Core — which
+# is NOT our bundled one, leading to an ImportError at PySide6 import.
 #
-# Fix: prepend our Qt lib path to LD_LIBRARY_PATH and re-exec this process
-# via os.execv() so the dynamic linker honours the variable from process
-# start, i.e. before it loads _any_ Qt shared library.
-# The _BW_ENV_READY sentinel prevents infinite re-exec loops.
+# Fix: Use ctypes.CDLL with RTLD_GLOBAL to force-load our bundled
+# libQt6Core.so.6 (and its key dependents) into the global process symbol
+# table BEFORE Python imports PySide6. Once our Qt6 symbols are in the
+# global table the dynamic linker uses them when resolving any subsequent
+# Qt6 .so (including the system libQt6DBus), so no version mismatch occurs.
+#
+# IMPORTANT — why NOT os.execv():
+# An earlier version used os.execv() to restart the process with a modified
+# LD_LIBRARY_PATH. That fixed the Qt version conflict but destroyed the IPC
+# socket that DaVinci Resolve uses for its scripting bridge, causing the
+# Resolve API to return no timelines or tracks. ctypes pre-loading achieves
+# the same linker isolation without replacing the process image.
 # ---------------------------------------------------------------------------
-if sys.platform.startswith('linux') and '_BW_ENV_READY' not in os.environ:
+if sys.platform.startswith('linux'):
+    import ctypes
     _qt_lib_dir = r'__BW_QT_DIR__'
+    # Load from most fundamental to most derived so dependencies resolve.
+    _qt_preload = [
+        'libQt6Core.so.6',
+        'libQt6Network.so.6',
+        'libQt6DBus.so.6',
+        'libQt6Gui.so.6',
+        'libQt6Widgets.so.6',
+        'libQt6OpenGL.so.6',
+        'libQt6XcbQpa.so.6',
+    ]
     if os.path.isdir(_qt_lib_dir):
-        _existing = os.environ.get('LD_LIBRARY_PATH', '')
-        os.environ['LD_LIBRARY_PATH'] = (_qt_lib_dir + ':' + _existing) if _existing else _qt_lib_dir
-        os.environ['_BW_ENV_READY'] = '1'
-        try:
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-        except Exception as _e:
-            # execv failed; log and fall through – the import might still work.
-            print(f'[BadWords] env-restart failed ({_e}), continuing without isolation.')
+        for _lib in _qt_preload:
+            _lib_path = os.path.join(_qt_lib_dir, _lib)
+            if os.path.exists(_lib_path):
+                try:
+                    ctypes.CDLL(_lib_path, mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    pass  # Non-fatal; skip libs that cannot be loaded
 
 INSTALL_DIR = r'__BW_INSTALL_DIR__'
 LIBS_DIR    = r'__BW_LIBS_DIR__'
