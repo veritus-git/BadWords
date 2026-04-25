@@ -314,10 +314,11 @@ except Exception as e:
     def check_model_exists(self, tech_name):
         return True
 
-    def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type, filler_words_list=None):
+    def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type, filler_words_list=None, progress_callback=None):
         """
         Modified v11.0: Uses stable-ts (stable_whisper) with faster-whisper backend.
         FIXED v11.2: Injects portable bin path to OS PATH for sub-dependencies.
+        UPDATED v12.1: Replaced subprocess.run with Popen for real-time output streaming.
         """
         unique_name = os.path.splitext(os.path.basename(audio_path))[0]
         output_dir = self.os_doc.get_temp_folder()
@@ -462,21 +463,43 @@ except Exception as e:
         log_info(f"Running Whisper Runner (Stable-TS). Script: {runner_script_path}")
         
         try:
-            result = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
+            whisper_start = time.time()
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
                 encoding='utf-8',
                 errors='replace',
-                env=env, 
+                bufsize=1,
+                universal_newlines=True,
+                env=env,
                 startupinfo=startup_info
             )
             
-            if result.stdout: log_info(f"[RUNNER-OUT] {result.stdout[:500]} ...")
-            if result.stderr: log_error(f"[RUNNER-ERR] {result.stderr}")
-
-            if result.returncode != 0:
-                log_error(f"Subprocess Failed. Return Code: {result.returncode}")
+            segments_count = 0
+            spam_markers = ["Transcribe:", "Adjustment:", "Segment processed:"]
+            for line in iter(process.stdout.readline, ''):
+                if any(marker in line for marker in spam_markers):
+                    match = re.search(r'Transcribe:\s*(\d+)%', line)
+                    if match and progress_callback:
+                        pct = int(match.group(1))
+                        progress_callback(pct)
+                    if "Segment processed:" in line:
+                        segments_count += 1
+                else:
+                    line_stripped = line.strip()
+                    if line_stripped:
+                        log_info(f"[RUNNER] {line_stripped}")
+            
+            process.wait()
+            whisper_sec = int(time.time() - whisper_start)
+            w_mins = whisper_sec // 60
+            w_secs = whisper_sec % 60
+            log_info(f"[RUNNER] Transcription complete in {w_mins}:{w_secs:02d} min. Total segments processed: {segments_count}")
+            
+            if process.returncode != 0:
+                log_error(f"Subprocess Failed. Return Code: {process.returncode}")
                 return None
                 
             if os.path.exists(json_output_path):
@@ -659,17 +682,19 @@ except Exception as e:
                 self.download_whisper_model_interactive(model, dl_progress_cb)
             
             update_status(get_status_msg("whisper_run", f"Faster-Whisper {model}..."))
+            update_progress(-1)  # Indeterminate bar during init
+            update_status(get_status_msg("whisper_init", "Initializing transcription..."))
+            
+            def whisper_live_progress(pct):
+                update_progress(int(pct))
+                update_status(f"Transcribing... {pct}%")
             
             # Execute Faster-Whisper via Runner with RESOLVED parameters
-            json_path = self.run_whisper(target_wav, model, lang, True, device_mode, fw_compute, filler_words)
-            
-            update_progress(55)
+            json_path = self.run_whisper(target_wav, model, lang, True, device_mode, fw_compute, filler_words, progress_callback=whisper_live_progress)
             
             if not json_path:
                 log_error("Whisper failed.")
                 return None, None
-            
-            update_progress(60)
 
             update_status(get_status_msg("silence", "Silence detection..."))
             silence_ranges = self.detect_silence(target_wav, -42, 0.2)
@@ -682,8 +707,6 @@ except Exception as e:
             try: os.remove(wav_path)
             except: pass
 
-            update_progress(80)
-
             update_status(get_status_msg("processing", "Processing..."))
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -692,8 +715,6 @@ except Exception as e:
                 data, silence_ranges, filler_words, fps, 
                 txt_inaudible, time_scale_correction
             )
-
-            update_progress(95)
             
             if words_data:
                 update_status(get_status_msg("init_analysis", "Finalizing data..."))
