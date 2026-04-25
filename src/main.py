@@ -11,14 +11,14 @@ DESCRIPTION:
 Main execution file. Checks dependencies, imports configuration,
 initializes the OS layer (osdoc), Resolve API, Engine, and starts the GUI.
 Connects all components into a working application.
+[PySide6 migration: Stage 1 — fixed GC & thread-affinity issues via AppController]
 """
 
 import sys
 import traceback
-import tkinter as tk
-from tkinter import messagebox
-import threading
-import queue
+
+from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QThread, Signal
 
 # Application module imports
 import osdoc
@@ -26,124 +26,192 @@ import api
 import engine
 import gui
 
-def init_system_thread(os_doc, result_queue):
-    """
-    Function to run in a separate thread.
-    Heavy initialization (Resolve API, Engine) happens here.
-    """
-    try:
-        # 1. Initialize API (Resolve Logic Layer) - Can be slow
-        resolve = api.ResolveHandler(os_doc)
 
-        # 2. Initialize Engine (Processing Logic Layer) - Checks FFmpeg/Whisper
-        audio_engine = engine.AudioEngine(os_doc, resolve)
-        
-        # Put results in queue
-        result_queue.put((resolve, audio_engine))
-    except Exception as e:
-        result_queue.put(e)
+# ==========================================
+# BACKGROUND INITIALIZATION THREAD
+# ==========================================
+
+class InitThread(QThread):
+    """
+    Runs heavyweight initialization (ResolveHandler, AudioEngine) off the
+    main thread so the splash screen stays responsive.
+
+    Signals are delivered to slots on the MAIN thread automatically by Qt's
+    queued-connection mechanism, so all GUI work in the slots is thread-safe.
+
+    Signals
+    -------
+    loaded(resolve, audio_engine)
+        Emitted when both objects are ready.
+    error(message)
+        Emitted if an exception is raised during initialization.
+    """
+    loaded = Signal(object, object)
+    error  = Signal(str)
+
+    def __init__(self, os_doc, parent=None):
+        super().__init__(parent)
+        self.os_doc = os_doc
+
+    def run(self):
+        try:
+            resolve      = api.ResolveHandler(self.os_doc)
+            audio_engine = engine.AudioEngine(self.os_doc, resolve)
+            self.loaded.emit(resolve, audio_engine)
+        except Exception as e:
+            self.error.emit(f"{e}\n\n{traceback.format_exc()}")
+
+
+# ==========================================
+# APPLICATION CONTROLLER
+# ==========================================
+
+class AppController:
+    """
+    Owns every long-lived object in the application so Python's garbage
+    collector never destroys a window simply because a helper function
+    returned.
+
+    Lifetime: one instance is created in main() and stored in the module-
+    level ``_controller`` variable, keeping it alive for the duration of
+    the Qt event loop.
+    """
+
+    def __init__(self, os_doc: osdoc.OSDoctor):
+        self.os_doc      = os_doc
+
+        # These attributes MUST be kept as instance variables.
+        # If they were local variables inside on_loaded(), the GC would
+        # destroy the QWidgets the moment that function returned.
+        self.splash      = None   # gui.SplashScreen
+        self.main_win    = None   # gui.BadWordsGUI
+        self.init_thread = None   # InitThread
+
+    # ------------------------------------------------------------------
+    # Start-up sequence
+    # ------------------------------------------------------------------
+
+    def start(self):
+        """Create the splash and kick off background initialization."""
+        # Splash is stored on self → GC-safe for the entire loading phase
+        self.splash = gui.SplashScreen()
+        self.splash.show()
+        QApplication.processEvents()  # Paint splash before heavy loading starts
+
+        self.init_thread = InitThread(self.os_doc)
+        # Qt delivers cross-thread signals via the event loop on the main
+        # thread, so on_loaded / on_error are always called from main thread.
+        self.init_thread.loaded.connect(self.on_loaded)
+        self.init_thread.error.connect(self.on_error)
+        self.init_thread.start()
+
+    # ------------------------------------------------------------------
+    # Signal handlers (always called on the MAIN THREAD by Qt)
+    # ------------------------------------------------------------------
+
+    def on_loaded(self, resolve, audio_engine):
+        """
+        Called on the main thread when InitThread finishes successfully.
+        Build the main window and store it on self so GC cannot destroy it.
+        """
+        self.splash.close()
+        self.splash = None  # Allow GC to clean up the splash widget properly
+
+        osdoc.log_info("Loading complete. Building main window.")
+
+        # IMPORTANT: store on self, NOT as a local variable.
+        self.main_win = gui.BadWordsGUI(audio_engine, resolve)
+
+        # Wire clean-shutdown callback
+        self.main_win.closeEvent_callback = self._on_close
+
+        self.main_win.show()
+        self.main_win.raise_()
+        self.main_win.activateWindow()
+        osdoc.log_info("Main window displayed.")
+
+    def on_error(self, message: str):
+        """Called on the main thread when InitThread raises an exception."""
+        osdoc.log_error(f"CRITICAL ERROR during init:\n{message}")
+        if self.splash:
+            self.splash.close()
+            self.splash = None
+        QMessageBox.critical(
+            None,
+            "Critical Application Error",
+            f"An unexpected error occurred during startup:\n\n"
+            f"{message.split(chr(10))[0]}"
+            f"\n\nDetails saved to log file."
+        )
+        QApplication.instance().quit()
+
+    # ------------------------------------------------------------------
+    # Shutdown
+    # ------------------------------------------------------------------
+
+    def _on_close(self):
+        """Called when the user closes the main window."""
+        if self.os_doc:
+            self.os_doc.cleanup_temp()
+        QApplication.instance().quit()
+
+
+# ==========================================
+# MODULE-LEVEL REFERENCE (prevents GC)
+# ==========================================
+# Storing the controller at module level ensures Python will NEVER garbage-
+# collect it (and therefore the windows it owns) while the event loop runs.
+_controller: AppController = None
+
+
+# ==========================================
+# ENTRY POINT
+# ==========================================
 
 def main():
-    # Variable for OSDoctor outside the try block to allow logging if init fails
+    global _controller
+
     os_doc = None
-    splash = None
 
     try:
-        # 1. Initialize OSDoctor (System Layer) - Usually fast
+        # 1. System layer — fast, safe on main thread
         os_doc = osdoc.OSDoctor()
         osdoc.log_info("=== Starting BadWords ===")
 
-        # 2. Create main Tkinter window immediately (but hide it)
-        root = tk.Tk()
-        root.withdraw() # Hide root initially
+        # 2. QApplication must exist before any QWidget
+        app = QApplication(sys.argv)
+        app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
 
-        # 3. Show Splash Screen immediately
-        splash = gui.SplashScreen(root)
-        
-        # Force UI update to show splash before heavy loading starts
-        root.update()
+        # 3. Create controller (holds all GUI references → GC-safe)
+        _controller = AppController(os_doc)
+        _controller.start()  # Shows splash, starts InitThread
 
-        # 4. Start Heavy Initialization in a separate Thread
-        init_queue = queue.Queue()
-        loading_thread = threading.Thread(target=init_system_thread, args=(os_doc, init_queue))
-        loading_thread.daemon = True # Kill thread if app closes
-        loading_thread.start()
-
-        # 5. Polling Loop to check if loading is done
-        def check_loading_status():
-            try:
-                # Check if data is available (non-blocking)
-                result = init_queue.get_nowait()
-                
-                if isinstance(result, Exception):
-                    # Initialization failed inside the thread
-                    raise result
-                
-                # Unpack success result
-                resolve, audio_engine = result
-                
-                # 6. Initialize Main GUI (Presentation Layer)
-                # GUI receives engine (to request analysis) and resolve (timeline navigation)
-                app = gui.BadWordsGUI(root, audio_engine, resolve)
-                
-                # 7. Destroy Splash and Show Main Window (handled by gui.py now)
-                # But we ensure splash is gone here
-                if splash:
-                    splash.destroy()
-                
-                # Main window is deiconified inside BadWordsGUI constructor now to fix flickering
-                
-            except queue.Empty:
-                # Still loading... check again in 100ms
-                root.after(100, check_loading_status)
-
-        # Start checking
-        check_loading_status()
-
-        # Configure behavior on window close
-        def on_close():
-            # Cleanup operations before exit
-            if os_doc:
-                os_doc.cleanup_temp()
-            root.destroy()
-            sys.exit(0) # Ensure process kills threads
-            
-        root.protocol("WM_DELETE_WINDOW", on_close)
-
-        # 8. Start main loop
-        osdoc.log_info("Initialization loop started.")
-        root.mainloop()
+        # 4. Hand control to Qt — app.exec() blocks here until app.quit() is called
+        osdoc.log_info("Event loop started.")
+        sys.exit(app.exec())
 
     except Exception as e:
-        # Critical error handling
         error_trace = traceback.format_exc()
-        error_msg = f"CRITICAL ERROR: {e}\n{error_trace}"
-        
-        # Log error via osdoc (if initialized)
+        error_msg   = f"CRITICAL ERROR: {e}\n{error_trace}"
+
         if os_doc:
             osdoc.log_error(error_msg)
         else:
-            print(error_msg) # Fallback to console
-        
-        # Attempt to show error window to the user
+            print(error_msg, file=sys.stderr)
+
+        # Attempt to show a Qt error dialog even if early init failed
         try:
-            # If root doesn't exist or was destroyed, create a temporary one
-            if 'root' not in locals() or not root.winfo_exists():
-                temp_root = tk.Tk()
-                temp_root.withdraw() # Hide main window
-                messagebox.showerror("Critical Application Error", 
-                                     f"An unexpected error occurred:\n{e}\n\nDetails saved to log file.")
-                temp_root.destroy()
-            else:
-                # Close splash if open
-                if splash: splash.destroy()
-                root.deiconify() # Ensure root is visible for message
-                messagebox.showerror("Critical Application Error", 
-                                     f"An unexpected error occurred:\n{e}\n\nDetails saved to log file.")
-        except:
-            pass # If even messagebox fails, nothing more we can do
-        
+            _app = QApplication.instance() or QApplication(sys.argv)
+            QMessageBox.critical(
+                None,
+                "Critical Application Error",
+                f"An unexpected error occurred:\n{e}\n\nDetails saved to log file."
+            )
+        except Exception:
+            pass
+
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
