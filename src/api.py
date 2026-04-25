@@ -127,44 +127,224 @@ class ResolveHandler:
         
         return f"{h:02d}:{m:02d}:{s:02d}:{f:02d}"
 
-    def render_audio(self, unique_id, export_path):
+    def render_audio(self, unique_id, export_path, timeline_name=None, track_indices=None):
         """
-        Renders the current timeline audio to a WAV file.
+        Renders audio from the specified timeline to a WAV file.
+
+        Args:
+            unique_id (str): Unique file name prefix.
+            export_path (str): Directory to write the WAV file to.
+            timeline_name (str|None): Name of the timeline to render. If None,
+                uses the currently active timeline.
+            track_indices (list[int]|None): 1-based list of audio track indices
+                to include. If None or empty, all tracks are rendered (default
+                backward-compatible behaviour).
+
+        Returns:
+            str|None: Absolute path to the rendered WAV file, or None on failure.
         """
-        if not self.project or not self.timeline: return None
-        
-        target_file = os.path.join(export_path, f"{unique_id}.wav")
-        
-        # Save current render settings to restore later
-        self.project.LoadRenderPreset("Audio Only")
-        
-        self.project.SetRenderSettings({
-            "SelectAllFrames": 1,
-            "TargetDir": export_path,
-            "CustomName": unique_id,
-            "ExportVideo": False,
-            "ExportAudio": True,
-            "AudioCodec": "wav",
-            "AudioBitDepth": 16,
-            "AudioSampleRate": 48000
-        })
-        
-        pid = self.project.AddRenderJob()
-        self.project.StartRendering(pid)
-        
-        # Wait loop
-        while self.project.IsRenderingInProgress():
-            time.sleep(1)
-            
-        # Check status
-        status = self.project.GetRenderJobStatus(pid)
-        self.project.DeleteRenderJob(pid)
-        
-        if status.get("JobStatus") == "Complete":
-            return target_file
-        else:
-            log_error(f"Render failed. Status: {status}")
+        if not self.project or not self.timeline:
             return None
+
+        target_file = os.path.join(export_path, f"{unique_id}.wav")
+
+        # ── 1. Switch to the requested timeline (if specified) ────────────────
+        original_timeline = self.timeline
+        switched_timeline = False
+
+        if timeline_name and timeline_name != self.timeline.GetName():
+            tl_count = self.project.GetTimelineCount()
+            for i in range(1, tl_count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl.GetName() == timeline_name:
+                    self.project.SetCurrentTimeline(tl)
+                    self.timeline = tl
+                    switched_timeline = True
+                    log_info(f"Switched to timeline: {timeline_name}")
+                    break
+            if not switched_timeline:
+                log_error(f"Timeline '{timeline_name}' not found. Using current timeline.")
+
+        render_timeline = self.timeline
+
+        # ── 2. Mute / solo audio tracks (if specific tracks were requested) ───
+        mute_state_backup = {}  # {track_idx: original_enabled_state}
+        track_isolated = False
+
+        if track_indices:
+            a_track_count = render_timeline.GetTrackCount("audio")
+
+            # Resolve's SWIG binding returns None for unknown attributes AND
+            # calling None raises TypeError — so we use try/except throughout.
+            # Try both known spellings across Resolve versions:
+            #   SetTrackEnable  — documented in newer builds
+            #   SetTrackEnabled — used in some earlier/custom builds
+            for _set_name, _get_name in (
+                ("SetTrackEnable",   "GetIsTrackEnabled"),
+                ("SetTrackEnabled",  "GetIsTrackEnabled"),
+            ):
+                if track_isolated:
+                    break
+                try:
+                    _set = getattr(render_timeline, _set_name)
+                    _get = getattr(render_timeline, _get_name)
+                    for idx in range(1, a_track_count + 1):
+                        mute_state_backup[idx] = _get("audio", idx)
+                        _set("audio", idx, False)   # mute all
+                    for idx in track_indices:
+                        if 1 <= idx <= a_track_count:
+                            _set("audio", idx, True)  # unmute selected
+                    track_isolated = True
+                    log_info(f"Track isolation via {_set_name}: {track_indices}")
+                except Exception:
+                    # Either the method doesn't exist (None callable) or the
+                    # call itself raised — clear backup and try next name.
+                    mute_state_backup.clear()
+
+            if not track_isolated:
+                log_error(
+                    "Track isolation unavailable in this Resolve version — "
+                    "rendering all audio tracks instead."
+                )
+
+        # ── 3. Configure render and execute ──────────────────────────────────
+        render_ok = False
+        try:
+            self.project.LoadRenderPreset("Audio Only")
+
+            self.project.SetRenderSettings({
+                "SelectAllFrames": 1,
+                "TargetDir":       export_path,
+                "CustomName":      unique_id,
+                "ExportVideo":     False,
+                "ExportAudio":     True,
+                "AudioCodec":      "wav",
+                "AudioBitDepth":   16,
+                "AudioSampleRate": 48000,
+            })
+
+            pid = self.project.AddRenderJob()
+
+            # Some Resolve builds on Linux ignore StartRendering(pid);
+            # calling it without args starts all Ready jobs reliably.
+            started = self.project.StartRendering(pid)
+            if not started:
+                self.project.StartRendering()
+
+            # Give Resolve a brief moment to transition from Ready → Rendering
+            time.sleep(0.5)
+
+            while self.project.IsRenderingInProgress():
+                time.sleep(1)
+
+            status = self.project.GetRenderJobStatus(pid)
+            self.project.DeleteRenderJob(pid)
+
+            render_ok = status.get("JobStatus") == "Complete"
+            if not render_ok:
+                log_error(f"Render failed. Status: {status}")
+
+        except Exception as e:
+            log_error(f"Render error: {e}")
+            render_ok = False
+
+        finally:
+            # ── 4. Restore muted tracks ──────────────────────────────────────
+            if mute_state_backup:
+                for _set_name in ("SetTrackEnable", "SetTrackEnabled"):
+                    try:
+                        _set = getattr(render_timeline, _set_name)
+                        for idx, was_enabled in mute_state_backup.items():
+                            _set("audio", idx, was_enabled)
+                        break  # success — stop trying
+                    except Exception as restore_err:
+                        log_error(f"Track restore via {_set_name} failed: {restore_err}")
+
+            # ── 5. Restore original timeline ──────────────────────────────────
+            if switched_timeline and original_timeline:
+                try:
+                    self.project.SetCurrentTimeline(original_timeline)
+                    self.timeline = original_timeline
+                except Exception as tl_err:
+                    log_error(f"Could not restore original timeline: {tl_err}")
+
+            # ── 6. Always return to Edit page ─────────────────────────────────
+            if self.resolve:
+                try:
+                    self.resolve.OpenPage("edit")
+                except Exception:
+                    pass
+
+        return target_file if render_ok else None
+
+    def get_all_timelines(self):
+        """
+        Returns a list of all timeline names in the current project.
+
+        Returns:
+            list[str]: Timeline names, or [] if no project / no timelines.
+        """
+        if not self.project:
+            return []
+        try:
+            count = self.project.GetTimelineCount()
+            names = []
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl:
+                    names.append(tl.GetName())
+            return names
+        except Exception as e:
+            log_error(f"get_all_timelines error: {e}")
+            return []
+
+    def get_audio_tracks(self, timeline_name=None):
+        """
+        Returns a list of audio track labels for the specified timeline.
+        Only tracks that contain at least one clip are included — empty
+        placeholder tracks are excluded.
+
+        Args:
+            timeline_name (str|None): Name of the timeline. If None or matches
+                the current timeline, the active timeline is used.
+
+        Returns:
+            list[str]: Labels like ['A1', 'A3'] (only populated tracks), or [].
+        """
+        if not self.project:
+            return []
+        try:
+            target_tl = self.timeline
+
+            if timeline_name and (not target_tl or target_tl.GetName() != timeline_name):
+                count = self.project.GetTimelineCount()
+                for i in range(1, count + 1):
+                    tl = self.project.GetTimelineByIndex(i)
+                    if tl and tl.GetName() == timeline_name:
+                        target_tl = tl
+                        break
+
+            if not target_tl:
+                return []
+
+            a_count = target_tl.GetTrackCount("audio")
+            populated = []
+            for i in range(1, a_count + 1):
+                try:
+                    items = target_tl.GetItemListInTrack("audio", i)
+                    # GetItemListInTrack returns a list or None / empty dict
+                    has_content = bool(items)  # [] / {} / None all evaluate False
+                    if has_content:
+                        populated.append(f"A{i}")
+                except Exception:
+                    # If the call fails, skip this track safely
+                    pass
+            return populated
+
+        except Exception as e:
+            log_error(f"get_audio_tracks error: {e}")
+            return []
+
 
     def get_next_badwords_edit_index(self, original_name):
         """

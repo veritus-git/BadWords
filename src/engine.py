@@ -649,7 +649,11 @@ except Exception as e:
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
 
-            wav_path = self.resolve_handler.render_audio(unique_id, temp_dir)
+            wav_path = self.resolve_handler.render_audio(
+                unique_id, temp_dir,
+                timeline_name=settings.get('timeline_name'),
+                track_indices=settings.get('track_indices') or None
+            )
             if not wav_path:
                 log_error("Fast Silence: render failed.")
                 return None, None
@@ -819,7 +823,11 @@ except Exception as e:
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
             
-            wav_path = self.resolve_handler.render_audio(unique_id, temp_dir)
+            wav_path = self.resolve_handler.render_audio(
+                unique_id, temp_dir,
+                timeline_name=settings.get('timeline_name'),
+                track_indices=settings.get('track_indices') or None
+            )
             if not wav_path:
                 log_error("Render failed.")
                 return None, None

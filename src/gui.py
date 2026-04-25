@@ -5776,6 +5776,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # --- Telemetry check fires 500 ms after first paint ---
         QTimer.singleShot(500, self.check_telemetry)
+
+        # --- Populate timeline/track dropdowns once Resolve has connected ---
+        QTimer.singleShot(800, self._populate_timeline_track_combos)
         
         self._bind_prefs()
 
@@ -6897,6 +6900,113 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         self.text_canvas._calculate_layout()
         self.text_canvas.update()
+    # ------------------------------------------------------------------
+    # Timeline / Track combo population & synchronisation
+    # ------------------------------------------------------------------
+
+    def _populate_timeline_track_combos(self):
+        """
+        Queries the Resolve API for all timelines in the current project and
+        populates both timeline dropdowns (combo_tl_0 / combo_tl_1).
+        Called via QTimer.singleShot(800, ...) after __init__.
+        """
+        try:
+            rh = self.engine.resolve_handler
+            timelines = rh.get_all_timelines()
+
+            current_tl_name = ""
+            if rh.timeline:
+                try:
+                    current_tl_name = rh.timeline.GetName()
+                except Exception:
+                    pass
+
+            no_tl_label = self.txt("msg_no_timelines_detected")
+
+            if not timelines:
+                for combo in (self.combo_tl_0, self.combo_tl_1):
+                    combo.options_list = [no_tl_label]
+                    combo.setText(no_tl_label)
+                for track_combo in (self.combo_tr_0, self.combo_tr_1):
+                    track_combo.options_list = []
+                    track_combo.selected_items = set()
+                    track_combo.setText(self.txt("msg_no_audio_tracks_detected"))
+                return
+
+            # Populate timeline dropdowns
+            for combo in (self.combo_tl_0, self.combo_tl_1):
+                combo.options_list = list(timelines)
+                display = current_tl_name if current_tl_name in timelines else timelines[0]
+                combo.setText(display)
+
+            # Populate track dropdowns for the default timeline
+            init_tl = current_tl_name if current_tl_name in timelines else timelines[0]
+            self._on_timeline_selected(init_tl, self.combo_tr_0)
+            self._on_timeline_selected(init_tl, self.combo_tr_1)
+
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_populate_timeline_track_combos error: {e}")
+
+    def _on_timeline_selected(self, tl_name, track_combo, mirror_tl_combo=None):
+        """
+        Updates *track_combo* with audio tracks for *tl_name*, and optionally
+        mirrors the selection to *mirror_tl_combo*.
+        """
+        try:
+            if tl_name == self.txt("msg_no_timelines_detected"):
+                return
+
+            rh = self.engine.resolve_handler
+            tracks = rh.get_audio_tracks(tl_name)
+
+            no_track_label = self.txt("msg_no_audio_tracks_detected")
+
+            if not tracks:
+                track_combo.options_list = []
+                track_combo.selected_items = set()
+                track_combo.setText(no_track_label)
+            else:
+                track_combo.options_list = list(tracks)
+                track_combo.selected_items = set()
+                track_combo.setText(self.txt("txt_select_tracks"))
+
+            # Mirror the timeline selection to the other page's dropdown
+            if mirror_tl_combo is not None:
+                if tl_name in mirror_tl_combo.options_list and mirror_tl_combo.text() != tl_name:
+                    try:
+                        mirror_tl_combo.valueChanged.disconnect()
+                    except Exception:
+                        pass
+                    mirror_tl_combo.setText(tl_name)
+                    if mirror_tl_combo is self.combo_tl_1:
+                        mirror_tl_combo.valueChanged.connect(
+                            lambda t: self._on_timeline_selected(t, self.combo_tr_1, self.combo_tl_0)
+                        )
+                    else:
+                        mirror_tl_combo.valueChanged.connect(
+                            lambda t: self._on_timeline_selected(t, self.combo_tr_0, self.combo_tl_1)
+                        )
+
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_on_timeline_selected error: {e}")
+
+    def _track_names_to_indices(self, tl_name, track_names):
+        """Converts track name labels (e.g. {'A1', 'A3'}) to 1-based integer indices."""
+        if not track_names:
+            return []
+        try:
+            all_tracks = self.engine.resolve_handler.get_audio_tracks(tl_name)
+            indices = []
+            for name in track_names:
+                if name in all_tracks:
+                    indices.append(all_tracks.index(name) + 1)
+            return sorted(indices)
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_track_names_to_indices error: {e}")
+            return []
 
     def _on_fast_silence(self):
         """Fast Silence Cut: runs FFmpeg pipeline then directly assembles the timeline."""
@@ -6932,11 +7042,24 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _p['silence_min_dur']      = min_dur_val
         self.engine.save_preferences(_p)
 
+        # Read selected timeline and tracks
+        selected_tl = getattr(self, 'combo_tl_1', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        no_tl = self.txt("msg_no_timelines_detected")
+        if selected_tl_name == no_tl:
+            selected_tl_name = ""
+
+        selected_tracks_combo = getattr(self, 'combo_tr_1', None)
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
         # Update settings for the core
         settings = {
             'threshold_db':    thresh_val,
             'padding_s':       pad_val,
             'silence_min_dur': min_dur_val,
+            'timeline_name':   selected_tl_name or None,
+            'track_indices':   track_indices or None,
         }
 
         self._worker_signals = WorkerSignals()
@@ -6959,6 +7082,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         self._analysis_thread = threading.Thread(target=worker_func, daemon=True)
         self._analysis_thread.start()
+
 
     def _on_fs_finished(self, words_data, segments_data):
         """Called when run_fast_silence_pipeline completes. Directly assembles the timeline."""
@@ -7241,12 +7365,40 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_trans.addWidget(lbl_sub)
         l_trans.addSpacing(20)
 
-        self.combo_tl_0 = CustomDropdown(["Timeline 1", "Timeline 2", "No timelines detected"])
+        self.combo_tl_0 = CustomDropdown([])
         self.combo_tl_0.setFixedHeight(30)
-        l_trans.addLayout(_row(self.txt("lbl_timeline_selection"), self.combo_tl_0))
+        self.combo_tl_0.valueChanged.connect(
+            lambda tl: self._on_timeline_selected(tl, self.combo_tr_0, self.combo_tl_1)
+        )
+        _vbox_tl0 = QVBoxLayout()
+        _vbox_tl0.setContentsMargins(0, 0, 0, 0)
+        _vbox_tl0.setSpacing(3)
+        _lbl_tl0 = QLabel(self.txt("lbl_timeline_selection"))
+        _lbl_tl0.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+        )
+        _hbox_tl0 = QHBoxLayout()
+        _hbox_tl0.setContentsMargins(0, 0, 0, 0)
+        _hbox_tl0.setSpacing(4)
+        _hbox_tl0.addWidget(self.combo_tl_0, 1)
+        _btn_ref_tl0 = QPushButton("↺")
+        _btn_ref_tl0.setFixedSize(30, 30)
+        _btn_ref_tl0.setCursor(Qt.PointingHandCursor)
+        _btn_ref_tl0.setToolTip(self.txt("tt_refresh_timelines") if "tt_refresh_timelines" in config.TRANS.get(self.lang, {}) else "Refresh timelines")
+        _btn_ref_tl0.setStyleSheet(
+            "QPushButton { background: transparent; border: 1px solid #444; "
+            "border-radius: 3px; color: #777; font-size: 11pt; } "
+            "QPushButton:hover { color: #ccc; border-color: #666; }"
+        )
+        _btn_ref_tl0.clicked.connect(self._populate_timeline_track_combos)
+        _hbox_tl0.addWidget(_btn_ref_tl0)
+        _vbox_tl0.addWidget(_lbl_tl0)
+        _vbox_tl0.addLayout(_hbox_tl0)
+        l_trans.addLayout(_vbox_tl0)
         l_trans.addSpacing(10)
 
-        self.combo_tr_0 = MultiSelectDropdown(["Audio 1", "Audio 2", "Audio 3", "No audio detected"])
+        self.combo_tr_0 = MultiSelectDropdown([])
         self.combo_tr_0.setFixedHeight(30)
         l_trans.addLayout(_row(self.txt("lbl_tracks_selection"), self.combo_tr_0))
         l_trans.addSpacing(10)
@@ -7358,12 +7510,40 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_fast.addWidget(lbl_fs_title)
         l_fast.addSpacing(20)
 
-        self.combo_tl_1 = CustomDropdown(["Timeline 1", "Timeline 2", "No timelines detected"])
+        self.combo_tl_1 = CustomDropdown([])
         self.combo_tl_1.setFixedHeight(30)
-        l_fast.addLayout(_row(self.txt("lbl_timeline_selection"), self.combo_tl_1))
+        self.combo_tl_1.valueChanged.connect(
+            lambda tl: self._on_timeline_selected(tl, self.combo_tr_1, self.combo_tl_0)
+        )
+        _vbox_tl1 = QVBoxLayout()
+        _vbox_tl1.setContentsMargins(0, 0, 0, 0)
+        _vbox_tl1.setSpacing(3)
+        _lbl_tl1 = QLabel(self.txt("lbl_timeline_selection"))
+        _lbl_tl1.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+        )
+        _hbox_tl1 = QHBoxLayout()
+        _hbox_tl1.setContentsMargins(0, 0, 0, 0)
+        _hbox_tl1.setSpacing(4)
+        _hbox_tl1.addWidget(self.combo_tl_1, 1)
+        _btn_ref_tl1 = QPushButton("↺")
+        _btn_ref_tl1.setFixedSize(30, 30)
+        _btn_ref_tl1.setCursor(Qt.PointingHandCursor)
+        _btn_ref_tl1.setToolTip(self.txt("tt_refresh_timelines") if "tt_refresh_timelines" in config.TRANS.get(self.lang, {}) else "Refresh timelines")
+        _btn_ref_tl1.setStyleSheet(
+            "QPushButton { background: transparent; border: 1px solid #444; "
+            "border-radius: 3px; color: #777; font-size: 11pt; } "
+            "QPushButton:hover { color: #ccc; border-color: #666; }"
+        )
+        _btn_ref_tl1.clicked.connect(self._populate_timeline_track_combos)
+        _hbox_tl1.addWidget(_btn_ref_tl1)
+        _vbox_tl1.addWidget(_lbl_tl1)
+        _vbox_tl1.addLayout(_hbox_tl1)
+        l_fast.addLayout(_vbox_tl1)
         l_fast.addSpacing(10)
 
-        self.combo_tr_1 = MultiSelectDropdown(["Audio 1", "Audio 2", "Audio 3", "No audio detected"])
+        self.combo_tr_1 = MultiSelectDropdown([])
         self.combo_tr_1.setFixedHeight(30)
         l_fast.addLayout(_row(self.txt("lbl_tracks_selection"), self.combo_tr_1))
         l_fast.addSpacing(10)
@@ -7601,13 +7781,27 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                     
         raw_model = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
         model = raw_model.split()[0].lower() # Fixes capital letter issue for Whisper
-        
+
+        # Read selected timeline and audio tracks
+        selected_tl = getattr(self, 'combo_tl_0', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        no_tl = self.txt("msg_no_timelines_detected")
+        if selected_tl_name == no_tl:
+            selected_tl_name = ""
+
+        selected_tracks_combo = getattr(self, 'combo_tr_0', None)
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
         settings = {
             "lang": lang_code,
             "model": model,
             "device": "Auto",
-            "filler_words": config.DEFAULT_BAD_WORDS
+            "filler_words": config.DEFAULT_BAD_WORDS,
+            "timeline_name": selected_tl_name or None,
+            "track_indices": track_indices or None,
         }
+
         
         # 4. Start thread targeting self.engine.run_analysis_pipeline()
         self._worker_signals = WorkerSignals()

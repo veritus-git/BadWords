@@ -624,6 +624,10 @@ TRANS = {
         "msg_standalone_silence_processing_c": "Silence detection complete.",
         "btn_run_standalone_silence": "Run Detection",
         "txt_initializing_standalone_silence": "Initializing Silence Detection...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "No timelines detected",
+        "msg_no_audio_tracks_detected": "No audio tracks detected",
+        "txt_all_tracks": "All tracks (default)",
     },
     'pl': {
         "btn_analyze": "Analizuj",
@@ -880,6 +884,10 @@ TRANS = {
         "btn_run_standalone_silence": "Uruchom",
         "txt_initializing_fast_silence": "Inicjalizacja wykrywania ciszy...",
         "txt_initializing_standalone_silence": "Inicjalizacja wykrywania ciszy...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Nie wykryto osi czasu",
+        "msg_no_audio_tracks_detected": "Nie wykryto ścieżek audio",
+        "txt_all_tracks": "Wszystkie ścieżki (domyślnie)",
     },
     'de': {
         "btn_analyze": "Analysieren",
@@ -1136,6 +1144,10 @@ TRANS = {
         "btn_run_standalone_silence": "Starten",
         "txt_initializing_fast_silence": "Stille-Erkennung initialisieren...",
         "txt_initializing_standalone_silence": "Stille-Erkennung initialisieren...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Keine Timelines erkannt",
+        "msg_no_audio_tracks_detected": "Keine Audiospuren erkannt",
+        "txt_all_tracks": "Alle Spuren (Standard)",
     },
     'es': {
         "btn_analyze": "Analizar",
@@ -1391,6 +1403,10 @@ TRANS = {
         "btn_run_standalone_silence": "Ejecutar",
         "txt_initializing_fast_silence": "Inicializando detección...",
         "txt_initializing_standalone_silence": "Inicializando detección...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "No se detectaron timelines",
+        "msg_no_audio_tracks_detected": "No se detectaron pistas de audio",
+        "txt_all_tracks": "Todas las pistas (predeterminado)",
     },
     'fr': {
         "btn_analyze": "Analyser",
@@ -1647,6 +1663,10 @@ TRANS = {
         "btn_run_standalone_silence": "Lancer",
         "txt_initializing_fast_silence": "Initialisation de la détection...",
         "txt_initializing_standalone_silence": "Initialisation de la détection...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Aucune timeline détectée",
+        "msg_no_audio_tracks_detected": "Aucune piste audio détectée",
+        "txt_all_tracks": "Toutes les pistes (par défaut)",
     },
     'it': {
         "btn_analyze": "Analizza",
@@ -1903,6 +1923,10 @@ TRANS = {
         "btn_run_standalone_silence": "Avvia",
         "txt_initializing_fast_silence": "Inizializzazione rilevamento...",
         "txt_initializing_standalone_silence": "Inizializzazione rilevamento...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Nessuna timeline rilevata",
+        "msg_no_audio_tracks_detected": "Nessuna traccia audio rilevata",
+        "txt_all_tracks": "Tutte le tracce (predefinito)",
     },
     'pt': {
         "btn_analyze": "Analisar",
@@ -2159,6 +2183,10 @@ TRANS = {
         "btn_run_standalone_silence": "Executar",
         "txt_initializing_fast_silence": "Inicializando detecção...",
         "txt_initializing_standalone_silence": "Inicializando detecção...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Nenhuma timeline detectada",
+        "msg_no_audio_tracks_detected": "Nenhuma faixa de áudio detectada",
+        "txt_all_tracks": "Todas as faixas (padrão)",
     },
     'uk': {
         "btn_analyze": "Аналізувати",
@@ -2415,6 +2443,10 @@ TRANS = {
         "btn_run_standalone_silence": "Запустити",
         "txt_initializing_fast_silence": "Ініціалізація виявлення...",
         "txt_initializing_standalone_silence": "Ініціалізація виявлення...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Таймлайни не виявлено",
+        "msg_no_audio_tracks_detected": "Аудіодоріжки не виявлено",
+        "txt_all_tracks": "Усі доріжки (за замовчуванням)",
     },
     'nl': {
         "btn_analyze": "Analyseren",
@@ -2671,6 +2703,10 @@ TRANS = {
         "btn_run_standalone_silence": "Uitvoeren",
         "txt_initializing_fast_silence": "Stiltedetectie initialiseren...",
         "txt_initializing_standalone_silence": "Stiltedetectie initialiseren...",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Geen timelines gedetecteerd",
+        "msg_no_audio_tracks_detected": "Geen audiosporen gedetecteerd",
+        "txt_all_tracks": "Alle sporen (standaard)",
     },
     'ru': {
         "btn_analyze": "Анализ",
@@ -2929,6 +2965,10 @@ TRANS = {
         "txt_initializing_standalone_silence": "Инициализация обнаружения...",
         # ── Fix: Russian tab_audio_sync was Ukrainian ─────────────────────────
         "tab_audio_sync": "Синхронизация аудио",
+        # ── Timeline / Track selection ──────────────────────────────────────────
+        "msg_no_timelines_detected": "Таймлайны не обнаружены",
+        "msg_no_audio_tracks_detected": "Аудиодорожки не обнаружены",
+        "txt_all_tracks": "Все дорожки (по умолчанию)",
     },
 }
 
