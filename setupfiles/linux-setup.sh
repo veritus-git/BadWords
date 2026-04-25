@@ -168,20 +168,57 @@ if [ "$WIPE_CHOICE" -eq 4 ]; then
 fi
 
 # ==========================================
-# 3. SOURCE VERIFICATION (For Installs Only)
+# 3. SOURCE FETCH (Local vs Web)
 # ==========================================
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SOURCE_PATH="$DIR/$SOURCE_FOLDER_NAME"
-ASSETS_PATH="$DIR/$ASSETS_FOLDER_NAME"
+REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip"
 
-if [ ! -d "$SOURCE_PATH" ]; then
-    echo -e "${RED}[ERROR] Folder '$SOURCE_FOLDER_NAME' not found in '$DIR'!${NC}"
-    echo -e "${YELLOW}Please extract the entire release archive before running the installer.${NC}"
-    exit 1
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+LOCAL_SRC="$DIR/$SOURCE_FOLDER_NAME"
+LOCAL_ASSETS="$DIR/$ASSETS_FOLDER_NAME"
+
+if [ -d "$LOCAL_SRC" ] && [ -f "$LOCAL_SRC/main.py" ]; then
+    echo -e "${GREEN}[OK] Local source files detected. Installing from local files.${NC}"
+    SOURCE_PATH="$LOCAL_SRC"
+    ASSETS_PATH="$LOCAL_ASSETS"
+else
+    echo -e "${YELLOW}[INFO] Local source not found (Running via curl one-liner).${NC}"
+    echo -e "${CYAN}[DOWNLOADING] Fetching latest source code from GitLab...${NC}"
+    
+    TMP_DL_DIR=$(mktemp -d)
+    ZIP_PATH="$TMP_DL_DIR/repo.zip"
+    
+    # Próbujemy curl lub wget
+    if command -v curl &> /dev/null; then
+        curl -fsSL "$REPO_ZIP_URL" -o "$ZIP_PATH"
+    elif command -v wget &> /dev/null; then
+        wget -qO "$ZIP_PATH" "$REPO_ZIP_URL"
+    else
+        echo -e "${RED}[ERROR] 'curl' or 'wget' is required to download source.${NC}"
+        exit 1
+    fi
+    
+    echo -e "${CYAN}[EXTRACTING] Unpacking source...${NC}"
+    # Używamy unzip jeśli istnieje, inaczej modułu zipfile pythona3
+    if command -v unzip &> /dev/null; then
+        unzip -q -o "$ZIP_PATH" -d "$TMP_DL_DIR"
+    else
+        python3 -m zipfile -e "$ZIP_PATH" "$TMP_DL_DIR"
+    fi
+    
+    EXTRACTED_DIR=$(find "$TMP_DL_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+    
+    if [ -d "$EXTRACTED_DIR/$SOURCE_FOLDER_NAME" ]; then
+        SOURCE_PATH="$EXTRACTED_DIR/$SOURCE_FOLDER_NAME"
+        ASSETS_PATH="$EXTRACTED_DIR/$ASSETS_FOLDER_NAME"
+        echo -e "${GREEN}[OK] Download and extraction complete.${NC}"
+    else
+        echo -e "${RED}[ERROR] Failed to extract source properly. Check repository URL.${NC}"
+        exit 1
+    fi
 fi
 
 if [ ! -f "$SOURCE_PATH/main.py" ]; then
-    echo -e "${RED}[ERROR] Missing 'main.py' in '$SOURCE_FOLDER_NAME'!${NC}"
+    echo -e "${RED}[ERROR] Missing 'main.py' in '$SOURCE_PATH'!${NC}"
     exit 1
 fi
 
