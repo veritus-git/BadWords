@@ -11,11 +11,12 @@ in DaVinci Resolve using OpenAI Whisper and FFmpeg.
 **[Windows](source%20files/Windows%20GUIDE.md)**
 
 ### Downloads:
+
 [![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)]() 
-[![Download](https://img.shields.io/badge/Download_Latest_Windows_Installer-333333?style=for-the-badge)](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest/downloads/Badwords%20Windows%20Latest.exe)
+[![Download](https://img.shields.io/badge/Download_Latest_Windows_Installer-333333?style=for-the-badge)](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest/downloads/BadWords-Windows-Installer.exe)
 
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)]() 
-[![Download](https://img.shields.io/badge/Download_Latest_Linux_Installer-333333?style=for-the-badge)](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest/downloads/BadWords%20Linux%20Latest.zip)
+[![Download](https://img.shields.io/badge/Download_Latest_Linux_Installer-333333?style=for-the-badge)](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest/downloads/BadWords-Linux-Installer.zip)
 
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)]() [![Download](https://img.shields.io/badge/Maybe_Someday!-333333?style=for-the-badge)](link)
 
