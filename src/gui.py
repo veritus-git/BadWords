@@ -3911,6 +3911,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         btn_export_m = QPushButton(self.txt("btn_export_markers"))
         btn_export_m.setObjectName("btn_ghost_sm")
+        btn_export_m.setStyleSheet("padding: 0 14px;")
         btn_export_m.setFixedHeight(30)
         btn_export_m.setCursor(Qt.PointingHandCursor)
         btn_export_m.clicked.connect(self._on_export_markers)
@@ -3918,6 +3919,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         btn_import_m = QPushButton(self.txt("btn_import_markers"))
         btn_import_m.setObjectName("btn_ghost_sm")
+        btn_import_m.setStyleSheet("padding: 0 14px;")
         btn_import_m.setFixedHeight(30)
         btn_import_m.setCursor(Qt.PointingHandCursor)
         btn_import_m.clicked.connect(self._on_import_markers)
