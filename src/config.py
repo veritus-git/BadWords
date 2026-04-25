@@ -76,9 +76,9 @@ MENU_FG = "#ffffff"
 GEAR_COLOR = "#a0a0a0"
 
 # Buttons
-BTN_BG = "#5865F2"             # Blurple
+BTN_BG = "#23a559"             
 BTN_FG = "#ffffff"
-BTN_ACTIVE = "#4752c4"
+BTN_ACTIVE = "#1e8f4c"
 
 BTN_GHOST_BG = "#404040"
 BTN_GHOST_ACTIVE = "#505050"
@@ -92,7 +92,7 @@ CHECKBOX_BG = "white"
 # Progress Bar
 PROGRESS_HEIGHT = 24
 PROGRESS_TRACK_COLOR = "#333333"
-PROGRESS_FILL_COLOR = "#23a559" 
+PROGRESS_FILL_COLOR = "#23a559"
 STATUS_TEXT_COLOR = "#eeeeee"
 
 # --- Word Marking Colors ---

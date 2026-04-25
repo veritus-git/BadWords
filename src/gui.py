@@ -29,13 +29,18 @@ from PySide6.QtWidgets import (
     QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
     QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
     QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
+    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
     QVariantAnimation, QEasingCurve, QAbstractAnimation,
     QPropertyAnimation,
 )
-from PySide6.QtGui import QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, QCursor
+from PySide6.QtGui import (
+    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
+    QCursor, QDrag, QPainter
+)
+from PySide6.QtCore import QMimeData
 
 import config
 import osdoc
@@ -49,6 +54,12 @@ RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Language
 # ==========================================
 # HELPERS
 # ==========================================
+
+class ActivityPanel(QFrame):
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#212121"))
+        super().paintEvent(event)
 
 def _app_icon() -> QIcon:
     """Load application icon from the install directory (icon.ico on Windows, icon.png elsewhere)."""
@@ -558,31 +569,55 @@ class IDETooltip(QLabel):
 class SidebarButton(QPushButton):
     """
     Static sidebar item with a fixed 40x40 size and VS Code style static tooltip.
+    Now draggable to allow panel repositioning.
     """
-    def __init__(self, icon_text: str, label_text: str, tooltip_widget=None, is_right_side: bool = False, parent=None):
-        super().__init__(icon_text, parent=parent)
+    def __init__(self, icon_text: str, label_text: str, activity_id: str, tooltip_widget=None, is_right_side: bool = False, parent=None):
+        super().__init__()
+        if parent:
+            self.setParent(parent)
+        self.setText(icon_text)
+        self.activity_id = activity_id
         self.setFixedSize(40, 40)
         self.setCursor(Qt.PointingHandCursor)
         self.custom_tooltip_text = label_text
         self.is_right_side = is_right_side
         self.tooltip_widget = tooltip_widget
+        self.drag_start_pos = None
         
         self.tooltip_timer = QTimer(self)
         self.tooltip_timer.setSingleShot(True)
         self.tooltip_timer.timeout.connect(self._show_tooltip)
         
-        self.setStyleSheet("""
-            QPushButton {
-                color: white; 
-                font-size: 24px; 
-                background: transparent; 
-                border-radius: 4px;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: """ + config.BTN_GHOST_BG + """;
-            }
-        """)
+        self.is_active = False
+        self.set_active(False)
+
+    def set_active(self, is_active: bool):
+        self.is_active = is_active
+        if is_active:
+            border_css = "border-left" if self.is_right_side else "border-right"
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    color: white; 
+                    font-size: 24px; 
+                    background-color: #333333; 
+                    border-radius: 4px;
+                    border: none;
+                    {border_css}: 2px solid {config.BTN_BG};
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    color: white; 
+                    font-size: 24px; 
+                    background: transparent; 
+                    border-radius: 4px;
+                    border: none;
+                }}
+                QPushButton:hover {{
+                    background-color: {config.BTN_GHOST_BG};
+                }}
+            """)
 
     def enterEvent(self, event):
         self.tooltip_timer.start(750)
@@ -598,7 +633,141 @@ class SidebarButton(QPushButton):
         if self.tooltip_widget:
             self.tooltip_widget.show_at(self, self.custom_tooltip_text, self.is_right_side)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        if not self.drag_start_pos:
+            return
+        if (event.position().toPoint() - self.drag_start_pos).manhattanLength() < QGuiApplication.styleHints().startDragDistance():
+            return
+            
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setText(self.activity_id)
+        drag.setMimeData(mime)
+        
+        # Snapshot the button for the drag icon
+        pixmap = self.grab()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.position().toPoint())
+        
+        # Execute drag
+        drag.exec(Qt.MoveAction)
+
+
+class SidebarFrame(QFrame):
+    """
+    A drop-zone container for SidebarButtons
+    """
+    def __init__(self, parent=None):
+        super().__init__()
+        if parent:
+            self.setParent(parent)
+        self.setAcceptDrops(True)
+        self.drop_indicator = QFrame()
+        self.drop_indicator.setStyleSheet("background-color: transparent; border: 1px dashed #555; border-radius: 4px;")
+        self.drop_indicator.setMinimumHeight(0)
+        self.drop_indicator.hide()
+        self.anim = QPropertyAnimation(self.drop_indicator, b"minimumHeight")
+        self.anim.setDuration(150)
+        self.current_drop_idx = -1
+        self._last_drop_index = -1
+        
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            self.drop_indicator.show()
+            self.anim.stop()
+            self.anim.setStartValue(self.drop_indicator.minimumHeight())
+            self.anim.setEndValue(40)
+            self.anim.start()
+            
+    def dragMoveEvent(self, event):
+        if not event.mimeData().hasText():
+            return
+            
+        layout = self.layout()
+        drop_y = event.position().y()
+        target_idx = 0
+        
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if widget is None or widget == self.drop_indicator:
+                    continue
+                if drop_y < widget.geometry().center().y():
+                    break
+                else:
+                    target_idx += 1
+                    
+        max_idx = layout.count() - 2
+        target_idx = min(target_idx, max_idx)
+                    
+        if target_idx != self._last_drop_index:
+            self._last_drop_index = target_idx
+            layout.insertWidget(target_idx, self.drop_indicator)
+            self.anim.stop()
+            self.anim.setStartValue(self.drop_indicator.minimumHeight())
+            self.anim.setEndValue(40)
+            self.anim.start()
+            
+        event.accept()
+
+    def dragLeaveEvent(self, event):
+        self.anim.stop()
+        self.anim.setStartValue(self.drop_indicator.minimumHeight())
+        self.anim.setEndValue(0)
+        try:
+            self.anim.finished.disconnect()
+        except RuntimeError:
+            pass
+        self.anim.finished.connect(self.drop_indicator.hide)
+        self.anim.start()
+
+    def dropEvent(self, event):
+        self.anim.stop()
+        self.drop_indicator.hide()
+        self.drop_indicator.setMinimumHeight(0)
+        self.drop_indicator.setParent(None)
+        self.current_drop_idx = -1
+        self._last_drop_index = -1
+        
+        activity_id = event.mimeData().text()
+        source_btn = event.source()
+        if isinstance(source_btn, SidebarButton) and source_btn.activity_id == activity_id:
+            layout = self.layout()
+            drop_y = event.position().y()
+            
+            target_idx = layout.count() - 1
+            for i in range(layout.count() - 1):
+                item = layout.itemAt(i)
+                if item and item.widget():
+                    widget = item.widget()
+                    if drop_y < widget.geometry().center().y():
+                        target_idx = i
+                        break
+                        
+            max_idx = layout.count() - 2
+            target_idx = min(target_idx, max_idx)
+                        
+            layout.insertWidget(target_idx, source_btn)
+            event.acceptProposedAction()
+            
+            main_window = self.window()
+            is_right = (hasattr(main_window, "_sidebar_right") and self == main_window._sidebar_right)
+            source_btn.is_right_side = is_right
+            if getattr(source_btn, "is_active", False):
+                source_btn.set_active(True)
+
+
 class CustomDropdown(QPushButton):
+    valueChanged = Signal(str)
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
@@ -687,9 +856,11 @@ class CustomDropdown(QPushButton):
 
     def _on_item_clicked(self, item, popup):
         self.setText(item.text())
+        self.valueChanged.emit(item.text())
         popup.close()
 
 class SearchableDropdown(QPushButton):
+    valueChanged = Signal(str)
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
@@ -800,13 +971,72 @@ class SearchableDropdown(QPushButton):
             item = self.list_widget.item(i)
             if not item.isHidden():
                 self.setText(item.text())
+                self.valueChanged.emit(item.text())
                 popup.close()
                 return
         popup.close()
 
     def _on_item_clicked(self, item, popup):
         self.setText(item.text())
+        self.valueChanged.emit(item.text())
         popup.close()
+
+
+class SettingsDialog(QDialog):
+    """
+    Stage 5: Audio Sync and Options Dialog
+    """
+    def __init__(self, engine, parent=None):
+        super().__init__(parent)
+        self.engine = engine
+        self.setWindowTitle("Settings")
+        self.setWindowFlags(Qt.Tool | Qt.Dialog)
+        self.setFixedSize(300, 250)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {config.BG_COLOR}; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11px; }}
+            QCheckBox {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11px; }}
+            QDoubleSpinBox {{ background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; padding: 3px; }}
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        
+        # Audio Sync Settings
+        lbl_sync = QLabel("<b>Audio Sync (Seconds)</b>")
+        layout.addWidget(lbl_sync)
+        
+        form = QFormLayout()
+        self.spin_offset = QDoubleSpinBox()
+        self.spin_offset.setRange(-10, 10)
+        self.spin_offset.setSingleStep(0.1)
+        self.spin_pad = QDoubleSpinBox()
+        self.spin_pad.setRange(0, 5)
+        self.spin_pad.setSingleStep(0.1)
+        self.spin_snap = QDoubleSpinBox()
+        self.spin_snap.setRange(0, 5)
+        self.spin_snap.setSingleStep(0.1)
+        
+        form.addRow("Offset (s):", self.spin_offset)
+        form.addRow("Padding (s):", self.spin_pad)
+        form.addRow("Snap Max (s):", self.spin_snap)
+        layout.addLayout(form)
+        
+        # Advanced View Options
+        self.chk_show_inaudible = QCheckBox("Show inaudible fragments")
+        self.chk_mark_inaudible = QCheckBox("Mark inaudible fragments with brown")
+        layout.addWidget(self.chk_show_inaudible)
+        layout.addWidget(self.chk_mark_inaudible)
+        
+        # Save Button
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        btn_ok = QPushButton("Save")
+        btn_ok.setFixedSize(80, 30)
+        btn_ok.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; border-radius: 4px;")
+        btn_ok.clicked.connect(self.accept)
+        btn_box.addWidget(btn_ok)
+        layout.addLayout(btn_box)
 
 
 # ==========================================
@@ -833,6 +1063,15 @@ class BadWordsGUI(QMainWindow):
         # This callback is injected by AppController in main.py
         self.closeEvent_callback = None
         self.shared_tooltip = IDETooltip()
+        
+        # Declare panel containers early for Pyre inference
+        self._sidebar_left: SidebarFrame = None
+        self._sidebar_right: SidebarFrame = None
+        self._panel_left: QSplitter = None
+        self._panel_right: QSplitter = None
+        
+        self._open_left = []
+        self._open_right = []
 
         # --- Language preference ---
         prefs     = engine.load_preferences() or {}
@@ -877,8 +1116,8 @@ class BadWordsGUI(QMainWindow):
         """)
 
         # --- Build UI ---
-        self._build_stacked_widget()   # QStackedWidget central area
         self._build_sidebars()         # left + right activity frames
+        self._build_central_workspace() # QStackedWidget central area + panels
 
         # --- Maximize on the monitor the cursor is on ---
         self._maximize_on_active_screen()
@@ -888,12 +1127,6 @@ class BadWordsGUI(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, '_sidebar_left') and self._sidebar_left is not None:
-            w = self._sidebar_left.width()
-            self._sidebar_left.setGeometry(0, 0, w, self.height())
-        if hasattr(self, '_sidebar_right') and self._sidebar_right is not None:
-            w = self._sidebar_right.width()
-            self._sidebar_right.setGeometry(self.width() - w, 0, w, self.height())
 
     def closeEvent(self, event):
         """Native PySide6 close event override."""
@@ -910,63 +1143,275 @@ class BadWordsGUI(QMainWindow):
         """
         Left and right vertical activity frames overlaying the main window.
         """
-        self._sidebar_left = QFrame(self)
+        self._sidebar_left = SidebarFrame(self)
         self._sidebar_left.setFixedWidth(50)
         self._sidebar_left.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         left_layout = QVBoxLayout(self._sidebar_left)
         left_layout.setContentsMargins(5, 6, 5, 6)
         left_layout.setSpacing(6)
         
-        btn_script = SidebarButton("\U0001f4dd", "Script", tooltip_widget=self.shared_tooltip)
-        btn_script.clicked.connect(self._on_nav_script)
+        btn_script = SidebarButton("\U0001f4dd", "Script", "script", tooltip_widget=self.shared_tooltip)
+        btn_script.clicked.connect(lambda: self._toggle_activity("script"))
         left_layout.addWidget(btn_script)
         
-        btn_analysis = SidebarButton("\U0001f4ca", "Analysis", tooltip_widget=self.shared_tooltip)
-        btn_analysis.clicked.connect(self._on_nav_analysis)
+        btn_analysis = SidebarButton("\U0001f4ca", "Analysis", "analyze", tooltip_widget=self.shared_tooltip)
+        btn_analysis.clicked.connect(lambda: self._toggle_activity("analyze"))
         left_layout.addWidget(btn_analysis)
         
         left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
-        btn_settings = SidebarButton("\u2699", "Settings", tooltip_widget=self.shared_tooltip)
+        btn_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip)
         btn_settings.clicked.connect(self._on_settings)
         left_layout.addWidget(btn_settings)
         
         self._sidebar_left.show()
 
-        self._sidebar_right = QFrame(self)
+        self._sidebar_right = SidebarFrame(self)
         self._sidebar_right.setFixedWidth(50)
         self._sidebar_right.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         right_layout = QVBoxLayout(self._sidebar_right)
         right_layout.setContentsMargins(5, 6, 5, 6)
         right_layout.setSpacing(6)
         
-        btn_markers = SidebarButton("\u2702", "Markers", tooltip_widget=self.shared_tooltip, is_right_side=True)
-        btn_markers.clicked.connect(self._on_nav_markers)
+        btn_markers = SidebarButton("\u2702", "Markers", "toolbox", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        btn_markers.clicked.connect(lambda: self._toggle_activity("toolbox"))
         right_layout.addWidget(btn_markers)
         
-        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        btn_automation = SidebarButton("\U0001f5e8", "Automation", "automation", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        btn_automation.clicked.connect(lambda: self._toggle_activity("automation"))
+        right_layout.addWidget(btn_automation)
         
-        self._sidebar_right.show()
+        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-    def _build_stacked_widget(self):
+    def _build_central_workspace(self):
         """
-        Central widget is a QStackedWidget with three pages:
-          0 — Welcome / Config
-          1 — Processing (progress placeholder)
-          2 — Editor    (editor placeholder)
+        Main container incorporating sidebars, panels, and central stack using QHBoxLayout.
         """
-        self._stack = QStackedWidget(self)
+        main_container = QWidget()
+        main_layout = QHBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Build Panels
+        self._panel_left = QSplitter(Qt.Vertical)
+        self._panel_left.setFixedWidth(280)
+        self._panel_left.setObjectName("leftPanel")
+        self._panel_left.setStyleSheet("QSplitter { background: transparent; } QSplitter::handle { background: transparent; height: 6px; }")
+        self._panel_left.hide()
+
+        self._stack = QStackedWidget()
         self._stack.setObjectName("stack")
-        self._stack.setStyleSheet(
-            f"QStackedWidget#stack {{ background-color: {config.BG_COLOR}; }}"
-        )
-
+        self._stack.setStyleSheet(f"QStackedWidget#stack {{ background-color: {config.BG_COLOR}; }}")
         self._stack.addWidget(self._build_welcome_screen())   # index 0
         self._stack.addWidget(self._build_page_processing())  # index 1
         self._stack.addWidget(self._build_page_editor())      # index 2
-
         self._stack.setCurrentIndex(0)
-        self.setCentralWidget(self._stack)
+
+        self._panel_right = QSplitter(Qt.Vertical)
+        self._panel_right.setFixedWidth(280)
+        self._panel_right.setObjectName("rightPanel")
+        self._panel_right.setStyleSheet("QSplitter { background: transparent; } QSplitter::handle { background: transparent; height: 6px; }")
+        self._panel_right.hide()
+        
+        self.activities = {}
+        self.active_activity = None
+        self._build_activities()
+
+        # Splitter layout for panels and stack
+        self._main_h_splitter = QSplitter(Qt.Horizontal)
+        self._main_h_splitter.addWidget(self._panel_left)
+        self._main_h_splitter.addWidget(self._stack)
+        self._main_h_splitter.addWidget(self._panel_right)
+        self._main_h_splitter.setHandleWidth(1)
+        self._main_h_splitter.setStyleSheet("QSplitter::handle { background-color: #1a1a1a; }")
+
+        # Add everything to main layout in exact order
+        main_layout.addWidget(self._sidebar_left)
+        main_layout.addWidget(self._main_h_splitter)
+        main_layout.addWidget(self._sidebar_right)
+
+        self.setCentralWidget(main_container)
+
+    def _toggle_activity(self, activity_id: str):
+        target_btn = None
+        target_splitter = None
+        
+        for i in range(self._sidebar_left.layout().count()):
+            widget = self._sidebar_left.layout().itemAt(i).widget()
+            if isinstance(widget, SidebarButton) and widget.activity_id == activity_id:
+                target_btn = widget
+                target_splitter = self._panel_left
+                break
+                
+        if not target_btn:
+            for i in range(self._sidebar_right.layout().count()):
+                widget = self._sidebar_right.layout().itemAt(i).widget()
+                if isinstance(widget, SidebarButton) and widget.activity_id == activity_id:
+                    target_btn = widget
+                    target_splitter = self._panel_right
+                    break
+                    
+        if not target_btn or not target_splitter:
+            return  # Activity button not found in sidebars
+
+        assert target_btn is not None
+        assert target_splitter is not None
+
+        activity_widget = self.activities[activity_id]
+        
+        # Check if the widget is currently inside a visible splitter
+        is_open = activity_widget.parent() in (self._panel_left, self._panel_right) and activity_widget.isVisible()
+        
+        if is_open:
+            activity_widget.setParent(None)
+            activity_widget.hide()
+            target_btn.set_active(False)
+            if target_splitter.count() == 0:
+                target_splitter.hide()
+                
+            if target_splitter == self._panel_left and activity_id in self._open_left:
+                self._open_left.remove(activity_id)
+            elif target_splitter == self._panel_right and activity_id in self._open_right:
+                self._open_right.remove(activity_id)
+        else:
+            if activity_widget.parent():
+                activity_widget.setParent(None)
+                
+            target_splitter.addWidget(activity_widget)
+            activity_widget.show()
+            target_btn.set_active(True)
+            target_splitter.show()
+            self._main_h_splitter.setSizes([280, 2000, 280])
+            
+            active_list = self._open_left if target_splitter == self._panel_left else self._open_right
+            active_list.append(activity_id)
+            
+            if len(active_list) > 3:
+                oldest_id = active_list.pop(0)
+                oldest_widget = self.activities[oldest_id]
+                oldest_widget.setParent(None)
+                oldest_widget.hide()
+                
+                sidebar = self._sidebar_left if target_splitter == self._panel_left else self._sidebar_right
+                for i in range(sidebar.layout().count()):
+                    btn = sidebar.layout().itemAt(i).widget()
+                    if isinstance(btn, SidebarButton) and getattr(btn, "activity_id", None) == oldest_id:
+                        btn.set_active(False)
+                        break
+
+    def _build_activities(self):
+        def _wrap_activity(widget: QWidget) -> ActivityPanel:
+            container = ActivityPanel()
+            container.setObjectName("activityContainer")
+            container.setAttribute(Qt.WA_StyledBackground, True)
+            container.setStyleSheet("""
+                QLabel, QCheckBox, QRadioButton { 
+                    background: transparent; 
+                    border: none; 
+                }
+            """)
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(6, 6, 6, 6)
+            layout.addWidget(widget)
+            return container
+
+        # Activity 1: Script
+        p_script = QWidget()
+        l_script = QVBoxLayout(p_script)
+        text_edit = QTextEdit()
+        text_edit.setStyleSheet("QTextEdit { background-color: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 3px; padding: 5px; color: #ffffff; }")
+        text_edit.setPlaceholderText("Paste script here...")
+        text_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        l_script.addWidget(text_edit)
+        
+        btn_row = QHBoxLayout()
+        btn_import = QPushButton("Import Script")
+        btn_import.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; padding: 4px; border: 1px solid #3a3a3a;")
+        btn_clear = QPushButton("Clear")
+        btn_clear.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; padding: 4px; border: 1px solid #3a3a3a;")
+        btn_row.addWidget(btn_import)
+        btn_row.addWidget(btn_clear)
+        l_script.addLayout(btn_row)
+        self.activities["script"] = _wrap_activity(p_script)
+        
+        # Activity 2: Analyze
+        p_analyze = QWidget()
+        l_analyze = QVBoxLayout(p_analyze)
+        l_analyze.addStretch(1)
+        l_analyze.setSpacing(15)
+        
+        btn_analyze = QPushButton("ANALYZE")
+        btn_analyze.setMinimumHeight(40)
+        btn_analyze.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 14px; border: none; border-radius: 4px;")
+        l_analyze.addWidget(btn_analyze)
+        
+        btn_replace = QPushButton("Replace typos in transcript\nwith text from script")
+        btn_replace.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; padding: 4px; border: 1px solid #3a3a3a;")
+        l_analyze.addWidget(btn_replace)
+        
+        btn_undo = QPushButton("Undo Replace")
+        btn_undo.setStyleSheet(f"background-color: #444444; color: #aaaaaa; padding: 2px; border: none;")
+        l_analyze.addWidget(btn_undo)
+        
+        btn_clear_transcript = QPushButton("Clear Transcript")
+        btn_clear_transcript.setStyleSheet(f"background-color: #1e1e1e; color: #e74c3c; padding: 4px; border: 1px solid #3a3a3a;")
+        l_analyze.addWidget(btn_clear_transcript)
+        
+        l_analyze.addStretch(1)
+        self.activities["analyze"] = _wrap_activity(p_analyze)
+        
+        # Activity 3: Toolbox
+        p_toolbox = QWidget()
+        l_toolbox = QVBoxLayout(p_toolbox)
+        l_toolbox.addStretch(1)
+        l_toolbox.setSpacing(15)
+        
+        l_toolbox.addWidget(QRadioButton("RED - Cut/Filler"))
+        l_toolbox.addWidget(QRadioButton("BLUE - Retake"))
+        l_toolbox.addWidget(QRadioButton("GREEN - Typo"))
+        l_toolbox.addWidget(QRadioButton("ERASER - Clear"))
+        
+        lbl_dummy = QLabel("add custom marker...")
+        lbl_dummy.setStyleSheet(f"color: #888888; text-decoration: underline;")
+        l_toolbox.addWidget(lbl_dummy)
+        
+        l_toolbox.addWidget(QCheckBox("Delete red clips automatically"))
+        
+        l_toolbox.addStretch(1)
+        self.activities["toolbox"] = _wrap_activity(p_toolbox)
+        
+        # Activity 4: Automation
+        p_automation = QWidget()
+        l_automation = QVBoxLayout(p_automation)
+        l_automation.addStretch(1)
+        l_automation.setSpacing(15)
+        
+        fillers_edit = QTextEdit()
+        fillers_edit.setStyleSheet("QTextEdit { background-color: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 3px; padding: 5px; color: #ffffff; }")
+        fillers_edit.setMaximumHeight(60)
+        l_automation.addWidget(QLabel("Filler Words:"))
+        l_automation.addWidget(fillers_edit)
+        l_automation.addWidget(QCheckBox("Mark filler words automatically"))
+        
+        form = QFormLayout()
+        spin_threshold = QDoubleSpinBox()
+        spin_threshold.setRange(-100, 0)
+        spin_threshold.setStyleSheet("QDoubleSpinBox { background-color: #1e1e1e; color: #ffffff; border: 1px solid #3a3a3a; padding: 3px; }")
+        spin_padding = QDoubleSpinBox()
+        spin_padding.setRange(0, 10)
+        spin_padding.setStyleSheet("QDoubleSpinBox { background-color: #1e1e1e; color: #ffffff; border: 1px solid #3a3a3a; padding: 3px; }")
+        form.addRow("Threshold (dB):", spin_threshold)
+        form.addRow("Padding (s):", spin_padding)
+        l_automation.addLayout(form)
+        
+        l_automation.addWidget(QCheckBox("Detect and cut silence"))
+        l_automation.addWidget(QCheckBox("Detect and mark silence"))
+        
+        l_automation.addStretch(1)
+        self.activities["automation"] = _wrap_activity(p_automation)
+
+    # Removed deprecated _on_nav_script and _on_nav_analysis
+
 
     def _build_welcome_screen(self) -> QWidget:
         """
@@ -1037,7 +1482,12 @@ class BadWordsGUI(QMainWindow):
         # ── Language — editable SearchableDropdown ────────────────────────────
         lang_items = list(config.SUPPORTED_LANGUAGES.values())
         self._combo_lang = SearchableDropdown(lang_items)
-        self._combo_lang.setText("Auto")
+        prefs = self.engine.load_preferences() or {}
+        if "lang" in prefs and prefs["lang"] in lang_items:
+            self._combo_lang.setText(prefs["lang"])
+        else:
+            self._combo_lang.setText("Auto")
+        self._combo_lang.valueChanged.connect(lambda v: self.engine.save_preferences({"gui_lang": v}))
         inner_layout.addLayout(_row(self.txt("lbl_lang"), self._combo_lang))
         inner_layout.addSpacing(10)
 
@@ -1051,14 +1501,22 @@ class BadWordsGUI(QMainWindow):
             "Large  (Accurate, 10 GB)",
         ]
         self._combo_model = CustomDropdown(model_items)
-        self._combo_model.setText(model_items[4])
+        if "model" in prefs and prefs["model"] in model_items:
+            self._combo_model.setText(prefs["model"])
+        else:
+            self._combo_model.setText(model_items[4])
+        self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         inner_layout.addLayout(_row(self.txt("lbl_model"), self._combo_model))
         inner_layout.addSpacing(10)
 
         # ── Device — non-editable CustomDropdown ──────────────────────────
         device_items = ["Auto", "CPU", "GPU (CUDA)"]
         self._combo_device = CustomDropdown(device_items)
-        self._combo_device.setText("Auto")
+        if "device" in prefs and prefs["device"] in device_items:
+            self._combo_device.setText(prefs["device"])
+        else:
+            self._combo_device.setText("Auto")
+        self._combo_device.valueChanged.connect(lambda v: self.engine.save_preferences({"device": v}))
         inner_layout.addLayout(_row(self.txt("lbl_device"), self._combo_device))
         inner_layout.addSpacing(24)
 
@@ -1194,8 +1652,9 @@ class BadWordsGUI(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_settings(self):
-        """Placeholder: open settings panel (Stage 4+)."""
-        print("[BadWordsGUI] Settings action triggered (Stage 4 TODO)")
+        """Open settings panel."""
+        dlg = SettingsDialog(self.engine, self)
+        dlg.exec()
 
     def _on_import_project(self):
         """Placeholder: import project (Stage 4+)."""
