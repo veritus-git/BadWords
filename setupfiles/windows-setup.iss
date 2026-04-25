@@ -298,6 +298,8 @@ begin
              (CompareText(FileName, 'models') = 0) or
              (CompareText(FileName, 'saves') = 0) or
              (CompareText(FileName, 'pref.json') = 0) or
+             (CompareText(FileName, 'user.json') = 0) or
+             (CompareText(FileName, 'settings.json') = 0) or
              (CompareText(FileName, 'badwords_debug.log') = 0)
           ) then
           begin
@@ -343,7 +345,14 @@ begin
     RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords');
 
     if InstallModePage.Values[2] then // Complete Reset
-      SmartCleanup(False, False)
+    begin
+      // Backup user data before full wipe
+      if FileExists(ExpandConstant('{app}\user.json')) then
+        FileCopy(ExpandConstant('{app}\user.json'), ExpandConstant('{tmp}\bw_user.json'), False);
+      if FileExists(ExpandConstant('{app}\settings.json')) then
+        FileCopy(ExpandConstant('{app}\settings.json'), ExpandConstant('{tmp}\bw_settings.json'), False);
+      SmartCleanup(False, False);
+    end
     else if InstallModePage.Values[1] then // Repair Installation
       SmartCleanup(False, True)
     else // Standard Update
@@ -352,6 +361,15 @@ begin
 
   if CurStep = ssPostInstall then
   begin
+    // Restore user data after Full Wipe + fresh install
+    if InstallModePage.Values[2] then
+    begin
+      if FileExists(ExpandConstant('{tmp}\bw_user.json')) then
+        FileCopy(ExpandConstant('{tmp}\bw_user.json'), ExpandConstant('{app}\user.json'), False);
+      if FileExists(ExpandConstant('{tmp}\bw_settings.json')) then
+        FileCopy(ExpandConstant('{tmp}\bw_settings.json'), ExpandConstant('{app}\settings.json'), False);
+    end;
+
     if WizardIsComponentSelected('nvidia') then GpuFlag := '1' else GpuFlag := '0';
     FFmpegZip := ExpandConstant('{tmp}\ffmpeg.zip');
 

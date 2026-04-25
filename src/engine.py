@@ -656,6 +656,9 @@ except Exception as e:
 
         try:
             lang = settings.get('lang')
+            # Whisper expects None for auto-detection, not the string "auto"
+            if isinstance(lang, str) and lang.lower() == "auto":
+                lang = None
             model = settings.get('model', 'medium').split()[0]
             
             # --- AUTO DEVICE LOGIC & COMPUTE TYPE ---

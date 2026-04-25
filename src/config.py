@@ -51,6 +51,9 @@ UI_FONT_NAME = get_system_font_name()
 DEFAULT_BAD_WORDS = ["yyy", "eee", "aaa", "umm", "uh", "ah", "mhm"]
 SIMILARITY_THRESHOLD = 0.45
 
+# Default filler/hesitation initial prompt for Whisper transcription
+DEFAULT_WHISPER_PROMPT = "yyy, eee, uuu, yhm, yyyy, eeee, aaaa, mhm, aha, umm, uh, ah"
+
 # ==========================================
 # USER DATA DEFAULTS (user.json)
 # Stores user identity and consent state only.
@@ -72,14 +75,21 @@ DEFAULT_SETTINGS = {
     "transcript_font_size":   12,
     "transcript_line_height": 12,
     "transcript_layout":      "segmented",  # "segmented" | "continuous"
+    "view_mode":              "segmented",  # alias used by UI save logic
     "chunk_max_words":        30,
-    "compute_type":           "float16",    # "float16" | "float32" | "int8"
+    "chunk_lookahead":        3,
+    "chunk_min_chars":        7,
+    "compute_type":           "float16",    # legacy alias
+    "ai_compute_type":        "float16",    # "float16" | "int8" | "float32"
     "device":                 "auto",       # "auto" | "cpu" | "gpu"
-    "gui_lang":               "en",         # UI language code (ISO 639-1)
+    "ai_initial_prompt":      DEFAULT_WHISPER_PROMPT,
+    "gui_lang":               "en",
+    "always_on_top":          True,
+    "hidden_panels":          [],
 }
 
 # Keys in DEFAULT_SETTINGS whose change requires an application restart.
-RESTART_REQUIRED_KEYS = ["theme", "compute_type", "device"]
+RESTART_REQUIRED_KEYS = ["theme", "compute_type", "device", "gui_lang", "ai_compute_type"]
 
 # ==========================================
 # COLOR PALETTE
@@ -416,7 +426,22 @@ TRANS = {
         "msg_telemetry": "Hi! 👋\n\nTo help me improve BadWords, do you agree to send a one-time, 100% anonymous ping after installation / update?\n\nOnly the app version and OS type (e.g., Windows) are sent. Audio files, scripts, or personal data are NEVER collected.\n\nGeolocation (country/city) is optional — uncheck the box below to disable it.",
         "btn_telemetry_yes": "I Agree",
         "btn_telemetry_no": "No thanks",
-        "chk_telemetry_geo": "Share your general location (country/city)"
+        "chk_telemetry_geo": "Share your general location (country/city)",
+        "tab_interface": "Interface",
+        "lbl_theme": "Theme",
+        "opt_dark": "Dark",
+        "opt_light": "Light",
+        "lbl_always_on_top": "Always on top",
+        "lbl_hidden_panels": "Hidden panels",
+        "btn_export_settings": "Export Settings",
+        "btn_import_settings": "Import Settings",
+        "tab_transcript": "Transcript",
+        "tab_ai_engine": "AI Engine",
+        "lbl_chunk_max_words": "Max chunk words",
+        "lbl_chunk_lookahead": "Lookahead words",
+        "lbl_chunk_min_chars": "Min chunk chars",
+        "lbl_compute_type": "Compute type",
+        "lbl_initial_prompt": "Initial prompt",
 
     },
     'pl': {
@@ -556,7 +581,22 @@ TRANS = {
         "msg_telemetry": "Cześć! 👋\n\nAby pomóc mi w rozwoju BadWords, czy zgadzasz się na wysłanie jednorazowego, w 100% anonimowego pingu po instalacji / aktualizacji?\n\nWysyłane są tylko wersja aplikacji i typ systemu (np. Windows). Żadne pliki audio, scenariusze ani dane osobiste NIGDY nie są zbierane.\n\nGeolokalizacja (państwo/miasto) jest opcjonalna — odznacz pole poniżej, aby ją wyłączyć.",
         "btn_telemetry_yes": "Zgadzam się",
         "btn_telemetry_no": "Nie, dzięki",
-        "chk_telemetry_geo": "Udostępnij swoją ogólną lokalizację (państwo/miasto)"
+        "chk_telemetry_geo": "Udostępnij swoją ogólną lokalizację (państwo/miasto)",
+        "tab_interface": "Interfejs",
+        "lbl_theme": "Motyw",
+        "opt_dark": "Ciemny",
+        "opt_light": "Jasny",
+        "lbl_always_on_top": "Zawsze na wierzchu",
+        "lbl_hidden_panels": "Ukryte panele",
+        "btn_export_settings": "Eksportuj Ustawienia",
+        "btn_import_settings": "Importuj Ustawienia",
+        "tab_transcript": "Transkrypcja",
+        "tab_ai_engine": "Silnik AI",
+        "lbl_chunk_max_words": "Maks. słów w bloku",
+        "lbl_chunk_lookahead": "Słowa wyprzedzenia",
+        "lbl_chunk_min_chars": "Min. znaków w bloku",
+        "lbl_compute_type": "Tryb obliczeń",
+        "lbl_initial_prompt": "Początkowy prompt",
 
 },
     'de': {
@@ -696,7 +736,23 @@ TRANS = {
         "msg_telemetry": "Hallo! 👋\n\nUm mir bei der Entwicklung von BadWords zu helfen, stimmen Sie zu, nach der Installation / einem Update einen einmaligen, zu 100 % anonymen Ping zu senden?\n\nEs werden nur die App-Version und der OS-Typ gesendet. Audio-Dateien, Skripte oder persönliche Daten werden NIEMALS gesammelt.\n\nDie Geolokalisierung ist optional — deaktivieren Sie das Kästchen unten, um sie auszuschalten.",
         "btn_telemetry_yes": "Ich stimme zu",
         "btn_telemetry_no": "Nein, danke",
-        "chk_telemetry_geo": "Allgemeinen Standort teilen (Land/Stadt)"
+        "chk_telemetry_geo": "Allgemeinen Standort teilen (Land/Stadt)",
+        "tab_interface": "Oberfläche",
+        "lbl_theme": "Design",
+        "opt_dark": "Dunkel",
+        "opt_light": "Hell",
+        "lbl_always_on_top": "Immer im Vordergrund",
+        "lbl_hidden_panels": "Ausgeblendete Panels",
+        "btn_export_settings": "Einstellungen exportieren",
+        "btn_import_settings": "Einstellungen importieren",
+        "tab_transcript": "Transkript",
+        "tab_ai_engine": "KI-Engine",
+        "lbl_chunk_max_words": "Max. Wörter pro Block",
+        "lbl_chunk_lookahead": "Vorschau-Wörter",
+        "lbl_chunk_min_chars": "Min. Zeichen pro Block",
+        "lbl_compute_type": "Rechentyp",
+        "lbl_initial_prompt": "Anfangs-Prompt",
+
 
 },
     'es': {
@@ -836,7 +892,23 @@ TRANS = {
         "msg_telemetry": "¡Hola! 👋\n\nPara ayudarme a mejorar BadWords, ¿aceptas enviar un ping único y 100 % anónimo después de la instalación / actualización?\n\nSolo se envían la versión de la aplicación y el tipo de SO. NUNCA se recopilan archivos de audio, guiones ni datos personales.\n\nLa geolocalización es opcional; desmarca la casilla de abajo para desactivarla.",
         "btn_telemetry_yes": "Acepto",
         "btn_telemetry_no": "No, gracias",
-        "chk_telemetry_geo": "Compartir tu ubicación general (país/ciudad)"
+        "chk_telemetry_geo": "Compartir tu ubicación general (país/ciudad)",
+        "tab_interface": "Interfaz",
+        "lbl_theme": "Tema",
+        "opt_dark": "Oscuro",
+        "opt_light": "Claro",
+        "lbl_always_on_top": "Siempre visible",
+        "lbl_hidden_panels": "Paneles ocultos",
+        "btn_export_settings": "Exportar configuración",
+        "btn_import_settings": "Importar configuración",
+        "tab_transcript": "Transcripción",
+        "tab_ai_engine": "Motor IA",
+        "lbl_chunk_max_words": "Máx. palabras por bloque",
+        "lbl_chunk_lookahead": "Palabras de anticipación",
+        "lbl_chunk_min_chars": "Mín. caracteres por bloque",
+        "lbl_compute_type": "Tipo de cómputo",
+        "lbl_initial_prompt": "Indicación inicial",
+
 
     },
     'fr': {
@@ -976,7 +1048,23 @@ TRANS = {
         "msg_telemetry": "Bonjour ! 👋\n\nPour m'aider à améliorer BadWords, acceptez-vous d'envoyer un ping unique et 100 % anonyme après l'installation / la mise à jour ?\n\nSeules la version de l'application et le type d'OS sont envoyés. Aucun fichier audio ou donnée personnelle n'est JAMAIS collecté.\n\nLa géolocalisation est facultative — décochez la case ci-dessous pour la désactiver.",
         "btn_telemetry_yes": "J'accepte",
         "btn_telemetry_no": "Non merci",
-        "chk_telemetry_geo": "Partager votre position générale (pays/ville)"
+        "chk_telemetry_geo": "Partager votre position générale (pays/ville)",
+        "tab_interface": "Interface",
+        "lbl_theme": "Thème",
+        "opt_dark": "Sombre",
+        "opt_light": "Clair",
+        "lbl_always_on_top": "Toujours au premier plan",
+        "lbl_hidden_panels": "Panneaux masqués",
+        "btn_export_settings": "Exporter les paramètres",
+        "btn_import_settings": "Importer les paramètres",
+        "tab_transcript": "Transcription",
+        "tab_ai_engine": "Moteur IA",
+        "lbl_chunk_max_words": "Mots max. par bloc",
+        "lbl_chunk_lookahead": "Mots d'anticipation",
+        "lbl_chunk_min_chars": "Caractères min. par bloc",
+        "lbl_compute_type": "Type de calcul",
+        "lbl_initial_prompt": "Invite initiale",
+
 
     },
     'it': {
@@ -1116,7 +1204,23 @@ TRANS = {
         "msg_telemetry": "Ciao! 👋\n\nPer aiutarmi a migliorare BadWords, accetti di inviare un ping singolo e al 100% anonimo dopo l'installazione / l'aggiornamento?\n\nVengono inviati solo la versione dell'app e il tipo di SO. NESSUN file audio, script o dato personale viene MAI raccolto.\n\nLa geolocalizzazione è facoltativa — deseleziona la casella qui sotto per disabilitarla.",
         "btn_telemetry_yes": "Accetto",
         "btn_telemetry_no": "No, grazie",
-        "chk_telemetry_geo": "Condividi la tua posizione generale (paese/città)"
+        "chk_telemetry_geo": "Condividi la tua posizione generale (paese/città)",
+        "tab_interface": "Interfaccia",
+        "lbl_theme": "Tema",
+        "opt_dark": "Scuro",
+        "opt_light": "Chiaro",
+        "lbl_always_on_top": "Sempre in primo piano",
+        "lbl_hidden_panels": "Pannelli nascosti",
+        "btn_export_settings": "Esporta impostazioni",
+        "btn_import_settings": "Importa impostazioni",
+        "tab_transcript": "Trascrizione",
+        "tab_ai_engine": "Motore IA",
+        "lbl_chunk_max_words": "Parole max per blocco",
+        "lbl_chunk_lookahead": "Parole di anticipo",
+        "lbl_chunk_min_chars": "Caratteri min per blocco",
+        "lbl_compute_type": "Tipo di calcolo",
+        "lbl_initial_prompt": "Prompt iniziale",
+
 
     },
     'pt': {
@@ -1256,7 +1360,23 @@ TRANS = {
         "msg_telemetry": "Olá! 👋\n\nPara me ajudar a melhorar o BadWords, você concorda em enviar um ping único e 100% anônimo após a instalação / atualização?\n\nApenas a versão do aplicativo e o SO são enviados. NENHUM arquivo de áudio, script ou dado pessoal é coletado NUNCA.\n\nA geolocalização é opcional — desmarque a caixa abaixo para desativá-la.",
         "btn_telemetry_yes": "Eu concordo",
         "btn_telemetry_no": "Não, obrigado",
-        "chk_telemetry_geo": "Compartilhe sua localização geral (país/cidade)"
+        "chk_telemetry_geo": "Compartilhe sua localização geral (país/cidade)",
+        "tab_interface": "Interface",
+        "lbl_theme": "Tema",
+        "opt_dark": "Escuro",
+        "opt_light": "Claro",
+        "lbl_always_on_top": "Sempre visível",
+        "lbl_hidden_panels": "Painéis ocultos",
+        "btn_export_settings": "Exportar configurações",
+        "btn_import_settings": "Importar configurações",
+        "tab_transcript": "Transcrição",
+        "tab_ai_engine": "Motor IA",
+        "lbl_chunk_max_words": "Máx. palavras por bloco",
+        "lbl_chunk_lookahead": "Palavras de antecipação",
+        "lbl_chunk_min_chars": "Mín. caracteres por bloco",
+        "lbl_compute_type": "Tipo de cómputo",
+        "lbl_initial_prompt": "Prompt inicial",
+
 
     },
     'uk': {
@@ -1396,7 +1516,23 @@ TRANS = {
         "msg_telemetry": "Привіт! 👋\n\nЩоб допомогти покращити BadWords, чи погоджуєтесь ви надіслати одноразовий 100% анонімний пінг після встановлення / оновлення?\n\nНадсилаються лише версія програми та тип ОС. Жодні аудіофайли чи особисті дані НІКОЛИ не збираються.\n\nГеолокація є необов’язковою — зніміть прапорець нижче, щоб вимкнути її.",
         "btn_telemetry_yes": "Я погоджуюсь",
         "btn_telemetry_no": "Ні, дякую",
-        "chk_telemetry_geo": "Поділитися своїм загальним місцем розташування"
+        "chk_telemetry_geo": "Поділитися своїм загальним місцем розташування",
+        "tab_interface": "Інтерфейс",
+        "lbl_theme": "Тема",
+        "opt_dark": "Темна",
+        "opt_light": "Світла",
+        "lbl_always_on_top": "Завжди поверх",
+        "lbl_hidden_panels": "Приховані панелі",
+        "btn_export_settings": "Експортувати налаштування",
+        "btn_import_settings": "Імпортувати налаштування",
+        "tab_transcript": "Транскрипція",
+        "tab_ai_engine": "Двигун АІ",
+        "lbl_chunk_max_words": "Макс. слів у блоці",
+        "lbl_chunk_lookahead": "Слова випередження",
+        "lbl_chunk_min_chars": "Мін. знаків у блоці",
+        "lbl_compute_type": "Тип обчислень",
+        "lbl_initial_prompt": "Початковий промпт",
+
 
     },
     'nl': {
@@ -1536,7 +1672,23 @@ TRANS = {
         "msg_telemetry": "Hallo! 👋\n\nOm me te helpen BadWords te verbeteren, ga je ermee akkoord om na de installatie / update een eenmalige, 100% anonieme ping te sturen?\n\nAlleen de app-versie en het besturingssysteem worden verzonden. Er worden NOOIT audiobestanden of persoonlijke gegevens verzameld.\n\nGeolocatie is optioneel — vink het onderstaande vakje uit om het uit te schakelen.",
         "btn_telemetry_yes": "Ik ga akkoord",
         "btn_telemetry_no": "Nee, bedankt",
-        "chk_telemetry_geo": "Deel je algemene locatie (land/stad)"
+        "chk_telemetry_geo": "Deel je algemene locatie (land/stad)",
+        "tab_interface": "Interface",
+        "lbl_theme": "Thema",
+        "opt_dark": "Donker",
+        "opt_light": "Licht",
+        "lbl_always_on_top": "Altijd bovenaan",
+        "lbl_hidden_panels": "Verborgen panelen",
+        "btn_export_settings": "Instellingen exporteren",
+        "btn_import_settings": "Instellingen importeren",
+        "tab_transcript": "Transcriptie",
+        "tab_ai_engine": "AI-engine",
+        "lbl_chunk_max_words": "Max woorden per blok",
+        "lbl_chunk_lookahead": "Vooruitkijkwoorden",
+        "lbl_chunk_min_chars": "Min tekens per blok",
+        "lbl_compute_type": "Rekentype",
+        "lbl_initial_prompt": "Initieel verzoek",
+
 
     },
     'ru': {
@@ -1676,7 +1828,23 @@ TRANS = {
         "msg_telemetry": "Привет! 👋\n\nЧтобы помочь улучшить BadWords, вы согласны отправить одноразовый, 100% анонимный пинг после установки / обновления?\n\nОтправляются только версия приложения и тип ОС. Никакие аудиофайлы или личные данные НИКОГДА не собираются.\n\nГеолокация не является обязательной — снимите флажок ниже, чтобы отключить ее.",
         "btn_telemetry_yes": "Я согласен",
         "btn_telemetry_no": "Нет, спасибо",
-        "chk_telemetry_geo": "Поделиться своим общим местоположением"
+        "chk_telemetry_geo": "Поделиться своим общим местоположением",
+        "tab_interface": "Интерфейс",
+        "lbl_theme": "Тема",
+        "opt_dark": "Тёмная",
+        "opt_light": "Светлая",
+        "lbl_always_on_top": "Всегда поверх окон",
+        "lbl_hidden_panels": "Скрытые панели",
+        "btn_export_settings": "Экспорт настроек",
+        "btn_import_settings": "Импорт настроек",
+        "tab_transcript": "Транскрипция",
+        "tab_ai_engine": "Движок АИ",
+        "lbl_chunk_max_words": "Макс. слов в блоке",
+        "lbl_chunk_lookahead": "Слова забега",
+        "lbl_chunk_min_chars": "Мин. символов в блоке",
+        "lbl_compute_type": "Тип вычислений",
+        "lbl_initial_prompt": "Начальный промпт",
+
 
     }
 }

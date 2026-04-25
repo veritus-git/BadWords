@@ -1690,18 +1690,26 @@ class CustomMsgBox(QDialog):
 
 
 class SettingsDialog(QDialog):
+    """Settings Dialog — left category menu + right stacked pages.
+    All I/O goes through engine.load_preferences / engine.save_preferences
+    which delegate to osdoc's smart router.
+    """
+
+    # Fallback defaults (for revert buttons)
     DEFAULTS = {
-        'view_mode': 'Continuous Flow',
-        'offset': -0.05,
-        'pad': 0.05,
-        'snap_max': 0.25,
+        'view_mode':          'continuous',
+        'offset':             -0.05,
+        'pad':                0.05,
+        'snap_max':           0.25,
         'editor_font_family': config.UI_FONT_NAME,
-        'editor_font_size': 12,
-        'editor_line_height': 12
+        'editor_font_size':   12,
+        'editor_line_height': 12,
+        'theme':              'dark',
+        'always_on_top':      False,
+        'hidden_panels':      [],
     }
 
     def txt(self, key: str, **kwargs) -> str:
-        import config
         prefs = self.engine.load_preferences() or {}
         lang = prefs.get("gui_lang", "en")
         text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
@@ -1713,214 +1721,646 @@ class SettingsDialog(QDialog):
         self.engine = engine
         self.setWindowTitle(self.txt("tool_settings"))
         self.setWindowFlags(Qt.Dialog)
-        self.setFixedSize(480, 420)
+        self.setMinimumSize(680, 520)
+        self.resize(720, 550)
         apply_dark_title_bar(self)
-        
-        self.setStyleSheet(f"""
-            QDialog {{ background-color: {config.BG_COLOR}; }}
-            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11pt; }}
-            QDoubleSpinBox, QSpinBox, QComboBox {{ background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; padding: 4px; border-radius: 3px; min-height: 24px; }}
-            QTabWidget::pane {{ border: 1px solid #3a3a3a; background: #212121; border-radius: 4px; }}
-            QTabBar::tab {{ background: #2b2b2b; color: #aaaaaa; padding: 8px 16px; border: 1px solid #3a3a3a; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }}
-            QTabBar::tab:selected {{ background: #212121; color: #ffffff; font-weight: bold; border-bottom: 1px solid #212121; }}
-            QPushButton.revert-btn {{ background: transparent; border: 1px solid #444; border-radius: 3px; color: #888; font-size: 12pt; font-weight: bold; }}
-            QPushButton.revert-btn:hover {{ background: #333; color: #fff; border-color: #666; }}
-        """)
-        
+
         prefs = self.engine.load_preferences() or {}
-        
-        main_layout = QVBoxLayout(self)
-        self.tabs = QTabWidget()
-        main_layout.addWidget(self.tabs)
-        
-        def _add_row(form, label_text, widget, default_val, setter_func):
-            row_layout = QHBoxLayout()
-            row_layout.setContentsMargins(0,0,0,0)
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            row_layout.addWidget(widget)
-            
-            btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(28, 28)
-            btn_rev.setCursor(Qt.PointingHandCursor)
-            btn_rev.setProperty("class", "revert-btn")
-            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
-            btn_rev.clicked.connect(lambda: setter_func(default_val))
-            
-            row_layout.addWidget(btn_rev)
-            form.addRow(label_text, row_layout)
-            self.revert_funcs.append(lambda: setter_func(default_val))
-            
+
+        # ── Global stylesheet ─────────────────────────────────────────────
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {config.BG_COLOR};
+            }}
+            QPushButton {{
+                padding: 4px 12px;
+            }}
+            QLabel {{
+                color: {config.FG_COLOR};
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+                background: transparent;
+            }}
+            QListWidget {{
+                background-color: {config.SIDEBAR_BG};
+                border: none;
+                border-right: 1px solid {config.SEPARATOR_COL};
+                outline: none;
+                padding: 6px 0;
+            }}
+            QListWidget::item {{
+                color: {config.NOTE_COL};
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+                padding: 10px 16px;
+                border-radius: 0px;
+            }}
+            QListWidget::item:selected {{
+                background-color: #2a2d2e;
+                color: {config.FG_COLOR};
+                border-left: 2px solid {config.BTN_BG};
+            }}
+            QListWidget::item:hover:!selected {{
+                background-color: #222222;
+                color: {config.FG_COLOR};
+            }}
+            QStackedWidget {{
+                background-color: {config.BG_COLOR};
+            }}
+            QDoubleSpinBox, QSpinBox, QComboBox {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                padding: 4px 8px;
+                border-radius: 3px;
+                min-height: 26px;
+            }}
+            QCheckBox {{
+                color: {config.FG_COLOR};
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                background: #1e1e1e;
+                border: 1px solid #555;
+                border-radius: 3px;
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {config.BTN_BG};
+                border-color: {config.BTN_BG};
+            }}
+            QPushButton#btn_apply {{
+                background-color: {config.BTN_BG};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+                padding: 0 18px;
+            }}
+            QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_secondary {{
+                background-color: transparent;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+                padding: 0 12px;
+            }}
+            QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
+            QPushButton#btn_ghost_sm {{
+                background-color: transparent;
+                color: #888;
+                border: 1px solid #444;
+                border-radius: 4px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 9pt;
+                padding: 0px;
+                text-align: center;
+            }}
+            QPushButton#btn_ghost_sm:hover {{ background-color: #222; color: #bbb; border-color: #666; }}
+            QPushButton[class="revert-btn"] {{
+                padding: 0px;
+                text-align: center;
+                background: transparent;
+                border: 1px solid #444;
+                border-radius: 3px;
+                color: #888;
+                font-size: 12pt;
+                font-weight: bold;
+            }}
+        """)
+
+        # ─────────────────────────────────────────────────────────────────
+        # Root layout: [LEFT menu | RIGHT content]
+        # ─────────────────────────────────────────────────────────────────
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── LEFT: Category list ───────────────────────────────────────────
+        self.category_list = QListWidget()
+        self.category_list.setFixedWidth(155)
+        self.category_list.setFocusPolicy(Qt.NoFocus)
+        self.category_list.addItem(self.txt("tab_general"))
+        self.category_list.addItem(self.txt("tab_audio_sync"))
+        self.category_list.addItem(self.txt("tab_transcript"))
+        self.category_list.addItem(self.txt("tab_ai_engine"))
+        self.category_list.addItem(self.txt("tab_interface"))
+        self.category_list.setCurrentRow(0)
+        root.addWidget(self.category_list)
+
+        # ── RIGHT: stacked pages + bottom bar ────────────────────────────
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        root.addLayout(right_layout)
+
+        self.stack = QStackedWidget()
+        right_layout.addWidget(self.stack)
+
+        # Connect list → stack
+        self.category_list.currentRowChanged.connect(self.stack.setCurrentIndex)
+
+        # ── Revert helper ─────────────────────────────────────────────────
         self.revert_funcs = []
-        
-        # TAB 1: General
-        tab_gen = QWidget()
-        form_gen = QFormLayout(tab_gen)
-        form_gen.setSpacing(15)
-        
-        # --- Language Selection ---
+
+        def _add_row(form, label_text, widget, default_val, setter_func):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row.addWidget(widget)
+            btn_rev = QPushButton("↺")
+            btn_rev.setFixedSize(26, 26)
+            btn_rev.setCursor(Qt.PointingHandCursor)
+            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            btn_rev.clicked.connect(lambda checked=False, d=default_val, s=setter_func: s(d))
+            row.addWidget(btn_rev)
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            lbl.setMinimumWidth(200)
+            form.addRow(lbl, row)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 0 — GENERAL
+        # ─────────────────────────────────────────────────────────────────
+        page_gen = QWidget()
+        page_gen.setStyleSheet("background: transparent;")
+        l_gen = QVBoxLayout(page_gen)
+        l_gen.setContentsMargins(24, 20, 24, 16)
+        l_gen.setSpacing(0)
+        form_gen = QFormLayout()
+        form_gen.setSpacing(14)
+        form_gen.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Language
         self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
         current_lang_code = prefs.get('gui_lang', 'en')
-        current_lang_name = config.SUPPORTED_LANGS.get(current_lang_code, 'English')
-        self.dropdown_lang.setText(current_lang_name)
-        
+        self.dropdown_lang.setText(config.SUPPORTED_LANGS.get(current_lang_code, 'English'))
+
         def _on_lang_changed(val):
             code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), 'en')
             self.engine.save_preferences({'gui_lang': code})
-            
-            # Fetch directly from target config instead of current runtime self.txt()
-            target_lang_dict = config.TRANS.get(code, config.TRANS['en'])
-            title = target_lang_dict.get('msg_title_language_changed', 'Language Changed')
-            message = target_lang_dict.get('msg_restart_lang', 'Language changed. Please restart BadWords.')
-            
-            # CLose the settings dialog first
+            target = config.TRANS.get(code, config.TRANS['en'])
+            title   = target.get('msg_title_language_changed', 'Language Changed')
+            message = target.get('msg_restart_lang', 'Language changed. Please restart BadWords.')
+            ok_text = target.get('btn_ok', 'OK')
             self.accept()
-            
-            try:
-                # Try to use the localized "Ok" or fallback to english "Ok"
-                ok_text = target_lang_dict.get('btn_ok', 'OK') 
-            except:
-                ok_text = "OK"
-                
-            msg_box = CustomMsgBox(self.parent(), title, message, ok_text)
-            msg_box.exec()
-            
+            CustomMsgBox(self.parent(), title, message, ok_text).exec()
+
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)
-        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', self.dropdown_lang.setText)
-        
+        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang,
+                 'English', self.dropdown_lang.setText)
+
+        # Theme
+        self.combo_theme = QComboBox()
+        self.combo_theme.addItems([self.txt("opt_dark"), self.txt("opt_light")])
+        current_theme = prefs.get('theme', 'dark')
+        self.combo_theme.setCurrentIndex(0 if current_theme == 'dark' else 1)
+        _add_row(form_gen, self.txt("lbl_theme"), self.combo_theme,
+                 0, self.combo_theme.setCurrentIndex)
+
+        l_gen.addLayout(form_gen)
+
+        # ── Import / Export (inside General tab) ──────────────────────────
+        sep_io = QFrame()
+        sep_io.setFrameShape(QFrame.Shape.HLine)
+        sep_io.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_gen.addSpacing(12)
+        l_gen.addWidget(sep_io)
+        l_gen.addSpacing(10)
+
+        io_row = QHBoxLayout()
+        io_row.setContentsMargins(0, 0, 0, 0)
+        io_row.setSpacing(8)
+
+        btn_import_s = QPushButton(self.txt("btn_import_settings"))
+        btn_import_s.setObjectName("btn_ghost_sm")
+        btn_import_s.setFixedHeight(28)
+        btn_import_s.setCursor(Qt.PointingHandCursor)
+        btn_import_s.clicked.connect(self._on_import_settings)
+        io_row.addWidget(btn_import_s)
+
+        btn_export_s = QPushButton(self.txt("btn_export_settings"))
+        btn_export_s.setObjectName("btn_ghost_sm")
+        btn_export_s.setFixedHeight(28)
+        btn_export_s.setCursor(Qt.PointingHandCursor)
+        btn_export_s.clicked.connect(self._on_export_settings)
+        io_row.addWidget(btn_export_s)
+
+        io_row.addStretch()
+        l_gen.addLayout(io_row)
+
+        l_gen.addStretch()
+        self.stack.addWidget(page_gen)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 1 — AUDIO SYNC
+        # ─────────────────────────────────────────────────────────────────
+        page_sync = QWidget()
+        page_sync.setStyleSheet("background: transparent;")
+        l_sync = QVBoxLayout(page_sync)
+        l_sync.setContentsMargins(24, 20, 24, 16)
+        l_sync.setSpacing(0)
+        form_sync = QFormLayout()
+        form_sync.setSpacing(14)
+        form_sync.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.spin_offset = QDoubleSpinBox()
+        self.spin_offset.setRange(-10, 10)
+        self.spin_offset.setSingleStep(0.1)
+        self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
+
+        self.spin_pad = QDoubleSpinBox()
+        self.spin_pad.setRange(0, 5)
+        self.spin_pad.setSingleStep(0.1)
+        self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
+
+        self.spin_snap = QDoubleSpinBox()
+        self.spin_snap.setRange(0, 5)
+        self.spin_snap.setSingleStep(0.1)
+        self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
+
+        _add_row(form_sync, self.txt("lbl_offset_s"),   self.spin_offset, self.DEFAULTS['offset'],   self.spin_offset.setValue)
+        _add_row(form_sync, self.txt("lbl_padding_s"),  self.spin_pad,    self.DEFAULTS['pad'],       self.spin_pad.setValue)
+        _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap,   self.DEFAULTS['snap_max'],  self.spin_snap.setValue)
+
+        l_sync.addLayout(form_sync)
+        l_sync.addStretch()
+        self.stack.addWidget(page_sync)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 2 — TRANSCRIPT
+        # ─────────────────────────────────────────────────────────────────
+        page_transcript = QWidget()
+        page_transcript.setStyleSheet("background: transparent;")
+        l_transcript = QVBoxLayout(page_transcript)
+        l_transcript.setContentsMargins(24, 20, 24, 16)
+        l_transcript.setSpacing(0)
+        form_transcript = QFormLayout()
+        form_transcript.setSpacing(14)
+        form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Display Mode (moved from General)
         self.combo_view = QComboBox()
         self.combo_view.addItems([self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")])
-        is_segmented = prefs.get('view_mode', 'continuous') == 'segmented'
-        self.combo_view.setCurrentIndex(1 if is_segmented else 0)
-        _add_row(form_gen, self.txt("lbl_display_mode"), self.combo_view, 0, self.combo_view.setCurrentIndex)
-        self.tabs.addTab(tab_gen, self.txt("tab_general"))
-        
-        # TAB 2: Audio Sync
-        tab_sync = QWidget()
-        form_sync = QFormLayout(tab_sync)
-        form_sync.setSpacing(15)
-        self.spin_offset = QDoubleSpinBox(); self.spin_offset.setRange(-10, 10); self.spin_offset.setSingleStep(0.1)
-        self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
-        
-        self.spin_pad = QDoubleSpinBox(); self.spin_pad.setRange(0, 5); self.spin_pad.setSingleStep(0.1)
-        self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
-        
-        self.spin_snap = QDoubleSpinBox(); self.spin_snap.setRange(0, 5); self.spin_snap.setSingleStep(0.1)
-        self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
-        
-        _add_row(form_sync, self.txt("lbl_offset_s"), self.spin_offset, self.DEFAULTS['offset'], self.spin_offset.setValue)
-        _add_row(form_sync, self.txt("lbl_padding_s"), self.spin_pad, self.DEFAULTS['pad'], self.spin_pad.setValue)
-        _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap, self.DEFAULTS['snap_max'], self.spin_snap.setValue)
-        self.tabs.addTab(tab_sync, self.txt("tab_audio_sync"))
-        
-        # TAB 3: Appearance
-        tab_app = QWidget()
-        l_app = QVBoxLayout(tab_app)
-        form_app = QFormLayout()
-        
+        is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
+        self.combo_view.setCurrentIndex(1 if is_seg else 0)
+        _add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
+                 1, self.combo_view.setCurrentIndex)
+
+        # Font family, size, line height
         from PySide6.QtGui import QFontDatabase
         self.combo_font = QComboBox()
         self.combo_font.addItems(QFontDatabase.families())
         self.combo_font.setCurrentText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
-        
-        self.spin_fsize = QSpinBox(); self.spin_fsize.setRange(8, 48)
+
+        self.spin_fsize = QSpinBox()
+        self.spin_fsize.setRange(8, 48)
         self.spin_fsize.setValue(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])))
-        
-        self.spin_lheight = QSpinBox(); self.spin_lheight.setRange(0, 40)
+
+        self.spin_lheight = QSpinBox()
+        self.spin_lheight.setRange(0, 40)
         self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
-        
-        _add_row(form_app, self.txt("lbl_transcript_font"), self.combo_font, self.DEFAULTS['editor_font_family'], self.combo_font.setCurrentText)
-        _add_row(form_app, self.txt("lbl_font_size_pt"), self.spin_fsize, self.DEFAULTS['editor_font_size'], self.spin_fsize.setValue)
-        _add_row(form_app, self.txt("lbl_line_spacing_px"), self.spin_lheight, self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
-        l_app.addLayout(form_app)
-        
+
+        _add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
+                 self.DEFAULTS['editor_font_family'], self.combo_font.setCurrentText)
+        _add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
+                 self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
+        _add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
+                 self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
+        l_transcript.addLayout(form_transcript)
+
+        # Font preview
         self.lbl_preview = QLabel(self.txt("lbl_font_preview"))
         self.lbl_preview.setAlignment(Qt.AlignCenter)
-        self.lbl_preview.setMinimumHeight(90)
+        self.lbl_preview.setMinimumHeight(60)
         self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR};")
-        l_app.addWidget(self.lbl_preview)
-        l_app.addStretch()
-        self.tabs.addTab(tab_app, self.txt("tab_appearance"))
-        
+        l_transcript.addSpacing(10)
+        l_transcript.addWidget(self.lbl_preview)
+
+        # Separator before chunking settings
+        sep_chunk = QFrame()
+        sep_chunk.setFrameShape(QFrame.Shape.HLine)
+        sep_chunk.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_transcript.addSpacing(12)
+        l_transcript.addWidget(sep_chunk)
+        l_transcript.addSpacing(10)
+
+        # Chunking spinboxes
+        form_chunk = QFormLayout()
+        form_chunk.setSpacing(14)
+        form_chunk.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.spin_chunk_max = QSpinBox()
+        self.spin_chunk_max.setRange(5, 200)
+        self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
+        _add_row(form_chunk, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue)
+
+        self.spin_chunk_look = QSpinBox()
+        self.spin_chunk_look.setRange(0, 20)
+        self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
+        _add_row(form_chunk, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue)
+
+        self.spin_chunk_min = QSpinBox()
+        self.spin_chunk_min.setRange(1, 50)
+        self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
+        _add_row(form_chunk, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue)
+
+        l_transcript.addLayout(form_chunk)
+        l_transcript.addStretch()
+
+        # Enable/disable chunk spinboxes based on view mode
+        def _update_chunk_state(idx):
+            enabled = (idx == 1)  # 1 = Segmented
+            self.spin_chunk_max.setEnabled(enabled)
+            self.spin_chunk_look.setEnabled(enabled)
+            self.spin_chunk_min.setEnabled(enabled)
+        self.combo_view.currentIndexChanged.connect(_update_chunk_state)
+        _update_chunk_state(self.combo_view.currentIndex())
+
         self.combo_font.currentTextChanged.connect(self._update_preview)
         self.spin_fsize.valueChanged.connect(self._update_preview)
         self.spin_lheight.valueChanged.connect(self._update_preview)
         self._update_preview()
-        
-        # Save Button Area
-        btn_box = QHBoxLayout()
+        self.stack.addWidget(page_transcript)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 3 — AI ENGINE
+        # ─────────────────────────────────────────────────────────────────
+        page_ai = QWidget()
+        page_ai.setStyleSheet("background: transparent;")
+        l_ai = QVBoxLayout(page_ai)
+        l_ai.setContentsMargins(24, 20, 24, 16)
+        l_ai.setSpacing(0)
+        form_ai = QFormLayout()
+        form_ai.setSpacing(14)
+        form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Device
+        _device_items = ["Auto", "CPU", "GPU"]
+        self.dropdown_device = CustomDropdown(_device_items)
+        self.dropdown_device.setFixedHeight(30)
+        saved_device = prefs.get('device', 'auto').capitalize()
+        if saved_device.upper() == 'AUTO': saved_device = 'Auto'
+        self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
+        _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setText)
+
+        # Compute type
+        _compute_items = ["float16", "int8", "float32"]
+        self.dropdown_compute = CustomDropdown(_compute_items)
+        self.dropdown_compute.setFixedHeight(30)
+        saved_compute = prefs.get('ai_compute_type', 'float16')
+        self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'float16')
+        _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'float16', self.dropdown_compute.setText)
+
+        l_ai.addLayout(form_ai)
+        l_ai.addSpacing(14)
+
+        # Initial prompt label + QTextEdit
+        lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
+        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+        l_ai.addWidget(lbl_prompt)
+        l_ai.addSpacing(4)
+
+        self.textedit_prompt = QTextEdit()
+        self.textedit_prompt.setMaximumHeight(80)
+        self.textedit_prompt.setPlaceholderText("e.g. Transcribe film dialogue with punctuation.")
+        self.textedit_prompt.setPlainText(prefs.get('ai_initial_prompt', config.DEFAULT_WHISPER_PROMPT))
+        self.textedit_prompt.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 6px 8px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+            }}
+        """)
+        l_ai.addWidget(self.textedit_prompt)
+        l_ai.addStretch()
+        self.stack.addWidget(page_ai)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 3 — INTERFACE
+        # ─────────────────────────────────────────────────────────────────
+        page_iface = QWidget()
+        page_iface.setStyleSheet("background: transparent;")
+        l_iface = QVBoxLayout(page_iface)
+        l_iface.setContentsMargins(24, 20, 24, 16)
+        l_iface.setSpacing(0)
+        form_iface = QFormLayout()
+        form_iface.setSpacing(14)
+        form_iface.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Always on top
+        self.chk_ontop = QCheckBox()
+        self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)))
+        _add_row(form_iface, self.txt("lbl_always_on_top"), self.chk_ontop,
+                 False, self.chk_ontop.setChecked)
+
+        # Hidden panels (multi-select)
+        _panel_options = ["Script Analysis", "Silence", "Filler Words", "Assembly"]
+        self.dropdown_hidden = MultiSelectDropdown(_panel_options)
+        self.dropdown_hidden.setFixedHeight(30)
+        saved_hidden = prefs.get('hidden_panels', [])
+        if isinstance(saved_hidden, list) and saved_hidden:
+            self.dropdown_hidden.selected_items = set(saved_hidden)
+            self.dropdown_hidden.setText(", ".join(sorted(saved_hidden)))
+        else:
+            self.dropdown_hidden.setText(self.txt("txt_select"))
+        _add_row(form_iface, self.txt("lbl_hidden_panels"), self.dropdown_hidden,
+                 [], lambda v: None)  # revert placeholder — clear handled by Restore Defaults
+
+        l_iface.addLayout(form_iface)
+        l_iface.addStretch()
+        self.stack.addWidget(page_iface)
+
+        # ─────────────────────────────────────────────────────────────────
+        # BOTTOM BUTTON BAR (separator + row)
+        # ─────────────────────────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"background: {config.SEPARATOR_COL}; max-height: 1px; border: none;")
+        right_layout.addWidget(sep)
+
+        btn_bar = QHBoxLayout()
+        btn_bar.setContentsMargins(16, 10, 16, 12)
+        btn_bar.setSpacing(8)
+
+        btn_bar.addStretch()
+
+        # Right: Restore / Close / Apply
         btn_restore = QPushButton(self.txt("btn_restore_defaults"))
+        btn_restore.setObjectName("btn_secondary")
+        btn_restore.setFixedHeight(30)
         btn_restore.setCursor(Qt.PointingHandCursor)
-        btn_restore.setStyleSheet(f"background-color: transparent; color: #aaaaaa; border: 1px solid #555; padding: 6px 12px; border-radius: 4px;")
         btn_restore.clicked.connect(self._restore_all_defaults)
-        btn_box.addWidget(btn_restore)
-        
-        btn_box.addStretch()
-        
+        btn_bar.addWidget(btn_restore)
+
         btn_close = QPushButton(self.txt("btn_close"))
-        btn_close.setFixedSize(90, 32)
+        btn_close.setObjectName("btn_secondary")
+        btn_close.setFixedWidth(80)
+        btn_close.setFixedHeight(30)
         btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.setStyleSheet(f"background-color: transparent; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; font-weight: bold;")
         btn_close.clicked.connect(self.reject)
-        btn_box.addWidget(btn_close)
-        
-        btn_ok = QPushButton(self.txt("btn_apply"))
-        btn_ok.setFixedSize(100, 32)
-        btn_ok.setCursor(Qt.PointingHandCursor)
-        btn_ok.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; border-radius: 4px; font-weight: bold;")
-        btn_ok.clicked.connect(self._apply_settings)
-        btn_box.addWidget(btn_ok)
-        main_layout.addLayout(btn_box)
+        btn_bar.addWidget(btn_close)
+
+        btn_apply = QPushButton(self.txt("btn_apply"))
+        btn_apply.setObjectName("btn_apply")
+        btn_apply.setFixedWidth(90)
+        btn_apply.setFixedHeight(30)
+        btn_apply.setCursor(Qt.PointingHandCursor)
+        btn_apply.clicked.connect(self._apply_settings)
+        btn_bar.addWidget(btn_apply)
+
+        right_layout.addLayout(btn_bar)
+
+    # ── Helpers ───────────────────────────────────────────────────────────
 
     def _restore_all_defaults(self):
-        msg_box = CustomMsgBox(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"), self.txt("btn_yes"), self.txt("btn_no"))
+        msg_box = CustomMsgBox(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"),
+                               self.txt("btn_yes"), self.txt("btn_no"))
         if msg_box.exec() == QDialog.Accepted:
-            for f in self.revert_funcs: 
+            for f in self.revert_funcs:
                 f()
 
     def _update_preview(self):
         ff = self.combo_font.currentText()
         fs = self.spin_fsize.value()
         lh = self.spin_lheight.value()
-        
-        # Override global CSS with explicit inline style to guarantee preview update
         self.lbl_preview.setStyleSheet(f"""
-            background-color: #1a1a1a; 
-            border: 1px solid #333; 
-            border-radius: 4px; 
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 4px;
             color: {config.FG_COLOR};
             font-family: "{ff}";
             font-size: {fs}pt;
         """)
-        
-        # Use HTML to simulate the custom line height visually
-        # Convert pt to px roughly (1pt ~= 1.33px) for line-height math
         px_size = int(fs * 1.33)
         total_lh = px_size + lh
-        
-        html = f"""
-        <div style="line-height: {total_lh}px; text-align: center;">
-            Aa<br>Bb
-        </div>
-        """
-        self.lbl_preview.setText(html)
+        self.lbl_preview.setText(
+            f'<div style="line-height: {total_lh}px; text-align: center;">Aa<br>Bb</div>'
+        )
+
+    # ── Export / Import ───────────────────────────────────────────────────
+
+    def _on_export_settings(self):
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        dest, _ = QFileDialog.getSaveFileName(
+            self, self.txt("btn_export_settings"), "badwords_settings.json",
+            "JSON files (*.json)"
+        )
+        if dest:
+            try:
+                shutil.copy2(self.engine.os_doc.settings_file, dest)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"Export settings failed: {e}")
+
+    def _on_import_settings(self):
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        src, _ = QFileDialog.getOpenFileName(
+            self, self.txt("btn_import_settings"), "",
+            "JSON files (*.json)"
+        )
+        if not src:
+            return
+        try:
+            shutil.copy2(src, self.engine.os_doc.settings_file)
+            self.engine.os_doc.settings = self.engine.os_doc.load_settings()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"Import settings failed: {e}")
+            return
+
+        target = config.TRANS.get('en', config.TRANS['en'])
+        CustomMsgBox(
+            self,
+            target.get('msg_title_language_changed', 'Restart Required'),
+            target.get('msg_restart_lang', 'Settings imported. Please restart BadWords to apply all changes.'),
+            target.get('btn_ok', 'OK')
+        ).exec()
+        self.reject()
+
+    # ── Smart Apply ───────────────────────────────────────────────────────
 
     def _apply_settings(self):
-        prefs = self.engine.load_preferences() or {}
-        prefs['view_mode'] = 'segmented' if self.combo_view.currentIndex() == 1 else 'continuous'
-        prefs['offset'] = self.spin_offset.value()
-        prefs['pad'] = self.spin_pad.value()
-        prefs['snap_max'] = self.spin_snap.value()
-        prefs['editor_font_family'] = self.combo_font.currentText()
-        prefs['editor_font_size'] = self.spin_fsize.value()
-        prefs['editor_line_height'] = self.spin_lheight.value()
-        if 'settings' in prefs: del prefs['settings']
-        self.engine.save_preferences(prefs)
-        
-        # Real-time update of canvas without closing
+        old_prefs = self.engine.load_preferences() or {}
+
+        # Gather current UI state
+        theme_val    = 'dark' if self.combo_theme.currentIndex() == 0 else 'light'
+        view_val     = 'segmented' if self.combo_view.currentIndex() == 1 else 'continuous'
+        hidden_items = sorted(self.dropdown_hidden.selected_items)
+        device_val   = self.dropdown_device.text().lower()
+        compute_val  = self.dropdown_compute.text()
+
+        new_prefs = {
+            'theme':              theme_val,
+            'view_mode':          view_val,
+            'offset':             self.spin_offset.value(),
+            'pad':                self.spin_pad.value(),
+            'snap_max':           self.spin_snap.value(),
+            'editor_font_family': self.combo_font.currentText(),
+            'editor_font_size':   self.spin_fsize.value(),
+            'editor_line_height': self.spin_lheight.value(),
+            'chunk_max_words':    self.spin_chunk_max.value(),
+            'chunk_lookahead':    self.spin_chunk_look.value(),
+            'chunk_min_chars':    self.spin_chunk_min.value(),
+            'device':             device_val,
+            'ai_compute_type':    compute_val,
+            'compute_type':       compute_val,  # keep legacy alias in sync
+            'ai_initial_prompt':  self.textedit_prompt.toPlainText(),
+            'always_on_top':      self.chk_ontop.isChecked(),
+            'hidden_panels':      hidden_items,
+        }
+
+        # Detect which restart-required keys actually changed
+        restart_needed = any(
+            new_prefs.get(k) != old_prefs.get(k)
+            for k in config.RESTART_REQUIRED_KEYS
+            if k in new_prefs
+        )
+
+        self.engine.save_preferences(new_prefs)
+
+        # Real-time canvas update
         main_win = self.parent()
         if hasattr(main_win, 'text_canvas'):
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()
+
+        # Always-on-top: apply immediately
+        aot_changed = new_prefs['always_on_top'] != bool(old_prefs.get('always_on_top', False))
+        if aot_changed and main_win:
+            flags = main_win.windowFlags()
+            if new_prefs['always_on_top']:
+                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+            else:
+                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, False)
+            main_win.show()
+
+        # Restart notification
+        if restart_needed:
+            lang = old_prefs.get('gui_lang', 'en')
+            target = config.TRANS.get(lang, config.TRANS['en'])
+            CustomMsgBox(
+                self,
+                target.get('msg_title_language_changed', 'Restart Required'),
+                target.get('msg_restart_lang', 'Some changes require a restart to take full effect.'),
+                target.get('btn_ok', 'OK')
+            ).exec()
+
 
 
 # ==========================================

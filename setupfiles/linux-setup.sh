@@ -296,15 +296,28 @@ echo -e "\n${RED}[CLEANUP] Processing old installation...${NC}"
 
 if [ -d "$OLD_INSTALL_DIR" ]; then
     if [ "$WIPE_CHOICE" -eq 3 ]; then
-        echo -e " - FULL WIPE selected. Deleting entire directory ($OLD_INSTALL_DIR)..."
+        echo -e " - FULL WIPE selected. Backing up user data before deletion..."
+        # Temporarily preserve user data files
+        BW_TMP_BACKUP=$(mktemp -d)
+        for f in user.json settings.json pref.json; do
+            [ -f "$OLD_INSTALL_DIR/$f" ] && cp "$OLD_INSTALL_DIR/$f" "$BW_TMP_BACKUP/" && echo -e "   * Backed up: $f"
+        done
         rm -rf "$OLD_INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR_BASH"
+        # Restore preserved files
+        for f in user.json settings.json pref.json; do
+            [ -f "$BW_TMP_BACKUP/$f" ] && cp "$BW_TMP_BACKUP/$f" "$INSTALL_DIR_BASH/" && echo -e "   * Restored: $f"
+        done
+        rm -rf "$BW_TMP_BACKUP"
     elif [ "$WIPE_CHOICE" -eq 2 ]; then
         echo -e " - CLEAN INSTALL selected. Wiping environment in $OLD_INSTALL_DIR..."
-        # Deletes everything EXCEPT the specified folders
+        # Deletes everything EXCEPT the specified folders and user data files
         find "$OLD_INSTALL_DIR" -mindepth 1 -maxdepth 1 \
             ! -name "models" \
             ! -name "saves" \
             ! -name "pref.json" \
+            ! -name "user.json" \
+            ! -name "settings.json" \
             -exec rm -rf {} +
     else
         echo -e " - UPDATE selected. No preliminary cleanup required (Additive Mode)."
@@ -367,7 +380,7 @@ for root, dirs, files in os.walk(src):
             print(f' - Skipped (identical): {rel_file}')
 
 # 2. Cleanup obsolete files from dst that are no longer in src
-protected_files = ['pref.json', 'badwords_debug.log', 'ffmpeg_static.tar.xz']
+protected_files = ['pref.json', 'user.json', 'settings.json', 'badwords_debug.log', 'ffmpeg_static.tar.xz']
 protected_dirs = ['models', 'saves', 'venv', 'bin', 'libs']
 
 for item in os.listdir(dst):
