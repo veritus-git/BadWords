@@ -787,13 +787,44 @@ class SidebarButton(QPushButton):
         mime.setText(self.activity_id)
         drag.setMimeData(mime)
         
-        # Snapshot the button for the drag icon
-        pixmap = self.grab()
-        drag.setPixmap(pixmap)
-        drag.setHotSpot(event.position().toPoint())
+        self._drag_was_active = self.is_active
+        
+        was_active = self.is_active
+        if was_active:
+            self.set_active(False)  # Temporarily remove active CSS (green border)
+            self.style().polish(self) # Force CSS update
+        
+        btn_pixmap = self.grab() # Take the perfect 40x40 photo without border
+        
+        if was_active:
+            self.set_active(True) # Restore state
+            self.style().polish(self)
+        
+        if self.is_active:
+            panel_widget = self.window().activities.get(self.activity_id)
+            if panel_widget:
+                panel_pixmap = panel_widget.grab()
+                scaled_panel = panel_pixmap.scaledToWidth(160, Qt.SmoothTransformation)
+                composite = QPixmap(scaled_panel.size())
+                composite.fill(Qt.transparent)
+                p = QPainter(composite)
+                p.setOpacity(0.6)
+                p.drawPixmap(0, 0, scaled_panel)
+                p.setOpacity(1.0)
+                p.drawPixmap(0, 0, btn_pixmap)
+                p.end()
+                drag.setPixmap(composite)
+                drag.setHotSpot(event.position().toPoint())
+            else:
+                drag.setPixmap(btn_pixmap)
+                drag.setHotSpot(event.position().toPoint())
+        else:
+            # Snapshot the button for the drag icon
+            drag.setPixmap(btn_pixmap)
+            drag.setHotSpot(event.position().toPoint())
         
         # Execute drag
-        if self.is_active and self.window() and hasattr(self.window(), "_toggle_activity"):
+        if self._drag_was_active and self.window() and hasattr(self.window(), "_toggle_activity"):
             self.window()._toggle_activity(self.activity_id)
             
         self.hide()
@@ -810,7 +841,12 @@ class SidebarDragZone(QFrame):
         if parent:
             self.setParent(parent)
         self.setAcceptDrops(True)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self._drop_line_y = -1
+        self.setLayout(QVBoxLayout())
+        self.layout().setAlignment(Qt.AlignTop)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(6)
         
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -828,31 +864,33 @@ class SidebarDragZone(QFrame):
             return
             
         layout = self.layout()
-        drop_y = event.position().y()
-        target_idx = 0
-        
         source_btn = event.source()
-        target_widget = None
+        
+        target_idx = layout.count()
+        last_vis_widget = None
+        drop_y = 0
+        
         for i in range(layout.count()):
-            item = layout.itemAt(i)
-            if item and item.widget():
-                widget = item.widget()
-                if not widget or widget.isHidden() or widget == source_btn: continue
-                if drop_y < widget.geometry().center().y():
-                    target_widget = widget
-                    break
-                else:
-                    target_idx += 1
-                    
-        max_idx = layout.count() - 2
-        target_idx = min(target_idx, max_idx)
-                    
-        if target_widget:
-            self._drop_line_y = target_widget.geometry().top()
-        elif layout.count() > 0:
-            last_item = layout.itemAt(layout.count() - 1)
-            if last_item and last_item.widget():
-                self._drop_line_y = last_item.widget().geometry().bottom()
+            w = layout.itemAt(i).widget()
+            if not w or w.isHidden() or w == source_btn:
+                continue
+            
+            last_vis_widget = w
+            
+            # Hit-test: if mouse is above the vertical center of this widget, insert BEFORE it.
+            if event.position().y() < w.geometry().center().y():
+                target_idx = i
+                drop_y = w.geometry().top()
+                break
+        else:
+            # If the loop completes without breaking, we are dropping at the VERY BOTTOM.
+            if last_vis_widget:
+                drop_y = last_vis_widget.geometry().bottom()
+            else:
+                layout_margins = self.layout().contentsMargins()
+                drop_y = layout_margins.top() if layout_margins else 0
+                
+        self._drop_line_y = drop_y
         self.update()
             
         event.accept()
@@ -867,20 +905,30 @@ class SidebarDragZone(QFrame):
         source_btn = event.source()
         if isinstance(source_btn, SidebarButton) and source_btn.activity_id == activity_id:
             layout = self.layout()
-            drop_y = event.position().y()
             
-            target_idx = layout.count() - 1
-            for i in range(layout.count() - 1):
-                item = layout.itemAt(i)
-                if item and item.widget():
-                    widget = item.widget()
-                    if not widget or widget.isHidden() or widget == source_btn: continue
-                    if drop_y < widget.geometry().center().y():
-                        target_idx = i
-                        break
-                        
-            max_idx = layout.count() - 2
-            target_idx = min(target_idx, max_idx)
+            target_idx = layout.count()
+            last_vis_widget = None
+            drop_y = 0
+            
+            for i in range(layout.count()):
+                w = layout.itemAt(i).widget()
+                if not w or w.isHidden() or w == source_btn:
+                    continue
+                
+                last_vis_widget = w
+                
+                # Hit-test: if mouse is above the vertical center of this widget, insert BEFORE it.
+                if event.position().y() < w.geometry().center().y():
+                    target_idx = i
+                    drop_y = w.geometry().top()
+                    break
+            else:
+                # If the loop completes without breaking, we are dropping at the VERY BOTTOM.
+                if last_vis_widget:
+                    drop_y = last_vis_widget.geometry().bottom()
+                else:
+                    layout_margins = self.layout().contentsMargins()
+                    drop_y = layout_margins.top() if layout_margins else 0
                         
             layout.insertWidget(target_idx, source_btn)
             event.acceptProposedAction()
@@ -892,6 +940,10 @@ class SidebarDragZone(QFrame):
             
             self._drop_line_y = -1
             self.update()
+            
+            if getattr(source_btn, '_drag_was_active', False):
+                source_btn.window()._toggle_activity(source_btn.activity_id)
+                source_btn._drag_was_active = False
 
 
 class CustomDropdown(QPushButton):
@@ -1276,9 +1328,7 @@ class BadWordsGUI(QMainWindow):
         left_layout.setSpacing(6)
         
         self._drag_zone_left = SidebarDragZone(self._sidebar_left)
-        drag_layout_left = QVBoxLayout(self._drag_zone_left)
-        drag_layout_left.setContentsMargins(0, 0, 0, 0)
-        drag_layout_left.setSpacing(6)
+        drag_layout_left = self._drag_zone_left.layout()
         left_layout.addWidget(self._drag_zone_left)
         
         self.btn_nav_script = SidebarButton("\U0001f4dd", "Script & Analysis", "script_analysis", tooltip_widget=self.shared_tooltip)
@@ -1293,15 +1343,13 @@ class BadWordsGUI(QMainWindow):
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
         drag_layout_left.addWidget(self.btn_nav_fillers)
         
-        left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        self.btn_nav_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_quit.clicked.connect(self.close)
+        left_layout.addWidget(self.btn_nav_quit)
         
         self.btn_nav_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_settings.clicked.connect(self._on_settings)
         left_layout.addWidget(self.btn_nav_settings)
-        
-        self.btn_nav_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
-        self.btn_nav_quit.clicked.connect(self.close)
-        left_layout.addWidget(self.btn_nav_quit)
         
         self._sidebar_left.show()
 
@@ -1313,9 +1361,7 @@ class BadWordsGUI(QMainWindow):
         right_layout.setSpacing(6)
         
         self._drag_zone_right = SidebarDragZone(self._sidebar_right)
-        drag_layout_right = QVBoxLayout(self._drag_zone_right)
-        drag_layout_right.setContentsMargins(0, 0, 0, 0)
-        drag_layout_right.setSpacing(6)
+        drag_layout_right = self._drag_zone_right.layout()
         right_layout.addWidget(self._drag_zone_right)
         
         self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", "Main Panel", "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
@@ -1326,8 +1372,6 @@ class BadWordsGUI(QMainWindow):
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
         drag_layout_right.addWidget(self.btn_nav_assembly)
         
-        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
-
     def _build_central_workspace(self):
         """
         Main container incorporating sidebars, panels, and central stack using QHBoxLayout.
