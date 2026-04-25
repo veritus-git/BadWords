@@ -6541,14 +6541,15 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.text_script.clear()
 
     def _on_analyze_compare(self):
-        from PySide6.QtWidgets import QMessageBox
         script_text = self.text_script.toPlainText().strip()
         if not script_text:
-            QMessageBox.warning(self, self.txt("msg_warning"), self.txt("msg_please_import_or_paste_a"))
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_please_import_or_paste_a"), self.txt("btn_ok"))
+            dlg.exec()
             return
             
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
-            QMessageBox.warning(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"))
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"), self.txt("btn_ok"))
+            dlg.exec()
             return
             
         # Run comparison via engine and overwrite canvas data
@@ -6556,9 +6557,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.text_canvas.load_data(updated_words)
 
     def _on_analyze_standalone(self):
-        from PySide6.QtWidgets import QMessageBox
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
-            QMessageBox.warning(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"))
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"), self.txt("btn_ok"))
+            dlg.exec()
             return
             
         prefs = self.engine.load_preferences() or {}
@@ -6731,17 +6732,13 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                     if widget and key in imported_prefs:
                         widget.setChecked(imported_prefs[key], animated=False)
 
-                # Update SpinBoxes
-                if hasattr(self, 'spin_thresh') and 'ui_spin_thresh' in imported_prefs:
-                    self.spin_thresh.setValue(imported_prefs['ui_spin_thresh'])
-                if hasattr(self, 'spin_pad') and 'ui_spin_pad' in imported_prefs:
-                    self.spin_pad.setValue(imported_prefs['ui_spin_pad'])
-                if hasattr(self, 'spin_silence_min_dur') and 'silence_min_dur' in imported_prefs:
-                    self.spin_silence_min_dur.setValue(float(imported_prefs['silence_min_dur']))
-                if hasattr(self, 'input_fs_min_dur') and 'silence_min_dur' in imported_prefs:
-                    self.input_fs_min_dur.setText(str(imported_prefs['silence_min_dur']))
+                # Restore Standalone Silence Detection inputs (QLineEdit-based)
                 if hasattr(self, 'input_fs_thresh') and 'silence_threshold_db' in imported_prefs:
                     self.input_fs_thresh.setText(str(imported_prefs['silence_threshold_db']))
+                if hasattr(self, 'input_fs_pad') and 'ui_spin_pad' in imported_prefs:
+                    self.input_fs_pad.setText(str(imported_prefs['ui_spin_pad']))
+                if hasattr(self, 'input_fs_min_dur') and 'silence_min_dur' in imported_prefs:
+                    self.input_fs_min_dur.setText(str(imported_prefs['silence_min_dur']))
 
                 # Restore pinned favorites visually
                 for fav_id in imported_prefs.get('favorites', []):
@@ -6803,8 +6800,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         except Exception as e:
             from osdoc import log_error
             log_error(f"Failed to load project: {e}")
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, self.txt("lbl_error"), f"{self.txt('msg_load_project_failed')}: {e}")
+            dlg = CustomMsgBox(self, self.txt("lbl_error"), f"{self.txt('msg_load_project_failed')}:\n{e}", self.txt("btn_ok"))
+            dlg.exec()
 
     def _refresh_canvas_view(self):
         if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
@@ -6965,10 +6962,11 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
     def _on_fs_finished(self, words_data, segments_data):
         """Called when run_fast_silence_pipeline completes. Directly assembles the timeline."""
-        from PySide6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtWidgets import QApplication
 
         if not words_data:
-            QMessageBox.critical(self, self.txt("msg_fast_silence"), self.txt("msg_no_silence_segments_detec"))
+            dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_no_silence_segments_detec"), self.txt("btn_ok"))
+            dlg.exec()
             self.go_to_page(0)
             if hasattr(self, 'welcome_stack'): self.welcome_stack.setCurrentIndex(0)
             return
@@ -6987,9 +6985,11 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         )
 
         if success:
-            QMessageBox.information(self, self.txt("msg_fast_silence"), self.txt("msg_fast_silence_processing_c"))
+            dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_standalone_silence_processing_c"), self.txt("btn_ok"))
+            dlg.exec()
         else:
-            QMessageBox.critical(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}: {err}")
+            dlg = CustomMsgBox(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}:\n{err}", self.txt("btn_ok"))
+            dlg.exec()
 
         self.go_to_page(0)
         if hasattr(self, 'welcome_stack'):
@@ -7147,18 +7147,18 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._on_assembly_error(self.txt("msg_assembly_failed"))
 
     def _on_assembly_success(self):
-        from PySide6.QtWidgets import QMessageBox
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
         if hasattr(self, '_panel_left'): self._panel_left.show()
         if hasattr(self, '_panel_right'): self._panel_right.show()
-        QMessageBox.information(self, self.txt("msg_success"), self.txt("msg_timeline_assembled_succes"))
+        dlg = CustomMsgBox(self, self.txt("msg_success"), self.txt("msg_timeline_assembled_succes"), self.txt("btn_ok"))
+        dlg.exec()
 
     def _on_assembly_error(self, err_msg):
-        from PySide6.QtWidgets import QMessageBox
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
         if hasattr(self, '_panel_left'): self._panel_left.show()
         if hasattr(self, '_panel_right'): self._panel_right.show()
-        QMessageBox.critical(self, self.txt("lbl_error"), err_msg)
+        dlg = CustomMsgBox(self, self.txt("lbl_error"), err_msg, self.txt("btn_ok"))
+        dlg.exec()
 
     def _build_welcome_screen(self) -> QWidget:
         """
@@ -7326,7 +7326,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_trans.addSpacing(14)
 
         # ── Link to fast silence sub-page
-        btn_switch_fast = QPushButton(self.txt("btn_fast_silence_detection"))
+        btn_switch_fast = QPushButton(self.txt("btn_standalone_silence_detection"))
         btn_switch_fast.setCursor(Qt.PointingHandCursor)
         btn_switch_fast.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
@@ -7348,7 +7348,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_fast.setAlignment(Qt.AlignTop)
 
         # TITLE
-        lbl_fs_title = QLabel(self.txt("lbl_fast_silence_workspace"))
+        lbl_fs_title = QLabel(self.txt("lbl_standalone_silence_workspace"))
         lbl_fs_title.setAlignment(Qt.AlignCenter)
         lbl_fs_title.setFixedHeight(20)
         lbl_fs_title.setStyleSheet(
@@ -7467,7 +7467,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # RUN BUTTON
         btn_row_fs = QHBoxLayout()
         btn_row_fs.addStretch()
-        self.btn_run_fs = QPushButton(self.txt("btn_run_fast_silence"))
+        self.btn_run_fs = QPushButton(self.txt("btn_run_standalone_silence"))
         self.btn_run_fs.setCursor(Qt.PointingHandCursor)
         self.btn_run_fs.setFixedHeight(30)
         self.btn_run_fs.setStyleSheet(f'''
@@ -7643,9 +7643,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
     def _on_analysis_finished(self, words_data, segments_data):
         if not words_data:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, self.txt("msg_analysis_failed"), self.txt("msg_the_transcription_process"))
-            
+            dlg = CustomMsgBox(self, self.txt("msg_analysis_failed"), self.txt("msg_the_transcription_process"), self.txt("btn_ok"))
+            dlg.exec()
             # Reset UI to Page 0 and show panels again
             self.go_to_page(0)
             self._panel_left.show()
