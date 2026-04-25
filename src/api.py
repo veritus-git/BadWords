@@ -402,6 +402,129 @@ class ResolveHandler:
             except:
                 pass
 
+    # ── XML Pre-filter Pipeline ─────────────────────────────────────────────
+
+    def export_timeline_xml(self, timeline_name, output_path):
+        """
+        Exports the named timeline as FCP7 XML to output_path.
+        Returns True on success, False otherwise.
+        """
+        try:
+            target_tl = None
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl.GetName() == timeline_name:
+                    target_tl = tl
+                    break
+
+            if not target_tl:
+                log_error(f"export_timeline_xml: timeline '{timeline_name}' not found.")
+                return False
+
+            export_type = getattr(self.resolve, 'EXPORT_FCP_7_XML', None)
+            if export_type is None:
+                log_error("export_timeline_xml: resolve.EXPORT_FCP_7_XML constant not available.")
+                return False
+
+            result = target_tl.Export(output_path, export_type)
+            if result:
+                log_info(f"Exported timeline XML: {output_path}")
+            else:
+                log_error(f"export_timeline_xml: Export() returned False for '{timeline_name}'.")
+            return bool(result)
+        except Exception as e:
+            log_error(f"export_timeline_xml error: {e}")
+            return False
+
+    def filter_xml_tracks(self, input_path, output_path, track_indices):
+        """
+        Filters an FCP7 XML file to keep only the specified audio track indices (1-based).
+        Video tracks are preserved intact — media paths are untouched.
+        Returns True on success, False otherwise.
+        """
+        try:
+            import xml.etree.ElementTree as ET
+            # Do NOT call ET.register_namespace — it corrupts namespace declarations on write
+
+            tree = ET.parse(input_path)
+            root = tree.getroot()
+
+            keep_set = set(track_indices)
+
+            # Diagnostic: log all media file paths found in XML
+            all_paths = [el.text for el in root.iter('pathurl') if el.text]
+            log_info(f"filter_xml_tracks: media paths in XML: {all_paths[:10]}")  # first 10
+
+            for audio_section in root.iter('audio'):
+                tracks = audio_section.findall('track')
+                log_info(f"filter_xml_tracks: found {len(tracks)} audio tracks; keeping {sorted(keep_set)}")
+                # Log each track's first clip name for diagnostics
+                for i, t in enumerate(tracks):
+                    clips = t.findall('.//name')
+                    clip_name = clips[0].text if clips else '(unknown)'
+                    log_info(f"  track[{i+1}]: first clip='{clip_name}' -> {'KEEP' if (i+1) in keep_set else 'REMOVE'}")
+                # Iterate in reverse so removal doesn't shift indices
+                for idx, track in reversed(list(enumerate(tracks))):
+                    if (idx + 1) not in keep_set:
+                        audio_section.remove(track)
+
+            # Write back — preserve exact encoding, no namespace mangling
+            tree.write(output_path, encoding="unicode", xml_declaration=False)
+            # Prepend UTF-8 declaration manually since encoding='unicode' skips it
+            with open(output_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n' + content)
+
+            log_info(f"Filtered XML written to: {output_path}")
+            return True
+        except Exception as e:
+            log_error(f"filter_xml_tracks error: {e}")
+            return False
+
+    def import_xml_as_timeline(self, xml_path):
+        """
+        Imports an FCP7 XML file into Resolve as a new timeline using
+        MediaPool.ImportTimelineFromFile().
+        importSourceClips=True tells Resolve to re-link existing media by path.
+        Returns the new timeline name (str) or None on failure.
+        """
+        try:
+            if not self.media_pool:
+                log_error("import_xml_as_timeline: media_pool not available.")
+                return None
+
+            import time as _time
+            import_options = {
+                "timelineName":      f"BW_Filtered_{int(_time.time())}",
+                "importSourceClips": True,   # Critical: must be True to re-link media
+            }
+            log_info(f"import_xml_as_timeline: calling ImportTimelineFromFile('{xml_path}')")
+            new_tl = self.media_pool.ImportTimelineFromFile(xml_path, import_options)
+
+            if not new_tl:
+                log_error(f"import_xml_as_timeline: ImportTimelineFromFile returned None for '{xml_path}'.")
+                log_error("  Possible causes: XML malformed, media paths wrong, or Resolve API version mismatch.")
+                return None
+
+            name = new_tl.GetName()
+            log_info(f"import_xml_as_timeline: Imported timeline '{name}' successfully.")
+
+            # Diagnostic: verify track count in imported timeline
+            try:
+                a_cnt = new_tl.GetTrackCount("audio")
+                v_cnt = new_tl.GetTrackCount("video")
+                log_info(f"import_xml_as_timeline: result has {v_cnt} video track(s), {a_cnt} audio track(s).")
+            except Exception:
+                pass
+
+            return name
+
+        except Exception as e:
+            log_error(f"import_xml_as_timeline error: {e}")
+            return None
+
     def get_optimal_source_item(self, original_timeline_name):
         """
         AUTO-SOURCING LOGIC:

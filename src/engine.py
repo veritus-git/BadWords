@@ -1559,20 +1559,69 @@ except Exception as e:
                 log_error("No active timeline found.")
                 return False, None
                 
-            # AUTO-SOURCING: Zawsze używamy oryginalnego timeline'u z momentu analizy
-            original_tl_name = settings.get("original_timeline_name")
+            # ── SOURCE SNAPSHOT: Use the timeline from transcription, not the active one ──
+            source_snapshot = settings.get("source_snapshot") or {}
+            original_tl_name = source_snapshot.get("timeline_name") or settings.get("original_timeline_name")
             if not original_tl_name:
                 original_tl_name = self.resolve_handler.timeline.GetName()
-                
+                log_info(f"assemble_timeline: No source snapshot found, falling back to active timeline: '{original_tl_name}'")
+            else:
+                log_info(f"assemble_timeline: Using source snapshot timeline: '{original_tl_name}'")
+
+            track_indices = source_snapshot.get("track_indices") or []
+            a_track_count = 0
+            try:
+                count = self.resolve_handler.project.GetTimelineCount()
+                for i in range(1, count + 1):
+                    tl = self.resolve_handler.project.GetTimelineByIndex(i)
+                    if tl.GetName() == original_tl_name:
+                        a_track_count = tl.GetTrackCount("audio")
+                        break
+            except Exception:
+                pass
+
+            all_tracks_selected = (not track_indices) or (a_track_count > 0 and len(track_indices) >= a_track_count)
+
+            # ── XML PRE-FILTER: Only when a subset of tracks was selected ──────────
+            xml_filtered_tl_name = None
+            if track_indices and not all_tracks_selected:
+                log_info(f"assemble_timeline: Track subset selected ({track_indices}), running XML pre-filter...")
+                set_status("Preparing filtered source timeline...")
+                try:
+                    temp_dir = self.os_doc.get_temp_folder()
+                    os.makedirs(temp_dir, exist_ok=True)
+                    safe_name = "".join(c for c in original_tl_name if c.isalnum() or c in '_-')
+                    raw_xml_path      = os.path.join(temp_dir, f"bw_raw_{safe_name}.xml")
+                    filtered_xml_path = os.path.join(temp_dir, f"bw_filtered_{safe_name}.xml")
+
+                    ok_export = self.resolve_handler.export_timeline_xml(original_tl_name, raw_xml_path)
+                    if ok_export:
+                        ok_filter = self.resolve_handler.filter_xml_tracks(raw_xml_path, filtered_xml_path, track_indices)
+                        if ok_filter:
+                            xml_filtered_tl_name = self.resolve_handler.import_xml_as_timeline(filtered_xml_path)
+                            if xml_filtered_tl_name:
+                                log_info(f"assemble_timeline: Using filtered timeline '{xml_filtered_tl_name}' as source.")
+                                original_tl_name = xml_filtered_tl_name
+                            else:
+                                log_error("assemble_timeline: XML import failed, falling back to original timeline.")
+                        else:
+                            log_error("assemble_timeline: XML filter failed, falling back to original timeline.")
+                    else:
+                        log_error("assemble_timeline: XML export failed, falling back to original timeline.")
+                except Exception as xml_err:
+                    log_error(f"assemble_timeline: XML pre-filter exception: {xml_err}")
+            else:
+                log_info(f"assemble_timeline: All tracks selected or no filter needed, using full timeline.")
+
             set_status(self.txt("status_assembly_source"))
             source_item, context_type = self.resolve_handler.get_optimal_source_item(original_tl_name)
-            
+
             if not source_item:
                 log_error("Could not find optimal source clip or timeline.")
                 return False, None
-                
+
             audio_only_mode = (context_type == 'audio')
-            
+
             set_progress(30)
             
             set_status(self.txt("status_calc_cuts"))

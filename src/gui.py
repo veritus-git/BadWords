@@ -6764,17 +6764,28 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             # --- 1. SYNC UI PREFERENCES ---
             imported_prefs = state.get('settings', {})
             
+            # --- Restore Source Snapshot ---
+            imported_snapshot = (state.get('settings') or {}).get('transcription_source')
+            if imported_snapshot:
+                self._transcription_source = imported_snapshot
+
             # --- Restore Title Bar ---
             title_text = state.get('title_bar_text', '')
             if title_text and title_text != "BadWords":
                 if hasattr(self, '_title_bar'):
                     self._title_bar.set_title(title_text)
-            else:
-                if hasattr(self, '_title_bar'):
-                    msg = self.txt("msg_transcription_source")
-                    if msg:
-                        fallback_title = msg.replace("{tl}", "Imported Project").replace("{tr}", self.txt("txt_all"))
-                        self._title_bar.set_title(fallback_title)
+            elif self._transcription_source:
+                # Rebuild title from snapshot
+                snap = self._transcription_source
+                tl_name = snap.get('timeline_name', '')
+                track_names = snap.get('track_names', [])
+                all_tl_tracks = snap.get('all_tracks', True)
+                tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
+                msg = self.txt('msg_transcription_source')
+                if msg and '{tl}' in msg:
+                    rebuilt_title = msg.replace('{tl}', tl_name).replace('{tr}', tracks_str)
+                    if hasattr(self, '_title_bar'):
+                        self._title_bar.set_title(rebuilt_title)
 
             if imported_prefs:
                 self.engine.save_preferences(imported_prefs)
@@ -7302,6 +7313,17 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self.bar_processing.set_value(val)
             QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
             
+        # ── INJECT SOURCE SNAPSHOT into prefs for engine ────────────────────
+        src = getattr(self, '_transcription_source', None)
+        if not src:
+            # Try to recover from persisted prefs
+            saved_src = (self.engine.load_preferences() or {}).get('transcription_source')
+            if saved_src:
+                src = saved_src
+                self._transcription_source = src
+        if src:
+            prefs["source_snapshot"] = src
+
         # EXECUTE TRULY SYNCHRONOUSLY ON MAIN THREAD
         # We bypass the threaded wrapper and call the core method directly
         success, warning = self.engine.assemble_timeline(
@@ -7926,8 +7948,30 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if msg and "{tl}" in msg:
             new_title = msg.replace("{tl}", selected_tl_name).replace("{tr}", tracks_str)
             self._title_bar.set_title(new_title)
-        
+
+        # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
+        # Compute track indices from names (needed for engine assembly)
+        all_tracks_available = list(selected_tracks_combo.options_list) if selected_tracks_combo else []
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
+        self._transcription_source = {
+            "timeline_name":  selected_tl_name,
+            "track_names":    selected_track_names,
+            "track_indices":  track_indices,
+            "all_tracks":     (not selected_track_names) or (len(selected_track_names) >= len(all_tracks_available)),
+        }
+        # Persist snapshot so it survives project export/import
+        try:
+            prefs = self.engine.load_preferences() or {}
+            prefs["transcription_source"] = self._transcription_source
+            self.engine.save_preferences(prefs)
+        except Exception as _e:
+            from osdoc import log_error as _log_error
+            _log_error(f"Could not persist transcription_source: {_e}")
+
         self._populate_editor(words_data, segments_data)
+
 
     def _on_nav_markers(self):
         """Toggle the right panel (placeholder)."""
