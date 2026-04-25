@@ -329,12 +329,29 @@ class TranscriptionCanvas(QWidget):
         self.setCursor(Qt.ArrowCursor)
         self.setMouseTracking(True)
         self._last_dragged_id = -1
-        self.setFont(QFont(config.UI_FONT_NAME, 16))
+        
+        # 14pt is approx 25% larger than the default 11pt GUI font
+        self.editor_font = QFont(config.UI_FONT_NAME, 14)
+        self.setFont(self.editor_font)
 
     def load_data(self, words_data):
         self.words_data = words_data
         self._calculate_layout()
         self.update()
+
+    def _get_visible_words(self):
+        """Returns a filtered list of only the words that should physically render."""
+        vis = []
+        for w in self.words_data:
+            if w.get('type') == 'silence': 
+                continue
+                
+            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+            if is_inaudible and hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
+                continue
+                
+            vis.append(w)
+        return vis
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -344,36 +361,35 @@ class TranscriptionCanvas(QWidget):
         if not self.words_data: return
         from PySide6.QtGui import QFontMetrics
         
-        metrics = QFontMetrics(self.font())
-        space_w = metrics.horizontalAdvance(" ")
-        line_height = metrics.height() + 18
-        x, y = 15, 15
-        max_w = self.width() - 30
+        metrics = QFontMetrics(self.editor_font)
+        space_w = metrics.horizontalAdvance(" ") + 2
+        line_height = metrics.height() + 16 # Tighter line spacing
         
-        for w in self.words_data:
-            if w.get('type') == 'silence': continue
-            
-            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
-            if is_inaudible and hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
-                continue
-
+        x, y = 20, 20
+        max_w = self.width() - 40
+        
+        visible_words = self._get_visible_words()
+        
+        for w in visible_words:
             text = w.get('text', '')
             word_w = metrics.horizontalAdvance(text)
             
-            if x + word_w > max_w and x > 15:
-                x = 15
+            if x + word_w > max_w and x > 20:
+                x = 20
                 y += line_height
                 
             w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
             x += word_w + space_w
             
-        self.setMinimumHeight(y + line_height + 30)
+        self.setMinimumHeight(y + line_height + 40)
 
     def paintEvent(self, event):
         from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtCore import QRectF
+        
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setFont(self.font())
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setFont(self.editor_font)
         
         color_map = {
             'bad': (QColor(config.WORD_BAD_BG), QColor(config.WORD_BAD_FG)),
@@ -382,61 +398,79 @@ class TranscriptionCanvas(QWidget):
             'inaudible': (QColor(config.WORD_INAUDIBLE_BG), QColor(config.WORD_INAUDIBLE_FG))
         }
         
+        def get_status(w):
+            s = w.get('status')
+            if s == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
+                return None
+            return s
+
         p.setPen(Qt.NoPen)
-        for i, w in enumerate(self.words_data):
+        visible_words = self._get_visible_words()
+        
+        # --- PASS 1: Base Rounded Backgrounds ---
+        for w in visible_words:
             if '_rect' not in w: continue
-            status = w.get('status')
-            if status == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
-                status = None
-                
+            status = get_status(w)
             if status in color_map:
-                bg_color = color_map[status][0]
-                rect = w['_rect'].adjusted(-2, 0, 2, 0)
-                p.setBrush(bg_color)
-                p.drawRoundedRect(rect, 4, 4)
+                p.setBrush(color_map[status][0])
+                p.drawRoundedRect(w['_rect'].adjusted(-3, -1, 3, 1), 5, 5)
                 
-                # ANTI-ISLAND: Bridge right side to next word if it has a status
-                if i + 1 < len(self.words_data):
-                    next_w = self.words_data[i+1]
-                    if '_rect' in next_w and next_w['_rect'].y() == rect.y():
-                        next_status = next_w.get('status')
-                        if next_status == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
-                            next_status = None
-                            
-                        if next_status in color_map:
-                            from PySide6.QtCore import QRectF
-                            next_rect = next_w['_rect'].adjusted(-2, 0, 2, 0)
-                            next_bg_color = color_map[next_status][0]
-                            
-                            # Calculate midpoint of the gap
-                            gap_mid = rect.right() + (next_rect.left() - rect.right()) / 2
-                            
-                            # Draw sharp left half of the bridge (current color)
-                            p.setBrush(bg_color)
-                            p.drawRect(QRectF(rect.right() - 4, rect.y(), gap_mid - rect.right() + 4, rect.height()))
-                            
-                            # Draw sharp right half of the bridge (next color)
-                            p.setBrush(next_bg_color)
-                            p.drawRect(QRectF(gap_mid, rect.y(), next_rect.left() - gap_mid + 4, rect.height()))
-                        
-        for w in self.words_data:
+        # --- PASS 2: Sharp Bridges (Anti-Island) ---
+        for i in range(len(visible_words) - 1):
+            w1 = visible_words[i]
+            w2 = visible_words[i+1]
+            
+            if '_rect' not in w1 or '_rect' not in w2: continue
+            if w1['_rect'].y() != w2['_rect'].y(): continue 
+            
+            s1 = get_status(w1)
+            s2 = get_status(w2)
+            
+            if s1 in color_map and s2 in color_map:
+                r1 = w1['_rect'].adjusted(-3, -1, 3, 1)
+                r2 = w2['_rect'].adjusted(-3, -1, 3, 1)
+                
+                c1 = color_map[s1][0]
+                c2 = color_map[s2][0]
+                
+                if s1 == s2:
+                    # SAME COLOR: Draw one massive seamless block
+                    p.setBrush(c1)
+                    bridge_rect = QRectF(r1.right() - 5, r1.y(), r2.left() - r1.right() + 10, r1.height())
+                    p.drawRect(bridge_rect)
+                else:
+                    # DIFFERENT COLORS: Disable antialiasing to prevent blurry hairline artifacts
+                    p.setRenderHint(QPainter.Antialiasing, False)
+                    gap_mid = int(r1.right() + (r2.left() - r1.right()) / 2.0)
+                    
+                    p.setBrush(c1)
+                    # +1 to width to ensure pixel overlap and eliminate hairlines
+                    p.drawRect(QRectF(r1.right() - 5, r1.y(), gap_mid - r1.right() + 6, r1.height()))
+                    
+                    p.setBrush(c2)
+                    p.drawRect(QRectF(gap_mid, r2.y(), r2.left() - gap_mid + 5, r2.height()))
+                    
+                    # Re-enable Antialiasing for the rest of the canvas
+                    p.setRenderHint(QPainter.Antialiasing, True)
+                
+        # --- PASS 3: Text Render (Always on top) ---
+        for w in visible_words:
             if '_rect' not in w: continue
-            status = w.get('status')
-            if status == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
-                status = None
+            status = get_status(w)
             fg_color = color_map[status][1] if status in color_map else QColor(config.WORD_NORMAL_FG)
             p.setPen(fg_color)
             p.drawText(w['_rect'], Qt.AlignCenter, w.get('text', ''))
 
     def _handle_mouse(self, pos):
-        for w in self.words_data:
-            if '_rect' in w and w['_rect'].adjusted(-2,0,2,0).contains(pos):
+        visible_words = self._get_visible_words()
+        for w in visible_words:
+            if '_rect' in w and w['_rect'].adjusted(-3, -1, 3, 1).contains(pos):
                 if w['id'] != self._last_dragged_id:
                     self._last_dragged_id = w['id']
                     status = None
-                    if getattr(self.main_window, 'rb_red', None) and self.main_window.rb_red.isChecked(): status = 'bad'
-                    elif getattr(self.main_window, 'rb_blue', None) and self.main_window.rb_blue.isChecked(): status = 'repeat'
-                    elif getattr(self.main_window, 'rb_green', None) and self.main_window.rb_green.isChecked(): status = 'typo'
+                    if self.main_window.rb_red.isChecked(): status = 'bad'
+                    elif self.main_window.rb_blue.isChecked(): status = 'repeat'
+                    elif self.main_window.rb_green.isChecked(): status = 'typo'
                     
                     import algorythms
                     updates = algorythms.propagate_status_change(self.words_data, w['id'], status)
