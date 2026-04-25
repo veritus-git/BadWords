@@ -2822,8 +2822,11 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText("Initializing Fast Silence Cut...")
 
-        # Read from page-1 spinboxes (if available), fall back to prefs
-        if hasattr(self, '_fs_spin_thresh') and hasattr(self, '_fs_spin_pad'):
+        # Read from spinboxes (new names first, old names as fallback)
+        if hasattr(self, 'spin_fs_thresh') and hasattr(self, 'spin_fs_pad'):
+            thresh = self.spin_fs_thresh.value()
+            pad    = self.spin_fs_pad.value()
+        elif hasattr(self, '_fs_spin_thresh') and hasattr(self, '_fs_spin_pad'):
             thresh = self._fs_spin_thresh.value()
             pad    = self._fs_spin_pad.value()
         else:
@@ -3210,77 +3213,53 @@ class BadWordsGUI(QMainWindow):
         self.welcome_stack.addWidget(p_transcription)  # index 0
 
         # ═══════════════════════════════════════════════════════════════
-        # SUB-PAGE 1: FAST SILENCE
+        # SUB-PAGE 1: FAST SILENCE (clean layout, mirrors main page)
         # ═══════════════════════════════════════════════════════════════
         p_fast = QWidget()
         p_fast.setStyleSheet("background: transparent;")
-        l_fast_outer = QVBoxLayout(p_fast)
-        l_fast_outer.setContentsMargins(0, 0, 0, 0)
-        l_fast_outer.setSpacing(0)
+        l_fast = QVBoxLayout(p_fast)
+        l_fast.setContentsMargins(0, 10, 0, 0)
+        l_fast.setSpacing(0)
 
-        # Back link (above the card)
-        btn_back = QPushButton("< Back to transcription")
+        # Back link
+        btn_back = QPushButton("\u2190 Back to transcription")
         btn_back.setCursor(Qt.PointingHandCursor)
         btn_back.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-            " font-size: 9pt; text-decoration: underline; border: none; padding: 0;"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
         )
         btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
-        l_fast_outer.addWidget(btn_back)
-        l_fast_outer.addSpacing(10)
+        l_fast.addWidget(btn_back)
+        l_fast.addSpacing(14)
 
-        # Inner card frame
-        card = QFrame()
-        card.setStyleSheet("""
-            QFrame {
-                background-color: #1a1a1a;
-                border: 1px solid #333333;
-                border-radius: 6px;
-            }
-        """)
-        l_card = QVBoxLayout(card)
-        l_card.setContentsMargins(20, 20, 20, 20)
-        l_card.setSpacing(0)
-
-        lbl_fast_title = QLabel("Fast Silence Cut")
-        lbl_fast_title.setAlignment(Qt.AlignCenter)
-        lbl_fast_title.setStyleSheet(
+        lbl_fs_title = QLabel("Fast Silence Detection")
+        lbl_fs_title.setAlignment(Qt.AlignCenter)
+        lbl_fs_title.setStyleSheet(
             f"color: #cccccc; font-size: 13pt; font-weight: bold;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
         )
-        l_card.addWidget(lbl_fast_title)
-        l_card.addSpacing(4)
+        l_fast.addWidget(lbl_fs_title)
+        l_fast.addSpacing(16)
 
-        lbl_fast_sub = QLabel("Detects and removes silence using FFmpeg only \u2014 no Whisper required.")
-        lbl_fast_sub.setAlignment(Qt.AlignCenter)
-        lbl_fast_sub.setWordWrap(True)
-        lbl_fast_sub.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 9pt;"
-            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
-        )
-        l_card.addWidget(lbl_fast_sub)
-        l_card.addSpacing(18)
+        # ── Settings rows ───────────────────────────────────────────────
+        self.spin_fs_thresh = QDoubleSpinBox()
+        self.spin_fs_thresh.setRange(-100, 0)
+        self.spin_fs_thresh.setSuffix(" dB")
+        self.spin_fs_thresh.setValue(prefs.get('ui_spin_thresh', -42.0))
+        l_fast.addLayout(_row("Silence Threshold:", self.spin_fs_thresh))
+        l_fast.addSpacing(10)
 
-        # Threshold spinbox
-        self._fs_spin_thresh = QDoubleSpinBox()
-        self._fs_spin_thresh.setRange(-100, 0)
-        self._fs_spin_thresh.setSuffix(" dB")
-        self._fs_spin_thresh.setValue(prefs.get('ui_spin_thresh', -42.0))
-        l_card.addLayout(_row("Silence Threshold:", self._fs_spin_thresh))
-        l_card.addSpacing(10)
+        self.spin_fs_pad = QDoubleSpinBox()
+        self.spin_fs_pad.setRange(0, 5)
+        self.spin_fs_pad.setSingleStep(0.05)
+        self.spin_fs_pad.setSuffix(" s")
+        self.spin_fs_pad.setValue(prefs.get('ui_spin_pad', 0.05))
+        l_fast.addLayout(_row("Padding:", self.spin_fs_pad))
+        l_fast.addSpacing(16)
 
-        # Padding spinbox
-        self._fs_spin_pad = QDoubleSpinBox()
-        self._fs_spin_pad.setRange(0, 5)
-        self._fs_spin_pad.setSingleStep(0.05)
-        self._fs_spin_pad.setSuffix(" s")
-        self._fs_spin_pad.setValue(prefs.get('ui_spin_pad', 0.05))
-        l_card.addLayout(_row("Padding:", self._fs_spin_pad))
-        l_card.addSpacing(16)
-
-        # Mode radio buttons
+        # ── Mode radios ─────────────────────────────────────────────────
         from PySide6.QtWidgets import QButtonGroup
-        fs_mode_group = QButtonGroup(card)
+        fs_mode_group = QButtonGroup(p_fast)
         self.rb_fs_cut = QRadioButton("Cut silence directly")
         self.rb_fs_cut.setChecked(True)
         self.rb_fs_cut.setCursor(Qt.PointingHandCursor)
@@ -3290,11 +3269,11 @@ class BadWordsGUI(QMainWindow):
         self.rb_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent; border: none;")
         fs_mode_group.addButton(self.rb_fs_cut)
         fs_mode_group.addButton(self.rb_fs_mark)
-        l_card.addWidget(self.rb_fs_cut)
-        l_card.addWidget(self.rb_fs_mark)
-        l_card.addSpacing(20)
+        l_fast.addWidget(self.rb_fs_cut)
+        l_fast.addWidget(self.rb_fs_mark)
+        l_fast.addSpacing(20)
 
-        # Run button — same green style as #btn_primary
+        # ── Run button ──────────────────────────────────────────────────
         self.btn_run_fs = QPushButton("\u26a1  RUN FAST SILENCE")
         self.btn_run_fs.setCursor(Qt.PointingHandCursor)
         self.btn_run_fs.setFixedHeight(36)
@@ -3308,9 +3287,7 @@ class BadWordsGUI(QMainWindow):
             QPushButton:pressed {{ background-color: #176e38; }}
         """)
         self.btn_run_fs.clicked.connect(self._on_fast_silence)
-        l_card.addWidget(self.btn_run_fs)
-
-        l_fast_outer.addWidget(card)
+        l_fast.addWidget(self.btn_run_fs)
 
         self.welcome_stack.addWidget(p_fast)   # index 1
 
