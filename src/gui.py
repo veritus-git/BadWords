@@ -664,22 +664,8 @@ class AnimatedTitleButton(QPushButton):
         self._update_style()
 
     def change_base_icon(self, new_icon_path):
-        if hasattr(self, 'icon_path'):
-            self.icon_path = new_icon_path
-        elif hasattr(self, '_icon_path'):
-            self._icon_path = new_icon_path
-            
-        # Bezpieczna aktualizacja ikony
+        self._icon_path = new_icon_path
         self.setIcon(QIcon(new_icon_path))
-        
-        # Jeśli ikona jest przypisywana przez QSS w metodzie aktualizującej (np. _update_style),
-        # upewnij się, że wywołujesz tę metodę, aby odświeżyć style!
-        if hasattr(self, '_update_style'):
-            self._update_style()
-            
-        # Wymuszenie przerysowania przez silnik Qt
-        self.style().unpolish(self)
-        self.style().polish(self)
         self.update()
 
     # ── internal ─────────────────────────────────────────────────────────────
@@ -795,12 +781,25 @@ class CustomTitleBar(QWidget):
 
     # ── helpers ───────────────────────────────────────────────────────────────
     def _toggle_maximize(self):
-        if self._win.isMaximized():
-            self._win.showNormal()
+        # Zapis/odczyt stanu przed maksymalizacją, aby przycisk "windowed"
+        # przywracał dokładny poprzedni rozmiar i położenie.
+        win = self._win
+        if not getattr(win, '_is_root', False):
+            return
+        if win.isMaximized():
+            win.showNormal()
+            saved_geo = getattr(win, '_pre_max_geometry', None)
+            if saved_geo and saved_geo.isValid():
+                win.setGeometry(saved_geo)
         else:
-            self._win.showMaximized()
+            win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
+            win.showMaximized()
 
     def mousePressEvent(self, event):
+        # Windows root window: OS handles dragging via HTCAPTION in nativeEvent.
+        if getattr(self._win, '_is_win', False) and getattr(self._win, '_is_root', False):
+            event.ignore()
+            return
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
             # Zapisujemy pozycję lokalną kliknięcia (względem paska tytułowego)
@@ -810,6 +809,11 @@ class CustomTitleBar(QWidget):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Windows root window: fully handled by OS via HTCAPTION.
+        if getattr(self._win, '_is_win', False) and getattr(self._win, '_is_root', False):
+            event.ignore()
+            return
+
         if not getattr(self, '_is_dragging', False):
             super().mouseMoveEvent(event)
             return
@@ -820,37 +824,53 @@ class CustomTitleBar(QWidget):
         if (event.position().toPoint() - self._click_pos).manhattanLength() < 5:
             return
 
-        self._is_dragging = False # Przekazujemy pałeczkę do systemu operacyjnego
+        self._is_dragging = False  # Przekazujemy pałeczkę do systemu operacyjnego
 
         if win.isMaximized():
-            # 1. Obliczamy procentowe miejsce chwycenia paska (np. 0.5 to środek)
-            ratio = self._click_pos.x() / self.width()
-            
-            # 2. Odpinamy okno z maksymalizacji
+            ratio          = self._click_pos.x() / max(1, self.width())
+            _TARGET_W      = 580
+            _TARGET_H      = 670
+            gp             = event.globalPosition().toPoint()
+            is_wayland     = getattr(self._win, '_is_wayland', False)
+
             win.showNormal()
-            
-            # 3. Korygujemy pozycję okna tak, aby pasek nie "uciekł" spod kursora
-            new_width = win.width()
-            global_mouse_pos = event.globalPosition().toPoint()
-            
-            new_x = global_mouse_pos.x() - int(new_width * ratio)
-            new_y = global_mouse_pos.y() - self._click_pos.y()
-            win.move(new_x, new_y)
-            
-        # Niezależnie od trybu okna, oddajemy kontrolę menedżerowi okien (Aero Snap itp.)
+
+            if is_wayland:
+                # Wayland: compositor controls position — setGeometry() position is
+                # ignored for toplevel windows. Just resize; compositor anchors the
+                # cursor automatically when startSystemMove() is called.
+                win.resize(_TARGET_W, _TARGET_H)
+            else:
+                # X11: we control position via setGeometry (single ConfigureRequest).
+                # Cursor stays at the same proportional place on the title bar.
+                new_x = gp.x() - int(_TARGET_W * ratio)
+                new_y = gp.y() - self._click_pos.y()
+                win.setGeometry(new_x, new_y, _TARGET_W, _TARGET_H)
+
+        # Oddajemy kontrolę menedżerowi okien (obsługa przeciągania / snap)
         if hasattr(win, 'windowHandle') and win.windowHandle():
             win.windowHandle().startSystemMove()
-            
+
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        # Windows root window: no-op — drag was never started on our side.
+        if getattr(self._win, '_is_win', False) and getattr(self._win, '_is_root', False):
+            event.ignore()
+            return
         self._is_dragging = False
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
+            # On Windows root it's handled by OS double-click on HTCAPTION.
+            if getattr(self._win, '_is_win', False) and getattr(self._win, '_is_root', False):
+                event.ignore()
+                return
             self._toggle_maximize()
         super().mouseDoubleClickEvent(event)
+
+
 
 
 class ResizeGrip(QWidget):
@@ -900,15 +920,37 @@ class FramelessWindowMixin:
     # ── public API ────────────────────────────────────────────────────────────
     def frameless_init(self, is_popup: bool = False):
         """Call once, right after super().__init__()."""
-        self.setWindowFlag(Qt.FramelessWindowHint, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self._is_popup              = is_popup
-        
-        # Determine if we are running on Windows
         import platform
-        _engine = getattr(self, 'engine', None)
-        _os_doc = getattr(_engine, 'os_doc', None) if _engine else None
-        self._is_win = _os_doc.is_win if _os_doc else (platform.system() == "Windows")
+        from PySide6.QtGui import QGuiApplication
+        self._is_win = platform.system() == "Windows"
+        self._is_wayland = QGuiApplication.platformName() == 'wayland'
+        # Sprawdzamy, czy to jest główne okno (root)
+        self._is_root = self.__class__.__name__ == "BadWordsGUI"
+
+        if self._is_win:
+            if self._is_root:
+                # Root window: uses a native HWND frame so DWM can handle Aero Snap,
+                # shadows, and the snap-layout preview. We do NOT set
+                # WA_TranslucentBackground here — combining it with a native frame
+                # causes Windows to composite a white NC area that flashes on every
+                # repaint / activation.
+                self.setWindowFlags(
+                    self.windowFlags()
+                    | Qt.Window
+                    | Qt.CustomizeWindowHint
+                    | Qt.WindowMinMaxButtonsHint
+                )
+                # Do NOT set WA_TranslucentBackground for the root on Windows.
+            else:
+                # Popups are genuinely frameless — translucency is safe here.
+                self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.Dialog)
+                self.setAttribute(Qt.WA_TranslucentBackground, True)
+        else:
+            # Linux / macOS: fully frameless + translucent (rounded corners via QSS).
+            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+            self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        self._is_popup = is_popup
 
         if not self._is_win:
             self._setup_grips()
@@ -921,6 +963,18 @@ class FramelessWindowMixin:
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.WindowStateChange:
             self._refresh_max_state()
+            # Gdy okno zmienia stan (max ↔ normal), wymuszamy na DWM natychmiastowe
+            # przeliczenie metryki NC przez SWP_FRAMECHANGED — eliminuje to białą ramkę
+            # która mogłaby się pojawić w pierwszej klatce po zmianie stanu.
+            if getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
+                try:
+                    import ctypes
+                    hwnd = int(self.winId())
+                    if hwnd:
+                        # SWP_FRAMECHANGED(0x20)|SWP_NOZORDER(0x04)|SWP_NOMOVE(0x02)|SWP_NOSIZE(0x01)
+                        ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
+                except Exception:
+                    pass
         super().changeEvent(event)
 
     def showEvent(self, event):
@@ -932,12 +986,25 @@ class FramelessWindowMixin:
 
     def _refresh_max_state(self):
         is_max = self.isMaximized()
-        
+
         # Szukamy paska pod obiema nazwami (główne okno: _title_bar, dialogi: _tb)
         title_bar = getattr(self, '_title_bar', getattr(self, '_tb', None))
-        
         if title_bar and hasattr(title_bar, 'update_maximize_icon'):
             title_bar.update_maximize_icon(is_max)
+
+        # Gdy okno pokrywa cały ekran, border-radius: 12px powoduje wizualne
+        # "przycinanie" narożników. Zerujemy promień przy maksymalizacji i
+        # przywracamy go przy powrocie do trybu okienkowego.
+        # Dotyczy TYLKO głównego okna — popupy nie mogą być maksymalizowane.
+        if getattr(self, '_is_root', False):
+            root_frame = self._get_root_frame()
+            if root_frame:
+                radius = '0px' if is_max else '12px'
+                root_frame.setStyleSheet(
+                    f"QFrame#{root_frame.objectName()} {{"
+                    f" background-color: {config.BG_COLOR};"
+                    f" border-radius: {radius}; }}"
+                )
 
     def _setup_grips(self):
         self._grips = []
@@ -983,38 +1050,97 @@ class FramelessWindowMixin:
 
     # ── Windows WM_NCHITTEST ──────────────────────────────────────────────────
     def nativeEvent(self, eventType, message):
-        try:
-            _is_win = getattr(self, '_is_win', platform.system() == "Windows")
-            if _is_win and eventType == b"windows_generic_MSG":
-                import ctypes.wintypes as _wt
-                msg = _wt.MSG.from_address(int(message))
-                if msg.message == 0x0084: # WM_NCHITTEST
-                    x = msg.lParam & 0xFFFF
-                    if x & 0x8000: x -= 0x10000
-                    y = (msg.lParam >> 16) & 0xFFFF
-                    if y & 0x8000: y -= 0x10000
-                    
-                    pos = self.mapFromGlobal(QPoint(x, y))
-                    w, h = self.width(), self.height()
-                    b = 6 # Grubość strefy zmiany rozmiaru okna
-                    
-                    left, right = pos.x() < b, pos.x() > w - b
-                    top, bottom = pos.y() < b, pos.y() > h - b
-                    
-                    # TYLKO krawędzie dla zmiany rozmiaru. Zero HTCAPTION (powodowało blokadę DWM)
-                    if top and left: return True, 13
-                    if top and right: return True, 14
-                    if bottom and left: return True, 16
-                    if bottom and right: return True, 17
-                    if left: return True, 10
-                    if right: return True, 11
-                    if top: return True, 12
-                    if bottom: return True, 15
-                    
-                    # Przekazanie do PySide (przyciski będą działać, przeciąganie w mouseMoveEvent)
-                    return True, 1 
-        except Exception:
-            pass
+        if not getattr(self, '_is_win', False) or not getattr(self, '_is_root', False) or eventType != b"windows_generic_MSG":
+            return super().nativeEvent(eventType, message)
+
+        import ctypes
+        from ctypes import wintypes
+        msg = wintypes.MSG.from_address(int(message))
+
+        # ── WM_NCCALCSIZE (0x0083) ────────────────────────────────────────────
+        # Returning 0 with wParam=True removes the entire native NC area so
+        # Windows draws nothing there — our custom title bar owns that space.
+        # When maximized, Windows adds a hidden "maximized border" (SM_CXFRAME +
+        # SM_CXPADDEDBORDER) that would otherwise push the client area inward.
+        # We compensate by shrinking the rect on all four sides. Left/right/bottom
+        # corrections prevent edge clipping on multi-monitor setups.
+        if msg.message == 0x0083:  # WM_NCCALCSIZE
+            if msg.wParam and self.isMaximized():
+                user32 = ctypes.windll.user32
+                # SM_CXFRAME(32) + SM_CXPADDEDBORDER(92) = total hidden border
+                border = user32.GetSystemMetrics(32) + user32.GetSystemMetrics(92)
+                params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
+                params[0].left   += border
+                params[0].top    += border
+                params[0].right  -= border
+                params[0].bottom -= border
+            return True, 0
+
+        # ── WM_ENTERSIZEMOVE (0x0231) ─────────────────────────────────────────
+        # Fires at the start of every drag or resize. Forces DWM to flush our
+        # WM_NCCALCSIZE=0 result before NC repaint — eliminates white flash.
+        if msg.message == 0x0231:  # WM_ENTERSIZEMOVE
+            hwnd = int(self.winId())
+            if hwnd:
+                # SWP_FRAMECHANGED(0x20)|SWP_NOZORDER(0x04)|SWP_NOMOVE(0x02)|SWP_NOSIZE(0x01)
+                ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
+            return super().nativeEvent(eventType, message)  # don't consume
+
+        # ── WM_NCACTIVATE (0x0086) ────────────────────────────────────────────
+        # The default handler repaints the NC area on activate/deactivate,
+        # which produces a white flash at the top of the window.
+        # Passing wParam=True and lParam=-1 tells Windows to suppress NC
+        # repainting entirely and keeps our custom title bar pixel-perfect.
+        if msg.message == 0x0086:  # WM_NCACTIVATE
+            hwnd = int(self.winId())
+            ctypes.windll.user32.DefWindowProcW(
+                hwnd,
+                0x0086,          # WM_NCACTIVATE
+                msg.wParam,      # keep active/inactive state
+                ctypes.c_long(-1)  # lParam = -1 → skip NC repaint
+            )
+            return True, 1
+
+        # ── WM_NCHITTEST (0x0084) ─────────────────────────────────────────────
+        # Map pixel positions to hit-test codes so Windows can drive:
+        #   • resize (HTLEFT / HTRIGHT / …)
+        #   • native drag + Aero Snap (HTCAPTION)
+        #   • button clicks stay in client space (HTCLIENT)
+        if msg.message == 0x0084:  # WM_NCHITTEST
+            x = msg.lParam & 0xFFFF
+            if x & 0x8000: x -= 0x10000
+            y = (msg.lParam >> 16) & 0xFFFF
+            if y & 0x8000: y -= 0x10000
+
+            global_pos = QPoint(x, y)
+            pos = self.mapFromGlobal(global_pos)
+            w, h = self.width(), self.height()
+            b = self._RESIZE_BORDER  # consistent with _update_grips
+
+            # Resize border hit-tests (disabled when maximized)
+            if not self.isMaximized():
+                lx, rx = pos.x() < b, pos.x() > w - b
+                ty, by = pos.y() < b, pos.y() > h - b
+                if ty and lx: return True, 13  # HTTOPLEFT
+                if ty and rx: return True, 14  # HTTOPRIGHT
+                if by and lx: return True, 16  # HTBOTTOMLEFT
+                if by and rx: return True, 17  # HTBOTTOMRIGHT
+                if lx:        return True, 10  # HTLEFT
+                if rx:        return True, 11  # HTRIGHT
+                if ty:        return True, 12  # HTTOP
+                if by:        return True, 15  # HTBOTTOM
+
+            # Title-bar hit-test — HTCAPTION gives native drag + snap + animations.
+            # Buttons stay as HTCLIENT so Qt can process their click events.
+            _tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
+            if _tb:
+                tb_pos = _tb.mapFromGlobal(global_pos)
+                if _tb.rect().contains(tb_pos):
+                    child = _tb.childAt(tb_pos)
+                    if not child or not child.inherits("QPushButton"):
+                        return True, 2  # HTCAPTION
+
+            return True, 1  # HTCLIENT
 
         return super().nativeEvent(eventType, message)
 
@@ -1239,17 +1365,21 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
 
         # --- Window setup ---
         self.frameless_init(is_popup=True)
-        self.setWindowFlags(self.windowFlags() | Qt.Dialog | Qt.WindowStaysOnTopHint)
+        # WindowModal blocks only the parent — avoids ApplicationModal event-queue
+        # pileup where pending main-window signals fire all at once after exec() returns.
+        # WindowStaysOnTopHint is redundant with a modal dialog and can cause DWM issues.
+        self.setWindowFlags(self.windowFlags() | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setWindowModality(Qt.ApplicationModal)
+        self.setWindowModality(Qt.WindowModal)
         self.setWindowIcon(_app_icon())
 
-        # --- Root QSS ---
+        # --- Root QSS (window is transparent; styling lives on inner_frame) ---
         self.setStyleSheet(f"""
             TelemetryPopup {{ background-color: transparent; }}
-            #MainInnerFrame {{
+            QFrame#MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #000000;
+                border-radius: 8px;
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
@@ -1322,18 +1452,41 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             }}
         """)
 
-        # --- Build layout ---
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
+        # --- Outer wrapper (transparent, holds shadow) ---
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
-        container = QWidget(self)
-        container.setObjectName("container")
-        outer.addWidget(container)
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
 
-        root_layout = QVBoxLayout(container)
-        root_layout.setContentsMargins(20, 25, 20, 20)
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(0, 4)
+        self.inner_frame.setGraphicsEffect(shadow)
+
+        main_layout.addWidget(self.inner_frame)
+
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
+
+        # --- Custom title bar ---
+        self._tb = CustomTitleBar(self, self._lang, parent=self.inner_frame)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        if hasattr(self._tb, '_lbl_title'):
+            self._tb._lbl_title.setText(self._t("title_telemetry"))
+        root_layout.addWidget(self._tb)
+
+        # --- Content area ---
+        container = QWidget(self.inner_frame)
+        container.setObjectName("container")
+        content_layout = QVBoxLayout(container)
+        content_layout.setContentsMargins(20, 15, 20, 20)
+        content_layout.setSpacing(0)
+        root_layout.addWidget(container)
 
         # Header row (title + language button)
         header = QHBoxLayout()
@@ -1350,8 +1503,8 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         self._btn_lang.clicked.connect(self._show_lang_picker)
         header.addWidget(self._btn_lang)
 
-        root_layout.addLayout(header)
-        root_layout.addSpacing(15)
+        content_layout.addLayout(header)
+        content_layout.addSpacing(15)
 
         # Message label
         self._lbl_msg = QLabel("", container)
@@ -1359,14 +1512,14 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         self._lbl_msg.setWordWrap(True)
         self._lbl_msg.setFixedWidth(400)
         self._lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        root_layout.addWidget(self._lbl_msg)
-        root_layout.addSpacing(10)
+        content_layout.addWidget(self._lbl_msg)
+        content_layout.addSpacing(10)
 
         # Geo checkbox
         self._chk_geo = QCheckBox("", container)
         self._chk_geo.setChecked(True)
-        root_layout.addWidget(self._chk_geo)
-        root_layout.addSpacing(20)
+        content_layout.addWidget(self._chk_geo)
+        content_layout.addSpacing(20)
 
         # Buttons row (No | Yes)
         btn_row = QHBoxLayout()
@@ -1387,10 +1540,11 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         btn_row.addWidget(self._btn_yes)
         btn_row.addStretch()
 
-        root_layout.addLayout(btn_row)
+        content_layout.addLayout(btn_row)
 
         # --- Populate text and size ---
         self._refresh_texts()
+
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -1408,6 +1562,10 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         self._btn_no.setText(self._t("btn_telemetry_no"))
         self._btn_lang.setText(self._lang.upper())
         self._chk_geo.setText(self._t("chk_telemetry_geo"))
+        # Keep title bar in sync when language changes
+        if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
+            self._tb._lbl_title.setText(self._t("title_telemetry"))
+
 
         # Adjust height to fit content and re-center
         self.adjustSize()
@@ -5554,15 +5712,24 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
     def _maximize_on_active_screen(self):
         """
-        Move the window to the monitor that currently has the cursor,
-        set its geometry to that screen's available geometry, then maximize.
-        This is the standard multi-monitor pattern for PySide6.
+        Move the window to the monitor that currently has the cursor and maximize.
+        DWM / the WM remembers the geometry that was set IMMEDIATELY before
+        showMaximized() as the "restore" size used when drag-to-unmaximizing.
+        We position 580x670 centered on the target screen first, THEN maximize,
+        so the restore size is always 580x670 regardless of previous session state.
         """
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
+            self.resize(580, 670)
             self.showMaximized()
             return
-        self.setGeometry(screen.availableGeometry())
+        sg = screen.availableGeometry()
+        # Center 580x670 on the target screen — this becomes the DWM restore geometry
+        self.setGeometry(
+            sg.x() + (sg.width()  - 580) // 2,
+            sg.y() + (sg.height() - 670) // 2,
+            580, 670
+        )
         self.showMaximized()
 
     # ------------------------------------------------------------------
