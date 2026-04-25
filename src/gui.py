@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
     QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property
+    QPropertyAnimation, Property, QThread
 )
 from PySide6.QtGui import (
     QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
@@ -50,6 +50,32 @@ import osdoc
 # CONSTANTS
 # ==========================================
 RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Languages
+
+
+# ==========================================
+# WORKERS
+# ==========================================
+class AnalysisWorker(QThread):
+    progress = Signal(int)
+    status = Signal(str)
+    finished_data = Signal(object, object)
+    error = Signal(str)
+
+    def __init__(self, engine, settings, parent=None):
+        super().__init__(parent)
+        self.engine = engine
+        self.settings = settings
+
+    def run(self):
+        try:
+            words_data, segments_data = self.engine.run_analysis_pipeline(
+                self.settings,
+                callback_status=self.status.emit,
+                callback_progress=self.progress.emit
+            )
+            self.finished_data.emit(words_data, segments_data)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 # ==========================================
@@ -1976,7 +2002,7 @@ class BadWordsGUI(QMainWindow):
         return page
 
     def _build_page_processing(self) -> QWidget:
-        """Page 1: Processing / progress placeholder."""
+        """Page 1: Processing liquid progress."""
         page = QWidget()
         page.setObjectName("page_processing")
         page.setStyleSheet(
@@ -1984,32 +2010,103 @@ class BadWordsGUI(QMainWindow):
         )
         layout = QVBoxLayout(page)
         layout.setAlignment(Qt.AlignCenter)
-        lbl = QLabel("Processing...", page)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(
+        
+        self.lbl_processing_status = QLabel("Initializing...", page)
+        self.lbl_processing_status.setAlignment(Qt.AlignCenter)
+        self.lbl_processing_status.setStyleSheet(
             f"color: {config.NOTE_COL}; font-size: 14pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
-        layout.addWidget(lbl)
+        layout.addWidget(self.lbl_processing_status)
+        
+        layout.addSpacing(15)
+        
+        from PySide6.QtWidgets import QProgressBar
+        self.bar_processing = QProgressBar(page)
+        self.bar_processing.setFixedHeight(8)
+        self.bar_processing.setTextVisible(False)
+        self.bar_processing.setRange(0, 100)
+        self.bar_processing.setValue(0)
+        self.bar_processing.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {config.PROGRESS_TRACK_COLOR};
+                border: none;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1a6b35, stop:1 #d4d033);
+                border-radius: 4px;
+            }}
+        """)
+        self.bar_processing.setFixedWidth(400)
+        layout.addWidget(self.bar_processing, 0, Qt.AlignCenter)
+        
+        from PySide6.QtCore import QEasingCurve
+        self._progress_anim = QPropertyAnimation(self.bar_processing, b"value", self)
+        self._progress_anim.setDuration(400)
+        self._progress_anim.setEasingCurve(QEasingCurve.OutCubic)
+        
         return page
 
+    def _update_processing_progress(self, val: int):
+        self._progress_anim.stop()
+        self._progress_anim.setStartValue(self.bar_processing.value())
+        self._progress_anim.setEndValue(val)
+        self._progress_anim.start()
+
+    def _update_processing_status(self, text: str):
+        self.lbl_processing_status.setText(text)
+
     def _build_page_editor(self) -> QWidget:
-        """Page 2: Editor area placeholder."""
+        """Page 2: Continuous Text Editor."""
         page = QWidget()
         page.setObjectName("page_editor")
         page.setStyleSheet(
             f"QWidget#page_editor {{ background-color: {config.BG_COLOR}; }}"
         )
         layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignCenter)
-        lbl = QLabel("Editor Area", page)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 14pt;"
-            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
-        )
-        layout.addWidget(lbl)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        from PySide6.QtWidgets import QTextBrowser
+        self.text_editor = QTextBrowser(page)
+        self.text_editor.setOpenExternalLinks(False)
+        self.text_editor.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: {config.BG_COLOR};
+                color: {config.FG_COLOR};
+                font-family: '{config.UI_FONT_NAME}';
+                font-size: 14pt;
+                border: none;
+                padding: 40px;
+            }}
+        """)
+        layout.addWidget(self.text_editor)
         return page
+
+    def _populate_editor(self, words_data, segments_data):
+        color_map = {
+            'bad': (config.WORD_BAD_BG, config.WORD_BAD_FG),
+            'repeat': (config.WORD_REPEAT_BG, config.WORD_REPEAT_FG),
+            'typo': (config.WORD_TYPO_BG, config.WORD_TYPO_FG),
+            'inaudible': (config.WORD_INAUDIBLE_BG, config.WORD_INAUDIBLE_FG)
+        }
+        
+        html_parts = []
+        html_parts.append(f"<div style='color: {config.WORD_NORMAL_FG}; font-size: 14pt; line-height: 1.6; font-family: sans-serif;'>")
+        
+        for w in words_data:
+            status = w.get('status')
+            text = w.get('text', '')
+            
+            if status in color_map:
+                bg, fg = color_map[status]
+                html_parts.append(f"<span style='background-color: {bg}; color: {fg}; border-radius: 3px;'>{text}</span> ")
+            else:
+                html_parts.append(f"{text} ")
+                
+        html_parts.append("</div>")
+        self.text_editor.setHtml("".join(html_parts))
 
     # ------------------------------------------------------------------
     # Sidebar navigation stubs
@@ -2024,13 +2121,52 @@ class BadWordsGUI(QMainWindow):
         self.go_to_page(1)
 
     def _on_start_analysis(self):
-        print("[BadWordsGUI] Start Analysis triggered (Stage 4 TODO)")
         # Auto-open panels if they aren't already open
         if hasattr(self, 'btn_nav_script') and not getattr(self.btn_nav_script, 'is_active', False):
             self._toggle_activity("script_analysis")
         if hasattr(self, 'btn_nav_main') and not getattr(self.btn_nav_main, 'is_active', False):
             self._toggle_activity("main_panel")
+            
+        # Sanitize model name to lowercase base name
+        model_str = self._combo_model.text() if hasattr(self, '_combo_model') else "Base"
+        clean_model = model_str.split()[0].lower() if model_str else "base"
+            
+        settings = {
+            "lang": self._combo_lang.text() if hasattr(self, '_combo_lang') else "Auto",
+            "model": clean_model,
+            "device": self._combo_device.text() if hasattr(self, '_combo_device') else "Auto",
+            "script": self.text_script.toPlainText() if hasattr(self, 'text_script') else ""
+        }
+        
+        self.worker = AnalysisWorker(self.engine, settings, self)
+        self.worker.progress.connect(self._update_processing_progress)
+        self.worker.status.connect(self._update_processing_status)
+        self.worker.finished_data.connect(self._on_analysis_finished)
+        self.worker.error.connect(lambda err: print(f"Analysis error: {err}"))
+        
+        # Optionally disable the start button while processing
+        btn_analyze = self.findChild(QPushButton, "btn_primary")
+        if btn_analyze:
+            btn_analyze.setEnabled(False)
+        
+        self.worker.start()
         self.go_to_page(1)
+
+        
+    def _on_analysis_finished(self, words_data, segments_data):
+        from PySide6.QtWidgets import QMessageBox
+        
+        btn_analyze = self.findChild(QPushButton, "btn_primary")
+        if btn_analyze:
+            btn_analyze.setEnabled(True)
+            
+        if not words_data:
+            self._stack.setCurrentIndex(0) # Go back to the main setup page
+            QMessageBox.critical(self, "Analysis Failed", "Failed to analyze the input. Please check the logs.")
+            return
+            
+        self._populate_editor(words_data, segments_data)
+        self.go_to_page(2)
 
     def _on_nav_markers(self):
         """Toggle the right panel (placeholder)."""
@@ -2066,10 +2202,6 @@ class BadWordsGUI(QMainWindow):
         """Placeholder: import project (Stage 4+)."""
         print("[BadWordsGUI] Import Project triggered (Stage 4 TODO)")
 
-    def _on_start_analysis(self):
-        """Placeholder: begin analysis flow, switch to processing page."""
-        print("[BadWordsGUI] Start Analysis triggered (Stage 4 TODO)")
-        self.go_to_page(1)  # Jump to Processing page
 
     # ------------------------------------------------------------------
     # Page navigation
