@@ -500,12 +500,20 @@ class TranscriptionCanvas(QWidget):
         
         p.setPen(Qt.NoPen) # Reset pen for Pass 1
         
+        def get_color_tuple(status_val):
+            if status_val in color_map: return color_map[status_val]
+            if status_val and str(status_val).startswith("custom_"):
+                c_name = status_val.split("_")[1]
+                return (QColor(config.RESOLVE_COLORS_HEX.get(c_name, "#ffffff")), QColor("#000000"))
+            return None
+
         # PASS 1: Base Backgrounds
         for w in visible_words:
             if '_rect' not in w: continue
             status = get_status(w)
-            if status in color_map:
-                p.setBrush(color_map[status][0])
+            color_res = get_color_tuple(status)
+            if color_res:
+                p.setBrush(color_res[0])
                 p.drawRoundedRect(w['_rect'].adjusted(-3, -1, 3, 1), 5, 5)
                 
         # PASS 2: Sharp Bridges
@@ -519,11 +527,14 @@ class TranscriptionCanvas(QWidget):
             s1 = get_status(w1)
             s2 = get_status(w2)
             
-            if s1 in color_map and s2 in color_map:
+            c1_res = get_color_tuple(s1)
+            c2_res = get_color_tuple(s2)
+            
+            if c1_res and c2_res:
                 r1 = w1['_rect'].adjusted(-3, -1, 3, 1)
                 r2 = w2['_rect'].adjusted(-3, -1, 3, 1)
-                c1 = color_map[s1][0]
-                c2 = color_map[s2][0]
+                c1 = c1_res[0]
+                c2 = c2_res[0]
                 
                 if s1 == s2:
                     p.setBrush(c1)
@@ -553,7 +564,8 @@ class TranscriptionCanvas(QWidget):
             if '_rect' not in w: continue
             p.setFont(active_font)
             status = get_status(w)
-            fg_color = color_map[status][1] if status in color_map else QColor(config.WORD_NORMAL_FG)
+            c_res = get_color_tuple(status)
+            fg_color = c_res[1] if c_res else QColor(config.WORD_NORMAL_FG)
             p.setPen(fg_color)
             p.drawText(w['_rect'], Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
 
@@ -563,10 +575,9 @@ class TranscriptionCanvas(QWidget):
             if '_rect' in w and w['_rect'].adjusted(-3, -1, 3, 1).contains(pos):
                 if w['id'] != self._last_dragged_id:
                     self._last_dragged_id = w['id']
-                    status = None
-                    if self.main_window.rb_red.isChecked():   status = 'bad'
-                    elif self.main_window.rb_blue.isChecked(): status = 'repeat'
-                    elif self.main_window.rb_green.isChecked(): status = 'typo'
+                    checked_btn = self.main_window.marker_btn_group.checkedButton()
+                    status = checked_btn.property('status_id') if checked_btn else None
+                    if status == 'eraser': status = None
                     # rb_eraser → status stays None → propagate_status_change clears
 
                     import algorythms
@@ -1892,6 +1903,14 @@ class SettingsDialog(QDialog):
             form.addRow(lbl, row)
             self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
 
+        def _add_page_to_stack(page_widget):
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+            scroll.setWidget(page_widget)
+            self.stack.addWidget(scroll)
+
         # ─────────────────────────────────────────────────────────────────
         # PAGE 0 — GENERAL
         # ─────────────────────────────────────────────────────────────────
@@ -1963,7 +1982,7 @@ class SettingsDialog(QDialog):
         l_gen.addLayout(io_row)
 
         l_gen.addStretch()
-        self.stack.addWidget(page_gen)
+        _add_page_to_stack(page_gen)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 1 — AUDIO SYNC
@@ -1998,7 +2017,7 @@ class SettingsDialog(QDialog):
 
         l_sync.addLayout(form_sync)
         l_sync.addStretch()
-        self.stack.addWidget(page_sync)
+        _add_page_to_stack(page_sync)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 2 — TRANSCRIPT
@@ -2094,7 +2113,7 @@ class SettingsDialog(QDialog):
         self.spin_fsize.valueChanged.connect(self._update_preview)
         self.spin_lheight.valueChanged.connect(self._update_preview)
         self._update_preview()
-        self.stack.addWidget(page_transcript)
+        _add_page_to_stack(page_transcript)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 3 — AI ENGINE
@@ -2118,12 +2137,12 @@ class SettingsDialog(QDialog):
         _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setText)
 
         # Compute type
-        _compute_items = ["float16", "int8", "float32"]
+        _compute_items = ["Auto", "float16", "int8", "float32"]
         self.dropdown_compute = CustomDropdown(_compute_items)
         self.dropdown_compute.setFixedHeight(30)
-        saved_compute = prefs.get('ai_compute_type', 'float16')
-        self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'float16')
-        _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'float16', self.dropdown_compute.setText)
+        saved_compute = prefs.get('ai_compute_type', 'Auto')
+        self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
+        _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setText)
 
         l_ai.addLayout(form_ai)
         l_ai.addSpacing(14)
@@ -2150,8 +2169,97 @@ class SettingsDialog(QDialog):
             }}
         """)
         l_ai.addWidget(self.textedit_prompt)
+
+        # ── Advanced Whisper Parameters ─────────────────────────
+        sep_whisper = QFrame()
+        sep_whisper.setFrameShape(QFrame.Shape.HLine)
+        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_ai.addSpacing(14)
+        l_ai.addWidget(sep_whisper)
+        l_ai.addSpacing(10)
+
+        form_whisper = QFormLayout()
+        form_whisper.setSpacing(14)
+        form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.chk_vad_filter = ToggleSwitch()
+        self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
+        _add_row(form_whisper, self.txt("lbl_vad_filter"), self.chk_vad_filter,
+                 False, lambda v: self.chk_vad_filter.setChecked(v, animated=False))
+
+        self.chk_condition_prev = ToggleSwitch()
+        self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
+        _add_row(form_whisper, self.txt("lbl_condition_prev"), self.chk_condition_prev,
+                 False, lambda v: self.chk_condition_prev.setChecked(v, animated=False))
+
+        self.spin_beam_size = QSpinBox()
+        self.spin_beam_size.setRange(1, 10)
+        self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', 1)))
+        _add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, 1, self.spin_beam_size.setValue)
+
+        self.spin_temperature = QDoubleSpinBox()
+        self.spin_temperature.setRange(0.0, 1.0)
+        self.spin_temperature.setSingleStep(0.1)
+        self.spin_temperature.setDecimals(2)
+        self.spin_temperature.setValue(float(prefs.get('ai_temperature', 0.0)))
+        _add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, 0.0, self.spin_temperature.setValue)
+
+        self.spin_logprob = QDoubleSpinBox()
+        self.spin_logprob.setRange(-3.0, 0.0)
+        self.spin_logprob.setSingleStep(0.1)
+        self.spin_logprob.setDecimals(2)
+        self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', -1.0)))
+        _add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, -1.0, self.spin_logprob.setValue)
+
+        self.spin_no_speech = QDoubleSpinBox()
+        self.spin_no_speech.setRange(0.0, 1.0)
+        self.spin_no_speech.setSingleStep(0.1)
+        self.spin_no_speech.setDecimals(2)
+        self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', 0.2)))
+        _add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, 0.2, self.spin_no_speech.setValue)
+
+        self.spin_patience = QDoubleSpinBox()
+        self.spin_patience.setRange(0.0, 10.0)
+        self.spin_patience.setSingleStep(0.1)
+        self.spin_patience.setDecimals(2)
+        self.spin_patience.setValue(float(prefs.get('ai_patience', 1.0)))
+        _add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, 1.0, self.spin_patience.setValue)
+
+        self.spin_compression = QDoubleSpinBox()
+        self.spin_compression.setRange(0.0, 100.0)
+        self.spin_compression.setSingleStep(0.1)
+        self.spin_compression.setDecimals(2)
+        self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', 10.0)))
+        _add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, 10.0, self.spin_compression.setValue)
+
+        self.spin_no_repeat = QSpinBox()
+        self.spin_no_repeat.setRange(0, 100)
+        self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', 0)))
+        _add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, 0, self.spin_no_repeat.setValue)
+
+        self.chk_regroup = ToggleSwitch()
+        self.chk_regroup.setChecked(bool(prefs.get('ai_regroup', False)), animated=False)
+        _add_row(form_whisper, self.txt("lbl_regroup"), self.chk_regroup,
+                 False, lambda v: self.chk_regroup.setChecked(v, animated=False))
+
+        self.chk_suppress_silence = ToggleSwitch()
+        self.chk_suppress_silence.setChecked(bool(prefs.get('ai_suppress_silence', False)), animated=False)
+        _add_row(form_whisper, self.txt("lbl_suppress_silence"), self.chk_suppress_silence,
+                 False, lambda v: self.chk_suppress_silence.setChecked(v, animated=False))
+
+        self.spin_q_levels = QSpinBox()
+        self.spin_q_levels.setRange(0, 100)
+        self.spin_q_levels.setValue(int(prefs.get('ai_q_levels', 20)))
+        _add_row(form_whisper, self.txt("lbl_q_levels"), self.spin_q_levels, 20, self.spin_q_levels.setValue)
+
+        self.spin_k_size = QSpinBox()
+        self.spin_k_size.setRange(0, 100)
+        self.spin_k_size.setValue(int(prefs.get('ai_k_size', 5)))
+        _add_row(form_whisper, self.txt("lbl_k_size"), self.spin_k_size, 5, self.spin_k_size.setValue)
+
+        l_ai.addLayout(form_whisper)
         l_ai.addStretch()
-        self.stack.addWidget(page_ai)
+        _add_page_to_stack(page_ai)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 3 — INTERFACE
@@ -2184,9 +2292,25 @@ class SettingsDialog(QDialog):
         _add_row(form_iface, self.txt("lbl_hidden_panels"), self.dropdown_hidden,
                  [], lambda v: None)  # revert placeholder — clear handled by Restore Defaults
 
+        # Accent Color
+        _accent_items = ["green", "blue", "purple", "orange"]
+        self.dropdown_accent = CustomDropdown(_accent_items)
+        self.dropdown_accent.setFixedHeight(30)
+        saved_accent = prefs.get('accent_color', 'green')
+        self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
+        _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
+
+        # App Icon
+        _icon_items = ["default", "dark", "light", "color"]
+        self.dropdown_icon = CustomDropdown(_icon_items)
+        self.dropdown_icon.setFixedHeight(30)
+        saved_icon = prefs.get('app_icon', 'default')
+        self.dropdown_icon.setText(saved_icon if saved_icon in _icon_items else 'default')
+        _add_row(form_iface, self.txt("lbl_app_icon"), self.dropdown_icon, 'default', self.dropdown_icon.setText)
+
         l_iface.addLayout(form_iface)
         l_iface.addStretch()
-        self.stack.addWidget(page_iface)
+        _add_page_to_stack(page_iface)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 5 — ALGORITHMS
@@ -2207,8 +2331,8 @@ class SettingsDialog(QDialog):
         _add_row(form_algo, self.txt("lbl_algo_fuzzy"), self.spin_fuzzy, 80, self.spin_fuzzy.setValue)
 
         self.spin_lookahead = QSpinBox()
-        self.spin_lookahead.setRange(1, 50)
-        self.spin_lookahead.setValue(int(prefs.get('algo_retake_lookahead', 15)))
+        self.spin_lookahead.setRange(1, 300)
+        self.spin_lookahead.setValue(int(prefs.get('algo_retake_lookahead', 80)))
         _add_row(form_algo, self.txt("lbl_algo_lookahead"), self.spin_lookahead, 15, self.spin_lookahead.setValue)
 
         self.spin_penalty = QDoubleSpinBox()
@@ -2225,7 +2349,7 @@ class SettingsDialog(QDialog):
 
         l_algo.addLayout(form_algo)
         l_algo.addStretch()
-        self.stack.addWidget(page_algo)
+        _add_page_to_stack(page_algo)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 6 — SHORTCUTS
@@ -2260,7 +2384,7 @@ class SettingsDialog(QDialog):
 
         l_shorts.addLayout(form_shorts)
         l_shorts.addStretch()
-        self.stack.addWidget(page_shorts)
+        _add_page_to_stack(page_shorts)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 7 — CUSTOM MARKERS
@@ -2307,7 +2431,7 @@ class SettingsDialog(QDialog):
         marker_btn_row.addWidget(btn_rem_m)
         marker_btn_row.addStretch()
         l_markers.addLayout(marker_btn_row)
-        self.stack.addWidget(page_markers)
+        _add_page_to_stack(page_markers)
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 8 — TELEMETRY
@@ -2342,7 +2466,7 @@ class SettingsDialog(QDialog):
 
         l_telem.addLayout(form_telem)
         l_telem.addStretch()
-        self.stack.addWidget(page_telem)
+        _add_page_to_stack(page_telem)
 
         # ─────────────────────────────────────────────────────────────────
         # BOTTOM BUTTON BAR (separator + row)
@@ -2557,7 +2681,49 @@ class SettingsDialog(QDialog):
             'telemetry_geo':    self.chk_telemetry_geo.isChecked(),
             # Custom markers
             'custom_markers':   self.current_custom_markers,
+            # Interface appearance
+            'accent_color':     self.dropdown_accent.text(),
+            'app_icon':         self.dropdown_icon.text(),
+            # Advanced Whisper params
+            'ai_vad_filter':            self.chk_vad_filter.isChecked(),
+            'ai_beam_size':             self.spin_beam_size.value(),
+            'ai_temperature':           self.spin_temperature.value(),
+            'ai_condition_on_prev':     self.chk_condition_prev.isChecked(),
+            'ai_logprob_threshold':     self.spin_logprob.value(),
+            'ai_no_speech_threshold':   self.spin_no_speech.value(),
+            'ai_patience':              self.spin_patience.value(),
+            'ai_compression_ratio_threshold': self.spin_compression.value(),
+            'ai_no_repeat_ngram_size':  self.spin_no_repeat.value(),
+            'ai_regroup':               self.chk_regroup.isChecked(),
+            'ai_suppress_silence':      self.chk_suppress_silence.isChecked(),
+            'ai_q_levels':              self.spin_q_levels.value(),
+            'ai_k_size':                self.spin_k_size.value(),
         }
+
+        # ── Stage 6A v2 (optimized): Hardware pre-validation ────────────────
+        selected_device  = new_prefs.get('device', 'auto')
+        selected_compute = new_prefs.get('ai_compute_type', 'Auto')
+        old_compute      = old_prefs.get('ai_compute_type', 'Auto')
+        old_device       = old_prefs.get('device', 'auto')
+
+        compute_changed = (selected_compute != old_compute) or (selected_device != old_device)
+        if selected_compute.lower() != 'auto' and compute_changed:
+            from PySide6.QtWidgets import QApplication
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                is_supported = self.engine.verify_hardware_compute(selected_device, selected_compute)
+            finally:
+                QApplication.restoreOverrideCursor()
+
+            if not is_supported:
+                CustomMsgBox(
+                    self,
+                    self.txt('msg_compute_fail_title'),
+                    self.txt('msg_compute_fail_desc'),
+                    self.txt('btn_close'),
+                ).exec()
+                return  # Abort — keep dialog open, nothing saved
+        # ────────────────────────────────────────────────────────────────────
 
         # Detect which restart-required keys actually changed
         restart_needed = any(
@@ -3188,30 +3354,14 @@ class BadWordsGUI(QMainWindow):
         row_marking_title.addWidget(self.btn_clear_transcript)
         l_main.addLayout(row_marking_title)
         
-        self.rb_red = QRadioButton(self.txt("rad_red_cut_filler"))
-        self.rb_red.setChecked(True)
-        self.rb_red.setCursor(Qt.CursorShape.PointingHandCursor)
-        style_rb(self.rb_red, config.WORD_BAD_BG)
-        l_main.addWidget(self.rb_red)
+        self.markers_layout = QVBoxLayout()
+        l_main.addLayout(self.markers_layout)
         
-        self.rb_blue = QRadioButton(self.txt("rad_blue_retake"))
-        self.rb_blue.setCursor(Qt.CursorShape.PointingHandCursor)
-        style_rb(self.rb_blue, config.WORD_REPEAT_BG)
-        l_main.addWidget(self.rb_blue)
-        
-        self.rb_green = QRadioButton(self.txt("rad_green_typo"))
-        self.rb_green.setCursor(Qt.CursorShape.PointingHandCursor)
-        style_rb(self.rb_green, config.WORD_TYPO_BG)
-        l_main.addWidget(self.rb_green)
-        
-        self.rb_eraser = QRadioButton(self.txt("rad_eraser_clear"))
-        self.rb_eraser.setCursor(Qt.CursorShape.PointingHandCursor)
-        style_rb(self.rb_eraser, "#ffffff")
-        l_main.addWidget(self.rb_eraser)
-        
-        lbl_dummy = QLabel(self.txt("lbl_add_custom_marker"))
-        lbl_dummy.setStyleSheet("color: #808080; font-size: 9pt; text-decoration: underline;")
-        l_main.addWidget(lbl_dummy)
+        self.btn_add_custom_marker = QPushButton(self.txt("lbl_add_custom_marker"))
+        self.btn_add_custom_marker.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add_custom_marker.setStyleSheet("QPushButton { background: transparent; color: #808080; text-decoration: underline; border: none; text-align: left; padding: 5px; } QPushButton:hover { color: #ffffff; }")
+        self.btn_add_custom_marker.clicked.connect(self._on_add_custom_marker)
+        l_main.addWidget(self.btn_add_custom_marker)
         
         # Middle
         l_main.addStretch(1)
@@ -3242,6 +3392,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_assemble.setStyleSheet("QPushButton { background-color: #11703c; color: white; font-weight: bold; border-radius: 4px; border: 1px solid #0a4d28; } QPushButton:hover { background-color: #168f4d; } QPushButton:pressed { background-color: #0d5c31; }")
         l_main.addWidget(self.btn_assemble)
         
+        self._build_marker_radio_buttons()
         self.activities["main_panel"] = _wrap_activity(p_main)
         
         self._favorite_proxies = {}
@@ -3890,10 +4041,9 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
         if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
         
-        prefs['mark_tool'] = 'bad'
-        if hasattr(self, 'rb_red') and self.rb_red.isChecked(): prefs['mark_tool'] = 'bad'
-        elif hasattr(self, 'rb_blue') and self.rb_blue.isChecked(): prefs['mark_tool'] = 'repeat'
-        elif hasattr(self, 'rb_green') and self.rb_green.isChecked(): prefs['mark_tool'] = 'typo'
+        checked_btn = getattr(self, 'marker_btn_group', None) and self.marker_btn_group.checkedButton()
+        if checked_btn:
+            prefs['mark_tool'] = checked_btn.property("status_id")
         
         self.engine.save_preferences(prefs)
         
@@ -4465,10 +4615,68 @@ class BadWordsGUI(QMainWindow):
                 w['selected'] = False
             self.text_canvas.update()
 
+    def _on_add_custom_marker(self):
+        from PySide6.QtWidgets import QApplication
+        dlg = SettingsDialog(self.engine, self)
+        dlg.stack.setCurrentIndex(7) # Custom markers is index 7
+        dlg.category_list.setCurrentRow(7)
+        dlg.exec()
+        self._build_marker_radio_buttons()
+        self.text_canvas.update()
+
+    def _build_marker_radio_buttons(self):
+        from PySide6.QtWidgets import QRadioButton, QButtonGroup
+        # Clear layout
+        while self.markers_layout.count():
+            item = self.markers_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        def style_rb(rb, color):
+            rb.setStyleSheet(f"QRadioButton {{ color: {color}; font-size: 11pt; font-weight: bold; background: transparent; padding: 5px; }} QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 7px; border: 2px solid #555; background-color: #333; }} QRadioButton::indicator:checked {{ background-color: {color}; border: 2px solid {color}; }}")
+
+        self.marker_btn_group = QButtonGroup(self)
+        
+        rb_red = QRadioButton(self.txt("rad_red_cut_filler"))
+        rb_red.setProperty("status_id", "bad")
+        style_rb(rb_red, config.WORD_BAD_BG)
+        
+        rb_blue = QRadioButton(self.txt("rad_blue_retake"))
+        rb_blue.setProperty("status_id", "repeat")
+        style_rb(rb_blue, config.WORD_REPEAT_BG)
+        
+        rb_green = QRadioButton(self.txt("rad_green_typo"))
+        rb_green.setProperty("status_id", "typo")
+        style_rb(rb_green, config.WORD_TYPO_BG)
+        
+        rb_eraser = QRadioButton(self.txt("rad_eraser_clear"))
+        rb_eraser.setProperty("status_id", "eraser")
+        rb_eraser.setStyleSheet("QRadioButton { color: #aaaaaa; font-size: 11pt; font-weight: bold; background: transparent; padding: 5px; } QRadioButton::indicator { width: 14px; height: 14px; border-radius: 7px; border: 2px solid #555; background-color: #333; } QRadioButton::indicator:checked { background-color: #aaaaaa; border: 2px solid #aaaaaa; }")
+        
+        for rb in (rb_red, rb_blue, rb_green, rb_eraser):
+            rb.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.markers_layout.addWidget(rb)
+            self.marker_btn_group.addButton(rb)
+            
+        custom_markers = self.engine.load_preferences().get('custom_markers', [])
+        for cm in custom_markers:
+            name, color = cm.get("name", ""), cm.get("color", "")
+            if not name: continue
+            rb = QRadioButton(f"{name} ({color})")
+            rb.setProperty("status_id", f"custom_{color}")
+            style_rb(rb, config.RESOLVE_COLORS_HEX.get(color, '#ffffff'))
+            rb.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.markers_layout.addWidget(rb)
+            self.marker_btn_group.addButton(rb)
+            
+        rb_red.setChecked(True)
+
     def _on_settings(self):
         """Open settings panel."""
         dlg = SettingsDialog(self.engine, self)
         dlg.exec()
+        self._build_marker_radio_buttons()
+        self.text_canvas.update()
 
 
 

@@ -371,7 +371,10 @@ class ResolveHandler:
             if len(audio_items) == len(valid_ops):
                  for i, item in enumerate(audio_items):
                     if item:
-                        color = COLOR_MAP.get(valid_ops[i]['type'])
+                        op_type = str(valid_ops[i]['type'])
+                        color = COLOR_MAP.get(op_type)
+                        if not color and op_type.startswith("custom_"):
+                            color = op_type.split("_")[1]
                         if color: item.SetClipColor(color)
             else:
                 current_rec_head = new_tl.GetStartFrame()
@@ -386,7 +389,10 @@ class ResolveHandler:
                     a_start = a_item.GetStart()
                     match = next((m for m in ops_map if abs(m['start'] - a_start) <= 2), None)
                     if match:
-                        color = COLOR_MAP.get(match['op']['type'])
+                        op_type = str(match['op']['type'])
+                        color = COLOR_MAP.get(op_type)
+                        if not color and op_type.startswith("custom_"):
+                            color = op_type.split("_")[1]
                         if color: a_item.SetClipColor(color)
 
             # Reset Playhead

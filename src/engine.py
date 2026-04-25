@@ -214,6 +214,43 @@ class AudioEngine:
         except (FileNotFoundError, ValueError, Exception):
             return "int8"
 
+    def verify_hardware_compute(self, device_pref: str, compute_pref: str) -> bool:
+        """
+        Stage 6A v2: Validates that the chosen compute type is actually supported
+        by the hardware, using ctranslate2 directly (no model load needed).
+        Returns True if supported or if compute_pref is 'auto' (skips validation).
+        """
+        if compute_pref.lower() == "auto":
+            return True
+
+        # Determine the real target device
+        if device_pref.lower() in ("gpu", "auto") and self.os_doc.has_nvidia_support():
+            target_device = "cuda"
+        else:
+            target_device = "cpu"
+
+        probe_script = (
+            f"import ctranslate2; "
+            f"types = list(ctranslate2.get_supported_compute_types('{target_device}')); "
+            f"print(types)"
+        )
+
+        try:
+            python_exe = self.os_doc.get_venv_python_path()
+            kwargs = {}
+            if hasattr(self.os_doc, 'get_subprocess_kwargs'):
+                kwargs = self.os_doc.get_subprocess_kwargs()
+            result = subprocess.run(
+                [python_exe, "-c", probe_script],
+                capture_output=True, text=True, timeout=15,
+                **kwargs,
+            )
+            log_info(f"[VerifyCompute] target={target_device} probe stdout: {result.stdout.strip()}")
+            return compute_pref in result.stdout
+        except Exception as exc:
+            log_info(f"[VerifyCompute] Probe failed ({exc}); defaulting to supported=True")
+            return True  # Don't block the user if the probe itself errors
+
     # ==========================================
     # 1. EXTERNAL PROCESS MANAGEMENT (FASTER-WHISPER)
     # ==========================================
@@ -287,12 +324,14 @@ except Exception as e:
     def check_model_exists(self, tech_name):
         return True
 
-    def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type, filler_words_list=None, progress_callback=None):
+    def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type,
+                    filler_words_list=None, initial_prompt=None, progress_callback=None):
         """
         Modified v11.0: Uses stable-ts (stable_whisper) with faster-whisper backend.
         FIXED v11.2: Injects portable bin path to OS PATH for sub-dependencies.
         UPDATED v12.1: Replaced subprocess.run with Popen for real-time output streaming.
         STAGE 9: Enabled VAD filter (min_silence_duration_ms=400) + no_repeat_ngram_size=0 to kill hallucination loops.
+        STAGE 6A: initial_prompt injected via repr() for safe quoting in generated script.
         """
         unique_name = os.path.splitext(os.path.basename(audio_path))[0]
         output_dir = self.os_doc.get_temp_folder()
@@ -302,10 +341,12 @@ except Exception as e:
         if model == "large": model = "large-v3"
         fw_device = "cuda" if "GPU" in device_mode else "cpu"
         
+        prefs = self.os_doc.get_all_prefs()
+
         initial_prompt_str = ""
         if verbatim:
-            # USER REQUESTED PROMPT (v10.3) - Stutter/Filler injection
-            base_prompt = "Umm, yyy, eh, mmm, tsk, h-h-hello, i... i will check. I went... I went to the st... store, tak tak."
+            # Stage 6A: Use user's custom initial prompt if set, else fall back to DEFAULT_WHISPER_PROMPT
+            base_prompt = initial_prompt if initial_prompt else config.DEFAULT_WHISPER_PROMPT
             initial_prompt_str = base_prompt
             if filler_words_list:
                 initial_prompt_str += f" {', '.join(filler_words_list)}"
@@ -368,22 +409,22 @@ try:
     # Parameters for strict VERBATIM output (STAGE 9: Unchain for phrasal retakes)
     result = model.transcribe(
         {repr(audio_path)}, 
-        beam_size=1,            # GREEDY DECODING
-        patience=1.0,
+        beam_size={repr(prefs.get('ai_beam_size', 1))},
+        patience={repr(prefs.get('ai_patience', 1.0))},
         language={repr(lang) if lang != "Auto" else "None"},
         initial_prompt={repr(initial_prompt_str)},
-        condition_on_previous_text=False,   # CRUCIAL: prevents context loops
-        vad_filter=False,                   # Raw acoustic stream; sanitize_hallucinations() handles loops
-        temperature=0.0,                    # Pure greedy — no smoothed fallback paths
-        no_speech_threshold=0.2,
-        log_prob_threshold=-1.0,
-        compression_ratio_threshold=10.0,   # STAGE 9: Raised ceiling — human phrasal retakes are NOT model loops; sanitize_hallucinations() is the real guard
-        no_repeat_ngram_size=0,             # Passed to backend if supported
+        condition_on_previous_text={repr(prefs.get('ai_condition_on_prev', False))},
+        vad_filter={repr(prefs.get('ai_vad_filter', False))},
+        temperature={repr(prefs.get('ai_temperature', 0.0))},
+        no_speech_threshold={repr(prefs.get('ai_no_speech_threshold', 0.2))},
+        log_prob_threshold={repr(prefs.get('ai_logprob_threshold', -1.0))},
+        compression_ratio_threshold={repr(prefs.get('ai_compression_ratio_threshold', 10.0))},
+        no_repeat_ngram_size={repr(prefs.get('ai_no_repeat_ngram_size', 0))},
         # Stable-TS specific flags for alignment precision:
-        regroup=False,          # STAGE 9: Raw disjointed word timestamps; no syntactic regrouping that swallows retakes
-        suppress_silence=False, # Keep silence gaps so Whisper sees micro-pauses between stutters
-        q_levels=20,            # Quantization levels for alignment
-        k_size=5                # Kernel size for alignment
+        regroup={repr(prefs.get('ai_regroup', False))},
+        suppress_silence={repr(prefs.get('ai_suppress_silence', False))},
+        q_levels={repr(prefs.get('ai_q_levels', 20))},
+        k_size={repr(prefs.get('ai_k_size', 5))}
     )
     
     output_segments = []
@@ -676,12 +717,31 @@ except Exception as e:
                 device_mode = raw_device
 
             # Determine Compute Type based on detected device
+            # Stage 6A: Prefer user-saved ai_compute_type from settings; auto-detect as fallback
+            saved_prefs     = self.os_doc.get_all_prefs()
+            saved_compute   = saved_prefs.get('ai_compute_type', '')
+            ai_initial_prompt = saved_prefs.get('ai_initial_prompt', config.DEFAULT_WHISPER_PROMPT)
+            algo_settings   = {k: saved_prefs[k] for k in (
+                'algo_fuzzy_threshold', 'algo_retake_lookahead',
+                'algo_distance_penalty', 'algo_anchor_depth',
+            ) if k in saved_prefs}
+            # Store so GUI-triggered compare calls can reuse them
+            self._last_algo_settings = algo_settings
+
             fw_compute = "int8"
             if "GPU" in device_mode:
-                fw_compute = self._get_optimal_compute_type()
-                log_info(f"Auto-Detected Compute Type: {fw_compute}")
+                if saved_compute:
+                    fw_compute = saved_compute
+                    log_info(f"Compute Type (user setting): {fw_compute}")
+                else:
+                    fw_compute = self._get_optimal_compute_type()
+                    log_info(f"Auto-Detected Compute Type: {fw_compute}")
             else:
-                log_info(f"Using standard CPU compute: {fw_compute}")
+                if saved_compute:
+                    fw_compute = saved_compute
+                    log_info(f"Compute Type (user setting, CPU): {fw_compute}")
+                else:
+                    log_info(f"Using standard CPU compute: {fw_compute}")
 
             filler_words = settings.get('filler_words', [])
             fps = self.resolve_handler.fps
@@ -745,7 +805,12 @@ except Exception as e:
                 update_status(f"{self.txt('status_transcribing')} {pct}%")
             
             # Execute Faster-Whisper via Runner with RESOLVED parameters
-            json_path = self.run_whisper(target_wav, model, lang, True, device_mode, fw_compute, filler_words, progress_callback=whisper_live_progress)
+            json_path = self.run_whisper(
+                target_wav, model, lang, True, device_mode, fw_compute,
+                filler_words,
+                initial_prompt=ai_initial_prompt,
+                progress_callback=whisper_live_progress,
+            )
             
             if not json_path:
                 log_error("Whisper failed.")
@@ -785,6 +850,7 @@ except Exception as e:
 
     def _build_data_structure(self, json_data, silence_ranges, filler_words, fps, 
                               txt_inaudible="inaudible", time_scale_correction=1.0):
+        prefs = self.os_doc.get_all_prefs()
         temp_words = []
         dynamic_bad = [w.lower().strip() for w in filler_words]
         
@@ -833,6 +899,11 @@ except Exception as e:
                     compressed_words.extend(current_group)
 
         # --- PASS 2: SMART CHUNKING (Z LOOKAHEAD) ---
+        c_max = int(prefs.get('chunk_max_words', 30))
+        c_look = int(prefs.get('chunk_lookahead', 3))
+        c_min = int(prefs.get('chunk_min_chars', 7))
+        c_hard_limit = c_max + c_look
+
         chunks = []
         curr_chunk = []
         for i, w in enumerate(compressed_words):
@@ -843,14 +914,14 @@ except Exception as e:
             should_break = False
             
             # Absolute maximum hard limit to prevent infinite run-ons
-            if len(curr_chunk) >= 33:
+            if len(curr_chunk) >= c_hard_limit:
                 should_break = True
-            elif len(curr_chunk) >= 30:
+            elif len(curr_chunk) >= c_max:
                 if has_punct:
                     should_break = True # Break immediately if current word has punctuation
                 else:
-                    # Look ahead up to remaining allowance (33 - current_length)
-                    allowance = 33 - len(curr_chunk)
+                    # Look ahead up to remaining allowance (c_hard_limit - current_length)
+                    allowance = c_hard_limit - len(curr_chunk)
                     lookahead_limit = min(allowance, len(compressed_words) - i - 1)
                     found_punct = False
                     
@@ -864,7 +935,7 @@ except Exception as e:
                     # If we DID find it, we keep going (should_break = False) until we hit it in next loops.
                     if not found_punct:
                         should_break = True
-            elif len(curr_chunk) >= 7 and has_punct:
+            elif len(curr_chunk) >= c_min and has_punct:
                 should_break = True # Normal soft break mid-sentence
                 
             if should_break:
@@ -1318,7 +1389,10 @@ except Exception as e:
         return processed_words, count
 
     def run_comparison_analysis(self, script_text, words_data):
-        result_words = algorythms.compare_script_to_transcript(script_text, words_data)
+        prefs = self.os_doc.get_all_prefs()
+        algo_settings = {k: prefs[k] for k in ('algo_fuzzy_threshold', 'algo_retake_lookahead', 'algo_distance_penalty', 'algo_anchor_depth') if k in prefs}
+        
+        result_words = algorythms.compare_script_to_transcript(script_text, words_data, algo_settings=algo_settings)
         final_words = algorythms.absorb_inaudible_into_repeats(result_words)
         # FIX: Force hallucination status after script comparison analysis
         final_words = self._enforce_hallucination_status(final_words)

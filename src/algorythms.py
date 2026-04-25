@@ -246,7 +246,15 @@ class AnalysisResult(list):
         self.missing_indices = []
 
 class CompareEngineV5:
-    def __init__(self, script_text, words_data):
+    def __init__(self, script_text, words_data, algo_settings=None):
+        # --- Stage 6A: Unpack algorithm tuning parameters with safe defaults ---
+        _s = algo_settings or {}
+        # fuzzy_threshold is stored as 0-100 in settings; normalize to 0.0-1.0
+        self.fuzzy_thresh     = _s.get('algo_fuzzy_threshold', 80) / 100.0
+        self.retake_lookahead = int(_s.get('algo_retake_lookahead', 80))
+        self.distance_penalty = float(_s.get('algo_distance_penalty', 2.0))  # reserved for future use
+        self.anchor_depth     = int(_s.get('algo_anchor_depth', 3))           # reserved for future use
+
         # A. Przygotowanie danych
         self.script_tokens = tokenize_v5(script_text)
         
@@ -331,6 +339,32 @@ class CompareEngineV5:
     def super_compare(self, s1, s2):
         """Funkcja pomocnicza B: SuperCompare."""
         return super_clean(s1) == super_clean(s2)
+
+    def _fuzzy_match(self, s1, s2):
+        """
+        Stage 6A: Instance-level fuzzy match that uses self.fuzzy_thresh
+        (derived from algo_fuzzy_threshold setting, normalized 0-1).
+        Keeps phonetic fallback from module-level check_fuzzy_match.
+        """
+        c1 = super_clean(s1)
+        c2 = super_clean(s2)
+        if not c1 or not c2:
+            return False
+        sim = calculate_similarity(c1, c2)
+        length = max(len(c1), len(c2))
+        # Scale short/mid thresholds relative to the user's long threshold
+        thresh = self.fuzzy_thresh
+        if length < 4:   thresh = min(thresh, THRESH_SHORT)
+        elif length <= 7: thresh = min(thresh, THRESH_MID)
+        if sim >= thresh:
+            return True
+        # Phonetic fallback
+        if sim >= 0.50:
+            ph1 = simplified_metaphone(c1)
+            ph2 = simplified_metaphone(c2)
+            if ph1 and ph2 and ph1 == ph2:
+                return True
+        return False
 
     def get_numeric_sequence_val(self, tokens, start_idx):
         """
@@ -452,14 +486,14 @@ class CompareEngineV5:
             match_found = False
             
             # 1:1
-            if check_fuzzy_match(s_word, t_word):
+            if self._fuzzy_match(s_word, t_word):
                 self.mark_range(j, j, 'typo', is_auto=True)
                 self.history_map[i] = j
                 self._add_trace(j, i) # v6.0 Secure Trace
                 i += 1; j += 1
                 match_found = True
             # Merge 1:2
-            elif j + 1 < self.t_len and check_fuzzy_match(s_word, t_word + self.trans_tokens[j+1]):
+            elif j + 1 < self.t_len and self._fuzzy_match(s_word, t_word + self.trans_tokens[j+1]):
                 self.mark_range(j, j+1, 'typo', is_auto=True)
                 self.history_map[i] = j+1
                 self._add_trace(j, i)
@@ -467,7 +501,7 @@ class CompareEngineV5:
                 i += 1; j += 2
                 match_found = True
             # Split 2:1
-            elif i + 1 < self.s_len and check_fuzzy_match(s_word + self.script_tokens[i+1], t_word):
+            elif i + 1 < self.s_len and self._fuzzy_match(s_word + self.script_tokens[i+1], t_word):
                 self.mark_range(j, j, 'typo', is_auto=True)
                 self.history_map[i] = j; self.history_map[i+1] = j
                 self._add_trace(j, i)
@@ -488,7 +522,7 @@ class CompareEngineV5:
                 if i + offset < self.s_len:
                     s_cand = self.script_tokens[i+offset]
                     # WARUNEK ROZSZERZONY: Exact LUB Fuzzy
-                    if self.super_compare(s_cand, t_word) or check_fuzzy_match(s_cand, t_word):
+                    if self.super_compare(s_cand, t_word) or self._fuzzy_match(s_cand, t_word):
                         match_offset = offset
                         break
             
@@ -504,9 +538,9 @@ class CompareEngineV5:
                 continue
 
             # Krok 5b: Detekcja Retake (Fuzzy Anchor + Lookahead + Distance Penalty v6.5)
-            # PATCH v6.5: Zmniejszony limit wsteczny (80) i Distance Penalty
+            # Stage 6A: retake_lookahead from algo_settings controls the search window
             found_retake = False
-            search_limit = max(0, i - 80) # Was 150
+            search_limit = max(0, i - self.retake_lookahead)
             
             for k in range(i - 1, search_limit - 1, -1):
                 s_candidate = self.script_tokens[k]
@@ -517,8 +551,8 @@ class CompareEngineV5:
                     c_cand = super_clean(s_candidate)
                     c_tword = super_clean(t_word)
                     if len(c_cand) >= 4:
-                        # Normal words: use standard fuzzy matching
-                        is_anchor_candidate = check_fuzzy_match(s_candidate, t_word)
+                        # Normal words: use instance fuzzy match (respects algo_fuzzy_threshold)
+                        is_anchor_candidate = self._fuzzy_match(s_candidate, t_word)
                     else:
                         # STAGE 9: Short words (< 4 chars) get a lower threshold (0.40)
                         # so real human stutters ("hi... hi world") are caught as 'repeat'
@@ -541,7 +575,7 @@ class CompareEngineV5:
                             # Check brief window for next match
                             while lookahead_j < self.t_len and lookahead_j < j + 4:
                                 t_next = self.trans_tokens[lookahead_j]
-                                if self.super_compare(s_next, t_next) or check_fuzzy_match(s_next, t_next):
+                                if self.super_compare(s_next, t_next) or self._fuzzy_match(s_next, t_next):
                                     confirmed = True
                                     break
                                 lookahead_j += 1
@@ -705,11 +739,12 @@ def apply_debug_rgb_pattern(words_data):
     result.missing_indices = [] # No missing script in debug mode
     return result
 
-def compare_script_to_transcript(script_text, words_data):
+def compare_script_to_transcript(script_text, words_data, algo_settings=None):
     """
     Wrapper dla silnika v5.0.
     Includes Debug Interceptor for "$ R G B" code.
     STAGE 9: Applies sanitize_hallucinations() before alignment to strip model loops.
+    STAGE 6A: Accepts algo_settings dict and passes it to CompareEngineV5.
     """
     
     # --- DEBUG INTERCEPTOR ---
@@ -721,7 +756,7 @@ def compare_script_to_transcript(script_text, words_data):
     # STAGE 9: Strip hallucination loops from raw transcript before analysis
     words_data = sanitize_hallucinations(words_data)
 
-    engine = CompareEngineV5(script_text, words_data)
+    engine = CompareEngineV5(script_text, words_data, algo_settings=algo_settings)
     # PATCH v6.4: ANTI-FREEZE
     # Return single object (AnalysisResult) instead of tuple to keep engine.py happy.
     return engine.run()
