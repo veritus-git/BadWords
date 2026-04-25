@@ -5377,14 +5377,31 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 toggle.toggled.connect(lambda v, k=key: self._save_single_pref(k, v))
                 
         if hasattr(self, 'spin_thresh'):
-            if 'ui_spin_thresh' in prefs:
-                self.spin_thresh.setValue(prefs['ui_spin_thresh'])
-            self.spin_thresh.valueChanged.connect(lambda v: self._save_single_pref('ui_spin_thresh', v))
-            
+            if 'silence_threshold_db' in prefs:
+                self.spin_thresh.setText(str(prefs['silence_threshold_db']))
+            elif 'ui_spin_thresh' in prefs:
+                self.spin_thresh.setText(str(prefs['ui_spin_thresh']))
+            self.spin_thresh.editingFinished.connect(
+                lambda: self._save_single_pref('silence_threshold_db',
+                    float(self.spin_thresh.text().replace(',', '.') or -42.0))
+            )
+
         if hasattr(self, 'spin_pad'):
             if 'ui_spin_pad' in prefs:
-                self.spin_pad.setValue(prefs['ui_spin_pad'])
-            self.spin_pad.valueChanged.connect(lambda v: self._save_single_pref('ui_spin_pad', v))
+                self.spin_pad.setText(str(prefs['ui_spin_pad']))
+            self.spin_pad.editingFinished.connect(
+                lambda: self._save_single_pref('ui_spin_pad',
+                    float(self.spin_pad.text().replace(',', '.') or 0.05))
+            )
+
+        if hasattr(self, 'spin_silence_min_dur'):
+            if 'silence_min_dur' in prefs:
+                self.spin_silence_min_dur.setText(str(prefs['silence_min_dur']))
+            self.spin_silence_min_dur.editingFinished.connect(
+                lambda: self._save_single_pref('silence_min_dur',
+                    float(self.spin_silence_min_dur.text().replace(',', '.') or 0.2))
+            )
+
         
         # Restore pinned favorites
         for fav_id in prefs.get('favorites', []):
@@ -5748,17 +5765,76 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_silence.setContentsMargins(15, 15, 15, 15)
         l_silence.setSpacing(10)
         
-        form_silence = QFormLayout()
-        self.spin_thresh = QDoubleSpinBox()
-        self.spin_thresh.setRange(-100, 0)
-        self.spin_thresh.setValue(-42.0)
-        self.spin_pad = QDoubleSpinBox()
-        self.spin_pad.setRange(0, 5)
-        self.spin_pad.setSingleStep(0.05)
-        self.spin_pad.setValue(0.05)
-        form_silence.addRow(self.txt("lbl_threshold_db"), self.spin_thresh)
-        form_silence.addRow(self.txt("lbl_padding_s"), self.spin_pad)
-        l_silence.addLayout(form_silence)
+        # Reusable style for compact silence param inputs
+        _sil_input_style = (
+            "QLineEdit { background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; "
+            "border-radius: 3px; padding: 2px 6px; } "
+            "QLineEdit:focus { border: 1px solid #1a7a3e; }"
+        )
+        _sil_rst_style = (
+            "QPushButton { background: transparent; border: 1px solid #444; "
+            "border-radius: 3px; color: #777; font-size: 10pt; } "
+            "QPushButton:hover { color: #ccc; border-color: #666; }"
+        )
+
+        def _sil_row(label_text, widget, rst_btn):
+            row = QHBoxLayout()
+            lbl = QLabel(label_text)
+            row.addWidget(lbl, 1)
+            row.addWidget(widget)
+            row.addSpacing(4)
+            row.addWidget(rst_btn)
+            return row
+
+        _sil_prefs = self.engine.load_preferences() or {}
+
+        self.spin_thresh = QLineEdit()
+        self.spin_thresh.setText(str(_sil_prefs.get('silence_threshold_db', _sil_prefs.get('ui_spin_thresh', -42.0))))
+        self.spin_thresh.setFixedWidth(68)
+        self.spin_thresh.setStyleSheet(_sil_input_style)
+        _rst_thresh = QPushButton("↺")
+        _rst_thresh.setFixedSize(22, 22)
+        _rst_thresh.setCursor(Qt.PointingHandCursor)
+        _rst_thresh.setStyleSheet(_sil_rst_style)
+        _rst_thresh.clicked.connect(lambda: (
+            self.spin_thresh.setText("-42.0"),
+            self._save_single_pref('silence_threshold_db', -42.0)
+        ))
+
+        self.spin_pad = QLineEdit()
+        self.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.05)))
+        self.spin_pad.setFixedWidth(68)
+        self.spin_pad.setStyleSheet(_sil_input_style)
+        _rst_pad = QPushButton("↺")
+        _rst_pad.setFixedSize(22, 22)
+        _rst_pad.setCursor(Qt.PointingHandCursor)
+        _rst_pad.setStyleSheet(_sil_rst_style)
+        _rst_pad.clicked.connect(lambda: (
+            self.spin_pad.setText("0.05"),
+            self._save_single_pref('ui_spin_pad', 0.05)
+        ))
+
+        self.spin_silence_min_dur = QLineEdit()
+        self.spin_silence_min_dur.setText(str(_sil_prefs.get('silence_min_dur', 0.2)))
+        self.spin_silence_min_dur.setFixedWidth(68)
+        self.spin_silence_min_dur.setStyleSheet(_sil_input_style)
+        self.spin_silence_min_dur.setToolTip(
+            "Minimum duration (in seconds) for a gap to be classified as silence. "
+            "Lower = more sensitive. Applies to both standalone and post-transcript modes."
+        )
+        _rst_min = QPushButton("↺")
+        _rst_min.setFixedSize(22, 22)
+        _rst_min.setCursor(Qt.PointingHandCursor)
+        _rst_min.setStyleSheet(_sil_rst_style)
+        _rst_min.clicked.connect(lambda: (
+            self.spin_silence_min_dur.setText("0.2"),
+            self._save_single_pref('silence_min_dur', 0.2)
+        ))
+
+        l_silence.addLayout(_sil_row(self.txt("lbl_threshold_db"), self.spin_thresh, _rst_thresh))
+        l_silence.addLayout(_sil_row(self.txt("lbl_padding_s"), self.spin_pad, _rst_pad))
+        l_silence.addLayout(_sil_row(self.txt("lbl_min_silence_dur"), self.spin_silence_min_dur, _rst_min))
+
         
         row_silence_cut = QHBoxLayout()
         lbl_cut = QLabel(self.txt("lbl_detect_and_cut_silence"))
@@ -6233,6 +6309,12 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                     self.spin_thresh.setValue(imported_prefs['ui_spin_thresh'])
                 if hasattr(self, 'spin_pad') and 'ui_spin_pad' in imported_prefs:
                     self.spin_pad.setValue(imported_prefs['ui_spin_pad'])
+                if hasattr(self, 'spin_silence_min_dur') and 'silence_min_dur' in imported_prefs:
+                    self.spin_silence_min_dur.setValue(float(imported_prefs['silence_min_dur']))
+                if hasattr(self, 'input_fs_min_dur') and 'silence_min_dur' in imported_prefs:
+                    self.input_fs_min_dur.setText(str(imported_prefs['silence_min_dur']))
+                if hasattr(self, 'input_fs_thresh') and 'silence_threshold_db' in imported_prefs:
+                    self.input_fs_thresh.setText(str(imported_prefs['silence_threshold_db']))
 
                 # Restore pinned favorites visually
                 for fav_id in imported_prefs.get('favorites', []):
@@ -6413,9 +6495,25 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             pad_val = float(self.input_fs_pad.text().replace(',', '.'))
         except (ValueError, AttributeError):
             pad_val = 0.05  # fallback
-            
+
+        try:
+            min_dur_val = float(self.input_fs_min_dur.text().replace(',', '.'))
+            min_dur_val = max(0.05, min_dur_val)  # safety clamp
+        except (ValueError, AttributeError):
+            min_dur_val = 0.2  # fallback
+
+        # Persist updated silence params so post-transcript path uses same values
+        _p = self.engine.load_preferences() or {}
+        _p['silence_threshold_db'] = thresh_val
+        _p['silence_min_dur']      = min_dur_val
+        self.engine.save_preferences(_p)
+
         # Update settings for the core
-        settings = {'threshold_db': thresh_val, 'padding_s': pad_val}
+        settings = {
+            'threshold_db':    thresh_val,
+            'padding_s':       pad_val,
+            'silence_min_dur': min_dur_val,
+        }
 
         self._worker_signals = WorkerSignals()
         self._worker_signals.progress.connect(self._on_analysis_progress)
@@ -6853,19 +6951,62 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             QLineEdit:focus { border: 1px solid #1a7a3e; }
         '''
 
+        # Helper: label above input + reset button on the right in one combined layout
+        def _row_rst(label_text, widget, reset_val_str):
+            """Label above, then a horizontal row: [input, stretch-none, reset_btn]."""
+            vbox = QVBoxLayout()
+            vbox.setContentsMargins(0, 0, 0, 0)
+            vbox.setSpacing(3)
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(
+                f"color: {config.NOTE_COL}; font-size: 9pt;"
+                f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+            )
+            vbox.addWidget(lbl)
+
+            hbox = QHBoxLayout()
+            hbox.setContentsMargins(0, 0, 0, 0)
+            hbox.setSpacing(4)
+            hbox.addWidget(widget, 1)
+
+            rst = QPushButton("↺")
+            rst.setFixedSize(22, 22)
+            rst.setCursor(Qt.PointingHandCursor)
+            rst.setStyleSheet(
+                "QPushButton { background: transparent; border: 1px solid #444; "
+                "border-radius: 3px; color: #777; font-size: 10pt; } "
+                "QPushButton:hover { color: #ccc; border-color: #666; }"
+            )
+            rst.clicked.connect(lambda: widget.setText(reset_val_str))
+            hbox.addWidget(rst)
+            vbox.addLayout(hbox)
+            return vbox
+
         self.input_fs_thresh = QLineEdit()
-        self.input_fs_thresh.setText(str(prefs.get('ui_spin_thresh', -42.0)))
+        self.input_fs_thresh.setText(str(prefs.get('silence_threshold_db', prefs.get('ui_spin_thresh', -42.0))))
         self.input_fs_thresh.setStyleSheet(input_style)
         self.input_fs_thresh.setFixedHeight(30)
-        l_fast.addLayout(_row(self.txt("lbl_silence_threshold_db"), self.input_fs_thresh))
+        l_fast.addLayout(_row_rst(self.txt("lbl_silence_threshold_db"), self.input_fs_thresh, "-42.0"))
         l_fast.addSpacing(10)
 
         self.input_fs_pad = QLineEdit()
         self.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.05)))
         self.input_fs_pad.setStyleSheet(input_style)
         self.input_fs_pad.setFixedHeight(30)
-        l_fast.addLayout(_row(self.txt("lbl_padding_s"), self.input_fs_pad))
+        l_fast.addLayout(_row_rst(self.txt("lbl_padding_s"), self.input_fs_pad, "0.05"))
+        l_fast.addSpacing(10)
+
+        self.input_fs_min_dur = QLineEdit()
+        self.input_fs_min_dur.setText(str(prefs.get('silence_min_dur', 0.2)))
+        self.input_fs_min_dur.setStyleSheet(input_style)
+        self.input_fs_min_dur.setFixedHeight(30)
+        self.input_fs_min_dur.setToolTip(
+            "Minimum gap duration (s) to classify as silence. "
+            "Lower = more gaps detected. Shared with post-transcript mode."
+        )
+        l_fast.addLayout(_row_rst(self.txt("lbl_min_silence_dur"), self.input_fs_min_dur, "0.2"))
         l_fast.addSpacing(16)
+
 
         # MODE TOGGLES (Mutually Exclusive)
         row_fs_cut = QHBoxLayout()

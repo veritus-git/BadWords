@@ -672,10 +672,11 @@ except Exception as e:
             update_progress(55)
             update_status(self.txt("status_silence"))
 
-            # STEP 3: Detect silence with min_dur=0.2 (matches transcription path).
-            # Was 0.1 (100ms) — that caused 2x more false positives than the
-            # transcription path which uses 0.2 (200ms).
-            raw_silences_slow = self.detect_silence(target_wav, threshold_db, 0.2)
+            # STEP 3: Detect silence using user-configured thresholds.
+            # Both min_dur and threshold_db are now read from settings, so the user
+            # can tune them from the GUI without touching engine code.
+            min_silence_dur = settings.get('silence_min_dur', 0.2)
+            raw_silences_slow = self.detect_silence(target_wav, threshold_db, min_silence_dur)
 
             # STEP 4: Scale timestamps back to real (source) time.
             # slow_wav stretches all timestamps by 1/SLOW_FACTOR; we must invert
@@ -878,7 +879,12 @@ except Exception as e:
                 return None, None
 
             update_status(self.txt("status_silence"))
-            silence_ranges = self.detect_silence(target_wav, -42, 0.2)
+            # Read silence params from user prefs so the same GUI controls affect
+            # both Fast Silence and post-transcription silence detection.
+            _silence_prefs = self.os_doc.get_all_prefs()
+            silence_threshold_db = _silence_prefs.get('silence_threshold_db', -42.0)
+            silence_min_dur      = _silence_prefs.get('silence_min_dur', 0.2)
+            silence_ranges = self.detect_silence(target_wav, silence_threshold_db, silence_min_dur)
             
             # Cleanup
             for p in [wav_path, current_wav_path, normalized_wav]:

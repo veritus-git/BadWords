@@ -66,7 +66,7 @@ GOLDEN_INITIAL_PROMPT = (
 
 # Official DaVinci Resolve marker colors
 RESOLVE_COLORS = [
-    "Orange", "Apricot", "Yellow", "Lime", "Olive",
+    "Orange", "Apricot", "Yellow", "Lime", "Green", "Olive",
     "Teal", "Navy", "Blue", "Purple", "Violet",
     "Pink", "Tan", "Beige", "Brown", "Chocolate",
 ]
@@ -80,6 +80,7 @@ RESOLVE_COLORS_HEX = {
     "Apricot":   "#FFB347",
     "Yellow":    "#FFD700",
     "Lime":      "#BFFF00",
+    "Green":     "#228B22",
     "Olive":     "#808000",
     "Teal":      "#008080",
     "Navy":      "#001F5B",
@@ -130,6 +131,9 @@ DEFAULT_SETTINGS = {
     "offset":               0.0,
     "pad":                  0.0,
     "snap_max":             0.0,
+    # ── Silence detection ───────────────────────────────────────────────────
+    "silence_min_dur":      0.2,    # Minimum silence duration (seconds) for FFmpeg silencedetect
+    "silence_threshold_db": -42.0,  # Silence threshold in dB (both standalone and post-transcript)
     # ── AI / Whisper ────────────────────────────────────────────────────────
     "compute_type":         "int8",
     "ai_compute_type":      "Auto",
@@ -411,6 +415,7 @@ TRANS = {
         "lbl_silence_threshold_db": "Silence threshold (dB)",
         "lbl_snap_max_s": "Snap max (s)",
         "lbl_threshold_db": "Threshold (dB)",
+        "lbl_min_silence_dur": "Min silence duration (s)",
         "lbl_timeline_selection": "Timeline Selection",
         "lbl_tracks_selection": "Track/s Selection",
         "lbl_transcript_font": "Transcript font",
@@ -554,6 +559,8 @@ TRANS = {
         "resolve_color_apricot": "Apricot",
         "resolve_color_yellow": "Yellow",
         "resolve_color_lime": "Lime",
+        "resolve_color_green": "Green",
+
         "resolve_color_teal": "Teal",
         "resolve_color_blue": "Blue",
         "resolve_color_purple": "Purple",
@@ -658,6 +665,7 @@ TRANS = {
         "lbl_silence_threshold_db": "Próg ciszy (dB)",
         "lbl_snap_max_s": "Przyciąganie maks. (s)",
         "lbl_threshold_db": "Próg (dB)",
+        "lbl_min_silence_dur": "Min. czas ciszy (s)",
         "lbl_timeline_selection": "Wybór Osi Czasu",
         "lbl_tracks_selection": "Wybór Ścieżek",
         "lbl_transcript_font": "Czcionka transkryptu",
@@ -799,6 +807,8 @@ TRANS = {
         "resolve_color_apricot": "Morelowy",
         "resolve_color_yellow": "Żółty",
         "resolve_color_lime": "Limonkowy",
+        "resolve_color_green": "Zielony",
+
         "resolve_color_teal": "Morski",
         "resolve_color_blue": "Niebieski",
         "resolve_color_purple": "Fioletowy",
@@ -1039,6 +1049,8 @@ TRANS = {
         "resolve_color_apricot": "Aprikose",
         "resolve_color_yellow": "Gelb",
         "resolve_color_lime": "Limette",
+        "resolve_color_green": "Grün",
+
         "resolve_color_teal": "Blaugrün",
         "resolve_color_blue": "Blau",
         "resolve_color_purple": "Lila",
@@ -1519,6 +1531,8 @@ TRANS = {
         "resolve_color_apricot": "Abricot",
         "resolve_color_yellow": "Jaune",
         "resolve_color_lime": "Citron vert",
+        "resolve_color_green": "Vert",
+
         "resolve_color_teal": "Sarcelle",
         "resolve_color_blue": "Bleu",
         "resolve_color_purple": "Violet",
@@ -1759,7 +1773,9 @@ TRANS = {
         "resolve_color_apricot": "Albicocca",
         "resolve_color_yellow": "Giallo",
         "resolve_color_lime": "Lime",
+        "resolve_color_green": "Verde",
         "resolve_color_teal": "Verde acqua",
+
         "resolve_color_blue": "Blu",
         "resolve_color_purple": "Viola",
         "resolve_color_pink": "Rosa",
@@ -1999,7 +2015,9 @@ TRANS = {
         "resolve_color_apricot": "Damasco",
         "resolve_color_yellow": "Amarelo",
         "resolve_color_lime": "Lima",
+        "resolve_color_green": "Verde",
         "resolve_color_teal": "Azul-petróleo",
+
         "resolve_color_blue": "Azul",
         "resolve_color_purple": "Roxo",
         "resolve_color_pink": "Rosa",
@@ -2239,6 +2257,8 @@ TRANS = {
         "resolve_color_apricot": "Абрикосовий",
         "resolve_color_yellow": "Жовтий",
         "resolve_color_lime": "Лаймовий",
+        "resolve_color_green": "Зелений",
+
         "resolve_color_teal": "Бірюзовий",
         "resolve_color_blue": "Синій",
         "resolve_color_purple": "Фіолетовий",
@@ -2479,6 +2499,8 @@ TRANS = {
         "resolve_color_apricot": "Abrikoos",
         "resolve_color_yellow": "Geel",
         "resolve_color_lime": "Limoen",
+        "resolve_color_green": "Groen",
+
         "resolve_color_teal": "Groenblauw",
         "resolve_color_blue": "Blauw",
         "resolve_color_purple": "Paars",
@@ -2719,6 +2741,8 @@ TRANS = {
         "resolve_color_apricot": "Абрикосовый",
         "resolve_color_yellow": "Жёлтый",
         "resolve_color_lime": "Лаймовый",
+        "resolve_color_green": "Зелёный",
+
         "resolve_color_teal": "Сине-зелёный",
         "resolve_color_blue": "Синий",
         "resolve_color_purple": "Фиолетовый",

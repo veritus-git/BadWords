@@ -299,7 +299,7 @@ class ResolveHandler:
         
         COLOR_MAP = {
             "bad": "Violet", "repeat": "Navy", "typo": "Olive",
-            "inaudible": "Chocolate", "silence_mark": "Beige",
+            "inaudible": "Chocolate", "silence_mark": "Tan",
             "silence_cut": None, "normal": None 
         }
         
