@@ -1,6 +1,6 @@
 ; --- DEFINITIONS ---
 #define MyAppName "BadWords"
-#define MyAppVersion "2.0.2"
+#define MyAppVersion "app_version"
 #define MyAppPublisher "Szymon Wolarz"
 #define MyAppExeName "main.py"
 
@@ -100,7 +100,7 @@ spanish.ErrResolve=No se pudo encontrar la carpeta de scripts de DaVinci Resolve
 spanish.ErrConfig=Error de configuración (setup_windows.bat). Código de error: %1
 spanish.ModeTitle=Modo de instalación
 spanish.ModeDesc=Elija cómo desea instalar BadWords
-spanish.ModeSub=Elija el tipo de instalación (Si es su primera vez, elija 1):
+spanish.ModeSub=Elija el tipo de instalación:
 spanish.ModeUpdate=Instalación/Actualización estándar - Instala o actualiza la aplicación. Mantenga sus ajustes y modelos.
 spanish.ModeClean=Reparar instalación - Solucione errores reemplazando archivos principales. Mantenga sus ajustes y modelos.
 spanish.ModeWipe=Restablecimiento completo - Elimine absolutamente TODO e instale desde cero.
@@ -262,7 +262,7 @@ begin
     if NeedsPythonInstallation() then 
       idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
       
-    // SMART FFmpeg: Download ONLY if Reset is chosen or ffmpeg doesn't exist
+    // SMART FFmpeg: Download ONLY if Wipe is chosen or ffmpeg doesn't exist
     if InstallModePage.Values[2] or not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
       idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
       
@@ -270,52 +270,8 @@ begin
   end;
 end;
 
-procedure CleanAppFolder_UpdateInstall;
-var
-  FindRec: TFindRec;
-  AppPath, FileName: String;
-begin
-  AppPath := ExpandConstant('{app}');
-  if not DirExists(AppPath) then Exit;
-
-  if FindFirst(AppPath + '\*', FindRec) then
-  begin
-    try
-      repeat
-        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
-        begin
-          FileName := FindRec.Name;
-          if (CompareText(FileName, 'pref.json') <> 0) and
-             (CompareText(FileName, 'badwords_debug.log') <> 0) and
-             (CompareText(FileName, 'unins000.exe') <> 0) and
-             (CompareText(FileName, 'unins000.dat') <> 0) then
-          begin
-            Log('[UPDATE] Deleting old file: ' + FileName);
-            DeleteFile(AppPath + '\' + FileName);
-          end;
-        end
-        else
-        begin
-          FileName := FindRec.Name;
-          if (FileName <> '.') and (FileName <> '..') and
-             (CompareText(FileName, 'models') <> 0) and
-             (CompareText(FileName, 'saves') <> 0) and
-             (CompareText(FileName, 'venv') <> 0) and
-             (CompareText(FileName, 'bin') <> 0) and
-             (CompareText(FileName, 'libs') <> 0) then
-          begin
-             Log('[UPDATE] Deleting obsolete directory: ' + FileName);
-             DelTree(AppPath + '\' + FileName, True, True, True);
-          end;
-        end;
-      until not FindNext(FindRec);
-    finally
-      FindClose(FindRec);
-    end;
-  end;
-end;
-
-procedure CleanAppFolder_CleanInstall;
+// Unified Smart Cleanup to absolutely protect installer files
+procedure SmartCleanup(KeepEnv: Boolean; KeepUserData: Boolean);
 var
   FindRec: TFindRec;
   AppPath, FileName: String;
@@ -331,15 +287,35 @@ begin
         begin
           FileName := FindRec.Name;
           
-          if (CompareText(FileName, 'models') = 0) or
-             (CompareText(FileName, 'saves') = 0) or
-             (CompareText(FileName, 'pref.json') = 0) then
+          // 1. ZAWSZE CHRONIMY PLIKI INSTALATORA INNO SETUP (Kluczowe dla dzialania deinstalacji)
+          if (CompareText(FileName, 'unins000.exe') = 0) or
+             (CompareText(FileName, 'unins000.dat') = 0) then
           begin
-            Log('[REPAIR INSTALL] Keeping userdata: ' + FileName);
+            Log('[CLEANUP] Keeping InnoSetup tracker: ' + FileName);
           end
+          // 2. CHRONIMY DANE UZYTKOWNIKA
+          else if KeepUserData and (
+             (CompareText(FileName, 'models') = 0) or
+             (CompareText(FileName, 'saves') = 0) or
+             (CompareText(FileName, 'pref.json') = 0) or
+             (CompareText(FileName, 'badwords_debug.log') = 0)
+          ) then
+          begin
+            Log('[CLEANUP] Keeping user data: ' + FileName);
+          end
+          // 3. CHRONIMY SRODOWISKO (Tylko dla trybu Update)
+          else if KeepEnv and (
+             (CompareText(FileName, 'venv') = 0) or
+             (CompareText(FileName, 'bin') = 0) or
+             (CompareText(FileName, 'libs') = 0)
+          ) then
+          begin
+            Log('[CLEANUP] Keeping environment: ' + FileName);
+          end
+          // 4. USUWAMY STARE PLIKI I SKRYPTY
           else
           begin
-            Log('[REPAIR INSTALL] Deleting: ' + FileName);
+            Log('[CLEANUP] Deleting obsolete item: ' + FileName);
             if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
               DelTree(AppPath + '\' + FileName, True, True, True)
             else
@@ -362,18 +338,16 @@ var
 begin
   if CurStep = ssInstall then
   begin
+    // ANTI-GHOST REGISTRY WIPE (Usuwamy z rejestru sieroty ze starych wersji bez GUID)
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords_is1');
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords');
+
     if InstallModePage.Values[2] then // Complete Reset
-    begin
-      DelTree(ExpandConstant('{app}'), True, True, True);
-    end
+      SmartCleanup(False, False)
     else if InstallModePage.Values[1] then // Repair Installation
-    begin
-      CleanAppFolder_CleanInstall(); 
-    end
-    else // Standard Update - Additive but deletes obsolete files
-    begin
-      CleanAppFolder_UpdateInstall();
-    end;
+      SmartCleanup(False, True)
+    else // Standard Update
+      SmartCleanup(True, True);
   end;
 
   if CurStep = ssPostInstall then
@@ -387,7 +361,6 @@ begin
       
     WizardForm.StatusLabel.Caption := CustomMessage('StatusConfig');
     
-    // Run windowed mode to force waiting if batch has a 'pause' command
     if not Exec(ExpandConstant('{app}\setup_windows.bat'), 
                 '"' + ExpandConstant('{app}') + '" "' + GpuFlag + '" "' + FFmpegZip + '" "' + WipeMode + '"', 
                 '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
@@ -431,11 +404,14 @@ begin
 
   if CurUninstallStep = usPostUninstall then
   begin
-    // Complete destruction of AppData footprint (venv, models, configs, saves)
+    // Scorched Earth: Complete destruction of AppData footprint
     AppPath := ExpandConstant('{app}');
     if DirExists(AppPath) then
     begin
       DelTree(AppPath, True, True, True);
     end;
+    
+    // Explicitly destroy current registry keys to be 100% sure
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1');
   end;
 end;
