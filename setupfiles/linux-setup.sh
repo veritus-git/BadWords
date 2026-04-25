@@ -210,6 +210,10 @@ fi
 # 3. SOURCE FETCH (Local vs Web)
 # ==========================================
 REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip"
+# Zamiast hardcodowanego main, użyjemy API GitLaba do pobrania tagu najnowszego release.
+# Fallback do 'main' jeśli API nie zadziała.
+#LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
+#REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOCAL_SRC="$DIR/$SOURCE_FOLDER_NAME"

@@ -34,6 +34,9 @@ APP_NAME="BadWords"
 SOURCE_FOLDER_NAME="src" 
 ASSETS_FOLDER_NAME="assets"
 REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip"
+# Dynamicznie pobierz najnowszy release (tag) przez API GitLaba. Fallback do 'main'.
+#LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
+#REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
 
 RESOLVE_SCRIPT_DIR="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility"
 WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords.py"
