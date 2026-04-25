@@ -240,6 +240,15 @@ def _txt(lang: str, key: str, **kwargs) -> str:
     return text
 
 
+def _qwidget_txt(self, key: str, **kwargs) -> str:
+    w = self.window()
+    if hasattr(w, 'txt') and w != self:
+        return w.txt(key, **kwargs)
+    return _txt("en", key, **kwargs)
+
+QWidget.txt = _qwidget_txt
+
+
 # ==========================================
 # PHASE 7 CLASSES: WORKER, PROGRESS BAR, CANVAS
 # ==========================================
@@ -652,7 +661,7 @@ class SplashScreen(QDialog):
         lbl_title.setAlignment(Qt.AlignCenter)
         layout.addWidget(lbl_title)
 
-        self._lbl_loading = QLabel("loading", self)
+        self._lbl_loading = QLabel(self.txt("lbl_loading"), self)
         self._lbl_loading.setObjectName("loading")
         self._lbl_loading.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._lbl_loading)
@@ -1323,7 +1332,7 @@ class CustomDropdown(QPushButton):
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
-        self.setText("Select...")
+        self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -1417,7 +1426,7 @@ class MultiSelectDropdown(QPushButton):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
         self.selected_items = set()
-        self.setText("Select tracks...")
+        self.setText(self.txt("txt_select_tracks"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -1482,7 +1491,7 @@ class MultiSelectDropdown(QPushButton):
         if checked: self.selected_items.add(text)
         else: self.selected_items.discard(text)
 
-        if not self.selected_items: self.setText("Select tracks...")
+        if not self.selected_items: self.setText(self.txt("txt_select_tracks"))
         else: self.setText(", ".join(sorted(self.selected_items)))
         self.valueChanged.emit(list(self.selected_items))
 
@@ -1492,7 +1501,7 @@ class SearchableDropdown(QPushButton):
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
-        self.setText("Select...")
+        self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -1538,7 +1547,7 @@ class SearchableDropdown(QPushButton):
         self.list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, self.popup))
         
         self.line_edit = QLineEdit()
-        self.line_edit.setPlaceholderText("Search...")
+        self.line_edit.setPlaceholderText(self.txt("ph_search"))
         self.line_edit.setFixedHeight(self.height())
         self.line_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.line_edit.setStyleSheet("""
@@ -1656,7 +1665,7 @@ class SettingsDialog(QDialog):
             btn_rev.setFixedSize(28, 28)
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setProperty("class", "revert-btn")
-            btn_rev.setToolTip("Revert to default")
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             btn_rev.clicked.connect(lambda: setter_func(default_val))
             
             row_layout.addWidget(btn_rev)
@@ -1669,11 +1678,41 @@ class SettingsDialog(QDialog):
         tab_gen = QWidget()
         form_gen = QFormLayout(tab_gen)
         form_gen.setSpacing(15)
+        
+        # --- Language Selection ---
+        self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
+        current_lang_code = prefs.get('gui_lang', 'en')
+        current_lang_name = config.SUPPORTED_LANGS.get(current_lang_code, 'English')
+        self.dropdown_lang.setText(current_lang_name)
+        
+        def _on_lang_changed(val):
+            code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), 'en')
+            self.engine.save_preferences({'gui_lang': code})
+            from PySide6.QtWidgets import QMessageBox
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle(self.txt("msg_title_language_changed"))
+            msg_box.setText(self.txt("msg_restart_lang"))
+            msg_box.setIcon(QMessageBox.Information)
+            
+            btn_now = msg_box.addButton(self.txt("btn_restart_now"), QMessageBox.AcceptRole)
+            btn_later = msg_box.addButton(self.txt("btn_restart_later"), QMessageBox.RejectRole)
+            
+            msg_box.exec()
+            if msg_box.clickedButton() == btn_now:
+                import sys
+                from PySide6.QtCore import QProcess
+                from PySide6.QtWidgets import QApplication
+                QProcess.startDetached(sys.executable, sys.argv)
+                QApplication.instance().quit()
+            
+        self.dropdown_lang.valueChanged.connect(_on_lang_changed)
+        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', self.dropdown_lang.setText)
+        
         self.combo_view = QComboBox()
         self.combo_view.addItems(["Continuous Flow", "Segmented Blocks"])
         self.combo_view.setCurrentText(prefs.get('view_mode', self.DEFAULTS['view_mode']))
-        _add_row(form_gen, "Display Mode:", self.combo_view, self.DEFAULTS['view_mode'], self.combo_view.setCurrentText)
-        self.tabs.addTab(tab_gen, "General")
+        _add_row(form_gen, self.txt("lbl_display_mode"), self.combo_view, self.DEFAULTS['view_mode'], self.combo_view.setCurrentText)
+        self.tabs.addTab(tab_gen, self.txt("tab_general"))
         
         # TAB 2: Audio Sync
         tab_sync = QWidget()
@@ -1688,10 +1727,10 @@ class SettingsDialog(QDialog):
         self.spin_snap = QDoubleSpinBox(); self.spin_snap.setRange(0, 5); self.spin_snap.setSingleStep(0.1)
         self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
         
-        _add_row(form_sync, "Offset (s):", self.spin_offset, self.DEFAULTS['offset'], self.spin_offset.setValue)
-        _add_row(form_sync, "Padding (s):", self.spin_pad, self.DEFAULTS['pad'], self.spin_pad.setValue)
-        _add_row(form_sync, "Snap Max (s):", self.spin_snap, self.DEFAULTS['snap_max'], self.spin_snap.setValue)
-        self.tabs.addTab(tab_sync, "Audio Sync")
+        _add_row(form_sync, self.txt("lbl_offset_s"), self.spin_offset, self.DEFAULTS['offset'], self.spin_offset.setValue)
+        _add_row(form_sync, self.txt("lbl_padding_s"), self.spin_pad, self.DEFAULTS['pad'], self.spin_pad.setValue)
+        _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap, self.DEFAULTS['snap_max'], self.spin_snap.setValue)
+        self.tabs.addTab(tab_sync, self.txt("tab_audio_sync"))
         
         # TAB 3: Appearance
         tab_app = QWidget()
@@ -1709,18 +1748,18 @@ class SettingsDialog(QDialog):
         self.spin_lheight = QSpinBox(); self.spin_lheight.setRange(0, 40)
         self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
         
-        _add_row(form_app, "Transcript Font:", self.combo_font, self.DEFAULTS['editor_font_family'], self.combo_font.setCurrentText)
-        _add_row(form_app, "Font Size (pt):", self.spin_fsize, self.DEFAULTS['editor_font_size'], self.spin_fsize.setValue)
-        _add_row(form_app, "Line Spacing (px):", self.spin_lheight, self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
+        _add_row(form_app, self.txt("lbl_transcript_font"), self.combo_font, self.DEFAULTS['editor_font_family'], self.combo_font.setCurrentText)
+        _add_row(form_app, self.txt("lbl_font_size_pt"), self.spin_fsize, self.DEFAULTS['editor_font_size'], self.spin_fsize.setValue)
+        _add_row(form_app, self.txt("lbl_line_spacing_px"), self.spin_lheight, self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
         l_app.addLayout(form_app)
         
-        self.lbl_preview = QLabel("Aa\nBb")
+        self.lbl_preview = QLabel(self.txt("lbl_aa_nbb"))
         self.lbl_preview.setAlignment(Qt.AlignCenter)
         self.lbl_preview.setMinimumHeight(90)
         self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR};")
         l_app.addWidget(self.lbl_preview)
         l_app.addStretch()
-        self.tabs.addTab(tab_app, "Appearance")
+        self.tabs.addTab(tab_app, self.txt("tab_appearance"))
         
         self.combo_font.currentTextChanged.connect(self._update_preview)
         self.spin_fsize.valueChanged.connect(self._update_preview)
@@ -1729,7 +1768,7 @@ class SettingsDialog(QDialog):
         
         # Save Button Area
         btn_box = QHBoxLayout()
-        btn_restore = QPushButton("Restore Defaults")
+        btn_restore = QPushButton(self.txt("btn_restore_defaults"))
         btn_restore.setCursor(Qt.PointingHandCursor)
         btn_restore.setStyleSheet(f"background-color: transparent; color: #aaaaaa; border: 1px solid #555; padding: 6px 12px; border-radius: 4px;")
         btn_restore.clicked.connect(self._restore_all_defaults)
@@ -1737,14 +1776,14 @@ class SettingsDialog(QDialog):
         
         btn_box.addStretch()
         
-        btn_close = QPushButton("Close")
+        btn_close = QPushButton(self.txt("btn_close"))
         btn_close.setFixedSize(90, 32)
         btn_close.setCursor(Qt.PointingHandCursor)
         btn_close.setStyleSheet(f"background-color: transparent; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; font-weight: bold;")
         btn_close.clicked.connect(self.reject)
         btn_box.addWidget(btn_close)
         
-        btn_ok = QPushButton("Apply")
+        btn_ok = QPushButton(self.txt("btn_apply"))
         btn_ok.setFixedSize(100, 32)
         btn_ok.setCursor(Qt.PointingHandCursor)
         btn_ok.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; border-radius: 4px; font-weight: bold;")
@@ -1960,23 +1999,23 @@ class BadWordsGUI(QMainWindow):
         drag_layout_left = self._drag_zone_left.layout()
         left_layout.addWidget(self._drag_zone_left)
         
-        self.btn_nav_script = SidebarButton("\U0001f4dd", "Script & Analysis", "script_analysis", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_script = SidebarButton("\U0001f4dd", self.txt("tool_script_analysis"), "script_analysis", tooltip_widget=self.shared_tooltip)
         self.btn_nav_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
         drag_layout_left.addWidget(self.btn_nav_script)
         
-        self.btn_nav_silence = SidebarButton("\U0001f507", "Silence", "silence", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_silence = SidebarButton("\U0001f507", self.txt("tool_silence"), "silence", tooltip_widget=self.shared_tooltip)
         self.btn_nav_silence.clicked.connect(lambda: self._toggle_activity("silence"))
         drag_layout_left.addWidget(self.btn_nav_silence)
 
-        self.btn_nav_fillers = SidebarButton("\U0001f4ac", "Filler Words", "fillers", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_fillers = SidebarButton("\U0001f4ac", self.txt("tool_filler_words"), "fillers", tooltip_widget=self.shared_tooltip)
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
         drag_layout_left.addWidget(self.btn_nav_fillers)
         
-        self.btn_nav_quit = SidebarButton("\U000023FB", "Quit", "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_quit = SidebarButton("\U000023FB", self.txt("tool_quit"), "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_quit.clicked.connect(self.close)
         left_layout.addWidget(self.btn_nav_quit)
         
-        self.btn_nav_settings = SidebarButton("\u2699", "Settings", "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_settings = SidebarButton("\u2699", self.txt("tool_settings"), "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_settings.clicked.connect(self._on_settings)
         left_layout.addWidget(self.btn_nav_settings)
         
@@ -1993,11 +2032,11 @@ class BadWordsGUI(QMainWindow):
         drag_layout_right = self._drag_zone_right.layout()
         right_layout.addWidget(self._drag_zone_right)
         
-        self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", "Main Panel", "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", self.txt("tool_main_panel"), "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
         drag_layout_right.addWidget(self.btn_nav_main)
         
-        self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", "Assembly", "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", self.txt("tool_assembly"), "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
         drag_layout_right.addWidget(self.btn_nav_assembly)
 
@@ -2230,19 +2269,19 @@ class BadWordsGUI(QMainWindow):
         
         self.text_script = QTextEdit()
         self.text_script.setAcceptRichText(False)
-        self.text_script.setPlaceholderText("Paste script here...")
+        self.text_script.setPlaceholderText(self.txt("ph_paste_script_here"))
         l_script_analysis.addWidget(self.text_script)
         
         btn_row_script = QHBoxLayout()
-        self.btn_import_script = QPushButton("Import Script")
+        self.btn_import_script = QPushButton(self.txt("btn_import_script"))
         self.btn_import_script.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_clear_script = QPushButton("Clear")
+        self.btn_clear_script = QPushButton(self.txt("btn_clear"))
         self.btn_clear_script.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_row_script.addWidget(self.btn_import_script)
         btn_row_script.addWidget(self.btn_clear_script)
         l_script_analysis.addLayout(btn_row_script)
         
-        self.btn_analyze_compare = QPushButton("ANALYZE (Compare)")
+        self.btn_analyze_compare = QPushButton(self.txt("btn_analyze_compare"))
         self.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_analyze_compare.setFixedHeight(35)
         self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 12pt; border: none; border-radius: 4px; padding: 10px;")
@@ -2255,7 +2294,7 @@ class BadWordsGUI(QMainWindow):
             self.btn_analyze_compare.setStyleSheet(f"QPushButton {{ background-color: {color.name()}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }}")
         self._analyze_color_anim.valueChanged.connect(update_btn_style)
         
-        self.btn_analyze_standalone = QPushButton("ANALYZE (Standalone)")
+        self.btn_analyze_standalone = QPushButton(self.txt("btn_analyze_standalone"))
         self.btn_analyze_standalone.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_analyze_standalone.setFixedHeight(35)
         self.btn_analyze_standalone.setEnabled(False)
@@ -2299,12 +2338,12 @@ class BadWordsGUI(QMainWindow):
         self.spin_pad.setRange(0, 5)
         self.spin_pad.setSingleStep(0.05)
         self.spin_pad.setValue(0.05)
-        form_silence.addRow("Threshold (dB):", self.spin_thresh)
-        form_silence.addRow("Padding (s):", self.spin_pad)
+        form_silence.addRow(self.txt("lbl_threshold_db"), self.spin_thresh)
+        form_silence.addRow(self.txt("lbl_padding_s"), self.spin_pad)
         l_silence.addLayout(form_silence)
         
         row_silence_cut = QHBoxLayout()
-        lbl_cut = QLabel("Detect and cut silence")
+        lbl_cut = QLabel(self.txt("lbl_detect_and_cut_silence"))
         lbl_cut.setWordWrap(True)
         row_silence_cut.addWidget(lbl_cut)
         row_silence_cut.addStretch()
@@ -2313,7 +2352,7 @@ class BadWordsGUI(QMainWindow):
         l_silence.addLayout(row_silence_cut)
         
         row_silence_mark = QHBoxLayout()
-        lbl_mark = QLabel("Detect and mark silence")
+        lbl_mark = QLabel(self.txt("lbl_detect_and_mark_silence"))
         lbl_mark.setWordWrap(True)
         row_silence_mark.addWidget(lbl_mark)
         row_silence_mark.addStretch()
@@ -2346,7 +2385,7 @@ class BadWordsGUI(QMainWindow):
         filler_tools_layout = QHBoxLayout()
         filler_tools_layout.setContentsMargins(0, 2, 0, 0)
         
-        self.lbl_filler_count = QLabel("0 / 150 words")
+        self.lbl_filler_count = QLabel(self.txt("lbl_0_150_words"))
         self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
         filler_tools_layout.addWidget(self.lbl_filler_count)
         
@@ -2359,7 +2398,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_reset_fillers.clicked.connect(self._on_reset_inline_fillers)
         filler_tools_layout.addWidget(self.btn_reset_fillers)
         
-        self.btn_save_fillers = QPushButton("Save")
+        self.btn_save_fillers = QPushButton(self.txt("btn_save"))
         self.btn_save_fillers.setCursor(Qt.PointingHandCursor)
         self.btn_save_fillers.setStyleSheet(f"background-color: {config.BTN_GHOST_BG}; color: {config.FG_COLOR}; border-radius: 4px; font-weight: bold; padding: 4px 10px;")
         self.btn_save_fillers.clicked.connect(self._on_save_inline_fillers)
@@ -2373,7 +2412,7 @@ class BadWordsGUI(QMainWindow):
         self._on_fillers_text_changed()
         
         row_auto_filler = QHBoxLayout()
-        row_auto_filler.addWidget(QLabel("Mark filler words automatically"))
+        row_auto_filler.addWidget(QLabel(self.txt("lbl_mark_filler_words_automat")))
         row_auto_filler.addStretch()
         self.tgl_auto_filler = ToggleSwitch()
         self.tgl_auto_filler.setChecked(True)
@@ -2391,9 +2430,9 @@ class BadWordsGUI(QMainWindow):
         
         # Top Section (Markers)
         row_marking_title = QHBoxLayout()
-        row_marking_title.addWidget(QLabel("Marking Mode:"))
+        row_marking_title.addWidget(QLabel(self.txt("lbl_marking_mode")))
         row_marking_title.addStretch()
-        self.btn_clear_transcript = QPushButton("🧹")
+        self.btn_clear_transcript = QPushButton(self.txt("btn_"))
         self.btn_clear_transcript.setFixedSize(26, 26)
         self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
         self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2402,28 +2441,28 @@ class BadWordsGUI(QMainWindow):
         row_marking_title.addWidget(self.btn_clear_transcript)
         l_main.addLayout(row_marking_title)
         
-        self.rb_red = QRadioButton("RED (Cut/Filler)")
+        self.rb_red = QRadioButton(self.txt("rad_red_cut_filler"))
         self.rb_red.setChecked(True)
         self.rb_red.setCursor(Qt.CursorShape.PointingHandCursor)
         style_rb(self.rb_red, config.WORD_BAD_BG)
         l_main.addWidget(self.rb_red)
         
-        self.rb_blue = QRadioButton("BLUE (Retake)")
+        self.rb_blue = QRadioButton(self.txt("rad_blue_retake"))
         self.rb_blue.setCursor(Qt.CursorShape.PointingHandCursor)
         style_rb(self.rb_blue, config.WORD_REPEAT_BG)
         l_main.addWidget(self.rb_blue)
         
-        self.rb_green = QRadioButton("GREEN (Typo)")
+        self.rb_green = QRadioButton(self.txt("rad_green_typo"))
         self.rb_green.setCursor(Qt.CursorShape.PointingHandCursor)
         style_rb(self.rb_green, config.WORD_TYPO_BG)
         l_main.addWidget(self.rb_green)
         
-        self.rb_eraser = QRadioButton("ERASER (Clear)")
+        self.rb_eraser = QRadioButton(self.txt("rad_eraser_clear"))
         self.rb_eraser.setCursor(Qt.CursorShape.PointingHandCursor)
         style_rb(self.rb_eraser, "#ffffff")
         l_main.addWidget(self.rb_eraser)
         
-        lbl_dummy = QLabel("+ add custom marker...")
+        lbl_dummy = QLabel(self.txt("lbl_add_custom_marker"))
         lbl_dummy.setStyleSheet("color: #808080; font-size: 9pt; text-decoration: underline;")
         l_main.addWidget(lbl_dummy)
         
@@ -2431,7 +2470,7 @@ class BadWordsGUI(QMainWindow):
         l_main.addStretch(1)
         
         # Favorites section
-        lbl_favs = QLabel("Pinned Favorites:")
+        lbl_favs = QLabel(self.txt("lbl_pinned_favorites"))
         lbl_favs.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
         l_main.addWidget(lbl_favs)
         
@@ -2442,15 +2481,15 @@ class BadWordsGUI(QMainWindow):
         # Bottom Section removed!
         
         row_proj = QHBoxLayout()
-        self.btn_import_proj = QPushButton("Import Project")
+        self.btn_import_proj = QPushButton(self.txt("btn_import_project"))
         self.btn_import_proj.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_export_proj = QPushButton("Export Project")
+        self.btn_export_proj = QPushButton(self.txt("btn_export_project"))
         self.btn_export_proj.setCursor(Qt.CursorShape.PointingHandCursor)
         row_proj.addWidget(self.btn_import_proj)
         row_proj.addWidget(self.btn_export_proj)
         l_main.addLayout(row_proj)
         
-        self.btn_assemble = QPushButton("ASSEMBLE")
+        self.btn_assemble = QPushButton(self.txt("btn_assemble"))
         self.btn_assemble.setFixedHeight(35)
         self.btn_assemble.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_assemble.setStyleSheet("QPushButton { background-color: #11703c; color: white; font-weight: bold; border-radius: 4px; border: 1px solid #0a4d28; } QPushButton:hover { background-color: #168f4d; } QPushButton:pressed { background-color: #0d5c31; }")
@@ -2468,7 +2507,7 @@ class BadWordsGUI(QMainWindow):
         l_assembly.setSpacing(15)
         
         def _pin_btn(fav_id: str):
-            btn = QPushButton("★")
+            btn = QPushButton(self.txt("btn_"))
             btn.setFixedSize(20, 20)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
@@ -2476,7 +2515,7 @@ class BadWordsGUI(QMainWindow):
             return btn
         
         row_show_inaudible = QHBoxLayout()
-        lbl_show_inaud = QLabel("Show inaudible fragments")
+        lbl_show_inaud = QLabel(self.txt("lbl_show_inaudible_fragments"))
         lbl_show_inaud.setWordWrap(True)
         row_show_inaudible.addWidget(lbl_show_inaud)
         row_show_inaudible.addStretch()
@@ -2487,10 +2526,10 @@ class BadWordsGUI(QMainWindow):
         pin_show_inaud = _pin_btn('show_inaudible')
         row_show_inaudible.addWidget(pin_show_inaud)
         l_assembly.addLayout(row_show_inaudible)
-        pin_show_inaud.clicked.connect(lambda: self._toggle_favorite('show_inaudible', self.tgl_show_inaudible, 'Show inaudible', pin_show_inaud))
+        pin_show_inaud.clicked.connect(lambda: self._toggle_favorite('show_inaudible', self.tgl_show_inaudible, self.txt("tool_show_inaudible"), pin_show_inaud))
         
         row_mark_inaudible = QHBoxLayout()
-        lbl_mark_inaud = QLabel("Mark inaudible fragments with brown")
+        lbl_mark_inaud = QLabel(self.txt("lbl_mark_inaudible_fragments"))
         lbl_mark_inaud.setWordWrap(True)
         row_mark_inaudible.addWidget(lbl_mark_inaud)
         row_mark_inaudible.addStretch()
@@ -2500,10 +2539,10 @@ class BadWordsGUI(QMainWindow):
         pin_mark_inaud = _pin_btn('mark_inaudible')
         row_mark_inaudible.addWidget(pin_mark_inaud)
         l_assembly.addLayout(row_mark_inaudible)
-        pin_mark_inaud.clicked.connect(lambda: self._toggle_favorite('mark_inaudible', self.tgl_mark_inaudible, 'Mark inaudible', pin_mark_inaud))
+        pin_mark_inaud.clicked.connect(lambda: self._toggle_favorite('mark_inaudible', self.tgl_mark_inaudible, self.txt("tool_mark_inaudible"), pin_mark_inaud))
         
         row_show_typos = QHBoxLayout()
-        lbl_show_typos = QLabel("Show detected typos")
+        lbl_show_typos = QLabel(self.txt("lbl_show_detected_typos"))
         lbl_show_typos.setWordWrap(True)
         row_show_typos.addWidget(lbl_show_typos)
         row_show_typos.addStretch()
@@ -2514,10 +2553,10 @@ class BadWordsGUI(QMainWindow):
         pin_show_typos = _pin_btn('show_typos')
         row_show_typos.addWidget(pin_show_typos)
         l_assembly.addLayout(row_show_typos)
-        pin_show_typos.clicked.connect(lambda: self._toggle_favorite('show_typos', self.tgl_show_typos, 'Show typos', pin_show_typos))
+        pin_show_typos.clicked.connect(lambda: self._toggle_favorite('show_typos', self.tgl_show_typos, self.txt("tool_show_typos"), pin_show_typos))
         
         row_ripple_delete = QHBoxLayout()
-        lbl_ripple = QLabel("<span style='color: #ed4245; font-weight: bold;'>Ripple delete</span> red clips")
+        lbl_ripple = QLabel(self.txt("lbl_ripple_delete_red_clips"))
         lbl_ripple.setWordWrap(True)
         row_ripple_delete.addWidget(lbl_ripple)
         row_ripple_delete.addStretch()
@@ -2526,7 +2565,7 @@ class BadWordsGUI(QMainWindow):
         pin_ripple = _pin_btn('ripple_delete')
         row_ripple_delete.addWidget(pin_ripple)
         l_assembly.addLayout(row_ripple_delete)
-        pin_ripple.clicked.connect(lambda: self._toggle_favorite('ripple_delete', self.tgl_ripple_delete, 'Ripple delete', pin_ripple))
+        pin_ripple.clicked.connect(lambda: self._toggle_favorite('ripple_delete', self.tgl_ripple_delete, self.txt("tool_ripple_delete"), pin_ripple))
         
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
@@ -2552,7 +2591,7 @@ class BadWordsGUI(QMainWindow):
                 self.shared_tooltip.show_at(watched, self.txt("tooltip_dev"), is_right_side=False)
             elif watched == getattr(self, 'btn_clear_transcript', None):
                 # CRITICAL: is_right_side=True forces it to render to the left of the button!
-                self.shared_tooltip.show_at(watched, "Clear all markings", is_right_side=True)
+                self.shared_tooltip.show_at(watched, self.txt("tooltip_clear_all_markings"), is_right_side=True)
         elif event.type() == QEvent.Type.Leave:
             if watched in (getattr(self, 'btn_analyze_standalone', None), getattr(self, 'btn_clear_transcript', None)):
                 self.shared_tooltip.hide()
@@ -2598,11 +2637,11 @@ class BadWordsGUI(QMainWindow):
         from PySide6.QtWidgets import QMessageBox
         script_text = self.text_script.toPlainText().strip()
         if not script_text:
-            QMessageBox.warning(self, "Warning", "Please import or paste a script first.")
+            QMessageBox.warning(self, self.txt("msg_warning"), self.txt("msg_please_import_or_paste_a"))
             return
             
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
-            QMessageBox.warning(self, "Warning", "No active transcription to compare against.")
+            QMessageBox.warning(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"))
             return
             
         # Run comparison via engine and overwrite canvas data
@@ -2612,7 +2651,7 @@ class BadWordsGUI(QMainWindow):
     def _on_analyze_standalone(self):
         from PySide6.QtWidgets import QMessageBox
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
-            QMessageBox.warning(self, "Warning", "No active transcription to analyze.")
+            QMessageBox.warning(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"))
             return
             
         prefs = self.engine.load_preferences() or {}
@@ -2643,9 +2682,9 @@ class BadWordsGUI(QMainWindow):
         self.engine.save_preferences(prefs)
         
         # Provide visual feedback on the button
-        self.btn_save_fillers.setText("Saved!")
+        self.btn_save_fillers.setText(self.txt("txt_saved"))
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(1500, lambda: self.btn_save_fillers.setText("Save"))
+        QTimer.singleShot(1500, lambda: self.btn_save_fillers.setText(self.txt("txt_save")))
         
         # Trigger real-time update if auto filler is currently active
         if hasattr(self, 'tgl_auto_filler') and self.tgl_auto_filler.isChecked() and hasattr(self, 'text_canvas') and self.text_canvas.words_data:
@@ -2955,7 +2994,7 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'bar_processing'):
             self.bar_processing.set_value(0)
         if hasattr(self, 'lbl_processing_status'):
-            self.lbl_processing_status.setText("Initializing Fast Silence Cut...")
+            self.lbl_processing_status.setText(self.txt("txt_initializing_fast_silence"))
 
         # Read from line edits
         try:
@@ -2997,12 +3036,12 @@ class BadWordsGUI(QMainWindow):
         from PySide6.QtWidgets import QApplication, QMessageBox
 
         if not words_data:
-            QMessageBox.critical(self, "Fast Silence", "No silence segments detected. Check your threshold setting.")
+            QMessageBox.critical(self, self.txt("msg_fast_silence"), self.txt("msg_no_silence_segments_detec"))
             self.go_to_page(0)
             if hasattr(self, 'welcome_stack'): self.welcome_stack.setCurrentIndex(0)
             return
 
-        self.lbl_processing_status.setText("Assembling Timeline...")
+        self.lbl_processing_status.setText(self.txt("txt_assembling_timeline"))
         QApplication.processEvents()
 
         fs_prefs = self.engine.load_preferences() or {}
@@ -3016,7 +3055,7 @@ class BadWordsGUI(QMainWindow):
         )
 
         if success:
-            QMessageBox.information(self, "Fast Silence", "Fast Silence processing complete!")
+            QMessageBox.information(self, self.txt("msg_fast_silence"), self.txt("msg_fast_silence_processing_c"))
         else:
             QMessageBox.critical(self, "Fast Silence Error", f"Assembly failed: {err}")
 
@@ -3114,7 +3153,7 @@ class BadWordsGUI(QMainWindow):
         self._panel_left.hide()
         self._panel_right.hide()
         self.go_to_page(1)
-        self.lbl_processing_status.setText("Initializing Assembly...")
+        self.lbl_processing_status.setText(self.txt("txt_initializing_assembly"))
         self.bar_processing.set_value(0)
         
         # Force UI update immediately before the heavy processing begins
@@ -3163,7 +3202,7 @@ class BadWordsGUI(QMainWindow):
         # HANDLE RESULTS SEQUENTIALLY
         if success:
             self.bar_processing.set_value(100)
-            self.lbl_processing_status.setText("Finishing...")
+            self.lbl_processing_status.setText(self.txt("txt_finishing"))
             QApplication.processEvents()
             self._on_assembly_success()
         else:
@@ -3174,7 +3213,7 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
         if hasattr(self, '_panel_left'): self._panel_left.show()
         if hasattr(self, '_panel_right'): self._panel_right.show()
-        QMessageBox.information(self, "Success", "Timeline assembled successfully!")
+        QMessageBox.information(self, self.txt("msg_success"), self.txt("msg_timeline_assembled_succes"))
 
     def _on_assembly_error(self, err_msg):
         from PySide6.QtWidgets import QMessageBox
@@ -3254,7 +3293,7 @@ class BadWordsGUI(QMainWindow):
         l_trans.setSpacing(0)
         l_trans.setAlignment(Qt.AlignTop)
 
-        lbl_sub = QLabel("Transcription workspace")
+        lbl_sub = QLabel(self.txt("lbl_transcription_workspace"))
         lbl_sub.setAlignment(Qt.AlignCenter)
         lbl_sub.setFixedHeight(20)
         lbl_sub.setStyleSheet(
@@ -3266,12 +3305,12 @@ class BadWordsGUI(QMainWindow):
 
         self.combo_tl_0 = CustomDropdown(["Timeline 1", "Timeline 2", "No timelines detected"])
         self.combo_tl_0.setFixedHeight(30)
-        l_trans.addLayout(_row("Timeline Selection:", self.combo_tl_0))
+        l_trans.addLayout(_row(self.txt("lbl_timeline_selection"), self.combo_tl_0))
         l_trans.addSpacing(10)
 
         self.combo_tr_0 = MultiSelectDropdown(["Audio 1", "Audio 2", "Audio 3", "No audio detected"])
         self.combo_tr_0.setFixedHeight(30)
-        l_trans.addLayout(_row("Track/s Selection:", self.combo_tr_0))
+        l_trans.addLayout(_row(self.txt("lbl_tracks_selection"), self.combo_tr_0))
         l_trans.addSpacing(10)
 
         # ── Language
@@ -3330,7 +3369,7 @@ class BadWordsGUI(QMainWindow):
         btn_import.clicked.connect(self._on_import_project)
         btn_row_t.addWidget(btn_import)
 
-        btn_analyze = QPushButton("\u25b6  " + self.txt("btn_analyze"))
+        btn_analyze = QPushButton(self.txt("btn_u25b6") + self.txt("btn_analyze"))
         btn_analyze.setObjectName("btn_primary")
         btn_analyze.setCursor(Qt.PointingHandCursor)
         btn_analyze.setFixedHeight(30)
@@ -3349,7 +3388,7 @@ class BadWordsGUI(QMainWindow):
         l_trans.addSpacing(14)
 
         # ── Link to fast silence sub-page
-        btn_switch_fast = QPushButton("Fast silence detection / removal...")
+        btn_switch_fast = QPushButton(self.txt("btn_fast_silence_detection_re"))
         btn_switch_fast.setCursor(Qt.PointingHandCursor)
         btn_switch_fast.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
@@ -3371,7 +3410,7 @@ class BadWordsGUI(QMainWindow):
         l_fast.setAlignment(Qt.AlignTop)
 
         # TITLE
-        lbl_fs_title = QLabel("Fast silence workspace")
+        lbl_fs_title = QLabel(self.txt("lbl_fast_silence_workspace"))
         lbl_fs_title.setAlignment(Qt.AlignCenter)
         lbl_fs_title.setFixedHeight(20)
         lbl_fs_title.setStyleSheet(
@@ -3383,12 +3422,12 @@ class BadWordsGUI(QMainWindow):
 
         self.combo_tl_1 = CustomDropdown(["Timeline 1", "Timeline 2", "No timelines detected"])
         self.combo_tl_1.setFixedHeight(30)
-        l_fast.addLayout(_row("Timeline Selection:", self.combo_tl_1))
+        l_fast.addLayout(_row(self.txt("lbl_timeline_selection"), self.combo_tl_1))
         l_fast.addSpacing(10)
 
         self.combo_tr_1 = MultiSelectDropdown(["Audio 1", "Audio 2", "Audio 3", "No audio detected"])
         self.combo_tr_1.setFixedHeight(30)
-        l_fast.addLayout(_row("Track/s Selection:", self.combo_tr_1))
+        l_fast.addLayout(_row(self.txt("lbl_tracks_selection"), self.combo_tr_1))
         l_fast.addSpacing(10)
 
         # SETTINGS ROWS
@@ -3405,19 +3444,19 @@ class BadWordsGUI(QMainWindow):
         self.input_fs_thresh.setText(str(prefs.get('ui_spin_thresh', -42.0)))
         self.input_fs_thresh.setStyleSheet(input_style)
         self.input_fs_thresh.setFixedHeight(30)
-        l_fast.addLayout(_row("Silence Threshold (dB):", self.input_fs_thresh))
+        l_fast.addLayout(_row(self.txt("lbl_silence_threshold_db"), self.input_fs_thresh))
         l_fast.addSpacing(10)
 
         self.input_fs_pad = QLineEdit()
         self.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.05)))
         self.input_fs_pad.setStyleSheet(input_style)
         self.input_fs_pad.setFixedHeight(30)
-        l_fast.addLayout(_row("Padding (s):", self.input_fs_pad))
+        l_fast.addLayout(_row(self.txt("lbl_padding_s"), self.input_fs_pad))
         l_fast.addSpacing(16)
 
         # MODE TOGGLES (Mutually Exclusive)
         row_fs_cut = QHBoxLayout()
-        lbl_fs_cut = QLabel("Cut silence directly")
+        lbl_fs_cut = QLabel(self.txt("lbl_cut_silence_directly"))
         lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
         row_fs_cut.addWidget(lbl_fs_cut)
         row_fs_cut.addStretch()
@@ -3428,7 +3467,7 @@ class BadWordsGUI(QMainWindow):
         l_fast.addSpacing(10)
 
         row_fs_mark = QHBoxLayout()
-        lbl_fs_mark = QLabel("Mark silence with color")
+        lbl_fs_mark = QLabel(self.txt("lbl_mark_silence_with_color"))
         lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
         row_fs_mark.addWidget(lbl_fs_mark)
         row_fs_mark.addStretch()
@@ -3447,7 +3486,7 @@ class BadWordsGUI(QMainWindow):
         # RUN BUTTON
         btn_row_fs = QHBoxLayout()
         btn_row_fs.addStretch()
-        self.btn_run_fs = QPushButton("RUN FAST SILENCE")
+        self.btn_run_fs = QPushButton(self.txt("btn_run_fast_silence"))
         self.btn_run_fs.setCursor(Qt.PointingHandCursor)
         self.btn_run_fs.setFixedHeight(30)
         self.btn_run_fs.setStyleSheet(f'''
@@ -3466,7 +3505,7 @@ class BadWordsGUI(QMainWindow):
         l_fast.addSpacing(20)
 
         # BACK BUTTON
-        btn_back = QPushButton("\u2190 Back to transcription")
+        btn_back = QPushButton(self.txt("btn_u2190_back_to_transcripti"))
         btn_back.setCursor(Qt.PointingHandCursor)
         btn_back.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
@@ -3498,7 +3537,7 @@ class BadWordsGUI(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setAlignment(Qt.AlignCenter)
         
-        self.lbl_processing_status = QLabel("Initializing...", page)
+        self.lbl_processing_status = QLabel(self.txt("lbl_initializing"), page)
         self.lbl_processing_status.setAlignment(Qt.AlignCenter)
         self.lbl_processing_status.setStyleSheet(
             f"color: {config.NOTE_COL}; font-size: 13pt;"
@@ -3567,7 +3606,7 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'bar_processing'):
             self.bar_processing.set_value(0)
         if hasattr(self, 'lbl_processing_status'):
-            self.lbl_processing_status.setText("Initializing analysis...")
+            self.lbl_processing_status.setText(self.txt("txt_initializing_analysis"))
 
         # 3. Gather settings
         raw_lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
@@ -3625,7 +3664,7 @@ class BadWordsGUI(QMainWindow):
     def _on_analysis_finished(self, words_data, segments_data):
         if not words_data:
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Analysis Failed", "The transcription process failed or was interrupted.\nPlease check the logs for more details.")
+            QMessageBox.critical(self, self.txt("msg_analysis_failed"), self.txt("msg_the_transcription_process"))
             
             # Reset UI to Page 0 and show panels again
             self.go_to_page(0)
