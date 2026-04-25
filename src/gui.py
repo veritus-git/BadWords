@@ -802,14 +802,12 @@ class CustomTitleBar(QWidget):
             return
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
-            # Zapisujemy pozycję lokalną kliknięcia (względem paska tytułowego)
             self._click_pos = event.position().toPoint()
             event.accept()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        # Windows root window: fully handled by OS via HTCAPTION.
         if getattr(self._win, '_is_win', False) and getattr(self._win, '_is_root', False):
             event.ignore()
             return
@@ -819,46 +817,82 @@ class CustomTitleBar(QWidget):
             return
 
         win = self.window()
+        gp = event.globalPosition().toPoint()
+        frames = getattr(self, '_x11_detach_frames', 0)
 
-        # Filtr drgań myszki (zapobiega odpalaniu drag przy zwykłym kliknięciu)
-        if (event.position().toPoint() - self._click_pos).manhattanLength() < 5:
+        # Filtr drgań (tylko na start dragu)
+        if frames == 0 and (event.position().toPoint() - self._click_pos).manhattanLength() < 5:
             return
 
-        self._is_dragging = False  # Przekazujemy pałeczkę do systemu operacyjnego
-
-        if win.isMaximized():
-            ratio          = self._click_pos.x() / max(1, self.width())
-            _TARGET_W      = 580
-            _TARGET_H      = 670
-            gp             = event.globalPosition().toPoint()
-            is_wayland     = getattr(self._win, '_is_wayland', False)
-
-            win.showNormal()
-
+        if win.isMaximized() and frames == 0:
+            is_wayland = getattr(self._win, '_is_wayland', False)
             if is_wayland:
-                # Wayland: compositor controls position — setGeometry() position is
-                # ignored for toplevel windows. Just resize; compositor anchors the
-                # cursor automatically when startSystemMove() is called.
-                win.resize(_TARGET_W, _TARGET_H)
+                self._is_dragging = False
+                win.showNormal()
+                win.resize(580, 670)
+                if hasattr(win, 'windowHandle') and win.windowHandle():
+                    win.windowHandle().startSystemMove()
+                event.accept()
+                return
             else:
-                # X11: we control position via setGeometry (single ConfigureRequest).
-                # Cursor stays at the same proportional place on the title bar.
-                new_x = gp.x() - int(_TARGET_W * ratio)
-                new_y = gp.y() - self._click_pos.y()
-                win.setGeometry(new_x, new_y, _TARGET_W, _TARGET_H)
+                # X11 OUT OF THE BOX FIX:
+                # Opóźniamy natywny drag o 5 ramek ruchu myszki (kilkadziesiąt milisekund).
+                # Pozwala to serwerowi X11 na całkowite zastosowanie obkurczenia 
+                # (showNormal + setGeometry), więc gdy w końcu wywołamy startSystemMove(), 
+                # Menedżer Okien (KWin/Mutter) policzy offset chwycenia perfekcyjnie pod kursorem.
+                
+                ratio = self._click_pos.x() / max(1, self.width())
+                saved_geo = getattr(win, '_pre_max_geometry', None)
+                new_w = saved_geo.width() if saved_geo and saved_geo.isValid() else 580
+                new_h = saved_geo.height() if saved_geo and saved_geo.isValid() else 670
+                
+                offset_x = int(new_w * ratio)
+                offset_y = min(self._click_pos.y(), self.height())
+                
+                new_x = gp.x() - offset_x
+                new_y = gp.y() - offset_y
 
-        # Oddajemy kontrolę menedżerowi okien (obsługa przeciągania / snap)
+                win.showNormal()
+                win.setGeometry(new_x, new_y, new_w, new_h)
+
+                self._x11_detach_frames = 5
+                self._cached_offset_x = offset_x
+                self._cached_offset_y = offset_y
+                # Utrzymujemy _is_dragging = True aby wejść tu znowu jak ruszysz myszką po odpięciu
+                event.accept()
+                return
+
+        if frames > 0:
+            self._x11_detach_frames -= 1
+            
+            # W trakcie "kwarantanny" X11 prowadzimy okno ręcznie, 
+            # by idealnie trzymało się i nie uciekło z dłoni
+            new_x = gp.x() - self._cached_offset_x
+            new_y = gp.y() - self._cached_offset_y
+            win.move(new_x, new_y)
+
+            if self._x11_detach_frames == 0:
+                # Oczekiwany moment! Serwer X11 jest ostatecznie wyzerowany i świadomy rozmiaru 580px.
+                # Odpalamy native Aero Snap Drag — Menadżer załapie okno perfekcyjnie tutaj.
+                self._is_dragging = False
+                if hasattr(win, 'windowHandle') and win.windowHandle():
+                    win.windowHandle().startSystemMove()
+
+            event.accept()
+            return
+
+        self._is_dragging = False
         if hasattr(win, 'windowHandle') and win.windowHandle():
             win.windowHandle().startSystemMove()
 
         event.accept()
 
     def mouseReleaseEvent(self, event):
-        # Windows root window: no-op — drag was never started on our side.
         if getattr(self._win, '_is_win', False) and getattr(self._win, '_is_root', False):
             event.ignore()
             return
         self._is_dragging = False
+        self._x11_detach_frames = 0
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
