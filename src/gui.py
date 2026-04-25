@@ -55,12 +55,6 @@ RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Language
 # HELPERS
 # ==========================================
 
-class ActivityPanel(QFrame):
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#212121"))
-        super().paintEvent(event)
-
 def _app_icon() -> QIcon:
     """Load application icon from the install directory (icon.ico on Windows, icon.png elsewhere)."""
     try:
@@ -1090,12 +1084,11 @@ class BadWordsGUI(QMainWindow):
             QMainWindow {{
                 background-color: {config.BG_COLOR};
             }}
-            QWidget {{
+            .QWidget {{
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
                 font-size: 10px;
-            }}
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{
@@ -1300,18 +1293,32 @@ class BadWordsGUI(QMainWindow):
                         break
 
     def _build_activities(self):
-        def _wrap_activity(widget: QWidget) -> ActivityPanel:
-            container = ActivityPanel()
-            container.setObjectName("activityContainer")
+        def _wrap_activity(widget: QWidget) -> QFrame:
+            container = QFrame()
+            container.setObjectName("ActivityPanel")
             container.setAttribute(Qt.WA_StyledBackground, True)
+
             container.setStyleSheet("""
-                QLabel, QCheckBox, QRadioButton { 
-                    background: transparent; 
-                    border: none; 
+                QFrame#ActivityPanel {
+                    background-color: #212121;
+                    border-radius: 6px;
+                    margin: 2px;
+                }
+                /* Force all generic children to be transparent so the grey shows through */
+                QFrame#ActivityPanel QWidget {
+                    background-color: transparent;
+                }
+                /* Restore specific background for input fields so they don't blend in */
+                QFrame#ActivityPanel QTextEdit,
+                QFrame#ActivityPanel QDoubleSpinBox,
+                QFrame#ActivityPanel QLineEdit {
+                    background-color: #1e1e1e;
+                    border: 1px solid #3a3a3a;
+                    color: #ffffff;
                 }
             """)
             layout = QVBoxLayout(container)
-            layout.setContentsMargins(6, 6, 6, 6)
+            layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(widget)
             return container
 
