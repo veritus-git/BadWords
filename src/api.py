@@ -369,7 +369,10 @@ class ResolveHandler:
             if video_items:
                 for i, item in enumerate(video_items):
                     if item and i < len(valid_ops):
-                        color = COLOR_MAP.get(valid_ops[i]['type'])
+                        op_type = str(valid_ops[i]['type'])
+                        color = COLOR_MAP.get(op_type)
+                        if not color and op_type.startswith("custom_"):
+                            color = op_type.split("_")[1]
                         if color: item.SetClipColor(color)
             
             if len(audio_items) == len(valid_ops):

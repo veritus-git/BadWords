@@ -1076,7 +1076,7 @@ class TranscriptionCanvas(QWidget):
             if status_val in color_map: return color_map[status_val]
             if status_val and str(status_val).startswith("custom_"):
                 c_name = status_val.split("_")[1]
-                return (QColor(config.RESOLVE_COLORS_HEX.get(c_name, "#ffffff")), QColor("#000000"))
+                return (QColor(config.RESOLVE_COLORS_HEX.get(c_name, "#ffffff")), QColor("#ffffff"))
             return None
             
         def get_base_bg_fg(w):
@@ -3221,11 +3221,12 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
 
     def _on_ok(self):
         name = self._name_edit.text().strip()
-        if name:
+        translated = self._color_combo.currentText()
+        color_key = self._color_key_map.get(translated, "")
+        # Both name and a valid color must be provided
+        if name and color_key:
             self.result_name = name
-            # Map translated color label back to English key for storage
-            translated = self._color_combo.currentText()
-            self.result_color = self._color_key_map.get(translated, translated)
+            self.result_color = color_key
             self.accept()
 
     def keyPressEvent(self, event):

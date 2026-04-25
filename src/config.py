@@ -76,21 +76,21 @@ RESOLVE_COLORS_BLOCKED = {"Olive", "Violet", "Chocolate", "Navy", "Tan"}
 
 # HEX codes for DaVinci Resolve marker colors
 RESOLVE_COLORS_HEX = {
-    "Orange":    "#FF8C00",
-    "Apricot":   "#FFB347",
-    "Yellow":    "#FFD700",
-    "Lime":      "#BFFF00",
-    "Green":     "#228B22",
+    "Orange":    "#eb6e00",
+    "Apricot":   "#ffa833",
+    "Yellow":    "#e2a91c",
+    "Lime":      "#9fc615",
+    "Green":     "#448f64",
     "Olive":     "#808000",
-    "Teal":      "#008080",
+    "Teal":      "#009899",
     "Navy":      "#001F5B",
-    "Blue":      "#0066CC",
-    "Purple":    "#6A0DAD",
+    "Blue":      "#4376a1",
+    "Purple":    "#9973a0",
     "Violet":    "#EE82EE",
-    "Pink":      "#FF69B4",
+    "Pink":      "#e98cb5",
     "Tan":       "#D2B48C",
-    "Beige":     "#F5F5DC",
-    "Brown":     "#A52A2A",
+    "Beige":     "#c6a077",
+    "Brown":     "#996600",
     "Chocolate": "#7B3F00",
 }
 
