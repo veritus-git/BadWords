@@ -94,14 +94,20 @@ class OSDoctor:
         # Define internal structure paths
         self.bin_dir = os.path.join(self.install_dir, "bin")
         self.log_file = os.path.join(self.app_data_dir, "badwords_debug.log")
-        self.pref_file = os.path.join(self.app_data_dir, "pref.json")  # Preferences file path
+        # Split config: user identity/consent → user.json, app prefs → settings.json
+        self.user_file     = os.path.join(self.install_dir, 'user.json')
+        self.settings_file = os.path.join(self.install_dir, 'settings.json')
+        # Legacy path for one-time migration
+        self.legacy_pref_file = os.path.join(self.install_dir, 'pref.json')
         self.saves_dir = os.path.join(self.app_data_dir, "saves")
         
         # Fallback check
         if not os.access(self.install_dir, os.W_OK):
             self.app_data_dir = os.path.join(tempfile.gettempdir(), "BadWords_Fallback")
             self.log_file = os.path.join(self.app_data_dir, "badwords.log")
-            self.pref_file = os.path.join(self.app_data_dir, "pref.json")
+            self.user_file     = os.path.join(self.app_data_dir, 'user.json')
+            self.settings_file = os.path.join(self.app_data_dir, 'settings.json')
+            self.legacy_pref_file = os.path.join(self.app_data_dir, 'pref.json')
             try: os.makedirs(self.app_data_dir, exist_ok=True)
             except: pass
 
@@ -112,7 +118,14 @@ class OSDoctor:
         self._setup_logging()
         self._log_system_info()
         
-        # --- INIT TELEMETRY PREFS ---
+        # --- MIGRATE LEGACY CONFIG (pref.json → user.json + settings.json) ---
+        self._migrate_legacy_config()
+        
+        # --- LOAD CONFIG INTO MEMORY (deep-merge with defaults) ---
+        self.user_data = self.load_user_data()
+        self.settings  = self.load_settings()
+        
+        # --- ENSURE TELEMETRY UUID IS GENERATED ---
         self._ensure_telemetry_prefs()
 
     def _get_machine_id(self):
@@ -152,72 +165,229 @@ class OSDoctor:
         except Exception:
             return "unknown_" + str(uuid.getnode())
 
-    def _ensure_telemetry_prefs(self):
-        """Inicjalizuje domyślne zmienne dla telemetrii w pref.json"""
-        prefs = {}
-        if os.path.exists(self.pref_file):
+    # ==========================
+    # CONFIG MIGRATION & LOADERS
+    # ==========================
+
+    def _migrate_legacy_config(self):
+        """One-time migration: splits legacy pref.json into user.json + settings.json.
+        Routes every key dynamically: user identity keys go to user.json, all others to settings.json.
+        """
+        if not os.path.exists(self.legacy_pref_file):
+            return
+
+        try:
+            with open(self.legacy_pref_file, 'r', encoding='utf-8') as f:
+                legacy = json.load(f)
+        except Exception as e:
+            log_error(f"Migration: could not read pref.json: {e}")
+            return
+
+        import config as _cfg
+
+        user_data = dict(_cfg.DEFAULT_USER_DATA)
+        settings  = dict(_cfg.DEFAULT_SETTINGS)
+
+        # Map the one legacy key name that differs from the new schema
+        legacy_key_alias = {
+            "analytics_uuid":    "uuid",
+            "telemetry_allow_geo": "telemetry_geo",
+        }
+
+        # Dynamically route every key from the old flat pref.json
+        for key, value in legacy.items():
+            resolved = legacy_key_alias.get(key, key)
+            if resolved in _cfg.DEFAULT_USER_DATA:
+                user_data[resolved] = value
+            else:
+                # Everything else (layout prefs, offsets, model choices, etc.) → settings
+                settings[resolved] = value
+
+        # --- Save both new files ---
+        try:
+            with open(self.user_file, 'w', encoding='utf-8') as f:
+                json.dump(user_data, f, indent=4)
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=4)
+        except Exception as e:
+            log_error(f"Migration: failed to write new config files: {e}")
+            return
+
+        # --- Safely delete the legacy file ---
+        try:
+            os.remove(self.legacy_pref_file)
+        except Exception as e:
+            log_error(f"Migration: could not remove pref.json: {e}")
+
+        log_info("Config migrated: pref.json → user.json + settings.json")
+
+    def load_user_data(self) -> dict:
+        """Loads user.json with self-healing deep-merge against DEFAULT_USER_DATA."""
+        import config as _cfg
+        defaults = dict(_cfg.DEFAULT_USER_DATA)
+
+        loaded = {}
+        if os.path.exists(self.user_file):
             try:
-                with open(self.pref_file, 'r', encoding='utf-8') as f:
-                    prefs = json.load(f)
-            except Exception:
-                pass
-        
+                with open(self.user_file, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+            except json.JSONDecodeError as e:
+                log_error(f"load_user_data: corrupt user.json, using defaults. ({e})")
+                loaded = {}
+
+        # Deep-merge: add any keys that were introduced in a new version
         needs_save = False
-        # None oznacza, że użytkownik jeszcze nie dostał pytania
-        if "telemetry_opt_in" not in prefs:
-            prefs["telemetry_opt_in"] = None  
-            needs_save = True
-            
-        # Generujemy stabilne, 100% anonimowe ID bazujące na systemie OS
-        if "analytics_uuid" not in prefs:
-            # Użycie MachineGuid eliminuje problemy z wirtualnymi kartami MAC
-            machine_id = self._get_machine_id().encode('utf-8')
-            hashed_node = hashlib.sha256(machine_id).hexdigest()
-            # Bierzemy pierwsze 32 znaki hasha, by zachować strukturę UUID
-            stable_uuid = str(uuid.UUID(hashed_node[:32]))
-            prefs["analytics_uuid"] = stable_uuid
-            needs_save = True
-            
-        # Zapisujemy wersję, żeby wiedzieć, kiedy wysłać ping po aktualizacji
-        if "last_pinged_version" not in prefs:
-            prefs["last_pinged_version"] = ""
-            needs_save = True
-            
-        # Domyślnie zgoda na geolokalizację (użytkownik może odznączyć w popupie)
-        if "telemetry_allow_geo" not in prefs:
-            prefs["telemetry_allow_geo"] = True
-            needs_save = True
-            
+        for key, default_val in defaults.items():
+            if key not in loaded:
+                loaded[key] = default_val
+                needs_save = True
+
         if needs_save:
             try:
-                with open(self.pref_file, 'w', encoding='utf-8') as f:
-                    json.dump(prefs, f, indent=4)
+                with open(self.user_file, 'w', encoding='utf-8') as f:
+                    json.dump(loaded, f, indent=4)
+                log_info("load_user_data: self-healed missing keys in user.json")
             except Exception as e:
-                log_error(f"Nie mozna zapisac telemetrii do pref.json: {e}")
-                
-    def get_telemetry_pref(self, key):
-        if os.path.exists(self.pref_file):
+                log_error(f"load_user_data: could not persist self-heal: {e}")
+
+        return loaded
+
+    def load_settings(self) -> dict:
+        """Loads settings.json with self-healing deep-merge against DEFAULT_SETTINGS."""
+        import config as _cfg
+        defaults = dict(_cfg.DEFAULT_SETTINGS)
+
+        loaded = {}
+        if os.path.exists(self.settings_file):
             try:
-                with open(self.pref_file, 'r', encoding='utf-8') as f:
-                    return json.load(f).get(key)
-            except Exception:
-                pass
-        return None
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+            except json.JSONDecodeError as e:
+                log_error(f"load_settings: corrupt settings.json, using defaults. ({e})")
+                loaded = {}
+
+        # Deep-merge: add any keys that were introduced in a new version
+        needs_save = False
+        for key, default_val in defaults.items():
+            if key not in loaded:
+                loaded[key] = default_val
+                needs_save = True
+
+        if needs_save:
+            try:
+                with open(self.settings_file, 'w', encoding='utf-8') as f:
+                    json.dump(loaded, f, indent=4)
+                log_info("load_settings: self-healed missing keys in settings.json")
+            except Exception as e:
+                log_error(f"load_settings: could not persist self-heal: {e}")
+
+        return loaded
+
+    def _ensure_telemetry_prefs(self):
+        """Ensures the anonymous tracking UUID exists in user.json.
+        last_pinged_version is handled by the deep-merge loader automatically.
+        """
+        if not self.user_data.get("uuid"):
+            machine_id = self._get_machine_id().encode('utf-8')
+            hashed_node = hashlib.sha256(machine_id).hexdigest()
+            stable_uuid = str(uuid.UUID(hashed_node[:32]))
+            self.user_data["uuid"] = stable_uuid
+            try:
+                with open(self.user_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.user_data, f, indent=4)
+            except Exception as e:
+                log_error(f"_ensure_telemetry_prefs: cannot write user.json: {e}")
+
+    def get_telemetry_pref(self, key):
+        """Reads a telemetry/user preference from the in-memory user_data dict.
+        Maps legacy key names used by engine.py to the new schema."""
+        key_alias = {
+            "analytics_uuid":    "uuid",
+            "telemetry_allow_geo": "telemetry_geo",
+        }
+        resolved = key_alias.get(key, key)
+        return self.user_data.get(resolved)
 
     def set_telemetry_pref(self, key, value):
-        prefs = {}
-        if os.path.exists(self.pref_file):
-            try:
-                with open(self.pref_file, 'r', encoding='utf-8') as f:
-                    prefs = json.load(f)
-            except Exception:
-                pass
-        prefs[key] = value
+        """Writes a telemetry/user preference to in-memory user_data and persists to user.json.
+        Maps legacy key names used by engine.py to the new schema."""
+        key_alias = {
+            "analytics_uuid":    "uuid",
+            "telemetry_allow_geo": "telemetry_geo",
+        }
+        resolved = key_alias.get(key, key)
+        self.user_data[resolved] = value
         try:
-            with open(self.pref_file, 'w', encoding='utf-8') as f:
-                json.dump(prefs, f, indent=4)
+            with open(self.user_file, 'w', encoding='utf-8') as f:
+                json.dump(self.user_data, f, indent=4)
         except Exception as e:
-            log_error(f"Nie mozna zaktualizowac pref.json: {e}")
+            log_error(f"set_telemetry_pref: cannot write user.json: {e}")
+
+    def set_pref(self, key, value):
+        """Universal preference router.
+        User identity/consent keys → user.json.
+        Everything else (app settings, UI prefs) → settings.json.
+        Both in-memory dicts and the respective files are updated.
+        """
+        import config as _cfg
+        if key in _cfg.DEFAULT_USER_DATA:
+            self.user_data[key] = value
+            try:
+                with open(self.user_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.user_data, f, indent=4)
+                log_info(f"set_pref: '{key}' saved to user.json")
+            except Exception as e:
+                log_error(f"set_pref: cannot write user.json ({key}): {e}")
+        else:
+            self.settings[key] = value
+            try:
+                with open(self.settings_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.settings, f, indent=4)
+                log_info(f"set_pref: '{key}' saved to settings.json")
+            except Exception as e:
+                log_error(f"set_pref: cannot write settings.json ({key}): {e}")
+
+    def get_all_prefs(self) -> dict:
+        """Returns a merged view of all preferences (user data + settings).
+        engine.py and gui.py should call this instead of reading JSON directly.
+        Settings keys take precedence over user_data keys if names ever collide.
+        """
+        merged = {}
+        merged.update(self.user_data)
+        merged.update(self.settings)
+        return merged
+
+    def save_all_prefs(self, prefs_dict: dict):
+        """Bulk preference router: routes each key to user.json or settings.json.
+        engine.py and gui.py should call this instead of writing JSON directly.
+        """
+        import config as _cfg
+        user_modified    = False
+        settings_modified = False
+
+        for key, value in prefs_dict.items():
+            if key in _cfg.DEFAULT_USER_DATA:
+                self.user_data[key] = value
+                user_modified = True
+            else:
+                self.settings[key] = value
+                settings_modified = True
+
+        if user_modified:
+            try:
+                with open(self.user_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.user_data, f, indent=4)
+                log_info("save_all_prefs: user.json updated")
+            except Exception as e:
+                log_error(f"save_all_prefs: cannot write user.json: {e}")
+
+        if settings_modified:
+            try:
+                with open(self.settings_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.settings, f, indent=4)
+                log_info("save_all_prefs: settings.json updated")
+            except Exception as e:
+                log_error(f"save_all_prefs: cannot write settings.json: {e}")
 
     def _init_smart_temp_dir(self):
         """

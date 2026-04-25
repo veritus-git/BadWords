@@ -52,6 +52,36 @@ DEFAULT_BAD_WORDS = ["yyy", "eee", "aaa", "umm", "uh", "ah", "mhm"]
 SIMILARITY_THRESHOLD = 0.45
 
 # ==========================================
+# USER DATA DEFAULTS (user.json)
+# Stores user identity and consent state only.
+# ==========================================
+DEFAULT_USER_DATA = {
+    "uuid": None,               # Hashed machine UUID for telemetry (anonymous)
+    "telemetry_opt_in": None,   # None = not yet asked, True/False = user decision
+    "telemetry_geo": True,      # Whether to include country/city in telemetry ping
+    "last_pinged_version": "",  # Version string of the last successful telemetry ping
+}
+
+# ==========================================
+# APPLICATION SETTINGS DEFAULTS (settings.json)
+# Stores persistent UI and engine preferences.
+# DO NOT include track/timeline/model selections here — those belong to main UI state.
+# ==========================================
+DEFAULT_SETTINGS = {
+    "theme":                  "dark",
+    "transcript_font_size":   12,
+    "transcript_line_height": 12,
+    "transcript_layout":      "segmented",  # "segmented" | "continuous"
+    "chunk_max_words":        30,
+    "compute_type":           "float16",    # "float16" | "float32" | "int8"
+    "device":                 "auto",       # "auto" | "cpu" | "gpu"
+    "gui_lang":               "en",         # UI language code (ISO 639-1)
+}
+
+# Keys in DEFAULT_SETTINGS whose change requires an application restart.
+RESTART_REQUIRED_KEYS = ["theme", "compute_type", "device"]
+
+# ==========================================
 # COLOR PALETTE
 # ==========================================
 # Main Layout (Dark Theme)

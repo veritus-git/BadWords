@@ -81,76 +81,16 @@ class AudioEngine:
         return text
 
     def save_preferences(self, settings_dict):
+        """Delegates all preference saving to OSDoctor's smart router.
+        Keys are automatically routed to user.json or settings.json.
         """
-        Saves the configuration window settings to a JSON file.
-        Uses os_doc.pref_file defined in OSDoctor.
-        """
-        try:
-            pref_path = getattr(self.os_doc, 'pref_file', os.path.join(self.os_doc.install_dir, "pref.json"))
-            
-            # 1. Odczytaj istniejące dane (aby nie nadpisać np. telemetrii)
-            existing_prefs = {}
-            if os.path.exists(pref_path):
-                try:
-                    with open(pref_path, 'r', encoding='utf-8') as f:
-                        existing_prefs = json.load(f)
-                except Exception:
-                    pass
-            
-            # 2. Zaktualizuj tylko przekazane klucze
-            existing_prefs.update(settings_dict)
-
-            # 3. Zapisz połączony słownik
-            with open(pref_path, 'w', encoding='utf-8') as f:
-                json.dump(existing_prefs, f, indent=4)
-                
-            try:
-                from osdoc import log_info
-                log_parts = [f"{k}={v}" for k, v in settings_dict.items() if k not in ['filler_words', 'telemetry_uuid']]
-                summary = ", ".join(log_parts)
-                log_info(f"Settings saved successfully: {summary}")
-            except:
-                pass
-                
-            return True
-        except Exception as e:
-            log_error(f"Failed to save preferences: {e}")
-            return False
+        self.os_doc.save_all_prefs(settings_dict)
 
     def load_preferences(self):
+        """Delegates all preference loading to OSDoctor's smart router.
+        Returns a merged dict of user data + settings.
         """
-        Loads settings from the JSON preference file.
-        Returns a dict or None if missing/corrupt.
-        """
-        try:
-            pref_path = getattr(self.os_doc, 'pref_file', os.path.join(self.os_doc.install_dir, "pref.json"))
-            if not os.path.exists(pref_path):
-                return {}
-            with open(pref_path, 'r', encoding='utf-8') as f:
-                prefs = json.load(f)
-                
-            # --- MIGRATION: Flatten and destroy legacy "settings" ---
-            needs_save = False
-            if 'settings' in prefs:
-                if isinstance(prefs['settings'], dict):
-                    legacy_settings = prefs['settings']
-                    for k, v in legacy_settings.items():
-                        if k not in prefs:
-                            prefs[k] = v
-                
-                # Absolutely destroy the legacy key
-                prefs.pop('settings', None)
-                needs_save = True
-                
-            if needs_save:
-                # Save the sanitized, flat dictionary back to disk
-                self.save_preferences(prefs)
-                
-            return prefs
-        except Exception as e:
-            from osdoc import log_error
-            log_error(f"Failed to load preferences: {e}")
-            return {}
+        return self.os_doc.get_all_prefs()
 
     # ==========================================
     # TELEMETRY (POSTHOG)

@@ -3687,7 +3687,6 @@ class BadWordsGUI(QMainWindow):
         lang_code = "auto"
         
         if raw_lang != "Auto":
-            import config
             for code, name in config.SUPPORTED_LANGUAGES.items():
                 if name.lower() == raw_lang.lower():
                     lang_code = code
