@@ -24,6 +24,7 @@ import subprocess
 import tempfile
 import uuid
 import json
+import hashlib
 
 # ==========================================
 # 1. LOGGING & STREAM PROXY
@@ -111,6 +112,43 @@ class OSDoctor:
         # --- INIT TELEMETRY PREFS ---
         self._ensure_telemetry_prefs()
 
+    def _get_machine_id(self):
+        """Pobiera stabilny, niezmienny identyfikator instalacji systemu operacyjnego (Win/Lin/Mac)."""
+        try:
+            if self.is_win:
+                # Windows: Pobieramy stały MachineGuid z Rejestru
+                import winreg
+                registry = winreg.HKEY_LOCAL_MACHINE
+                address = r"SOFTWARE\Microsoft\Cryptography"
+                key = winreg.OpenKey(registry, address, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+                value, _ = winreg.QueryValueEx(key, "MachineGuid")
+                winreg.CloseKey(key)
+                return str(value)
+            
+            elif self.is_linux:
+                # Linux: Używamy uniwersalnego machine-id z systemd
+                with open("/etc/machine-id", "r") as f:
+                    return f.read().strip()
+            
+            elif self.os_type == "Darwin": 
+                # macOS: Natywny IOPlatformUUID z rejestru sprzętowego Apple (ioreg)
+                # Nie wywołuje monitów o prywatność jak MAC adres
+                result = subprocess.run(
+                    ['ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'], 
+                    capture_output=True, text=True
+                )
+                for line in result.stdout.split('\n'):
+                    if 'IOPlatformUUID' in line:
+                        parts = line.split('=')
+                        if len(parts) == 2:
+                            return parts[1].strip().strip('"')
+                return "mac_fallback_" + str(uuid.getnode())
+                
+            else:
+                return str(uuid.getnode())
+        except Exception:
+            return "unknown_" + str(uuid.getnode())
+
     def _ensure_telemetry_prefs(self):
         """Inicjalizuje domyślne zmienne dla telemetrii w pref.json"""
         prefs = {}
@@ -126,10 +164,17 @@ class OSDoctor:
         if "telemetry_opt_in" not in prefs:
             prefs["telemetry_opt_in"] = None  
             needs_save = True
-        # Generujemy losowe, unikalne i anonimowe ID
+            
+        # Generujemy stabilne, 100% anonimowe ID bazujące na systemie OS
         if "analytics_uuid" not in prefs:
-            prefs["analytics_uuid"] = str(uuid.uuid4())
+            # Użycie MachineGuid eliminuje problemy z wirtualnymi kartami MAC
+            machine_id = self._get_machine_id().encode('utf-8')
+            hashed_node = hashlib.sha256(machine_id).hexdigest()
+            # Bierzemy pierwsze 32 znaki hasha, by zachować strukturę UUID
+            stable_uuid = str(uuid.UUID(hashed_node[:32]))
+            prefs["analytics_uuid"] = stable_uuid
             needs_save = True
+            
         # Zapisujemy wersję, żeby wiedzieć, kiedy wysłać ping po aktualizacji
         if "last_pinged_version" not in prefs:
             prefs["last_pinged_version"] = ""
