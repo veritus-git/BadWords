@@ -270,6 +270,51 @@ begin
   end;
 end;
 
+procedure CleanAppFolder_UpdateInstall;
+var
+  FindRec: TFindRec;
+  AppPath, FileName: String;
+begin
+  AppPath := ExpandConstant('{app}');
+  if not DirExists(AppPath) then Exit;
+
+  if FindFirst(AppPath + '\*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+        begin
+          FileName := FindRec.Name;
+          if (CompareText(FileName, 'pref.json') <> 0) and
+             (CompareText(FileName, 'badwords_debug.log') <> 0) and
+             (CompareText(FileName, 'unins000.exe') <> 0) and
+             (CompareText(FileName, 'unins000.dat') <> 0) then
+          begin
+            Log('[UPDATE] Deleting old file: ' + FileName);
+            DeleteFile(AppPath + '\' + FileName);
+          end;
+        end
+        else
+        begin
+          FileName := FindRec.Name;
+          if (FileName <> '.') and (FileName <> '..') and
+             (CompareText(FileName, 'models') <> 0) and
+             (CompareText(FileName, 'saves') <> 0) and
+             (CompareText(FileName, 'venv') <> 0) and
+             (CompareText(FileName, 'bin') <> 0) and
+             (CompareText(FileName, 'libs') <> 0) then
+          begin
+             Log('[UPDATE] Deleting obsolete directory: ' + FileName);
+             DelTree(AppPath + '\' + FileName, True, True, True);
+          end;
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 procedure CleanAppFolder_CleanInstall;
 var
   FindRec: TFindRec;
@@ -325,6 +370,10 @@ begin
     begin
       CleanAppFolder_CleanInstall(); 
     end
+    else // Standard Update - Additive but deletes obsolete files
+    begin
+      CleanAppFolder_UpdateInstall();
+    end;
   end;
 
   if CurStep = ssPostInstall then
@@ -344,6 +393,49 @@ begin
                 '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
     begin
       MsgBox(FmtMessage(CustomMessage('ErrConfig'), [IntToStr(ResultCode)]), mbError, MB_OK);
+    end;
+  end;
+end;
+
+// ==========================================
+// FULL UNINSTALLER LOGIC
+// ==========================================
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppPath, ResolvePath, StoreDir: String;
+  FindRec: TFindRec;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    // Delete standard Resolve script
+    ResolvePath := ExpandConstant('{userappdata}\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py');
+    if FileExists(ResolvePath) then DeleteFile(ResolvePath);
+
+    // Delete Windows Store Resolve script
+    StoreDir := ExpandConstant('{localappdata}\Packages\');
+    if FindFirst(StoreDir + 'BlackmagicDesign.DaVinciResolve_*', FindRec) then
+    begin
+      try
+        repeat
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          begin
+            ResolvePath := StoreDir + FindRec.Name + '\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py';
+            if FileExists(ResolvePath) then DeleteFile(ResolvePath);
+          end;
+        until not FindNext(FindRec);
+      finally
+        FindClose(FindRec);
+      end;
+    end;
+  end;
+
+  if CurUninstallStep = usPostUninstall then
+  begin
+    // Complete destruction of AppData footprint (venv, models, configs, saves)
+    AppPath := ExpandConstant('{app}');
+    if DirExists(AppPath) then
+    begin
+      DelTree(AppPath, True, True, True);
     end;
   end;
 end;

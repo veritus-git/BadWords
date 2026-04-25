@@ -1,17 +1,21 @@
 #!/bin/bash
 set -e
 
-# --- BADWORDS LINUX INSTALLER v9.4 (TRUE ADDITIVE UPDATE) ---
+# --- BADWORDS LINUX INSTALLER v9.6.1 (UX & UNINSTALL FIXED + PATHS HOTFIX) ---
 # Copyright (c) 2026 Szymon Wolarz
 #
-# CHANGES v9.4:
-# - True Additive Update: Recursively checks ALL folders and files. Creates missing dirs.
-# - Clean Install: Strictly deletes everything except models, saves, pref.json.
+# CHANGES v9.6.1:
+# - Reordered logic: Main menu is now first.
+# - Uninstall mode bypasses source checks and GPU prompts.
+# - Added true two-way sync for Update mode (deletes obsolete source files).
+# - HOTFIX: Restored missing directory variables.
+
+PROCESS_NAME="Installation"
 
 # --- TRAP: KEEP WINDOW OPEN ON EXIT ---
 function finish {
     echo ""
-    echo -e "${GREEN}Installation process finished.${NC}"
+    echo -e "${GREEN}${PROCESS_NAME} process finished.${NC}"
     read -p "Press Enter to close this window..."
 }
 trap finish EXIT
@@ -20,23 +24,91 @@ trap finish EXIT
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+BOLD_RED='\033[1;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# ==========================================
+# 0. PATHS & VARIABLES
+# ==========================================
 APP_NAME="BadWords"
 SOURCE_FOLDER_NAME="src" 
+INSTALL_DIR_BASH="$HOME/.local/share/$APP_NAME"
+RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
+
+VENV_DIR="$INSTALL_DIR_BASH/venv"
+LIBS_LINK="$INSTALL_DIR_BASH/libs"
+MODELS_DIR="$INSTALL_DIR_BASH/models"
+BIN_DIR="$INSTALL_DIR_BASH/bin"
+LOG_FILE="$INSTALL_DIR_BASH/badwords_debug.log"
 
 echo -e "${BLUE}================================================================================${NC}"
 echo -e "${BLUE}                   BadWords - PORTABLE INSTALLER (Linux)                        ${NC}"
 echo -e "${BLUE}================================================================================${NC}"
 
-# 1. SOURCE VERIFICATION
+# ==========================================
+# 1. MAIN MENU: INSTALLATION MODE SELECTION
+# ==========================================
+echo -e "\n${YELLOW}What would you like to do?${NC}"
+echo -e "${GREEN}1) Standard Install/Update: Install or update the app. Keep your settings and models.${NC}"
+echo -e "${CYAN}2) Repair Installation: Fix bugs by replacing core files. Keep your settings and models.${NC}"
+echo -e "${RED}3) Complete Reset: Delete absolutely EVERYTHING and install from scratch.${NC}"
+echo -e "${BOLD_RED}4) Uninstall: Remove BadWords completely from this system.${NC}"
+echo ""
+read -p "Select [1-4]: " WIPE_CHOICE
+
+if [ -z "$WIPE_CHOICE" ]; then WIPE_CHOICE="1"; fi
+
+case "$WIPE_CHOICE" in
+    1) MODE_INSTALL="Update" ;;
+    2) MODE_INSTALL="Clean Install" ;;
+    3) MODE_INSTALL="Full Wipe" ;;
+    4) MODE_INSTALL="Uninstall" ;;
+    *) echo -e "${RED}[ERROR] Invalid choice. Exiting.${NC}"; exit 1 ;;
+esac
+
+echo -e "${YELLOW}[INFO] Selected Action: $MODE_INSTALL${NC}"
+
+# ==========================================
+# 2. UNINSTALL HANDLER (EXECUTE & EXIT)
+# ==========================================
+if [ "$WIPE_CHOICE" -eq 4 ]; then
+    PROCESS_NAME="Deinstallation"
+    
+    echo -e "\n${BOLD_RED}WARNING: You are about to completely remove BadWords from this system.${NC}"
+    read -p "Type 'yes' to confirm uninstallation: " UNINSTALL_CONFIRM
+    
+    if [ "$UNINSTALL_CONFIRM" != "yes" ]; then
+        echo -e "${YELLOW}[INFO] Uninstall cancelled by user.${NC}"
+        exit 0
+    fi
+
+    echo -e "\n${RED}[UNINSTALL] Removing BadWords...${NC}"
+    if [ -d "$INSTALL_DIR_BASH" ]; then
+        rm -rf "$INSTALL_DIR_BASH"
+        echo -e " - Removed app directory: $INSTALL_DIR_BASH"
+    fi
+    
+    WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
+    if [ -f "$WRAPPER_FILE" ]; then
+        rm "$WRAPPER_FILE"
+        echo -e " - Removed wrapper from DaVinci Resolve."
+    fi
+    
+    echo -e "${RED}[UNINSTALL] Complete. BadWords has been removed.${NC}"
+    exit 0
+fi
+
+# ==========================================
+# 3. SOURCE VERIFICATION (For Installs Only)
+# ==========================================
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SOURCE_PATH="$DIR/$SOURCE_FOLDER_NAME"
 
 if [ ! -d "$SOURCE_PATH" ]; then
     echo -e "${RED}[ERROR] Folder '$SOURCE_FOLDER_NAME' not found in '$DIR'!${NC}"
+    echo -e "${YELLOW}Please extract the entire release archive before running the installer.${NC}"
     exit 1
 fi
 
@@ -46,9 +118,8 @@ if [ ! -f "$SOURCE_PATH/main.py" ]; then
 fi
 
 # ==========================================
-# 2. GPU ACCELERATION MODE SELECTION
+# 4. GPU ACCELERATION MODE SELECTION
 # ==========================================
-
 echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
 echo -e "${YELLOW}[CONFIG] Please select your hardware acceleration mode:${NC}"
 echo -e "${GREEN}1) NVIDIA: NVIDIA GPUs acceleration${NC}"
@@ -76,33 +147,10 @@ case "$GPU_CHOICE" in
         ;;
 esac
 
-echo -e "${YELLOW}[INFO] Selected Mode: $MODE_NAME${NC}"
+echo -e "${YELLOW}[INFO] Selected GPU Mode: $MODE_NAME${NC}"
 
 # ==========================================
-# 2.5. INSTALLATION MODE SELECTION
-# ==========================================
-
-echo -e "\n${YELLOW}=========================== INSTALLATION MODE ===========================${NC}"
-echo -e "${YELLOW}What would you like to do?${NC}"
-echo -e "${GREEN}1) Standard Install/Update: Install or update the app. Keep your settings and models.${NC}"
-echo -e "${CYAN}2) Repair Installation: Fix bugs by replacing core files. Keep your settings and models.${NC}"
-echo -e "${RED}3) Complete Reset: Delete absolutely EVERYTHING and install from scratch.${NC}"
-echo ""
-read -p "Select [1-3]: " WIPE_CHOICE
-
-if [ -z "$WIPE_CHOICE" ]; then WIPE_CHOICE="1"; fi
-
-case "$WIPE_CHOICE" in
-    1) MODE_INSTALL="Update" ;;
-    2) MODE_INSTALL="Clean Install" ;;
-    3) MODE_INSTALL="Full Wipe" ;;
-    *) echo -e "${RED}[ERROR] Invalid choice. Exiting.${NC}"; exit 1 ;;
-esac
-
-echo -e "${YELLOW}[INFO] Selected Install Mode: $MODE_INSTALL${NC}"
-
-# ==========================================
-# 3. SMART PYTHON SELECTION (COMPATIBILITY)
+# 5. SMART PYTHON SELECTION (COMPATIBILITY)
 # ==========================================
 echo -e "\n${YELLOW}[INFO] Checking Python compatibility...${NC}"
 
@@ -165,19 +213,9 @@ fi
 echo -e "${GREEN}[INFO] Using Python interpreter: $TARGET_PYTHON${NC}"
 
 # ==========================================
-# 4. PATHS
+# 6. IN-PLACE CLEANUP (Instead of backups)
 # ==========================================
-INSTALL_DIR_BASH="$HOME/.local/share/$APP_NAME"
-VENV_DIR="$INSTALL_DIR_BASH/venv"
-LIBS_LINK="$INSTALL_DIR_BASH/libs"
-MODELS_DIR="$INSTALL_DIR_BASH/models"
-BIN_DIR="$INSTALL_DIR_BASH/bin"
-LOG_FILE="$INSTALL_DIR_BASH/badwords_debug.log"
 OLD_WHISPER_CACHE="$HOME/.cache/whisper"
-
-# ==========================================
-# 5. IN-PLACE CLEANUP (Instead of backups)
-# ==========================================
 echo -e "\n${RED}[CLEANUP] Processing old installation...${NC}"
 
 if [ -d "$INSTALL_DIR_BASH" ]; then
@@ -204,7 +242,7 @@ fi
 echo -e "${GREEN}[CLEANUP] Complete.${NC}"
 
 # ==========================================
-# 6. APPLICATION SETUP
+# 7. APPLICATION SETUP (TRUE TWO-WAY SYNC)
 # ==========================================
 echo -e "\n${YELLOW}[INFO] Preparing directory structure...${NC}"
 mkdir -p "$INSTALL_DIR_BASH"
@@ -212,7 +250,7 @@ mkdir -p "$MODELS_DIR"
 mkdir -p "$BIN_DIR"
 
 if [ "$WIPE_CHOICE" -eq 1 ]; then
-    echo -e "${CYAN}[UPDATE] Recursively updating files and creating missing folders...${NC}"
+    echo -e "${CYAN}[UPDATE] Syncing files and removing obsolete scripts...${NC}"
     python3 -c "
 import os, shutil, hashlib
 
@@ -226,6 +264,7 @@ def get_hash(filepath):
 src = '$SOURCE_PATH'
 dst = '$INSTALL_DIR_BASH'
 
+# 1. Update/Add files from src to dst
 for root, dirs, files in os.walk(src):
     rel_path = os.path.relpath(root, src)
     if rel_path == '.':
@@ -250,6 +289,23 @@ for root, dirs, files in os.walk(src):
             shutil.copy2(s_path, d_path)
         else:
             print(f' - Skipped (identical): {rel_file}')
+
+# 2. Cleanup obsolete files from dst that are no longer in src
+protected_files = ['pref.json', 'badwords_debug.log', 'ffmpeg_static.tar.xz']
+protected_dirs = ['models', 'saves', 'venv', 'bin', 'libs']
+
+for item in os.listdir(dst):
+    d_path = os.path.join(dst, item)
+    s_path = os.path.join(src, item)
+    
+    if os.path.isdir(d_path):
+        if item not in protected_dirs and not os.path.exists(s_path):
+            print(f' - Removing obsolete directory: {item}')
+            shutil.rmtree(d_path)
+    else:
+        if item not in protected_files and not os.path.exists(s_path):
+            print(f' - Removing obsolete file: {item}')
+            os.remove(d_path)
 "
 else
     echo -e "${YELLOW}[INFO] Copying new source files...${NC}"
@@ -257,7 +313,7 @@ else
 fi
 
 # ==========================================
-# 7. PORTABLE FFMPEG (STATIC BUILD)
+# 8. PORTABLE FFMPEG (STATIC BUILD)
 # ==========================================
 if [ "$WIPE_CHOICE" -eq 1 ] && [ -f "$BIN_DIR/ffmpeg" ]; then
     echo -e "\n${GREEN}[OK] Portable FFmpeg already exists (Update mode). Skipping download.${NC}"
@@ -297,7 +353,7 @@ else
 fi
 
 # ==========================================
-# 8. VENV CREATION
+# 9. VENV CREATION
 # ==========================================
 if [ ! -d "$VENV_DIR" ]; then
     echo -e "\n${CYAN}[VENV] Creating isolated Virtual Environment ($TARGET_PYTHON)...${NC}"
@@ -310,7 +366,7 @@ else
 fi
 
 # ==========================================
-# 9. VENV INSTALLATION
+# 10. VENV INSTALLATION
 # ==========================================
 echo -e "\n${CYAN}[INSTALL] Installing libraries into VENV...${NC}"
 VENV_PIP="$VENV_DIR/bin/pip"
@@ -346,7 +402,7 @@ fi
 echo -e "${GREEN}[SUCCESS] Dependencies installed in VENV.${NC}"
 
 # ==========================================
-# 10. SYMLINK TRICK
+# 11. SYMLINK TRICK
 # ==========================================
 echo -e "\n${YELLOW}[LINKING] Creating 'libs' compatibility link...${NC}"
 SITE_PACKAGES_DIR=$(find "$VENV_DIR/lib" -name "site-packages" -type d | head -n 1)
@@ -361,22 +417,16 @@ else
 fi
 
 # ==========================================
-# 11. DAVINCI RESOLVE CONFIGURATION
+# 12. DAVINCI RESOLVE CONFIGURATION
 # ==========================================
 echo -e "\n${YELLOW}[INFO] Configuring DaVinci Resolve integration...${NC}"
-RESOLVE_SCRIPT_DIR=""
-
-if [ -d "/opt/resolve" ]; then
-    RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
-else
-    RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
+if [ ! -d "$RESOLVE_SCRIPT_DIR" ]; then
+    mkdir -p "$RESOLVE_SCRIPT_DIR"
 fi
-
-mkdir -p "$RESOLVE_SCRIPT_DIR"
 export WRAPPER_TARGET_DIR="$RESOLVE_SCRIPT_DIR"
 
 # ==========================================
-# 12. WRAPPER GENERATION
+# 13. WRAPPER GENERATION
 # ==========================================
 echo -e "${YELLOW}[INFO] Generating wrapper script...${NC}"
 
@@ -441,7 +491,7 @@ except Exception as e:
     sys.exit(1)
 "
 
-# 13. LOG PREPARATION
+# 14. LOG PREPARATION
 echo -e "\n${YELLOW}[INFO] Initializing Log File...${NC}"
 touch "$LOG_FILE"
 chmod 666 "$LOG_FILE"
