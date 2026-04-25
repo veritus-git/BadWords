@@ -3,10 +3,10 @@ Automatically **detect, mark and/or remove filler words, silence, and retakes** 
 in DaVinci Resolve using OpenAI Whisper, FFmpeg and Python.
 
 <br>
-![Preview](assets/editor_preview.png)
+![Preview](repo/editor_preview.png)
 
 ## Quick access shortcuts:
-### Installation & Uninstalation guides: <br> [Linux (any distro)](assets/Linux%20GUIDE.md) <br> [Windows](assets/Windows%20GUIDE.md)
+### Installation & Uninstalation guides: <br> [Linux (any distro)](repo/Linux%20GUIDE.md) <br> [Windows](repo/Windows%20GUIDE.md)
 # [Download Latest BadWords Release](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest)<br>
 
 [![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)]()
@@ -43,7 +43,7 @@ in DaVinci Resolve using OpenAI Whisper, FFmpeg and Python.
 - **Interactive Review** - Review cuts before applying them to the timeline.
 - **Heat map** - Mark timeline with colors instead of invasive rough cutting
 
-![Timeline Heatmap](assets/heatmap.png)
+![Timeline Heatmap](repo/heatmap.png)
 
 ## ⭐️ Core Capabilities
 
