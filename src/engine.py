@@ -639,7 +639,7 @@ except Exception as e:
             SLOW_FACTOR = 0.42 
             
             unique_id = f"BW_{int(time.time())}"
-            update_progress(5)
+            update_progress(10)
 
             update_status(get_status_msg("render", "Rendering..."))
             temp_dir = self.os_doc.get_temp_folder()
@@ -650,7 +650,7 @@ except Exception as e:
                 log_error("Render failed.")
                 return None, None
             
-            update_progress(20)
+            update_progress(50)
 
             # 1. SLOW DOWN
             current_wav_path = wav_path
@@ -663,16 +663,19 @@ except Exception as e:
                     current_wav_path = slow_wav
                     time_scale_correction = SLOW_FACTOR
             
-            update_progress(30)
+            update_progress(75)
 
             # 2. NORMALIZE
             update_status("Enhancing audio (Radio Voice)...")
             normalized_wav = self.normalize_audio(current_wav_path)
             target_wav = normalized_wav
 
+            update_progress(100)
+            time.sleep(0.3) # Let user see 100% completion of Phase 1
+
             update_status(get_status_msg("check_model", f"Checking {model}..."))
             
-            # Włączamy nieokreślony pasek ładowania przed weryfikacją (dla Windowsa i Linuxa)
+            # Switch to Indeterminate (Phase 2)
             update_progress(-1) 
             
             def dl_progress_cb(val): pass
