@@ -1935,17 +1935,19 @@ class SettingsDialog(QDialog):
 
         if is_basic:
             self.category_list.addItem(self.txt("tab_general"))
-            self.category_list.addItem(self.txt("tab_transcript"))
-            self.category_list.addItem(self.txt("tab_shortcuts"))
-        else:
-            self.category_list.addItem(self.txt("tab_general"))
-            self.category_list.addItem(self.txt("tab_audio_sync"))
-            self.category_list.addItem(self.txt("tab_transcript"))
-            self.category_list.addItem(self.txt("tab_ai_engine"))
-            self.category_list.addItem(self.txt("tab_interface"))
-            self.category_list.addItem(self.txt("tab_algorithms"))
             self.category_list.addItem(self.txt("tab_shortcuts"))
             self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_telemetry"))
+        else:
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+            self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_interface"))
+            self.category_list.addItem(self.txt("tab_ai_engine"))
+            self.category_list.addItem(self.txt("tab_algorithms"))
+            self.category_list.addItem(self.txt("tab_audio_sync"))
             self.category_list.addItem(self.txt("tab_telemetry"))
 
         self.category_list.setCurrentRow(0)
@@ -2087,43 +2089,89 @@ class SettingsDialog(QDialog):
         _add_page_to_stack(page_gen)
 
         # ─────────────────────────────────────────────────────────────────
-        if not is_basic:
-                # PAGE 1 — AUDIO SYNC
-            # ─────────────────────────────────────────────────────────────────
-            page_sync = QWidget()
-            page_sync.setStyleSheet("background: transparent;")
-            l_sync = QVBoxLayout(page_sync)
-            l_sync.setContentsMargins(24, 20, 24, 16)
-            l_sync.setSpacing(0)
-            form_sync = QFormLayout()
-            form_sync.setSpacing(14)
-            form_sync.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        # PAGE 1 — SHORTCUTS
+        # ─────────────────────────────────────────────────────────────────
+        page_shorts = QWidget()
+        page_shorts.setStyleSheet("background: transparent;")
+        l_shorts = QVBoxLayout(page_shorts)
+        l_shorts.setContentsMargins(24, 20, 24, 16)
+        l_shorts.setSpacing(0)
+        form_shorts = QFormLayout()
+        form_shorts.setSpacing(14)
+        form_shorts.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-            self.spin_offset = QDoubleSpinBox()
-            self.spin_offset.setRange(-10, 10)
-            self.spin_offset.setSingleStep(0.1)
-            self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
+        from PySide6.QtGui import QKeySequence
+        from PySide6.QtWidgets import QKeySequenceEdit
 
-            self.spin_pad = QDoubleSpinBox()
-            self.spin_pad.setRange(0, 5)
-            self.spin_pad.setSingleStep(0.1)
-            self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
+        current_shortcuts = prefs.get('shortcuts', config.DEFAULT_SETTINGS['shortcuts'])
+        self.shortcut_inputs = {}
 
-            self.spin_snap = QDoubleSpinBox()
-            self.spin_snap.setRange(0, 5)
-            self.spin_snap.setSingleStep(0.1)
-            self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
+        for key, value in current_shortcuts.items():
+            i18n_key = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            widget = QKeySequenceEdit()
+            widget.setKeySequence(QKeySequence(str(value)))
+            widget.setFixedHeight(30)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            lbl.setMinimumWidth(200)
+            form_shorts.addRow(lbl, widget)
+            self.shortcut_inputs[key] = widget
 
-            _add_row(form_sync, self.txt("lbl_offset_s"),   self.spin_offset, self.DEFAULTS['offset'],   self.spin_offset.setValue)
-            _add_row(form_sync, self.txt("lbl_padding_s"),  self.spin_pad,    self.DEFAULTS['pad'],       self.spin_pad.setValue)
-            _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap,   self.DEFAULTS['snap_max'],  self.spin_snap.setValue)
+        l_shorts.addLayout(form_shorts)
+        l_shorts.addStretch()
+        _add_page_to_stack(page_shorts)
 
-            l_sync.addLayout(form_sync)
-            l_sync.addStretch()
-            _add_page_to_stack(page_sync)
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 2 — CUSTOM MARKERS
+        # ─────────────────────────────────────────────────────────────────
+        page_markers = QWidget()
+        page_markers.setStyleSheet("background: transparent;")
+        l_markers = QVBoxLayout(page_markers)
+        l_markers.setContentsMargins(24, 20, 24, 16)
+        l_markers.setSpacing(10)
 
-            # ─────────────────────────────────────────────────────────────────
-        # PAGE 2 — TRANSCRIPT
+        self.current_custom_markers = list(prefs.get('custom_markers', []))
+
+        self.markers_list = QListWidget()
+        self.markers_list.setAlternatingRowColors(True)
+        self.markers_list.setStyleSheet(f"""
+                QListWidget {{
+                    background-color: #1e1e1e;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 3px;
+                    color: {config.FG_COLOR};
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: 10pt;
+                }}
+                QListWidget::item:alternate {{ background-color: #1a1a1a; }}
+                QListWidget::item:selected {{ background-color: {config.BTN_BG}; color: white; }}
+            """)    
+        self._refresh_markers_list()
+        l_markers.addWidget(self.markers_list)
+
+        marker_btn_row = QHBoxLayout()
+        marker_btn_row.setSpacing(8)
+        btn_add_m = QPushButton(self.txt("btn_add_marker"))
+        btn_add_m.setObjectName("btn_secondary")
+        btn_add_m.setFixedHeight(30)
+        btn_add_m.setCursor(Qt.PointingHandCursor)
+        btn_add_m.clicked.connect(self._on_add_marker)
+        marker_btn_row.addWidget(btn_add_m)
+
+        btn_rem_m = QPushButton(self.txt("btn_remove_marker"))
+        btn_rem_m.setObjectName("btn_secondary")
+        btn_rem_m.setFixedHeight(30)
+        btn_rem_m.setCursor(Qt.PointingHandCursor)
+        btn_rem_m.clicked.connect(self._on_remove_marker)
+        marker_btn_row.addWidget(btn_rem_m)
+        marker_btn_row.addStretch()
+        l_markers.addLayout(marker_btn_row)
+        _add_page_to_stack(page_markers)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 3 — TRANSCRIPT
         # ─────────────────────────────────────────────────────────────────
         page_transcript = QWidget()
         page_transcript.setStyleSheet("background: transparent;")
@@ -2221,8 +2269,63 @@ class SettingsDialog(QDialog):
 
         # ─────────────────────────────────────────────────────────────────
         if not is_basic:
-                # PAGE 3 — AI ENGINE
-            # ─────────────────────────────────────────────────────────────────
+            # PAGE 4 — INTERFACE
+        # ─────────────────────────────────────────────────────────────────
+            page_iface = QWidget()
+            page_iface.setStyleSheet("background: transparent;")
+            l_iface = QVBoxLayout(page_iface)
+            l_iface.setContentsMargins(24, 20, 24, 16)
+            l_iface.setSpacing(0)
+            form_iface = QFormLayout()
+            form_iface.setSpacing(14)
+            form_iface.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+            # Always on top
+            self.chk_ontop = ToggleSwitch()
+            self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)), animated=False)
+            _add_row(form_iface, self.txt("lbl_always_on_top"), self.chk_ontop,
+                     False, lambda v: self.chk_ontop.setChecked(v, animated=False))
+
+            # Hidden panels (multi-select)
+            _panel_options = ["Script Analysis", "Silence", "Filler Words", "Assembly"]
+            self.dropdown_hidden = MultiSelectDropdown(_panel_options)
+            self.dropdown_hidden.setFixedHeight(30)
+            saved_hidden = prefs.get('hidden_panels', [])
+            if isinstance(saved_hidden, list) and saved_hidden:
+                self.dropdown_hidden.selected_items = set(saved_hidden)
+                self.dropdown_hidden.setText(", ".join(sorted(saved_hidden)))
+            else:
+                self.dropdown_hidden.setText(self.txt("txt_select"))
+            _add_row(form_iface, self.txt("lbl_hidden_panels"), self.dropdown_hidden,
+                     [], lambda v: None)  # revert placeholder — clear handled by Restore Defaults
+
+            # Accent Color
+            _accent_items = ["green", "blue", "purple", "orange"]
+            self.dropdown_accent = CustomDropdown(_accent_items)
+            self.dropdown_accent.setFixedHeight(30)
+            saved_accent = prefs.get('accent_color', 'green')
+            self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
+            _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
+
+            # App Icon
+            _icon_items = ["default", "dark", "light", "color"]
+            self.dropdown_icon = CustomDropdown(_icon_items)
+            self.dropdown_icon.setFixedHeight(30)
+            saved_icon = prefs.get('app_icon', 'default')
+            self.dropdown_icon.setText(saved_icon if saved_icon in _icon_items else 'default')
+            _add_row(form_iface, self.txt("lbl_app_icon"), self.dropdown_icon, 'default', self.dropdown_icon.setText)
+
+            l_iface.addLayout(form_iface)
+            l_iface.addStretch()
+            _add_page_to_stack(page_iface)
+
+        
+        
+
+        # ─────────────────────────────────────────────────────────────────
+        if not is_basic:
+            # PAGE 5 — AI ENGINE
+        # ─────────────────────────────────────────────────────────────────
             page_ai = QWidget()
             page_ai.setStyleSheet("background: transparent;")
             l_ai = QVBoxLayout(page_ai)
@@ -2367,57 +2470,7 @@ class SettingsDialog(QDialog):
             l_ai.addStretch()
             _add_page_to_stack(page_ai)
 
-            # ─────────────────────────────────────────────────────────────────
-        if not is_basic:
-                # PAGE 3 — INTERFACE
-            # ─────────────────────────────────────────────────────────────────
-            page_iface = QWidget()
-            page_iface.setStyleSheet("background: transparent;")
-            l_iface = QVBoxLayout(page_iface)
-            l_iface.setContentsMargins(24, 20, 24, 16)
-            l_iface.setSpacing(0)
-            form_iface = QFormLayout()
-            form_iface.setSpacing(14)
-            form_iface.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-            # Always on top
-            self.chk_ontop = ToggleSwitch()
-            self.chk_ontop.setChecked(bool(prefs.get('always_on_top', True)), animated=False)
-            _add_row(form_iface, self.txt("lbl_always_on_top"), self.chk_ontop,
-                     False, lambda v: self.chk_ontop.setChecked(v, animated=False))
-
-            # Hidden panels (multi-select)
-            _panel_options = ["Script Analysis", "Silence", "Filler Words", "Assembly"]
-            self.dropdown_hidden = MultiSelectDropdown(_panel_options)
-            self.dropdown_hidden.setFixedHeight(30)
-            saved_hidden = prefs.get('hidden_panels', [])
-            if isinstance(saved_hidden, list) and saved_hidden:
-                self.dropdown_hidden.selected_items = set(saved_hidden)
-                self.dropdown_hidden.setText(", ".join(sorted(saved_hidden)))
-            else:
-                self.dropdown_hidden.setText(self.txt("txt_select"))
-            _add_row(form_iface, self.txt("lbl_hidden_panels"), self.dropdown_hidden,
-                     [], lambda v: None)  # revert placeholder — clear handled by Restore Defaults
-
-            # Accent Color
-            _accent_items = ["green", "blue", "purple", "orange"]
-            self.dropdown_accent = CustomDropdown(_accent_items)
-            self.dropdown_accent.setFixedHeight(30)
-            saved_accent = prefs.get('accent_color', 'green')
-            self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
-            _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
-
-            # App Icon
-            _icon_items = ["default", "dark", "light", "color"]
-            self.dropdown_icon = CustomDropdown(_icon_items)
-            self.dropdown_icon.setFixedHeight(30)
-            saved_icon = prefs.get('app_icon', 'default')
-            self.dropdown_icon.setText(saved_icon if saved_icon in _icon_items else 'default')
-            _add_row(form_iface, self.txt("lbl_app_icon"), self.dropdown_icon, 'default', self.dropdown_icon.setText)
-
-            l_iface.addLayout(form_iface)
-            l_iface.addStretch()
-            _add_page_to_stack(page_iface)
+            
 
             # ─────────────────────────────────────────────────────────────────
         if not is_basic:
@@ -2459,124 +2512,79 @@ class SettingsDialog(QDialog):
             l_algo.addStretch()
             _add_page_to_stack(page_algo)
 
-            # ─────────────────────────────────────────────────────────────────
-        # PAGE 6 — SHORTCUTS
-        # ─────────────────────────────────────────────────────────────────
-        page_shorts = QWidget()
-        page_shorts.setStyleSheet("background: transparent;")
-        l_shorts = QVBoxLayout(page_shorts)
-        l_shorts.setContentsMargins(24, 20, 24, 16)
-        l_shorts.setSpacing(0)
-        form_shorts = QFormLayout()
-        form_shorts.setSpacing(14)
-        form_shorts.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        from PySide6.QtGui import QKeySequence
-        from PySide6.QtWidgets import QKeySequenceEdit
-
-        current_shortcuts = prefs.get('shortcuts', config.DEFAULT_SETTINGS['shortcuts'])
-        self.shortcut_inputs = {}
-
-        for key, value in current_shortcuts.items():
-            i18n_key = f'shortcut_{key}'
-            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
-            widget = QKeySequenceEdit()
-            widget.setKeySequence(QKeySequence(str(value)))
-            widget.setFixedHeight(30)
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            lbl = QLabel(label_text)
-            lbl.setWordWrap(True)
-            lbl.setMinimumWidth(200)
-            form_shorts.addRow(lbl, widget)
-            self.shortcut_inputs[key] = widget
-
-        l_shorts.addLayout(form_shorts)
-        l_shorts.addStretch()
-        _add_page_to_stack(page_shorts)
 
         # ─────────────────────────────────────────────────────────────────
         if not is_basic:
-                # PAGE 7 — CUSTOM MARKERS
+            # PAGE 1 — AUDIO SYNC
             # ─────────────────────────────────────────────────────────────────
-            page_markers = QWidget()
-            page_markers.setStyleSheet("background: transparent;")
-            l_markers = QVBoxLayout(page_markers)
-            l_markers.setContentsMargins(24, 20, 24, 16)
-            l_markers.setSpacing(10)
+            page_sync = QWidget()
+            page_sync.setStyleSheet("background: transparent;")
+            l_sync = QVBoxLayout(page_sync)
+            l_sync.setContentsMargins(24, 20, 24, 16)
+            l_sync.setSpacing(0)
+            form_sync = QFormLayout()
+            form_sync.setSpacing(14)
+            form_sync.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-            self.current_custom_markers = list(prefs.get('custom_markers', []))
+            self.spin_offset = QDoubleSpinBox()
+            self.spin_offset.setRange(-10, 10)
+            self.spin_offset.setSingleStep(0.1)
+            self.spin_offset.setValue(float(prefs.get('offset', self.DEFAULTS['offset'])))
 
-            self.markers_list = QListWidget()
-            self.markers_list.setAlternatingRowColors(True)
-            self.markers_list.setStyleSheet(f"""
-                QListWidget {{
-                    background-color: #1e1e1e;
-                    border: 1px solid #3a3a3a;
-                    border-radius: 3px;
-                    color: {config.FG_COLOR};
-                    font-family: "{config.UI_FONT_NAME}";
-                    font-size: 10pt;
-                }}
-                QListWidget::item:alternate {{ background-color: #1a1a1a; }}
-                QListWidget::item:selected {{ background-color: {config.BTN_BG}; color: white; }}
-            """)
-            self._refresh_markers_list()
-            l_markers.addWidget(self.markers_list)
+            self.spin_pad = QDoubleSpinBox()
+            self.spin_pad.setRange(0, 5)
+            self.spin_pad.setSingleStep(0.1)
+            self.spin_pad.setValue(float(prefs.get('pad', self.DEFAULTS['pad'])))
 
-            marker_btn_row = QHBoxLayout()
-            marker_btn_row.setSpacing(8)
-            btn_add_m = QPushButton(self.txt("btn_add_marker"))
-            btn_add_m.setObjectName("btn_secondary")
-            btn_add_m.setFixedHeight(30)
-            btn_add_m.setCursor(Qt.PointingHandCursor)
-            btn_add_m.clicked.connect(self._on_add_marker)
-            marker_btn_row.addWidget(btn_add_m)
+            self.spin_snap = QDoubleSpinBox()
+            self.spin_snap.setRange(0, 5)
+            self.spin_snap.setSingleStep(0.1)
+            self.spin_snap.setValue(float(prefs.get('snap_max', prefs.get('snap_margin', self.DEFAULTS['snap_max']))))
 
-            btn_rem_m = QPushButton(self.txt("btn_remove_marker"))
-            btn_rem_m.setObjectName("btn_secondary")
-            btn_rem_m.setFixedHeight(30)
-            btn_rem_m.setCursor(Qt.PointingHandCursor)
-            btn_rem_m.clicked.connect(self._on_remove_marker)
-            marker_btn_row.addWidget(btn_rem_m)
-            marker_btn_row.addStretch()
-            l_markers.addLayout(marker_btn_row)
-            _add_page_to_stack(page_markers)
+            _add_row(form_sync, self.txt("lbl_offset_s"),   self.spin_offset, self.DEFAULTS['offset'],   self.spin_offset.setValue)
+            _add_row(form_sync, self.txt("lbl_padding_s"),  self.spin_pad,    self.DEFAULTS['pad'],       self.spin_pad.setValue)
+            _add_row(form_sync, self.txt("lbl_snap_max_s"), self.spin_snap,   self.DEFAULTS['snap_max'],  self.spin_snap.setValue)
 
-            # ─────────────────────────────────────────────────────────────────
-        if not is_basic:
-                # PAGE 8 — TELEMETRY
-            # ─────────────────────────────────────────────────────────────────
-            page_telem = QWidget()
-            page_telem.setStyleSheet("background: transparent;")
-            l_telem = QVBoxLayout(page_telem)
-            l_telem.setContentsMargins(24, 20, 24, 16)
-            l_telem.setSpacing(12)
+            l_sync.addLayout(form_sync)
+            l_sync.addStretch()
+            _add_page_to_stack(page_sync)
 
-            # Info label
-            lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
-            lbl_telem_info.setWordWrap(True)
-            lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
-            l_telem.addWidget(lbl_telem_info)
 
-            form_telem = QFormLayout()
-            form_telem.setSpacing(14)
-            form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-            user_data = getattr(self.engine.os_doc, 'user_data', {})
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 8 — TELEMETRY
+        # ─────────────────────────────────────────────────────────────────
+        page_telem = QWidget()
+        page_telem.setStyleSheet("background: transparent;")
+        l_telem = QVBoxLayout(page_telem)
+        l_telem.setContentsMargins(24, 20, 24, 16)
+        l_telem.setSpacing(12)
 
-            self.chk_telemetry_opt_in = ToggleSwitch()
-            self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
-            _add_row(form_telem, self.txt("chk_telemetry_opt_in"), self.chk_telemetry_opt_in,
-                     False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
+        # Info label
+        lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
+        lbl_telem_info.setWordWrap(True)
+        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        l_telem.addWidget(lbl_telem_info)
 
-            self.chk_telemetry_geo = ToggleSwitch()
-            self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
-            _add_row(form_telem, self.txt("chk_telemetry_geo"), self.chk_telemetry_geo,
-                     True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
+        form_telem = QFormLayout()
+        form_telem.setSpacing(14)
+        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-            l_telem.addLayout(form_telem)
-            l_telem.addStretch()
-            _add_page_to_stack(page_telem)
+        user_data = getattr(self.engine.os_doc, 'user_data', {})
+
+        self.chk_telemetry_opt_in = ToggleSwitch()
+        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), self.chk_telemetry_opt_in,
+                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
+
+        self.chk_telemetry_geo = ToggleSwitch()
+        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
+        _add_row(form_telem, self.txt("chk_telemetry_geo"), self.chk_telemetry_geo,
+                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
+
+        l_telem.addLayout(form_telem)
+        l_telem.addStretch()
+        _add_page_to_stack(page_telem)
     def _restore_all_defaults(self):
         msg_box = CustomMsgBox(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"),
                                self.txt("btn_yes"), self.txt("btn_no"))

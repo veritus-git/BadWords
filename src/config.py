@@ -108,7 +108,7 @@ DEFAULT_SETTINGS = {
     "chunk_max_words":        30,
     "chunk_lookahead":        3,
     "chunk_min_chars":        7,
-    "compute_type":           "float16",
+    "compute_type":           "int8",
     "ai_compute_type":        "Auto",
     "device":                 "auto",
     "ai_initial_prompt":      DEFAULT_WHISPER_PROMPT,
