@@ -554,14 +554,34 @@ class TranscriptionCanvas(QWidget):
                 if w['id'] != self._last_dragged_id:
                     self._last_dragged_id = w['id']
                     status = None
-                    if self.main_window.rb_red.isChecked(): status = 'bad'
+                    if self.main_window.rb_red.isChecked():   status = 'bad'
                     elif self.main_window.rb_blue.isChecked(): status = 'repeat'
                     elif self.main_window.rb_green.isChecked(): status = 'typo'
-                    
+                    # rb_eraser → status stays None → propagate_status_change clears
+
                     import algorythms
                     updates = algorythms.propagate_status_change(self.words_data, w['id'], status)
-                    if updates: self.update()
+
+                    if updates:
+                        # Build a fast O(1) lookup: id → word_obj
+                        id_map = {wo['id']: wo for wo in self.words_data}
+
+                        layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
+                        for wid, _raw in updates:
+                            word_obj = id_map.get(wid)
+                            if word_obj is None:
+                                continue
+                            # Stamp overlay_suppressed so the algo overlay sinks
+                            # below the user's manual paint until the next reload.
+                            word_obj['overlay_suppressed'] = True
+                            # Route through the Layer Engine — this is what actually
+                            # writes word_obj['status'] to the correct final value.
+                            if layer_engine:
+                                layer_engine(word_obj)
+
+                        self.update()
                 break
+
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -2258,7 +2278,7 @@ class BadWordsGUI(QMainWindow):
         row_show_inaudible.addStretch()
         self.tgl_show_inaudible = ToggleSwitch()
         self.tgl_show_inaudible.setChecked(True)
-        self.tgl_show_inaudible.toggled.connect(self._refresh_canvas_view)
+        self.tgl_show_inaudible.toggled.connect(self._on_inaudible_toggled)
         row_show_inaudible.addWidget(self.tgl_show_inaudible)
         l_assembly.addLayout(row_show_inaudible)
         
@@ -2275,7 +2295,7 @@ class BadWordsGUI(QMainWindow):
         row_show_typos.addStretch()
         self.tgl_show_typos = ToggleSwitch()
         self.tgl_show_typos.setChecked(True)
-        self.tgl_show_typos.toggled.connect(self._refresh_canvas_view)
+        self.tgl_show_typos.toggled.connect(self._on_typos_toggled)
         row_show_typos.addWidget(self.tgl_show_typos)
         l_assembly.addLayout(row_show_typos)
         
@@ -2512,6 +2532,91 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
             self.text_canvas._calculate_layout()
             self.text_canvas.update()
+
+    def _calculate_visual_layer(self, word_obj: dict) -> str:
+        """
+        Non-Destructive Two-Layer Engine.
+
+        BASE LAYER  — what the word 'is' permanently:
+            manual_status (if set by user) > hard auto (hallucination/is_bad) >
+            algo repeat > normal
+
+        OVERLAY LAYER — a transient algo highlight that floats on top:
+            active only when the matching toggle is ON and the user hasn't
+            manually painted over it (overlay_suppressed == False).
+
+        Manual painting sets overlay_suppressed=True so the user color shows.
+        Toggle reload sets overlay_suppressed=False so the overlay resurfaces
+        WITHOUT touching manual_status.
+        """
+        # --- BASE LAYER ---
+        base = word_obj.get('manual_status')  # None means 'not set by user'
+        if base is None:
+            if word_obj.get('_is_hallucination') or word_obj.get('is_bad'):
+                base = 'bad'
+            elif word_obj.get('algo_status') == 'repeat':
+                base = 'repeat'
+            else:
+                base = 'normal'
+
+        # --- OVERLAY LAYER (toggle-gated, suppressed after manual paint) ---
+        overlay = None
+        if not word_obj.get('overlay_suppressed', False):
+            show_typos = hasattr(self, 'tgl_show_typos') and self.tgl_show_typos.isChecked()
+            show_inaud = hasattr(self, 'tgl_show_inaudible') and self.tgl_show_inaudible.isChecked()
+            if show_typos and word_obj.get('algo_status') == 'typo':
+                overlay = 'typo'
+            elif show_inaud and (word_obj.get('is_inaudible') or word_obj.get('type') == 'inaudible'):
+                overlay = 'inaudible'
+
+        final = overlay if overlay is not None else base
+        word_obj['status'] = final
+        word_obj['selected'] = final in ('bad', 'inaudible', 'typo', 'repeat')
+        return final
+
+    def _on_inaudible_toggled(self, is_checked: bool):
+        """
+        Reload for 'Show inaudible fragments'.
+        Turning ON: clears overlay_suppressed so the brown overlay resurfaces on top.
+        manual_status is NEVER touched — base layer stays intact.
+        """
+        if not hasattr(self, 'text_canvas') or not getattr(self.text_canvas, 'words_data', None):
+            return
+
+        for word_obj in self.text_canvas.words_data:
+            if not (word_obj.get('is_inaudible') or word_obj.get('type') == 'inaudible'):
+                continue
+
+            if is_checked:
+                # Reload: allow the brown overlay to float back to the top
+                word_obj['overlay_suppressed'] = False
+
+            self._calculate_visual_layer(word_obj)
+
+        self.text_canvas._calculate_layout()
+        self.text_canvas.update()
+
+    def _on_typos_toggled(self, is_checked: bool):
+        """
+        Reload for 'Show detected typos'.
+        Turning ON: clears overlay_suppressed so the green overlay resurfaces on top.
+        manual_status is NEVER touched — base layer stays intact.
+        """
+        if not hasattr(self, 'text_canvas') or not getattr(self.text_canvas, 'words_data', None):
+            return
+
+        for word_obj in self.text_canvas.words_data:
+            if word_obj.get('algo_status') != 'typo':
+                continue
+
+            if is_checked:
+                # Reload: allow the green overlay to float back to the top
+                word_obj['overlay_suppressed'] = False
+
+            self._calculate_visual_layer(word_obj)
+
+        self.text_canvas._calculate_layout()
+        self.text_canvas.update()
 
     def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return

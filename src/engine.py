@@ -921,8 +921,8 @@ except Exception as e:
                 inaud_start = new_end
                 inaud_end   = word_obj['end']
 
-                # Guard: inaudible slice must be at least 20ms to be meaningful
-                if round(inaud_end - inaud_start, 3) >= 0.02:
+                # Guard: inaudible head must be at least 150ms to avoid sub-frame micro-cuts on the timeline
+                if round(inaud_end - inaud_start, 3) >= 0.15:
                     shortened = dict(word_obj)  # shallow copy is safe — all values are immutable scalars
                     shortened['end'] = new_end
 
