@@ -785,24 +785,31 @@ class TranscriptionCanvas(QWidget):
             
         groups = []
         curr_group = []
-        curr_state = None
+        curr_state = None # Teraz będzie przechowywać tuple: (search_state, bg_color)
         
         for w in visible_words:
             if '_rect' not in w: continue
-            state = 'active' if w.get('_search_active') else ('match' if w.get('_search_match') else None)
+            
+            # Pobieramy stan wyszukiwania i kolor tła dla danego słowa
+            search_state = 'active' if w.get('_search_active') else ('match' if w.get('_search_match') else None)
+            bg_color, _, _ = get_base_bg_fg(w)
+            
+            # Nasz nowy klucz grupowania to kombinacja stanu i koloru
+            state = (search_state, bg_color) if search_state else None
             
             if state:
+                # Grupujemy tylko jeśli: ten sam stan, ten sam kolor i ta sama linia Y
                 if curr_state == state and curr_group and w['_rect'].y() == curr_group[-1]['_rect'].y():
                     curr_group.append(w)
                 else:
-                    if curr_group: groups.append((curr_group, curr_state))
+                    if curr_group: groups.append((curr_group, curr_state[0])) # Zapisujemy tylko search_state do grup
                     curr_group = [w]
                     curr_state = state
             else:
-                if curr_group: groups.append((curr_group, curr_state))
+                if curr_group: groups.append((curr_group, curr_state[0]))
                 curr_group = []
                 curr_state = None
-        if curr_group: groups.append((curr_group, curr_state))
+        if curr_group: groups.append((curr_group, curr_state[0]))
 
         # Uproszczone wygaszanie kolorów
         def get_dimmed_center(color):
