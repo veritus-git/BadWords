@@ -2863,6 +2863,46 @@ class IDETooltip(QLabel):
         self.move(x, y)
         self.show()
 
+    def show_global(self, text, pos):
+        self.setText(text)
+        self.adjustSize()
+        # Offset cursor by ~15px below it
+        self.move(pos.x(), pos.y() + 15)
+        self.show()
+
+class GlobalTooltipFilter(QObject):
+    """Intercepts native QEvent.ToolTip globally and uses the shared IDETooltip."""
+    def __init__(self, shared_tooltip):
+        super().__init__()
+        self.shared_tooltip = shared_tooltip
+        self.tooltip_timer = QTimer(self)
+        self.tooltip_timer.setSingleShot(True)
+        self.tooltip_timer.timeout.connect(self._do_show)
+        self.current_text = ""
+        self.current_pos = None
+        self.active_widget = None
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.ToolTip:
+            if isinstance(obj, QWidget):
+                text = obj.toolTip()
+                if text:
+                    self.current_text = text
+                    self.current_pos = event.globalPos()
+                    self.active_widget = obj
+                    self.tooltip_timer.start(500)
+                    return True # Stop native tooltip
+        elif event.type() in (QEvent.Leave, QEvent.Hide, QEvent.MouseButtonPress, QEvent.WindowDeactivate):
+            if obj == self.active_widget or self.active_widget is None:
+                self.tooltip_timer.stop()
+                self.shared_tooltip.hide()
+                self.active_widget = None
+        return False
+
+    def _do_show(self):
+        if self.current_text and self.active_widget:
+            self.shared_tooltip.show_global(self.current_text, self.current_pos)
+
 class SidebarButton(QPushButton):
     """
     Static sidebar item with a fixed 40x40 size and VS Code style static tooltip.
@@ -5891,6 +5931,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.shared_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.shared_tooltip.setWindowFlag(Qt.WindowTransparentForInput, True)
         
+        # Install global tooltip filter to route all tooltips through IDETooltip
+        self._global_tooltip_filter = GlobalTooltipFilter(self.shared_tooltip)
+        QApplication.instance().installEventFilter(self._global_tooltip_filter)
+        
         # Declare panel containers early for Pyre inference
         self._sidebar_right: SidebarFrame = None
         self._panel_left: QFrame = None
@@ -5920,14 +5964,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
                 font-size: 10pt;
-            }}
-            QToolTip {{
-                background-color: #1e1e1e;
-                color: #cccccc;
-                border: 1px solid #454545;
-                padding: 4px;
-                font-family: 'Segoe UI', sans-serif;
-                font-size: 9pt;
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{
