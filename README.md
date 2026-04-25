@@ -6,19 +6,17 @@ in DaVinci Resolve using OpenAI Whisper and FFmpeg.
 ![Preview](assets/editor_preview.png)
 
 ## Quick access shortcuts:
-### Installation & Deinstalation guides:
-**[Linux (any distro)](assets/Linux%20GUIDE.md)** <br>
-**[Windows](assets/Windows%20GUIDE.md)**
+### Installation & Uninstalation guides: <br> [Linux (any distro)](assets/Linux%20GUIDE.md) <br> [Windows](assets/Windows%20GUIDE.md)
+### Downloads: <br> [Download Latest BadWords Release](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest)<br>
 
-### Downloads:
 
-[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)]() 
+[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)]()
+[![Download](https://img.shields.io/badge/Supported_✅-333333?style=for-the-badge)](link)
+
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)]() 
-[![Download](https://img.shields.io/badge/Download_Latest_BadWords_Release-333333?style=for-the-badge)](https://gitlab.com/badwords/BadWords/-/releases/permalink/latest)
+[![Download](https://img.shields.io/badge/Supported_✅-333333?style=for-the-badge)](link)
 
-
-
-[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)]() [![Download](https://img.shields.io/badge/Maybe_Someday!-333333?style=for-the-badge)](link)
+[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)]() [![Download](https://img.shields.io/badge/Soon!-333333?style=for-the-badge)](link)
 
 <a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" align="top" width="30%" style="margin-left: 20px; margin-bottom: 20px;" alt="Logo"></a>
 
