@@ -58,6 +58,145 @@ RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Language
 # HELPERS
 # ==========================================
 
+_QPushButton = QPushButton
+class QPushButton(_QPushButton):
+    """Patched QPushButton to support smooth marquee (scroll) effect on hover when text is squeezed."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._mq_timer = QTimer(self)
+        self._mq_timer.timeout.connect(self._mq_scroll)
+        self._mq_timer.setInterval(16)  # ~60fps smooth scroll
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        self._mq_hovered = False
+        self._mq_is_squeezed = False
+        self._mq_state = "START_DELAY"
+        self._mq_ticks = 0
+
+    def setText(self, str_text):
+        self.setProperty("_mq_original_text", str_text)
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        super().setText(str_text)
+
+    def text(self):
+        orig = self.property("_mq_original_text")
+        if orig is not None:
+            return orig
+        return super().text()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        orig = self.property("_mq_original_text")
+        if orig is None:
+            orig = super().text()
+            self.setProperty("_mq_original_text", orig)
+
+        self._mq_hovered = True
+        try:
+            if not orig or len(orig.strip()) <= 3:
+                self._mq_is_squeezed = False
+                return
+                
+            fm = self.fontMetrics()
+            if fm.horizontalAdvance(orig) > self.width() - 16:
+                self._mq_is_squeezed = True
+                self._mq_pos = 0.0
+                self._mq_alpha = 1.0
+                self._mq_state = "START_DELAY"
+                self._mq_ticks = 0
+                self._mq_timer.start()
+            else:
+                self._mq_is_squeezed = False
+        except Exception:
+            pass
+
+    def leaveEvent(self, event):
+        self._mq_hovered = False
+        self._mq_is_squeezed = False
+        self._mq_timer.stop()
+        self._mq_pos = 0.0
+        self._mq_alpha = 1.0
+        self.update()
+        super().leaveEvent(event)
+
+    def _mq_scroll(self):
+        orig = self.property("_mq_original_text")
+        if not orig: return
+        fm = self.fontMetrics()
+        
+        clip_w = self.width() - 16
+        max_scroll = float(fm.horizontalAdvance(orig) - clip_w)
+        if max_scroll < 0: max_scroll = 0.0
+
+        if self._mq_state == "START_DELAY":
+            self._mq_ticks += 1
+            if self._mq_ticks > 40:  # ~640ms
+                self._mq_state = "SCROLL"
+                self._mq_ticks = 0
+                
+        elif self._mq_state == "SCROLL":
+            self._mq_pos += 0.5  # Slower scroll (approx 30px/s)
+            if self._mq_pos >= max_scroll:
+                self._mq_pos = max_scroll
+                self._mq_state = "END_DELAY"
+                self._mq_ticks = 0
+                
+        elif self._mq_state == "END_DELAY":
+            self._mq_ticks += 1
+            if self._mq_ticks > 40:  # ~640ms wait at the end
+                self._mq_state = "FADEOUT"
+                self._mq_ticks = 0
+                
+        elif self._mq_state == "FADEOUT":
+            self._mq_alpha -= 0.05
+            if self._mq_alpha <= 0.0:
+                self._mq_alpha = 0.0
+                self._mq_pos = 0.0
+                self._mq_state = "FADEIN"
+                
+        elif self._mq_state == "FADEIN":
+            self._mq_alpha += 0.05
+            if self._mq_alpha >= 1.0:
+                self._mq_alpha = 1.0
+                self._mq_state = "START_DELAY"
+                self._mq_ticks = 0
+        
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._mq_hovered or not self._mq_is_squeezed:
+            super().paintEvent(event)
+            return
+
+        from PySide6.QtWidgets import QStyleOptionButton, QStyle
+
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        
+        orig = self.property("_mq_original_text") or ""
+        opt.text = ""  # Hide native text to draw our own
+        
+        painter = QPainter(self)
+        self.style().drawControl(QStyle.CE_PushButton, opt, painter, self)
+        
+        padding = 8
+        clip_rect = self.rect().adjusted(padding, 0, -padding, 0)
+        painter.setClipRect(clip_rect)
+        
+        color = opt.palette.buttonText().color()
+        if self._mq_alpha < 1.0:
+            alpha = max(0.0, min(1.0, self._mq_alpha))
+            color.setAlphaF(alpha)
+            
+        painter.setPen(color)
+        
+        draw_rect = clip_rect.translated(-int(self._mq_pos), 0)
+        draw_rect.setWidth(9999) # Prevent wrapping
+        
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
+
+
 class GripHandle(QSplitterHandle):
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -2635,9 +2774,12 @@ class CustomDropdown(QPushButton):
         
         popup._update_height = _update_height
 
+    def setValue(self, text):
+        self.setText(text)
+        self.valueChanged.emit(text)
+
     def _on_item_clicked(self, item, popup):
-        self.setText(item.text())
-        self.valueChanged.emit(item.text())
+        self.setValue(item.text())
         popup.close()
 
     def currentText(self):
@@ -2836,9 +2978,12 @@ class SearchableDropdown(QPushButton):
                 return
         popup.close()
 
+    def setValue(self, text):
+        self.setText(text)
+        self.valueChanged.emit(text)
+
     def _on_item_clicked(self, item, popup):
-        self.setText(item.text())
-        self.valueChanged.emit(item.text())
+        self.setValue(item.text())
         popup.close()
 
     def currentText(self):
@@ -3949,7 +4094,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
         self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
         _add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
-                 self.txt("opt_segmented_blocks"), self.combo_view.setText)
+                 self.txt("opt_segmented_blocks"), self.combo_view.setValue)
 
         # Font family, size, line height
         from PySide6.QtGui import QFontDatabase
@@ -3965,7 +4110,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
 
         _add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
-                 self.DEFAULTS['editor_font_family'], self.combo_font.setText)
+                 self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
         _add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
                  self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
         _add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
@@ -4069,7 +4214,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             self.dropdown_accent.setFixedHeight(30)
             saved_accent = prefs.get('accent_color', 'green')
             self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
-            _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setText)
+            _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setValue)
 
 
 
@@ -4100,7 +4245,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             saved_device = prefs.get('device', 'auto').capitalize()
             if saved_device.upper() == 'AUTO': saved_device = 'Auto'
             self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
-            _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setText)
+            _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setValue)
 
             # Compute type
             _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
@@ -4108,7 +4253,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             self.dropdown_compute.setFixedHeight(30)
             saved_compute = prefs.get('ai_compute_type', 'Auto')
             self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
-            _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setText)
+            _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
 
             l_ai.addLayout(form_ai)
             l_ai.addSpacing(14)
