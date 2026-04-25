@@ -1308,7 +1308,11 @@ class SidebarDragZone(QFrame):
             
             self._drop_line_y = -1
             self.update()
-            
+
+            main_window = self.window()
+            if hasattr(main_window, '_save_sidebar_layout'):
+                main_window._save_sidebar_layout()
+
             if getattr(source_btn, '_drag_was_active', False):
                 source_btn.window()._toggle_activity(source_btn.activity_id)
                 source_btn._drag_was_active = False
@@ -1406,6 +1410,82 @@ class CustomDropdown(QPushButton):
         self.setText(item.text())
         self.valueChanged.emit(item.text())
         popup.close()
+
+class MultiSelectDropdown(QPushButton):
+    valueChanged = Signal(list)
+    def __init__(self, options_list, parent=None):
+        super().__init__(parent=parent)
+        self.options_list = list(options_list)
+        self.selected_items = set()
+        self.setText("Select tracks...")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1e1e1e; color: #d4d4d4; text-align: left;
+                padding: 4px 8px; border: 1px solid #3a3a3a; border-radius: 3px; min-height: 20px;
+            }}
+            QPushButton:hover {{ border-color: {config.BTN_BG}; }}
+        """)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("QFrame { background-color: #1e1e1e; border: 1px solid #444; border-radius: 3px; padding: 0px; margin: 0px; }")
+
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        list_widget = QListWidget()
+        list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        list_widget.setStyleSheet("""
+            QListWidget { border: none; outline: none; background: transparent; }
+            QListWidget::item { border-bottom: 1px solid #2a2a2a; }
+            QListWidget::item:hover { background-color: #2a2d2e; }
+        """)
+
+        from PySide6.QtCore import QSize
+        for opt in self.options_list:
+            item = QListWidgetItem(list_widget)
+            item.setSizeHint(QSize(0, 28))  # TWARDE WYMUSZENIE 28px
+            widget = QCheckBox(opt)
+            widget.setCursor(Qt.PointingHandCursor)
+            widget.setChecked(opt in self.selected_items)
+            widget.setStyleSheet("""
+                QCheckBox { color: #d4d4d4; padding: 0px 8px; margin: 0px; font-size: 10pt; background: transparent; }
+                QCheckBox::indicator {
+                    width: 14px; height: 14px; border-radius: 7px; background-color: #111111; border: 1px solid #333;
+                }
+                QCheckBox::indicator:checked {
+                    background: qradialgradient(cx:0.5, cy:0.5, radius:0.4, fx:0.5, fy:0.5, stop:0 #1a7a3e, stop:0.8 #1a7a3e, stop:1 transparent);
+                    border: 1px solid #1a7a3e;
+                }
+            """)
+            widget.toggled.connect(lambda checked, text=opt: self._on_toggled(text, checked))
+            list_widget.setItemWidget(item, widget)
+
+        layout.addWidget(list_widget)
+
+        # PERFEKCYJNA MATEMATYKA WYSOKOŚCI
+        display_count = min(5, len(self.options_list))
+        list_height = display_count * 28
+        list_widget.setFixedHeight(list_height)
+        popup.setFixedHeight(list_height + 2)
+
+        global_pos = self.mapToGlobal(QPoint(0, self.height()))
+        popup.move(global_pos)
+        popup.setFixedWidth(self.width())
+        popup.show()
+
+    def _on_toggled(self, text, checked):
+        if checked: self.selected_items.add(text)
+        else: self.selected_items.discard(text)
+
+        if not self.selected_items: self.setText("Select tracks...")
+        else: self.setText(", ".join(sorted(self.selected_items)))
+        self.valueChanged.emit(list(self.selected_items))
+
 
 class SearchableDropdown(QPushButton):
     valueChanged = Signal(str)
@@ -1920,6 +2000,8 @@ class BadWordsGUI(QMainWindow):
         self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", "Assembly", "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
         drag_layout_right.addWidget(self.btn_nav_assembly)
+
+        self._restore_sidebar_layout()
         
     def _build_central_workspace(self):
         """
@@ -2031,6 +2113,59 @@ class BadWordsGUI(QMainWindow):
                     sizes[2] = target_w
                     sizes[1] = max(0, sizes[1] - diff)
                 self._main_h_splitter.setSizes(sizes)
+
+    def _save_sidebar_layout(self):
+        prefs = self.engine.load_preferences() or {}
+
+        left_order = []
+        for i in range(self._drag_zone_left.layout().count()):
+            w = self._drag_zone_left.layout().itemAt(i).widget()
+            if isinstance(w, SidebarButton): left_order.append(w.activity_id)
+
+        right_order = []
+        for i in range(self._drag_zone_right.layout().count()):
+            w = self._drag_zone_right.layout().itemAt(i).widget()
+            if isinstance(w, SidebarButton): right_order.append(w.activity_id)
+
+        prefs['sidebar_left'] = left_order
+        prefs['sidebar_right'] = right_order
+        self.engine.save_preferences(prefs)
+
+    def _restore_sidebar_layout(self):
+        prefs = self.engine.load_preferences() or {}
+        left_saved = prefs.get('sidebar_left', [])
+        right_saved = prefs.get('sidebar_right', [])
+
+        if not left_saved and not right_saved: return
+
+        # Zmapuj i wyczyść obecne przyciski
+        btns_map = {}
+        for dz in [self._drag_zone_left, self._drag_zone_right]:
+            layout = dz.layout()
+            for i in reversed(range(layout.count())):
+                w = layout.itemAt(i).widget()
+                if isinstance(w, SidebarButton):
+                    btns_map[w.activity_id] = w
+                    layout.removeWidget(w)
+
+        # Odtwórz poprawną kolejność dla lewej strony
+        for act_id in left_saved:
+            if act_id in btns_map:
+                btn = btns_map.pop(act_id)
+                btn.is_right_side = False
+                self._drag_zone_left.layout().addWidget(btn)
+
+        # Odtwórz poprawną kolejność dla prawej strony
+        for act_id in right_saved:
+            if act_id in btns_map:
+                btn = btns_map.pop(act_id)
+                btn.is_right_side = True
+                self._drag_zone_right.layout().addWidget(btn)
+
+        # Resztki (nowe funkcje) lądują domyślnie na lewo
+        for btn in btns_map.values():
+            btn.is_right_side = False
+            self._drag_zone_left.layout().addWidget(btn)
 
     def _build_activities(self):
         def _wrap_activity(widget: QWidget) -> QFrame:
@@ -2822,19 +2957,19 @@ class BadWordsGUI(QMainWindow):
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText("Initializing Fast Silence Cut...")
 
-        # Read from spinboxes (new names first, old names as fallback)
-        if hasattr(self, 'spin_fs_thresh') and hasattr(self, 'spin_fs_pad'):
-            thresh = self.spin_fs_thresh.value()
-            pad    = self.spin_fs_pad.value()
-        elif hasattr(self, '_fs_spin_thresh') and hasattr(self, '_fs_spin_pad'):
-            thresh = self._fs_spin_thresh.value()
-            pad    = self._fs_spin_pad.value()
-        else:
-            prefs  = self.engine.load_preferences() or {}
-            thresh = prefs.get('ui_spin_thresh', -42.0)
-            pad    = prefs.get('ui_spin_pad', 0.05)
-
-        settings = {'threshold_db': thresh, 'padding_s': pad}
+        # Read from line edits
+        try:
+            thresh_val = float(self.input_fs_thresh.text().replace(',', '.'))
+        except (ValueError, AttributeError):
+            thresh_val = -42.0  # fallback
+            
+        try:
+            pad_val = float(self.input_fs_pad.text().replace(',', '.'))
+        except (ValueError, AttributeError):
+            pad_val = 0.05  # fallback
+            
+        # Update settings for the core
+        settings = {'threshold_db': thresh_val, 'padding_s': pad_val}
 
         self._worker_signals = WorkerSignals()
         self._worker_signals.progress.connect(self._on_analysis_progress)
@@ -3072,6 +3207,7 @@ class BadWordsGUI(QMainWindow):
         inner_layout = QVBoxLayout(inner)
         inner_layout.setContentsMargins(0, 0, 0, 0)
         inner_layout.setSpacing(0)
+        inner_layout.setAlignment(Qt.AlignTop)
 
         # ── Shared Title ─────────────────────────────────────────────────
         lbl_title = QLabel("BadWords", inner)
@@ -3080,7 +3216,7 @@ class BadWordsGUI(QMainWindow):
         lbl_title.setStyleSheet(f"""
             QLabel#welcome_title {{
                 color: #ffffff;
-                font-size: 24pt;
+                font-size: 34pt;
                 font-weight: 900;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
@@ -3088,7 +3224,7 @@ class BadWordsGUI(QMainWindow):
             }}
         """)
         inner_layout.addWidget(lbl_title)
-        inner_layout.addSpacing(24)
+        inner_layout.addSpacing(10)
 
         # ── Local stacked widget ──────────────────────────────────────────
         self.welcome_stack = QStackedWidget()
@@ -3111,17 +3247,16 @@ class BadWordsGUI(QMainWindow):
             row.addWidget(widget)
             return row
 
-        # ═══════════════════════════════════════════════════════════════
-        # SUB-PAGE 0: TRANSCRIPTION
-        # ═══════════════════════════════════════════════════════════════
         p_transcription = QWidget()
         p_transcription.setStyleSheet("background: transparent;")
         l_trans = QVBoxLayout(p_transcription)
         l_trans.setContentsMargins(0, 0, 0, 0)
         l_trans.setSpacing(0)
+        l_trans.setAlignment(Qt.AlignTop)
 
         lbl_sub = QLabel("Transcription workspace")
         lbl_sub.setAlignment(Qt.AlignCenter)
+        lbl_sub.setFixedHeight(20)
         lbl_sub.setStyleSheet(
             f"color: {config.NOTE_COL}; font-size: 10pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
@@ -3129,9 +3264,20 @@ class BadWordsGUI(QMainWindow):
         l_trans.addWidget(lbl_sub)
         l_trans.addSpacing(20)
 
+        self.combo_tl_0 = CustomDropdown(["Timeline 1", "Timeline 2", "No timelines detected"])
+        self.combo_tl_0.setFixedHeight(30)
+        l_trans.addLayout(_row("Timeline Selection:", self.combo_tl_0))
+        l_trans.addSpacing(10)
+
+        self.combo_tr_0 = MultiSelectDropdown(["Audio 1", "Audio 2", "Audio 3", "No audio detected"])
+        self.combo_tr_0.setFixedHeight(30)
+        l_trans.addLayout(_row("Track/s Selection:", self.combo_tr_0))
+        l_trans.addSpacing(10)
+
         # ── Language
         lang_items = list(config.SUPPORTED_LANGUAGES.values())
         self._combo_lang = SearchableDropdown(lang_items)
+        self._combo_lang.setFixedHeight(30)
         saved_lang = prefs.get('lang', 'Auto')
         display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
         self._combo_lang.setText(display_name if (display_name in lang_items or display_name == 'Auto') else "Auto")
@@ -3149,6 +3295,7 @@ class BadWordsGUI(QMainWindow):
             "Large  (Accurate, 10 GB)",
         ]
         self._combo_model = CustomDropdown(model_items)
+        self._combo_model.setFixedHeight(30)
         self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[4])
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         l_trans.addLayout(_row(self.txt("lbl_model"), self._combo_model))
@@ -3157,6 +3304,7 @@ class BadWordsGUI(QMainWindow):
         # ── Device
         device_items = ["Auto", "CPU", "GPU (CUDA)"]
         self._combo_device = CustomDropdown(device_items)
+        self._combo_device.setFixedHeight(30)
         self._combo_device.setText(prefs["device"] if "device" in prefs and prefs["device"] in device_items else "Auto")
         self._combo_device.valueChanged.connect(lambda v: self.engine.save_preferences({"device": v}))
         l_trans.addLayout(_row(self.txt("lbl_device"), self._combo_device))
@@ -3218,12 +3366,14 @@ class BadWordsGUI(QMainWindow):
         p_fast = QWidget()
         p_fast.setStyleSheet("background: transparent;")
         l_fast = QVBoxLayout(p_fast)
-        l_fast.setContentsMargins(0, 10, 0, 0)
+        l_fast.setContentsMargins(0, 0, 0, 0)
         l_fast.setSpacing(0)
+        l_fast.setAlignment(Qt.AlignTop)
 
         # TITLE
         lbl_fs_title = QLabel("Fast silence workspace")
         lbl_fs_title.setAlignment(Qt.AlignCenter)
+        lbl_fs_title.setFixedHeight(20)
         lbl_fs_title.setStyleSheet(
             f"color: {config.NOTE_COL}; font-size: 10pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
@@ -3231,24 +3381,38 @@ class BadWordsGUI(QMainWindow):
         l_fast.addWidget(lbl_fs_title)
         l_fast.addSpacing(20)
 
-        # SETTINGS ROWS
-        spin_style = f"background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; border-radius: 3px; padding: 4px; min-height: 20px;"
-
-        self.spin_fs_thresh = QDoubleSpinBox()
-        self.spin_fs_thresh.setRange(-100, 0)
-        self.spin_fs_thresh.setSuffix(" dB")
-        self.spin_fs_thresh.setValue(prefs.get('ui_spin_thresh', -42.0))
-        self.spin_fs_thresh.setStyleSheet(spin_style)
-        l_fast.addLayout(_row("Silence Threshold:", self.spin_fs_thresh))
+        self.combo_tl_1 = CustomDropdown(["Timeline 1", "Timeline 2", "No timelines detected"])
+        self.combo_tl_1.setFixedHeight(30)
+        l_fast.addLayout(_row("Timeline Selection:", self.combo_tl_1))
         l_fast.addSpacing(10)
 
-        self.spin_fs_pad = QDoubleSpinBox()
-        self.spin_fs_pad.setRange(0, 5)
-        self.spin_fs_pad.setSingleStep(0.05)
-        self.spin_fs_pad.setSuffix(" s")
-        self.spin_fs_pad.setValue(prefs.get('ui_spin_pad', 0.05))
-        self.spin_fs_pad.setStyleSheet(spin_style)
-        l_fast.addLayout(_row("Padding:", self.spin_fs_pad))
+        self.combo_tr_1 = MultiSelectDropdown(["Audio 1", "Audio 2", "Audio 3", "No audio detected"])
+        self.combo_tr_1.setFixedHeight(30)
+        l_fast.addLayout(_row("Track/s Selection:", self.combo_tr_1))
+        l_fast.addSpacing(10)
+
+        # SETTINGS ROWS
+        input_style = '''
+            QLineEdit {
+                background-color: #1e1e1e; color: #d4d4d4; 
+                border: 1px solid #3a3a3a; border-radius: 3px; 
+                padding: 4px 8px;
+            }
+            QLineEdit:focus { border: 1px solid #1a7a3e; }
+        '''
+
+        self.input_fs_thresh = QLineEdit()
+        self.input_fs_thresh.setText(str(prefs.get('ui_spin_thresh', -42.0)))
+        self.input_fs_thresh.setStyleSheet(input_style)
+        self.input_fs_thresh.setFixedHeight(30)
+        l_fast.addLayout(_row("Silence Threshold (dB):", self.input_fs_thresh))
+        l_fast.addSpacing(10)
+
+        self.input_fs_pad = QLineEdit()
+        self.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.05)))
+        self.input_fs_pad.setStyleSheet(input_style)
+        self.input_fs_pad.setFixedHeight(30)
+        l_fast.addLayout(_row("Padding (s):", self.input_fs_pad))
         l_fast.addSpacing(16)
 
         # MODE TOGGLES (Mutually Exclusive)
