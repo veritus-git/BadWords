@@ -1611,7 +1611,7 @@ except Exception as e:
 
         try:
             set_status(self.txt("status_assembly_init"))
-            set_progress(10)
+            set_progress(-1)
             
             self.resolve_handler.refresh_context()
             if not self.resolve_handler.timeline:
@@ -1655,7 +1655,8 @@ except Exception as e:
                     source_tl_for_assembly = cached_filtered
                 else:
                     log_info(f"assemble_timeline: Track subset selected ({track_indices}), building filtered timeline...")
-                    set_status("Preparing filtered source timeline...")
+                    set_status(self.txt("status_assembly_init"))  # reuse init string
+                    set_progress(-1)  # Indeterminate loop
                     try:
                         temp_dir = self.os_doc.get_temp_folder()
                         os.makedirs(temp_dir, exist_ok=True)
@@ -1703,6 +1704,7 @@ except Exception as e:
                 source_tl_for_assembly = original_tl_name
 
             set_status(self.txt("status_assembly_source"))
+            set_progress(-1)
             source_item, context_type = self.resolve_handler.get_optimal_source_item(source_tl_for_assembly)
 
             if not source_item:
@@ -1710,8 +1712,6 @@ except Exception as e:
                 return False, None
 
             audio_only_mode = (context_type == 'audio')
-
-            set_progress(30)
 
             set_status(self.txt("status_calc_cuts"))
             fps = self.resolve_handler.fps
@@ -1721,9 +1721,8 @@ except Exception as e:
                 calc_settings["audio_end_cap_s"] = audio_end_cap_s
             clean_ops = self.calculate_timeline_structure(words_data, fps, calc_settings)
 
-            set_progress(50)
-
             set_status(self.txt("status_assembly_resolve"))
+
 
             # Always use original source timeline name for Edit numbering (not XML filtered name)
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
@@ -1733,8 +1732,7 @@ except Exception as e:
             
             # --- ZMIANA: Przekazanie paczkowego callbacku do api.py ---
             def assembly_progress_cb(current, total):
-                # Skalujemy postęp w przedziale od 50 do 90 (pozostałe procenty to cleanup i przygotowanie)
-                perc = 50 + int((current / max(1, total)) * 40)
+                perc = int((current / max(1, total)) * 100)
                 set_progress(perc)
                 # Dynamiczna zmiana tekstu w UI
                 set_status(f"{self.txt('status_assembly_clips')} {current}/{total}...")

@@ -3113,6 +3113,134 @@ class SidebarDragZone(QFrame):
                 source_btn._drag_was_active = False
 
 
+class MarkerDragZone(QFrame):
+    """
+    A drop-zone container for Custom Markers in the settings panel.
+    """
+    def __init__(self, parent=None):
+        super().__init__()
+        if parent:
+            self.setParent(parent)
+        self.setAcceptDrops(True)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self._drop_line_y = -1
+        self.setLayout(QVBoxLayout())
+        self.layout().setAlignment(Qt.AlignTop)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+        
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._drop_line_y >= 0:
+            p = QPainter(self)
+            p.setPen(QPen(QColor("#11703c"), 3))
+            p.drawLine(0, self._drop_line_y, self.width(), self._drop_line_y)
+            
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText() and event.mimeData().text() == "m_drag":
+            event.acceptProposedAction()
+            
+    def dragMoveEvent(self, event):
+        if not event.mimeData().hasText() or event.mimeData().text() != "m_drag":
+            return
+            
+        layout = self.layout()
+        source_widget = event.source()
+        
+        target_idx = layout.count() - 1 
+        drop_y = 0
+        last_vis_widget = None
+        
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if not w or w.isHidden() or w == source_widget:
+                continue
+            
+            if w.objectName() == "stretch_placeholder":
+                continue
+                
+            last_vis_widget = w
+            
+            if event.position().y() < w.geometry().center().y():
+                target_idx = i
+                drop_y = w.geometry().top()
+                break
+        else:
+            if last_vis_widget:
+                drop_y = last_vis_widget.geometry().bottom()
+                
+        if drop_y != self._drop_line_y:
+            self._drop_line_y = drop_y
+            self.update()
+            
+        event.acceptProposedAction()
+        
+    def dragLeaveEvent(self, event):
+        self._drop_line_y = -1
+        self.update()
+
+    def dropEvent(self, event):
+        self._drop_line_y = -1
+        self.update()
+        
+        if not event.mimeData().hasText() or event.mimeData().text() != "m_drag":
+            return
+            
+        source_widget = event.source()
+        layout = self.layout()
+        
+        target_idx = layout.count() - 1
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if not w or w.isHidden() or w == source_widget:
+                continue
+            if w.objectName() == "stretch_placeholder":
+                continue
+            if event.position().y() < w.geometry().center().y():
+                target_idx = i
+                break
+                
+        if hasattr(self.window(), "_on_markers_reordered"):
+            self.window()._on_markers_reordered(source_widget.original_idx, target_idx)
+            
+        event.acceptProposedAction()
+
+
+class MarkerRowWidget(QWidget):
+    """
+    Draggable marker row.
+    """
+    def __init__(self, marker_data, original_idx, parent=None):
+        super().__init__(parent)
+        self.marker_data = marker_data
+        self.original_idx = original_idx
+        self.drag_start_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_pos = event.pos()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        if not self.drag_start_pos:
+            return
+        if (event.pos() - self.drag_start_pos).manhattanLength() < QApplication.startDragDistance():
+            return
+            
+        from PySide6.QtGui import QDrag
+        from PySide6.QtCore import QMimeData
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setText("m_drag")
+        drag.setMimeData(mime)
+        
+        pixmap = self.grab()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.pos())
+        
+        drag.exec(Qt.MoveAction)
 class CustomDropdown(QPushButton):
     valueChanged = Signal(str)
     def __init__(self, options_list, parent=None):
@@ -4503,9 +4631,9 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 background-color: #1e1e1e;
             }}
         """)
-        self._markers_inner = QWidget()
+        self._markers_inner = MarkerDragZone()
         self._markers_inner.setObjectName("markers_inner")
-        self._markers_layout = QVBoxLayout(self._markers_inner)
+        self._markers_layout = self._markers_inner.layout()
         self._markers_layout.setContentsMargins(4, 4, 4, 4)
         self._markers_layout.setSpacing(2)
         self._markers_layout.addStretch()
@@ -4948,12 +5076,22 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         self.chk_telemetry_opt_in = ToggleSwitch()
         self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
-        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), self.chk_telemetry_opt_in,
+        w1 = QWidget()
+        l1 = QHBoxLayout(w1)
+        l1.setContentsMargins(0, 0, 0, 0)
+        l1.addStretch()
+        l1.addWidget(self.chk_telemetry_opt_in)
+        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
                  False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
 
         self.chk_telemetry_geo = ToggleSwitch()
         self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
-        _add_row(form_telem, self.txt("chk_telemetry_geo"), self.chk_telemetry_geo,
+        w2 = QWidget()
+        l2 = QHBoxLayout(w2)
+        l2.setContentsMargins(0, 0, 0, 0)
+        l2.addStretch()
+        l2.addWidget(self.chk_telemetry_geo)
+        _add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
                  True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
 
         l_telem.addLayout(form_telem)
@@ -4983,10 +5121,12 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             default_state['settings_view_mode'] = old_prefs.get('settings_view_mode', 'basic')
             # Save to disk first so subsequent load_preferences() returns defaults
             self.engine.save_preferences(default_state)
+            self.initial_prefs = self.engine.load_preferences() or {}
             # Reset all visible widgets to their default values
             self._restore_state_dict(default_state)
             # Clear custom markers
             self.current_custom_markers = []
+            CustomMsgBox(self, self.txt('msg_title_settings'), self.txt('msg_restart_required'), self.txt('btn_ok')).exec()
             try:
                 self._refresh_markers_list()
             except Exception:
@@ -5042,7 +5182,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             color = m.get('color', '')
             hex_col = config.RESOLVE_COLORS_HEX.get(color, '#FFFFFF')
 
-            row_widget = QWidget()
+            row_widget = MarkerRowWidget(m, idx)
             row_widget.setObjectName("marker_row")
             row_widget.setStyleSheet(row_ss)
             row_layout = QHBoxLayout(row_widget)
@@ -5084,6 +5224,17 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
             # Insert before stretch
             layout.insertWidget(layout.count() - 1, row_widget)
+
+    def _on_markers_reordered(self, source_idx, target_idx):
+        if source_idx == target_idx:
+            return
+        m = self.current_custom_markers.pop(source_idx)
+        # if source_idx < target_idx, target_idx shifted down by 1 due to pop
+        if source_idx < target_idx:
+            target_idx -= 1
+        self.current_custom_markers.insert(target_idx, m)
+        self._refresh_markers_list()
+        self._save_markers_and_refresh_main()
 
     def _save_markers_and_refresh_main(self):
         """
@@ -5590,6 +5741,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         )
 
         self.engine.save_preferences(new_prefs)
+        self.initial_prefs = self.engine.load_preferences() or {}
         self.btn_apply.setText(self.txt("txt_saved"))
         self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
         from PySide6.QtCore import QTimer
@@ -5671,7 +5823,8 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'algo_distance_penalty': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_penalty')}",
                 'algo_anchor_depth': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_anchor')}",
                 'telemetry_opt_in': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_opt_in')}",
-                'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}"
+                'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}",
+                'custom_markers': self.txt('tab_custom_markers')
             }
             
             # Map dynamic shortcut composite keys
@@ -5767,6 +5920,14 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
                 font-size: 10pt;
+            }}
+            QToolTip {{
+                background-color: #1e1e1e;
+                color: #cccccc;
+                border: 1px solid #454545;
+                padding: 4px;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 9pt;
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{
@@ -6410,6 +6571,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_main.addLayout(row_marking_title)
         
         self.markers_layout = QVBoxLayout()
+        self.markers_layout.setSpacing(4)
         l_main.addLayout(self.markers_layout)
         
         self.btn_add_custom_marker = QPushButton(self.txt("lbl_add_custom_marker"))
@@ -7481,7 +7643,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _btn_ref_tl0 = QPushButton("↺")
         _btn_ref_tl0.setFixedSize(30, 30)
         _btn_ref_tl0.setCursor(Qt.PointingHandCursor)
-        _btn_ref_tl0.setToolTip(self.txt("tt_refresh_timelines") if "tt_refresh_timelines" in config.TRANS.get(self.lang, {}) else "Refresh timelines")
+        _btn_ref_tl0.setToolTip(self.txt("tt_refresh_timelines"))
         _btn_ref_tl0.setStyleSheet(
             "QPushButton { background: transparent; border: 1px solid #444; "
             "border-radius: 3px; color: #777; font-size: 11pt; } "
@@ -7524,15 +7686,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[4])
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         l_trans.addLayout(_row(self.txt("lbl_model"), self._combo_model))
-        l_trans.addSpacing(10)
-
-        # ── Device
-        device_items = ["Auto", "CPU", "GPU (CUDA)"]
-        self._combo_device = CustomDropdown(device_items)
-        self._combo_device.setFixedHeight(30)
-        self._combo_device.setText(prefs["device"] if "device" in prefs and prefs["device"] in device_items else "Auto")
-        self._combo_device.valueChanged.connect(lambda v: self.engine.save_preferences({"device": v}))
-        l_trans.addLayout(_row(self.txt("lbl_device"), self._combo_device))
         l_trans.addSpacing(24)
 
         # ── Action buttons
@@ -7626,7 +7779,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _btn_ref_tl1 = QPushButton("↺")
         _btn_ref_tl1.setFixedSize(30, 30)
         _btn_ref_tl1.setCursor(Qt.PointingHandCursor)
-        _btn_ref_tl1.setToolTip(self.txt("tt_refresh_timelines") if "tt_refresh_timelines" in config.TRANS.get(self.lang, {}) else "Refresh timelines")
+        _btn_ref_tl1.setToolTip(self.txt("tt_refresh_timelines"))
         _btn_ref_tl1.setStyleSheet(
             "QPushButton { background: transparent; border: 1px solid #444; "
             "border-radius: 3px; color: #777; font-size: 11pt; } "
@@ -7681,6 +7834,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 "QPushButton:hover { color: #ccc; border-color: #666; }"
             )
             rst.clicked.connect(lambda: widget.setText(reset_val_str))
+            # Optional: Add tooltip to generic reset button
+            rst.setToolTip(self.txt("tt_reset_to_default"))
             hbox.addWidget(rst)
             vbox.addLayout(hbox)
             return vbox
@@ -7740,9 +7895,21 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.tgl_fs_cut.toggled.connect(lambda v: self._save_single_pref('fs_cut_mode', v))
         self.tgl_fs_mark.toggled.connect(lambda v: self._save_single_pref('fs_mark_mode', v))
 
-        # RUN BUTTON
+        # RUN & BACK BUTTONS
         btn_row_fs = QHBoxLayout()
+
+        # BACK BUTTON
+        btn_back = QPushButton(f"← {self.txt('btn_back_to_transcription')}")
+        btn_back.setCursor(Qt.PointingHandCursor)
+        btn_back.setStyleSheet(
+            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
+        )
+        btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
+        btn_row_fs.addWidget(btn_back)
+
         btn_row_fs.addStretch()
+
         self.btn_run_fs = QPushButton(self.txt("btn_run_standalone_silence"))
         self.btn_run_fs.setCursor(Qt.PointingHandCursor)
         self.btn_run_fs.setFixedHeight(30)
@@ -7757,20 +7924,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         ''')
         self.btn_run_fs.clicked.connect(self._on_fast_silence)
         btn_row_fs.addWidget(self.btn_run_fs)
+        
         l_fast.addLayout(btn_row_fs)
-
-        l_fast.addSpacing(20)
-
-        # BACK BUTTON
-        btn_back = QPushButton(f"← {self.txt('btn_back_to_transcription')}")
-        btn_back.setCursor(Qt.PointingHandCursor)
-        btn_back.setStyleSheet(
-            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
-        )
-        btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
-        l_fast.addWidget(btn_back)
-
         l_fast.addStretch()
 
         self.welcome_stack.addWidget(p_fast)   # index 1
@@ -8031,19 +8186,29 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if msg_box.exec() == QDialog.Accepted:
             undo_action = {"type": "paint", "changes": {}}
             for w in self.text_canvas.words_data:
-                if w.get('status') or w.get('manual_status') or w.get('algo_status') or w.get('is_auto') or w.get('selected'):
+                has_inaud = (w.get('is_inaudible') or w.get('type') == 'inaudible')
+                needs_suppress = has_inaud and not w.get('overlay_suppressed', False)
+                
+                if (w.get('status') or w.get('manual_status') or w.get('algo_status') or 
+                    w.get('is_auto') or w.get('selected') or needs_suppress):
+                    
                     undo_action["changes"][w['id']] = {
                         'status': w.get('status'),
                         'manual_status': w.get('manual_status'),
                         'algo_status': w.get('algo_status'),
                         'is_auto': w.get('is_auto'),
-                        'selected': w.get('selected')
+                        'selected': w.get('selected'),
+                        'overlay_suppressed': w.get('overlay_suppressed', False)
                     }
                     w['status'] = None
                     w['manual_status'] = None
                     w['algo_status'] = None
                     w['is_auto'] = False
                     w['selected'] = False
+                    if has_inaud:
+                        w['overlay_suppressed'] = True
+                        
+                    self._calculate_visual_layer(w)
 
             if hasattr(self, 'undo_manager') and undo_action["changes"]:
                 self.undo_manager.push(undo_action)
@@ -8140,7 +8305,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             }
         """)
         
-        for rb in (rb_red, rb_blue, rb_green, rb_eraser):
+        for rb in (rb_red, rb_blue, rb_green):
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
             self.markers_layout.addWidget(rb)
             self.marker_btn_group.addButton(rb)
@@ -8158,6 +8323,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
             self.markers_layout.addWidget(rb)
             self.marker_btn_group.addButton(rb)
+
+        rb_eraser.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.markers_layout.addWidget(rb_eraser)
+        self.marker_btn_group.addButton(rb_eraser)
             
         self.rb_mark_bad       = rb_red
         self.rb_mark_repeat    = rb_blue

@@ -134,6 +134,10 @@ DEFAULT_SETTINGS = {
     # ── Silence detection ───────────────────────────────────────────────────
     "silence_min_dur":      0.2,    # Minimum silence duration (seconds) for FFmpeg silencedetect
     "silence_threshold_db": -42.0,  # Silence threshold in dB (both standalone and post-transcript)
+    "ui_spin_thresh":       -42.0,
+    "ui_spin_pad":          0.05,
+    "fs_cut_mode":          True,
+    "fs_mark_mode":         False,
     # ── AI / Whisper ────────────────────────────────────────────────────────
     "compute_type":         "int8",
     "ai_compute_type":      "Auto",
@@ -369,6 +373,8 @@ SUPPORTED_LANGS = {
 }
 TRANS = {
     'en': {
+        "tt_refresh_timelines": "Refresh Timelines",
+        "tt_reset_to_default": "Reset to Default",
         "btn_analyze": "Analyze",
         "btn_analyze_compare": "Analyze (Compare)",
         "btn_analyze_standalone": "Analyze (Standalone)",
@@ -632,6 +638,8 @@ TRANS = {
         "txt_all": "All",
     },
     'pl': {
+        "tt_refresh_timelines": "Odśwież Oś Czasu",
+        "tt_reset_to_default": "Resetuj do Domyślnych",
         "btn_analyze": "Analizuj",
         "btn_analyze_compare": "Analizuj (Porównaj)",
         "btn_analyze_standalone": "Analizuj (Bez Skryptu)",
@@ -894,6 +902,8 @@ TRANS = {
         "txt_all": "Wszystkie",
     },
     'de': {
+        "tt_refresh_timelines": "Timelines aktualisieren",
+        "tt_reset_to_default": "Auf Standard zurücksetzen",
         "btn_analyze": "Analysieren",
         "btn_analyze_compare": "Analysieren (Vergleichen)",
         "btn_analyze_standalone": "Analysieren (Ohne Skript)",
@@ -1156,6 +1166,8 @@ TRANS = {
         "txt_all": "Alle",
     },
     'es': {
+        "tt_refresh_timelines": "Actualizar líneas de tiempo",
+        "tt_reset_to_default": "Restablecer por defecto",
         "btn_analyze": "Analizar",
         "btn_analyze_compare": "Analizar (Comparar)",
         "btn_analyze_standalone": "Analizar (Independiente)",
@@ -1417,6 +1429,8 @@ TRANS = {
         "txt_all": "Todas",
     },
     'fr': {
+        "tt_refresh_timelines": "Rafraîchir les timelines",
+        "tt_reset_to_default": "Réinitialiser par défaut",
         "btn_analyze": "Analyser",
         "btn_analyze_compare": "Analyser (Comparer)",
         "btn_analyze_standalone": "Analyser (Autonome)",
@@ -1679,6 +1693,8 @@ TRANS = {
         "txt_all": "Toutes",
     },
     'it': {
+        "tt_refresh_timelines": "Aggiorna le timeline",
+        "tt_reset_to_default": "Ripristina impostazioni predefinite",
         "btn_analyze": "Analizza",
         "btn_analyze_compare": "Analizza (Confronta)",
         "btn_analyze_standalone": "Analizza (Indipendente)",
@@ -1941,6 +1957,8 @@ TRANS = {
         "txt_all": "Tutte",
     },
     'pt': {
+        "tt_refresh_timelines": "Atualizar linhas do tempo",
+        "tt_reset_to_default": "Restaurar padrões",
         "btn_analyze": "Analisar",
         "btn_analyze_compare": "Analisar (Comparar)",
         "btn_analyze_standalone": "Analisar (Independente)",
@@ -2203,6 +2221,8 @@ TRANS = {
         "txt_all": "Todas",
     },
     'uk': {
+        "tt_refresh_timelines": "Оновити таймлайни",
+        "tt_reset_to_default": "Скинути до замовчувань",
         "btn_analyze": "Аналізувати",
         "btn_analyze_compare": "Аналіз (Порівняння)",
         "btn_analyze_standalone": "Аналіз (Автономний)",
@@ -2465,6 +2485,8 @@ TRANS = {
         "txt_all": "Усі",
     },
     'nl': {
+        "tt_refresh_timelines": "Tijdlijnen vernieuwen",
+        "tt_reset_to_default": "Herstellen naar standaard",
         "btn_analyze": "Analyseren",
         "btn_analyze_compare": "Analyseren (Vergelijken)",
         "btn_analyze_standalone": "Analyseren (Losstaand)",
@@ -2727,6 +2749,8 @@ TRANS = {
         "txt_all": "Alle",
     },
     'ru': {
+        "tt_refresh_timelines": "Обновить таймлайны",
+        "tt_reset_to_default": "Сбросить по умолчанию",
         "btn_analyze": "Анализ",
         "btn_analyze_compare": "Анализ (Сравнение)",
         "btn_analyze_standalone": "Анализ (Автономный)",
