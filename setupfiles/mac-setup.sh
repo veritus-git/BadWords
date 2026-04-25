@@ -35,7 +35,7 @@ SOURCE_FOLDER_NAME="src"
 ASSETS_FOLDER_NAME="assets"
 REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip"
 
-RESOLVE_SCRIPT_DIR="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Support/Fusion/Scripts/Utility"
+RESOLVE_SCRIPT_DIR="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility"
 WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords.py"
 
 # --- SMART PATH DETECTION & VALIDATION ---
