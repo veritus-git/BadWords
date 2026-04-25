@@ -323,12 +323,16 @@ class ResolveHandler:
                 if op.get('type') == 'silence_cut': continue
                 start_f = int(op['s'])
                 end_f = int(op['e'])
-                if (end_f - start_f) <= 1: continue 
+                if (end_f - start_f) < 2: continue
                 
                 clip_infos.append({
                     "mediaPoolItem": source_item,
                     "startFrame": start_f,
-                    "endFrame": end_f - 1 
+                    # CRITICAL FIX: Resolve AppendToTimeline uses EXCLUSIVE endFrame
+                    # (first frame NOT included in the clip, same as Python slices).
+                    # Old code used end_f - 1 (inclusive), which lost 1 frame per clip.
+                    # At 55 clips / 25fps that caused ~2.2 seconds of cumulative drift.
+                    "endFrame": end_f,
                 })
                 valid_ops.append(op)
 

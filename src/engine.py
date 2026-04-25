@@ -1256,7 +1256,17 @@ except Exception as e:
         pad_f = int(round(pad_s * fps))
         snap_f = int(round(snap_max_s * fps))
 
+        # FIX #2 (TAIL SILENCE): Determine the true end of the source audio.
+        # words_data[0] may carry a 'meta_global_silence' list whose last element
+        # tells us where the detected audio actually ends. If that is absent, fall
+        # back to the 'end' field of the last word (works for FAST_SILENCE_TRACK
+        # which always spans the full timeline duration).
         raw_silence = words_data[0].get('meta_global_silence', None)
+        _audio_end_s = words_data[-1].get('end', 0.0)
+        if raw_silence:
+            _audio_end_s = max(_audio_end_s, raw_silence[-1]['e'])
+        audio_end_f = t2f(_audio_end_s)
+
         silence_blocks_for_snap = [w for w in words_data if w.get('type') == 'silence']
         
         chunks = []
@@ -1302,8 +1312,14 @@ except Exception as e:
             
             if i < len(chunks) - 1:
                 next_chunk_start = chunks[i+1]['words'][0]['start']
-                raw_cut = next_chunk_start
-                cut_f = t2f(raw_cut) + offset_f - pad_f
+                # FIX #1 (DRIFT): The cut point is the start of the NEXT chunk.
+                # offset_f shifts the cut earlier/later (global timing trim).
+                # pad_f is a safety buffer added to the START of the next block,
+                # NOT subtracted from the END of the current one.
+                # Old code: `cut_f = t2f(raw_cut) + offset_f - pad_f`
+                # This double-subtracted (offset is already negative) causing
+                # ~2 frames of loss per cut boundary = 4-5 seconds over 55 clips.
+                cut_f = t2f(next_chunk_start) + offset_f
                 
                 for s in silence_blocks_for_snap:
                     s_start_f = t2f(s['start'])
@@ -1318,7 +1334,10 @@ except Exception as e:
                 if cut_f < block_start_f: cut_f = block_start_f + 1
                 block_end_f = cut_f
             else:
-                block_end_f = t2f(chunk_end_w) + offset_f + pad_f + 100 
+                # FIX #2 (TAIL SILENCE): Last block must extend to the actual end
+                # of the source audio, not just the last word's timestamp.
+                # audio_end_f was computed above from meta_global_silence or words[-1].end.
+                block_end_f = max(audio_end_f, t2f(chunk_end_w)) + pad_f
             
             ops_raw.append({
                 's': block_start_f,
