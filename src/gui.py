@@ -264,6 +264,123 @@ QWidget.txt = _qwidget_txt
 # PHASE 7 CLASSES: WORKER, PROGRESS BAR, CANVAS
 # ==========================================
 
+class ShortcutCaptureButton(QPushButton):
+    """
+    Key-capture widget that visually matches standard inputs.
+    - Idle:      dark background (#1e1e1e), subtle border (#3a3a3a)
+    - Listening: same background, green border (#23a559), text = "..."
+    - Conflict:  red border (#ed4245) while another button has the same sequence
+    - Uses native keyPressEvent to reliably capture single keys and combos.
+    - Focus loss reverts to previous sequence without clearing.
+    """
+    sequence_changed = Signal(str)
+
+    _BASE_SS = """
+        QPushButton {{
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid {border};
+            border-radius: 3px;
+            padding: 0px 8px;
+            min-height: 26px;
+            max-height: 26px;
+            text-align: center;
+            font-family: monospace;
+            font-size: 10pt;
+        }}
+        QPushButton:hover {{
+            background-color: #252525;
+        }}
+    """
+
+    def __init__(self, current_sequence, display_only=False, parent=None):
+        super().__init__(parent)
+        self.current_seq = current_sequence or ""
+        self.capturing = False
+        self.display_only = display_only
+        self._conflict = False
+
+        self.setCursor(Qt.PointingHandCursor if not display_only else Qt.ArrowCursor)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._apply_style()
+        self._update_label()
+
+        if not display_only:
+            self.clicked.connect(self.start_capture)
+
+    def _apply_style(self):
+        if self._conflict:
+            border = "#ed4245"
+        elif self.capturing:
+            border = "#23a559"
+        else:
+            border = "#3a3a3a"
+        self.setStyleSheet(self._BASE_SS.format(border=border))
+
+    def _update_label(self):
+        if self.display_only:
+            self.setText(self.current_seq if self.current_seq else "—")
+        else:
+            if self.capturing:
+                self.setText("...")
+            else:
+                self.setText(self.current_seq if self.current_seq else "(none)")
+
+    def start_capture(self):
+        if self.display_only:
+            return
+        self.capturing = True
+        self._conflict = False
+        self._apply_style()
+        self._update_label()
+        self.setFocus()
+
+    def keyPressEvent(self, event):
+        if not self.capturing:
+            super().keyPressEvent(event)
+            return
+
+        key = event.key()
+        # Ignore modifiers if pressed alone
+        if key in (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_AltGr, Qt.Key_unknown):
+            return
+
+        from PySide6.QtGui import QKeySequence
+        # Qt6-safe way to get the combination of modifiers and key
+        combo = event.keyCombination()
+        seq = QKeySequence(combo).toString(QKeySequence.PortableText)
+        
+        self.current_seq = seq
+        self.capturing = False
+        self._apply_style()
+        self._update_label()
+        self.clearFocus()
+        self.sequence_changed.emit(seq)
+
+    def focusOutEvent(self, event):
+        if self.capturing:
+            # Revert to old sequence on cancel
+            self.capturing = False
+            self._apply_style()
+            self._update_label()
+        super().focusOutEvent(event)
+
+    def get_sequence(self) -> str:
+        return self.current_seq
+
+    def set_sequence(self, seq: str):
+        self.current_seq = seq or ""
+        self._update_label()
+
+    def set_conflict(self, conflict: bool):
+        if self._conflict != conflict:
+            self._conflict = conflict
+            if not self.capturing:
+                self._apply_style()
+
+
+
+
 class SearchOverlayWidget(QFrame):
     def __init__(self, parent_widget, main_window):
         super().__init__(parent_widget)
@@ -3350,30 +3467,91 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         form_shorts.setSpacing(14)
         form_shorts.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        from PySide6.QtGui import QKeySequence
-        from PySide6.QtWidgets import QKeySequenceEdit
+        default_shortcuts = getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {})
+        # Merge defaults with saved prefs, keeping only keys present in DEFAULT_SETTINGS
+        saved_shortcuts = prefs.get('shortcuts', {})
+        current_shortcuts = {k: saved_shortcuts.get(k, v) for k, v in default_shortcuts.items()}
 
-        current_shortcuts = prefs.get('shortcuts', getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {})).copy()
-        if 'search' not in current_shortcuts:
-            current_shortcuts['search'] = 'Ctrl+F'
         self.shortcut_inputs = {}
+
+        def _check_shortcut_conflicts():
+            """Scan all capturable inputs; set red border on any with a duplicate sequence."""
+            # Gather sequences from capturable inputs only
+            seq_to_keys = {}
+            for k, w in self.shortcut_inputs.items():
+                if w.display_only:
+                    continue
+                seq = w.get_sequence()
+                if seq:
+                    seq_to_keys.setdefault(seq, []).append(k)
+            # Apply conflict styling
+            for k, w in self.shortcut_inputs.items():
+                if w.display_only:
+                    continue
+                seq = w.get_sequence()
+                is_conflict = seq and len(seq_to_keys.get(seq, [])) > 1
+                w.set_conflict(bool(is_conflict))
+
+        def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
+            container = QWidget()
+            row = QHBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row.addWidget(widget)
+
+            if not is_display:
+                btn_clear = QPushButton("✕")
+                btn_clear.setFixedSize(26, 26)
+                btn_clear.setCursor(Qt.PointingHandCursor)
+                btn_clear.setObjectName("btn_ghost_sm")
+                # Tooltip for clearing could be localized, but fallback to en for now if no specific key exists
+                btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
+                btn_clear.clicked.connect(lambda: setter_func(""))
+                row.addWidget(btn_clear)
+
+            btn_rev = QPushButton("↺")
+            btn_rev.setFixedSize(26, 26)
+            btn_rev.setCursor(Qt.PointingHandCursor)
+            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addWidget(btn_rev)
+
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            lbl.setMinimumWidth(200)
+            form.addRow(lbl, container)
 
         for key, value in current_shortcuts.items():
             i18n_key = f'shortcut_{key}'
             label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
-            widget = QKeySequenceEdit()
-            widget.setKeySequence(QKeySequence(str(value)))
-            widget.setFixedHeight(30)
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            lbl = QLabel(label_text)
-            lbl.setWordWrap(True)
-            lbl.setMinimumWidth(200)
-            form_shorts.addRow(lbl, widget)
+
+            widget = ShortcutCaptureButton(str(value), display_only=False)
+
+            widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+
+            # Setter for revert and clear buttons
+            def make_setter(w, check_fn):
+                def _setter(v):
+                    w.set_sequence(str(v))
+                    check_fn()
+                return _setter
+
+            default_val = default_shortcuts.get(key, '')
+            _add_shortcut_row(form_shorts, label_text, widget, default_val, make_setter(widget, _check_shortcut_conflicts), is_display=False)
+
             self.shortcut_inputs[key] = widget
+
+        # Initial conflict check in case loaded prefs already have duplicates
+        _check_shortcut_conflicts()
 
         l_shorts.addLayout(form_shorts)
         l_shorts.addStretch()
         _add_page_to_stack(page_shorts)
+
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 2 — CUSTOM MARKERS
@@ -4004,7 +4182,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         view_mode = 'segmented' if view_mode_val == self.txt("opt_segmented_blocks") else ('continuous' if view_mode_val else old_prefs.get('view_mode', 'segmented'))
 
         try:
-            shortcuts_dict = {k: v.keySequence().toString() for k, v in self.shortcut_inputs.items()}
+            shortcuts_dict = {k: v.get_sequence() for k, v in self.shortcut_inputs.items()}
         except (RuntimeError, AttributeError):
             shortcuts_dict = old_prefs.get('shortcuts', {})
 
@@ -4118,7 +4296,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             if hasattr(self, 'shortcut_inputs'):
                 for k, v in state.get('shortcuts', {}).items():
                     if k in self.shortcut_inputs:
-                        self.shortcut_inputs[k].setKeySequence(QKeySequence(v))
+                        self.shortcut_inputs[k].set_sequence(v)
         except RuntimeError:
             pass
                 
@@ -4232,6 +4410,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 
         if diff:
             key_name_map = {
+                'shortcuts': f"{self.txt('tab_shortcuts')}",
                 'gui_lang': f"{self.txt('tab_general')}: {self.txt('lbl_language')}",
                 'app_icon': f"{self.txt('tab_general')}: {self.txt('lbl_app_icon')}",
                 'offset': f"{self.txt('tab_audio_sync')}: {self.txt('lbl_offset_s')}",
@@ -4379,13 +4558,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._build_central_workspace() # QStackedWidget central area + panels
 
         self.search_overlay = SearchOverlayWidget(self.scroll_area, self)
-        
-        from PySide6.QtGui import QShortcut, QKeySequence
-        from PySide6.QtCore import Qt as _Qt
-        
-        search_seq = prefs.get('shortcuts', {}).get('search', 'Ctrl+F')
-        QShortcut(QKeySequence(search_seq), self, context=_Qt.ApplicationShortcut).activated.connect(self.search_overlay.open_search)
-        QShortcut(_Qt.Key_Escape, self, context=_Qt.ApplicationShortcut).activated.connect(self.search_overlay.close_search)
+
+        self._active_shortcuts = []  # track dynamic QShortcuts for cleanup
+        self._apply_dynamic_shortcuts()
 
         # --- Maximize on the monitor the cursor is on ---
         self._maximize_on_active_screen()
@@ -6226,13 +6401,78 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self.markers_layout.addWidget(rb)
             self.marker_btn_group.addButton(rb)
             
+        self.rb_mark_bad       = rb_red
+        self.rb_mark_repeat    = rb_blue
+        self.rb_mark_typo      = rb_green
+        self.rb_mark_inaudible = rb_eraser  # closest available; no dedicated inaudible radio
         rb_red.setChecked(True)
+
+    def _apply_dynamic_shortcuts(self):
+        """
+        Build (or rebuilds) all dynamic QShortcuts from the saved preferences.
+        Clears previously registered shortcuts first to avoid duplicates.
+        'jump_to_word' and 'play_stop' are display-only and not registered.
+        """
+        from PySide6.QtGui import QShortcut, QKeySequence
+
+        # Remove previously registered dynamic shortcuts
+        for sc in getattr(self, '_active_shortcuts', []):
+            try:
+                sc.setEnabled(False)
+                sc.deleteLater()
+            except RuntimeError:
+                pass
+        self._active_shortcuts = []
+
+        prefs = self.engine.load_preferences() or {}
+        shortcuts = {**config.DEFAULT_SETTINGS.get('shortcuts', {}), **prefs.get('shortcuts', {})}
+
+        # Keys that are informational only — never register as QShortcut
+        DISPLAY_ONLY_KEYS = {'jump_to_word', 'play_stop'}
+
+        def _make(seq, slot):
+            """Helper: register one QShortcut with ApplicationShortcut context."""
+            if not seq or seq in ('', 'Ctrl+RMB', 'Space'):
+                return
+            try:
+                sc = QShortcut(QKeySequence(seq), self, context=Qt.ApplicationShortcut)
+                sc.activated.connect(slot)
+                self._active_shortcuts.append(sc)
+            except Exception:
+                pass
+
+        # search — open search overlay
+        _make(shortcuts.get('search', 'Ctrl+F'), self.search_overlay.open_search)
+
+        # open_settings — open settings dialog (default: Escape)
+        # Note: Escape also closes search; handled by priority in event chain
+        _make(shortcuts.get('open_settings', 'Escape'), self._on_settings)
+
+        # Marker shortcuts — click the corresponding radio button
+        def _check_rb(rb):
+            """Click (check) the given radio button if it exists."""
+            def _do():
+                try:
+                    rb.setChecked(True)
+                except RuntimeError:
+                    pass
+            return _do
+
+        if hasattr(self, 'rb_mark_bad'):
+            _make(shortcuts.get('mark_red', '1'),    _check_rb(self.rb_mark_bad))
+        if hasattr(self, 'rb_mark_repeat'):
+            _make(shortcuts.get('mark_blue', '2'),   _check_rb(self.rb_mark_repeat))
+        if hasattr(self, 'rb_mark_typo'):
+            _make(shortcuts.get('mark_green', '3'),  _check_rb(self.rb_mark_typo))
+        if hasattr(self, 'rb_mark_inaudible'):
+            _make(shortcuts.get('mark_eraser', '4'), _check_rb(self.rb_mark_inaudible))
 
     def _on_settings(self):
         """Open settings panel."""
         dlg = SettingsDialog(self.engine, self)
         dlg.exec()
         self._build_marker_radio_buttons()
+        self._apply_dynamic_shortcuts()
         self.text_canvas.update()
 
 
