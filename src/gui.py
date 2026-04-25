@@ -244,6 +244,7 @@ def _txt(lang: str, key: str, **kwargs) -> str:
 # PHASE 7 CLASSES: WORKER, PROGRESS BAR, CANVAS
 # ==========================================
 
+
 class WorkerSignals(QObject):
     progress = Signal(int)
     status = Signal(str)
@@ -417,7 +418,10 @@ class TranscriptionCanvas(QWidget):
                 x += ts_w + space_w + 5
             
             # Standard word layout
-            text = w.get('text', '')
+            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+            text = "(...)" if is_inaudible else w.get('text', '')
+            w['_display_text'] = text  # Store visual text
+            
             word_w = metrics.horizontalAdvance(text)
             
             if x + word_w > max_w and x > 20:
@@ -452,6 +456,10 @@ class TranscriptionCanvas(QWidget):
             s = w.get('status')
             if s == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
                 return None
+            if s == 'typo' and hasattr(self.main_window, 'tgl_show_typos') and not self.main_window.tgl_show_typos.isChecked():
+                # Keep 'typo' visible if it was manually marked by the user
+                if w.get('manual_status') != 'typo' or w.get('is_auto', False):
+                    return None
             return s
 
         p.setPen(Qt.NoPen)
@@ -521,7 +529,7 @@ class TranscriptionCanvas(QWidget):
             status = get_status(w)
             fg_color = color_map[status][1] if status in color_map else QColor(config.WORD_NORMAL_FG)
             p.setPen(fg_color)
-            p.drawText(w['_rect'], Qt.AlignCenter, w.get('text', ''))
+            p.drawText(w['_rect'], Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
 
     def _handle_mouse(self, pos):
         visible_words = self._get_visible_words()
@@ -1679,6 +1687,7 @@ class SettingsDialog(QDialog):
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()
 
+
 # ==========================================
 # CLASS 3: MAIN APPLICATION WINDOW
 # ==========================================
@@ -1805,7 +1814,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
         drag_layout_left.addWidget(self.btn_nav_fillers)
         
-        self.btn_nav_quit = SidebarButton("\U0001f6aa", "Quit", "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_quit = SidebarButton("\U000023FB", "Quit", "quit", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_quit.clicked.connect(self.close)
         left_layout.addWidget(self.btn_nav_quit)
         
@@ -2007,6 +2016,7 @@ class BadWordsGUI(QMainWindow):
         l_script_analysis.setSpacing(10)
         
         self.text_script = QTextEdit()
+        self.text_script.setAcceptRichText(False)
         self.text_script.setPlaceholderText("Paste script here...")
         l_script_analysis.addWidget(self.text_script)
         
@@ -2105,15 +2115,45 @@ class BadWordsGUI(QMainWindow):
         l_fillers = QVBoxLayout(p_fillers)
         l_fillers.setContentsMargins(15, 15, 15, 15)
         l_fillers.setSpacing(10)
+        # Inline Filler Words Editor
+        prefs = self.engine.load_preferences() or {}
+        fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
         
-        l_fillers.addWidget(QLabel("Filler Words (comma separated):"))
-        self.text_fillers = QTextEdit()
-        self.text_fillers.setFixedHeight(80)
-        l_fillers.addWidget(self.text_fillers)
+        self.txt_fillers = QTextEdit()
+        self.txt_fillers.setAcceptRichText(False)
+        self.txt_fillers.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; border-radius: 4px; padding: 4px;")
+        self.txt_fillers.setText(", ".join(fillers))
+        l_fillers.addWidget(self.txt_fillers)
+        
+        # Bottom tools for fillers (Counter, Reset, Save)
+        filler_tools_layout = QHBoxLayout()
+        filler_tools_layout.setContentsMargins(0, 2, 0, 0)
+        
+        self.lbl_filler_count = QLabel("0 / 150 words")
+        self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
+        filler_tools_layout.addWidget(self.lbl_filler_count)
+        
+        filler_tools_layout.addStretch()
+        
+        self.btn_reset_fillers = QPushButton("↺")
+        self.btn_reset_fillers.setFixedSize(24, 24)
+        self.btn_reset_fillers.setCursor(Qt.PointingHandCursor)
+        self.btn_reset_fillers.setStyleSheet("background: transparent; border: 1px solid #444; border-radius: 3px; color: #888;")
+        self.btn_reset_fillers.clicked.connect(self._on_reset_inline_fillers)
+        filler_tools_layout.addWidget(self.btn_reset_fillers)
         
         self.btn_save_fillers = QPushButton("Save")
-        self.btn_save_fillers.setCursor(Qt.CursorShape.PointingHandCursor)
-        l_fillers.addWidget(self.btn_save_fillers)
+        self.btn_save_fillers.setCursor(Qt.PointingHandCursor)
+        self.btn_save_fillers.setStyleSheet(f"background-color: {config.BTN_GHOST_BG}; color: {config.FG_COLOR}; border-radius: 4px; font-weight: bold; padding: 4px 10px;")
+        self.btn_save_fillers.clicked.connect(self._on_save_inline_fillers)
+        filler_tools_layout.addWidget(self.btn_save_fillers)
+        l_fillers.addLayout(filler_tools_layout)
+        
+        # Connect text changed signal for auto-resize and counting
+        self.txt_fillers.textChanged.connect(self._on_fillers_text_changed)
+        
+        # Force initial calculation
+        self._on_fillers_text_changed()
         
         row_auto_filler = QHBoxLayout()
         row_auto_filler.addWidget(QLabel("Mark filler words automatically"))
@@ -2172,21 +2212,7 @@ class BadWordsGUI(QMainWindow):
         # Middle
         l_main.addStretch(1)
         
-        # Bottom Section
-        self.lbl_progress = QLabel("Ready.")
-        self.lbl_progress.setAlignment(Qt.AlignCenter)
-        self.lbl_progress.setStyleSheet("font-size: 9pt;")
-        l_main.addWidget(self.lbl_progress)
-        
-        from PySide6.QtWidgets import QProgressBar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(6)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet(f"""
-            QProgressBar {{ background-color: {config.PROGRESS_TRACK_COLOR}; border: none; border-radius: 3px; }}
-            QProgressBar::chunk {{ background-color: {config.PROGRESS_FILL_COLOR}; border-radius: 3px; }}
-        """)
-        l_main.addWidget(self.progress_bar)
+        # Bottom Section removed!
         
         row_proj = QHBoxLayout()
         self.btn_import_proj = QPushButton("Import Project")
@@ -2216,6 +2242,7 @@ class BadWordsGUI(QMainWindow):
         row_show_inaudible.addStretch()
         self.tgl_show_inaudible = ToggleSwitch()
         self.tgl_show_inaudible.setChecked(True)
+        self.tgl_show_inaudible.toggled.connect(self._refresh_canvas_view)
         row_show_inaudible.addWidget(self.tgl_show_inaudible)
         l_assembly.addLayout(row_show_inaudible)
         
@@ -2223,6 +2250,7 @@ class BadWordsGUI(QMainWindow):
         row_mark_inaudible.addWidget(QLabel("Mark inaudible fragments with brown"))
         row_mark_inaudible.addStretch()
         self.tgl_mark_inaudible = ToggleSwitch()
+        self.tgl_mark_inaudible.toggled.connect(self._refresh_canvas_view)
         row_mark_inaudible.addWidget(self.tgl_mark_inaudible)
         l_assembly.addLayout(row_mark_inaudible)
         
@@ -2231,6 +2259,7 @@ class BadWordsGUI(QMainWindow):
         row_show_typos.addStretch()
         self.tgl_show_typos = ToggleSwitch()
         self.tgl_show_typos.setChecked(True)
+        self.tgl_show_typos.toggled.connect(self._refresh_canvas_view)
         row_show_typos.addWidget(self.tgl_show_typos)
         l_assembly.addLayout(row_show_typos)
         
@@ -2248,6 +2277,18 @@ class BadWordsGUI(QMainWindow):
         self.btn_analyze_standalone.installEventFilter(self)
         self.btn_clear_transcript.installEventFilter(self)
 
+        # Signal Connections
+        self.btn_import_script.clicked.connect(self._on_import_script)
+        self.btn_clear_script.clicked.connect(self._on_clear_script)
+        self.btn_analyze_compare.clicked.connect(self._on_analyze_compare)
+        self.btn_analyze_standalone.clicked.connect(self._on_analyze_standalone)
+        self.tgl_auto_filler.toggled.connect(self._on_auto_filler_toggled)
+        
+        # Right Panel Signals
+        self.btn_assemble.clicked.connect(self._on_assemble)
+        self.btn_import_proj.clicked.connect(self._on_import_project)
+        self.btn_export_proj.clicked.connect(self._on_export_project)
+        
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.Enter:
             if watched == getattr(self, 'btn_analyze_standalone', None):
@@ -2264,6 +2305,294 @@ class BadWordsGUI(QMainWindow):
 
     # Removed deprecated _on_nav_script and _on_nav_analysis
 
+    # ------------------------------------------------------------------
+    # UI Logic Methods
+    # ------------------------------------------------------------------
+
+    def _on_import_script(self):
+        from PySide6.QtWidgets import QFileDialog
+        import algorythms
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Script", "", 
+            "Text/Word/PDF Files (*.txt *.docx *.pdf);;All Files (*)"
+        )
+        if not file_path: return
+        
+        ext = file_path.split('.')[-1].lower()
+        content = ""
+        
+        if ext == 'txt':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        elif ext == 'docx':
+            if hasattr(algorythms, 'read_docx_text'):
+                content = algorythms.read_docx_text(file_path)
+        elif ext == 'pdf':
+            if hasattr(algorythms, 'read_pdf_text'):
+                content = algorythms.read_pdf_text(file_path)
+            
+        self.text_script.setText(content)
+
+    def _on_clear_script(self):
+        self.text_script.clear()
+
+    def _on_analyze_compare(self):
+        from PySide6.QtWidgets import QMessageBox
+        script_text = self.text_script.toPlainText().strip()
+        if not script_text:
+            QMessageBox.warning(self, "Warning", "Please import or paste a script first.")
+            return
+            
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            QMessageBox.warning(self, "Warning", "No active transcription to compare against.")
+            return
+            
+        # Run comparison via engine and overwrite canvas data
+        updated_words = self.engine.run_comparison_analysis(script_text, self.text_canvas.words_data)
+        self.text_canvas.load_data(updated_words)
+
+    def _on_analyze_standalone(self):
+        from PySide6.QtWidgets import QMessageBox
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            QMessageBox.warning(self, "Warning", "No active transcription to analyze.")
+            return
+            
+        prefs = self.engine.load_preferences() or {}
+        show_inaudible = prefs.get('show_inaudible', True)
+        
+        # Standalone analysis returns a tuple: (processed_words, count)
+        updated_words, _ = self.engine.run_standalone_analysis(self.text_canvas.words_data, show_inaudible)
+        self.text_canvas.load_data(updated_words)
+
+    def _on_auto_filler_toggled(self, is_checked):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
+        import algorythms
+        prefs = self.engine.load_preferences() or {}
+        fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
+        
+        # Apply filler logic directly to the current state
+        if hasattr(algorythms, 'apply_auto_filler_logic'):
+            updated_words = algorythms.apply_auto_filler_logic(self.text_canvas.words_data, fillers, is_checked)
+            self.text_canvas.words_data = updated_words
+            self.text_canvas.update()
+
+    def _on_save_inline_fillers(self):
+        raw_text = self.txt_fillers.toPlainText()
+        new_fillers = [w.strip() for w in raw_text.split(',') if w.strip()]
+        
+        prefs = self.engine.load_preferences() or {}
+        prefs['filler_words'] = new_fillers
+        self.engine.save_preferences(prefs)
+        
+        # Provide visual feedback on the button
+        self.btn_save_fillers.setText("Saved!")
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1500, lambda: self.btn_save_fillers.setText("Save"))
+        
+        # Trigger real-time update if auto filler is currently active
+        if hasattr(self, 'tgl_auto_filler') and self.tgl_auto_filler.isChecked() and hasattr(self, 'text_canvas') and self.text_canvas.words_data:
+            import algorythms
+            if hasattr(algorythms, 'apply_auto_filler_logic'):
+                updated_words = algorythms.apply_auto_filler_logic(self.text_canvas.words_data, new_fillers, True)
+                self.text_canvas.words_data = updated_words
+                self.text_canvas.update()
+
+    def _on_reset_inline_fillers(self):
+        self.txt_fillers.setText(", ".join(config.DEFAULT_BAD_WORDS))
+        self._on_save_inline_fillers()
+
+    def _on_fillers_text_changed(self):
+        # Auto-Resize: Document height + 1 line height
+        doc_height = self.txt_fillers.document().size().height()
+        from PySide6.QtGui import QFontMetrics
+        line_height = QFontMetrics(self.txt_fillers.font()).lineSpacing()
+        
+        new_height = int(doc_height + line_height + 10) # 10px padding margin
+        # Cap max height to avoid breaking the UI
+        new_height = min(new_height, 250)
+        self.txt_fillers.setFixedHeight(new_height)
+        
+        # Word count calculation
+        raw_text = self.txt_fillers.toPlainText()
+        words = [w.strip() for w in raw_text.split(',') if w.strip()]
+        count = len(words)
+        
+        self.lbl_filler_count.setText(f"{count} / 150 words")
+        
+        if count > 150:
+            self.lbl_filler_count.setStyleSheet("color: #ed4245; font-size: 9pt; font-weight: bold;")
+            self.btn_save_fillers.setEnabled(False)
+        else:
+            self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
+            self.btn_save_fillers.setEnabled(True)
+
+    def _get_clean_words_data(self):
+        """Returns a deep-copy of words_data stripped of all PySide6 UI objects (keys starting with '_')."""
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            return []
+            
+        clean_data = []
+        for w in self.text_canvas.words_data:
+            # Only keep native Python types, strip UI markers like _rect, _ts_rect, _display_text
+            clean_w = {k: v for k, v in w.items() if not k.startswith('_')}
+            clean_data.append(clean_w)
+        return clean_data
+
+    def _on_export_project(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
+        from PySide6.QtWidgets import QFileDialog
+        import time, os
+        
+        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        os.makedirs(saves_dir, exist_ok=True)
+        
+        path, _ = QFileDialog.getSaveFileName(self, "Export Project", os.path.join(saves_dir, f"BadWords_Project_{int(time.time())}.json"), "JSON Files (*.json)")
+        if not path: return
+        
+        prefs = self.engine.load_preferences() or {}
+        
+        # USE SANITIZED DATA TO PREVENT JSON ENCODER CRASHES
+        clean_words = self._get_clean_words_data()
+        
+        data_packet = {
+            "lang_code": prefs.get('lang', 'Auto'),
+            "settings": prefs,
+            "filler_words": prefs.get('filler_words', config.DEFAULT_BAD_WORDS),
+            "words_data": clean_words,
+            "script_content": getattr(self, 'txt_script', None).toPlainText() if hasattr(self, 'txt_script') else ""
+        }
+        self.engine.save_project_state(path, data_packet)
+
+    def _on_import_project(self):
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            import os
+            
+            saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+            os.makedirs(saves_dir, exist_ok=True)
+            
+            path, _ = QFileDialog.getOpenFileName(self, "Import Project", saves_dir, "JSON Files (*.json)")
+            if not path: return
+            
+            state, _ = self.engine.load_project_state(path)
+            
+            # Restore Script
+            if hasattr(self, 'txt_script') and 'script_content' in state:
+                self.txt_script.setText(state['script_content'])
+                
+            # Restore Data
+            if hasattr(self, 'go_to_page'): self.go_to_page(2)
+            if hasattr(self, '_panel_left'): self._panel_left.show()
+            if hasattr(self, '_panel_right'): self._panel_right.show()
+            if hasattr(self, 'text_canvas'): self.text_canvas.load_data(state.get('words_data', []))
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"Failed to load project: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to load project: {e}")
+
+    def _refresh_canvas_view(self):
+        if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
+
+    def _on_assemble(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
+        
+        from PySide6.QtWidgets import QApplication
+        import copy
+        
+        prefs = self.engine.load_preferences() or {}
+        
+        # GATHER UI STATES
+        if hasattr(self, 'tgl_silence_cut'): prefs['silence_cut'] = self.tgl_silence_cut.isChecked()
+        if hasattr(self, 'tgl_silence_mark'): prefs['silence_mark'] = self.tgl_silence_mark.isChecked()
+        if hasattr(self, 'tgl_reviewer'): prefs['enable_reviewer'] = self.tgl_reviewer.isChecked()
+        if hasattr(self, 'tgl_ripple_delete'): prefs['auto_del'] = self.tgl_ripple_delete.isChecked()
+        if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
+        if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
+        if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
+        
+        prefs['mark_tool'] = 'bad'
+        if hasattr(self, 'rb_red') and self.rb_red.isChecked(): prefs['mark_tool'] = 'bad'
+        elif hasattr(self, 'rb_blue') and self.rb_blue.isChecked(): prefs['mark_tool'] = 'repeat'
+        elif hasattr(self, 'rb_green') and self.rb_green.isChecked(): prefs['mark_tool'] = 'typo'
+        
+        self.engine.save_preferences(prefs)
+        
+        # UI Prep
+        self._panel_left.hide()
+        self._panel_right.hide()
+        self.go_to_page(1)
+        self.lbl_processing_status.setText("Initializing Assembly...")
+        self.bar_processing.set_value(0)
+        
+        # Force UI update immediately before the heavy processing begins
+        QApplication.processEvents()
+        
+        # SANITIZE EXPORT DATA (Prevents C++ QRect deepcopy memory leaks)
+        export_data = self._get_clean_words_data()
+        show_typos = prefs.get('show_typos', True)
+        mark_inaudible = prefs.get('mark_inaudible', True)
+        
+        for w in export_data:
+            if w.get('status') == 'typo' and not show_typos:
+                if w.get('manual_status') != 'typo' or w.get('is_auto', False):
+                    w['status'] = None
+            if w.get('status') == 'inaudible' and not mark_inaudible:
+                w['status'] = None
+
+        from PySide6.QtCore import QEventLoop
+        
+        # EVENT-PUMP CALLBACKS: Keep UI fluid but block rogue clicks
+        def pump_status(msg):
+            self.lbl_processing_status.setText(msg)
+            QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+
+        def pump_progress(val):
+            self.bar_processing.set_value(val)
+            QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+            
+        # EXECUTE TRULY SYNCHRONOUSLY ON MAIN THREAD
+        # We bypass the threaded wrapper and call the core method directly
+        success, warning = self.engine.assemble_timeline(
+            export_data, 
+            prefs, 
+            callback_status=pump_status, 
+            callback_progress=pump_progress
+        )
+        
+        # AGGRESSIVE RAM CLEANUP: Free memory immediately after assembly finishes
+        try:
+            del export_data
+            import gc
+            gc.collect()
+        except:
+            pass
+            
+        # HANDLE RESULTS SEQUENTIALLY
+        if success:
+            self.bar_processing.set_value(100)
+            self.lbl_processing_status.setText("Finishing...")
+            QApplication.processEvents()
+            self._on_assembly_success()
+        else:
+            self._on_assembly_error("Assembly failed. Check logs.")
+
+    def _on_assembly_success(self):
+        from PySide6.QtWidgets import QMessageBox
+        if hasattr(self, 'go_to_page'): self.go_to_page(2)
+        if hasattr(self, '_panel_left'): self._panel_left.show()
+        if hasattr(self, '_panel_right'): self._panel_right.show()
+        QMessageBox.information(self, "Success", "Timeline assembled successfully!")
+
+    def _on_assembly_error(self, err_msg):
+        from PySide6.QtWidgets import QMessageBox
+        if hasattr(self, 'go_to_page'): self.go_to_page(2)
+        if hasattr(self, '_panel_left'): self._panel_left.show()
+        if hasattr(self, '_panel_right'): self._panel_right.show()
+        QMessageBox.critical(self, "Error", err_msg)
 
     def _build_welcome_screen(self) -> QWidget:
         """
@@ -2630,9 +2959,6 @@ class BadWordsGUI(QMainWindow):
         dlg = SettingsDialog(self.engine, self)
         dlg.exec()
 
-    def _on_import_project(self):
-        """Placeholder: import project (Stage 4+)."""
-        print("[BadWordsGUI] Import Project triggered (Stage 4 TODO)")
 
 
 

@@ -278,11 +278,11 @@ class ResolveHandler:
 
         # ZWRÓĆ WYNIK NA PODSTAWIE WARUNKÓW
         if is_single_uncut and source_media_item:
-            log_info("Auto-Sourcing: Warunek A (Jeden klip). Użyto pliku bazowego.")
+            log_info("Auto-Sourcing: Condition A (Single clip). Using base file.")
             return source_media_item, context_type
 
         # WARUNEK B (Cały Timeline jako klip)
-        log_info("Auto-Sourcing: Warunek B (Złożony montaż). Użyto osi czasu z Media Pool.")
+        log_info("Auto-Sourcing: Condition B (Complex assembly). Using timeline from Media Pool.")
         root_folder = self.media_pool.GetRootFolder()
         timeline_media_item = self.find_timeline_item_recursive(root_folder, original_timeline_name)
         
@@ -295,33 +295,19 @@ class ResolveHandler:
     # ==========================================
 
     def generate_timeline_from_ops(self, ops, source_item, new_tl_name, audio_only_mode=False, progress_callback=None):
-        """
-        Creates a new timeline and assembles it based on the operations list.
-        Explicitly colors tracks using Index-Based Coloring.
-        Includes Lazy-Assemble (chunking) to prevent DaVinci Resolve from freezing.
-        
-        Args:
-            ops: List of cut operations.
-            source_item: MediaPoolItem to append.
-            new_tl_name: Name for the new timeline.
-            audio_only_mode: If True, ensures result has no video track/clips.
-            progress_callback: Function to report progress back to the Engine/GUI.
-        """
         if not self.media_pool or not ops: return False
         
-        # UPDATED COLOR MAP
         COLOR_MAP = {
-            "bad": "Violet",
-            "repeat": "Navy",
-            "typo": "Olive",
-            "inaudible": "Chocolate",
-            "silence_mark": "Beige",
-            "silence_cut": None, 
-            "normal": None 
+            "bad": "Violet", "repeat": "Navy", "typo": "Olive",
+            "inaudible": "Chocolate", "silence_mark": "Beige",
+            "silence_cut": None, "normal": None 
         }
         
+        # [CRITICAL OPTIMIZATION] Lock UI rendering by switching to the Media page
+        if self.resolve:
+            self.resolve.OpenPage("media")
+            
         try:
-            # 1. Create New Timeline
             log_info(f"Creating timeline: {new_tl_name} (AudioOnly: {audio_only_mode})")
             new_tl = self.media_pool.CreateEmptyTimeline(new_tl_name)
             if not new_tl:
@@ -330,37 +316,28 @@ class ResolveHandler:
             
             self.project.SetCurrentTimeline(new_tl)
             
-            # 2. Prepare Clip Info List for AppendToTimeline
             clip_infos = []
-            valid_ops = [] # Ops that actually result in clips
+            valid_ops = []
             
             for op in ops:
-                op_type = op.get('type')
-                if op_type == 'silence_cut': 
-                    continue
-                    
+                if op.get('type') == 'silence_cut': continue
                 start_f = int(op['s'])
                 end_f = int(op['e'])
-                duration = end_f - start_f
+                if (end_f - start_f) <= 1: continue 
                 
-                if duration <= 1: continue 
-                
-                # Create Clip Info for Append
-                clip_info = {
+                clip_infos.append({
                     "mediaPoolItem": source_item,
                     "startFrame": start_f,
                     "endFrame": end_f - 1 
-                }
-                clip_infos.append(clip_info)
+                })
                 valid_ops.append(op)
 
-            # 3. Batch Append (LAZY ASSEMBLE CHUNKING)
             if not clip_infos:
                 log_info("No clips to append.")
                 return True
 
             total_clips = len(clip_infos)
-            chunk_size = 10
+            chunk_size = 50 # Process 50 clips at a time
             
             log_info(f"Starting lazy assembly of {total_clips} clips in chunks of {chunk_size}...")
             
@@ -371,58 +348,33 @@ class ResolveHandler:
                 if progress_callback:
                     current_count = min(i + chunk_size, total_clips)
                     progress_callback(current_count, total_clips)
-                
-                # Ułamek sekundy opóźnienia, aby interfejs Resolve'a zarejestrował i wyrenderował zmiany
-                time.sleep(0.05) 
-            
-            # 3.5. CLEANUP FOR AUDIO ONLY MODE
-            # If user wanted audio only, but source clip had video (e.g. mp4 file),
-            # Resolve appended both Video and Audio tracks. We must delete Video track content.
+                    
+                # NOTE: time.sleep(0.05) is removed because the UI is frozen on the Media page.
+
+            # Cleanup video if audio_only_mode
             if audio_only_mode:
                 video_garbage = new_tl.GetItemListInTrack("video", 1) or []
                 if video_garbage:
-                    log_info("Audio Only Mode: Cleaning up video track.")
-                    # In API, deleting items from timeline usually requires list of items
-                    # Note: DeleteClips is a method of Timeline object in newer APIs?
-                    # Fallback: DeleteTrack not always available safely without impacting Audio.
-                    # Best way: Delete the clips themselves.
-                    try:
-                        new_tl.DeleteClips(video_garbage, False) # False = No Ripple (safe)
-                    except:
-                        log_error("Failed to delete video garbage clips.")
+                    try: new_tl.DeleteClips(video_garbage, False)
+                    except: log_error("Failed to delete video garbage clips.")
 
-            # 4. ROBUST INDEX-BASED COLORING
-            
-            # Get Items (Check existence)
-            video_items = []
-            if not audio_only_mode:
-                video_items = new_tl.GetItemListInTrack("video", 1) or []
-            
+            # Apply Colors
+            video_items = [] if audio_only_mode else (new_tl.GetItemListInTrack("video", 1) or [])
             audio_items = new_tl.GetItemListInTrack("audio", 1) or []
             
-            # Apply to Video (Only if not in audio mode and items exist)
             if video_items:
                 for i, item in enumerate(video_items):
                     if item and i < len(valid_ops):
-                        op_type = valid_ops[i]['type']
-                        color = COLOR_MAP.get(op_type)
+                        color = COLOR_MAP.get(valid_ops[i]['type'])
                         if color: item.SetClipColor(color)
             
-            # Apply to Audio
-            # Match coloring logic with video if possible, else use sync
             if len(audio_items) == len(valid_ops):
-                 # Perfect match (1:1 with ops)
                  for i, item in enumerate(audio_items):
                     if item:
-                        op_type = valid_ops[i]['type']
-                        color = COLOR_MAP.get(op_type)
+                        color = COLOR_MAP.get(valid_ops[i]['type'])
                         if color: item.SetClipColor(color)
             else:
-                # Fallback: Color Audio by checking start time match against ops timing
-                log_info("Audio item count mismatch. Using time-sync for Audio coloring.")
                 current_rec_head = new_tl.GetStartFrame()
-                
-                # Create a map of Ops timing
                 ops_map = []
                 for op in valid_ops:
                     dur = int(op['e']) - int(op['s'])
@@ -432,21 +384,36 @@ class ResolveHandler:
                 for a_item in audio_items:
                     if not a_item: continue
                     a_start = a_item.GetStart()
-                    # Find op that matches this start time
                     match = next((m for m in ops_map if abs(m['start'] - a_start) <= 2), None)
-                    
                     if match:
                         color = COLOR_MAP.get(match['op']['type'])
                         if color: a_item.SetClipColor(color)
 
-            # NEW: Reset Playhead to Start (Home)
-            # This ensures the user starts viewing the timeline from the beginning.
+            # Reset Playhead
             try:
                 start_frame = new_tl.GetStartFrame()
-                start_tc_str = self._frames_to_tc(start_frame)
-                new_tl.SetCurrentTimecode(start_tc_str)
+                new_tl.SetCurrentTimecode(self._frames_to_tc(start_frame))
             except Exception as e:
                 log_error(f"Failed to reset playhead: {e}")
+
+            # >>> AGGRESSIVE SWIG/RPC MEMORY CLEANUP <<<
+            # We must sever the Python references to Resolve's internal C++ objects.
+            # If we don't, the RPC server gets bloated and freezes Resolve on subsequent runs.
+            try:
+                del video_items
+                del audio_items
+                del clip_infos
+                del valid_ops
+                # Delete ops_map if it exists in the local scope
+                if 'ops_map' in locals():
+                    del ops_map
+                del new_tl
+            except Exception:
+                pass
+                
+            import gc
+            gc.collect()
+            # >>> END CLEANUP <<<
 
             return True
 
@@ -455,3 +422,8 @@ class ResolveHandler:
             import traceback
             log_error(traceback.format_exc())
             return False
+            
+        finally:
+            # ALWAYS return to the Edit page, even if the process failed
+            if self.resolve:
+                self.resolve.OpenPage("edit")

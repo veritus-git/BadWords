@@ -777,30 +777,21 @@ def analyze_repeats(words_data, show_inaudible=True):
 # 6. GUI LOGIC HELPERS (Decoupled Logic)
 # ==========================================
 
-def apply_auto_filler_logic(words_data, filler_words, enabled):
-    """
-    Applies logic for auto-marking filler words.
-    Extracted from GUI to keep presentation layer clean.
-    """
-    # Use a set for faster O(1) lookups instead of list O(n)
-    dynamic_bad = {w.lower().strip() for w in filler_words}
-    
+def apply_auto_filler_logic(words_data, fillers, is_enabled):
+    fillers_lower = [f.lower() for f in fillers]
     for w in words_data:
-        if w.get('is_inaudible') or w.get('type') == 'silence' or w.get('_is_hallucination'):
-            continue
-        
-        txt_clean = re.sub(r'[^\w\s\'-]', '', w['text']).strip()
-        if txt_clean.lower() in dynamic_bad:
-            if enabled:
-                # Mark as bad if currently neutral or already bad
-                if w.get('status') is None or w.get('status') == 'bad':
-                    w['status'] = 'bad'
-                    w['selected'] = True
-            else:
-                # Unmark if disabled, but only if it was marked as bad
-                if w.get('status') == 'bad':
-                    w['status'] = None
-                    w['selected'] = False
+        clean_text = w.get('text', '').strip(".,?!:;\"'()[]{}").lower()
+        if is_enabled and clean_text in fillers_lower:
+            if not w.get('manual_status'): # Do not overwrite manual markings
+                w['status'] = 'bad'
+                w['is_auto'] = True
+                w['selected'] = True
+        else:
+            # CLEANUP: If it was auto-marked previously, but no longer qualifies, clear it
+            if w.get('is_auto'):
+                w['status'] = w.get('manual_status')
+                w['is_auto'] = False
+                w['selected'] = bool(w['status'])
     return words_data
 
 def propagate_status_change(words_data, target_id, new_status):
