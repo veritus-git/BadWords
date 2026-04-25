@@ -1,0 +1,7 @@
+changelog of 2.0.0:
+- rewrote app engine from openai-whisper to faster-whisper for faster and less RAM-consuming transcription ✔️
+- rewrote linux installer to work with faster-whisper ✔️
+- made the app fully "compact" by putting every file of it in one folder ✔️
+- MADE WINDOWS INSTALLER ✔️
+- fully cross-plaform compatible ✔️
+- deleted manual option of downloading Whisper models on Linux ✔️

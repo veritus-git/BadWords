@@ -1,0 +1,17 @@
+changelog of 2.0.2:
+- made timestampts (cuts) of words much more precise (stable-ts THE BIGGEST CHANGE IN THIS PATCH) ✔️
+- fix behaviour of typos fragments ✔️
+- fix behaviour of inaudible fragments ✔️
+- fix non-script-reviewer window ✔️
+- fix white title bar issue in windows ✔️
+- fix text display (whisper hallucinations marked with [xAMOUTOFREPETITION] in gui) ✔️
+- add checking/downloading stage on windows (for better status updates) ✔️
+- add "lazy-assemble" so assembling doesnt look like program crashed ✔️
+- add function for choosing the most optimal compute type for better performance on newer cards and compatibility on older (float16/float32/int8) ✔️
+- add telemetry for statstics ✔️
+- add branding icon ✔️
+- optimize Verbatim transcription ✔️
+- improve installers for updates/clean install/full wipe ✔️
+- replace manual "Compound Clip Fix Mode" checkbox with background "Auto-Sourcing" for smart timeline assembly ✔️
+EASTEREGG:
+- if you are reading changelog, heres a secret code - "$RGB" type it in script window and click "analyze (compare)" and see what happens ✔️

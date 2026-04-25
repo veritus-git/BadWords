@@ -1,0 +1,9 @@
+changelog of 2.0.1:
+- add all the supported languages for transcription (RTL languages supported) ✔️
+- add "show detected typos" option ✔️
+- add "clear trancript" option ✔️
+- add "import project" option in editor page ✔️
+- add saving user preferences ✔️
+- fix yellow marking of missing parts in the script ✔️
+- change the fixed resolution of the editor window to changeable ✔️
+- change silence detection algorithm ✔️

@@ -1,0 +1,12 @@
+changelog of 1.0.3:
+- russian lang added ✔️
+- change "generate" to "assemble" ✔️
+- deleted some unwanted logical functions from gui.py and put them into algorythms.py and engine.py ✔️
+- made dynamic height of windows to get a more clean look ✔️
+- remade "Compund Clip Fix" option ✔️
+- fixed issue with timeline assembly (no error while working on audio-only timeline) ✔️
+- fixed issues with the Compare option (too much blue/yellow marks) ✔️
+- Whisper enhancement for verbatim transcript precision ✔️
+- added "Marquee Progress Bar" while Whisper is running ✔️
+- Fixed issues with importing script from pdf/docx ✔️
+- safer linux installer (without --break-system-packages) ✔️
