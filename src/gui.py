@@ -2238,6 +2238,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
 
     def _on_no(self):
         self._engine.os_doc.set_telemetry_pref("telemetry_opt_in", False)
+        self._engine.os_doc.set_telemetry_pref("telemetry_allow_geo", False)
         self.accept()
 
     def keyPressEvent(self, event):
@@ -2925,7 +2926,150 @@ class CustomMsgBox(FramelessWindowMixin, QDialog):
         _center_on_screen(self, self.width(), self.height())
 
 
+class MarkerDialog(FramelessWindowMixin, QDialog):
+    """
+    Custom frameless dialog for adding or editing a custom marker.
+    Usage:
+        dlg = MarkerDialog(parent, lang, title_key, prefill_name='', prefill_color='Blue')
+        if dlg.exec() == QDialog.Accepted:
+            name, color = dlg.result_name, dlg.result_color
+    """
+    def __init__(self, parent, lang: str, title_key: str,
+                 prefill_name: str = '', prefill_color: str = ''):
+        super().__init__(parent)
+        self._lang = lang
+        self.result_name = ''
+        self.result_color = ''
+
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setWindowModality(Qt.ApplicationModal)
+
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: 6px; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
+            QLabel#lbl_title {{ font-size: 13pt; font-weight: bold; color: #ffffff; }}
+            QLineEdit {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 5px 8px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+            }}
+            QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
+            QPushButton {{
+                background-color: {config.BTN_GHOST_BG};
+                color: {config.BTN_FG};
+                padding: 6px 16px;
+                border-radius: 4px;
+                min-width: 80px;
+                font-weight: bold;
+                font-family: "{config.UI_FONT_NAME}";
+            }}
+            QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton#btn_ok {{ background-color: {config.BTN_BG}; }}
+            QPushButton#btn_ok:hover {{ background-color: {config.BTN_ACTIVE}; }}
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 4)
+        self.inner_frame.setGraphicsEffect(shadow)
+        main_layout.addWidget(self.inner_frame)
+
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self._tb = CustomTitleBar(self, lang, parent=self.inner_frame)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        title_text = _txt(lang, title_key)
+        if hasattr(self._tb, '_lbl_title'):
+            self._tb._lbl_title.setText(title_text)
+        root_layout.addWidget(self._tb)
+
+        content = QWidget(self.inner_frame)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(14)
+        root_layout.addWidget(content)
+
+        lbl_title = QLabel(title_text, content)
+        lbl_title.setObjectName("lbl_title")
+        content_layout.addWidget(lbl_title)
+
+        # Name row
+        name_row = QHBoxLayout()
+        name_lbl = QLabel(_txt(lang, "lbl_marker_name"), content)
+        name_lbl.setFixedWidth(100)
+        self._name_edit = QLineEdit(content)
+        self._name_edit.setText(prefill_name)
+        self._name_edit.setPlaceholderText("e.g. Retake")
+        name_row.addWidget(name_lbl)
+        name_row.addWidget(self._name_edit)
+        content_layout.addLayout(name_row)
+
+        # Color row
+        color_row = QHBoxLayout()
+        color_lbl = QLabel(_txt(lang, "lbl_marker_color"), content)
+        color_lbl.setFixedWidth(100)
+        _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
+        self._color_combo = CustomDropdown([c for c in config.RESOLVE_COLORS if c not in _blocked])
+        if prefill_color and prefill_color in config.RESOLVE_COLORS:
+            self._color_combo.setText(prefill_color)
+        color_row.addWidget(color_lbl)
+        color_row.addWidget(self._color_combo)
+        content_layout.addLayout(color_row)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_cancel = QPushButton(_txt(lang, "btn_close"), content)
+        btn_cancel.clicked.connect(self.reject)
+        btn_ok = QPushButton(_txt(lang, "btn_apply"), content)
+        btn_ok.setObjectName("btn_ok")
+        btn_ok.clicked.connect(self._on_ok)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addSpacing(8)
+        btn_row.addWidget(btn_ok)
+        content_layout.addLayout(btn_row)
+
+        self.adjustSize()
+        self.setFixedWidth(380)
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height())
+
+    def _on_ok(self):
+        name = self._name_edit.text().strip()
+        if name:
+            self.result_name = name
+            self.result_color = self._color_combo.currentText()
+            self.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            self._on_ok()
+        elif event.key() == Qt.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
+
+
 class UnsavedChangesDialog(FramelessWindowMixin, QDialog):
+
     def __init__(self, parent, diff_dict, key_name_map):
         super().__init__(parent)
         self.frameless_init(is_popup=True)
@@ -3569,21 +3713,24 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         def _check_shortcut_conflicts():
             """Scan all capturable inputs; set red border on any with a duplicate sequence."""
-            # Gather sequences from capturable inputs only
+            # Gather sequences from capturable inputs only (built-in + custom marker)
+            all_inputs = dict(self.shortcut_inputs)
+            all_inputs.update(getattr(self, 'custom_marker_shortcut_inputs', {}))
             seq_to_keys = {}
-            for k, w in self.shortcut_inputs.items():
+            for k, w in all_inputs.items():
                 if w.display_only:
                     continue
                 seq = w.get_sequence()
                 if seq:
                     seq_to_keys.setdefault(seq, []).append(k)
             # Apply conflict styling
-            for k, w in self.shortcut_inputs.items():
+            for k, w in all_inputs.items():
                 if w.display_only:
                     continue
                 seq = w.get_sequence()
                 is_conflict = seq and len(seq_to_keys.get(seq, [])) > 1
                 w.set_conflict(bool(is_conflict))
+
 
         def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
             container = QWidget()
@@ -3641,6 +3788,24 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
             self.shortcut_inputs[key] = widget
 
+        # ── Custom Marker shortcuts (dynamic) ─────────────────────────────
+        # Save references so _refresh_custom_marker_shortcuts() can rebuild them
+        self._form_shorts = form_shorts
+        self._add_shortcut_row_fn = _add_shortcut_row
+        self._check_shortcut_conflicts_fn = _check_shortcut_conflicts
+        self.custom_marker_shortcut_inputs = {}
+
+        # Separator before custom marker shortcuts
+        self._sep_custom_markers = QFrame()
+        self._sep_custom_markers.setFrameShape(QFrame.Shape.HLine)
+        self._sep_custom_markers.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        form_shorts.addRow(self._sep_custom_markers)
+
+        # Initial render of custom marker shortcut rows
+        # (current_custom_markers is populated in PAGE 2 below, but _refresh_custom_marker_shortcuts
+        # uses getattr fallback so it is safe to call here — it will be called again from PAGE 2 init)
+        self._refresh_custom_marker_shortcuts()
+
         # Initial conflict check in case loaded prefs already have duplicates
         _check_shortcut_conflicts()
 
@@ -3660,22 +3825,33 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         self.current_custom_markers = list(prefs.get('custom_markers', []))
 
-        self.markers_list = QListWidget()
-        self.markers_list.setAlternatingRowColors(True)
-        self.markers_list.setStyleSheet(f"""
-                QListWidget {{
-                    background-color: #1e1e1e;
-                    border: 1px solid #3a3a3a;
-                    border-radius: 3px;
-                    color: {config.FG_COLOR};
-                    font-family: "{config.UI_FONT_NAME}";
-                    font-size: 10pt;
-                }}
-                QListWidget::item:alternate {{ background-color: #1a1a1a; }}
-                QListWidget::item:selected {{ background-color: {config.BTN_BG}; color: white; }}
-            """)    
+        # Scroll area to hold the dynamic marker rows
+        markers_scroll = QScrollArea()
+        markers_scroll.setWidgetResizable(True)
+        markers_scroll.setFrameShape(QFrame.NoFrame)
+        markers_scroll.setMinimumHeight(120)
+        markers_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+            }}
+            QWidget#markers_inner {{
+                background-color: #1e1e1e;
+            }}
+        """)
+        self._markers_inner = QWidget()
+        self._markers_inner.setObjectName("markers_inner")
+        self._markers_layout = QVBoxLayout(self._markers_inner)
+        self._markers_layout.setContentsMargins(4, 4, 4, 4)
+        self._markers_layout.setSpacing(2)
+        self._markers_layout.addStretch()
+        markers_scroll.setWidget(self._markers_inner)
         self._refresh_markers_list()
-        l_markers.addWidget(self.markers_list)
+        # Also refresh Shortcuts tab now that current_custom_markers is populated
+        self._refresh_custom_marker_shortcuts()
+        l_markers.addWidget(markers_scroll)
+
 
         marker_btn_row = QHBoxLayout()
         marker_btn_row.setSpacing(8)
@@ -3685,15 +3861,9 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         btn_add_m.setCursor(Qt.PointingHandCursor)
         btn_add_m.clicked.connect(self._on_add_marker)
         marker_btn_row.addWidget(btn_add_m)
-
-        btn_rem_m = QPushButton(self.txt("btn_remove_marker"))
-        btn_rem_m.setObjectName("btn_secondary")
-        btn_rem_m.setFixedHeight(30)
-        btn_rem_m.setCursor(Qt.PointingHandCursor)
-        btn_rem_m.clicked.connect(self._on_remove_marker)
-        marker_btn_row.addWidget(btn_rem_m)
         marker_btn_row.addStretch()
         l_markers.addLayout(marker_btn_row)
+
         _add_page_to_stack(page_markers)
 
         # ─────────────────────────────────────────────────────────────────
@@ -4144,64 +4314,201 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
     # ── Custom Markers helpers ─────────────────────────────────────────────
 
     def _refresh_markers_list(self):
-        self.markers_list.clear()
-        for m in self.current_custom_markers:
+        """Rebuild the custom marker list widget with inline Edit/Delete buttons."""
+        # Clear existing rows (keep the trailing stretch)
+        layout = self._markers_layout
+        while layout.count() > 1:  # keep the stretch at the end
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        row_ss = f"""
+            QWidget#marker_row {{
+                background-color: #1e1e1e;
+                border-bottom: 1px solid #2a2a2a;
+            }}
+            QWidget#marker_row:hover {{
+                background-color: #252525;
+            }}
+            QLabel {{
+                color: {config.FG_COLOR};
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: 10pt;
+                background: transparent;
+            }}
+            QPushButton {{
+                background-color: #2d2d2d;
+                color: #aaaaaa;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 2px 8px;
+                font-size: 9pt;
+                min-height: 22px;
+            }}
+            QPushButton:hover {{
+                background-color: #383838;
+                color: #ffffff;
+            }}
+            QPushButton#btn_del:hover {{
+                background-color: #7a2020;
+                border-color: #ed4245;
+                color: #ed4245;
+            }}
+        """
+
+        for idx, m in enumerate(self.current_custom_markers):
             name  = m.get('name', '?')
             color = m.get('color', '')
-            item = QListWidgetItem(f"{name}  [{color}]")
             hex_col = config.RESOLVE_COLORS_HEX.get(color, '#FFFFFF')
-            item.setForeground(QColor(hex_col))
-            self.markers_list.addItem(item)
+
+            row_widget = QWidget()
+            row_widget.setObjectName("marker_row")
+            row_widget.setStyleSheet(row_ss)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(8, 4, 8, 4)
+            row_layout.setSpacing(8)
+
+            # Color dot indicator
+            dot = QLabel("●")
+            dot.setStyleSheet(f"color: {hex_col}; font-size: 14pt; background: transparent;")
+            dot.setFixedWidth(20)
+            row_layout.addWidget(dot)
+
+            # Name + color label
+            lbl_name = QLabel(f"{name}")
+            lbl_name.setStyleSheet(f"color: {hex_col}; font-weight: bold; background: transparent;")
+            row_layout.addWidget(lbl_name, 1)
+
+            lbl_color = QLabel(f"[{color}]")
+            lbl_color.setStyleSheet(f"color: #666666; font-size: 9pt; background: transparent;")
+            row_layout.addWidget(lbl_color)
+
+            # Edit button
+            def make_edit(i):
+                return lambda checked=False: self._on_edit_marker(i)
+            btn_edit = QPushButton(self.txt("btn_edit_marker"))
+            btn_edit.setCursor(Qt.PointingHandCursor)
+            btn_edit.clicked.connect(make_edit(idx))
+            row_layout.addWidget(btn_edit)
+
+            # Delete button
+            def make_del(i):
+                return lambda checked=False: self._on_remove_marker_inline(i)
+            btn_del = QPushButton("✕")
+            btn_del.setObjectName("btn_del")
+            btn_del.setCursor(Qt.PointingHandCursor)
+            btn_del.setFixedWidth(28)
+            btn_del.clicked.connect(make_del(idx))
+            row_layout.addWidget(btn_del)
+
+            # Insert before stretch
+            layout.insertWidget(layout.count() - 1, row_widget)
 
     def _on_add_marker(self):
-        dlg = QDialog(self)
-        dlg.setWindowTitle(self.txt("btn_add_marker"))
-        dlg.setModal(True)
-        dlg.setMinimumWidth(320)
-        dlg.setStyleSheet(self.styleSheet())
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        dlg = MarkerDialog(self, lang, "btn_add_marker")
+        if dlg.exec() == QDialog.Accepted and dlg.result_name:
+            self.current_custom_markers.append({
+                "name":  dlg.result_name,
+                "color": dlg.result_color,
+            })
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
 
-        lay = QFormLayout(dlg)
-        lay.setSpacing(12)
-        lay.setContentsMargins(16, 16, 16, 12)
+    def _on_edit_marker(self, idx: int):
+        if not (0 <= idx < len(self.current_custom_markers)):
+            return
+        m = self.current_custom_markers[idx]
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        dlg = MarkerDialog(self, lang, "btn_edit_marker",
+                           prefill_name=m.get('name', ''),
+                           prefill_color=m.get('color', ''))
+        if dlg.exec() == QDialog.Accepted and dlg.result_name:
+            self.current_custom_markers[idx] = {
+                "name":  dlg.result_name,
+                "color": dlg.result_color,
+            }
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
 
-        name_edit = QLineEdit()
-        name_edit.setPlaceholderText("e.g. Retake")
-        lay.addRow(QLabel(self.txt("lbl_marker_name")), name_edit)
+    def _on_remove_marker_inline(self, idx: int):
+        if 0 <= idx < len(self.current_custom_markers):
+            self.current_custom_markers.pop(idx)
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
 
-        _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
-        color_combo = CustomDropdown([c for c in config.RESOLVE_COLORS if c not in _blocked])
-        lay.addRow(QLabel(self.txt("lbl_marker_color")), color_combo)
-
-        btn_row = QHBoxLayout()
-        btn_ok  = QPushButton(self.txt("btn_apply"))
-        btn_ok.setObjectName("btn_apply")
-        btn_ok.setFixedHeight(28)
-        btn_ok.clicked.connect(dlg.accept)
-        btn_cancel = QPushButton(self.txt("btn_close"))
-        btn_cancel.setObjectName("btn_secondary")
-        btn_cancel.setFixedHeight(28)
-        btn_cancel.clicked.connect(dlg.reject)
-        btn_row.addStretch()
-        btn_row.addWidget(btn_cancel)
-        btn_row.addWidget(btn_ok)
-        lay.addRow(btn_row)
-
-        if dlg.exec() == QDialog.Accepted:
-            name = name_edit.text().strip()
-            if name:
-                self.current_custom_markers.append({
-                    "name":  name,
-                    "color": color_combo.currentText(),
-                })
-                self._refresh_markers_list()
 
     def _on_remove_marker(self):
-        row = self.markers_list.currentRow()
-        if 0 <= row < len(self.current_custom_markers):
-            self.current_custom_markers.pop(row)
-            self._refresh_markers_list()
+        """Legacy method — kept for safety but no longer wired to any button."""
+        pass
+
+    def _refresh_custom_marker_shortcuts(self):
+        """
+        Rebuilds the custom-marker shortcut rows in the Shortcuts tab.
+        Called after adding, editing, or removing a custom marker.
+        """
+        form = getattr(self, '_form_shorts', None)
+        if form is None:
+            return
+
+        add_row_fn = getattr(self, '_add_shortcut_row_fn', None)
+        check_fn   = getattr(self, '_check_shortcut_conflicts_fn', None)
+        if add_row_fn is None or check_fn is None:
+            return
+
+        # Remove previous custom marker rows from the form
+        old_inputs = getattr(self, 'custom_marker_shortcut_inputs', {})
+        for key in list(old_inputs.keys()):
+            w = old_inputs.pop(key)
+            # Find and remove the row containing this widget
+            for r in range(form.rowCount()):
+                field = form.itemAt(r, form.FieldRole)
+                if field and field.widget() and hasattr(field.widget(), 'layout'):
+                    lay = field.widget().layout()
+                    if lay:
+                        for ci in range(lay.count()):
+                            child = lay.itemAt(ci)
+                            if child and child.widget() is w:
+                                form.removeRow(r)
+                                break
+
+        self.custom_marker_shortcut_inputs = {}
+
+        prefs = self.engine.load_preferences() or {}
+        saved_shortcuts = prefs.get('shortcuts', {})
+        markers = getattr(self, 'current_custom_markers', [])
+
+        for m in markers:
+            name  = m.get('name', '')
+            if not name:
+                continue
+            s_key = f'custom_marker_{name}'
+
+            # Build label using i18n format key
+            fmt = self.txt('shortcut_custom_marker_fmt')
+            # If key missing fall back gracefully
+            if fmt == 'shortcut_custom_marker_fmt':
+                label_text = f'Switch to "{name}" Marker'
+            else:
+                label_text = fmt.format(name=name)
+
+            current_seq = saved_shortcuts.get(s_key, '')
+            widget = ShortcutCaptureButton(str(current_seq), display_only=False)
+            widget.sequence_changed.connect(lambda _seq, _w=widget: check_fn())
+
+            def make_setter(w, check):
+                def _setter(v):
+                    w.set_sequence(str(v))
+                    check()
+                return _setter
+
+            add_row_fn(form, label_text, widget, '', make_setter(widget, check_fn), is_display=False)
+            self.custom_marker_shortcut_inputs[s_key] = widget
+
+        check_fn()
 
     def _update_preview(self):
+
         ff = self.combo_font.currentText()
         fs = self.spin_fsize.value()
         lh = self.spin_lheight.value()
@@ -4295,8 +4602,12 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         try:
             shortcuts_dict = {k: v.get_sequence() for k, v in self.shortcut_inputs.items()}
+            # Merge in custom marker shortcuts
+            for k, v in getattr(self, 'custom_marker_shortcut_inputs', {}).items():
+                shortcuts_dict[k] = v.get_sequence()
         except (RuntimeError, AttributeError):
             shortcuts_dict = old_prefs.get('shortcuts', {})
+
 
         try:
             hidden_panels_val = sorted(self.dropdown_hidden.selected_items)
