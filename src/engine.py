@@ -1616,7 +1616,7 @@ except Exception as e:
             self.resolve_handler.refresh_context()
             if not self.resolve_handler.timeline:
                 log_error("No active timeline found.")
-                return False, None
+                return False, None, None, None
                 
             # ── SOURCE SNAPSHOT: Use the timeline from transcription, not the active one ──
             source_snapshot = settings.get("source_snapshot") or {}
@@ -1709,7 +1709,7 @@ except Exception as e:
 
             if not source_item:
                 log_error("Could not find optimal source clip or timeline.")
-                return False, None
+                return False, None, None, None
 
             audio_only_mode = (context_type == 'audio')
 
@@ -1748,12 +1748,12 @@ except Exception as e:
             
             if not success:
                 log_error("Failed to generate timeline via API.")
-                return False, None
+                return False, None, None, None
                 
             set_progress(100)
-            return True, warning_code
+            return True, warning_code, new_tl_name, clean_ops
             
         except Exception as e:
             log_error(f"Assembly Critical Error: {e}")
             traceback.print_exc()
-            return False, None
+            return False, None, None, None

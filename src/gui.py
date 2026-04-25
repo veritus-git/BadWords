@@ -1504,7 +1504,15 @@ class TranscriptionCanvas(QWidget):
         def get_base_bg_fg(w):
             status = get_status(w)
             c_res = get_color_tuple(status)
-            if c_res: return c_res[0], c_res[1], False
+            if c_res:
+                bg, fg = c_res[0], c_res[1]
+                if w.get('is_assembled_cut'):
+                    # Interpolate sharply towards dark gray background to dim seamlessly
+                    r = int(bg.red() * 0.2 + 30 * 0.8)
+                    g = int(bg.green() * 0.2 + 30 * 0.8)
+                    b = int(bg.blue() * 0.2 + 30 * 0.8)
+                    bg = QColor(r, g, b, 255)
+                return bg, fg, False
             return None, QColor(config.WORD_NORMAL_FG), True
 
         p.setPen(Qt.NoPen)
@@ -1686,9 +1694,17 @@ class TranscriptionCanvas(QWidget):
             if w.get('_is_bold'):
                 font.setBold(True)
                 
+            if w.get('is_assembled_cut'):
+                final_fg = QColor("#5a5a5a")
+                
             p.setFont(font)
             p.setPen(final_fg)
             p.drawText(w['_rect'], Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
+            
+            if w.get('is_assembled_cut'):
+                p.setPen(QPen(final_fg, 1.5))
+                mid_y = int(w['_rect'].center().y()) + 1
+                p.drawLine(int(w['_rect'].left()) + 4, mid_y, int(w['_rect'].right()) - 4, mid_y)
             
         # PASS 4: Active Underlines
         if active_underlines:
@@ -1745,6 +1761,7 @@ class TranscriptionCanvas(QWidget):
                             # Stamp overlay_suppressed so the algo overlay sinks
                             # below the user's manual paint until the next reload.
                             word_obj['overlay_suppressed'] = True
+                            word_obj.pop('is_assembled_cut', None)
                             # Route through the Layer Engine — this is what actually
                             # writes word_obj['status'] to the correct final value.
                             if layer_engine:
@@ -1891,6 +1908,7 @@ class CustomTitleBar(QWidget):
 
         # Title text
         self._lbl_title = QLabel(config.APP_NAME)
+        self._full_title = config.APP_NAME
         self._lbl_title.setTextFormat(Qt.RichText)
         self._lbl_title.setStyleSheet(
             f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
@@ -1899,6 +1917,12 @@ class CustomTitleBar(QWidget):
         lay.addWidget(self._lbl_title)
         lay.addStretch()
 
+        # Chapter Dropdown (absolutely centered via resizeEvent)
+        self.chapter_dropdown = TitleDropdown(['Original'], parent=self)
+        self.chapter_dropdown.setFixedHeight(24)
+        self.chapter_dropdown.setMinimumWidth(100)
+        self.chapter_dropdown.hide() # Hidden until at least one assembly happens
+        
         # Resolve icon directory (assets/layout/ sibling to src/)
         _src_dir    = os.path.dirname(os.path.abspath(__file__))
         _assets_dir = os.path.join(_src_dir, "layout")
@@ -1921,7 +1945,37 @@ class CustomTitleBar(QWidget):
             lay.addWidget(btn)
 
     def set_title(self, text):
+        from PySide6.QtGui import QFontMetrics
+        self._full_title = text
         self._lbl_title.setText(text)
+        self.update_elision()
+
+    def update_elision(self):
+        from PySide6.QtGui import QFontMetrics
+        if hasattr(self, 'chapter_dropdown') and self.chapter_dropdown.isVisible():
+            dw = self.chapter_dropdown.sizeHint().width()
+            dx = (self.width() - dw) // 2
+            # Leave a 20px gap before dropdown
+            max_w = max(10, dx - self._lbl_title.x() - 20)
+        else:
+            # Dropdown hidden, can use up to right buttons
+            btn_area = self.btn_min.width() * 3 + 24
+            max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 20)
+            
+        fm = QFontMetrics(self._lbl_title.font())
+        elided = fm.elidedText(self._full_title, Qt.ElideRight, max_w)
+        self._lbl_title.setText(elided)
+
+    def update_dropdown_placement(self):
+        if hasattr(self, 'chapter_dropdown') and self.chapter_dropdown.isVisible():
+            cw = self.chapter_dropdown.sizeHint().width()
+            ch = self.chapter_dropdown.height()
+            self.chapter_dropdown.setGeometry((self.width() - cw) // 2, (self.height() - ch) // 2, cw, ch)
+        self.update_elision()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_dropdown_placement()
 
     def update_maximize_icon(self, is_maximized):
         icon_name = 'windowed.png' if is_maximized else 'maximize.png'
@@ -3381,6 +3435,29 @@ class CustomDropdown(QPushButton):
     def currentText(self):
         return self.text()
 
+class TitleDropdown(CustomDropdown):
+    def __init__(self, options_list, parent=None):
+        super().__init__(options_list, parent)
+        self.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #aaaaaa;
+                text-align: center;
+                border: none;
+                font-size: 9pt;
+                padding: 2px 6px;
+            }
+            QPushButton:hover { color: #ffffff; }
+        """)
+
+    def setText(self, text):
+        # Always append the down arrow for the title drop down
+        clean_text = text.replace("  ▾", "")
+        super().setText(f"{clean_text}  ▾")
+
+    def currentText(self):
+        return super().currentText().replace("  ▾", "")
+
 class MultiSelectDropdown(QPushButton):
     valueChanged = Signal(list)
     def __init__(self, options_list, parent=None):
@@ -4766,6 +4843,17 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         l_transcript.addSpacing(10)
         l_transcript.addWidget(self.lbl_preview)
 
+        # Sync DaVinci Timeline on Chapter Switch
+        self.chk_sync_davinci = ToggleSwitch()
+        self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
+        w_sync = QWidget()
+        l_sync = QHBoxLayout(w_sync)
+        l_sync.setContentsMargins(0, 0, 0, 0)
+        l_sync.addStretch()
+        l_sync.addWidget(self.chk_sync_davinci)
+        _add_row(form_transcript, self.txt("chk_sync_davinci"), w_sync,
+                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=False))
+
         if not is_basic:
             # Separator before chunking settings
             sep_chunk = QFrame()
@@ -4854,8 +4942,6 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             saved_accent = prefs.get('accent_color', 'green')
             self.dropdown_accent.setText(saved_accent if saved_accent in _accent_items else 'green')
             _add_row(form_iface, self.txt("lbl_accent_color"), self.dropdown_accent, 'green', self.dropdown_accent.setValue)
-
-
 
             l_iface.addLayout(form_iface)
             l_iface.addStretch()
@@ -5631,6 +5717,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'always_on_top':      self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
                 'hidden_panels':      hidden_panels_val,
                 'accent_color':       self._safe_get('dropdown_accent', old_prefs.get('accent_color', 'green'), 'currentText'),
+                'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
                 'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto').capitalize(), 'currentText').lower(),
                 'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
                 'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
@@ -5720,6 +5807,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 
         if not is_basic:
             self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
+            self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
             try:
                 if hasattr(self, 'dropdown_hidden'):
                     self.dropdown_hidden.selected_items = set(state.get('hidden_panels', []))
@@ -5855,6 +5943,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'always_on_top': f"{self.txt('tab_interface')}: {self.txt('lbl_always_on_top')}",
                 'hidden_panels': f"{self.txt('tab_interface')}: {self.txt('lbl_hidden_panels')}",
                 'accent_color': f"{self.txt('tab_interface')}: {self.txt('lbl_accent_color')}",
+                'sync_davinci_chapter': f"{self.txt('tab_interface')}: {self.txt('chk_sync_davinci')}",
                 'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
                 'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
                 'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",
@@ -5927,6 +6016,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.resolve_handler     = resolve_handler
         # This callback is injected by AppController in main.py
         self.closeEvent_callback = None
+        self._chapters = []
+        self._current_chapter_idx = -1
         self.shared_tooltip = IDETooltip()
         self.shared_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.shared_tooltip.setWindowFlag(Qt.WindowTransparentForInput, True)
@@ -5998,6 +6089,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # ── CSD: custom title bar ───────────────────────────────────────
         self._title_bar = CustomTitleBar(self, self.lang, parent=self._root_frame)
+        self._title_bar.chapter_dropdown.valueChanged.connect(self._switch_chapter)
         self._root_layout.addWidget(self._title_bar)
 
         # --- Build UI --- (sidebars + central workspace sit below title bar)
@@ -6814,6 +6906,37 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         updated_words, _ = self.engine.run_standalone_analysis(self.text_canvas.words_data, show_inaudible)
         self.text_canvas.load_data(updated_words)
 
+    def _switch_chapter(self, chapter_name):
+        if not self._chapters: return
+        
+        target_idx = -1
+        for i, ch in enumerate(self._chapters):
+            if ch.get("name") == chapter_name:
+                target_idx = i
+                break
+                
+        if target_idx == -1: return
+        self._current_chapter_idx = target_idx
+        
+        import copy
+        ch = self._chapters[target_idx]
+        self.text_canvas.load_data(copy.deepcopy(ch.get("words", [])))
+        
+        # Sync DaVinci
+        prefs = self.engine.load_preferences() or {}
+        if prefs.get("sync_davinci_chapter", True):
+            tl_name = ch.get("tl_name")
+            if tl_name and self.resolve_handler and getattr(self.resolve_handler, 'project', None):
+                try:
+                    count = self.resolve_handler.project.GetTimelineCount()
+                    for i in range(1, count + 1):
+                        tl = self.resolve_handler.project.GetTimelineByIndex(i)
+                        if tl and tl.GetName() == tl_name:
+                            self.resolve_handler.project.SetCurrentTimeline(tl)
+                            break
+                except Exception:
+                    pass
+
     def _on_auto_filler_toggled(self, is_checked):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
         import algorithms
@@ -6933,12 +7056,18 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         clean_words = self._get_clean_words_data()
 
+        # Update current chapter with latest canvas data before saving
+        if getattr(self, '_current_chapter_idx', -1) >= 0 and self._chapters:
+            self._chapters[self._current_chapter_idx]['words'] = clean_words
+            
         data_packet = {
             "lang_code":      prefs.get('lang', 'Auto'),
             "settings":       prefs,
             "title_bar_text": getattr(self, '_title_bar', None)._lbl_title.text() if hasattr(self, '_title_bar') else "BadWords",
             "filler_words":   prefs.get('filler_words', config.DEFAULT_BAD_WORDS),
             "words_data":     clean_words,
+            "chapters":       getattr(self, '_chapters', []),
+            "current_chapter_idx": getattr(self, '_current_chapter_idx', -1),
             "script_content": getattr(self, 'text_script', None).toPlainText() if hasattr(self, 'text_script') else ""
         }
         # Note: layout state is inside 'settings', not at the root level
@@ -7063,6 +7192,33 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             # Load Words Data
             if hasattr(self, 'text_canvas'):
                 self.text_canvas.load_data(state.get('words_data', []))
+                
+            # Restore Chapters
+            saved_chapters = state.get('chapters', [])
+            saved_current_idx = state.get('current_chapter_idx', -1)
+            if saved_chapters:
+                self._chapters = saved_chapters
+                self._current_chapter_idx = saved_current_idx
+            else:
+                import copy
+                self._chapters = [{
+                    "name": "Original",
+                    "tl_name": self._transcription_source.get("timeline_name", "") if self._transcription_source else "",
+                    "words": copy.deepcopy(state.get('words_data', []))
+                }]
+                self._current_chapter_idx = 0
+                
+            # Update Dropdown UI
+            if self._chapters and hasattr(self, '_title_bar') and hasattr(self._title_bar, 'chapter_dropdown'):
+                self._title_bar.chapter_dropdown.options_list = [ch['name'] for ch in self._chapters]
+                # Try to select current chapter name, otherwise default to first
+                if 0 <= self._current_chapter_idx < len(self._chapters):
+                    self._title_bar.chapter_dropdown.setText(self._chapters[self._current_chapter_idx]['name'])
+                if len(self._chapters) > 1:
+                    self._title_bar.chapter_dropdown.show()
+                else:
+                    self._title_bar.chapter_dropdown.hide()
+                self._title_bar.update_dropdown_placement()
 
             # Apply splitter sizes
             if saved_sizes and hasattr(self, '_main_h_splitter'):
@@ -7524,7 +7680,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # EXECUTE TRULY SYNCHRONOUSLY ON MAIN THREAD
         # We bypass the threaded wrapper and call the core method directly
-        success, warning = self.engine.assemble_timeline(
+        success, warning, new_tl_name, clean_ops = self.engine.assemble_timeline(
             export_data, 
             prefs, 
             callback_status=pump_status, 
@@ -7559,15 +7715,56 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self.bar_processing.set_value(100)
             self.lbl_processing_status.setText(self.txt("txt_finishing"))
             QApplication.processEvents()
-            self._on_assembly_success()
+            self._on_assembly_success(new_tl_name, clean_ops)
         else:
             self._on_assembly_error(self.txt("msg_assembly_failed"))
 
 
-    def _on_assembly_success(self):
+    def _on_assembly_success(self, new_tl_name, clean_ops):
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
         if hasattr(self, '_panel_left'): self._panel_left.show()
         if hasattr(self, '_panel_right'): self._panel_right.show()
+        
+        # --- CHAPTER REGISTRATION ---
+        new_words = self._get_clean_words_data()
+        prefs = self.engine.load_preferences() or {}
+        auto_del = prefs.get('auto_del', False)
+        silence_cut = prefs.get('silence_cut', False)
+        show_typos = prefs.get('show_typos', True)
+        show_inaudible = prefs.get('show_inaudible', True)
+        
+        for w in new_words:
+            is_cut = False
+            if auto_del and w.get('status') == 'bad':
+                is_cut = True
+            elif silence_cut and w.get('type') == 'silence':
+                is_cut = True
+            elif not show_typos and w.get('status') == 'typo' and w.get('is_auto', False):
+                is_cut = True
+            elif not show_inaudible and (w.get('is_inaudible') or w.get('type') == 'inaudible'):
+                is_cut = True
+                
+            if is_cut:
+                w['is_assembled_cut'] = True
+                
+        chapter_name = f"Edit {len(self._chapters)}"
+        new_chapter = {
+            "name": chapter_name,
+            "tl_name": new_tl_name or "",
+            "words": new_words
+        }
+        self._chapters.append(new_chapter)
+        self._current_chapter_idx = len(self._chapters) - 1
+        
+        # Update dropdown
+        self._title_bar.chapter_dropdown.options_list = [ch['name'] for ch in self._chapters]
+        self._title_bar.chapter_dropdown.setText(chapter_name)
+        self._title_bar.chapter_dropdown.show()
+        self._title_bar.update_dropdown_placement()
+        
+        # Load the new state
+        self.text_canvas.load_data(new_words)
+        
         dlg = CustomMsgBox(self, self.txt("msg_success"), self.txt("msg_timeline_assembled_succes"), self.txt("btn_ok"))
         dlg.exec()
 
@@ -8023,6 +8220,20 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         return page
 
     def _populate_editor(self, words_data, segments_data):
+        import copy
+        self._chapters = [{
+            "name": "Original",
+            "tl_name": getattr(self, '_original_timeline_name', ""),
+            "words": copy.deepcopy(words_data)
+        }]
+        self._current_chapter_idx = 0
+        
+        # Reset UI Dropdown
+        self._title_bar.chapter_dropdown.hide()
+        self._title_bar.chapter_dropdown.options_list = ["Original"]
+        self._title_bar.chapter_dropdown.setText("Original")
+        self._title_bar.update_dropdown_placement()
+        
         if hasattr(self, 'text_canvas'):
             self.text_canvas.load_data(words_data)
 

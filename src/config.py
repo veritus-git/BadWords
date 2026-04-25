@@ -138,6 +138,7 @@ DEFAULT_SETTINGS = {
     "ui_spin_pad":          0.05,
     "fs_cut_mode":          True,
     "fs_mark_mode":         False,
+    "sync_davinci_chapter": True,
     # ── AI / Whisper ────────────────────────────────────────────────────────
     "compute_type":         "int8",
     "ai_compute_type":      "Auto",
@@ -373,6 +374,7 @@ SUPPORTED_LANGS = {
 }
 TRANS = {
     'en': {
+        "chk_sync_davinci": "Sync DaVinci Timeline on Chapter Switch",
         "tt_refresh_timelines": "Refresh Timelines",
         "tt_reset_to_default": "Reset to Default",
         "btn_analyze": "Analyze",
@@ -638,6 +640,7 @@ TRANS = {
         "txt_all": "All",
     },
     'pl': {
+        "chk_sync_davinci": "Synchronizuj oś czasu DaVinci przy zmianie edycji",
         "tt_refresh_timelines": "Odśwież Oś Czasu",
         "tt_reset_to_default": "Resetuj do Domyślnych",
         "btn_analyze": "Analizuj",
@@ -902,6 +905,7 @@ TRANS = {
         "txt_all": "Wszystkie",
     },
     'de': {
+        "chk_sync_davinci": "DaVinci Timeline bei Editionswechsel synchronisieren",
         "tt_refresh_timelines": "Timelines aktualisieren",
         "tt_reset_to_default": "Auf Standard zurücksetzen",
         "btn_analyze": "Analysieren",
@@ -1166,6 +1170,7 @@ TRANS = {
         "txt_all": "Alle",
     },
     'es': {
+        "chk_sync_davinci": "Sincronizar línea de tiempo de DaVinci al cambiar de edición",
         "tt_refresh_timelines": "Actualizar líneas de tiempo",
         "tt_reset_to_default": "Restablecer por defecto",
         "btn_analyze": "Analizar",
@@ -1429,6 +1434,7 @@ TRANS = {
         "txt_all": "Todas",
     },
     'fr': {
+        "chk_sync_davinci": "Synchroniser la timeline DaVinci lors du changement d'édition",
         "tt_refresh_timelines": "Rafraîchir les timelines",
         "tt_reset_to_default": "Réinitialiser par défaut",
         "btn_analyze": "Analyser",
@@ -1693,6 +1699,7 @@ TRANS = {
         "txt_all": "Toutes",
     },
     'it': {
+        "chk_sync_davinci": "Sincronizza timeline DaVinci al cambio di edizione",
         "tt_refresh_timelines": "Aggiorna le timeline",
         "tt_reset_to_default": "Ripristina impostazioni predefinite",
         "btn_analyze": "Analizza",
@@ -1957,6 +1964,7 @@ TRANS = {
         "txt_all": "Tutte",
     },
     'pt': {
+        "chk_sync_davinci": "Sincronizar linha do tempo DaVinci ao mudar de edição",
         "tt_refresh_timelines": "Atualizar linhas do tempo",
         "tt_reset_to_default": "Restaurar padrões",
         "btn_analyze": "Analisar",
@@ -2221,6 +2229,7 @@ TRANS = {
         "txt_all": "Todas",
     },
     'uk': {
+        "chk_sync_davinci": "Синхронізувати таймлайн DaVinci при зміні редакції",
         "tt_refresh_timelines": "Оновити таймлайни",
         "tt_reset_to_default": "Скинути до замовчувань",
         "btn_analyze": "Аналізувати",
@@ -2485,6 +2494,7 @@ TRANS = {
         "txt_all": "Усі",
     },
     'nl': {
+        "chk_sync_davinci": "DaVinci-tijdlijn synchroniseren bij het wisselen van bewerking",
         "tt_refresh_timelines": "Tijdlijnen vernieuwen",
         "tt_reset_to_default": "Herstellen naar standaard",
         "btn_analyze": "Analyseren",
@@ -2749,6 +2759,7 @@ TRANS = {
         "txt_all": "Alle",
     },
     'ru': {
+        "chk_sync_davinci": "Синхронизировать таймлайн DaVinci при смене редакции",
         "tt_refresh_timelines": "Обновить таймлайны",
         "tt_reset_to_default": "Сбросить по умолчанию",
         "btn_analyze": "Анализ",
