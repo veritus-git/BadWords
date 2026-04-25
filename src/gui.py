@@ -199,12 +199,23 @@ class ToggleSwitch(QWidget):
 
 
 def _app_icon() -> QIcon:
-    """Load application icon from the install directory (icon.ico on Windows, icon.png elsewhere)."""
     try:
+        import json
         install_dir = os.path.dirname(os.path.abspath(__file__))
         is_win = platform.system() == "Windows"
-        icon_file = "icon.ico" if is_win else "icon.png"
-        icon_path = os.path.join(install_dir, icon_file)
+        ext = ".ico" if is_win else ".png"
+
+        icon_name = "default"
+        settings_file = os.path.join(install_dir, "settings.json")
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                icon_name = data.get('app_icon', 'default')
+
+        icon_path = os.path.join(install_dir, "assets", f"icon_{icon_name}{ext}")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(install_dir, f"icon{ext}")
+
         if os.path.exists(icon_path):
             return QIcon(icon_path)
     except Exception:
@@ -1706,6 +1717,115 @@ class CustomMsgBox(QDialog):
         _center_on_screen(self, self.width(), self.height())
 
 
+class UnsavedChangesDialog(QDialog):
+    def __init__(self, parent, diff_dict, key_name_map):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        apply_dark_title_bar(self)
+        self.setStyleSheet(parent.styleSheet() + """
+            QScrollArea { border: 1px solid #333; background-color: #1c1c1c; border-radius: 4px; }
+            QFrame#item_row { border-bottom: 1px solid #333; padding-bottom: 5px; }
+        """)
+        
+        self.decisions = {}
+        self.diff_dict = diff_dict
+        self.rows = {}
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 25, 20, 20)
+        layout.setSpacing(15)
+        
+        lbl_title = QLabel(parent.txt('msg_unsaved_title'))
+        lbl_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        layout.addWidget(lbl_title)
+        layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        self.vbox = QVBoxLayout(scroll_content)
+        self.vbox.setContentsMargins(10, 10, 10, 10)
+        self.vbox.setSpacing(10)
+        
+        for k, (old_v, new_v) in diff_dict.items():
+            row = QFrame()
+            row.setObjectName("item_row")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            
+            fname = key_name_map.get(k, k.replace('_', ' ').title())
+            lbl_name = QLabel(f"{fname}:")
+            lbl_val = QLabel(f"<b>{new_v}</b>")
+            lbl_val.setStyleSheet("color: #aaa;")
+            
+            btn_save = QPushButton(parent.txt('btn_save'))
+            btn_save.setObjectName("btn_apply")
+            btn_save.setCursor(Qt.PointingHandCursor)
+            btn_save.clicked.connect(lambda checked=False, key=k: self._make_decision(key, 'save'))
+            
+            btn_discard = QPushButton(parent.txt('btn_discard'))
+            btn_discard.setObjectName("btn_secondary")
+            btn_discard.setCursor(Qt.PointingHandCursor)
+            btn_discard.clicked.connect(lambda checked=False, key=k: self._make_decision(key, 'discard'))
+            
+            rl.addWidget(lbl_name)
+            rl.addWidget(lbl_val)
+            rl.addStretch()
+            rl.addWidget(btn_discard)
+            rl.addWidget(btn_save)
+            
+            self.vbox.addWidget(row)
+            self.rows[k] = row
+        
+        self.vbox.addStretch()
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+        
+        bot_layout = QHBoxLayout()
+        btn_cancel = QPushButton(parent.txt('btn_cancel'))
+        btn_cancel.setObjectName("btn_secondary")
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.clicked.connect(self.reject)
+        
+        btn_discard_all = QPushButton(parent.txt('btn_discard_all'))
+        btn_discard_all.setObjectName("btn_secondary")
+        btn_discard_all.setCursor(Qt.PointingHandCursor)
+        btn_discard_all.clicked.connect(self._discard_all)
+        
+        btn_save_all = QPushButton(parent.txt('btn_save_all'))
+        btn_save_all.setObjectName("btn_apply")
+        btn_save_all.setCursor(Qt.PointingHandCursor)
+        btn_save_all.clicked.connect(self._save_all)
+        
+        bot_layout.addWidget(btn_cancel)
+        bot_layout.addStretch()
+        bot_layout.addWidget(btn_discard_all)
+        bot_layout.addWidget(btn_save_all)
+        layout.addLayout(bot_layout)
+        
+        self.resize(600, 450)
+        _center_on_screen(self, 600, 450)
+        
+    def _make_decision(self, key, decision):
+        self.decisions[key] = decision
+        self.rows[key].hide()
+        if len(self.decisions) == len(self.diff_dict):
+            self.accept()
+            
+    def _save_all(self):
+        for k in self.diff_dict:
+            if k not in self.decisions:
+                self.decisions[k] = 'save'
+        self.accept()
+        
+    def _discard_all(self):
+        for k in self.diff_dict:
+            if k not in self.decisions:
+                self.decisions[k] = 'discard'
+        self.accept()
+
+
 class SettingsDialog(QDialog):
     """Settings Dialog — left category menu + right stacked pages.
     All I/O goes through engine.load_preferences / engine.save_preferences
@@ -1819,6 +1939,7 @@ class SettingsDialog(QDialog):
                 padding: 0 18px;
             }}
             QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_apply:pressed {{ background-color: #125c2f; }}
             QPushButton#btn_secondary {{
                 background-color: transparent;
                 color: #d4d4d4;
@@ -1895,28 +2016,29 @@ class SettingsDialog(QDialog):
         btn_bar.addStretch()
 
         # Right: Restore / Close / Apply
-        btn_restore = QPushButton(self.txt("btn_restore_defaults"))
-        btn_restore.setObjectName("btn_secondary")
-        btn_restore.setFixedHeight(30)
-        btn_restore.setCursor(Qt.PointingHandCursor)
-        btn_restore.clicked.connect(self._restore_all_defaults)
-        btn_bar.addWidget(btn_restore)
+        self.btn_restore = QPushButton(self.txt("btn_restore_defaults"))
+        self.btn_restore.setObjectName("btn_secondary")
+        self.btn_restore.setMinimumWidth(120)
+        self.btn_restore.setFixedHeight(30)
+        self.btn_restore.setCursor(Qt.PointingHandCursor)
+        self.btn_restore.clicked.connect(self._restore_all_defaults)
+        btn_bar.addWidget(self.btn_restore)
 
-        btn_close = QPushButton(self.txt("btn_close"))
-        btn_close.setObjectName("btn_secondary")
-        btn_close.setFixedWidth(80)
-        btn_close.setFixedHeight(30)
-        btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.clicked.connect(self.reject)
-        btn_bar.addWidget(btn_close)
+        self.btn_close = QPushButton(self.txt("btn_close"))
+        self.btn_close.setObjectName("btn_secondary")
+        self.btn_close.setMinimumWidth(120)
+        self.btn_close.setFixedHeight(30)
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.clicked.connect(self.reject)
+        btn_bar.addWidget(self.btn_close)
 
-        btn_apply = QPushButton(self.txt("btn_apply"))
-        btn_apply.setObjectName("btn_apply")
-        btn_apply.setFixedWidth(90)
-        btn_apply.setFixedHeight(30)
-        btn_apply.setCursor(Qt.PointingHandCursor)
-        btn_apply.clicked.connect(self._apply_settings)
-        btn_bar.addWidget(btn_apply)
+        self.btn_apply = QPushButton(self.txt("btn_apply"))
+        self.btn_apply.setObjectName("btn_apply")
+        self.btn_apply.setMinimumWidth(120)
+        self.btn_apply.setFixedHeight(30)
+        self.btn_apply.setCursor(Qt.PointingHandCursor)
+        self.btn_apply.clicked.connect(self._apply_settings)
+        btn_bar.addWidget(self.btn_apply)
 
         right_layout.addLayout(btn_bar)
 
@@ -1973,7 +2095,9 @@ class SettingsDialog(QDialog):
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setObjectName("btn_ghost_sm")
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
-            btn_rev.clicked.connect(lambda checked, d=default_val, s=setter_func: s(d))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
             row.addWidget(btn_rev)
             lbl = QLabel(label_text)
             lbl.setWordWrap(True)
@@ -1984,6 +2108,7 @@ class SettingsDialog(QDialog):
 
         def _add_page_to_stack(page_widget):
             scroll = QScrollArea()
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.NoFrame)
             scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
@@ -2041,17 +2166,35 @@ class SettingsDialog(QDialog):
 
         def _on_lang_changed(val):
             code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), 'en')
-            self.engine.save_preferences({'gui_lang': code})
+            prefs = self.engine.load_preferences() or {}
+            if code == prefs.get('gui_lang'):
+                return
+
+            current_state = self._get_current_state_dict()
+            current_state['gui_lang'] = code
+            
+            prefs['gui_lang'] = code
+            self.engine.save_preferences(prefs)
+
+            self._build_ui()
+            self._restore_state_dict(current_state)
+
             target = config.TRANS.get(code, config.TRANS['en'])
             title   = target.get('msg_title_language_changed', 'Language Changed')
-            message = target.get('msg_restart_lang', 'Language changed. Please restart BadWords.')
+            message = target.get('msg_restart_lang_pending', 'Language changed. Full changes will apply on restart.')
             ok_text = target.get('btn_ok', 'OK')
-            self.accept()
-            CustomMsgBox(self.parent(), title, message, ok_text).exec()
+            
+            CustomMsgBox(self, title, message, ok_text).exec()
+            
+            self.btn_apply.setText(self.txt("btn_apply"))
+            self.btn_close.setText(self.txt("btn_close"))
+            self.btn_restore.setText(self.txt("btn_restore_defaults"))
 
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)
-        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang,
-                 'English', self.dropdown_lang.setText)
+        def _reset_lang(val):
+            self.dropdown_lang.setText(val)
+            _on_lang_changed(val)
+        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
 
         # App Icon (Visual Selector)
         icon_row = QHBoxLayout()
@@ -2093,7 +2236,17 @@ class SettingsDialog(QDialog):
         icon_container = QWidget()
         icon_container.setLayout(icon_row)
         icon_container.layout().setContentsMargins(0, 0, 0, 0)
-        _add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
+        
+        lbl_icon, container_icon = _add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
+        btn_rev_icon = container_icon.findChild(QPushButton, "btn_ghost_sm")
+        if btn_rev_icon:
+            btn_rev_icon.clicked.disconnect()
+            def set_icon_default(val="default"):
+                for btn in self.icon_group.buttons():
+                    if btn.property("icon_name") == val:
+                        btn.setChecked(True)
+                        break
+            btn_rev_icon.clicked.connect(lambda *args: set_icon_default("default"))
 
         l_gen.addLayout(form_gen)
 
@@ -2619,11 +2772,27 @@ class SettingsDialog(QDialog):
         l_telem.addStretch()
         _add_page_to_stack(page_telem)
     def _restore_all_defaults(self):
-        msg_box = CustomMsgBox(self, self.txt("msg_restore_title"), self.txt("msg_restore_desc"),
-                               self.txt("btn_yes"), self.txt("btn_no"))
+        msg_box = CustomMsgBox(
+            self, 
+            self.txt('msg_restore_title'), 
+            self.txt('msg_restore_desc'), 
+            self.txt('btn_yes'), 
+            self.txt('btn_no')
+        )
         if msg_box.exec() == QDialog.Accepted:
-            for f in self.revert_funcs:
-                f()
+            import config
+            # Kopia słownika by uniknąć modyfikacji referencji
+            default_state = config.DEFAULT_SETTINGS.copy()
+            
+            # Wstrzyknięcie domyślnych wartości do interfejsu (symulacja przycisków resetu)
+            self._restore_state_dict(default_state)
+            
+            # Wymuszenie odświeżenia znaczników i paska języka jeśli jest
+            self.current_custom_markers = []
+            try:
+                self._refresh_markers_list()
+            except Exception:
+                pass
 
     # ── Custom Markers helpers ─────────────────────────────────────────────
 
@@ -2745,74 +2914,193 @@ class SettingsDialog(QDialog):
         ).exec()
         self.reject()
 
+
     # ── Smart Apply ───────────────────────────────────────────────────────
 
-    def _apply_settings(self):
+    def _safe_get(self, attr_name, default_val, method_name="value"):
+        """Safely extracts a value from a widget, avoiding PySide6 dead C++ object errors."""
+        try:
+            widget = getattr(self, attr_name)
+            return getattr(widget, method_name)()
+        except (RuntimeError, AttributeError):
+            return default_val
+
+    def _get_current_state_dict(self):
         old_prefs = self.engine.load_preferences() or {}
         is_basic = old_prefs.get('settings_view_mode', 'basic') == 'basic'
+        
+        try:
+            checked_btn = self.icon_group.checkedButton()
+            icon_val = checked_btn.property("icon_name") if checked_btn else "default"
+        except (RuntimeError, AttributeError):
+            icon_val = old_prefs.get('app_icon', 'default')
 
-        # Gather current UI state (Global/Basic widgets)
-        hidden_items = sorted(self.dropdown_hidden.selected_items)
-        checked_btn = self.icon_group.checkedButton()
-        icon_val = checked_btn.property("icon_name") if checked_btn else "default"
+        try:
+            val = self.dropdown_lang.text()
+            lang_code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), old_prefs.get('gui_lang', 'en'))
+        except (RuntimeError, AttributeError):
+            lang_code = old_prefs.get('gui_lang', 'en')
+            
+        view_mode_val = self._safe_get('combo_view', '', 'currentText')
+        view_mode = 'segmented' if view_mode_val == self.txt("opt_segmented_blocks") else ('continuous' if view_mode_val else old_prefs.get('view_mode', 'segmented'))
 
-        new_prefs = {
-            'offset':             self.spin_offset.value(),
-            'pad':                self.spin_pad.value(),
-            'snap_max':           self.spin_snap.value(),
-            'always_on_top':      self.chk_ontop.isChecked(),
-            'hidden_panels':      hidden_items,
+        try:
+            shortcuts_dict = {k: v.keySequence().toString() for k, v in self.shortcut_inputs.items()}
+        except (RuntimeError, AttributeError):
+            shortcuts_dict = old_prefs.get('shortcuts', {})
+
+        try:
+            hidden_panels_val = sorted(self.dropdown_hidden.selected_items)
+        except (RuntimeError, AttributeError):
+            hidden_panels_val = old_prefs.get('hidden_panels', [])
+
+        state = {
+            'gui_lang':           lang_code,
+            'settings_view_mode': old_prefs.get('settings_view_mode', 'basic'),
+            'offset':             self._safe_get('spin_offset', old_prefs.get('offset', 0.0), 'value'),
+            'pad':                self._safe_get('spin_pad', old_prefs.get('pad', 0.0), 'value'),
+            'snap_max':           self._safe_get('spin_snap', old_prefs.get('snap_max', 0.0), 'value'),
             'app_icon':           icon_val,
-            # Shortcuts
-            'shortcuts': {k: v.keySequence().toString() for k, v in self.shortcut_inputs.items()},
-            # Telemetry (routes to user.json via osdoc save_all_prefs)
-            'telemetry_opt_in': self.chk_telemetry_opt_in.isChecked(),
-            'telemetry_geo':    self.chk_telemetry_geo.isChecked(),
+            'shortcuts':          shortcuts_dict,
+            'custom_markers':     getattr(self, 'current_custom_markers', old_prefs.get('custom_markers', [])),
+            'telemetry_opt_in':   self._safe_get('chk_telemetry_opt_in', old_prefs.get('telemetry_opt_in', False), 'isChecked'),
+            'telemetry_geo':      self._safe_get('chk_telemetry_geo', old_prefs.get('telemetry_geo', False), 'isChecked'),
+            'view_mode':          view_mode,
+            'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', 'Segoe UI'), 'currentText'),
+            'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
+            'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 12), 'value'),
         }
         
         if not is_basic:
-            view_val     = 'segmented' if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 'continuous'
-            device_val   = self.dropdown_device.currentText().lower()
-            compute_val  = self.dropdown_compute.currentText()
-            
-            new_prefs.update({
-                'view_mode':          view_val,
-                'editor_font_family': self.combo_font.currentText(),
-                'editor_font_size':   self.spin_fsize.value(),
-                'editor_line_height': self.spin_lheight.value(),
-                'chunk_max_words':    self.spin_chunk_max.value(),
-                'chunk_lookahead':    self.spin_chunk_look.value(),
-                'chunk_min_chars':    self.spin_chunk_min.value(),
-                'device':             device_val,
-                'ai_compute_type':    compute_val,
-                'compute_type':       compute_val,
-                'ai_initial_prompt':  self.textedit_prompt.toPlainText(),
-                # Algorithms
-                'algo_fuzzy_threshold':  self.spin_fuzzy.value(),
-                'algo_retake_lookahead': self.spin_lookahead.value(),
-                'algo_distance_penalty': self.spin_penalty.value(),
-                'algo_anchor_depth':     self.spin_anchor.value(),
-                # Custom markers
-                'custom_markers':   self.current_custom_markers,
-                # Interface appearance
-                'accent_color':     self.dropdown_accent.currentText(),
-                # Advanced Whisper params
-                'ai_vad_filter':            self.chk_vad_filter.isChecked(),
-                'ai_beam_size':             self.spin_beam_size.value(),
-                'ai_temperature':           self.spin_temperature.value(),
-                'ai_condition_on_prev':     self.chk_condition_prev.isChecked(),
-                'ai_logprob_threshold':     self.spin_logprob.value(),
-                'ai_no_speech_threshold':   self.spin_no_speech.value(),
-                'ai_patience':              self.spin_patience.value(),
-                'ai_compression_ratio_threshold': self.spin_compression.value(),
-                'ai_no_repeat_ngram_size':  self.spin_no_repeat.value(),
-                'ai_regroup':               self.chk_regroup.isChecked(),
-                'ai_suppress_silence':      self.chk_suppress_silence.isChecked(),
-                'ai_q_levels':              self.spin_q_levels.value(),
-                'ai_k_size':                self.spin_k_size.value(),
+            state.update({
+                'always_on_top':      self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
+                'hidden_panels':      hidden_panels_val,
+                'accent_color':       self._safe_get('dropdown_accent', old_prefs.get('accent_color', 'green'), 'currentText'),
+                'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto').capitalize(), 'currentText').lower(),
+                'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
+                'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
+                'chunk_max_words':    self._safe_get('spin_chunk_max', old_prefs.get('chunk_max_words', 30), 'value'),
+                'chunk_lookahead':    self._safe_get('spin_chunk_look', old_prefs.get('chunk_lookahead', 3), 'value'),
+                'chunk_min_chars':    self._safe_get('spin_chunk_min', old_prefs.get('chunk_min_chars', 7), 'value'),
+                'algo_fuzzy_threshold':  self._safe_get('spin_fuzzy', old_prefs.get('algo_fuzzy_threshold', 80), 'value'),
+                'algo_retake_lookahead': self._safe_get('spin_lookahead', old_prefs.get('algo_retake_lookahead', 80), 'value'),
+                'algo_distance_penalty': self._safe_get('spin_penalty', old_prefs.get('algo_distance_penalty', 2.0), 'value'),
+                'algo_anchor_depth':     self._safe_get('spin_anchor', old_prefs.get('algo_anchor_depth', 3), 'value'),
+                'ai_vad_filter':            self._safe_get('chk_vad_filter', old_prefs.get('ai_vad_filter', False), 'isChecked'),
+                'ai_beam_size':             self._safe_get('spin_beam_size', old_prefs.get('ai_beam_size', 1), 'value'),
+                'ai_temperature':           self._safe_get('spin_temperature', old_prefs.get('ai_temperature', 0.0), 'value'),
+                'ai_condition_on_prev':     self._safe_get('chk_condition_prev', old_prefs.get('ai_condition_on_prev', False), 'isChecked'),
+                'ai_logprob_threshold':     self._safe_get('spin_logprob', old_prefs.get('ai_logprob_threshold', -1.0), 'value'),
+                'ai_no_speech_threshold':   self._safe_get('spin_no_speech', old_prefs.get('ai_no_speech_threshold', 0.2), 'value'),
+                'ai_patience':              self._safe_get('spin_patience', old_prefs.get('ai_patience', 1.0), 'value'),
+                'ai_compression_ratio_threshold': self._safe_get('spin_compression', old_prefs.get('ai_compression_ratio_threshold', 10.0), 'value'),
+                'ai_no_repeat_ngram_size':  self._safe_get('spin_no_repeat', old_prefs.get('ai_no_repeat_ngram_size', 0), 'value'),
+                'ai_regroup':               self._safe_get('chk_regroup', old_prefs.get('ai_regroup', False), 'isChecked'),
+                'ai_suppress_silence':      self._safe_get('chk_suppress_silence', old_prefs.get('ai_suppress_silence', False), 'isChecked'),
+                'ai_q_levels':              self._safe_get('spin_q_levels', old_prefs.get('ai_q_levels', 20), 'value'),
+                'ai_k_size':                self._safe_get('spin_k_size', old_prefs.get('ai_k_size', 5), 'value'),
             })
+        else:
+            advanced_keys = ["always_on_top", "hidden_panels", "accent_color", "device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_regroup", "ai_suppress_silence", "ai_q_levels", "ai_k_size"]
+            for key in advanced_keys:
+                if key in old_prefs:
+                    state[key] = old_prefs[key]
+        return state
 
-        # ── Stage 6A v2 (optimized): Hardware pre-validation ────────────────
+    def _safe_set(self, attr_name, value, method_name="setValue"):
+        """Safely sets a value on a widget, avoiding dead objects or missing attributes."""
+        try:
+            if hasattr(self, attr_name):
+                widget = getattr(self, attr_name)
+                getattr(widget, method_name)(value)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _restore_state_dict(self, state):
+        is_basic = state.get('settings_view_mode', 'basic') == 'basic'
+        
+        self._safe_set('spin_offset', state.get('offset', 0.0), 'setValue')
+        self._safe_set('spin_pad', state.get('pad', 0.0), 'setValue')
+        self._safe_set('spin_snap', state.get('snap_max', 0.0), 'setValue')
+        self._safe_set('chk_telemetry_opt_in', state.get('telemetry_opt_in', False), 'setChecked')
+        self._safe_set('chk_telemetry_geo', state.get('telemetry_geo', False), 'setChecked')
+        
+        try:
+            if hasattr(self, 'icon_group'):
+                icon_name = state.get('app_icon', 'default')
+                for btn in self.icon_group.buttons():
+                    if btn.property("icon_name") == icon_name:
+                        btn.setChecked(True)
+                        break
+        except RuntimeError:
+            pass
+                
+        try:
+            lang_code = state.get('gui_lang', 'en')
+            self._safe_set('dropdown_lang', config.SUPPORTED_LANGS.get(lang_code, 'English'), 'setText')
+        except Exception:
+            pass
+        
+        view_mode = state.get('view_mode', 'segmented')
+        self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
+        self._safe_set('combo_font', state.get('editor_font_family', 'Segoe UI'), 'setText')
+        self._safe_set('spin_fsize', state.get('editor_font_size', 12), 'setValue')
+        self._safe_set('spin_lheight', state.get('editor_line_height', 12), 'setValue')
+        
+        self.current_custom_markers = state.get('custom_markers', [])
+        try:
+            if hasattr(self, '_refresh_markers_list'):
+                self._refresh_markers_list()
+        except RuntimeError:
+            pass
+        
+        try:
+            from PySide6.QtGui import QKeySequence
+            if hasattr(self, 'shortcut_inputs'):
+                for k, v in state.get('shortcuts', {}).items():
+                    if k in self.shortcut_inputs:
+                        self.shortcut_inputs[k].setKeySequence(QKeySequence(v))
+        except RuntimeError:
+            pass
+                
+        if not is_basic:
+            self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
+            try:
+                if hasattr(self, 'dropdown_hidden'):
+                    self.dropdown_hidden.selected_items = set(state.get('hidden_panels', []))
+                    self.dropdown_hidden.setText(", ".join(sorted(state.get('hidden_panels', []))) if state.get('hidden_panels') else self.txt("txt_select"))
+            except RuntimeError:
+                pass
+            
+            self._safe_set('dropdown_accent', state.get('accent_color', 'green'), 'setText')
+            self._safe_set('dropdown_device', state.get('device', 'Auto').capitalize(), 'setText')
+            self._safe_set('dropdown_compute', state.get('ai_compute_type', 'Auto'), 'setText')
+            self._safe_set('textedit_prompt', state.get('ai_initial_prompt', ''), 'setPlainText')
+            self._safe_set('spin_chunk_max', state.get('chunk_max_words', 30), 'setValue')
+            self._safe_set('spin_chunk_look', state.get('chunk_lookahead', 3), 'setValue')
+            self._safe_set('spin_chunk_min', state.get('chunk_min_chars', 7), 'setValue')
+            self._safe_set('chk_vad_filter', state.get('ai_vad_filter', False), 'setChecked')
+            self._safe_set('spin_beam_size', state.get('ai_beam_size', 1), 'setValue')
+            self._safe_set('spin_temperature', state.get('ai_temperature', 0.0), 'setValue')
+            self._safe_set('chk_condition_prev', state.get('ai_condition_on_prev', False), 'setChecked')
+            self._safe_set('spin_logprob', state.get('ai_logprob_threshold', -1.0), 'setValue')
+            self._safe_set('spin_no_speech', state.get('ai_no_speech_threshold', 0.2), 'setValue')
+            self._safe_set('spin_patience', state.get('ai_patience', 1.0), 'setValue')
+            self._safe_set('spin_compression', state.get('ai_compression_ratio_threshold', 10.0), 'setValue')
+            self._safe_set('spin_no_repeat', state.get('ai_no_repeat_ngram_size', 0), 'setValue')
+            self._safe_set('chk_regroup', state.get('ai_regroup', False), 'setChecked')
+            self._safe_set('chk_suppress_silence', state.get('ai_suppress_silence', False), 'setChecked')
+            self._safe_set('spin_q_levels', state.get('ai_q_levels', 20), 'setValue')
+            self._safe_set('spin_k_size', state.get('ai_k_size', 5), 'setValue')
+            self._safe_set('spin_fuzzy', state.get('algo_fuzzy_threshold', 80), 'setValue')
+            self._safe_set('spin_lookahead', state.get('algo_retake_lookahead', 80), 'setValue')
+            self._safe_set('spin_penalty', state.get('algo_distance_penalty', 2.0), 'setValue')
+            self._safe_set('spin_anchor', state.get('algo_anchor_depth', 3), 'setValue')
+
+    def _apply_settings(self):
+        old_prefs = self.engine.load_preferences() or {}
+        new_prefs = self._get_current_state_dict()
+        
         selected_device  = new_prefs.get('device', 'auto')
         selected_compute = new_prefs.get('ai_compute_type', 'Auto')
         old_compute      = old_prefs.get('ai_compute_type', 'Auto')
@@ -2828,16 +3116,9 @@ class SettingsDialog(QDialog):
                 QApplication.restoreOverrideCursor()
 
             if not is_supported:
-                CustomMsgBox(
-                    self,
-                    self.txt('msg_compute_fail_title'),
-                    self.txt('msg_compute_fail_desc'),
-                    self.txt('btn_close'),
-                ).exec()
-                return  # Abort — keep dialog open, nothing saved
-        # ────────────────────────────────────────────────────────────────────
+                CustomMsgBox(self, self.txt('msg_compute_fail_title'), self.txt('msg_compute_fail_desc'), self.txt('btn_close')).exec()
+                return
 
-        # Detect which restart-required keys actually changed
         restart_needed = any(
             new_prefs.get(k) != old_prefs.get(k)
             for k in config.RESTART_REQUIRED_KEYS
@@ -2845,34 +3126,97 @@ class SettingsDialog(QDialog):
         )
 
         self.engine.save_preferences(new_prefs)
+        self.btn_apply.setText(self.txt("txt_saved"))
+        self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
+        from PySide6.QtCore import QTimer
+        def restore_btn():
+            self.btn_apply.setText(self.txt("btn_apply"))
+            self.btn_apply.setStyleSheet("") # Przywraca domyślny arkusz CSS
+        QTimer.singleShot(1500, restore_btn)
 
-        # Real-time canvas update
         main_win = self.parent()
         if hasattr(main_win, 'text_canvas'):
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()
 
-        # Always-on-top: apply immediately
-        aot_changed = new_prefs['always_on_top'] != bool(old_prefs.get('always_on_top', False))
+        aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
         if aot_changed and main_win:
-            flags = main_win.windowFlags()
-            if new_prefs['always_on_top']:
+            if new_prefs.get('always_on_top'):
                 main_win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
             else:
                 main_win.setWindowFlag(Qt.WindowStaysOnTopHint, False)
             main_win.show()
 
-        # Restart notification
         if restart_needed:
             lang = old_prefs.get('gui_lang', 'en')
             target = config.TRANS.get(lang, config.TRANS['en'])
             CustomMsgBox(
                 self,
-                target.get('msg_title_language_changed', 'Restart Required'),
-                target.get('msg_restart_lang', 'Some changes require a restart to take full effect.'),
+                target.get('tool_settings', 'Settings'),
+                target.get('msg_restart_required', 'Changes applied. Full effect will be visible on next launch.'),
                 target.get('btn_ok', 'OK')
             ).exec()
 
+    def reject(self):
+        old_prefs = self.engine.load_preferences() or {}
+        new_prefs = self._get_current_state_dict()
+        diff = {}
+        for k, new_val in new_prefs.items():
+            old_val = old_prefs.get(k)
+            if old_val is None:
+                if k == 'app_icon': old_val = 'default'
+                elif k == 'gui_lang': old_val = 'en'
+                elif k == 'hidden_panels': old_val = []
+                elif k == 'custom_markers': old_val = []
+            if str(new_val) != str(old_val) and new_val != old_val:
+                diff[k] = (old_val, new_val)
+                
+        if diff:
+            key_name_map = {
+                'gui_lang': f"{self.txt('tab_general')}: {self.txt('lbl_language')}",
+                'app_icon': f"{self.txt('tab_general')}: {self.txt('lbl_app_icon')}",
+                'offset': f"{self.txt('tab_audio_sync')}: {self.txt('lbl_offset_s')}",
+                'pad': f"{self.txt('tab_audio_sync')}: {self.txt('lbl_padding_s')}",
+                'snap_max': f"{self.txt('tab_audio_sync')}: {self.txt('lbl_snap_max_s')}",
+                'view_mode': f"{self.txt('tab_transcript')}: {self.txt('lbl_display_mode')}",
+                'editor_font_family': f"{self.txt('tab_transcript')}: {self.txt('lbl_transcript_font')}",
+                'editor_font_size': f"{self.txt('tab_transcript')}: {self.txt('lbl_font_size_pt')}",
+                'editor_line_height': f"{self.txt('tab_transcript')}: {self.txt('lbl_line_spacing_px')}",
+                'chunk_max_words': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_max_words')}",
+                'chunk_lookahead': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_lookahead')}",
+                'chunk_min_chars': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_min_chars')}",
+                'always_on_top': f"{self.txt('tab_interface')}: {self.txt('lbl_always_on_top')}",
+                'hidden_panels': f"{self.txt('tab_interface')}: {self.txt('lbl_hidden_panels')}",
+                'accent_color': f"{self.txt('tab_interface')}: {self.txt('lbl_accent_color')}",
+                'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
+                'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
+                'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",
+                'algo_fuzzy_threshold': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_fuzzy')}",
+                'algo_retake_lookahead': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_lookahead')}",
+                'algo_distance_penalty': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_penalty')}",
+                'algo_anchor_depth': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_anchor')}",
+                'telemetry_opt_in': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_opt_in')}",
+                'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}"
+            }
+            
+            dlg = UnsavedChangesDialog(self, diff, key_name_map)
+            if dlg.exec() == QDialog.Accepted:
+                save_needed = False
+                for k, action in dlg.decisions.items():
+                    if action == 'discard':
+                        new_prefs[k] = diff[k][0] 
+                    else:
+                        save_needed = True
+                
+                self._restore_state_dict(new_prefs)
+                
+                if save_needed:
+                    self._apply_settings()
+                super().reject()
+            else:
+                return 
+        else:
+            super().reject()
 
 
 # ==========================================
