@@ -127,20 +127,35 @@ if "%WIPE_MODE%"=="0" (
     echo [INFO] Standard Install/Update detected. Using fast upgrade...
     set "PIP_FLAGS=--upgrade"
 ) else (
-    echo [INFO] Repair/Reset Mode detected. Forcing clean reinstall...
-    set "PIP_FLAGS=--no-warn-script-location --force-reinstall --ignore-installed"
+    echo [INFO] Repair/Reset Mode detected. Fresh environment expected...
+    set "PIP_FLAGS="
+)
+
+:: --- SMART SKIP FOR AI LIBRARIES ---
+echo [INFO] Checking AI libraries...
+if "%WIPE_MODE%"=="0" (
+    if exist "%VENV_DIR%\Lib\site-packages\torch" if exist "%VENV_DIR%\Lib\site-packages\faster_whisper" (
+        echo [INFO] AI libraries already installed. Quick update detected.
+        echo [INFO] Skipping heavy downloads...
+        goto :SKIP_AI_INSTALL
+    )
 )
 
 echo [INFO] Installing AI libraries...
 if "%GPU_MODE%"=="1" (
-    echo [INFO] Hardware: NVIDIA GPU (CUDA)
-    "%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf %PIP_FLAGS%
-) else (
-    echo [INFO] Hardware: CPU
-    echo [INFO] Downloading CPU-optimized PyTorch to save space...
-    "%VENV_PYTHON%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu %PIP_FLAGS%
-    "%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf %PIP_FLAGS%
+    echo [INFO] Hardware: NVIDIA GPU ^(CUDA + CPU Support^)
+    echo [INFO] Installing full PyTorch ^(Supports BOTH CUDA and CPU^)...
+    "%VENV_PYTHON%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 %PIP_FLAGS%
+    "%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf --extra-index-url https://download.pytorch.org/whl/cu121 %PIP_FLAGS%
+    goto :SKIP_AI_INSTALL
 )
+
+echo [INFO] Hardware: CPU ONLY
+echo [INFO] Downloading CPU-optimized PyTorch to save disk space...
+"%VENV_PYTHON%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu %PIP_FLAGS%
+"%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf --extra-index-url https://download.pytorch.org/whl/cpu %PIP_FLAGS%
+
+:SKIP_AI_INSTALL
 
 if !errorlevel! neq 0 (
     echo [ERROR] Failed to install libraries.
@@ -234,7 +249,7 @@ if exist "!WRAPPER_FILE!" (
 echo.
 echo [SUCCESS] Configuration complete!
 :: Auto-close timeout (will gracefully exit without waiting for a key press)
-timeout /t 3 >nul
+timeout /t 1 >nul
 exit /b 0
 
 :ERROR_ARGS
