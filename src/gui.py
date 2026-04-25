@@ -625,10 +625,335 @@ class TranscriptionCanvas(QWidget):
             self._handle_mouse(event.pos())
 
 # ==========================================
+# CSD — CLIENT-SIDE DECORATION CLASSES
+# ==========================================
+
+class AnimatedTitleButton(QPushButton):
+    """
+    Title-bar control button with a 150ms QVariantAnimation colour transition
+    on hover. The close button uses a red hover (#c42b1c) to match Discord/
+    Spotify conventions; all other buttons use HOVER from config.
+    """
+
+    def __init__(self, icon_path: str, tooltip_key: str, lang: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("TitleBarBtn")
+        self._bg    = config.COLOR_TITLEBAR_BG
+        self._hover = config.COLOR_TITLEBAR_HOVER
+        self._press = "#3a3a3d"
+        self._cur   = self._bg
+
+        self.setFixedSize(32, 32)
+        self.setToolTip(_txt(lang, tooltip_key))
+        self.setCursor(Qt.ArrowCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+        self.setAutoFillBackground(False)
+        self.setFlat(True)
+
+        pix = QPixmap(icon_path)
+        if not pix.isNull():
+            self.setIcon(QIcon(pix))
+            self.setIconSize(QSize(12, 12))
+
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(150)
+        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._anim.valueChanged.connect(self._on_color_changed)
+
+        self._update_style()
+
+    # ── internal ─────────────────────────────────────────────────────────────
+    def _on_color_changed(self, color):
+        self._cur = color.name() if hasattr(color, 'name') else str(color)
+        self._update_style()
+
+    def _update_style(self):
+        self.setStyleSheet(f"""
+            QPushButton#TitleBarBtn {{
+                background-color: {self._cur}; border: none; border-radius: 0px;
+                min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px;
+                margin: 0px; padding: 0px;
+            }}
+            QPushButton#TitleBarBtn:pressed {{ background-color: {self._press}; }}
+        """)
+
+    # ── events ────────────────────────────────────────────────────────────────
+    def enterEvent(self, event):
+        self._anim.stop()
+        self._anim.setStartValue(QColor(self._cur))
+        self._anim.setEndValue(QColor(self._hover))
+        self._anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._anim.stop()
+        self._anim.setStartValue(QColor(self._cur))
+        self._anim.setEndValue(QColor(self._bg))
+        self._anim.start()
+        super().leaveEvent(event)
+
+
+class CustomTitleBar(QWidget):
+    """
+    Cross-platform custom title bar.
+
+    macOS / Linux
+    -------------
+    • Dragging  → QWindow.startSystemMove()  (native OS behaviour)
+    • Dbl-click → toggle maximized             (native OS behaviour)
+
+    Windows
+    -------
+    Dragging and maximise toggles are handled by FramelessWindowMixin via
+    WM_NCHITTEST returning HTCAPTION, so mousePressEvent / mouseDoubleClick
+    are NO-OPs on Windows (the mixin intercepts them at the native level).
+    """
+
+    def __init__(self, window: QWidget, lang: str, parent=None):
+        super().__init__(parent)
+        self._win  = window
+        self._lang = lang
+        self.setObjectName("CustomTitleBar")
+        self.setFixedHeight(32)
+        self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"QWidget#CustomTitleBar {{ background-color: {config.COLOR_TITLEBAR_BG}; }}"
+        )
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(12, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # Small app-icon
+        icon_lbl = QLabel()
+        icon_pix = _app_icon().pixmap(QSize(14, 14))
+        if not icon_pix.isNull():
+            icon_lbl.setPixmap(icon_pix)
+        icon_lbl.setFixedSize(18, 32)
+        icon_lbl.setStyleSheet("background: transparent;")
+        lay.addWidget(icon_lbl)
+        lay.addSpacing(6)
+
+        # Title text
+        self._lbl_title = QLabel(config.APP_NAME)
+        self._lbl_title.setStyleSheet(
+            f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
+            f"font-size: 9pt; background: transparent;"
+        )
+        lay.addWidget(self._lbl_title)
+        lay.addStretch()
+
+        # Resolve icon directory (assets/layout/ sibling to src/)
+        _src_dir    = os.path.dirname(os.path.abspath(__file__))
+        _assets_dir = os.path.join(_src_dir, "layout")
+
+        self.btn_minimize = AnimatedTitleButton(
+            os.path.join(_assets_dir, "minimize.png"),
+            "btn_minimize", lang, parent=self)
+        self.btn_maximize = AnimatedTitleButton(
+            os.path.join(_assets_dir, "maximize.png"),
+            "btn_maximize", lang, parent=self)
+        self.btn_close    = AnimatedTitleButton(
+            os.path.join(_assets_dir, "exit.png"),
+            "btn_close",    lang, parent=self)
+
+        self.btn_minimize.clicked.connect(lambda: self._win.showMinimized())
+        self.btn_maximize.clicked.connect(self._toggle_maximize)
+        self.btn_close.clicked.connect(self._win.close)
+
+        for btn in (self.btn_minimize, self.btn_maximize, self.btn_close):
+            lay.addWidget(btn)
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def _toggle_maximize(self):
+        if self._win.isMaximized():
+            self._win.showNormal()
+        else:
+            self._win.showMaximized()
+
+    # ── macOS / Linux native move & toggle ────────────────────────────────────
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            win_handle = self._win.windowHandle()
+            if win_handle:
+                try:
+                    win_handle.startSystemMove()
+                except Exception:
+                    pass
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._toggle_maximize()
+        super().mouseDoubleClickEvent(event)
+
+
+class FramelessWindowMixin:
+    """
+    Mixin that turns any QMainWindow / QDialog into a frameless, CSD window.
+
+    Usage
+    -----
+        class MyWindow(FramelessWindowMixin, QMainWindow):
+            def __init__(self):
+                super().__init__()
+                self.frameless_init(is_popup=False)
+
+    Provides
+    --------
+    • frameless_init()      — sets flags, creates shadow for popups
+    • moveEvent / resizeEvent — Smart Corners (per-corner border-radius)
+    • nativeEvent           — WM_NCHITTEST map (Windows only):
+          resize borders → HT* constants
+          title bar area → HTCAPTION  (enables Aero Snap, system animations)
+          close/min/max buttons → HTCLIENT
+          rest of window → HTCLIENT
+    """
+
+    _RESIZE_BORDER = 5   # px — hit-test sensitivity at window edges
+
+    # ── public API ────────────────────────────────────────────────────────────
+    def frameless_init(self, is_popup: bool = False):
+        """Call once, right after super().__init__()."""
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._is_popup              = is_popup
+        self._current_corner_state  = None   # (tl, tr, bl, br) cache
+
+    def _get_root_frame(self):
+        """Return the topmost styled QFrame to apply border-radius to."""
+        return getattr(self, 'inner_frame', getattr(self, '_root_frame', None))
+
+    # ── Smart Corners ─────────────────────────────────────────────────────────
+    def _apply_smart_corners(self):
+        """
+        Rounds every corner that does NOT touch a screen edge (tolerance ±2 px).
+        Only rewrites QSS when the state actually changes.
+        """
+        screen = self.screen()
+        if not screen:
+            return
+        avail = screen.availableGeometry()
+        fg    = self.frameGeometry()
+        tol   = 2
+
+        t_top    = abs(fg.top()    - avail.top())    <= tol
+        t_bottom = abs(fg.bottom() - avail.bottom()) <= tol
+        t_left   = abs(fg.left()   - avail.left())   <= tol
+        t_right  = abs(fg.right()  - avail.right())  <= tol
+
+        r = 12   # corner radius in px
+        tl = 0 if (t_top    or t_left)  else r
+        tr = 0 if (t_top    or t_right) else r
+        bl = 0 if (t_bottom or t_left)  else r
+        br = 0 if (t_bottom or t_right) else r
+
+        state = (tl, tr, bl, br)
+        if state == self._current_corner_state:
+            return
+        self._current_corner_state = state
+
+        target = self._get_root_frame()
+        if target is None:
+            return
+
+        existing = target.styleSheet()
+        # Strip any previous border-radius rule and append the new one
+        lines = [l for l in existing.split('\n')
+                 if 'border-radius' not in l and l.strip()]
+        clean = '\n'.join(lines)
+        if clean and not clean.endswith('{'):
+            target.setStyleSheet(
+                clean + f"\n    border-radius: {tl}px {tr}px {br}px {bl}px;"
+            )
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._apply_smart_corners()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_smart_corners()
+
+    # ── Windows WM_NCHITTEST ──────────────────────────────────────────────────
+    def nativeEvent(self, eventType, message):
+        try:
+            # Determine if we are running on Windows
+            _engine = getattr(self, 'engine', None)
+            _os_doc = getattr(_engine, 'os_doc', None) if _engine else None
+            _is_win = _os_doc.is_win if _os_doc else (platform.system() == "Windows")
+
+            if _is_win and eventType == b"windows_generic_MSG":
+                import ctypes.wintypes as _wt
+                msg = _wt.MSG.from_address(int(message))
+                if msg.message != 0x0084:              # WM_NCHITTEST
+                    return super().nativeEvent(eventType, message)
+
+                # Cursor position in screen coordinates
+                lp    = msg.lParam
+                sx    = ctypes.c_int16(lp & 0xFFFF).value
+                sy    = ctypes.c_int16((lp >> 16) & 0xFFFF).value
+                local = self.mapFromGlobal(QPoint(sx, sy))
+                lx, ly  = local.x(), local.y()
+                w,  h   = self.width(), self.height()
+                b       = self._RESIZE_BORDER
+
+                on_l = lx < b
+                on_r = lx >= w - b
+                on_t = ly < b
+                on_b = ly >= h - b
+
+                # fmt: off
+                _HT = {
+                    (True,  False, True,  False): 13,  # HTTOPLEFT
+                    (False, True,  True,  False): 14,  # HTTOPRIGHT
+                    (True,  False, False, True ): 16,  # HTBOTTOMLEFT
+                    (False, True,  False, True ): 17,  # HTBOTTOMRIGHT
+                    (False, False, True,  False): 12,  # HTTOP
+                    (False, False, False, True ): 15,  # HTBOTTOM
+                    (True,  False, False, False): 10,  # HTLEFT
+                    (False, True,  False, False): 11,  # HTRIGHT
+                }
+                # fmt: on
+                hit = _HT.get((on_l, on_r, on_t, on_b))
+                if hit:
+                    return True, hit
+
+                # Check title bar region
+                _tb = getattr(self, '_title_bar', None)
+                if _tb is not None:
+                    tb_tl = _tb.mapToGlobal(_tb.rect().topLeft())
+                    tb_br = _tb.mapToGlobal(_tb.rect().bottomRight())
+                    if (tb_tl.x() <= sx <= tb_br.x() and
+                            tb_tl.y() <= sy <= tb_br.y()):
+                        # If cursor is over a window-control button → HTCLIENT
+                        for _btn in (_tb.btn_minimize,
+                                     _tb.btn_maximize,
+                                     _tb.btn_close):
+                            _bl = _btn.mapToGlobal(_btn.rect().topLeft())
+                            _br = _btn.mapToGlobal(_btn.rect().bottomRight())
+                            if (_bl.x() <= sx <= _br.x() and
+                                    _bl.y() <= sy <= _br.y()):
+                                return True, 1   # HTCLIENT
+                        return True, 2           # HTCAPTION → OS drag/snap
+
+                return True, 1                   # HTCLIENT
+
+        except Exception as _e:
+            try:
+                osdoc.log_error(f"[CSD] nativeEvent: {_e}")
+            except Exception:
+                pass
+
+        return super().nativeEvent(eventType, message)
+
+
+# ==========================================
 # CLASS 1: SPLASH SCREEN
 # ==========================================
 
-class SplashScreen(QDialog):
+class SplashScreen(FramelessWindowMixin, QDialog):
     """
     Frameless, dark loading window displayed while engine/api are initializing.
     Shows an animated "loading…" label (0-3 cycling dots at 400 ms).
@@ -638,22 +963,38 @@ class SplashScreen(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # --- Window flags: frameless, always on top during splash ---
-        self.setWindowFlags(
-            Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint |
-            Qt.Dialog
-        )
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        apply_dark_title_bar(self)
 
         W, H = 300, 150
-        self.setFixedSize(W, H)
+        self.setFixedSize(W + 30, H + 30)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        self.inner_frame = QFrame()
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        layout = QVBoxLayout(self.inner_frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        content_layout = QVBoxLayout()
+        layout.addLayout(content_layout)
 
         # --- QSS styling ---
         self.setStyleSheet(f"""
-            QDialog {{
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #000000;
             }}
@@ -673,20 +1014,19 @@ class SplashScreen(QDialog):
         """)
 
         # --- Layout ---
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 30, 20, 20)
-        layout.setSpacing(8)
-        layout.setAlignment(Qt.AlignCenter)
+        content_layout.setContentsMargins(20, 30, 20, 20)
+        content_layout.setSpacing(8)
+        content_layout.setAlignment(Qt.AlignCenter)
 
-        lbl_title = QLabel("BadWords", self)
+        lbl_title = QLabel("BadWords", self.inner_frame)
         lbl_title.setObjectName("title")
         lbl_title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(lbl_title)
+        content_layout.addWidget(lbl_title)
 
-        self._lbl_loading = QLabel(self.txt("lbl_loading"), self)
+        self._lbl_loading = QLabel(self.txt("lbl_loading"), self.inner_frame)
         self._lbl_loading.setObjectName("loading")
         self._lbl_loading.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self._lbl_loading)
+        content_layout.addWidget(self._lbl_loading)
 
         # --- Icon ---
         self.setWindowIcon(_app_icon())
@@ -797,7 +1137,7 @@ class _LangPickerDialog(QDialog):
         self.close()
 
 
-class TelemetryPopup(QDialog):
+class TelemetryPopup(FramelessWindowMixin, QDialog):
     """
     Modal dialog asking the user for analytics consent.
 
@@ -828,20 +1168,18 @@ class TelemetryPopup(QDialog):
             self._lang = "en"
 
         # --- Window setup ---
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setWindowModality(Qt.ApplicationModal)
         self.setWindowIcon(_app_icon())
-        apply_dark_title_bar(self)
 
         # --- Root QSS ---
         self.setStyleSheet(f"""
-            TelemetryPopup {{
+            TelemetryPopup {{ background-color: transparent; }}
+            #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #000000;
-            }}
-            QWidget#container {{
-                background-color: {config.BG_COLOR};
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
@@ -1650,17 +1988,18 @@ class SearchableDropdown(QPushButton):
         return self.text()
 
 
-class CustomMsgBox(QDialog):
+class CustomMsgBox(FramelessWindowMixin, QDialog):
     def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None):
         super().__init__(parent)
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        apply_dark_title_bar(self)
         
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
             QLabel {{ color: {config.FG_COLOR}; }}
             QLabel#lbl_title {{ font-size: 14pt; font-weight: bold; }}
             QLabel#lbl_msg {{ font-size: 11pt; }}
@@ -1677,24 +2016,45 @@ class CustomMsgBox(QDialog):
             QPushButton#btn_yes:hover {{ background-color: {config.BTN_ACTIVE}; }}
         """)
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
         
-        container = QWidget(self)
-        v_layout = QVBoxLayout(container)
-        v_layout.setContentsMargins(20, 25, 20, 20)
-        v_layout.setSpacing(15)
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
+        self._tb.btn_minimize.hide()
+        self._tb.btn_maximize.hide()
+        root_layout.addWidget(self._tb)
+        
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 25, 20, 20)
+        content_layout.setSpacing(15)
+        root_layout.addLayout(content_layout)
         
         lbl_title = QLabel(title)
         lbl_title.setObjectName("lbl_title")
-        v_layout.addWidget(lbl_title)
+        content_layout.addWidget(lbl_title)
         
         lbl_msg = QLabel(message)
         lbl_msg.setObjectName("lbl_msg")
         lbl_msg.setWordWrap(True)
         lbl_msg.setFixedWidth(380)
         lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        v_layout.addWidget(lbl_msg)
+        content_layout.addWidget(lbl_msg)
         
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
@@ -1710,36 +2070,63 @@ class CustomMsgBox(QDialog):
         btn_yes.clicked.connect(self.accept)
         btn_layout.addWidget(btn_yes)
         
-        v_layout.addLayout(btn_layout)
-        layout.addWidget(container)
+        content_layout.addLayout(btn_layout)
         
         self.adjustSize()
         _center_on_screen(self, self.width(), self.height())
 
 
-class UnsavedChangesDialog(QDialog):
+class UnsavedChangesDialog(FramelessWindowMixin, QDialog):
     def __init__(self, parent, diff_dict, key_name_map):
         super().__init__(parent)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        apply_dark_title_bar(self)
-        self.setStyleSheet(parent.styleSheet() + """
-            QScrollArea { border: 1px solid #333; background-color: #1c1c1c; border-radius: 4px; }
-            QFrame#item_row { border-bottom: 1px solid #333; padding-bottom: 5px; }
+        
+        self.setStyleSheet(parent.styleSheet() + f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; }}
+            QScrollArea {{ border: 1px solid #333; background-color: #1c1c1c; border-radius: 4px; }}
+            QFrame#item_row {{ border-bottom: 1px solid #333; padding-bottom: 5px; }}
         """)
         
         self.decisions = {}
         self.diff_dict = diff_dict
         self.rows = {}
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 25, 20, 20)
-        layout.setSpacing(15)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
+        self._tb.btn_minimize.hide()
+        self._tb.btn_maximize.hide()
+        root_layout.addWidget(self._tb)
+        
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 25, 20, 20)
+        content_layout.setSpacing(15)
+        root_layout.addLayout(content_layout)
         
         lbl_title = QLabel(parent.txt('msg_unsaved_title'))
         lbl_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
-        layout.addWidget(lbl_title)
-        layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
+        content_layout.addWidget(lbl_title)
+        content_layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
         
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1780,7 +2167,7 @@ class UnsavedChangesDialog(QDialog):
         
         self.vbox.addStretch()
         scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
+        content_layout.addWidget(scroll)
         
         bot_layout = QHBoxLayout()
         btn_cancel = QPushButton(parent.txt('btn_cancel'))
@@ -1802,10 +2189,10 @@ class UnsavedChangesDialog(QDialog):
         bot_layout.addStretch()
         bot_layout.addWidget(btn_discard_all)
         bot_layout.addWidget(btn_save_all)
-        layout.addLayout(bot_layout)
+        content_layout.addLayout(bot_layout)
         
-        self.resize(600, 450)
-        _center_on_screen(self, 600, 450)
+        self.resize(630, 480)
+        _center_on_screen(self, 630, 480)
         
     def _make_decision(self, key, decision):
         self.decisions[key] = decision
@@ -1826,7 +2213,7 @@ class UnsavedChangesDialog(QDialog):
         self.accept()
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(FramelessWindowMixin, QDialog):
     """Settings Dialog — left category menu + right stacked pages.
     All I/O goes through engine.load_preferences / engine.save_preferences
     which delegate to osdoc's smart router.
@@ -1857,17 +2244,19 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.engine = engine
         self.setWindowTitle(self.txt("tool_settings"))
-        self.setWindowFlags(Qt.Dialog)
-        self.setMinimumSize(680, 520)
-        self.resize(720, 550)
-        apply_dark_title_bar(self)
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.Dialog)
+        self.setMinimumSize(710, 550)
+        self.resize(750, 580)
 
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
         self.setStyleSheet(f"""
-            QDialog {{
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
+                border: 1px solid #1a1a1a;
             }}
             QPushButton {{
                 padding: 6px 16px;
@@ -1976,9 +2365,38 @@ class SettingsDialog(QDialog):
         # ─────────────────────────────────────────────────────────────────
         # Root layout: [LEFT menu | RIGHT content]
         # ─────────────────────────────────────────────────────────────────
-        root = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        outer_layout = QVBoxLayout(self.inner_frame)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+        
+        self._tb = CustomTitleBar(self, prefs.get("gui_lang", "en"), parent=self.inner_frame)
+        # Manually force the title into toolbars that normally get theirs from windowTitle()
+        if hasattr(self._tb, "_lbl_title"):
+            self._tb._lbl_title.setText(self.txt("tool_settings"))
+        self._tb.btn_minimize.hide()
+        self._tb.btn_maximize.hide()
+        outer_layout.addWidget(self._tb)
+        
+        root = QHBoxLayout()
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+        outer_layout.addLayout(root)
 
         # ── LEFT: Category list ───────────────────────────────────────────
         self.category_list = QListWidget()
@@ -3223,7 +3641,7 @@ class SettingsDialog(QDialog):
 # CLASS 3: MAIN APPLICATION WINDOW
 # ==========================================
 
-class BadWordsGUI(QMainWindow):
+class BadWordsGUI(FramelessWindowMixin, QMainWindow):
     """
     Stage 3 — QMainWindow implementing the "VS Code" unified workspace:
       - Opens maximized on the monitor under the cursor
@@ -3233,10 +3651,14 @@ class BadWordsGUI(QMainWindow):
         Page 1: Processing         (progress placeholder)
         Page 2: Editor             (editor placeholder)
       - Right dock starts hidden; revealed when analysis begins
+      - CSD: frameless window with CustomTitleBar and native-feeling behaviour
     """
 
     def __init__(self, engine, resolve_handler, parent=None):
         super().__init__(parent)
+
+        # ── CSD: remove native frame, enable translucency ──────────────────
+        self.frameless_init(is_popup=False)
 
         self.engine              = engine
         self.resolve_handler     = resolve_handler
@@ -3262,13 +3684,13 @@ class BadWordsGUI(QMainWindow):
         self.setWindowIcon(_app_icon())
         self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
         self.setMinimumSize(config.CFG_WINDOW_W_BASE, 400)
-        self.engine.os_doc.force_dark_titlebar(int(self.winId()))
+        # NOTE: force_dark_titlebar removed — CSD owns the title bar.
 
         # --- Global QSS ---
         self.setStyleSheet(f"""
             * {{ outline: none; }}
             QMainWindow {{
-                background-color: {config.BG_COLOR};
+                background-color: transparent;
             }}
             QWidget {{
                 background-color: {config.BG_COLOR};
@@ -3294,7 +3716,24 @@ class BadWordsGUI(QMainWindow):
             }}
         """)
 
-        # --- Build UI ---
+        # ── CSD: root frame (wraps title bar + content, owns border-radius) ──
+        self._root_frame = QFrame()
+        self._root_frame.setObjectName("RootFrame")
+        self._root_frame.setStyleSheet(f"""
+            QFrame#RootFrame {{
+                background-color: {config.BG_COLOR};
+                border-radius: 12px;
+            }}
+        """)
+        self._root_layout = QVBoxLayout(self._root_frame)
+        self._root_layout.setContentsMargins(0, 0, 0, 0)
+        self._root_layout.setSpacing(0)
+
+        # ── CSD: custom title bar ───────────────────────────────────────
+        self._title_bar = CustomTitleBar(self, self.lang, parent=self._root_frame)
+        self._root_layout.addWidget(self._title_bar)
+
+        # --- Build UI --- (sidebars + central workspace sit below title bar)
         self._build_sidebars()         # left + right activity frames
         self._build_central_workspace() # QStackedWidget central area + panels
 
@@ -3464,7 +3903,10 @@ class BadWordsGUI(QMainWindow):
         main_layout.addWidget(self._main_h_splitter)
         main_layout.addWidget(self._sidebar_right)
 
-        self.setCentralWidget(main_container)
+        # ── CSD: add content area under the title bar in the root frame ───────
+        self._root_layout.addWidget(main_container)
+        self.setCentralWidget(self._root_frame)
+
 
     def _toggle_activity(self, activity_id: str):
         target_btn = None

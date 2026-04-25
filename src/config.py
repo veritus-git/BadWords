@@ -190,6 +190,10 @@ DARK_PALETTE = {
 for _k, _v in DARK_PALETTE.items():
     globals()[_k] = _v
 
+# ── Title Bar (CSD) ────────────────────────────────────────────────────────
+COLOR_TITLEBAR_BG    = "#191919"   # default title-bar background
+COLOR_TITLEBAR_HOVER = "#2b2b2b"   # button hover (non-close)
+
 # --- Word Marking Colors ---
 WORD_NORMAL_FG    = "#dcddde"
 WORD_BAD_BG       = "#ed4245" # Red (Filler/Error)
@@ -2456,3 +2460,25 @@ def get_trans(key, lang_code="en"):
     """
     lang_dict = TRANS.get(lang_code, TRANS["en"])
     return lang_dict.get(key, TRANS["en"].get(key, f"[{key}]"))
+
+
+# ── CSD Title Bar i18n ─────────────────────────────────────────────────────
+# Injected here so each individual language dict stays unchanged.
+_CSD_TB_I18N = {
+    'en': ('Minimize', 'Maximize'),
+    'pl': ('Minimalizuj', 'Maksymalizuj'),
+    'de': ('Minimieren', 'Maximieren'),
+    'es': ('Minimizar', 'Maximizar'),
+    'fr': ('Réduire', 'Agrandir'),
+    'it': ('Riduci a icona', 'Ingrandisci'),
+    'pt': ('Minimizar', 'Maximizar'),
+    'uk': ('Згорнути', 'Розгорнути'),
+    'nl': ('Minimaliseren', 'Maximaliseren'),
+    'ru': ('Свернуть', 'Развернуть'),
+}
+for _lang_code, (_min_txt, _max_txt) in _CSD_TB_I18N.items():
+    TRANS.setdefault(_lang_code, {}).update({
+        'btn_minimize': _min_txt,
+        'btn_maximize': _max_txt,
+    })
+del _CSD_TB_I18N, _lang_code, _min_txt, _max_txt
