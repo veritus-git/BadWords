@@ -3456,6 +3456,7 @@ class TitleDropdown(CustomDropdown):
                 padding: 2px 6px;
             }
             QPushButton:hover { color: #ffffff; }
+            QPushButton:pressed { background: transparent; color: #ffffff; }
         """)
 
     def setText(self, text):
@@ -3465,6 +3466,48 @@ class TitleDropdown(CustomDropdown):
 
     def currentText(self):
         return super().currentText().replace("  ▾", "")
+
+    def mousePressEvent(self, event):
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("""
+            QFrame {
+                background-color: #383838;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
+        
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        list_widget = QListWidget()
+        list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.addItems(self.options_list)
+        list_widget.setStyleSheet("""
+            QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #e6e6e6; }
+            QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
+            QListWidget::item:selected { background-color: #555555; }
+            QListWidget::item:focus { border: none; outline: none; }
+            QListWidget::item:hover { background-color: #4a4a4a; }
+        """)
+        list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
+        layout.addWidget(list_widget)
+        
+        row_h = 26
+        display_count = list_widget.count()
+        list_height = display_count * row_h
+        list_widget.setFixedHeight(list_height)
+        popup.setFixedHeight(list_height)
+        
+        global_pos = self.mapToGlobal(QPoint(0, self.height() + 2))
+        popup.move(global_pos)
+        popup.setFixedWidth(self.width())
+        popup.show()
 
 class MultiSelectDropdown(QPushButton):
     valueChanged = Signal(list)
@@ -4453,10 +4496,18 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         btn_view_advanced.setFixedHeight(30)
         btn_view_advanced.setCursor(Qt.PointingHandCursor)
         
+        import os
+        has_dev = os.path.exists(os.path.join(self.engine.os_doc.install_dir, "dev.json"))
+        
         if view_mode == 'advanced':
             btn_view_advanced.setStyleSheet(active_btn_style)
         else:
             btn_view_advanced.setStyleSheet(inactive_btn_style)
+            
+        if not has_dev:
+            btn_view_advanced.setEnabled(False)
+            btn_view_advanced.setToolTip(self.txt("tt_advanced_locked"))
+            
         btn_view_advanced.clicked.connect(lambda: self._set_view_mode('advanced'))
 
         view_btn_row.addWidget(btn_view_basic)
@@ -5753,6 +5804,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', 'Segoe UI'), 'currentText'),
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 12), 'value'),
+            'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
         }
         
         if not is_basic:
@@ -5760,7 +5812,6 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'always_on_top':      self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
                 'hidden_panels':      hidden_panels_val,
                 'accent_color':       self._safe_get('dropdown_accent', old_prefs.get('accent_color', 'green'), 'currentText'),
-                'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
                 'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto').capitalize(), 'currentText').lower(),
                 'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
                 'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
@@ -5848,9 +5899,10 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         except RuntimeError:
             pass
                 
+        self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
+        
         if not is_basic:
             self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
-            self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
             try:
                 if hasattr(self, 'dropdown_hidden'):
                     self.dropdown_hidden.selected_items = set(state.get('hidden_panels', []))
@@ -5913,6 +5965,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         self.engine.save_preferences(new_prefs)
         self.initial_prefs = self.engine.load_preferences() or {}
+        self._initial_state = self._get_current_state_dict()
         self.btn_apply.setText(self.txt("txt_saved"))
         self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
         from PySide6.QtCore import QTimer
@@ -5986,7 +6039,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'always_on_top': f"{self.txt('tab_interface')}: {self.txt('lbl_always_on_top')}",
                 'hidden_panels': f"{self.txt('tab_interface')}: {self.txt('lbl_hidden_panels')}",
                 'accent_color': f"{self.txt('tab_interface')}: {self.txt('lbl_accent_color')}",
-                'sync_davinci_chapter': f"{self.txt('tab_interface')}: {self.txt('chk_sync_davinci')}",
+                'sync_davinci_chapter': f"{self.txt('tab_transcript')}: {self.txt('chk_sync_davinci')}",
                 'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
                 'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
                 'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",
@@ -7808,25 +7861,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         
         # --- CHAPTER REGISTRATION ---
         new_words = self._get_clean_words_data()
-        prefs = self.engine.load_preferences() or {}
-        auto_del = prefs.get('auto_del', False)
-        silence_cut = prefs.get('silence_cut', False)
-        show_typos = prefs.get('show_typos', True)
-        show_inaudible = prefs.get('show_inaudible', True)
-        
-        for w in new_words:
-            is_cut = False
-            if auto_del and w.get('status') == 'bad':
-                is_cut = True
-            elif silence_cut and w.get('type') == 'silence':
-                is_cut = True
-            elif not show_typos and w.get('status') == 'typo' and w.get('is_auto', False):
-                is_cut = True
-            elif not show_inaudible and (w.get('is_inaudible') or w.get('type') == 'inaudible'):
-                is_cut = True
-                
-            if is_cut:
-                w['is_assembled_cut'] = True
                 
         chapter_name = f"Edit {len(self._chapters)}"
         new_chapter = {
