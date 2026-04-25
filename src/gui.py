@@ -1,4 +1,3 @@
-from PySide6 import QtCore
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -15,6 +14,7 @@ Receives user actions and delegates them to Engine or ResolveHandler.
 [PySide6 migration: Stage 2 — Main Window Shell & Dynamic Panels]
 """
 
+from PySide6 import QtCore
 import re
 import math
 import platform
@@ -3619,6 +3619,9 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             form.addRow(lbl, container)
 
         for key, value in current_shortcuts.items():
+            # Basic view: hide jump_to_word and play_stop (display-only shortcuts)
+            if is_basic and key in ('jump_to_word', 'play_stop'):
+                continue
             i18n_key = f'shortcut_{key}'
             label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
 
@@ -3735,53 +3738,57 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         l_transcript.addLayout(form_transcript)
 
         # Font preview
-        self.lbl_preview = QLabel(self.txt("lbl_font_preview"))
-        self.lbl_preview.setAlignment(Qt.AlignCenter)
-        self.lbl_preview.setMinimumHeight(60)
-        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR};")
+        self.lbl_preview = QLabel()
+        self.lbl_preview.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_preview.setWordWrap(True)
+        self.lbl_preview.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.lbl_preview.setMinimumHeight(90)
+        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
         l_transcript.addSpacing(10)
         l_transcript.addWidget(self.lbl_preview)
 
-        # Separator before chunking settings
-        sep_chunk = QFrame()
-        sep_chunk.setFrameShape(QFrame.Shape.HLine)
-        sep_chunk.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
-        l_transcript.addSpacing(12)
-        l_transcript.addWidget(sep_chunk)
-        l_transcript.addSpacing(10)
-        self._advanced_widgets.append(sep_chunk)
+        if not is_basic:
+            # Separator before chunking settings
+            sep_chunk = QFrame()
+            sep_chunk.setFrameShape(QFrame.Shape.HLine)
+            sep_chunk.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+            l_transcript.addSpacing(12)
+            l_transcript.addWidget(sep_chunk)
+            l_transcript.addSpacing(10)
 
-        # Chunking spinboxes
-        form_chunk = QFormLayout()
-        form_chunk.setSpacing(14)
-        form_chunk.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        # Chunking spinboxes — Advanced view only
+        if not is_basic:
+            form_chunk = QFormLayout()
+            form_chunk.setSpacing(14)
+            form_chunk.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        self.spin_chunk_max = QSpinBox()
-        self.spin_chunk_max.setRange(5, 200)
-        self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
-        self._advanced_widgets.extend(_add_row(form_chunk, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue))
+            self.spin_chunk_max = QSpinBox()
+            self.spin_chunk_max.setRange(5, 200)
+            self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
+            _add_row(form_chunk, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue)
 
-        self.spin_chunk_look = QSpinBox()
-        self.spin_chunk_look.setRange(0, 20)
-        self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
-        self._advanced_widgets.extend(_add_row(form_chunk, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue))
+            self.spin_chunk_look = QSpinBox()
+            self.spin_chunk_look.setRange(0, 20)
+            self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
+            _add_row(form_chunk, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue)
 
-        self.spin_chunk_min = QSpinBox()
-        self.spin_chunk_min.setRange(1, 50)
-        self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
-        self._advanced_widgets.extend(_add_row(form_chunk, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue))
+            self.spin_chunk_min = QSpinBox()
+            self.spin_chunk_min.setRange(1, 50)
+            self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
+            _add_row(form_chunk, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue)
 
-        l_transcript.addLayout(form_chunk)
+            l_transcript.addLayout(form_chunk)
+
+            # Enable/disable chunk spinboxes based on view mode
+            def _update_chunk_state(idx):
+                enabled = (idx == 1)  # 1 = Segmented
+                self.spin_chunk_max.setEnabled(enabled)
+                self.spin_chunk_look.setEnabled(enabled)
+                self.spin_chunk_min.setEnabled(enabled)
+            self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
+            _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
+
         l_transcript.addStretch()
-
-        # Enable/disable chunk spinboxes based on view mode
-        def _update_chunk_state(idx):
-            enabled = (idx == 1)  # 1 = Segmented
-            self.spin_chunk_max.setEnabled(enabled)
-            self.spin_chunk_look.setEnabled(enabled)
-            self.spin_chunk_min.setEnabled(enabled)
-        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
-        _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
 
         self.combo_font.valueChanged.connect(self._update_preview)
         self.spin_fsize.valueChanged.connect(self._update_preview)
@@ -4117,13 +4124,17 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         )
         if msg_box.exec() == QDialog.Accepted:
             import config
-            # Kopia słownika by uniknąć modyfikacji referencji
+            old_prefs = self.engine.load_preferences() or {}
+            # Build a full default state — start with DEFAULT_SETTINGS then keep
+            # lang and settings_view_mode so the UI doesn't switch language/mode.
             default_state = config.DEFAULT_SETTINGS.copy()
-            
-            # Wstrzyknięcie domyślnych wartości do interfejsu (symulacja przycisków resetu)
+            default_state['gui_lang'] = old_prefs.get('gui_lang', 'en')
+            default_state['settings_view_mode'] = old_prefs.get('settings_view_mode', 'basic')
+            # Save to disk first so subsequent load_preferences() returns defaults
+            self.engine.save_preferences(default_state)
+            # Reset all visible widgets to their default values
             self._restore_state_dict(default_state)
-            
-            # Wymuszenie odświeżenia znaczników i paska języka jeśli jest
+            # Clear custom markers
             self.current_custom_markers = []
             try:
                 self._refresh_markers_list()
@@ -4157,8 +4168,8 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         name_edit.setPlaceholderText("e.g. Retake")
         lay.addRow(QLabel(self.txt("lbl_marker_name")), name_edit)
 
-        _reserved = {"Red", "Yellow", "Cyan", "Blue"}
-        color_combo = CustomDropdown([c for c in config.RESOLVE_COLORS if c not in _reserved])
+        _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
+        color_combo = CustomDropdown([c for c in config.RESOLVE_COLORS if c not in _blocked])
         lay.addRow(QLabel(self.txt("lbl_marker_color")), color_combo)
 
         btn_row = QHBoxLayout()
@@ -4201,11 +4212,13 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             color: {config.FG_COLOR};
             font-family: "{ff}";
             font-size: {fs}pt;
+            padding: 12px 14px;
         """)
         px_size = int(fs * 1.33)
         total_lh = px_size + lh
+        preview_text = self.txt("lbl_font_preview")
         self.lbl_preview.setText(
-            f'<div style="line-height: {total_lh}px; text-align: center;">Aa<br>Bb</div>'
+            f'<div style="line-height: {total_lh}px; text-align: left;">{preview_text}</div>'
         )
 
     # ── Export / Import ───────────────────────────────────────────────────
@@ -5215,9 +5228,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         l_main.addStretch(1)
         
         # Favorites section
-        lbl_favs = QLabel(self.txt("lbl_pinned_favorites"))
-        lbl_favs.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
-        l_main.addWidget(lbl_favs)
+        self.lbl_pinned_favorites = QLabel(self.txt("lbl_pinned_favorites"))
+        self.lbl_pinned_favorites.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
+        self.lbl_pinned_favorites.setVisible(False)  # Hidden until at least one favorite is pinned
+        l_main.addWidget(self.lbl_pinned_favorites)
         
         self.layout_favorites = QVBoxLayout()
         self.layout_favorites.setSpacing(10)
@@ -5581,6 +5595,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                     if hasattr(self, '_pin_buttons') and fav_id in self._pin_buttons:
                         if not hasattr(self, '_favorite_proxies') or fav_id not in self._favorite_proxies:
                             self._pin_buttons[fav_id].click()
+                # Update pinned favorites label visibility
+                if hasattr(self, 'lbl_pinned_favorites') and hasattr(self, '_favorite_proxies'):
+                    self.lbl_pinned_favorites.setVisible(len(self._favorite_proxies) > 0)
 
             # Restore Script
             if hasattr(self, 'text_script') and 'script_content' in state:
@@ -5831,6 +5848,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             if target_id in favs: favs.remove(target_id)
             prefs['favorites'] = favs
             self.engine.save_preferences(prefs)
+            # Hide label if no favorites left
+            if hasattr(self, 'lbl_pinned_favorites'):
+                self.lbl_pinned_favorites.setVisible(len(self._favorite_proxies) > 0)
         else:
             # --- ADD favorite ---
             from PySide6.QtWidgets import QWidget as _QWidget
@@ -5871,6 +5891,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             if target_id not in favs: favs.append(target_id)
             prefs['favorites'] = favs
             self.engine.save_preferences(prefs)
+            # Show label when first favorite is added
+            if hasattr(self, 'lbl_pinned_favorites'):
+                self.lbl_pinned_favorites.setVisible(True)
 
     def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
@@ -6488,8 +6511,13 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
     def _on_add_custom_marker(self):
         from PySide6.QtWidgets import QApplication
         dlg = SettingsDialog(self.engine, self)
-        dlg.stack.setCurrentIndex(7) # Custom markers is index 7
-        dlg.category_list.setCurrentRow(7)
+        # Navigate to Custom Markers tab dynamically by matching the translated tab name
+        custom_markers_label = dlg.txt("tab_custom_markers")
+        for i in range(dlg.category_list.count()):
+            if dlg.category_list.item(i).text() == custom_markers_label:
+                dlg.stack.setCurrentIndex(i)
+                dlg.category_list.setCurrentRow(i)
+                break
         dlg.exec()
         self._build_marker_radio_buttons()
         self.text_canvas.update()
@@ -6503,7 +6531,32 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 item.widget().deleteLater()
                 
         def style_rb(rb, color):
-            rb.setStyleSheet(f"QRadioButton {{ color: {color}; font-size: 11pt; font-weight: bold; background: transparent; padding: 5px; }} QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 7px; border: 2px solid #555; background-color: #333; }} QRadioButton::indicator:checked {{ background-color: {color}; border: 2px solid {color}; }}")
+            rb.setStyleSheet(f"""
+                QRadioButton {{
+                    color: {color};
+                    font-size: 11pt;
+                    font-weight: bold;
+                    background: transparent;
+                    padding: 2px 5px;
+                }}
+                QRadioButton::indicator {{
+                    width: 15px; height: 15px;
+                    border-radius: 8px;
+                    border: 2px solid #555;
+                    background: #1a1a1a;
+                }}
+                QRadioButton::indicator:checked {{
+                    border: 2px solid #555;
+                    background: qradialgradient(
+                        cx:0.5, cy:0.5, radius:0.5,
+                        fx:0.5, fy:0.5,
+                        stop:0 {color},
+                        stop:0.4 {color},
+                        stop:0.5 #1a1a1a,
+                        stop:1 #1a1a1a
+                    );
+                }}
+            """)
 
         self.marker_btn_group = QButtonGroup(self)
         
@@ -6521,7 +6574,30 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         
         rb_eraser = QRadioButton(self.txt("rad_eraser_clear"))
         rb_eraser.setProperty("status_id", "eraser")
-        rb_eraser.setStyleSheet("QRadioButton { color: #aaaaaa; font-size: 11pt; font-weight: bold; background: transparent; padding: 5px; } QRadioButton::indicator { width: 14px; height: 14px; border-radius: 7px; border: 2px solid #555; background-color: #333; } QRadioButton::indicator:checked { background-color: #aaaaaa; border: 2px solid #aaaaaa; }")
+        rb_eraser.setStyleSheet("""
+            QRadioButton {
+                color: #aaaaaa; font-size: 11pt; font-weight: bold;
+                background: transparent;
+                padding: 2px 5px;
+            }
+            QRadioButton::indicator {
+                width: 15px; height: 15px;
+                border-radius: 8px;
+                border: 2px solid #555;
+                background: #1a1a1a;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #555;
+                background: qradialgradient(
+                    cx:0.5, cy:0.5, radius:0.5,
+                    fx:0.5, fy:0.5,
+                    stop:0 #aaaaaa,
+                    stop:0.4 #aaaaaa,
+                    stop:0.5 #1a1a1a,
+                    stop:1 #1a1a1a
+                );
+            }
+        """)
         
         for rb in (rb_red, rb_blue, rb_green, rb_eraser):
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -6532,7 +6608,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         for cm in custom_markers:
             name, color = cm.get("name", ""), cm.get("color", "")
             if not name: continue
-            rb = QRadioButton(f"{name} ({color})")
+            # Format: COLOR (Name) — color first, name in parentheses
+            rb = QRadioButton(f"{color} ({name})")
             rb.setProperty("status_id", f"custom_{color}")
             style_rb(rb, config.RESOLVE_COLORS_HEX.get(color, '#ffffff'))
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
