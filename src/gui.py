@@ -2131,7 +2131,6 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         self._lbl_msg = QLabel("", container)
         self._lbl_msg.setObjectName("lbl_msg")
         self._lbl_msg.setWordWrap(True)
-        self._lbl_msg.setFixedWidth(400)
         self._lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         content_layout.addWidget(self._lbl_msg)
         content_layout.addSpacing(10)
@@ -2191,7 +2190,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         # Adjust height to fit content and re-center
         self.adjustSize()
         # Fix width so word-wrap calculations are stable
-        w = 450
+        w = 580
         self.setFixedWidth(w)
         self.adjustSize()
         h = self.sizeHint().height()
@@ -3017,19 +3016,30 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
         name_lbl.setFixedWidth(100)
         self._name_edit = QLineEdit(content)
         self._name_edit.setText(prefill_name)
-        self._name_edit.setPlaceholderText("e.g. Retake")
+        self._name_edit.setPlaceholderText(_txt(lang, "placeholder_marker_name"))
         name_row.addWidget(name_lbl)
         name_row.addWidget(self._name_edit)
         content_layout.addLayout(name_row)
 
-        # Color row
+        # Color row — translated display names with a reverse map to English keys
         color_row = QHBoxLayout()
         color_lbl = QLabel(_txt(lang, "lbl_marker_color"), content)
         color_lbl.setFixedWidth(100)
         _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
-        self._color_combo = CustomDropdown([c for c in config.RESOLVE_COLORS if c not in _blocked])
+        # Build [(translated_label, english_key), ...]
+        self._color_key_map: dict[str, str] = {}  # translated → english
+        translated_options: list[str] = []
+        for c in config.RESOLVE_COLORS:
+            if c in _blocked:
+                continue
+            t = _txt(lang, f"resolve_color_{c.lower()}")
+            self._color_key_map[t] = c
+            translated_options.append(t)
+        self._color_combo = CustomDropdown(translated_options)
+        # Set prefill value — find its translated equivalent
         if prefill_color and prefill_color in config.RESOLVE_COLORS:
-            self._color_combo.setText(prefill_color)
+            prefill_t = _txt(lang, f"resolve_color_{prefill_color.lower()}")
+            self._color_combo.setText(prefill_t)
         color_row.addWidget(color_lbl)
         color_row.addWidget(self._color_combo)
         content_layout.addLayout(color_row)
@@ -3056,7 +3066,9 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
         name = self._name_edit.text().strip()
         if name:
             self.result_name = name
-            self.result_color = self._color_combo.currentText()
+            # Map translated color label back to English key for storage
+            translated = self._color_combo.currentText()
+            self.result_color = self._color_key_map.get(translated, translated)
             self.accept()
 
     def keyPressEvent(self, event):
@@ -3066,6 +3078,7 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
             self.reject()
         else:
             super().keyPressEvent(event)
+
 
 
 class UnsavedChangesDialog(FramelessWindowMixin, QDialog):
@@ -4379,7 +4392,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             lbl_name.setStyleSheet(f"color: {hex_col}; font-weight: bold; background: transparent;")
             row_layout.addWidget(lbl_name, 1)
 
-            lbl_color = QLabel(f"[{color}]")
+            lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
             lbl_color.setStyleSheet(f"color: #666666; font-size: 9pt; background: transparent;")
             row_layout.addWidget(lbl_color)
 
@@ -4404,6 +4417,26 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             # Insert before stretch
             layout.insertWidget(layout.count() - 1, row_widget)
 
+    def _save_markers_and_refresh_main(self):
+        """
+        Persist custom_markers immediately (bypassing the Apply button),
+        then rebuild the main window's marker sidebar and dynamic shortcuts.
+        Markers work like a live database, not a pending settings value.
+        """
+        prefs = self.engine.load_preferences() or {}
+        prefs['custom_markers'] = list(self.current_custom_markers)
+        self.engine.save_preferences(prefs)
+
+        # Rebuild main window sidebar and shortcuts if accessible
+        main_win = self.parent()
+        if main_win is None:
+            # Try walking up the parent chain
+            main_win = self.window()
+        if main_win and hasattr(main_win, '_build_marker_radio_buttons'):
+            main_win._build_marker_radio_buttons()
+        if main_win and hasattr(main_win, '_apply_dynamic_shortcuts'):
+            main_win._apply_dynamic_shortcuts()
+
     def _on_add_marker(self):
         lang = self.engine.load_preferences().get('gui_lang', 'en')
         dlg = MarkerDialog(self, lang, "btn_add_marker")
@@ -4414,6 +4447,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             })
             self._refresh_markers_list()
             self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
 
     def _on_edit_marker(self, idx: int):
         if not (0 <= idx < len(self.current_custom_markers)):
@@ -4430,17 +4464,20 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             }
             self._refresh_markers_list()
             self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
 
     def _on_remove_marker_inline(self, idx: int):
         if 0 <= idx < len(self.current_custom_markers):
             self.current_custom_markers.pop(idx)
             self._refresh_markers_list()
             self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
 
 
     def _on_remove_marker(self):
         """Legacy method — kept for safety but no longer wired to any button."""
         pass
+
 
     def _refresh_custom_marker_shortcuts(self):
         """
@@ -6919,8 +6956,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         for cm in custom_markers:
             name, color = cm.get("name", ""), cm.get("color", "")
             if not name: continue
-            # Format: COLOR (Name) — color first, name in parentheses
-            rb = QRadioButton(f"{color} ({name})")
+            # Translate the color name for display; keep English key in status_id
+            translated_color = self.txt(f"resolve_color_{color.lower()}")
+            # Format: TranslatedColor (Name)
+            rb = QRadioButton(f"{translated_color} ({name})")
             rb.setProperty("status_id", f"custom_{color}")
             style_rb(rb, config.RESOLVE_COLORS_HEX.get(color, '#ffffff'))
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -7014,6 +7053,33 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             _make(shortcuts.get('mark_green', '3'),  _check_rb(self.rb_mark_typo))
         if hasattr(self, 'rb_mark_inaudible'):
             _make(shortcuts.get('mark_eraser', '4'), _check_rb(self.rb_mark_inaudible))
+
+        # Custom marker shortcuts — each registered key selects the matching radio button
+        custom_markers = prefs.get('custom_markers', [])
+        for cm in custom_markers:
+            name  = cm.get('name', '')
+            color = cm.get('color', '')
+            if not name:
+                continue
+            s_key = f'custom_marker_{name}'
+            seq   = shortcuts.get(s_key, '')
+            if not seq:
+                continue
+            # Find the radio button with matching status_id
+            target_status_id = f'custom_{color}'
+            rb_target = None
+            if hasattr(self, 'marker_btn_group'):
+                for rb in self.marker_btn_group.buttons():
+                    try:
+                        if rb.property('status_id') == target_status_id \
+                                and rb.text().endswith(f'({name})'):
+                            rb_target = rb
+                            break
+                    except RuntimeError:
+                        pass
+            if rb_target is not None:
+                _make(seq, _check_rb(rb_target))
+
 
     def _on_settings(self):
         """Open settings panel."""
