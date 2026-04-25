@@ -931,16 +931,20 @@ class ResolveHandler:
                 return tb, True
         return rounded, False
 
-    def _build_source_clip_map(self, timeline, track_type, track_idx):
+    def _build_source_clip_map(self, timeline, track_type, track_idx, tl_start_frame=0):
         """
         Returns an ordered list of clip dicts for one track on the given timeline.
         Each dict:
-          abs_start  – absolute start frame on the timeline (includes TL offset)
-          abs_end    – absolute end frame (exclusive, i.e. start + duration)
-          src_in     – source media in-point (frames from media beginning)
+          abs_start  – raw frame from item.GetStart() (may be timecode-absolute or 0-based)
+          abs_end    – abs_start + duration
+          rel_start  – 0-based position from TL start  = abs_start - tl_start_frame
+          rel_end    – rel_start + duration
+          src_in     – source media in-point (frames from media file beginning)
           src_out    – source media out-point (exclusive)
           file_path  – absolute filesystem path to the media file
-        Clips are sorted by abs_start ascending.
+        Clips are sorted by rel_start ascending.
+        Using rel_start/rel_end in op_to_clipitems guarantees correct mapping
+        regardless of whether GetStart() uses timecode-absolute or 0-based space.
         """
         clips = []
         try:
@@ -952,27 +956,30 @@ class ResolveHandler:
                     pool_item = item.GetMediaPoolItem()
                     if not pool_item:
                         continue
-                    fp = pool_item.GetClipProperty("File Path") or ""
+                    fp        = pool_item.GetClipProperty("File Path") or ""
                     abs_start = int(item.GetStart())
                     duration  = int(item.GetDuration())
-                    src_in    = int(item.GetLeftOffset())   # frames from media head to in-point
+                    src_in    = int(item.GetLeftOffset())  # frames from media head to in-point
+                    rel_start = abs_start - tl_start_frame
                     clips.append({
                         "abs_start": abs_start,
                         "abs_end":   abs_start + duration,
+                        "rel_start": rel_start,              # KEY: 0-based from TL start
+                        "rel_end":   rel_start + duration,   # KEY: 0-based from TL start
                         "src_in":    src_in,
                         "src_out":   src_in + duration,
                         "file_path": fp,
                     })
                 except Exception as ci_err:
                     log_error(f"_build_source_clip_map: skipping clip: {ci_err}")
-            clips.sort(key=lambda c: c["abs_start"])
+            clips.sort(key=lambda c: c["rel_start"])
         except Exception as e:
             log_error(f"_build_source_clip_map({track_type}, {track_idx}): {e}")
         return clips
 
     def build_edit_xml_from_ops(self, ops, source_tl_name, new_tl_name,
                                  track_indices, audio_only_mode, output_path,
-                                 preserve_track_order=False):
+                                 preserve_track_order=False, auto_del=False):
         """
         Constructs a complete FCP7 XML file ready to be imported as a new
         DaVinci Resolve timeline.
@@ -990,6 +997,7 @@ class ResolveHandler:
         """
         import xml.etree.ElementTree as ET
 
+        # Resolve clip colors — same map used in XML and in API verification pass
         COLOR_MAP = {
             "bad":          "Violet",
             "repeat":       "Navy",
@@ -1032,29 +1040,35 @@ class ResolveHandler:
             else:
                 audio_tracks_src = list(range(1, a_track_count + 1))
 
-            # Build clip maps
+            # Build clip maps — pass tl_start_frame so clips store rel_start/rel_end
             # Video: always ALL video tracks (user decision)
             video_clip_maps = {}
             if not audio_only_mode:
                 for vi in range(1, v_track_count + 1):
-                    clips = self._build_source_clip_map(target_tl, "video", vi)
+                    clips = self._build_source_clip_map(target_tl, "video", vi, tl_start_frame)
                     if clips:
                         video_clip_maps[vi] = clips
 
             # Audio: only selected tracks
             audio_clip_maps = {}
             for ai in audio_tracks_src:
-                clips = self._build_source_clip_map(target_tl, "audio", ai)
+                clips = self._build_source_clip_map(target_tl, "audio", ai, tl_start_frame)
                 if clips:
                     audio_clip_maps[ai] = clips
 
             log_info(f"build_edit_xml_from_ops: {len(video_clip_maps)} video track(s), "
                      f"{len(audio_clip_maps)} audio track(s), tl_start={tl_start_frame}")
 
-            # ── 4. Filter ops: skip bad & silence_cut ─────────────────────────
-            SKIP_TYPES = {"bad", "silence_cut"}
+            # ── 4. Filter ops ─────────────────────────────────────────────────
+            #   silence_cut:  ALWAYS skipped (silence that was cut)
+            #   bad:          skipped only when auto_del (Ripple Delete) is ON;
+            #                 when OFF, bad clips appear with Violet color via API
+            #   silence_mark: always kept (marked but not cut)
+            skip_types = {"silence_cut"}
+            if auto_del:
+                skip_types.add("bad")
             kept_ops = [op for op in ops
-                        if op["type"] not in SKIP_TYPES and (op["e"] - op["s"]) >= 2]
+                        if op["type"] not in skip_types and (op["e"] - op["s"]) >= 2]
 
             if not kept_ops:
                 log_error("build_edit_xml_from_ops: no ops to assemble after filtering.")
@@ -1063,23 +1077,23 @@ class ResolveHandler:
             # ── 5. Helper: map one op range onto source clips ─────────────────
             def op_to_clipitems(op, clip_map):
                 """
-                Given one op in 0-based timeline frames and a list of source clips,
-                returns a list of (src_in, src_out, duration) tuples covering the
-                portion of the op that overlaps each source clip.
-                This correctly handles multi-clip (cut) source timelines.
+                Maps one op (in 0-based frames, same space as ops list) onto the
+                source clips using their rel_start/rel_end fields (also 0-based).
+                Returns a list of segment dicts for clips that overlap the op.
+                Correctly handles multi-clip source timelines with any number of
+                sequential or non-sequential clips.
                 """
-                op_start_abs = tl_start_frame + op["s"]
-                op_end_abs   = tl_start_frame + op["e"]
                 result = []
                 for clip in clip_map:
-                    overlap_start = max(op_start_abs, clip["abs_start"])
-                    overlap_end   = min(op_end_abs,   clip["abs_end"])
+                    # All in 0-based space — no tl_start_frame addition needed
+                    overlap_start = max(op["s"], clip["rel_start"])
+                    overlap_end   = min(op["e"], clip["rel_end"])
                     if overlap_end <= overlap_start:
                         continue
-                    offset   = overlap_start - clip["abs_start"]
-                    src_in   = clip["src_in"] + offset
-                    dur      = overlap_end - overlap_start
-                    src_out  = src_in + dur
+                    offset  = overlap_start - clip["rel_start"]
+                    src_in  = clip["src_in"] + offset
+                    dur     = overlap_end - overlap_start
+                    src_out = src_in + dur
                     result.append({
                         "src_in":    src_in,
                         "src_out":   src_out,
@@ -1144,7 +1158,8 @@ class ResolveHandler:
                     make_clipitem._emitted_files = set()
                 make_file_elem(ci, file_path, emit_full=first_emit)
                 make_clipitem._emitted_files.add(file_path)
-                # Color
+                # PRIMARY color embed — Resolve honours <logginginfo><clipcolor> on import
+                # reapply_clip_colors() will verify and correct these after import
                 if color:
                     li = ET.SubElement(ci, "logginginfo")
                     ET.SubElement(li, "clipcolor").text = color
@@ -1204,14 +1219,14 @@ class ResolveHandler:
                             ci_counter[0] += 1
                             make_clipitem(
                                 v_track_el,
-                                ci_id       = f"clipitem-v{vi_src}-{ci_counter[0]}",
-                                dest_start  = dest_pos,
-                                dest_end    = dest_pos + seg["duration"],
-                                src_in      = seg["src_in"],
-                                src_out     = seg["src_out"],
-                                duration    = seg["duration"],
-                                file_path   = seg["file_path"],
-                                color       = color,
+                                ci_id      = f"clipitem-v{vi_src}-{ci_counter[0]}",
+                                dest_start = dest_pos,
+                                dest_end   = dest_pos + seg["duration"],
+                                src_in     = seg["src_in"],
+                                src_out    = seg["src_out"],
+                                duration   = seg["duration"],
+                                file_path  = seg["file_path"],
+                                color      = color,
                             )
                             dest_pos += seg["duration"]
             else:
@@ -1272,15 +1287,22 @@ class ResolveHandler:
             log_error(f"build_edit_xml_from_ops error: {e}\n{traceback.format_exc()}")
             return False
 
-    def reapply_clip_colors(self, tl_name, ops, fps):
+    def reapply_clip_colors(self, tl_name, ops, fps, auto_del=False):
         """
-        POST-IMPORT COLOR FAILSAFE.
-        After importing the XML timeline, iterates through all clips and
-        sets their color via the Resolve API — guaranteeing correct colors
-        even if the XML <logginginfo><clipcolor> element was ignored.
+        POST-IMPORT COLOR VERIFICATION & CORRECTION.
 
-        Matches each timeline clip to its op by reconstructing the running
-        destination position from the kept ops list (same order as XML).
+        After importing the XML (which already embeds <logginginfo><clipcolor>),
+        this method walks all clips on the new timeline and verifies that each
+        clip has the correct color set.  If any clip's color is wrong or missing
+        (e.g. because a particular Resolve version ignored the XML color element),
+        it is corrected via SetClipColor().
+
+        Matching strategy:
+          - Reconstruct the running dest_pos from kept_ops  (MUST use the same
+            auto_del flag as build_edit_xml_from_ops so the ops_map is identical)
+          - Match each timeline item by its GetStart() position with ±2 frame tol.
+          - "normal" type clips get no color (SetClipColor is not called).
+          - Clips that already have the correct color are skipped silently.
         """
         COLOR_MAP = {
             "bad":          "Violet",
@@ -1289,7 +1311,11 @@ class ResolveHandler:
             "inaudible":    "Chocolate",
             "silence_mark": "Tan",
         }
-        SKIP_TYPES = {"bad", "silence_cut"}
+
+        # MUST mirror build_edit_xml_from_ops skip logic exactly
+        skip_types = {"silence_cut"}
+        if auto_del:
+            skip_types.add("bad")
 
         try:
             # Find the newly imported timeline
@@ -1304,26 +1330,38 @@ class ResolveHandler:
                 log_error(f"reapply_clip_colors: timeline '{tl_name}' not found.")
                 return
 
-            # Build ops_map: (dest_start_frame, dest_end_frame, op_type)
-            # This mirrors the XML build order exactly
+            # Reconstruct ops_map identical to what was written to XML
             kept_ops = [op for op in ops
-                        if op["type"] not in SKIP_TYPES and (op["e"] - op["s"]) >= 2]
+                        if op["type"] not in skip_types and (op["e"] - op["s"]) >= 2]
             if not kept_ops:
+                log_info("reapply_clip_colors: no kept ops, nothing to verify.")
                 return
 
             tl_start = int(target_tl.GetStartFrame())
-            ops_map = []
+
+            # Build positional index: dest_start → (op_type, expected_color)
+            # Key insight: positions in the imported TL start at tl_start (not 0)
+            # because FCP7 XML <start>=0 maps to frame tl_start after import
+            ops_map = []   # ordered list of {dest_start, type, color}
             dest_pos = tl_start
             for op in kept_ops:
                 dur = op["e"] - op["s"]
+                op_type = op["type"]
+                color = COLOR_MAP.get(op_type)
+                if not color and str(op_type).startswith("custom_"):
+                    color = op_type.split("_")[1]
                 ops_map.append({
                     "dest_start": dest_pos,
-                    "dest_end":   dest_pos + dur,
-                    "type":       op["type"],
+                    "type":       op_type,
+                    "color":      color,      # None = no color (normal)
                 })
                 dest_pos += dur
 
-            def apply_colors_to_track(track_type, track_count):
+            corrected = 0
+            ok_count  = 0
+
+            def verify_track(track_type, track_count):
+                nonlocal corrected, ok_count
                 for ti in range(1, track_count + 1):
                     try:
                         items = target_tl.GetItemListInTrack(track_type, ti) or []
@@ -1333,25 +1371,39 @@ class ResolveHandler:
                             item_start = int(item.GetStart())
                             # Find matching op by start position (±2 frames tolerance)
                             match = next(
-                                (m for m in ops_map if abs(m["dest_start"] - item_start) <= 2),
+                                (m for m in ops_map
+                                 if abs(m["dest_start"] - item_start) <= 2),
                                 None
                             )
                             if not match:
+                                # Clip at unknown position — skip silently
                                 continue
-                            op_type = match["type"]
-                            color = COLOR_MAP.get(op_type)
-                            if not color and str(op_type).startswith("custom_"):
-                                color = op_type.split("_")[1]
-                            if color:
-                                item.SetClipColor(color)
+                            expected_color = match["color"]
+                            if not expected_color:
+                                # "normal" clips: no color expected, don't touch
+                                ok_count += 1
+                                continue
+                            # Verify current color against expected
+                            try:
+                                actual_color = item.GetClipColor()
+                            except Exception:
+                                actual_color = None
+                            if actual_color and actual_color.lower() == expected_color.lower():
+                                ok_count += 1  # already correct from XML
+                            else:
+                                # Mismatch or missing — correct it
+                                item.SetClipColor(expected_color)
+                                corrected += 1
                     except Exception as te:
-                        log_error(f"reapply_clip_colors track {track_type}{ti}: {te}")
+                        log_error(f"reapply_clip_colors verify {track_type}{ti}: {te}")
 
             v_count = target_tl.GetTrackCount("video")
             a_count = target_tl.GetTrackCount("audio")
-            apply_colors_to_track("video", v_count)
-            apply_colors_to_track("audio", a_count)
-            log_info(f"reapply_clip_colors: colors applied to '{tl_name}'.")
+            verify_track("video", v_count)
+            verify_track("audio", a_count)
+
+            log_info(f"reapply_clip_colors: '{tl_name}' — "
+                     f"{ok_count} correct, {corrected} corrected via API.")
 
         except Exception as e:
             log_error(f"reapply_clip_colors error: {e}")

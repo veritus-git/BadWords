@@ -1693,13 +1693,15 @@ except Exception as e:
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
             new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
 
-            # ── LOAD PRESERVE TRACK ORDER SETTING ────────────────────────────
+            # ── LOAD PRESERVE TRACK ORDER + AUTO_DEL SETTINGS ────────────────
             import config
             prefs = self.os_doc.get_all_prefs()
             preserve_track_order = bool(prefs.get(
                 "xml_preserve_track_order",
                 config.DEFAULT_SETTINGS["xml_preserve_track_order"]
             ))
+            # auto_del (Ripple Delete) is passed directly in settings from gui._on_assemble()
+            auto_del = bool(settings.get("auto_del", False))
 
             # ──────────────────────────────────────────────────────────────────
             # PRIMARY PATH: XML BUILD + IMPORT
@@ -1724,6 +1726,7 @@ except Exception as e:
                     audio_only_mode      = audio_only_mode,
                     output_path          = xml_path,
                     preserve_track_order = preserve_track_order,
+                    auto_del             = auto_del,
                 )
 
                 if ok_build:
@@ -1757,7 +1760,7 @@ except Exception as e:
 
                         # ── Phase: Apply clip colors (failsafe) ───────────────
                         set_status(self.txt("status_assembly_colors"))
-                        self.resolve_handler.reapply_clip_colors(xml_tl_name, clean_ops, fps)
+                        self.resolve_handler.reapply_clip_colors(xml_tl_name, clean_ops, fps, auto_del=auto_del)
 
                         xml_success = True
                     else:
