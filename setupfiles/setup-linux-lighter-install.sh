@@ -8,7 +8,7 @@ set -e
 # - True Additive Update: Recursively checks ALL folders and files. Creates missing dirs.
 # - Clean Install: Strictly deletes everything except models, saves, pref.json.
 
-# --- TRAP: ZATRZYMANIE OKNA NA KONIEC ---
+# --- TRAP: KEEP WINDOW OPEN ON EXIT ---
 function finish {
     echo ""
     echo -e "${GREEN}Installation process finished.${NC}"
@@ -31,7 +31,7 @@ echo -e "${BLUE}================================================================
 echo -e "${BLUE}                   BadWords - PORTABLE INSTALLER (Linux)                        ${NC}"
 echo -e "${BLUE}================================================================================${NC}"
 
-# 1. WERYFIKACJA ŹRÓDŁA
+# 1. SOURCE VERIFICATION
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SOURCE_PATH="$DIR/$SOURCE_FOLDER_NAME"
 
@@ -46,7 +46,7 @@ if [ ! -f "$SOURCE_PATH/main.py" ]; then
 fi
 
 # ==========================================
-# 2. WYBÓR TRYBU AKCELERACJI GPU
+# 2. GPU ACCELERATION MODE SELECTION
 # ==========================================
 
 echo -e "\n${YELLOW}============================= AI ENGINE SETUP =============================${NC}"
@@ -79,7 +79,7 @@ esac
 echo -e "${YELLOW}[INFO] Selected Mode: $MODE_NAME${NC}"
 
 # ==========================================
-# 2.5. WYBÓR TRYBU INSTALACJI
+# 2.5. INSTALLATION MODE SELECTION
 # ==========================================
 
 echo -e "\n${YELLOW}=========================== INSTALLATION MODE ===========================${NC}"
@@ -102,7 +102,7 @@ esac
 echo -e "${YELLOW}[INFO] Selected Install Mode: $MODE_INSTALL${NC}"
 
 # ==========================================
-# 3. SMART PYTHON SELECTION (KOMPATYBILNOŚĆ)
+# 3. SMART PYTHON SELECTION (COMPATIBILITY)
 # ==========================================
 echo -e "\n${YELLOW}[INFO] Checking Python compatibility...${NC}"
 
@@ -165,7 +165,7 @@ fi
 echo -e "${GREEN}[INFO] Using Python interpreter: $TARGET_PYTHON${NC}"
 
 # ==========================================
-# 4. ŚCIEŻKI
+# 4. PATHS
 # ==========================================
 INSTALL_DIR_BASH="$HOME/.local/share/$APP_NAME"
 VENV_DIR="$INSTALL_DIR_BASH/venv"
@@ -176,7 +176,7 @@ LOG_FILE="$INSTALL_DIR_BASH/badwords_debug.log"
 OLD_WHISPER_CACHE="$HOME/.cache/whisper"
 
 # ==========================================
-# 5. IN-PLACE CLEANUP (Zamiast backupów)
+# 5. IN-PLACE CLEANUP (Instead of backups)
 # ==========================================
 echo -e "\n${RED}[CLEANUP] Processing old installation...${NC}"
 
@@ -186,7 +186,7 @@ if [ -d "$INSTALL_DIR_BASH" ]; then
         rm -rf "$INSTALL_DIR_BASH"
     elif [ "$WIPE_CHOICE" -eq 2 ]; then
         echo -e " - CLEAN INSTALL selected. Wiping environment (keeping models, saves, prefs)..."
-        # Usuwa wszystko OPRÓCZ wskazanych
+        # Deletes everything EXCEPT the specified folders
         find "$INSTALL_DIR_BASH" -mindepth 1 -maxdepth 1 \
             ! -name "models" \
             ! -name "saves" \
@@ -204,7 +204,7 @@ fi
 echo -e "${GREEN}[CLEANUP] Complete.${NC}"
 
 # ==========================================
-# 6. SETUP APLIKACJI
+# 6. APPLICATION SETUP
 # ==========================================
 echo -e "\n${YELLOW}[INFO] Preparing directory structure...${NC}"
 mkdir -p "$INSTALL_DIR_BASH"
@@ -297,7 +297,7 @@ else
 fi
 
 # ==========================================
-# 8. TWORZENIE VENV
+# 8. VENV CREATION
 # ==========================================
 if [ ! -d "$VENV_DIR" ]; then
     echo -e "\n${CYAN}[VENV] Creating isolated Virtual Environment ($TARGET_PYTHON)...${NC}"
@@ -310,24 +310,30 @@ else
 fi
 
 # ==========================================
-# 9. INSTALACJA W VENV
+# 9. VENV INSTALLATION
 # ==========================================
 echo -e "\n${CYAN}[INSTALL] Installing libraries into VENV...${NC}"
 VENV_PIP="$VENV_DIR/bin/pip"
 
 # Upgrade pip inside venv
-"$VENV_PIP" install --upgrade pip
+"$VENV_PIP" install --upgrade pip >/dev/null 2>&1
 
 # Install dependencies based on selection
 if [ -z "$NVIDIA_PACKAGES" ]; then
+    # CPU OPTIMIZATION LOGIC
+    echo -e "${CYAN}[INSTALL] Downloading CPU-optimized PyTorch to save disk space...${NC}"
+    
     if [ "$WIPE_CHOICE" -eq 1 ]; then
+        "$VENV_PIP" install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cpu || { echo -e "${RED}[ERROR] PyTorch Install failed.${NC}"; exit 1; }
         echo -e "${CYAN}[INSTALL] Upgrading Faster-Whisper + Stable-TS (CPU Mode)...${NC}"
         "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
     else
+        "$VENV_PIP" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu || { echo -e "${RED}[ERROR] PyTorch Install failed.${NC}"; exit 1; }
         echo -e "${CYAN}[INSTALL] Installing Faster-Whisper + Stable-TS (CPU Mode)...${NC}"
         "$VENV_PIP" install faster-whisper stable-ts pypdf || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
     fi
 else
+    # NVIDIA CUDA LOGIC
     if [ "$WIPE_CHOICE" -eq 1 ]; then
         echo -e "${CYAN}[INSTALL] Upgrading Faster-Whisper + Stable-TS + $MODE_NAME Support...${NC}"
         "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf $NVIDIA_PACKAGES || { echo -e "${RED}[ERROR] Install failed.${NC}"; exit 1; }
@@ -355,7 +361,7 @@ else
 fi
 
 # ==========================================
-# 11. KONFIGURACJA DAVINCI
+# 11. DAVINCI RESOLVE CONFIGURATION
 # ==========================================
 echo -e "\n${YELLOW}[INFO] Configuring DaVinci Resolve integration...${NC}"
 RESOLVE_SCRIPT_DIR=""
@@ -370,7 +376,7 @@ mkdir -p "$RESOLVE_SCRIPT_DIR"
 export WRAPPER_TARGET_DIR="$RESOLVE_SCRIPT_DIR"
 
 # ==========================================
-# 12. GENEROWANIE WRAPPERA
+# 12. WRAPPER GENERATION
 # ==========================================
 echo -e "${YELLOW}[INFO] Generating wrapper script...${NC}"
 
@@ -435,7 +441,7 @@ except Exception as e:
     sys.exit(1)
 "
 
-# 13. PRZYGOTOWANIE LOGÓW
+# 13. LOG PREPARATION
 echo -e "\n${YELLOW}[INFO] Initializing Log File...${NC}"
 touch "$LOG_FILE"
 chmod 666 "$LOG_FILE"

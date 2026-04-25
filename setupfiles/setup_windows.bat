@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: --- CLEANUP ENVIRONMENT ---
-:: Usuwamy zmienne, ktore moga mieszać w Pythonie (stare instalacje)
+:: Remove variables that might interfere with Python (old installations)
 set "PYTHONHOME="
 set "PYTHONPATH="
 
@@ -29,14 +29,14 @@ echo ==================================================
 echo [INFO] Searching for Python (3.10 - 3.12)...
 set "PYTHON_CMD="
 
-:: Strategia A: System PATH (Najważniejsza, bo instalator doda tu Pythona)
+:: Strategy A: System PATH (Highest priority, as installer adds Python here)
 where python >nul 2>&1
 if !errorlevel! equ 0 (
     for /f "tokens=*" %%i in ('where python') do (
         set "CANDIDATE=%%i"
         echo !CANDIDATE! | findstr /i "WindowsApps" >nul
         if !errorlevel! neq 0 (
-            :: Znaleziono cos w PATH, sprawdzamy wersje
+            :: Found something in PATH, checking version
             call :CHECK_VERSION "!CANDIDATE!"
             if !IS_VALID! equ 1 (
                 set "PYTHON_CMD=!CANDIDATE!"
@@ -46,16 +46,16 @@ if !errorlevel! equ 0 (
     )
 )
 
-:: Strategia B: AppData (User Install) - Domyślna dla instalacji bez Admina
+:: Strategy B: AppData (User Install) - Default for non-Admin installs
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" ( set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe" & goto :VERIFY_PYTHON )
 if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" ( set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe" & goto :VERIFY_PYTHON )
 if exist "%LOCALAPPDATA%\Programs\Python\Python310\python.exe" ( set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python310\python.exe" & goto :VERIFY_PYTHON )
 
-:: Strategia C: Program Files (Jako fallback, gdyby jednak tam byl)
+:: Strategy C: Program Files (Fallback)
 if exist "%ProgramFiles%\Python312\python.exe" ( set "PYTHON_CMD=%ProgramFiles%\Python312\python.exe" & goto :VERIFY_PYTHON )
 if exist "%ProgramFiles%\Python311\python.exe" ( set "PYTHON_CMD=%ProgramFiles%\Python311\python.exe" & goto :VERIFY_PYTHON )
 
-:: Strategia D: Launcher (Ostateczność)
+:: Strategy D: Launcher (Last resort)
 py -3.12 --version >nul 2>&1
 if !errorlevel! equ 0 ( set "PYTHON_CMD=py -3.12" & goto :FOUND_PYTHON )
 
@@ -133,10 +133,12 @@ if "%WIPE_MODE%"=="0" (
 
 echo [INFO] Installing AI libraries...
 if "%GPU_MODE%"=="1" (
-    echo [INFO] Hardware: NVIDIA GPU
+    echo [INFO] Hardware: NVIDIA GPU (CUDA)
     "%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf %PIP_FLAGS%
 ) else (
     echo [INFO] Hardware: CPU
+    echo [INFO] Downloading CPU-optimized PyTorch to save space...
+    "%VENV_PYTHON%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu %PIP_FLAGS%
     "%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf %PIP_FLAGS%
 )
 
@@ -161,7 +163,7 @@ if not exist "%FFMPEG_ZIP%" goto :SKIP_FFMPEG
 
 echo [INFO] Extracting FFmpeg...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
-:: POPRAWKA DEBUG: Wyescapowane podwójne cudzysłowy chronią apostrofy w nazwie użytkownika
+:: DEBUG FIX: Escaped double quotes protect apostrophes in usernames
 powershell -NoProfile -Command "Expand-Archive -Path \"!FFMPEG_ZIP!\" -DestinationPath \"!INSTALL_DIR!\ffmpeg_tmp\" -Force"
 echo [INFO] Installing binaries...
 for /r "%INSTALL_DIR%\ffmpeg_tmp" %%F in (ffmpeg.exe, ffprobe.exe) do ( copy /y "%%F" "%BIN_DIR%\" >nul )
@@ -180,29 +182,29 @@ mklink /J "libs" "!SITE_PACKAGES!" >nul
 :: ==========================================
 echo [INFO] Linking with DaVinci Resolve...
 
-:: Ustalanie domyslnej sciezki
+:: Determine default path
 set "RESOLVE_SCRIPT_DIR=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
 
-:: Sprawdzanie czy mamy edycje Microsoft Store (nadpisuje sciezke domyslna)
+:: Check for Microsoft Store edition (overrides default path)
 for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
     if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
         set "RESOLVE_SCRIPT_DIR=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
     )
 )
 
-:: Tworzenie podfolderow jesli nie istnieja (np. Utility)
+:: Create subfolders if they do not exist (e.g., Utility)
 if not exist "!RESOLVE_SCRIPT_DIR!" (
     mkdir "!RESOLVE_SCRIPT_DIR!"
 )
 
 set "WRAPPER_FILE=!RESOLVE_SCRIPT_DIR!\BadWords.py"
 
-:: Generowanie czystego kodu Pythona prosto do pliku
-:: (Znaki '> ' usunięte od wewnątrz, aby zapobiec dodawaniu pustych spacji na koncu linii w batchu)
+:: Generate clean Python code directly to file
+:: (Spaces before '>' removed to prevent trailing spaces in batch)
 echo import sys> "!WRAPPER_FILE!"
 echo import os>> "!WRAPPER_FILE!"
 echo import traceback>> "!WRAPPER_FILE!"
-:: ZMIANA DEBUGOWA: POTRÓJNE CUDZYSŁOWY CHRONIĄ PRZED BŁĘDEM APOSTROFU W NAZWIE UŻYTKOWNIKA!
+:: DEBUG FIX: TRIPLE QUOTES PROTECT AGAINST APOSTROPHE ERRORS IN USERNAMES!
 echo INSTALL_DIR = r"""%INSTALL_DIR%""">> "!WRAPPER_FILE!"
 echo LIBS_DIR = os.path.join(INSTALL_DIR, 'libs')>> "!WRAPPER_FILE!"
 echo MAIN_SCRIPT = os.path.join(INSTALL_DIR, 'main.py')>> "!WRAPPER_FILE!"
@@ -231,6 +233,9 @@ if exist "!WRAPPER_FILE!" (
 
 echo.
 echo [SUCCESS] Configuration complete!
+:: Auto-close timeout (will gracefully exit without waiting for a key press)
+timeout /t 3 >nul
+exit /b 0
 
 :ERROR_ARGS
 echo [ERROR] Invalid arguments.
