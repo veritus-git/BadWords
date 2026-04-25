@@ -128,56 +128,78 @@ class AudioEngine:
         Asynchroniczne wysyłanie pingu telemetrycznego do PostHog.
         Wysyła tylko za zgodą użytkownika i tylko raz na daną wersję.
         """
-        def _ping_thread():
-            try:
-                opt_in = self.os_doc.get_telemetry_pref("telemetry_opt_in")
-                if not opt_in:
-                    return # Brak zgody lub brak decyzji
+        try:
+            # 1. Sprawdzenie flagi - z uwzględnieniem parsowania stringów z JSON
+            opt_in = self.os_doc.get_telemetry_pref("telemetry_opt_in")
+            if opt_in not in [True, "True", "true", 1, "1"]:
+                log_info("Telemetry: Oczekuje na zgode lub zgoda zostala odrzucona.")
+                return 
+            
+            last_ping = self.os_doc.get_telemetry_pref("last_pinged_version")
+            current_version = config.VERSION
+            
+            if last_ping == current_version:
+                log_info(f"Telemetry: Ping dla wersji {current_version} juz zostal wyslany. Pomijam.")
+                return 
                 
-                last_ping = self.os_doc.get_telemetry_pref("last_pinged_version")
-                current_version = config.VERSION
-                
-                if last_ping == current_version:
-                    return # Ping dla tej wersji już został wysłany
-                    
-                # Magia kategoryzacji (Nowy vs Update)
-                install_type = "New Install" if not last_ping else "Update"
-                uuid_str = self.os_doc.get_telemetry_pref("analytics_uuid") or "unknown"
-                
-                payload = {
-                    "api_key": getattr(config, "POSTHOG_API_KEY", ""),
-                    "event": event_name,
-                    "distinct_id": uuid_str,
-                    "properties": {
-                        "version": current_version,
-                        "os": self.os_doc.os_type,
-                        "install_type": install_type,
-                        "$lib": "urllib_python"
+            # Natychmiastowe nadpisanie zabezpieczające przed dublowaniem żądań z innych wątków/okien
+            self.os_doc.set_telemetry_pref("last_pinged_version", current_version)
+            
+            install_type = "New Install" if not last_ping else "Update"
+            uuid_str = self.os_doc.get_telemetry_pref("analytics_uuid") or "unknown"
+            
+            def _ping_thread(previous_version):
+                import ssl
+                try:
+                    # distinct_id dla bezpieczeństwa dublujemy w properties i na zewnątrz (wymogi PostHog API)
+                    payload = {
+                        "api_key": getattr(config, "POSTHOG_API_KEY", ""),
+                        "event": event_name,
+                        "distinct_id": uuid_str, 
+                        "properties": {
+                            "distinct_id": uuid_str,
+                            "version": current_version,
+                            "os": self.os_doc.os_type,
+                            "install_type": install_type,
+                            "$lib": "urllib_python"
+                        }
                     }
-                }
-                
-                # Zabezpieczenie przed wysyłaniem, jeśli klucz nie został podany
-                if not payload["api_key"] or "TUTAJ_WKLEISZ" in payload["api_key"]:
-                    log_info("Telemetry skip: Default/Empty API Key in config.")
-                    return
+                    
+                    if not payload["api_key"] or "TUTAJ_WKLEISZ" in payload["api_key"]:
+                        log_info("Telemetry skip: Default/Empty API Key in config.")
+                        self.os_doc.set_telemetry_pref("last_pinged_version", previous_version)
+                        return
 
-                data = json.dumps(payload).encode('utf-8')
-                host = getattr(config, "POSTHOG_HOST", "https://eu.i.posthog.com")
-                url = f"{host.rstrip('/')}/capture/"
-                
-                req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-                
-                # Używamy timeout=5s, żeby nie powiesić wątku, jeśli internet kuleje
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    if response.getcode() == 200:
-                        log_info(f"Telemetry ping sent successfully ({install_type}).")
-                        # Sukces! Zapisujemy wersję, żeby więcej nie pingować przy kolejnym włączeniu
-                        self.os_doc.set_telemetry_pref("last_pinged_version", current_version)
-            except Exception as e:
-                log_error(f"Telemetry ping failed: {e}")
+                    data = json.dumps(payload).encode('utf-8')
+                    host = getattr(config, "POSTHOG_HOST", "https://eu.i.posthog.com")
+                    url = f"{host.rstrip('/')}/capture/"
+                    
+                    # Usunąłem User-Agent, dodano Accept. Zapobiega to blokowaniu przez Cloudflare.
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Accept': '*/*'
+                    }
+                    req = urllib.request.Request(url, data=data, headers=headers)
+                    
+                    # OMINIECIE PROBLEMU Z BRAKIEM CERTYFIKATOW SSL W PORTABLE PYTHON
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    
+                    with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
+                        if response.getcode() == 200:
+                            log_info(f"Telemetry ping sent successfully ({install_type} - {current_version}).")
+                        else:
+                            self.os_doc.set_telemetry_pref("last_pinged_version", previous_version)
+                            log_error(f"Telemetry ping failed with HTTP code {response.getcode()}")
+                except Exception as e:
+                    self.os_doc.set_telemetry_pref("last_pinged_version", previous_version)
+                    log_error(f"Telemetry ping HTTP request failed: {e}")
 
-        # Uruchamiamy w tle
-        threading.Thread(target=_ping_thread, daemon=True).start()
+            threading.Thread(target=_ping_thread, args=(last_ping,), daemon=True).start()
+
+        except Exception as e:
+            log_error(f"Telemetry initialization failed: {e}")
 
     # ==========================================
     # 0. SMART COMPUTE DETECTION
