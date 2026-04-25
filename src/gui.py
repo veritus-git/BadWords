@@ -1358,6 +1358,8 @@ class TranscriptionCanvas(QWidget):
         self.setCursor(Qt.ArrowCursor)
         self.setMouseTracking(True)
         self._last_dragged_id = -1
+        # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
+        self._cached_visible_words = []
 
     def load_data(self, words_data):
         self.words_data = words_data
@@ -1368,6 +1370,7 @@ class TranscriptionCanvas(QWidget):
         """Returns a filtered list of only the words that should physically render.
         STAGE 9: Consecutive inaudible tokens are deduplicated in the view layer —
         only the first (...) of a run is shown; data remains intact in memory.
+        Result is cached in self._cached_visible_words — do NOT call this inside paintEvent.
         """
         if not self.words_data: return []
         
@@ -1395,13 +1398,35 @@ class TranscriptionCanvas(QWidget):
             vis.append(w)
         return vis
 
+    def _get_clip_rect(self):
+        """Returns the QRect of the currently visible viewport area in canvas coordinates,
+        expanded by a generous vertical buffer so words near the edge are never clipped.
+        Falls back to the full canvas rect when no parent scroll area is found."""
+        try:
+            scroll = getattr(self.main_window, 'scroll_area', None)
+            if scroll is not None:
+                vbar = scroll.verticalScrollBar()
+                hbar = scroll.horizontalScrollBar()
+                y_off = vbar.value()
+                x_off = hbar.value()
+                vp = scroll.viewport()
+                vp_h = vp.height()
+                vp_w = vp.width()
+                # 400px vertical buffer — ensures words on partially-visible lines render correctly
+                BUFFER = 400
+                return QRect(x_off, max(0, y_off - BUFFER), vp_w, vp_h + BUFFER * 2)
+        except Exception:
+            pass
+        return self.rect()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._calculate_layout()
 
     def _calculate_layout(self):
-        if not self.words_data: return
+        if not self.words_data:
+            self._cached_visible_words = []
+            return
         from PySide6.QtGui import QFontMetrics, QFont
         
         prefs = self.main_window.engine.load_preferences() or {}
@@ -1421,7 +1446,9 @@ class TranscriptionCanvas(QWidget):
         x, y = 20, 20
         max_w = self.width() - 40
         
+        # Rebuild the cached list once — paintEvent reads it directly, never recomputes
         visible_words = self._get_visible_words()
+        self._cached_visible_words = visible_words
         
         for w in visible_words:
             # Clean previous iteration markers
@@ -1438,12 +1465,18 @@ class TranscriptionCanvas(QWidget):
                     y += 20 # Gap between paragraphs
                 x = 20
                 
-                # Generate Timestamp
+                # Generate Timestamp — format depends on 'timestamp_precise' setting
                 secs = w.get('start', 0)
-                m = int(secs // 60)
-                s = int(secs % 60)
-                ms = int((secs - int(secs)) * 1000)
-                ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
+                if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']):
+                    m = int(secs // 60)
+                    s = int(secs % 60)
+                    ms = int((secs - int(secs)) * 1000)
+                    ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
+                else:
+                    total_s = int(round(secs))
+                    m = total_s // 60
+                    s = total_s % 60
+                    ts_text = f"[{m:02d}:{s:02d}]"
                 
                 ts_w = ts_metrics.horizontalAdvance(ts_text)
                 w['_ts_text'] = ts_text
@@ -1517,9 +1550,18 @@ class TranscriptionCanvas(QWidget):
             return None, QColor(config.WORD_NORMAL_FG), True
 
         p.setPen(Qt.NoPen)
-        visible_words = self._get_visible_words()
-        
-        # Oś Y separatorów
+
+        # ── VIEWPORT CULLING ─────────────────────────────────────────────────────
+        # Use the pre-computed cached list — never call _get_visible_words() here.
+        # Build a smaller list of only those words whose _rect overlaps the visible
+        # viewport region. All rendering passes below use this culled list.
+        # The full cached list is kept so bridge-detection can peek at neighbours.
+        all_visible = self._cached_visible_words
+        clip = self._get_clip_rect()
+        visible_words = [w for w in all_visible if '_rect' not in w or clip.intersects(w['_rect'])]
+        # ────────────────────────────────────────────────────────────────────────
+
+        # Oś Y separatorów (only in visible range)
         p.setPen(QPen(QColor("#333333"), 1))
         for w in visible_words:
             if '_separator_y' in w:
@@ -1528,6 +1570,7 @@ class TranscriptionCanvas(QWidget):
         p.setPen(Qt.NoPen)
         
         # 1. CZYSZCZENIE ŚMIECI PO POPRZEDNICH ITERACJACH
+        # Only clear per-frame keys on the culled (visible) set — no reason to touch off-screen words
         for w in visible_words:
             for key in ['_search_brush', '_search_fg', '_is_bold']:
                 w.pop(key, None)
@@ -1642,10 +1685,17 @@ class TranscriptionCanvas(QWidget):
                 p.drawRoundedRect(w['_rect'].adjusted(-expand, -1, expand, 1), 5, 5)
 
         # PASS 2: Sharp Bridges
+        # Iterate over the FULL cached list so bridges between an off-screen word and
+        # an on-screen word are never orphaned. We skip pairs where neither is in the
+        # visible set (fast path via a set of ids).
         p.setPen(Qt.NoPen)
-        for i in range(len(visible_words) - 1):
-            w1 = visible_words[i]
-            w2 = visible_words[i+1]
+        visible_ids = {id(w) for w in visible_words}
+        for i in range(len(all_visible) - 1):
+            w1 = all_visible[i]
+            w2 = all_visible[i+1]
+            # Skip pairs where neither word is on screen
+            if id(w1) not in visible_ids and id(w2) not in visible_ids:
+                continue
             
             if '_rect' not in w1 or '_rect' not in w2: continue
             if w1['_rect'].y() != w2['_rect'].y(): continue 
@@ -1715,7 +1765,7 @@ class TranscriptionCanvas(QWidget):
                 p.drawRoundedRect(rect, 1, 1)
 
     def _handle_mouse(self, pos):
-        visible_words = self._get_visible_words()
+        visible_words = self._cached_visible_words
         for w in visible_words:
             if '_rect' in w and w['_rect'].adjusted(-3, -1, 3, 1).contains(pos):
                 if w['id'] != self._last_dragged_id:
@@ -4988,6 +5038,21 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         _add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
                  False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=False))
 
+        # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
+        self.tgl_timestamp_precise = ToggleSwitch()
+        self.tgl_timestamp_precise.setChecked(
+            bool(prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])),
+            animated=False
+        )
+        self.tgl_timestamp_precise.setToolTip(self.txt("tt_timestamp_precise"))
+        w_ts_precise = QWidget()
+        l_ts_precise = QHBoxLayout(w_ts_precise)
+        l_ts_precise.setContentsMargins(0, 0, 0, 0)
+        l_ts_precise.addStretch()
+        l_ts_precise.addWidget(self.tgl_timestamp_precise)
+        _add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
+                 False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=False))
+
         l_transcript.addLayout(form_bottom)
         l_transcript.addStretch()
 
@@ -5805,6 +5870,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 12), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
+            'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
         }
         
         if not is_basic:
@@ -5900,6 +5966,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             pass
                 
         self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
+        self._safe_set('tgl_timestamp_precise', state.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
         
         if not is_basic:
             self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
@@ -6040,6 +6107,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'hidden_panels': f"{self.txt('tab_interface')}: {self.txt('lbl_hidden_panels')}",
                 'accent_color': f"{self.txt('tab_interface')}: {self.txt('lbl_accent_color')}",
                 'sync_davinci_chapter': f"{self.txt('tab_transcript')}: {self.txt('chk_sync_davinci')}",
+                'timestamp_precise':    f"{self.txt('tab_transcript')}: {self.txt('lbl_timestamp_precise')}",
                 'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
                 'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
                 'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",

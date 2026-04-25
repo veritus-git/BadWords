@@ -188,6 +188,10 @@ DEFAULT_SETTINGS = {
     # False (default): audio tracks are re-mapped sequentially (A1, A2, A3...)
     # True: original source track indices are preserved in the output timeline
     "xml_preserve_track_order": False,
+    # ── Transcript timestamps ───────────────────────────────────────────────
+    # False (default): timestamps rounded to nearest second, e.g. [01:08]
+    # True: full millisecond precision, e.g. [01:07.986]
+    "timestamp_precise": False,
 }
 
 
@@ -648,6 +652,8 @@ TRANS = {
         "status_assembly_xml_build": "Building XML assembly...",
         "status_assembly_xml_import": "Importing XML timeline...",
         "status_assembly_colors": "Applying clip colors...",
+        "lbl_timestamp_precise": "Precise timestamps (ms)",
+        "tt_timestamp_precise": "Show full millisecond precision in segment timestamps (e.g. [01:07.986] instead of [01:08]).",
     },
     'pl': {
         "chk_sync_davinci": "Synchronizuj oś czasu DaVinci przy zmianie edycji",
@@ -919,6 +925,8 @@ TRANS = {
         "status_assembly_xml_build": "Budowanie XML montażu...",
         "status_assembly_xml_import": "Importowanie osi czasu z XML...",
         "status_assembly_colors": "Stosowanie kolorów klipów...",
+        "lbl_timestamp_precise": "Dokładne znaczniki czasu (ms)",
+        "tt_timestamp_precise": "Pokazuje pełną precyzję milisekundową w znacznikach czasu (np. [01:07.986] zamiast [01:08]).",
     },
     'de': {
         "chk_sync_davinci": "DaVinci Timeline bei Editionswechsel synchronisieren",
@@ -1190,6 +1198,8 @@ TRANS = {
         "status_assembly_xml_build": "XML-Montage wird erstellt...",
         "status_assembly_xml_import": "XML-Timeline wird importiert...",
         "status_assembly_colors": "Clip-Farben werden angewendet...",
+        "lbl_timestamp_precise": "Präzise Zeitstempel (ms)",
+        "tt_timestamp_precise": "Zeigt Millisekunden-Genauigkeit in Segment-Zeitstempeln (z.B. [01:07.986] statt [01:08]).",
     },
     'es': {
         "chk_sync_davinci": "Sincronizar línea de tiempo de DaVinci al cambiar de edición",
@@ -1460,6 +1470,8 @@ TRANS = {
         "status_assembly_xml_build": "Construyendo ensamblaje XML...",
         "status_assembly_xml_import": "Importando línea de tiempo XML...",
         "status_assembly_colors": "Aplicando colores de clips...",
+        "lbl_timestamp_precise": "Marcas de tiempo precisas (ms)",
+        "tt_timestamp_precise": "Muestra la precisión completa en milisegundos en las marcas de tiempo (p. ej. [01:07.986] en lugar de [01:08]).",
     },
     'fr': {
         "chk_sync_davinci": "Synchroniser la timeline DaVinci lors du changement d'édition",
@@ -1731,6 +1743,8 @@ TRANS = {
         "status_assembly_xml_build": "Construction de l'assemblage XML...",
         "status_assembly_xml_import": "Importation de la timeline XML...",
         "status_assembly_colors": "Application des couleurs de clips...",
+        "lbl_timestamp_precise": "Horodatages précis (ms)",
+        "tt_timestamp_precise": "Affiche la précision en millisecondes dans les horodatages de segments (ex. [01:07.986] au lieu de [01:08]).",
     },
     'it': {
         "chk_sync_davinci": "Sincronizza timeline DaVinci al cambio di edizione",
@@ -2002,6 +2016,8 @@ TRANS = {
         "status_assembly_xml_build": "Costruzione dell'assemblaggio XML...",
         "status_assembly_xml_import": "Importazione della timeline XML...",
         "status_assembly_colors": "Applicazione dei colori dei clip...",
+        "lbl_timestamp_precise": "Timestamp precisi (ms)",
+        "tt_timestamp_precise": "Mostra la precisione in millisecondi nei timestamp dei segmenti (es. [01:07.986] invece di [01:08]).",
     },
     'pt': {
         "chk_sync_davinci": "Sincronizar linha do tempo DaVinci ao mudar de edição",
@@ -2273,6 +2289,8 @@ TRANS = {
         "status_assembly_xml_build": "Construindo montagem XML...",
         "status_assembly_xml_import": "Importando timeline XML...",
         "status_assembly_colors": "Aplicando cores dos clipes...",
+        "lbl_timestamp_precise": "Timestamps precisos (ms)",
+        "tt_timestamp_precise": "Exibe precisão total em milissegundos nos timestamps dos segmentos (ex. [01:07.986] em vez de [01:08]).",
     },
     'uk': {
         "chk_sync_davinci": "Синхронізувати таймлайн DaVinci при зміні редакції",
@@ -2544,6 +2562,8 @@ TRANS = {
         "status_assembly_xml_build": "Побудова XML-монтажу...",
         "status_assembly_xml_import": "Імпортування XML-часової шкали...",
         "status_assembly_colors": "Застосування кольорів кліпів...",
+        "lbl_timestamp_precise": "Точні мітки часу (мс)",
+        "tt_timestamp_precise": "Показує повну точність у мілісекундах у мітках часу сегментів (напр. [01:07.986] замість [01:08]).",
     },
     'nl': {
         "chk_sync_davinci": "DaVinci-tijdlijn synchroniseren bij het wisselen van bewerking",
@@ -2815,6 +2835,8 @@ TRANS = {
         "status_assembly_xml_build": "XML-montage bouwen...",
         "status_assembly_xml_import": "XML-tijdlijn importeren...",
         "status_assembly_colors": "Clipkleuren toepassen...",
+        "lbl_timestamp_precise": "Nauwkeurige tijdstempels (ms)",
+        "tt_timestamp_precise": "Toont volledige millisecondeprecisie in segmenttijdstempels (bijv. [01:07.986] in plaats van [01:08]).",
     },
     'ru': {
         "chk_sync_davinci": "Синхронизировать таймлайн DaVinci при смене редакции",
@@ -3088,6 +3110,8 @@ TRANS = {
         "status_assembly_xml_build": "Построение XML-монтажа...",
         "status_assembly_xml_import": "Импорт XML-временной шкалы...",
         "status_assembly_colors": "Применение цветов клипов...",
+        "lbl_timestamp_precise": "Точные временные метки (мс)",
+        "tt_timestamp_precise": "Показывает полную точность в миллисекундах в временных метках сегментов (напр. [01:07.986] вместо [01:08]).",
     },
 }
 
