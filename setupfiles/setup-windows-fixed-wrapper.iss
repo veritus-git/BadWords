@@ -223,8 +223,8 @@ Filename: "{tmp}\python_setup.exe"; Parameters: "/quiet PrependPath=1 Include_te
 
 [Code]
 var
-  PythonNeeded: Boolean;
   InstallModePage: TInputOptionWizardPage;
+  DownloadsQueued: Boolean;
 
 function NeedsPythonInstallation(): Boolean;
 var
@@ -241,11 +241,7 @@ end;
 procedure InitializeWizard;
 begin
   idpDownloadAfter(wpReady);
-  
-  PythonNeeded := NeedsPythonInstallation();
-  if PythonNeeded then idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
-
-  idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
+  DownloadsQueued := False;
 
   InstallModePage := CreateInputOptionPage(wpSelectComponents,
     CustomMessage('ModeTitle'), CustomMessage('ModeDesc'),
@@ -254,6 +250,24 @@ begin
   InstallModePage.Add(CustomMessage('ModeClean'));
   InstallModePage.Add(CustomMessage('ModeWipe'));
   InstallModePage.Values[0] := True; // Default to Standard Update
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  
+  // Wrzucamy pakiety do pobrania tuż przed stroną "Gotowy do instalacji" (wpReady)
+  if (CurPageID = wpReady) and not DownloadsQueued then
+  begin
+    if NeedsPythonInstallation() then 
+      idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
+      
+    // SMART FFmpeg: Pobierz TYLKO jeśli wybrano Reset lub ffmpeg nie istnieje
+    if InstallModePage.Values[2] or not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
+      idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
+      
+    DownloadsQueued := True;
+  end;
 end;
 
 procedure CleanAppFolder_CleanInstall;
@@ -315,9 +329,6 @@ begin
 
   if CurStep = ssPostInstall then
   begin
-    // Wrapper generation has been moved to setup_windows.bat
-    
-    // Zmieniono IsComponentSelected na WizardIsComponentSelected
     if WizardIsComponentSelected('nvidia') then GpuFlag := '1' else GpuFlag := '0';
     FFmpegZip := ExpandConstant('{tmp}\ffmpeg.zip');
 
@@ -327,6 +338,7 @@ begin
       
     WizardForm.StatusLabel.Caption := CustomMessage('StatusConfig');
     
+    // Uruchomienie trybu okienkowego aby wymusić czekanie jeśli batch ma komendę 'pause'
     if not Exec(ExpandConstant('{app}\setup_windows.bat'), 
                 '"' + ExpandConstant('{app}') + '" "' + GpuFlag + '" "' + FFmpegZip + '" "' + WipeMode + '"', 
                 '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
