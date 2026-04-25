@@ -36,14 +36,22 @@ SOURCE_FOLDER_NAME="src"
 ASSETS_FOLDER_NAME="assets"
 RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
 WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords.py"
+LEGACY_WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
 
 # --- SMART PATH DETECTION & VALIDATION ---
 DEFAULT_INSTALL_DIR="$HOME/.local/share/$APP_NAME"
 INSTALL_DIR_BASH="$DEFAULT_INSTALL_DIR"
 DETECTION_MSG=""
 
+CHECK_WRAPPER=""
 if [ -f "$WRAPPER_FILE" ]; then
-    DETECTED_PATH=$(grep -E "^INSTALL_DIR\s*=\s*" "$WRAPPER_FILE" | head -n 1 | sed -E "s/^INSTALL_DIR\s*=\s*r?['\"](.*)['\"]/\1/")
+    CHECK_WRAPPER="$WRAPPER_FILE"
+elif [ -f "$LEGACY_WRAPPER_FILE" ]; then
+    CHECK_WRAPPER="$LEGACY_WRAPPER_FILE"
+fi
+
+if [ -n "$CHECK_WRAPPER" ]; then
+    DETECTED_PATH=$(grep -E "^INSTALL_DIR\s*=\s*" "$CHECK_WRAPPER" | head -n 1 | sed -E "s/^INSTALL_DIR\s*=\s*r?['\"](.*)['\"]/\1/")
     
     # Walidacja: ścieżka musi istnieć i posiadać main.py
     if [ -n "$DETECTED_PATH" ] && [ -d "$DETECTED_PATH" ] && [ -f "$DETECTED_PATH/main.py" ]; then
@@ -82,18 +90,20 @@ fi
 echo -e "\n${YELLOW}What would you like to do?${NC}"
 echo -e "${GREEN}1) Standard Install/Update: Install or update the app. Keep your settings and models.${NC}"
 echo -e "${CYAN}2) Repair Installation: Fix bugs by replacing core files. Keep your settings and models.${NC}"
-echo -e "${RED}3) Complete Reset: Delete absolutely EVERYTHING and install from scratch.${NC}"
-echo -e "${BOLD_RED}4) Uninstall: Remove BadWords completely from this system.${NC}"
+echo -e "${BLUE}3) Move Installation: Change the BadWords installation folder (Moves all files).${NC}"
+echo -e "${RED}4) Complete Reset: Delete absolutely EVERYTHING and install from scratch.${NC}"
+echo -e "${BOLD_RED}5) Uninstall: Remove BadWords completely from this system.${NC}"
 echo ""
-read -p "Select [1-4]: " WIPE_CHOICE
+read -p "Select [1-5]: " WIPE_CHOICE
 
 if [ -z "$WIPE_CHOICE" ]; then WIPE_CHOICE="1"; fi
 
 case "$WIPE_CHOICE" in
     1) MODE_INSTALL="Update" ;;
     2) MODE_INSTALL="Clean Install" ;;
-    3) MODE_INSTALL="Full Wipe" ;;
-    4) MODE_INSTALL="Uninstall" ;;
+    3) MODE_INSTALL="Move Installation" ;;
+    4) MODE_INSTALL="Full Wipe" ;;
+    5) MODE_INSTALL="Uninstall" ;;
     *) echo -e "${RED}[ERROR] Invalid choice. Exiting.${NC}"; exit 1 ;;
 esac
 
@@ -102,13 +112,19 @@ echo -e "${YELLOW}[INFO] Selected Action: $MODE_INSTALL${NC}"
 # ==========================================
 # 1.5 CUSTOM INSTALLATION PATH PROMPT
 # ==========================================
-# Pytamy o ścieżkę tylko przy pełnym wipe LUB gdy to pierwsza instalacja
-if [ "$WIPE_CHOICE" -eq 3 ] || [ ! -d "$OLD_INSTALL_DIR" ]; then
-    if [ "$WIPE_CHOICE" -ne 4 ]; then
-        echo -e "\n${YELLOW}========================== INSTALLATION PATH ==========================${NC}"
-        echo -e "\n${YELLOW}You can choose where to install BadWords${NC}"
-        echo -e "${GREEN}Default/Current Path: $OLD_INSTALL_DIR${NC}"
-        echo -e "${CYAN}Press [ENTER] to use this path, or type a custom absolute path (e.g. ~/Documents)${NC}"
+# Pytamy o ścieżkę tylko przy pełnym wipe, przenoszeniu LUB gdy to pierwsza instalacja
+if [ "$WIPE_CHOICE" -eq 4 ] || [ "$WIPE_CHOICE" -eq 3 ] || [ ! -d "$OLD_INSTALL_DIR" ]; then
+    if [ "$WIPE_CHOICE" -ne 5 ]; then
+        echo -e "\n${YELLOW}========================== PATH CONFIGURATION ==========================${NC}"
+        if [ "$WIPE_CHOICE" -eq 3 ]; then
+            echo -e "${GREEN}Current Path: $OLD_INSTALL_DIR${NC}"
+            echo -e "${CYAN}Type a NEW absolute path to move BadWords to (e.g. ~/Documents)${NC}"
+        else
+            echo -e "\n${YELLOW}You can choose where to install BadWords${NC}"
+            echo -e "${GREEN}Default/Current Path: $OLD_INSTALL_DIR${NC}"
+            echo -e "${CYAN}Press [ENTER] to use this path, or type a custom absolute path (e.g. ~/Documents)${NC}"
+        fi
+        
         read -p "Path: " CUSTOM_PATH
 
         if [ -n "$CUSTOM_PATH" ]; then
@@ -121,8 +137,22 @@ if [ "$WIPE_CHOICE" -eq 3 ] || [ ! -d "$OLD_INSTALL_DIR" ]; then
                 CUSTOM_PATH="${CUSTOM_PATH%/}/$APP_NAME"
             fi
             
+            if [ "$WIPE_CHOICE" -eq 3 ] && [ "$CUSTOM_PATH" == "$OLD_INSTALL_DIR" ]; then
+                echo -e "${RED}[ERROR] New path is identical to the current one! Exiting.${NC}"
+                exit 1
+            fi
+            
             INSTALL_DIR_BASH="$CUSTOM_PATH"
             echo -e "${GREEN}[INFO] Target path set to: $INSTALL_DIR_BASH${NC}"
+            
+            if [ "$WIPE_CHOICE" -eq 3 ] && [ -d "$OLD_INSTALL_DIR" ]; then
+                echo -e "\n${YELLOW}[MOVE] Moving files from $OLD_INSTALL_DIR to $INSTALL_DIR_BASH...${NC}"
+                mkdir -p "$(dirname "$INSTALL_DIR_BASH")"
+                mv "$OLD_INSTALL_DIR" "$INSTALL_DIR_BASH"
+                # Wymuś odświeżenie paczek pythona i venv przy zmianie ścieżki (Move traktowany jako Repair)
+                WIPE_CHOICE=2 
+                echo -e "${GREEN}[OK] Files automatically moved. Initiating fast re-link...${NC}"
+            fi
             
             # Re-kalkulacja zmiennych zależnych na nową ścieżkę
             VENV_DIR="$INSTALL_DIR_BASH/venv"
@@ -130,10 +160,14 @@ if [ "$WIPE_CHOICE" -eq 3 ] || [ ! -d "$OLD_INSTALL_DIR" ]; then
             MODELS_DIR="$INSTALL_DIR_BASH/models"
             BIN_DIR="$INSTALL_DIR_BASH/bin"
             LOG_FILE="$INSTALL_DIR_BASH/badwords_debug.log"
+            OLD_INSTALL_DIR="$INSTALL_DIR_BASH"
+        elif [ "$WIPE_CHOICE" -eq 3 ]; then
+            echo -e "${RED}[ERROR] Path cannot be empty for moving! Exiting.${NC}"
+            exit 1
         fi
     fi
 else
-    if [ "$WIPE_CHOICE" -ne 4 ]; then
+    if [ "$WIPE_CHOICE" -ne 5 ]; then
         echo -e "${GREEN}[INFO] Using detected path: $OLD_INSTALL_DIR${NC}"
     fi
 fi
@@ -141,7 +175,7 @@ fi
 # ==========================================
 # 2. UNINSTALL HANDLER (EXECUTE & EXIT)
 # ==========================================
-if [ "$WIPE_CHOICE" -eq 4 ]; then
+if [ "$WIPE_CHOICE" -eq 5 ]; then
     PROCESS_NAME="Deinstallation"
     
     echo -e "\n${BOLD_RED}WARNING: You are about to completely remove BadWords from this system.${NC}"
@@ -546,6 +580,11 @@ if [ ! -d "$RESOLVE_SCRIPT_DIR" ]; then
     mkdir -p "$RESOLVE_SCRIPT_DIR"
 fi
 export WRAPPER_TARGET_DIR="$RESOLVE_SCRIPT_DIR"
+
+if [ -f "$RESOLVE_SCRIPT_DIR/BadWords (Linux).py" ]; then
+    rm "$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
+    echo -e "${CYAN} - Removed legacy wrapper: BadWords (Linux).py${NC}"
+fi
 
 # ==========================================
 # 13. WRAPPER GENERATION
