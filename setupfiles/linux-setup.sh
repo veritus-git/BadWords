@@ -35,7 +35,7 @@ APP_NAME="BadWords"
 SOURCE_FOLDER_NAME="src" 
 ASSETS_FOLDER_NAME="assets"
 RESOLVE_SCRIPT_DIR="$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"
-WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords (Linux).py"
+WRAPPER_FILE="$RESOLVE_SCRIPT_DIR/BadWords.py"
 
 # --- SMART PATH DETECTION & VALIDATION ---
 DEFAULT_INSTALL_DIR="$HOME/.local/share/$APP_NAME"
@@ -568,7 +568,7 @@ import sys
 import stat
 
 APP_NAME = \"$APP_NAME\"
-WRAPPER_NAME = \"BadWords (Linux).py\"
+WRAPPER_NAME = \"BadWords.py\"
 
 INSTALL_DIR = r\"$INSTALL_DIR_BASH\"
 LIBS_DIR = os.path.join(INSTALL_DIR, \"libs\")
