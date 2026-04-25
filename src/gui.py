@@ -2871,8 +2871,8 @@ class BadWordsGUI(QMainWindow):
         QApplication.processEvents()
 
         fs_prefs = self.engine.load_preferences() or {}
-        fs_prefs['silence_cut']  = getattr(self, 'rb_fs_cut',  None) and self.rb_fs_cut.isChecked()
-        fs_prefs['silence_mark'] = getattr(self, 'rb_fs_mark', None) and self.rb_fs_mark.isChecked()
+        fs_prefs['silence_cut']  = getattr(self, 'tgl_fs_cut',  None) and self.tgl_fs_cut.isChecked()
+        fs_prefs['silence_mark'] = getattr(self, 'tgl_fs_mark', None) and self.tgl_fs_mark.isChecked()
 
         success, err = self.engine.assemble_timeline(
             words_data, fs_prefs,
@@ -2887,7 +2887,7 @@ class BadWordsGUI(QMainWindow):
 
         self.go_to_page(0)
         if hasattr(self, 'welcome_stack'):
-            self.welcome_stack.setCurrentIndex(0)
+            self.welcome_stack.setCurrentIndex(1)
 
     def _toggle_favorite(self, target_id: str, source_toggle, label_text: str, pin_btn):
         """Proxy Favorites system — creates or destroys a mirrored ToggleSwitch in layout_favorites."""
@@ -3221,31 +3221,24 @@ class BadWordsGUI(QMainWindow):
         l_fast.setContentsMargins(0, 10, 0, 0)
         l_fast.setSpacing(0)
 
-        # Back link
-        btn_back = QPushButton("\u2190 Back to transcription")
-        btn_back.setCursor(Qt.PointingHandCursor)
-        btn_back.setStyleSheet(
-            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
-        )
-        btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
-        l_fast.addWidget(btn_back)
-        l_fast.addSpacing(14)
-
-        lbl_fs_title = QLabel("Fast Silence Detection")
+        # TITLE
+        lbl_fs_title = QLabel("Fast silence workspace")
         lbl_fs_title.setAlignment(Qt.AlignCenter)
         lbl_fs_title.setStyleSheet(
-            f"color: #cccccc; font-size: 13pt; font-weight: bold;"
-            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
+            f"color: {config.NOTE_COL}; font-size: 10pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         l_fast.addWidget(lbl_fs_title)
-        l_fast.addSpacing(16)
+        l_fast.addSpacing(20)
 
-        # ── Settings rows ───────────────────────────────────────────────
+        # SETTINGS ROWS
+        spin_style = f"background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; border-radius: 3px; padding: 4px; min-height: 20px;"
+
         self.spin_fs_thresh = QDoubleSpinBox()
         self.spin_fs_thresh.setRange(-100, 0)
         self.spin_fs_thresh.setSuffix(" dB")
         self.spin_fs_thresh.setValue(prefs.get('ui_spin_thresh', -42.0))
+        self.spin_fs_thresh.setStyleSheet(spin_style)
         l_fast.addLayout(_row("Silence Threshold:", self.spin_fs_thresh))
         l_fast.addSpacing(10)
 
@@ -3254,40 +3247,71 @@ class BadWordsGUI(QMainWindow):
         self.spin_fs_pad.setSingleStep(0.05)
         self.spin_fs_pad.setSuffix(" s")
         self.spin_fs_pad.setValue(prefs.get('ui_spin_pad', 0.05))
+        self.spin_fs_pad.setStyleSheet(spin_style)
         l_fast.addLayout(_row("Padding:", self.spin_fs_pad))
         l_fast.addSpacing(16)
 
-        # ── Mode radios ─────────────────────────────────────────────────
-        from PySide6.QtWidgets import QButtonGroup
-        fs_mode_group = QButtonGroup(p_fast)
-        self.rb_fs_cut = QRadioButton("Cut silence directly")
-        self.rb_fs_cut.setChecked(True)
-        self.rb_fs_cut.setCursor(Qt.PointingHandCursor)
-        self.rb_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent; border: none;")
-        self.rb_fs_mark = QRadioButton("Mark silence with color")
-        self.rb_fs_mark.setCursor(Qt.PointingHandCursor)
-        self.rb_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent; border: none;")
-        fs_mode_group.addButton(self.rb_fs_cut)
-        fs_mode_group.addButton(self.rb_fs_mark)
-        l_fast.addWidget(self.rb_fs_cut)
-        l_fast.addWidget(self.rb_fs_mark)
-        l_fast.addSpacing(20)
+        # MODE TOGGLES (Mutually Exclusive)
+        row_fs_cut = QHBoxLayout()
+        lbl_fs_cut = QLabel("Cut silence directly")
+        lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
+        row_fs_cut.addWidget(lbl_fs_cut)
+        row_fs_cut.addStretch()
+        self.tgl_fs_cut = ToggleSwitch()
+        self.tgl_fs_cut.setChecked(prefs.get('fs_cut_mode', True), animated=False)
+        row_fs_cut.addWidget(self.tgl_fs_cut)
+        l_fast.addLayout(row_fs_cut)
+        l_fast.addSpacing(10)
 
-        # ── Run button ──────────────────────────────────────────────────
-        self.btn_run_fs = QPushButton("\u26a1  RUN FAST SILENCE")
+        row_fs_mark = QHBoxLayout()
+        lbl_fs_mark = QLabel("Mark silence with color")
+        lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
+        row_fs_mark.addWidget(lbl_fs_mark)
+        row_fs_mark.addStretch()
+        self.tgl_fs_mark = ToggleSwitch()
+        self.tgl_fs_mark.setChecked(prefs.get('fs_mark_mode', False), animated=False)
+        row_fs_mark.addWidget(self.tgl_fs_mark)
+        l_fast.addLayout(row_fs_mark)
+        l_fast.addSpacing(24)
+
+        # Connect mutual exclusion & auto-saving
+        self.tgl_fs_cut.toggled.connect(lambda c: self.tgl_fs_mark.setChecked(False) if c else None)
+        self.tgl_fs_mark.toggled.connect(lambda c: self.tgl_fs_cut.setChecked(False) if c else None)
+        self.tgl_fs_cut.toggled.connect(lambda v: self._save_single_pref('fs_cut_mode', v))
+        self.tgl_fs_mark.toggled.connect(lambda v: self._save_single_pref('fs_mark_mode', v))
+
+        # RUN BUTTON
+        btn_row_fs = QHBoxLayout()
+        btn_row_fs.addStretch()
+        self.btn_run_fs = QPushButton("RUN FAST SILENCE")
         self.btn_run_fs.setCursor(Qt.PointingHandCursor)
-        self.btn_run_fs.setFixedHeight(36)
-        self.btn_run_fs.setStyleSheet(f"""
+        self.btn_run_fs.setFixedHeight(30)
+        self.btn_run_fs.setStyleSheet(f'''
             QPushButton {{
                 background-color: {config.BTN_BG}; color: #ffffff;
-                font-family: "{config.UI_FONT_NAME}"; font-size: 11pt; font-weight: bold;
-                border: none; border-radius: 4px;
+                font-family: "{config.UI_FONT_NAME}"; font-size: 10pt; font-weight: bold;
+                border: none; border-radius: 3px; padding: 0 18px;
             }}
             QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
             QPushButton:pressed {{ background-color: #176e38; }}
-        """)
+        ''')
         self.btn_run_fs.clicked.connect(self._on_fast_silence)
-        l_fast.addWidget(self.btn_run_fs)
+        btn_row_fs.addWidget(self.btn_run_fs)
+        l_fast.addLayout(btn_row_fs)
+
+        l_fast.addSpacing(20)
+
+        # BACK BUTTON
+        btn_back = QPushButton("\u2190 Back to transcription")
+        btn_back.setCursor(Qt.PointingHandCursor)
+        btn_back.setStyleSheet(
+            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
+        )
+        btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
+        l_fast.addWidget(btn_back)
+
+        l_fast.addStretch()
 
         self.welcome_stack.addWidget(p_fast)   # index 1
 

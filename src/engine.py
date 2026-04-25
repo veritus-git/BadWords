@@ -658,24 +658,36 @@ except Exception as e:
             update_progress(80)
             update_status("Building data structure...")
 
-            words_data = []
-            for i, s in enumerate(raw_silences):
-                start = round(s['s'] + padding_s, 3)
-                end   = round(s['e'] - padding_s, 3)
-                if end <= start:
-                    continue
-                words_data.append({
-                    'text':             '[SILENCE]',
-                    'start':            start,
-                    'end':              end,
-                    'type':             'silence',
-                    'status':           'silence',
-                    'selected':         False,
-                    'seg_start':        start,
-                    'seg_end':          end,
-                    'is_segment_start': i == 0,
-                    'id':               i,
-                })
+            # --- Fake Word Injection approach ---
+            # Compute audio duration from Resolve timeline
+            fps = self.resolve_handler.fps
+            tl_start = self.resolve_handler.get_timeline_start_frame()
+            tl_end = self.resolve_handler.timeline.GetEndFrame()
+            duration_s = (tl_end - tl_start) / fps
+
+            # Apply padding to each detected silence
+            padded_silences = []
+            for s in raw_silences:
+                new_start = s['s'] + padding_s
+                new_end   = s['e'] - padding_s
+                if new_end > new_start:
+                    padded_silences.append({'s': new_start, 'e': new_end})
+
+            # Single fake word that spans the entire audio;
+            # calculate_timeline_structure will use _meta_global_silence for precise cuts.
+            words_data = [{
+                'text':             '[FAST_SILENCE_TRACK]',
+                'start':            0.0,
+                'end':              duration_s,
+                'type':             'word',
+                'status':           'normal',
+                'selected':         False,
+                'seg_start':        0.0,
+                'seg_end':          duration_s,
+                'is_segment_start': True,
+                'id':               0,
+                'meta_global_silence': padded_silences,
+            }]
 
             # Cleanup temp file
             try: os.remove(wav_path)
@@ -1117,7 +1129,7 @@ except Exception as e:
 
         for i, w in enumerate(final_words): w['id'] = i
         if final_words:
-            final_words[0]['_meta_global_silence'] = raw_global_silence
+            final_words[0]['meta_global_silence'] = raw_global_silence
 
         segments = []
         current_seg = []
@@ -1154,7 +1166,7 @@ except Exception as e:
         pad_f = int(round(pad_s * fps))
         snap_f = int(round(snap_max_s * fps))
 
-        raw_silence = words_data[0].get('_meta_global_silence', None)
+        raw_silence = words_data[0].get('meta_global_silence', None)
         silence_blocks_for_snap = [w for w in words_data if w.get('type') == 'silence']
         
         chunks = []
