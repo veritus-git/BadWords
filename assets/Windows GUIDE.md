@@ -14,3 +14,11 @@ Mid-install the terminal will popup - dont worry, it will do all the work and cl
 2. Open your Project and Timeline.  
 3. Go to Workspace → Scripts → BadWords  
 4. Enjoy easier editing\!
+
+### 4\) Uninstallation
+
+1. Open the **Start menu**, type **"Add or remove programs"** (or **"Installed apps"** on Windows 11\), and press Enter.  
+2. Find **BadWords** in the list of installed applications.  
+3. Click **Uninstall** and follow the on-screen instructions.
+
+> **Note:** The uninstaller will automatically and safely remove all associated files, hidden folders, and registry entries.

@@ -3,6 +3,23 @@
 All notable changes to the **BadWords** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.0.3] - 2026-02-28
+### Added
+- **Transcription Progress**: Replaced the infinite loading loop with a precise, visible percentage progress bar for transcription stage
+- **Privacy Controls**: Added an option to send telemetry data without sharing geolocation (country/city) information.
+- **Linux Installer**: Added the ability to choose a custom installation path.
+- **Uninstallation**: Introduced proper, clean uninstallation routines for both Windows (scorched earth removal of all files and registry orphans) and Linux.
+
+### Changed
+- **Installer Polish**: Refined the overall behavior and flow of both Windows and Linux installers for a smoother setup.
+- **Linux Updates**: The update option on Linux now smartly skips asking for the hardware acceleration type if an existing environment is detected.
+- **Windows Downloads**: Optimized the dependency downloading process in the Windows installer.
+
+### Fixed
+- **Linux Subprocesses**: Fixed critical issues with subprocess execution, ensuring the Whisper runner works reliably.
+- **Telemetry & Pinging**: Resolved issues with telemetry pings and implemented secure, hash-based UUID generation.
+- **Windows Wrapper**: Fixed the DaVinci Resolve wrapper script generation issues during the Windows installation.
+
 ## [2.0.2] - 2026-02-25
 ### Added
 - **Compute Type Selection**: Added automatic/manual selection for optimal compute types (float16, float32, int8) to improve performance on new GPUs and compatibility on older hardware.
