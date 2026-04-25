@@ -885,7 +885,481 @@ class ResolveHandler:
         return timeline_media_item, context_type
 
     # ==========================================
-    # TIMELINE GENERATOR FROM OPERATIONS
+    # XML ASSEMBLY PIPELINE (PRIMARY PATH)
+    # ==========================================
+
+    def _path_to_fileurl(self, path):
+        """
+        Converts a filesystem path to a valid file:// URL for FCP7 XML.
+        Handles Windows drive letters and Linux/macOS absolute paths.
+        Spaces and special chars are percent-encoded (RFC 3986).
+        """
+        import urllib.parse
+        # Normalise separators
+        path = path.replace('\\', '/')
+        # Windows: "C:/..." → "/C:/..."
+        if len(path) >= 2 and path[1] == ':':
+            path = '/' + path
+        # Quote everything except safe URL characters (slashes, colon for drive)
+        encoded = urllib.parse.quote(path, safe='/:@')
+        return 'file://' + encoded
+
+    def _get_fps_params(self, fps):
+        """
+        Returns (timebase_int, is_ntsc) for FCP7 XML <rate> elements.
+
+        FCP7 XML encodes FPS as an integer <timebase> + boolean <ntsc>.
+        NTSC drop-frame rates (23.976, 29.97, 59.94 etc.) must set ntsc=TRUE
+        so Resolve can reconstruct the exact rational rate (e.g. 24000/1001).
+
+        No rounding is done on the frame counts themselves — they arrive from
+        the API already as integers, so there is zero drift risk here.
+        """
+        NTSC_MAP = {
+            23: 23.976, 24: 23.976,   # 23.976 rounds to 24 in int()
+            29: 29.97,  30: 29.97,    # 29.97  rounds to 30
+            47: 47.952, 48: 47.952,
+            59: 59.94,  60: 59.94,
+        }
+        rounded = int(round(fps))
+        # Detect NTSC: actual fps differs from its nearest integer by >0.01
+        if abs(fps - rounded) > 0.01:
+            return rounded, True
+        # Also catch e.g. fps=23.976 that DaVinci may report at higher precision
+        for tb, ntsc_rate in NTSC_MAP.items():
+            if abs(fps - ntsc_rate) < 0.02:
+                return tb, True
+        return rounded, False
+
+    def _build_source_clip_map(self, timeline, track_type, track_idx):
+        """
+        Returns an ordered list of clip dicts for one track on the given timeline.
+        Each dict:
+          abs_start  – absolute start frame on the timeline (includes TL offset)
+          abs_end    – absolute end frame (exclusive, i.e. start + duration)
+          src_in     – source media in-point (frames from media beginning)
+          src_out    – source media out-point (exclusive)
+          file_path  – absolute filesystem path to the media file
+        Clips are sorted by abs_start ascending.
+        """
+        clips = []
+        try:
+            items = timeline.GetItemListInTrack(track_type, track_idx)
+            if not items:
+                return clips
+            for item in items:
+                try:
+                    pool_item = item.GetMediaPoolItem()
+                    if not pool_item:
+                        continue
+                    fp = pool_item.GetClipProperty("File Path") or ""
+                    abs_start = int(item.GetStart())
+                    duration  = int(item.GetDuration())
+                    src_in    = int(item.GetLeftOffset())   # frames from media head to in-point
+                    clips.append({
+                        "abs_start": abs_start,
+                        "abs_end":   abs_start + duration,
+                        "src_in":    src_in,
+                        "src_out":   src_in + duration,
+                        "file_path": fp,
+                    })
+                except Exception as ci_err:
+                    log_error(f"_build_source_clip_map: skipping clip: {ci_err}")
+            clips.sort(key=lambda c: c["abs_start"])
+        except Exception as e:
+            log_error(f"_build_source_clip_map({track_type}, {track_idx}): {e}")
+        return clips
+
+    def build_edit_xml_from_ops(self, ops, source_tl_name, new_tl_name,
+                                 track_indices, audio_only_mode, output_path,
+                                 preserve_track_order=False):
+        """
+        Constructs a complete FCP7 XML file ready to be imported as a new
+        DaVinci Resolve timeline.
+
+        ops               – list of {s, e, type} in 0-based frames relative to
+                            the source TL start (same space as calculate_timeline_structure)
+        source_tl_name    – name of the existing source timeline to read from
+        new_tl_name       – desired name for the imported timeline
+        track_indices     – 1-based list of audio tracks to include; [] = all
+        audio_only_mode   – True: omit all video tracks from output
+        output_path       – filesystem path where the XML will be written
+        preserve_track_order – False (default): remap audio to A1,A2,A3...
+                               True: keep original source track indices
+        Returns True on success, False on any error.
+        """
+        import xml.etree.ElementTree as ET
+
+        COLOR_MAP = {
+            "bad":          "Violet",
+            "repeat":       "Navy",
+            "typo":         "Olive",
+            "inaudible":    "Chocolate",
+            "silence_mark": "Tan",
+        }
+
+        try:
+            # ── 1. Find source timeline ───────────────────────────────────────
+            target_tl = None
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl.GetName() == source_tl_name:
+                    target_tl = tl
+                    break
+            if not target_tl:
+                log_error(f"build_edit_xml_from_ops: timeline '{source_tl_name}' not found.")
+                return False
+
+            # ── 2. FPS & rate params ──────────────────────────────────────────
+            try:
+                raw_fps = float(target_tl.GetSetting("timelineFrameRate"))
+            except Exception:
+                raw_fps = self.fps or 24.0
+            timebase, is_ntsc = self._get_fps_params(raw_fps)
+            ntsc_str = "TRUE" if is_ntsc else "FALSE"
+            log_info(f"build_edit_xml_from_ops: fps={raw_fps} → timebase={timebase}, ntsc={ntsc_str}")
+
+            tl_start_frame = int(target_tl.GetStartFrame())
+
+            # ── 3. Determine which audio tracks to include ────────────────────
+            a_track_count = target_tl.GetTrackCount("audio")
+            v_track_count = target_tl.GetTrackCount("video")
+
+            if track_indices:
+                audio_tracks_src = sorted(set(i for i in track_indices
+                                              if 1 <= i <= a_track_count))
+            else:
+                audio_tracks_src = list(range(1, a_track_count + 1))
+
+            # Build clip maps
+            # Video: always ALL video tracks (user decision)
+            video_clip_maps = {}
+            if not audio_only_mode:
+                for vi in range(1, v_track_count + 1):
+                    clips = self._build_source_clip_map(target_tl, "video", vi)
+                    if clips:
+                        video_clip_maps[vi] = clips
+
+            # Audio: only selected tracks
+            audio_clip_maps = {}
+            for ai in audio_tracks_src:
+                clips = self._build_source_clip_map(target_tl, "audio", ai)
+                if clips:
+                    audio_clip_maps[ai] = clips
+
+            log_info(f"build_edit_xml_from_ops: {len(video_clip_maps)} video track(s), "
+                     f"{len(audio_clip_maps)} audio track(s), tl_start={tl_start_frame}")
+
+            # ── 4. Filter ops: skip bad & silence_cut ─────────────────────────
+            SKIP_TYPES = {"bad", "silence_cut"}
+            kept_ops = [op for op in ops
+                        if op["type"] not in SKIP_TYPES and (op["e"] - op["s"]) >= 2]
+
+            if not kept_ops:
+                log_error("build_edit_xml_from_ops: no ops to assemble after filtering.")
+                return False
+
+            # ── 5. Helper: map one op range onto source clips ─────────────────
+            def op_to_clipitems(op, clip_map):
+                """
+                Given one op in 0-based timeline frames and a list of source clips,
+                returns a list of (src_in, src_out, duration) tuples covering the
+                portion of the op that overlaps each source clip.
+                This correctly handles multi-clip (cut) source timelines.
+                """
+                op_start_abs = tl_start_frame + op["s"]
+                op_end_abs   = tl_start_frame + op["e"]
+                result = []
+                for clip in clip_map:
+                    overlap_start = max(op_start_abs, clip["abs_start"])
+                    overlap_end   = min(op_end_abs,   clip["abs_end"])
+                    if overlap_end <= overlap_start:
+                        continue
+                    offset   = overlap_start - clip["abs_start"]
+                    src_in   = clip["src_in"] + offset
+                    dur      = overlap_end - overlap_start
+                    src_out  = src_in + dur
+                    result.append({
+                        "src_in":    src_in,
+                        "src_out":   src_out,
+                        "duration":  dur,
+                        "file_path": clip["file_path"],
+                    })
+                return result
+
+            # ── 6. Build XML tree ─────────────────────────────────────────────
+            # Collect unique file paths for the <file> registry
+            file_registry = {}  # path → xml id string
+            file_id_counter = [0]
+
+            def get_file_id(path):
+                if path not in file_registry:
+                    file_id_counter[0] += 1
+                    file_registry[path] = f"file-{file_id_counter[0]}"
+                return file_registry[path]
+
+            # Pre-walk all ops to register files in order
+            for op in kept_ops:
+                for vm in video_clip_maps.values():
+                    for seg in op_to_clipitems(op, vm):
+                        get_file_id(seg["file_path"])
+                for am in audio_clip_maps.values():
+                    for seg in op_to_clipitems(op, am):
+                        get_file_id(seg["file_path"])
+
+            def make_rate_elem(parent, ntsc=ntsc_str, tb=timebase):
+                r = ET.SubElement(parent, "rate")
+                ET.SubElement(r, "timebase").text = str(tb)
+                ET.SubElement(r, "ntsc").text = ntsc
+                return r
+
+            def make_file_elem(parent, path, emit_full):
+                """
+                Emits <file id="file-N"> with full content (first time),
+                or a self-closing reference <file id="file-N"/> (subsequent).
+                """
+                fid = get_file_id(path)
+                file_el = ET.SubElement(parent, "file", id=fid)
+                if emit_full:
+                    ET.SubElement(file_el, "name").text = path.split("/")[-1].split("\\")[-1]
+                    ET.SubElement(file_el, "pathurl").text = self._path_to_fileurl(path)
+                    make_rate_elem(file_el)
+                # else: empty element = reference only
+
+            def make_clipitem(parent, ci_id, dest_start, dest_end,
+                              src_in, src_out, duration, file_path,
+                              color=None, sourcetrack_type=None, sourcetrack_idx=None):
+                ci = ET.SubElement(parent, "clipitem", id=ci_id)
+                ET.SubElement(ci, "name").text = file_path.split("/")[-1].split("\\")[-1]
+                ET.SubElement(ci, "duration").text = str(duration)
+                make_rate_elem(ci)
+                ET.SubElement(ci, "start").text   = str(dest_start)
+                ET.SubElement(ci, "end").text     = str(dest_end)
+                ET.SubElement(ci, "in").text      = str(src_in)
+                ET.SubElement(ci, "out").text     = str(src_out)
+                # First emission of a file path includes full definition; subsequent refs only
+                first_emit = file_path not in getattr(make_clipitem, "_emitted_files", set())
+                if not hasattr(make_clipitem, "_emitted_files"):
+                    make_clipitem._emitted_files = set()
+                make_file_elem(ci, file_path, emit_full=first_emit)
+                make_clipitem._emitted_files.add(file_path)
+                # Color
+                if color:
+                    li = ET.SubElement(ci, "logginginfo")
+                    ET.SubElement(li, "clipcolor").text = color
+                # Audio sourcetrack sub-element
+                if sourcetrack_type:
+                    st = ET.SubElement(ci, "sourcetrack")
+                    ET.SubElement(st, "mediatype").text = sourcetrack_type
+                    if sourcetrack_idx is not None:
+                        ET.SubElement(st, "trackindex").text = str(sourcetrack_idx)
+                return ci
+
+            # Reset statics
+            if hasattr(make_clipitem, "_emitted_files"):
+                del make_clipitem._emitted_files
+
+            # Root
+            xmeml = ET.Element("xmeml", version="5")
+            seq   = ET.SubElement(xmeml, "sequence", id="sequence-1")
+            ET.SubElement(seq, "name").text = new_tl_name
+
+            # Calculate total destination frames
+            total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
+            ET.SubElement(seq, "duration").text = str(total_dest_frames)
+            make_rate_elem(seq)
+
+            media = ET.SubElement(seq, "media")
+
+            # ── VIDEO section ─────────────────────────────────────────
+            video_el = ET.SubElement(media, "video")
+
+            # Format
+            fmt = ET.SubElement(video_el, "format")
+            sc  = ET.SubElement(fmt, "samplecharacteristics")
+            try:
+                w = int(target_tl.GetSetting("timelineResolutionWidth")  or 1920)
+                h = int(target_tl.GetSetting("timelineResolutionHeight") or 1080)
+            except Exception:
+                w, h = 1920, 1080
+            ET.SubElement(sc, "width").text  = str(w)
+            ET.SubElement(sc, "height").text = str(h)
+            make_rate_elem(sc)
+
+            if not audio_only_mode and video_clip_maps:
+                ci_counter = [0]
+                for vi_src, vclips in sorted(video_clip_maps.items()):
+                    v_track_el = ET.SubElement(video_el, "track")
+                    dest_pos = 0
+                    for op in kept_ops:
+                        color = COLOR_MAP.get(op["type"])
+                        if not color and str(op["type"]).startswith("custom_"):
+                            color = op["type"].split("_")[1]
+                        segs = op_to_clipitems(op, vclips)
+                        if not segs:
+                            dest_pos += op["e"] - op["s"]
+                            continue
+                        for seg in segs:
+                            ci_counter[0] += 1
+                            make_clipitem(
+                                v_track_el,
+                                ci_id       = f"clipitem-v{vi_src}-{ci_counter[0]}",
+                                dest_start  = dest_pos,
+                                dest_end    = dest_pos + seg["duration"],
+                                src_in      = seg["src_in"],
+                                src_out     = seg["src_out"],
+                                duration    = seg["duration"],
+                                file_path   = seg["file_path"],
+                                color       = color,
+                            )
+                            dest_pos += seg["duration"]
+            else:
+                # Empty video track placeholder (required by FCP7 XML schema)
+                ET.SubElement(video_el, "track")
+
+            # ── AUDIO section ─────────────────────────────────────────
+            audio_el = ET.SubElement(media, "audio")
+
+            if audio_clip_maps:
+                ci_counter_a = [0]
+                for out_idx, ai_src in enumerate(sorted(audio_clip_maps.keys()), start=1):
+                    # Track index in output timeline
+                    dest_track_idx = ai_src if preserve_track_order else out_idx
+                    aclips = audio_clip_maps[ai_src]
+                    a_track_el = ET.SubElement(audio_el, "track")
+                    dest_pos = 0
+                    for op in kept_ops:
+                        color = COLOR_MAP.get(op["type"])
+                        if not color and str(op["type"]).startswith("custom_"):
+                            color = op["type"].split("_")[1]
+                        segs = op_to_clipitems(op, aclips)
+                        if not segs:
+                            dest_pos += op["e"] - op["s"]
+                            continue
+                        for seg in segs:
+                            ci_counter_a[0] += 1
+                            make_clipitem(
+                                a_track_el,
+                                ci_id            = f"clipitem-a{ai_src}-{ci_counter_a[0]}",
+                                dest_start       = dest_pos,
+                                dest_end         = dest_pos + seg["duration"],
+                                src_in           = seg["src_in"],
+                                src_out          = seg["src_out"],
+                                duration         = seg["duration"],
+                                file_path        = seg["file_path"],
+                                color            = color,
+                                sourcetrack_type = "audio",
+                                sourcetrack_idx  = dest_track_idx,
+                            )
+                            dest_pos += seg["duration"]
+            else:
+                ET.SubElement(audio_el, "track")
+
+            # ── 7. Write XML with proper declaration ──────────────────
+            tree = ET.ElementTree(xmeml)
+            raw_bytes = ET.tostring(xmeml, encoding="unicode", xml_declaration=False)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write(raw_bytes)
+
+            log_info(f"build_edit_xml_from_ops: wrote {output_path} "
+                     f"({len(kept_ops)} ops, {total_dest_frames} frames)")
+            return True
+
+        except Exception as e:
+            import traceback
+            log_error(f"build_edit_xml_from_ops error: {e}\n{traceback.format_exc()}")
+            return False
+
+    def reapply_clip_colors(self, tl_name, ops, fps):
+        """
+        POST-IMPORT COLOR FAILSAFE.
+        After importing the XML timeline, iterates through all clips and
+        sets their color via the Resolve API — guaranteeing correct colors
+        even if the XML <logginginfo><clipcolor> element was ignored.
+
+        Matches each timeline clip to its op by reconstructing the running
+        destination position from the kept ops list (same order as XML).
+        """
+        COLOR_MAP = {
+            "bad":          "Violet",
+            "repeat":       "Navy",
+            "typo":         "Olive",
+            "inaudible":    "Chocolate",
+            "silence_mark": "Tan",
+        }
+        SKIP_TYPES = {"bad", "silence_cut"}
+
+        try:
+            # Find the newly imported timeline
+            target_tl = None
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == tl_name:
+                    target_tl = tl
+                    break
+            if not target_tl:
+                log_error(f"reapply_clip_colors: timeline '{tl_name}' not found.")
+                return
+
+            # Build ops_map: (dest_start_frame, dest_end_frame, op_type)
+            # This mirrors the XML build order exactly
+            kept_ops = [op for op in ops
+                        if op["type"] not in SKIP_TYPES and (op["e"] - op["s"]) >= 2]
+            if not kept_ops:
+                return
+
+            tl_start = int(target_tl.GetStartFrame())
+            ops_map = []
+            dest_pos = tl_start
+            for op in kept_ops:
+                dur = op["e"] - op["s"]
+                ops_map.append({
+                    "dest_start": dest_pos,
+                    "dest_end":   dest_pos + dur,
+                    "type":       op["type"],
+                })
+                dest_pos += dur
+
+            def apply_colors_to_track(track_type, track_count):
+                for ti in range(1, track_count + 1):
+                    try:
+                        items = target_tl.GetItemListInTrack(track_type, ti) or []
+                        for item in items:
+                            if not item:
+                                continue
+                            item_start = int(item.GetStart())
+                            # Find matching op by start position (±2 frames tolerance)
+                            match = next(
+                                (m for m in ops_map if abs(m["dest_start"] - item_start) <= 2),
+                                None
+                            )
+                            if not match:
+                                continue
+                            op_type = match["type"]
+                            color = COLOR_MAP.get(op_type)
+                            if not color and str(op_type).startswith("custom_"):
+                                color = op_type.split("_")[1]
+                            if color:
+                                item.SetClipColor(color)
+                    except Exception as te:
+                        log_error(f"reapply_clip_colors track {track_type}{ti}: {te}")
+
+            v_count = target_tl.GetTrackCount("video")
+            a_count = target_tl.GetTrackCount("audio")
+            apply_colors_to_track("video", v_count)
+            apply_colors_to_track("audio", a_count)
+            log_info(f"reapply_clip_colors: colors applied to '{tl_name}'.")
+
+        except Exception as e:
+            log_error(f"reapply_clip_colors error: {e}")
+
+    # ==========================================
+    # LEGACY FALLBACK: APPEND TO TIMELINE
+    # !! ABSOLUTE LAST RESORT — used only when XML import fails !!
+    # Do NOT call this directly; engine.py calls it only as an emergency fallback.
     # ==========================================
 
     def generate_timeline_from_ops(self, ops, source_item, new_tl_name, audio_only_mode=False, progress_callback=None):

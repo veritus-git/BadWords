@@ -1599,39 +1599,70 @@ except Exception as e:
         t.start()
 
     def assemble_timeline(self, words_data, settings, callback_status=None, callback_progress=None):
-        source_item = None
+        """
+        PRIMARY PATH: Builds a complete FCP7 XML in Python and imports it into
+        Resolve in a single API call (ImportTimelineFromFile).
+
+        ABSOLUTE EMERGENCY FALLBACK: If XML build or import fails, falls back to
+        the old AppendToTimeline method (generate_timeline_from_ops). The fallback
+        is logged clearly and should never be reached under normal operation.
+        """
         warning_code = None
-        
-        def set_status(msg): 
+
+        def set_status(msg):
             if callback_status: callback_status(msg)
             else: log_info(msg)
-            
+
         def set_progress(val):
             if callback_progress: callback_progress(val)
 
         try:
             set_status(self.txt("status_assembly_init"))
             set_progress(-1)
-            
+
             self.resolve_handler.refresh_context()
             if not self.resolve_handler.timeline:
                 log_error("No active timeline found.")
                 return False, None, None, None
-                
-            # ── SOURCE SNAPSHOT: Use the timeline from transcription, not the active one ──
-            source_snapshot = settings.get("source_snapshot") or {}
-            original_tl_name = source_snapshot.get("timeline_name") or settings.get("original_timeline_name")
+
+            # ── SOURCE SNAPSHOT ───────────────────────────────────────────────
+            source_snapshot   = settings.get("source_snapshot") or {}
+            original_tl_name  = source_snapshot.get("timeline_name") or settings.get("original_timeline_name")
             if not original_tl_name:
                 original_tl_name = self.resolve_handler.timeline.GetName()
-                log_info(f"assemble_timeline: No source snapshot found, falling back to active timeline: '{original_tl_name}'")
+                log_info(f"assemble_timeline: No source snapshot, using active: '{original_tl_name}'")
             else:
-                log_info(f"assemble_timeline: Using source snapshot timeline: '{original_tl_name}'")
+                log_info(f"assemble_timeline: Source snapshot → '{original_tl_name}'")
 
             track_indices = source_snapshot.get("track_indices") or []
-            a_track_count = 0
+
+            # Determine audio_only_mode from source timeline structure
+            context_type = "video"  # default
             try:
                 count = self.resolve_handler.project.GetTimelineCount()
                 for i in range(1, count + 1):
+                    tl = self.resolve_handler.project.GetTimelineByIndex(i)
+                    if tl.GetName() == original_tl_name:
+                        v_count = tl.GetTrackCount("video")
+                        v_has_clips = False
+                        for vi in range(1, v_count + 1):
+                            items = tl.GetItemListInTrack("video", vi)
+                            if items:
+                                v_has_clips = True
+                                break
+                        if not v_has_clips:
+                            context_type = "audio"
+                        break
+            except Exception:
+                pass
+            audio_only_mode = (context_type == "audio")
+
+            # ── AUDIO CAP: determine true end of selected tracks ──────────────
+            audio_end_cap_s = None
+            a_track_count = 0
+            try:
+                count_tl = self.resolve_handler.project.GetTimelineCount()
+                for i in range(1, count_tl + 1):
                     tl = self.resolve_handler.project.GetTimelineByIndex(i)
                     if tl.GetName() == original_tl_name:
                         a_track_count = tl.GetTrackCount("audio")
@@ -1639,120 +1670,186 @@ except Exception as e:
             except Exception:
                 pass
 
-            all_tracks_selected = (not track_indices) or (a_track_count > 0 and len(track_indices) >= a_track_count)
-
-            # ── FILTERED TIMELINE: Cache per transcription session ────────────────
-            # If source_snapshot already carries a filtered TL name AND it still
-            # exists in Resolve, reuse it — no need to redo XML export/import.
-            xml_filtered_tl_name = None
-            audio_end_cap_s = None  # will cap ops to actual track duration
+            all_tracks_selected = (not track_indices) or (
+                a_track_count > 0 and len(track_indices) >= a_track_count
+            )
 
             if track_indices and not all_tracks_selected:
-                cached_filtered = source_snapshot.get("filtered_tl_name")
-                if cached_filtered and self.resolve_handler.timeline_exists(cached_filtered):
-                    log_info(f"assemble_timeline: Reusing cached filtered timeline '{cached_filtered}'.")
-                    xml_filtered_tl_name = cached_filtered
-                    source_tl_for_assembly = cached_filtered
-                else:
-                    log_info(f"assemble_timeline: Track subset selected ({track_indices}), building filtered timeline...")
-                    set_status(self.txt("status_assembly_init"))  # reuse init string
-                    set_progress(-1)  # Indeterminate loop
-                    try:
-                        temp_dir = self.os_doc.get_temp_folder()
-                        os.makedirs(temp_dir, exist_ok=True)
-                        safe_name = "".join(c for c in original_tl_name if c.isalnum() or c in '_-')
-                        raw_xml_path      = os.path.join(temp_dir, f"bw_raw_{safe_name}.xml")
-                        filtered_xml_path = os.path.join(temp_dir, f"bw_filtered_{safe_name}.xml")
-
-                        ok_export = self.resolve_handler.export_timeline_xml(original_tl_name, raw_xml_path)
-                        if ok_export:
-                            ok_filter = self.resolve_handler.filter_xml_tracks(raw_xml_path, filtered_xml_path, track_indices)
-                            if ok_filter:
-                                xml_filtered_tl_name = self.resolve_handler.import_xml_as_timeline(
-                                    filtered_xml_path, original_tl_name
-                                )
-                                if xml_filtered_tl_name:
-                                    log_info(f"assemble_timeline: Created filtered timeline '{xml_filtered_tl_name}'.")
-                                    source_tl_for_assembly = xml_filtered_tl_name
-                                    # Persist in snapshot so next assembly reuses it
-                                    source_snapshot["filtered_tl_name"] = xml_filtered_tl_name
-                                else:
-                                    log_error("assemble_timeline: XML import failed, falling back to original timeline.")
-                                    source_tl_for_assembly = original_tl_name
-                            else:
-                                log_error("assemble_timeline: XML filter failed, falling back.")
-                                source_tl_for_assembly = original_tl_name
-                        else:
-                            log_error("assemble_timeline: XML export failed, falling back.")
-                            source_tl_for_assembly = original_tl_name
-                    except Exception as xml_err:
-                        log_error(f"assemble_timeline: XML pre-filter exception: {xml_err}")
-                        source_tl_for_assembly = original_tl_name
-
-                # ── Get the actual track end time to cap ops ──────────────────
-                # This is the real fix for timeline length: the WAV rendered with
-                # muting includes silence for the full TL duration, so ops would
-                # extend to the end of the long TL. Querying Resolve directly gives
-                # the true end of the selected track(s).
                 audio_end_cap_s = self.resolve_handler.get_selected_tracks_end_seconds(
                     original_tl_name, track_indices
                 )
                 if audio_end_cap_s:
-                    log_info(f"assemble_timeline: Capping audio ops at {audio_end_cap_s:.3f}s (selected track end).")
-            else:
-                log_info("assemble_timeline: All tracks selected or no filter needed, using full timeline.")
-                source_tl_for_assembly = original_tl_name
+                    log_info(f"assemble_timeline: audio cap at {audio_end_cap_s:.3f}s")
 
-            set_status(self.txt("status_assembly_source"))
-            set_progress(-1)
-            source_item, context_type = self.resolve_handler.get_optimal_source_item(source_tl_for_assembly)
-
-            if not source_item:
-                log_error("Could not find optimal source clip or timeline.")
-                return False, None, None, None
-
-            audio_only_mode = (context_type == 'audio')
-
+            # ── CALCULATE CUTS ────────────────────────────────────────────────
             set_status(self.txt("status_calc_cuts"))
             fps = self.resolve_handler.fps
-            # Pass audio_end_cap_s so the last block is capped to the selected track's end
             calc_settings = dict(settings)
             if audio_end_cap_s:
                 calc_settings["audio_end_cap_s"] = audio_end_cap_s
             clean_ops = self.calculate_timeline_structure(words_data, fps, calc_settings)
 
-            set_status(self.txt("status_assembly_resolve"))
-
-
-            # Always use original source timeline name for Edit numbering (not XML filtered name)
+            # ── NAME FOR NEW TIMELINE ─────────────────────────────────────────
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
             new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
 
+            # ── LOAD PRESERVE TRACK ORDER SETTING ────────────────────────────
+            import config
+            prefs = self.os_doc.get_all_prefs()
+            preserve_track_order = bool(prefs.get(
+                "xml_preserve_track_order",
+                config.DEFAULT_SETTINGS["xml_preserve_track_order"]
+            ))
 
-            
-            # --- ZMIANA: Przekazanie paczkowego callbacku do api.py ---
-            def assembly_progress_cb(current, total):
-                perc = int((current / max(1, total)) * 100)
-                set_progress(perc)
-                # Dynamiczna zmiana tekstu w UI
-                set_status(f"{self.txt('status_assembly_clips')} {current}/{total}...")
+            # ──────────────────────────────────────────────────────────────────
+            # PRIMARY PATH: XML BUILD + IMPORT
+            # ──────────────────────────────────────────────────────────────────
+            xml_success = False
+            xml_tl_name = None
 
-            success = self.resolve_handler.generate_timeline_from_ops(
-                clean_ops, 
-                source_item, 
-                new_tl_name,
-                audio_only_mode=audio_only_mode,
-                progress_callback=assembly_progress_cb
-            )
-            # -----------------------------------------------------------
-            
-            if not success:
-                log_error("Failed to generate timeline via API.")
-                return False, None, None, None
-                
+            try:
+                temp_dir = self.os_doc.get_temp_folder()
+                os.makedirs(temp_dir, exist_ok=True)
+                safe_name = "".join(c for c in new_tl_name if c.isalnum() or c in '_-')
+                xml_path  = os.path.join(temp_dir, f"bw_edit_{safe_name}.xml")
+
+                set_status(self.txt("status_assembly_xml_build"))
+                set_progress(-1)
+
+                ok_build = self.resolve_handler.build_edit_xml_from_ops(
+                    ops                  = clean_ops,
+                    source_tl_name       = original_tl_name,
+                    new_tl_name          = new_tl_name,
+                    track_indices        = track_indices if not all_tracks_selected else [],
+                    audio_only_mode      = audio_only_mode,
+                    output_path          = xml_path,
+                    preserve_track_order = preserve_track_order,
+                )
+
+                if ok_build:
+                    set_status(self.txt("status_assembly_xml_import"))
+                    set_progress(-1)
+
+                    # Switch to Media page to reduce Resolve UI overhead on import
+                    if self.resolve_handler.resolve:
+                        self.resolve_handler.resolve.OpenPage("media")
+
+                    # Set folder to Edits before import
+                    edits_bin = self.resolve_handler.get_badwords_edits_bin()
+                    if edits_bin:
+                        try:
+                            self.resolve_handler.media_pool.SetCurrentFolder(edits_bin)
+                        except Exception:
+                            pass
+
+                    import_options = {
+                        "timelineName":      new_tl_name,
+                        "importSourceClips": True,
+                    }
+                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
+                        xml_path, import_options
+                    )
+
+                    if new_tl:
+                        actual_name = new_tl.GetName()
+                        log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
+                        xml_tl_name = actual_name
+
+                        # ── Phase: Apply clip colors (failsafe) ───────────────
+                        set_status(self.txt("status_assembly_colors"))
+                        self.resolve_handler.reapply_clip_colors(xml_tl_name, clean_ops, fps)
+
+                        xml_success = True
+                    else:
+                        log_error("assemble_timeline: ImportTimelineFromFile returned None.")
+                else:
+                    log_error("assemble_timeline: XML build failed.")
+
+                # Cleanup temp XML regardless of success
+                try:
+                    if os.path.exists(xml_path):
+                        os.remove(xml_path)
+                except Exception:
+                    pass
+
+            except Exception as xml_err:
+                log_error(f"assemble_timeline: XML path exception: {xml_err}")
+                import traceback as _tb
+                log_error(_tb.format_exc())
+
+            # ──────────────────────────────────────────────────────────────────
+            # ABSOLUTE EMERGENCY FALLBACK: AppendToTimeline
+            # Triggered ONLY if XML path completely failed.
+            # ──────────────────────────────────────────────────────────────────
+            if not xml_success:
+                log_error("assemble_timeline: !! EMERGENCY FALLBACK — AppendToTimeline !!")
+                log_error("assemble_timeline: XML path failed. Using legacy method.")
+
+                # For fallback we need a source_item (old logic)
+                source_tl_for_fallback = original_tl_name
+                if track_indices and not all_tracks_selected:
+                    # Try to create filtered TL as before (old code reused)
+                    try:
+                        tmp_dir = self.os_doc.get_temp_folder()
+                        os.makedirs(tmp_dir, exist_ok=True)
+                        s_safe = "".join(c for c in original_tl_name
+                                         if c.isalnum() or c in '_-')
+                        raw_xml      = os.path.join(tmp_dir, f"bw_raw_{s_safe}.xml")
+                        filtered_xml = os.path.join(tmp_dir, f"bw_filtered_{s_safe}.xml")
+                        if self.resolve_handler.export_timeline_xml(original_tl_name, raw_xml):
+                            if self.resolve_handler.filter_xml_tracks(raw_xml, filtered_xml, track_indices):
+                                fl_name = self.resolve_handler.import_xml_as_timeline(
+                                    filtered_xml, original_tl_name
+                                )
+                                if fl_name:
+                                    source_tl_for_fallback = fl_name
+                    except Exception as fb_xml_err:
+                        log_error(f"assemble_timeline: Fallback XML pre-filter: {fb_xml_err}")
+
+                set_status(self.txt("status_assembly_source"))
+                source_item, fb_context = self.resolve_handler.get_optimal_source_item(
+                    source_tl_for_fallback
+                )
+                if not source_item:
+                    log_error("assemble_timeline: Fallback also failed — no source item.")
+                    return False, None, None, None
+
+                audio_only_mode = (fb_context == "audio")
+
+                # Re-compute edit name (may have been taken if XML partially worked)
+                fb_name, fb_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
+                fb_tl_name = f"{fb_name} BadWords Edit {fb_idx}"
+
+                def fb_progress(current, total):
+                    set_progress(int((current / max(1, total)) * 100))
+                    set_status(f"{self.txt('status_assembly_clips')} {current}/{total}...")
+
+                set_status(self.txt("status_assembly_resolve"))
+                fb_ok = self.resolve_handler.generate_timeline_from_ops(
+                    clean_ops, source_item, fb_tl_name,
+                    audio_only_mode=audio_only_mode,
+                    progress_callback=fb_progress
+                )
+                if not fb_ok:
+                    log_error("assemble_timeline: Emergency fallback also failed.")
+                    return False, None, None, None
+
+                new_tl_name = fb_tl_name
+                log_info(f"assemble_timeline: Fallback succeeded → '{new_tl_name}'")
+
+            # ── Return to Edit page & cleanup ─────────────────────────────────
+            try:
+                if self.resolve_handler.resolve:
+                    self.resolve_handler.resolve.OpenPage("edit")
+            except Exception:
+                pass
+
+            import gc
+            gc.collect()
+
             set_progress(100)
             return True, warning_code, new_tl_name, clean_ops
-            
+
         except Exception as e:
             log_error(f"Assembly Critical Error: {e}")
             traceback.print_exc()

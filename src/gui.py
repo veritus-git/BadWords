@@ -6827,9 +6827,32 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         row_ripple_delete.addWidget(pin_ripple)
         l_assembly.addLayout(row_ripple_delete)
         pin_ripple.clicked.connect(lambda: self._toggle_favorite('ripple_delete', self.tgl_ripple_delete, self.txt("tool_ripple_delete"), pin_ripple))
-        
+
+        # ── XML track order toggle ─────────────────────────────────────────
+        row_xml_track_order = QHBoxLayout()
+        lbl_xml_order = QLabel(self.txt("lbl_xml_preserve_track_order"))
+        lbl_xml_order.setWordWrap(True)
+        lbl_xml_order.setToolTip(self.txt("tt_xml_preserve_track_order"))
+        row_xml_track_order.addWidget(lbl_xml_order)
+        row_xml_track_order.addStretch()
+        _xml_prefs = self.engine.load_preferences() or {}
+        self.tgl_xml_preserve_track_order = ToggleSwitch()
+        import config as _cfg_tgl
+        self.tgl_xml_preserve_track_order.setChecked(
+            bool(_xml_prefs.get("xml_preserve_track_order",
+                                _cfg_tgl.DEFAULT_SETTINGS["xml_preserve_track_order"])),
+            animated=False
+        )
+        self.tgl_xml_preserve_track_order.setToolTip(self.txt("tt_xml_preserve_track_order"))
+        self.tgl_xml_preserve_track_order.toggled.connect(
+            lambda checked: self._save_single_pref("xml_preserve_track_order", checked)
+        )
+        row_xml_track_order.addWidget(self.tgl_xml_preserve_track_order)
+        l_assembly.addLayout(row_xml_track_order)
+
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
+
         
         self.btn_analyze_standalone.installEventFilter(self)
         self.btn_clear_transcript.installEventFilter(self)

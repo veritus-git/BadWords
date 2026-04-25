@@ -184,6 +184,10 @@ DEFAULT_SETTINGS = {
     # ── Telemetry ────────────────────────────────────────────────────────────
     "telemetry_opt_in":     False,
     "telemetry_geo":        False,
+    # ── Assembly / XML Pipeline ──────────────────────────────────────────────
+    # False (default): audio tracks are re-mapped sequentially (A1, A2, A3...)
+    # True: original source track indices are preserved in the output timeline
+    "xml_preserve_track_order": False,
 }
 
 
@@ -638,6 +642,11 @@ TRANS = {
         "txt_all_tracks": "All tracks",
         "msg_transcription_source": "BadWords - Source Timeline: <i>{tl}</i> - Tracks: <i>{tr}</i>",
         "txt_all": "All",
+        "lbl_xml_preserve_track_order": "Preserve original audio track order",
+        "tt_xml_preserve_track_order": "When enabled, audio tracks keep their source indices in the output timeline (e.g. A3 stays A3). When disabled (default), tracks are re-mapped sequentially starting from A1.",
+        "status_assembly_xml_build": "Building XML assembly...",
+        "status_assembly_xml_import": "Importing XML timeline...",
+        "status_assembly_colors": "Applying clip colors...",
     },
     'pl': {
         "chk_sync_davinci": "Synchronizuj oś czasu DaVinci przy zmianie edycji",
@@ -903,6 +912,11 @@ TRANS = {
         "txt_all_tracks": "Wszystkie ścieżki",
         "msg_transcription_source": "BadWords - Źródłowa oś czasu: <i>{tl}</i> - Ścieżki: <i>{tr}</i>",
         "txt_all": "Wszystkie",
+        "lbl_xml_preserve_track_order": "Zachowaj oryginalną kolejność ścieżek audio",
+        "tt_xml_preserve_track_order": "Gdy włączone, ścieżki audio zachowują oryginalne indeksy w wynikowej osi czasu (np. A3 pozostaje A3). Gdy wyłączone (domyślnie), ścieżki są remapowane kolejno od A1.",
+        "status_assembly_xml_build": "Budowanie XML montażu...",
+        "status_assembly_xml_import": "Importowanie osi czasu z XML...",
+        "status_assembly_colors": "Stosowanie kolorów klipów...",
     },
     'de': {
         "chk_sync_davinci": "DaVinci Timeline bei Editionswechsel synchronisieren",
@@ -1168,6 +1182,11 @@ TRANS = {
         "txt_all_tracks": "Alle Spuren",
         "msg_transcription_source": "BadWords - Quell-Timeline: <i>{tl}</i> - Spuren: <i>{tr}</i>",
         "txt_all": "Alle",
+        "lbl_xml_preserve_track_order": "Originale Audiospurreihenfolge beibehalten",
+        "tt_xml_preserve_track_order": "Wenn aktiviert, behalten Audiospuren ihre ursprünglichen Indizes in der Ausgabe-Timeline (z.B. A3 bleibt A3). Wenn deaktiviert (Standard), werden Spuren sequenziell ab A1 neu nummeriert.",
+        "status_assembly_xml_build": "XML-Montage wird erstellt...",
+        "status_assembly_xml_import": "XML-Timeline wird importiert...",
+        "status_assembly_colors": "Clip-Farben werden angewendet...",
     },
     'es': {
         "chk_sync_davinci": "Sincronizar línea de tiempo de DaVinci al cambiar de edición",
@@ -1432,6 +1451,11 @@ TRANS = {
         "txt_all_tracks": "Todas las pistas",
         "msg_transcription_source": "BadWords - Timeline de origen: <i>{tl}</i> - Pistas: <i>{tr}</i>",
         "txt_all": "Todas",
+        "lbl_xml_preserve_track_order": "Conservar el orden original de pistas de audio",
+        "tt_xml_preserve_track_order": "Cuando está activado, las pistas de audio mantienen sus índices originales en la línea de tiempo de salida (p. ej., A3 sigue siendo A3). Cuando está desactivado (predeterminado), las pistas se reasignan secuencialmente desde A1.",
+        "status_assembly_xml_build": "Construyendo ensamblaje XML...",
+        "status_assembly_xml_import": "Importando línea de tiempo XML...",
+        "status_assembly_colors": "Aplicando colores de clips...",
     },
     'fr': {
         "chk_sync_davinci": "Synchroniser la timeline DaVinci lors du changement d'édition",
@@ -1697,6 +1721,11 @@ TRANS = {
         "txt_all_tracks": "Toutes les pistes",
         "msg_transcription_source": "BadWords - Timeline source: <i>{tl}</i> - Pistes: <i>{tr}</i>",
         "txt_all": "Toutes",
+        "lbl_xml_preserve_track_order": "Conserver l'ordre original des pistes audio",
+        "tt_xml_preserve_track_order": "Lorsqu'il est activé, les pistes audio conservent leurs indices d'origine dans la timeline de sortie (ex. A3 reste A3). Lorsqu'il est désactivé (par défaut), les pistes sont renumérotées séquentiellement à partir de A1.",
+        "status_assembly_xml_build": "Construction de l'assemblage XML...",
+        "status_assembly_xml_import": "Importation de la timeline XML...",
+        "status_assembly_colors": "Application des couleurs de clips...",
     },
     'it': {
         "chk_sync_davinci": "Sincronizza timeline DaVinci al cambio di edizione",
@@ -1962,6 +1991,11 @@ TRANS = {
         "txt_all_tracks": "Tutte le tracce",
         "msg_transcription_source": "BadWords - Timeline di origine: <i>{tl}</i> - Tracce: <i>{tr}</i>",
         "txt_all": "Tutte",
+        "lbl_xml_preserve_track_order": "Mantieni l'ordine originale delle tracce audio",
+        "tt_xml_preserve_track_order": "Se attivato, le tracce audio mantengono i loro indici originali nella timeline di output (es. A3 rimane A3). Se disattivato (predefinito), le tracce vengono rimappate sequenzialmente a partire da A1.",
+        "status_assembly_xml_build": "Costruzione dell'assemblaggio XML...",
+        "status_assembly_xml_import": "Importazione della timeline XML...",
+        "status_assembly_colors": "Applicazione dei colori dei clip...",
     },
     'pt': {
         "chk_sync_davinci": "Sincronizar linha do tempo DaVinci ao mudar de edição",
@@ -2227,6 +2261,11 @@ TRANS = {
         "txt_all_tracks": "Todas as faixas",
         "msg_transcription_source": "BadWords - Timeline de origem: <i>{tl}</i> - Faixas: <i>{tr}</i>",
         "txt_all": "Todas",
+        "lbl_xml_preserve_track_order": "Preservar a ordem original das faixas de áudio",
+        "tt_xml_preserve_track_order": "Quando ativado, as faixas de áudio mantêm os seus índices originais na linha do tempo de saída (ex. A3 permanece A3). Quando desativado (padrão), as faixas são remapeadas sequencialmente a partir de A1.",
+        "status_assembly_xml_build": "Construindo montagem XML...",
+        "status_assembly_xml_import": "Importando timeline XML...",
+        "status_assembly_colors": "Aplicando cores dos clipes...",
     },
     'uk': {
         "chk_sync_davinci": "Синхронізувати таймлайн DaVinci при зміні редакції",
@@ -2492,6 +2531,11 @@ TRANS = {
         "txt_all_tracks": "Усі доріжки",
         "msg_transcription_source": "BadWords - Вихідний таймлайн: <i>{tl}</i> - Доріжки: <i>{tr}</i>",
         "txt_all": "Усі",
+        "lbl_xml_preserve_track_order": "Зберегти оригінальний порядок аудіодоріжок",
+        "tt_xml_preserve_track_order": "Якщо увімкнено, аудіодоріжки зберігають свої вихідні індекси у підсумковій часовій шкалі (напр. A3 залишається A3). Якщо вимкнено (типово), доріжки перенумеровуються послідовно починаючи з A1.",
+        "status_assembly_xml_build": "Побудова XML-монтажу...",
+        "status_assembly_xml_import": "Імпортування XML-часової шкали...",
+        "status_assembly_colors": "Застосування кольорів кліпів...",
     },
     'nl': {
         "chk_sync_davinci": "DaVinci-tijdlijn synchroniseren bij het wisselen van bewerking",
@@ -2757,6 +2801,11 @@ TRANS = {
         "txt_all_tracks": "Alle sporen",
         "msg_transcription_source": "BadWords - Bron timeline: <i>{tl}</i> - Sporen: <i>{tr}</i>",
         "txt_all": "Alle",
+        "lbl_xml_preserve_track_order": "Originele volgorde van audiosporen bewaren",
+        "tt_xml_preserve_track_order": "Indien ingeschakeld, behouden audiosporen hun oorspronkelijke indices in de uitvoer-tijdlijn (bijv. A3 blijft A3). Indien uitgeschakeld (standaard), worden sporen opeenvolgend hernummerd vanaf A1.",
+        "status_assembly_xml_build": "XML-montage bouwen...",
+        "status_assembly_xml_import": "XML-tijdlijn importeren...",
+        "status_assembly_colors": "Clipkleuren toepassen...",
     },
     'ru': {
         "chk_sync_davinci": "Синхронизировать таймлайн DaVinci при смене редакции",
@@ -3024,6 +3073,11 @@ TRANS = {
         "txt_all_tracks": "Все дорожки",
         "msg_transcription_source": "BadWords - Исходный таймлайн: <i>{tl}</i> - Дорожки: <i>{tr}</i>",
         "txt_all": "Все",
+        "lbl_xml_preserve_track_order": "Сохранить оригинальный порядок аудиодорожек",
+        "tt_xml_preserve_track_order": "При включении аудиодорожки сохраняют исходные индексы в итоговой временной шкале (напр. A3 остаётся A3). При отключении (по умолчанию) дорожки переназначаются последовательно начиная с A1.",
+        "status_assembly_xml_build": "Построение XML-монтажа...",
+        "status_assembly_xml_import": "Импорт XML-временной шкалы...",
+        "status_assembly_colors": "Применение цветов клипов...",
     },
 }
 
