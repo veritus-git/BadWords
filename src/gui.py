@@ -1992,14 +1992,38 @@ class CustomTitleBar(QWidget):
         win = self._win
         if not getattr(win, '_is_root', False):
             return
-        if win.isMaximized():
-            win.showNormal()
-            saved_geo = getattr(win, '_pre_max_geometry', None)
-            if saved_geo and saved_geo.isValid():
-                win.setGeometry(saved_geo)
+        
+        is_mac = platform.system() == "Darwin"
+        
+        if is_mac:
+            # Na macOS showMaximized() z FramelessWindowHint wchodzi w tryb pełnoekranowy
+            # lub zostawia dziwne marginesy. Używamy geometry-based podejścia.
+            if getattr(win, '_mac_is_maximized', False):
+                win._mac_is_maximized = False
+                saved_geo = getattr(win, '_pre_max_geometry', None)
+                if saved_geo and saved_geo.isValid():
+                    win.setGeometry(saved_geo)
+                    win.showNormal()
+                win._refresh_max_state()
+                win._update_grips()
+            else:
+                win._pre_max_geometry = win.geometry()
+                win._mac_is_maximized = True
+                screen = QGuiApplication.screenAt(win.geometry().center()) or QGuiApplication.primaryScreen()
+                if screen:
+                    ag = screen.availableGeometry()
+                    win.setGeometry(ag)
+                win._refresh_max_state()
+                win._update_grips()
         else:
-            win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
-            win.showMaximized()
+            if win.isMaximized():
+                win.showNormal()
+                saved_geo = getattr(win, '_pre_max_geometry', None)
+                if saved_geo and saved_geo.isValid():
+                    win.setGeometry(saved_geo)
+            else:
+                win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
+                win.showMaximized()
 
     def mousePressEvent(self, event):
         # Windows root window: OS handles dragging via HTCAPTION in nativeEvent.
@@ -2225,7 +2249,7 @@ class FramelessWindowMixin:
                 grip.raise_()
 
     def _refresh_max_state(self):
-        is_max = self.isMaximized()
+        is_max = self.isMaximized() or getattr(self, '_mac_is_maximized', False)
 
         # Szukamy paska pod obiema nazwami (główne okno: _title_bar, dialogi: _tb)
         title_bar = getattr(self, '_title_bar', getattr(self, '_tb', None))
@@ -2267,7 +2291,7 @@ class FramelessWindowMixin:
     def _update_grips(self):
         if not hasattr(self, '_grips'): return
 
-        is_max = self.isMaximized()
+        is_max = self.isMaximized() or getattr(self, '_mac_is_maximized', False)
 
         b = 6 
         w, h = self.width(), self.height()
@@ -8402,24 +8426,33 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
     def _maximize_on_active_screen(self):
         """
         Move the window to the monitor that currently has the cursor and maximize.
-        DWM / the WM remembers the geometry that was set IMMEDIATELY before
-        showMaximized() as the "restore" size used when drag-to-unmaximizing.
-        We position 580x670 centered on the target screen first, THEN maximize,
-        so the restore size is always 580x670 regardless of previous session state.
+        On macOS with FramelessWindowHint, showMaximized() is unreliable — it can
+        trigger native fullscreen (removes Dock/menu bar) or leave unexpected margins.
+        We use setGeometry(availableGeometry) instead for macOS.
+        On other platforms, we position 580x670 centered first so the WM remembers
+        that as the restore geometry.
         """
+        import platform as _platform
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             self.resize(580, 670)
             self.showMaximized()
             return
         sg = screen.availableGeometry()
-        # Center 580x670 on the target screen — this becomes the DWM restore geometry
-        self.setGeometry(
-            sg.x() + (sg.width()  - 580) // 2,
-            sg.y() + (sg.height() - 670) // 2,
-            580, 670
-        )
-        self.showMaximized()
+        
+        if _platform.system() == "Darwin":
+            # macOS: direct geometry-based maximize, respects Dock + Menu Bar
+            self._mac_is_maximized = True
+            self._pre_max_geometry = None  # no restore geometry at startup
+            self.setGeometry(sg)
+        else:
+            # Center 580x670 on the target screen — this becomes the DWM restore geometry
+            self.setGeometry(
+                sg.x() + (sg.width()  - 580) // 2,
+                sg.y() + (sg.height() - 670) // 2,
+                580, 670
+            )
+            self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)

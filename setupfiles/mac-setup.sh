@@ -172,6 +172,29 @@ fi
 echo -e "${GREEN}[INFO] Using Python interpreter: $TARGET_PYTHON${NC}"
 
 # ==========================================
+# 3.5 FFMPEG PORTABLE LINK (into bin/)
+# ==========================================
+# DaVinci Resolve launches as a GUI app and does NOT load ~/.zshrc or ~/.bash_profile.
+# This means Homebrew's PATH is invisible to it. We solve this by symlinking the
+# Homebrew ffmpeg binary into our own install_dir/bin/ folder, which osdoc.py
+# always checks first (Portable mode priority).
+echo -e "\n${YELLOW}[FFMPEG] Linking FFmpeg into portable bin/ folder...${NC}"
+BIN_DIR_MAC="$INSTALL_DIR_BASH/bin"
+mkdir -p "$BIN_DIR_MAC"
+
+# Find where Homebrew installed ffmpeg
+BREW_FFMPEG=$(brew --prefix ffmpeg)/bin/ffmpeg
+BREW_FFPROBE=$(brew --prefix ffmpeg)/bin/ffprobe
+
+if [ -f "$BREW_FFMPEG" ]; then
+    ln -sf "$BREW_FFMPEG" "$BIN_DIR_MAC/ffmpeg"
+    ln -sf "$BREW_FFPROBE" "$BIN_DIR_MAC/ffprobe"
+    echo -e "${GREEN}[OK] FFmpeg symlinked: $BIN_DIR_MAC/ffmpeg -> $BREW_FFMPEG${NC}"
+else
+    echo -e "${RED}[WARN] Could not find Homebrew FFmpeg at $BREW_FFMPEG. Falling back to PATH.${NC}"
+fi
+
+# ==========================================
 # 4. IN-PLACE CLEANUP
 # ==========================================
 OLD_WHISPER_CACHE="$HOME/.cache/whisper"
