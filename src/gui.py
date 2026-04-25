@@ -7501,6 +7501,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             'timeline_name':   selected_tl_name or None,
             'track_indices':   track_indices or None,
         }
+        self._fs_settings = settings
 
         self._worker_signals = WorkerSignals()
         self._worker_signals.progress.connect(self._on_analysis_progress)
@@ -7541,8 +7542,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         fs_prefs = self.engine.load_preferences() or {}
         fs_prefs['silence_cut']  = getattr(self, 'tgl_fs_cut',  None) and self.tgl_fs_cut.isChecked()
         fs_prefs['silence_mark'] = getattr(self, 'tgl_fs_mark', None) and self.tgl_fs_mark.isChecked()
+        if hasattr(self, '_fs_settings'):
+            fs_prefs['source_snapshot'] = self._fs_settings
 
-        success, err = self.engine.assemble_timeline(
+        success, warning, new_tl_name, clean_ops = self.engine.assemble_timeline(
             words_data, fs_prefs,
             callback_status=self.lbl_processing_status.setText,
             callback_progress=self.bar_processing.set_value
@@ -7552,7 +7555,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_standalone_silence_processing_c"), self.txt("btn_ok"))
             dlg.exec()
         else:
-            dlg = CustomMsgBox(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}:\n{err}", self.txt("btn_ok"))
+            dlg = CustomMsgBox(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}:\n{warning}", self.txt("btn_ok"))
             dlg.exec()
 
         self.go_to_page(0)
