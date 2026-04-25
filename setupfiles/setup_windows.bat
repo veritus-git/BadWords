@@ -161,7 +161,8 @@ if not exist "%FFMPEG_ZIP%" goto :SKIP_FFMPEG
 
 echo [INFO] Extracting FFmpeg...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
-powershell -NoProfile -Command "Expand-Archive -Path '%FFMPEG_ZIP%' -DestinationPath '%INSTALL_DIR%\ffmpeg_tmp' -Force"
+:: POPRAWKA DEBUG: Wyescapowane podwójne cudzysłowy chronią apostrofy w nazwie użytkownika
+powershell -NoProfile -Command "Expand-Archive -Path \"!FFMPEG_ZIP!\" -DestinationPath \"!INSTALL_DIR!\ffmpeg_tmp\" -Force"
 echo [INFO] Installing binaries...
 for /r "%INSTALL_DIR%\ffmpeg_tmp" %%F in (ffmpeg.exe, ffprobe.exe) do ( copy /y "%%F" "%BIN_DIR%\" >nul )
 rmdir /s /q "%INSTALL_DIR%\ffmpeg_tmp" 2>nul
@@ -174,9 +175,62 @@ for /d %%D in ("%VENV_DIR%\Lib\site-packages") do set "SITE_PACKAGES=%%D"
 mklink /J "libs" "!SITE_PACKAGES!" >nul
 :LIBS_EXIST
 
+:: ==========================================
+:: 5. LINK WITH DAVINCI RESOLVE
+:: ==========================================
+echo [INFO] Linking with DaVinci Resolve...
+
+:: Ustalanie domyslnej sciezki
+set "RESOLVE_SCRIPT_DIR=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
+
+:: Sprawdzanie czy mamy edycje Microsoft Store (nadpisuje sciezke domyslna)
+for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
+    if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
+        set "RESOLVE_SCRIPT_DIR=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
+    )
+)
+
+:: Tworzenie podfolderow jesli nie istnieja (np. Utility)
+if not exist "!RESOLVE_SCRIPT_DIR!" (
+    mkdir "!RESOLVE_SCRIPT_DIR!"
+)
+
+set "WRAPPER_FILE=!RESOLVE_SCRIPT_DIR!\BadWords.py"
+
+:: Generowanie czystego kodu Pythona prosto do pliku
+:: (Znaki '> ' usunięte od wewnątrz, aby zapobiec dodawaniu pustych spacji na koncu linii w batchu)
+echo import sys> "!WRAPPER_FILE!"
+echo import os>> "!WRAPPER_FILE!"
+echo import traceback>> "!WRAPPER_FILE!"
+:: ZMIANA DEBUGOWA: POTRÓJNE CUDZYSŁOWY CHRONIĄ PRZED BŁĘDEM APOSTROFU W NAZWIE UŻYTKOWNIKA!
+echo INSTALL_DIR = r"""%INSTALL_DIR%""">> "!WRAPPER_FILE!"
+echo LIBS_DIR = os.path.join(INSTALL_DIR, 'libs')>> "!WRAPPER_FILE!"
+echo MAIN_SCRIPT = os.path.join(INSTALL_DIR, 'main.py')>> "!WRAPPER_FILE!"
+echo if os.path.exists(LIBS_DIR) and LIBS_DIR not in sys.path:>> "!WRAPPER_FILE!"
+echo     sys.path.insert(0, LIBS_DIR)>> "!WRAPPER_FILE!"
+echo if INSTALL_DIR not in sys.path:>> "!WRAPPER_FILE!"
+echo     sys.path.append(INSTALL_DIR)>> "!WRAPPER_FILE!"
+echo if os.path.exists(MAIN_SCRIPT):>> "!WRAPPER_FILE!"
+echo     try:>> "!WRAPPER_FILE!"
+echo         with open(MAIN_SCRIPT, 'r', encoding='utf-8') as f:>> "!WRAPPER_FILE!"
+echo             code = f.read()>> "!WRAPPER_FILE!"
+echo         g = globals().copy()>> "!WRAPPER_FILE!"
+echo         g['__file__'] = MAIN_SCRIPT>> "!WRAPPER_FILE!"
+echo         exec(code, g)>> "!WRAPPER_FILE!"
+echo     except Exception as e:>> "!WRAPPER_FILE!"
+echo         print(f"Error executing BadWords: {e}")>> "!WRAPPER_FILE!"
+echo         traceback.print_exc()>> "!WRAPPER_FILE!"
+echo else:>> "!WRAPPER_FILE!"
+echo     print(f"CRITICAL: Script not found at {MAIN_SCRIPT}")>> "!WRAPPER_FILE!"
+
+if exist "!WRAPPER_FILE!" (
+    echo [SUCCESS] Wrapper successfully created at: !WRAPPER_FILE!
+) else (
+    echo [ERROR] Failed to create wrapper file at: !WRAPPER_FILE!
+)
+
 echo.
 echo [SUCCESS] Configuration complete!
-exit /b 0
 
 :ERROR_ARGS
 echo [ERROR] Invalid arguments.
