@@ -1636,18 +1636,20 @@ except Exception as e:
 
             track_indices = source_snapshot.get("track_indices") or []
 
-            # Determine audio_only_mode from source timeline structure
-            context_type = "video"  # default
+            # ── SOURCE TIMELINE INSPECTION (single pass) ──────────────────────
+            # Determine: audio_only_mode, a_track_count, for later use.
+            context_type  = "video"  # default
+            a_track_count = 0
             try:
                 count = self.resolve_handler.project.GetTimelineCount()
                 for i in range(1, count + 1):
                     tl = self.resolve_handler.project.GetTimelineByIndex(i)
                     if tl.GetName() == original_tl_name:
-                        v_count = tl.GetTrackCount("video")
-                        v_has_clips = False
+                        a_track_count = tl.GetTrackCount("audio")
+                        v_count       = tl.GetTrackCount("video")
+                        v_has_clips   = False
                         for vi in range(1, v_count + 1):
-                            items = tl.GetItemListInTrack("video", vi)
-                            if items:
+                            if tl.GetItemListInTrack("video", vi):
                                 v_has_clips = True
                                 break
                         if not v_has_clips:
@@ -1659,16 +1661,6 @@ except Exception as e:
 
             # ── AUDIO CAP: determine true end of selected tracks ──────────────
             audio_end_cap_s = None
-            a_track_count = 0
-            try:
-                count_tl = self.resolve_handler.project.GetTimelineCount()
-                for i in range(1, count_tl + 1):
-                    tl = self.resolve_handler.project.GetTimelineByIndex(i)
-                    if tl.GetName() == original_tl_name:
-                        a_track_count = tl.GetTrackCount("audio")
-                        break
-            except Exception:
-                pass
 
             all_tracks_selected = (not track_indices) or (
                 a_track_count > 0 and len(track_indices) >= a_track_count

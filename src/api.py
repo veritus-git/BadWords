@@ -909,26 +909,31 @@ class ResolveHandler:
         Returns (timebase_int, is_ntsc) for FCP7 XML <rate> elements.
 
         FCP7 XML encodes FPS as an integer <timebase> + boolean <ntsc>.
-        NTSC drop-frame rates (23.976, 29.97, 59.94 etc.) must set ntsc=TRUE
-        so Resolve can reconstruct the exact rational rate (e.g. 24000/1001).
+        NTSC fractional rates (23.976, 29.97, 59.94 etc.) must set ntsc=TRUE
+        so Resolve reconstructs the exact rational rate (e.g. 24000/1001).
 
-        No rounding is done on the frame counts themselves — they arrive from
-        the API already as integers, so there is zero drift risk here.
+        24fps, 30fps, 48fps, 60fps are CLEAN integer rates — ntsc=FALSE.
         """
+        # NTSC rates: map the rounded integer (as Resolve reports it) to the
+        # exact fractional value. ONLY the fractional variants are NTSC.
+        # 24/30/48/60 are clean rates and must NOT appear in this map.
         NTSC_MAP = {
-            23: 23.976, 24: 23.976,   # 23.976 rounds to 24 in int()
-            29: 29.97,  30: 29.97,    # 29.97  rounds to 30
-            47: 47.952, 48: 47.952,
-            59: 59.94,  60: 59.94,
+            23: 23.976,   # 23.976 rounds to 23 in some APIs, or to 24
+            29: 29.97,    # 29.97 rounds to 30
+            47: 47.952,   # 47.952 rounds to 48
+            59: 59.94,    # 59.94 rounds to 60
         }
         rounded = int(round(fps))
-        # Detect NTSC: actual fps differs from its nearest integer by >0.01
+        # Primary detection: if actual fps differs from its nearest integer by >0.01
+        # it is definitively a fractional (NTSC) rate.
         if abs(fps - rounded) > 0.01:
             return rounded, True
-        # Also catch e.g. fps=23.976 that DaVinci may report at higher precision
+        # Secondary: catch values like 23.976 or 29.97 that some Resolve versions
+        # report with higher floating-point precision.
         for tb, ntsc_rate in NTSC_MAP.items():
             if abs(fps - ntsc_rate) < 0.02:
                 return tb, True
+        # Clean integer rate (24, 30, 48, 60, etc.)
         return rounded, False
 
     def _build_source_clip_map(self, timeline, track_type, track_idx, tl_start_frame=0):
@@ -1021,7 +1026,7 @@ class ResolveHandler:
                     break
             if not target_tl:
                 log_error(f"build_edit_xml_from_ops: timeline '{source_tl_name}' not found.")
-                return False
+                return False, {}
 
             # ── 2. FPS & rate params ──────────────────────────────────────────
             try:
