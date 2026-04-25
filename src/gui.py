@@ -22,6 +22,7 @@ import subprocess
 import os
 import time
 import traceback
+import ctypes
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
@@ -261,14 +262,14 @@ class SplashScreen(QDialog):
             }}
             QLabel#title {{
                 color: #ffffff;
-                font-size: 24px;
+                font-size: 18pt;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#loading {{
                 color: {config.NOTE_COL};
-                font-size: 12px;
+                font-size: 12pt;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
@@ -340,7 +341,7 @@ class _LangPickerDialog(QDialog):
                 background-color: {config.MENU_BG};
                 color: {config.MENU_FG};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10px;
+                font-size: 11pt;
                 border: none;
                 outline: none;
             }}
@@ -446,21 +447,21 @@ class TelemetryPopup(QDialog):
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
-                font-size: 16px;
+                font-size: 14pt;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#lbl_msg {{
                 color: {config.FG_COLOR};
-                font-size: 10px;
+                font-size: 11pt;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QPushButton#btn_lang {{
                 color: {config.GEAR_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 11px;
+                font-size: 11pt;
                 font-weight: bold;
                 background: transparent;
                 border: none;
@@ -473,7 +474,7 @@ class TelemetryPopup(QDialog):
                 background-color: {config.BTN_BG};
                 color: #ffffff;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 9px;
+                font-size: 10pt;
                 font-weight: bold;
                 border: none;
                 padding: 6px 16px;
@@ -486,7 +487,7 @@ class TelemetryPopup(QDialog):
                 background-color: {config.CANCEL_BG};
                 color: #ffffff;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 9px;
+                font-size: 10pt;
                 font-weight: bold;
                 border: none;
                 padding: 6px 16px;
@@ -498,7 +499,7 @@ class TelemetryPopup(QDialog):
             QCheckBox {{
                 color: #aaaaaa;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 9px;
+                font-size: 10pt;
                 background: transparent;
                 spacing: 8px;
             }}
@@ -679,7 +680,7 @@ class IDETooltip(QLabel):
                 border: 1px solid #454545;
                 padding: 4px 8px;
                 font-family: 'Segoe UI', sans-serif;
-                font-size: 12px;
+                font-size: 12pt;
             }
         """)
         self.hide()
@@ -733,7 +734,7 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: 24px; 
+                    font-size: 18pt; 
                     background-color: #333333; 
                     border-radius: 4px;
                     border: none;
@@ -744,7 +745,7 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: 24px; 
+                    font-size: 18pt; 
                     background: transparent; 
                     border-radius: 4px;
                     border: none;
@@ -1174,8 +1175,8 @@ class SettingsDialog(QDialog):
         self.setFixedSize(300, 250)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {config.BG_COLOR}; }}
-            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11px; }}
-            QCheckBox {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11px; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11pt; }}
+            QCheckBox {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; font-size: 11pt; }}
             QDoubleSpinBox {{ background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; padding: 3px; }}
         """)
         
@@ -1263,16 +1264,23 @@ class BadWordsGUI(QMainWindow):
         self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
         self.setMinimumSize(config.CFG_WINDOW_W_BASE, 400)
 
+        if platform.system() == "Windows":
+            try:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(int(self.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4)
+            except Exception:
+                pass
+
         # --- Global QSS ---
         self.setStyleSheet(f"""
+            * {{ outline: none; }}
             QMainWindow {{
                 background-color: {config.BG_COLOR};
             }}
-            .QWidget {{
+            QWidget {{
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10px;
+                font-size: 11pt;
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{
@@ -1560,7 +1568,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_analyze_compare = QPushButton("ANALYZE (Compare)")
         self.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_analyze_compare.setFixedHeight(35)
-        self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 14px; border: none; border-radius: 4px; padding: 10px;")
+        self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 14pt; border: none; border-radius: 4px; padding: 10px;")
         l_script_analysis.addWidget(self.btn_analyze_compare)
         
         self._analyze_color_anim = QVariantAnimation(self)
@@ -1678,7 +1686,7 @@ class BadWordsGUI(QMainWindow):
         self.btn_clear_transcript.setFixedSize(26, 26)
         self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
         self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_clear_transcript.setStyleSheet("background: transparent; border: none; font-size: 14px; padding: 2px;")
+        self.btn_clear_transcript.setStyleSheet("background: transparent; border: none; font-size: 14pt; padding: 2px;")
         row_marking_title.addWidget(self.btn_clear_transcript)
         l_main.addLayout(row_marking_title)
         
@@ -1703,7 +1711,7 @@ class BadWordsGUI(QMainWindow):
         l_main.addWidget(self.rb_eraser)
         
         lbl_dummy = QLabel("+ add custom marker...")
-        lbl_dummy.setStyleSheet("color: #808080; font-size: 9px; text-decoration: underline;")
+        lbl_dummy.setStyleSheet("color: #808080; font-size: 10pt; text-decoration: underline;")
         l_main.addWidget(lbl_dummy)
         
         # Middle
@@ -1712,14 +1720,17 @@ class BadWordsGUI(QMainWindow):
         # Bottom Section
         self.lbl_progress = QLabel("Ready.")
         self.lbl_progress.setAlignment(Qt.AlignCenter)
-        self.lbl_progress.setStyleSheet("font-size: 9px;")
+        self.lbl_progress.setStyleSheet("font-size: 10pt;")
         l_main.addWidget(self.lbl_progress)
         
         from PySide6.QtWidgets import QProgressBar
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(6)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {config.PROGRESS_FILL_COLOR}; }}")
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{ background-color: {config.PROGRESS_TRACK_COLOR}; border: none; border-radius: 3px; }}
+            QProgressBar::chunk {{ background-color: {config.PROGRESS_FILL_COLOR}; border-radius: 3px; }}
+        """)
         l_main.addWidget(self.progress_bar)
         
         row_proj = QHBoxLayout()
@@ -1833,7 +1844,7 @@ class BadWordsGUI(QMainWindow):
             row.setSpacing(3)
             lbl = QLabel(label_text)
             lbl.setStyleSheet(
-                f"color: {config.NOTE_COL}; font-size: 9px;"
+                f"color: {config.NOTE_COL}; font-size: 10pt;"
                 f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
             )
             row.addWidget(lbl)
@@ -1847,7 +1858,7 @@ class BadWordsGUI(QMainWindow):
         lbl_title.setStyleSheet(f"""
             QLabel#welcome_title {{
                 color: #ffffff;
-                font-size: 36px;
+                font-size: 28pt;
                 font-weight: 900;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
@@ -1859,7 +1870,7 @@ class BadWordsGUI(QMainWindow):
         lbl_sub = QLabel("Transcription workspace", inner)
         lbl_sub.setAlignment(Qt.AlignCenter)
         lbl_sub.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 10px;"
+            f"color: {config.NOTE_COL}; font-size: 11pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         inner_layout.addWidget(lbl_sub)
@@ -1919,7 +1930,7 @@ class BadWordsGUI(QMainWindow):
                 background-color: #1e1e1e;
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10px;
+                font-size: 11pt;
                 border: 1px solid #3a3a3a;
                 border-radius: 3px;
                 padding: 0 12px;
@@ -1939,7 +1950,7 @@ class BadWordsGUI(QMainWindow):
                 background-color: {config.BTN_BG};
                 color: #ffffff;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10px;
+                font-size: 11pt;
                 font-weight: bold;
                 border: none;
                 border-radius: 3px;
@@ -1976,7 +1987,7 @@ class BadWordsGUI(QMainWindow):
         lbl = QLabel("Processing...", page)
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 16px;"
+            f"color: {config.NOTE_COL}; font-size: 14pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         layout.addWidget(lbl)
@@ -1994,7 +2005,7 @@ class BadWordsGUI(QMainWindow):
         lbl = QLabel("Editor Area", page)
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 16px;"
+            f"color: {config.NOTE_COL}; font-size: 14pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         layout.addWidget(lbl)
