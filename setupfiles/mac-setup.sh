@@ -37,9 +37,11 @@ LATEST_TAG=$(curl -s "https://api.github.com/repos/veritus-git/BadWords/releases
 
 if [ -n "$LATEST_TAG" ]; then
     REPO_ZIP_URL="https://github.com/veritus-git/BadWords/archive/refs/tags/${LATEST_TAG}.zip"
+    SOURCE_REPO="GitHub"
 else
     LATEST_TAG=$(curl -s "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases" | python3 -c 'import json, sys; data=json.load(sys.stdin); print(data[0]["tag_name"] if isinstance(data, list) and len(data)>0 else "main")' 2>/dev/null || echo "main")
     REPO_ZIP_URL="https://gitlab.com/badwords/BadWords/-/archive/${LATEST_TAG}/BadWords-${LATEST_TAG}.zip"
+    SOURCE_REPO="GitLab"
 fi
 
 RESOLVE_SCRIPT_DIR="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility"
@@ -264,7 +266,7 @@ if [ -d "$LOCAL_SRC" ] && [ -f "$LOCAL_SRC/main.py" ]; then
     fi
 else
     echo -e "${YELLOW}[INFO] Local source not found (Running via curl one-liner).${NC}"
-    echo -e "${CYAN}[DOWNLOADING] Fetching latest source code from GitLab...${NC}"
+    echo -e "${CYAN}[DOWNLOADING] Fetching latest source code from ${SOURCE_REPO}...${NC}"
     
     TMP_DL_DIR=$(mktemp -d)
     ZIP_PATH="$TMP_DL_DIR/repo.zip"
