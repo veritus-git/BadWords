@@ -24,12 +24,12 @@
 
 It uses local AI (Faster-Whisper) to give you a full transcript of your audio. You can then review the cuts, remove silences and filler words, and with one click, send the processed timeline back to Resolve — complete with markers and cuts. 
 
-BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the final polishing to you.
+BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving the final polishing to you.
 
 ## ⚙️ How it works
 
 1. **Select & Transcribe:** Launch BadWords directly from Resolve, pick your audio tracks, and hit Analyze. The AI transcribes everything.
-2. **Interactive Review:** Review cuts before applying them to the timeline. You can find filler words (umm, ahh) and silence using local AI, then clean your transcript interactively.
+2. **Interactive Review:** Review transcript before assembling it, find deviations, check badtakes and remove silence & filler words (emm, ahh)
 3. **Assemble Timeline:** Once you're done reviewing, hit Assemble. BadWords automatically generates a **brand new, clean timeline** inside Resolve with all your cuts and color markers applied perfectly.
 
 <p align="center">
@@ -51,14 +51,21 @@ BadWords does **80% of the tedious work for you** (cutting tight silences, marki
 - **Full Uninstallers:** Both Windows and Linux now ship with complete, scorched-earth uninstallers that cleanly remove all associated files, hidden folders, and registry entries — no leftovers.
 - **Linux Install Path Selection:** The Linux installer now lets you choose a custom installation path instead of forcing a single fixed location.
 - **Geolocation opt-out in Telemetry:** You can now disable geolocation in the optional telemetry ping. Opting out strips all location data from the anonymous install/update signal.
-- **Subprocess stability fixes:** Resolved edge-case crashes and race conditions in background subprocess handling for more reliable transcription runs.
+- **Subprocess stability fixes:** Resolved edge-case crashes in background subprocess handling for more reliable transcription runs.
 - **Installer optimisations:** Both installers are smarter — the Linux script skips redundant PyTorch downloads when updating, and the GPU acceleration mode is auto-detected on updates so you don't have to pick it again.
+
+---
+
+## 📋 Requirements
+- **App:** DaVinci Resolve (Free or Studio)
+- **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
+- **Disk Space:** ~15GB free space for the app, plus 1–10GB depending on your chosen AI models.
 
 ---
 
 ## 🛠️ Installation & Setup
 
-> **Note:** The installation process may take a while depending on your internet connection. It downloads ~15GB of essential AI libraries, models, and UI components required to run entirely offline.
+> **Note:** The installation process may take a while depending on your internet connection. It downloads ~15GB of essential AI libraries and UI components required to run entirely offline. Internet is also required for first analysis to download chosen AI Whisper model
 
 ### 🪟 Windows
 Simply download the standard installer and follow the process.
@@ -106,13 +113,6 @@ If you want to install a specific older version, you must download the `.zip` ar
 
 ---
 
-## 📋 Requirements
-- **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
-- **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
-- **Disk Space:** ~15GB free space for the app, plus 1–10GB depending on your chosen AI models.
-
----
-
 ## 🎬 A little about me & the project
 
 Hi! I am Simon - the 17 year old solo-developer of BadWords. This project started totally randomly. It wasn't planned, it wasn't supposed to become a full-on program. Heck! It wasn't supposed to even leave my computer... but somehow it became the biggest and most advanced project I've made.
@@ -124,7 +124,7 @@ Just by using BadWords and sending feedback, you are contributing to this projec
 **Support the Project!**  
 If BadWords saved you even a bit of time, consider buying me a coffee. It helps me maintain the project between school and life!
 
-<a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" align="top" width="200px" alt="Buy Me A Coffee Logo"></a>
+<a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" align="top" width="250px" alt="Buy Me A Coffee Logo"></a>
 
 ---
 
