@@ -1265,6 +1265,8 @@ except Exception as e:
         for i, w in enumerate(final_words): w['id'] = i
         if final_words:
             final_words[0]['meta_global_silence'] = raw_global_silence
+            if 'language' in json_data:
+                final_words[0]['meta_language'] = json_data.get('language')
 
         segments = []
         current_seg = []

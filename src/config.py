@@ -257,6 +257,9 @@ WORD_INAUDIBLE_FG = "#ffffff"
 # ==========================================
 # SUPPORTED LANGUAGES (WHISPER)
 # ==========================================
+# Languages that naturally read from Right to Left
+RTL_LANGUAGES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}
+
 # Key: Whisper Code (ISO), Value: Native Name
 SUPPORTED_LANGUAGES = {
     "Auto": "Auto",

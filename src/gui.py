@@ -1435,6 +1435,22 @@ class TranscriptionCanvas(QWidget):
         pref_lh = prefs.get('editor_line_height', 8)
         view_mode = prefs.get('view_mode', 'continuous')
         
+        is_rtl = False
+        lang_pref = prefs.get('lang', 'Auto')
+        
+        rtl_codes = getattr(config, 'RTL_LANGUAGES', {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'})
+        # Whisper auto-detect outputs English names
+        rtl_english_names = {'arabic', 'hebrew', 'persian', 'urdu', 'yiddish', 'pashto', 'sindhi'}
+        rtl_native_names = {config.SUPPORTED_LANGUAGES.get(code, code) for code in rtl_codes}
+        
+        if isinstance(lang_pref, str) and lang_pref.lower() != 'auto':
+            if lang_pref in rtl_native_names or lang_pref.lower() in rtl_codes or lang_pref.lower() in rtl_english_names:
+                is_rtl = True
+        elif self.words_data:
+            meta_lang = self.words_data[0].get('meta_language')
+            if isinstance(meta_lang, str) and (meta_lang.lower() in rtl_codes or meta_lang.lower() in rtl_english_names):
+                is_rtl = True
+                
         active_font = QFont(pref_family, pref_size)
         metrics = QFontMetrics(active_font)
         ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
@@ -1443,8 +1459,9 @@ class TranscriptionCanvas(QWidget):
         space_w = metrics.horizontalAdvance(" ") + 2
         line_height = metrics.height() + pref_lh
         
-        x, y = 20, 20
         max_w = self.width() - 40
+        x = max_w if is_rtl else 20
+        y = 20
         
         # Rebuild the cached list once — paintEvent reads it directly, never recomputes
         visible_words = self._get_visible_words()
@@ -1458,12 +1475,13 @@ class TranscriptionCanvas(QWidget):
             
             # Paragraph formatting based on Engine's Chunking
             if view_mode == 'segmented' and w.get('is_segment_start'):
-                if x > 20: 
+                has_advanced = (x < max_w) if is_rtl else (x > 20)
+                if has_advanced: 
                     y += line_height
                 if y > 20: 
                     w['_separator_y'] = y + 10 # Store Y coordinate for the line
                     y += 20 # Gap between paragraphs
-                x = 20
+                x = max_w if is_rtl else 20
                 
                 # Generate Timestamp — format depends on 'timestamp_precise' setting
                 secs = w.get('start', 0)
@@ -1478,24 +1496,44 @@ class TranscriptionCanvas(QWidget):
                     s = total_s % 60
                     ts_text = f"[{m:02d}:{s:02d}]"
                 
-                ts_w = ts_metrics.horizontalAdvance(ts_text)
-                w['_ts_text'] = ts_text
-                w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
-                x += ts_w + space_w + 5
+                # Ensure timestamps stay isolated as LTR natively, using LTR Embedding, if in RTL mode.
+                w['_ts_text'] = f"\u202A\u2068{ts_text}\u2069\u202C" if is_rtl else ts_text
+                ts_w = ts_metrics.horizontalAdvance(w['_ts_text'])
+                
+                if is_rtl:
+                    x -= ts_w
+                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
+                    x -= (space_w + 5)
+                else:
+                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
+                    x += ts_w + space_w + 5
             
             # Standard word layout
             is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
-            text = "(...)" if is_inaudible else w.get('text', '')
-            w['_display_text'] = text  # Store visual text
+            raw_text = "(...)" if is_inaudible else w.get('text', '')
             
-            word_w = metrics.horizontalAdvance(text)
+            # Use BiDirectional formatting to perfectly resolve neutral chars (e.g. dots, numbers) in RTL.
+            # \u202B (RLE) sets the base direction to RTL.
+            # \u2068 (FSI) isolates the word so LTR chunks like "[x34]" keep their brackets unmirrored.
+            display_text = f"\u202B\u2068{raw_text}\u2069\u202C" if is_rtl else raw_text
             
-            if x + word_w > max_w and x > 20:
-                x = 20
-                y += line_height
-                
-            w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
-            x += word_w + space_w
+            w['_display_text'] = display_text  # Store visual text
+            
+            word_w = metrics.horizontalAdvance(display_text)
+            
+            if is_rtl:
+                if x - word_w < 20 and x < max_w:
+                    x = max_w
+                    y += line_height
+                x -= word_w
+                w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                x -= space_w
+            else:
+                if x + word_w > max_w and x > 20:
+                    x = 20
+                    y += line_height
+                w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                x += word_w + space_w
             
         self.setMinimumHeight(y + line_height + 40)
 
@@ -1624,8 +1662,8 @@ class TranscriptionCanvas(QWidget):
             is_active = (state == 'active')
             bg, fg, is_neutral = get_base_bg_fg(grp_words[0])
             
-            min_x = grp_words[0]['_rect'].left()
-            max_x = grp_words[-1]['_rect'].right()
+            min_x = min(w['_rect'].left() for w in grp_words)
+            max_x = max(w['_rect'].right() for w in grp_words)
             r0 = grp_words[0]['_rect']
             
             if is_active:
@@ -1713,17 +1751,26 @@ class TranscriptionCanvas(QWidget):
                 r1 = w1['_rect'].adjusted(-expand1, -1, expand1, 1)
                 r2 = w2['_rect'].adjusted(-expand2, -1, expand2, 1)
                 
+                left_rect = r1 if r1.left() <= r2.left() else r2
+                right_rect = r2 if r1.left() <= r2.left() else r1
+                brush_left = brush1 if r1.left() <= r2.left() else brush2
+                brush_right = brush2 if r1.left() <= r2.left() else brush1
+                
                 if brush1 == brush2:
                     p.setBrush(brush1)
-                    bridge_rect = QRectF(r1.right() - 5, r1.y(), r2.left() - r1.right() + 10, r1.height())
-                    p.drawRect(bridge_rect)
+                    bridge_rect = QRectF(left_rect.right() - 5, left_rect.y(), right_rect.left() - left_rect.right() + 10, left_rect.height())
+                    if bridge_rect.width() > 0:
+                        p.drawRect(bridge_rect)
                 else:
                     p.setRenderHint(QPainter.Antialiasing, False)
-                    gap_mid = int(r1.right() + (r2.left() - r1.right()) / 2.0)
-                    p.setBrush(brush1)
-                    p.drawRect(QRectF(r1.right() - 5, r1.y(), gap_mid - r1.right() + 6, r1.height()))
-                    p.setBrush(brush2)
-                    p.drawRect(QRectF(gap_mid, r2.y(), r2.left() - gap_mid + 5, r2.height()))
+                    gap_mid = int(left_rect.right() + (right_rect.left() - left_rect.right()) / 2.0)
+                    
+                    if right_rect.left() - left_rect.right() > 0:
+                        p.setBrush(brush_left)
+                        p.drawRect(QRectF(left_rect.right() - 5, left_rect.y(), gap_mid - left_rect.right() + 6, left_rect.height()))
+                        p.setBrush(brush_right)
+                        p.drawRect(QRectF(gap_mid, right_rect.y(), right_rect.left() - gap_mid + 5, right_rect.height()))
+                        
                     p.setRenderHint(QPainter.Antialiasing, True)
                     
         # PASS 3: Timestamps & Text
@@ -3729,6 +3776,12 @@ class SearchableDropdown(QPushButton):
         self.list_widget = QListWidget()
         self.list_widget.setFrameShape(QFrame.Shape.NoFrame)
         self.list_widget.addItems(self.options_list)
+        
+        rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item.text() in rtl_names:
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.list_widget.setStyleSheet("""
             QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
             QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
