@@ -33,10 +33,11 @@ Get-ChildItem "$env:LOCALAPPDATA\Packages\BlackmagicDesign.DaVinciResolve_*" -Er
 $InstallDir = $DefaultInstallDir
 $DetectionMsg = ""
 if (Test-Path $WrapperFile) {
-    $line = Get-Content $WrapperFile -ErrorAction SilentlyContinue | Where-Object { $_ -match '^INSTALL_DIR\s*=' } | Select-Object -First 1
-    if ($line -match 'r?[''"](.+?)[''"]') {
-        $detected = $matches[1].Trim('"')
-        if ((Test-Path $detected) -and (Test-Path "$detected\main.py")) {
+    $line = Get-Content $WrapperFile -ErrorAction SilentlyContinue | Where-Object { $_ -match 'INSTALL_DIR' } | Select-Object -First 1
+    # Handle both: INSTALL_DIR = r"""C:\path"""  and  INSTALL_DIR = r"C:\path"
+    if ($line -match 'INSTALL_DIR\s*=\s*r?"{1,3}([^"]+)"{1,3}') {
+        $detected = $matches[1].Trim()
+        if ($detected -and (Test-Path $detected) -and (Test-Path "$detected\main.py")) {
             $InstallDir   = $detected
             $DetectionMsg = "Valid installation detected at: $InstallDir"
         }

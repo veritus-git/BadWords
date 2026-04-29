@@ -23,12 +23,11 @@ for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
 
 set "INSTALL_DIR="
 if exist "!WRAPPER_FILE!" (
-    for /f "tokens=*" %%L in ('findstr /r "^INSTALL_DIR" "!WRAPPER_FILE!" 2^>nul') do (
-        set "LINE=%%L"
-        :: Extract path from: INSTALL_DIR = r"""C:\..."""
-        for /f "tokens=2 delims=""" %%P in ("!LINE!") do (
-            if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
-        )
+    :: Use PowerShell to parse path — handles both r"""C:\path""" and r"C:\path"
+    for /f "delims=" %%P in ('powershell -NoProfile -Command ^
+        "$l = (Get-Content '!WRAPPER_FILE!' -ErrorAction SilentlyContinue) | Where-Object { $_ -match 'INSTALL_DIR' } | Select-Object -First 1; ^
+         if ($l -match 'INSTALL_DIR\s*=\s*r?\""{1,3}([^\"]+)\""{1,3}') { $matches[1].Trim() }" 2^>nul') do (
+        if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
     )
 )
 
@@ -153,59 +152,40 @@ if not exist "!EXTRACTED_DIR!\src\main.py" (
     exit /b 1
 )
 
-:: ── 6. Sync files with Python ───────────────────────────────────────────────
-echo [INFO] Syncing files...
+:: ── 6. Sync files with robocopy ────────────────────────────────────────────
+echo [INFO] Syncing application files...
 
-:: Write Python sync script to a temp file (multiline -c doesn't work in CMD)
-set "SYNC_PY=!TMP_DIR!\bw_sync.py"
-(
-echo import os, shutil, hashlib
-echo.
-echo def get_hash^(p^):
-echo     try:
-echo         with open^(p, 'rb'^) as f: return hashlib.md5^(f.read^(^)^).hexdigest^(^)
-echo     except: return None
-echo.
-echo src_paths = [p for p in [r'!EXTRACTED_DIR!\src', r'!EXTRACTED_DIR!\assets'] if os.path.isdir^(p^)]
-echo dst = r'!INSTALL_DIR!'
-echo.
-echo for src in src_paths:
-echo     for root, dirs, files in os.walk^(src^):
-echo         rel = os.path.relpath^(root, src^)
-echo         d_dir = dst if rel == '.' else os.path.join^(dst, rel^)
-echo         os.makedirs^(d_dir, exist_ok=True^)
-echo         for f in files:
-echo             s_f = os.path.join^(root, f^)
-echo             d_f = os.path.join^(d_dir, f^)
-echo             if get_hash^(s_f^) != get_hash^(d_f^):
-echo                 shutil.copy2^(s_f, d_f^)
-echo                 name = os.path.join^(rel, f^) if rel != '.' else f
-echo                 print^('  Updated: ' + name^)
-echo.
-echo protected_files = {'pref.json','user.json','settings.json','badwords_debug.log'}
-echo protected_dirs  = {'models','saves','venv','bin','libs'}
-echo all_src = set^(^)
-echo for src in src_paths:
-echo     all_src ^|= set^(os.listdir^(src^)^)
-echo.
-echo for item in os.listdir^(dst^):
-echo     if item in protected_files or item in protected_dirs: continue
-echo     if item not in all_src:
-echo         full = os.path.join^(dst, item^)
-echo         try:
-echo             if os.path.isdir^(full^): shutil.rmtree^(full^)
-echo             else: os.remove^(full^)
-echo             print^('  Removed obsolete: ' + item^)
-echo         except Exception as e:
-echo             print^('  [SKIP] Could not remove ' + item + ': ' + str^(e^)^)
-) > "!SYNC_PY!"
+set "SRC_MAIN=!EXTRACTED_DIR!\src"
+set "SRC_ASSETS=!EXTRACTED_DIR!\assets"
 
-"!PYTHON_CMD!" "!SYNC_PY!"
-if !errorlevel! neq 0 (
-    echo [ERROR] File sync failed.
+:: robocopy exit codes 0-7 = success (0=no change, 1=copied, 2=extra, etc.)
+:: exit code >=8 = real error
+if exist "!SRC_MAIN!" (
+    robocopy "!SRC_MAIN!" "!INSTALL_DIR!" /E /NJH /NJS /NP ^
+        /XF pref.json user.json settings.json badwords_debug.log ^
+        /XD models saves venv bin libs 2>nul
+    if !errorlevel! geq 8 (
+        echo [ERROR] File sync failed with robocopy error !errorlevel!.
+        rmdir /s /q "!TMP_DIR!"
+        exit /b 1
+    )
+    echo [INFO] Source files synced.
+) else (
+    echo [ERROR] Extracted source not found: !SRC_MAIN!
     rmdir /s /q "!TMP_DIR!"
     exit /b 1
 )
+
+if exist "!SRC_ASSETS!" (
+    robocopy "!SRC_ASSETS!" "!INSTALL_DIR!" /E /NJH /NJS /NP ^
+        /XF pref.json user.json settings.json badwords_debug.log ^
+        /XD models saves venv bin libs 2>nul
+    if !errorlevel! geq 8 (
+        echo [WARN] Assets sync returned error !errorlevel! - continuing.
+    )
+    echo [INFO] Asset files synced.
+)
+
 
 :: ── 7. Upgrade pip packages ─────────────────────────────────────────────────
 if exist "!VENV_PIP!" (
