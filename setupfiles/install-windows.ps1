@@ -310,7 +310,7 @@ $VenvPip    = "$VenvDir\Scripts\pip.exe"
 $VenvPython = "$VenvDir\Scripts\python.exe"
 
 Write-Info "Upgrading pip..."
-& $VenvPip install --upgrade pip | Out-Null
+& $VenvPython -m pip install --upgrade pip 2>&1 | Out-Null
 
 # ── Install AI libraries ──────────────────────────────────────────────────────
 $torchInstalled = (& $VenvPip show torch 2>&1) -match 'Name: torch'

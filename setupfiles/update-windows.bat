@@ -186,14 +186,50 @@ if exist "!SRC_ASSETS!" (
     echo [INFO] Asset files synced.
 )
 
+:: ── 6b. Remove obsolete files (like Linux updater) ─────────────────────────
+echo [INFO] Cleaning up obsolete files...
+set "CLEANUP_PS=!TMP_DIR!\bw_cleanup.ps1"
+(
+echo $src     = '!SRC_MAIN!'
+echo $assets  = '!SRC_ASSETS!'
+echo $dst     = '!INSTALL_DIR!'
+echo $protectedFiles = @^('pref.json','user.json','settings.json','badwords_debug.log','BadWords.py','unins000.dat','unins000.exe'^)
+echo $protectedDirs  = @^('models','saves','venv','bin','libs','icons','layout','.git','.github','__pycache__'^)
+echo $srcFiles = @^(^)
+echo foreach ^($dir in @^($src, $assets^)^) {
+echo     if ^(Test-Path $dir^) {
+echo         $srcFiles += Get-ChildItem $dir -File -Recurse ^| ForEach-Object { $_.Name }
+echo     }
+echo }
+echo Get-ChildItem $dst -File ^| Where-Object {
+echo     $_.Name -notin $srcFiles -and $_.Name -notin $protectedFiles
+echo } ^| ForEach-Object {
+echo     Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+echo     Write-Host ^('  Removed obsolete: ' + $_.Name^)
+echo }
+echo Get-ChildItem $dst -Directory ^| Where-Object {
+echo     $_.Name -notin $protectedDirs -and ^(Get-ChildItem $_.FullName -Recurse -File^).Count -eq 0
+echo } ^| ForEach-Object {
+echo     Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+echo     Write-Host ^('  Removed empty dir: ' + $_.Name^)
+echo }
+) > "!CLEANUP_PS!"
+powershell -NoProfile -ExecutionPolicy Bypass -File "!CLEANUP_PS!" 2>nul
 
 :: ── 7. Upgrade pip packages ─────────────────────────────────────────────────
-if exist "!VENV_PIP!" (
+if exist "!VENV_PYTHON!" (
     echo [INFO] Upgrading pip packages...
+    :: First upgrade pip itself (pip.exe can't upgrade itself, python -m pip can)
+    "!VENV_PYTHON!" -m pip install --upgrade pip 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
+    :: Then upgrade app packages
+    "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
+) else if exist "!VENV_PIP!" (
+    echo [INFO] Upgrading pip packages (pip fallback)...
     "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied"
 ) else (
-    echo [WARN] venv pip not found, skipping package upgrade.
+    echo [WARN] venv not found, skipping package upgrade.
 )
+
 
 :: ── 8. Refresh libs junction ────────────────────────────────────────────────
 set "LIBS_DIR=!INSTALL_DIR!\libs"
