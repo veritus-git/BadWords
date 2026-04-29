@@ -216,8 +216,28 @@ for src in [r'$SourcePath', r'$AssetsPath']:
 "@
     $syncPy = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "bw_sync_$([System.IO.Path]::GetRandomFileName()).py")
     [System.IO.File]::WriteAllText($syncPy, $syncScript, [System.Text.Encoding]::UTF8)
-    python3 $syncPy 2>&1
+
+    # Find Python early (before main detection block below) — py launcher first (Windows standard)
+    $earlyPy = $null
+    foreach ($c in @('py', 'python', 'python3')) {
+        try { $null = & $c --version 2>&1; $earlyPy = $c; break } catch {}
+    }
+    if (-not $earlyPy) {
+        foreach ($p in @(
+            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe"
+        )) { if (Test-Path $p) { $earlyPy = $p; break } }
+    }
+    if ($earlyPy) {
+        & $earlyPy $syncPy 2>&1
+    } else {
+        Write-Warn "Python not found for sync — falling back to full copy for changed files."
+        Copy-Item "$SourcePath\*"  $InstallDir -Recurse -Force
+        if (Test-Path $AssetsPath) { Copy-Item "$AssetsPath\*" $InstallDir -Recurse -Force }
+    }
     Remove-Item $syncPy -ErrorAction SilentlyContinue
+
 
 } else {
     # Full copy
