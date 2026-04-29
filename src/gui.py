@@ -2117,10 +2117,12 @@ class CustomTitleBar(QWidget):
         lay.addWidget(icon_lbl)
         lay.addSpacing(6)
 
-        # Title text
+        # Title text — RichText for italic parts; WA_TransparentForMouseEvents blocks the
+        # hover-reflow quirk (Qt's mini-browser switching to plain text on mouseover).
         self._lbl_title = QLabel(config.APP_NAME)
         self._full_title = config.APP_NAME
         self._lbl_title.setTextFormat(Qt.RichText)
+        self._lbl_title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._lbl_title.setStyleSheet(
             f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
             f"font-size: 9pt; background: transparent;"
@@ -2156,26 +2158,33 @@ class CustomTitleBar(QWidget):
             lay.addWidget(btn)
 
     def set_title(self, text):
-        from PySide6.QtGui import QFontMetrics
         self._full_title = text
         self._lbl_title.setText(text)
         self.update_elision()
 
     def update_elision(self):
-        from PySide6.QtGui import QFontMetrics
+        from PySide6.QtGui import QFontMetrics, QTextDocument
         if hasattr(self, 'chapter_dropdown') and self.chapter_dropdown.isVisible():
             dw = self.chapter_dropdown.sizeHint().width()
             dx = (self.width() - dw) // 2
-            # Leave a 20px gap before dropdown
-            max_w = max(10, dx - self._lbl_title.x() - 20)
+            max_w = max(10, dx - self._lbl_title.x() - 4)
         else:
-            # Dropdown hidden, can use up to right buttons
-            btn_area = self.btn_min.width() * 3 + 24
-            max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 20)
-            
+            btn_area = self.btn_min.width() * 3 + 4
+            max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 4)
+
+        # Measure using plain text (HTML tags would inflate the pixel width)
+        doc = QTextDocument()
+        doc.setHtml(self._full_title)
+        plain = doc.toPlainText()
+
         fm = QFontMetrics(self._lbl_title.font())
-        elided = fm.elidedText(self._full_title, Qt.ElideRight, max_w)
-        self._lbl_title.setText(elided)
+        if fm.horizontalAdvance(plain) <= max_w:
+            # Fits — keep full RichText (preserves <i> italic)
+            self._lbl_title.setText(self._full_title)
+        else:
+            # Doesn't fit — elide plain text
+            elided = fm.elidedText(plain, Qt.ElideRight, max_w)
+            self._lbl_title.setText(elided)
 
     def update_dropdown_placement(self):
         if hasattr(self, 'chapter_dropdown') and self.chapter_dropdown.isVisible():
