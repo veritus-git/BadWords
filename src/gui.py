@@ -2572,11 +2572,24 @@ class FramelessWindowMixin:
             )
             return True, 1
 
+        # ── WM_MOUSEACTIVATE (0x0021) ─────────────────────────────────────────
+        # When the window is clicked to regain focus, Windows sends WM_MOUSEACTIVATE
+        # before WM_NCHITTEST. Returning MA_ACTIVATE (1) lets Windows correctly
+        # re-register the HTCAPTION tracking state, fixing drag loss after focus-out.
+        if msg.message == 0x0021:  # WM_MOUSEACTIVATE
+            return True, 1  # MA_ACTIVATE — activate and pass click through normally
+
         # ── WM_NCHITTEST (0x0084) ─────────────────────────────────────────────
         # Map pixel positions to hit-test codes so Windows can drive:
         #   • resize (HTLEFT / HTRIGHT / …)
         #   • native drag + Aero Snap (HTCAPTION)
         #   • button clicks stay in client space (HTCLIENT)
+        #
+        # IMPORTANT: We intentionally do NOT use _tb.mapFromGlobal() here because
+        # after a focus-loss/regain cycle the widget coordinate mapping can be stale
+        # (Qt hasn't yet committed the NC geometry change from DWM). Instead we use
+        # self.childAt(pos) which queries the live widget tree at the client-space
+        # position — this is always reliable regardless of window focus state.
         if msg.message == 0x0084:  # WM_NCHITTEST
             x = msg.lParam & 0xFFFF
             if x & 0x8000: x -= 0x10000
@@ -2602,14 +2615,14 @@ class FramelessWindowMixin:
                 if by:        return True, 15  # HTBOTTOM
 
             # Title-bar hit-test — HTCAPTION gives native drag + snap + animations.
-            # Buttons stay as HTCLIENT so Qt can process their click events.
+            # We check against the fixed title-bar height (32 px) using self.childAt()
+            # instead of _tb.mapFromGlobal() — this survives focus-loss/regain cycles.
             _tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
-            if _tb:
-                tb_pos = _tb.mapFromGlobal(global_pos)
-                if _tb.rect().contains(tb_pos):
-                    child = _tb.childAt(tb_pos)
-                    if not child or not child.inherits("QPushButton"):
-                        return True, 2  # HTCAPTION
+            tb_height = (_tb.height() if _tb else 32)
+            if 0 <= pos.y() < tb_height:
+                child = self.childAt(pos)
+                if not child or not child.inherits("QPushButton"):
+                    return True, 2  # HTCAPTION
 
             return True, 1  # HTCLIENT
 

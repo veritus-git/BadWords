@@ -11,49 +11,7 @@ set "PYTHONPATH="
 
 echo [UPDATE] BadWords Windows Auto-Update starting...
 
-:: ── 1. Locate installation via wrapper ──────────────────────────────────────
-set "WRAPPER_FILE=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
-
-:: Also check Microsoft Store edition path
-for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
-    if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
-        set "WRAPPER_FILE=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
-    )
-)
-
-set "INSTALL_DIR="
-if exist "!WRAPPER_FILE!" (
-    REM Write detection PS1 to avoid CMD mangling regex chars ({,} ^ in for/f inline)
-    set "DETECT_PS=%TEMP%\_bw_detect_path.ps1"
-    (
-    echo $f = '!WRAPPER_FILE!'
-    echo if ^(Test-Path $f^) {
-    echo     $line = Get-Content $f -ErrorAction SilentlyContinue ^| Where-Object { $_ -match 'INSTALL_DIR' } ^| Select-Object -First 1
-    echo     if ^($line -match 'INSTALL_DIR\s*=\s*r?"{1,3}([^"]+)"{1,3}'^) { $matches[1].Trim^(^) }
-    echo }
-    ) > "!DETECT_PS!"
-    for /f "delims=" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -File "!DETECT_PS!" 2^>nul') do (
-        if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
-    )
-    del "!DETECT_PS!" 2>nul
-)
-
-:: Validate detected path
-if not defined INSTALL_DIR (
-    set "INSTALL_DIR=%APPDATA%\BadWords"
-    echo [WARN] Could not read wrapper, using default: !INSTALL_DIR!
-)
-if not exist "!INSTALL_DIR!\main.py" (
-    echo [ERROR] No valid BadWords installation found at !INSTALL_DIR!
-    exit /b 1
-)
-
-echo [INFO] Installation path: !INSTALL_DIR!
-set "VENV_DIR=!INSTALL_DIR!\venv"
-set "VENV_PYTHON=!VENV_DIR!\Scripts\python.exe"
-set "VENV_PIP=!VENV_DIR!\Scripts\pip.exe"
-
-:: ── 2. Ensure Python is available ───────────────────────────────────────────
+:: ── 1. Ensure Python is available ───────────────────────────────────────────
 set "PYTHON_CMD="
 where python >nul 2>&1 && (
     for /f "tokens=*" %%P in ('where python') do (
@@ -81,6 +39,38 @@ if not defined PYTHON_CMD (
 )
 :FOUND_PY
 echo [INFO] Using Python: !PYTHON_CMD!
+
+:: ── 2. Locate installation via wrapper (Python-based, immune to regex escaping) ─
+set "WRAPPER_FILE=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
+
+:: Also check Microsoft Store edition path
+for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
+    if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
+        set "WRAPPER_FILE=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
+    )
+)
+
+set "INSTALL_DIR="
+if exist "!WRAPPER_FILE!" (
+    for /f "delims=" %%P in ('"!PYTHON_CMD!" -c "import re,sys; lines=open(sys.argv[1],encoding=\"utf-8\",errors=\"replace\").readlines(); m=[re.search(r\"INSTALL_DIR\s*=\s*r?[\"\"\"]+([^\"\"\"]+)[\"\"\"]+\",l) for l in lines]; found=[x.group(1).strip() for x in m if x]; print(found[0] if found else \"\")" "!WRAPPER_FILE!" 2^>nul') do (
+        if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
+    )
+)
+
+:: Validate detected path
+if not defined INSTALL_DIR (
+    set "INSTALL_DIR=%APPDATA%\BadWords"
+    echo [WARN] Could not read wrapper, using default: !INSTALL_DIR!
+)
+if not exist "!INSTALL_DIR!\main.py" (
+    echo [ERROR] No valid BadWords installation found at !INSTALL_DIR!
+    exit /b 1
+)
+
+echo [INFO] Installation path: !INSTALL_DIR!
+set "VENV_DIR=!INSTALL_DIR!\venv"
+set "VENV_PYTHON=!VENV_DIR!\Scripts\python.exe"
+set "VENV_PIP=!VENV_DIR!\Scripts\pip.exe"
 
 :: ── 3. Ensure curl is available (ships with Win10 1803+) ────────────────────
 where curl >nul 2>&1 || (
@@ -193,35 +183,43 @@ if exist "!SRC_ASSETS!" (
     echo [INFO] Asset files synced.
 )
 
-:: ── 6b. Remove obsolete files (like Linux updater) ─────────────────────────
+:: ── 6b. Remove obsolete files — Python inline (identical logic to Linux updater) ─
 echo [INFO] Cleaning up obsolete files...
-set "CLEANUP_PS=!TMP_DIR!\bw_cleanup.ps1"
-(
-echo $src     = '!SRC_MAIN!'
-echo $assets  = '!SRC_ASSETS!'
-echo $dst     = '!INSTALL_DIR!'
-echo $protectedFiles = @^('pref.json','user.json','settings.json','badwords_debug.log','BadWords.py','unins000.dat','unins000.exe'^)
-echo $protectedDirs  = @^('models','saves','venv','bin','libs','icons','layout','.git','.github','__pycache__'^)
-echo $srcFiles = @^(^)
-echo foreach ^($dir in @^($src, $assets^)^) {
-echo     if ^(Test-Path $dir^) {
-echo         $srcFiles += Get-ChildItem $dir -File -Recurse ^| ForEach-Object { $_.Name }
-echo     }
-echo }
-echo Get-ChildItem $dst -File ^| Where-Object {
-echo     $_.Name -notin $srcFiles -and $_.Name -notin $protectedFiles
-echo } ^| ForEach-Object {
-echo     Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
-echo     Write-Host ^('  Removed obsolete: ' + $_.Name^)
-echo }
-echo Get-ChildItem $dst -Directory ^| Where-Object {
-echo     $_.Name -notin $protectedDirs -and ^(Get-ChildItem $_.FullName -Recurse -File^).Count -eq 0
-echo } ^| ForEach-Object {
-echo     Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-echo     Write-Host ^('  Removed empty dir: ' + $_.Name^)
-echo }
-) > "!CLEANUP_PS!"
-powershell -NoProfile -ExecutionPolicy Bypass -File "!CLEANUP_PS!" 2>nul
+"!PYTHON_CMD!" -c "
+import os, sys
+
+src_paths = [p for p in [r'!SRC_MAIN!', r'!SRC_ASSETS!'] if os.path.isdir(p)]
+dst = r'!INSTALL_DIR!'
+
+protected_files = {'pref.json','user.json','settings.json','badwords_debug.log',
+                   'BadWords.py','unins000.dat','unins000.exe'}
+protected_dirs  = {'models','saves','venv','bin','libs','icons','layout',
+                   '.git','.github','__pycache__'}
+
+# Collect every filename that exists in any source directory (top-level only)
+all_src_items = set()
+for src in src_paths:
+    all_src_items.update(os.listdir(src))
+
+# Remove top-level files in dst that are not in any source and not protected
+for item in os.listdir(dst):
+    full = os.path.join(dst, item)
+    if item in protected_files or item in protected_dirs:
+        continue
+    if item not in all_src_items:
+        try:
+            if os.path.isdir(full):
+                import shutil
+                shutil.rmtree(full)
+            else:
+                os.remove(full)
+            print('  Removed obsolete: ' + item)
+        except Exception as e:
+            print('  [WARN] Could not remove ' + item + ': ' + str(e))
+"
+if !errorlevel! neq 0 (
+    echo [WARN] Cleanup step exited with code !errorlevel! - continuing.
+)
 
 :: ── 7. Upgrade pip packages ─────────────────────────────────────────────────
 if exist "!VENV_PYTHON!" (
