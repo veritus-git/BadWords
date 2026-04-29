@@ -4492,6 +4492,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                         stderr=subprocess.STDOUT,
                         text=True,
                         timeout=600,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                 else:
                     os.chmod(tmp_script, 0o755)
@@ -5428,10 +5429,11 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                         if not is_win:
                             os.chmod(tmp, 0o755)
                         cmd = ['cmd.exe', '/c', tmp] if is_win else ['/bin/bash', tmp]
+                        extra = {'creationflags': subprocess.CREATE_NO_WINDOW} if is_win else {}
                         result = subprocess.run(
                             cmd, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, timeout=600
+                            text=True, timeout=600, **extra
                         )
                         for line in result.stdout.splitlines():
                             log_info(f'[Updater] {line}')
@@ -9925,10 +9927,11 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 if not is_win:
                     os.chmod(tmp, 0o755)
                 cmd = ['cmd.exe', '/c', tmp] if is_win else ['/bin/bash', tmp]
+                extra = {'creationflags': subprocess.CREATE_NO_WINDOW} if is_win else {}
                 result = subprocess.run(
                     cmd, stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, timeout=600
+                    text=True, timeout=600, **extra
                 )
                 for line in result.stdout.splitlines():
                     log_info(f'[AutoUpdate] {line}')

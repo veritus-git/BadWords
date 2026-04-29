@@ -155,46 +155,52 @@ if not exist "!EXTRACTED_DIR!\src\main.py" (
 
 :: ── 6. Sync files with Python ───────────────────────────────────────────────
 echo [INFO] Syncing files...
-"!PYTHON_CMD!" -c "
-import os, shutil, hashlib
 
-def get_hash(p):
-    try:
-        with open(p, 'rb') as f: return hashlib.md5(f.read()).hexdigest()
-    except: return None
+:: Write Python sync script to a temp file (multiline -c doesn't work in CMD)
+set "SYNC_PY=!TMP_DIR!\bw_sync.py"
+(
+echo import os, shutil, hashlib
+echo.
+echo def get_hash^(p^):
+echo     try:
+echo         with open^(p, 'rb'^) as f: return hashlib.md5^(f.read^(^)^).hexdigest^(^)
+echo     except: return None
+echo.
+echo src_paths = [p for p in [r'!EXTRACTED_DIR!\src', r'!EXTRACTED_DIR!\assets'] if os.path.isdir^(p^)]
+echo dst = r'!INSTALL_DIR!'
+echo.
+echo for src in src_paths:
+echo     for root, dirs, files in os.walk^(src^):
+echo         rel = os.path.relpath^(root, src^)
+echo         d_dir = dst if rel == '.' else os.path.join^(dst, rel^)
+echo         os.makedirs^(d_dir, exist_ok=True^)
+echo         for f in files:
+echo             s_f = os.path.join^(root, f^)
+echo             d_f = os.path.join^(d_dir, f^)
+echo             if get_hash^(s_f^) != get_hash^(d_f^):
+echo                 shutil.copy2^(s_f, d_f^)
+echo                 name = os.path.join^(rel, f^) if rel != '.' else f
+echo                 print^('  Updated: ' + name^)
+echo.
+echo protected_files = {'pref.json','user.json','settings.json','badwords_debug.log'}
+echo protected_dirs  = {'models','saves','venv','bin','libs'}
+echo all_src = set^(^)
+echo for src in src_paths:
+echo     all_src ^|= set^(os.listdir^(src^)^)
+echo.
+echo for item in os.listdir^(dst^):
+echo     if item in protected_files or item in protected_dirs: continue
+echo     if item not in all_src:
+echo         full = os.path.join^(dst, item^)
+echo         try:
+echo             if os.path.isdir^(full^): shutil.rmtree^(full^)
+echo             else: os.remove^(full^)
+echo             print^('  Removed obsolete: ' + item^)
+echo         except Exception as e:
+echo             print^('  [SKIP] Could not remove ' + item + ': ' + str^(e^)^)
+) > "!SYNC_PY!"
 
-src_paths = [p for p in [r'%s\src' % r'!EXTRACTED_DIR!', r'%s\assets' % r'!EXTRACTED_DIR!'] if os.path.isdir(p)]
-dst = r'!INSTALL_DIR!'
-
-for src in src_paths:
-    for root, dirs, files in os.walk(src):
-        rel = os.path.relpath(root, src)
-        d_dir = dst if rel == '.' else os.path.join(dst, rel)
-        os.makedirs(d_dir, exist_ok=True)
-        for f in files:
-            s_f = os.path.join(root, f)
-            d_f = os.path.join(d_dir, f)
-            if get_hash(s_f) != get_hash(d_f):
-                shutil.copy2(s_f, d_f)
-                print(f'  Updated: {os.path.join(rel,f) if rel != \".\" else f}')
-
-protected_files = {'pref.json','user.json','settings.json','badwords_debug.log'}
-protected_dirs  = {'models','saves','venv','bin','libs'}
-all_src = set()
-for src in src_paths:
-    all_src |= set(os.listdir(src))
-
-for item in os.listdir(dst):
-    if item in protected_files or item in protected_dirs: continue
-    if item not in all_src:
-        full = os.path.join(dst, item)
-        try:
-            if os.path.isdir(full): shutil.rmtree(full)
-            else: os.remove(full)
-            print(f'  Removed obsolete: {item}')
-        except Exception as e:
-            print(f'  [SKIP] Could not remove {item}: {e}')
-"
+"!PYTHON_CMD!" "!SYNC_PY!"
 if !errorlevel! neq 0 (
     echo [ERROR] File sync failed.
     rmdir /s /q "!TMP_DIR!"

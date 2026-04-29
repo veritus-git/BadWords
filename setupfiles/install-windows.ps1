@@ -2,7 +2,7 @@
 # Usage: irm https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/install-windows.ps1 | iex
 # Or local: powershell -ExecutionPolicy Bypass -File install-windows.ps1
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $APP_NAME   = 'BadWords'
 $APP_FOLDER = 'BadWords'
 
@@ -88,6 +88,7 @@ if ($Mode -eq 'Move') {
     Write-Host "Current path: $OldInstallDir" -ForegroundColor Green
     $newPath = Read-Host "Enter new absolute path (e.g. D:\BadWords)"
     if ([string]::IsNullOrWhiteSpace($newPath)) { Write-Err "Path cannot be empty."; exit 1 }
+    if (-not [System.IO.Path]::IsPathRooted($newPath)) { Write-Err "Path must be absolute (e.g. D:\BadWords)."; exit 1 }
     # Ensure path ends with \BadWords
     if (-not $newPath.TrimEnd('\').EndsWith("\$APP_FOLDER") -and -not $newPath.TrimEnd('\').EndsWith("/$APP_FOLDER")) {
         $newPath = "$($newPath.TrimEnd('\'))\$APP_FOLDER"
