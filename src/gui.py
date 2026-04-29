@@ -537,7 +537,11 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         return fm.horizontalAdvance(item.text()) > self._available_width()
 
     def eventFilter(self, obj, event):
-        if obj is self._lw.viewport():
+        try:
+            lw_vp = self._lw.viewport()
+        except RuntimeError:
+            return False
+        if obj is lw_vp:
             if event.type() == QEvent.Type.MouseMove:
                 pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
                 idx = self._lw.indexAt(pos)
@@ -3170,37 +3174,41 @@ class GlobalAppFilter(QObject):
         self.active_widget = None
 
     def eventFilter(self, obj, event):
-        # 1. Global Focus Management: clear focus from QLineEdit on click anywhere outside
-        if event.type() == QEvent.MouseButtonPress:
-            focused = QApplication.focusWidget()
-            if isinstance(focused, QLineEdit):
-                global_pos = QCursor.pos()
-                focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
-                if not focused_global_rect.contains(global_pos):
-                    focused.clearFocus()
-                    
-        # 2. Enter/Return removes focus from QLineEdit
-        if event.type() == QEvent.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                obj.clearFocus()
+        try:
+            # 1. Global Focus Management: clear focus from QLineEdit on click anywhere outside
+            if event.type() == QEvent.MouseButtonPress:
+                focused = QApplication.focusWidget()
+                if isinstance(focused, QLineEdit):
+                    global_pos = QCursor.pos()
+                    focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
+                    if not focused_global_rect.contains(global_pos):
+                        focused.clearFocus()
 
-        # 3. Tooltip handling
-        if event.type() == QEvent.ToolTip:
-            if isinstance(obj, QWidget):
-                text = obj.toolTip()
-                if text:
-                    self.current_text = text
-                    self.current_pos = event.globalPos()
-                    self.active_widget = obj
-                    self.tooltip_timer.start(500)
-                    return True # Stop native tooltip
-        elif event.type() in (QEvent.Leave, QEvent.Hide, QEvent.MouseButtonPress, QEvent.WindowDeactivate):
-            if obj == self.active_widget or self.active_widget is None:
-                self.tooltip_timer.stop()
-                if hasattr(self, 'shared_tooltip'):
-                    self.shared_tooltip.hide()
-                self.active_widget = None
+            # 2. Enter/Return removes focus from QLineEdit
+            if event.type() == QEvent.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
+                if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                    obj.clearFocus()
+
+            # 3. Tooltip handling
+            if event.type() == QEvent.ToolTip:
+                if isinstance(obj, QWidget):
+                    text = obj.toolTip()
+                    if text:
+                        self.current_text = text
+                        self.current_pos = event.globalPos()
+                        self.active_widget = obj
+                        self.tooltip_timer.start(500)
+                        return True  # Stop native tooltip
+            elif event.type() in (QEvent.Leave, QEvent.Hide, QEvent.MouseButtonPress, QEvent.WindowDeactivate):
+                if obj == self.active_widget or self.active_widget is None:
+                    self.tooltip_timer.stop()
+                    if hasattr(self, 'shared_tooltip'):
+                        self.shared_tooltip.hide()
+                    self.active_widget = None
+        except RuntimeError:
+            pass
         return False
+
 
     def _do_show(self):
         if self.current_text and self.active_widget:
@@ -4490,7 +4498,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                         stdin=subprocess.DEVNULL,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
-                        text=True,
+                        encoding='utf-8', errors='replace',
                         timeout=600,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
@@ -4501,13 +4509,13 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                         stdin=subprocess.DEVNULL,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
-                        text=True,
+                        encoding='utf-8', errors='replace',
                         timeout=600,
                     )
 
                 # Log full output for diagnostics
                 from osdoc import log_info, log_error
-                for line in result.stdout.splitlines():
+                for line in (result.stdout or '').splitlines():
                     log_info(f'[Updater] {line}')
 
                 if result.returncode == 0:
@@ -5433,9 +5441,9 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                         result = subprocess.run(
                             cmd, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, timeout=600, **extra
+                            encoding='utf-8', errors='replace', timeout=600, **extra
                         )
-                        for line in result.stdout.splitlines():
+                        for line in (result.stdout or '').splitlines():
                             log_info(f'[Updater] {line}')
                         if result.returncode == 0:
                             _bridge.done.emit(True, "")
@@ -9931,9 +9939,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 result = subprocess.run(
                     cmd, stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, timeout=600, **extra
+                    encoding='utf-8', errors='replace', timeout=600, **extra
                 )
-                for line in result.stdout.splitlines():
+                for line in (result.stdout or '').splitlines():
                     log_info(f'[AutoUpdate] {line}')
                 _bridge.done.emit(result.returncode == 0,
                                   f"Exit code {result.returncode}" if result.returncode != 0 else "")
