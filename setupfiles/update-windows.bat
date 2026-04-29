@@ -27,7 +27,6 @@ if not defined PYTHON_CMD (
             goto :FOUND_PY
         )
     )
-    REM Last resort: winget install Python 3.11
     echo [WARN] Python not found. Attempting to install via winget...
     winget install --id Python.Python.3.11 -e --silent --accept-source-agreements --accept-package-agreements
     set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
@@ -40,10 +39,11 @@ if not defined PYTHON_CMD (
 :FOUND_PY
 echo [INFO] Using Python: !PYTHON_CMD!
 
-:: ── 2. Locate installation via wrapper (Python-based, immune to regex escaping) ─
+:: ── 2. Locate installation via wrapper ──────────────────────────────────────
+:: PowerShell writes the detection script via Set-Content — immune to CMD
+:: double-quote / regex escaping issues that plagued the echo-based approach.
 set "WRAPPER_FILE=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
 
-:: Also check Microsoft Store edition path
 for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
     if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
         set "WRAPPER_FILE=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
@@ -52,12 +52,16 @@ for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
 
 set "INSTALL_DIR="
 if exist "!WRAPPER_FILE!" (
-    for /f "delims=" %%P in ('"!PYTHON_CMD!" -c "import re,sys; lines=open(sys.argv[1],encoding=\"utf-8\",errors=\"replace\").readlines(); m=[re.search(r\"INSTALL_DIR\s*=\s*r?[\"\"\"]+([^\"\"\"]+)[\"\"\"]+\",l) for l in lines]; found=[x.group(1).strip() for x in m if x]; print(found[0] if found else \"\")" "!WRAPPER_FILE!" 2^>nul') do (
+    set "DETECT_PS=%TEMP%\_bw_detect_%RANDOM%.ps1"
+    :: PowerShell writes a clean PS1 — single-quoted strings inside, '' = literal '
+    :: No {1,3} quantifiers that CMD would corrupt. Plain string-split detection.
+    powershell -NoProfile -Command "Set-Content -Path '!DETECT_PS!' -Encoding UTF8 -Value 'foreach ($l in (Get-Content ''!WRAPPER_FILE!'' -EA SilentlyContinue)) { if ($l -match ''INSTALL_DIR\s*='') { $v = ($l -split ''='', 2)[1].Trim().TrimStart(''r'').Trim([char]34).Trim([char]39).Trim([char]34).Trim([char]39); if ($v) { $v; break } } }'"
+    for /f "delims=" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -File "!DETECT_PS!" 2^>nul') do (
         if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
     )
+    del "!DETECT_PS!" 2>nul
 )
 
-:: Validate detected path
 if not defined INSTALL_DIR (
     set "INSTALL_DIR=%APPDATA%\BadWords"
     echo [WARN] Could not read wrapper, using default: !INSTALL_DIR!
@@ -84,7 +88,6 @@ set "LATEST_TAG="
 set "REPO_ZIP_URL="
 set "SOURCE_REPO="
 
-:: GitHub
 if not defined USE_PS_DL (
     for /f "delims=" %%T in ('curl -fsSL --connect-timeout 10 "https://api.github.com/repos/veritus-git/BadWords/releases/latest" ^| "!PYTHON_CMD!" -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"tag_name\",\"\"))" 2^>nul') do set "LATEST_TAG=%%T"
 ) else (
@@ -97,7 +100,6 @@ if defined LATEST_TAG (
     goto :GOT_TAG
 )
 
-:: GitLab fallback
 echo [WARN] GitHub unavailable, trying GitLab...
 if not defined USE_PS_DL (
     for /f "delims=" %%T in ('curl -fsSL --connect-timeout 10 "https://gitlab.com/api/v4/projects/badwords%%2FBadWords/releases" ^| "!PYTHON_CMD!" -c "import json,sys; d=json.load(sys.stdin); print(d[0][\"tag_name\"] if isinstance(d,list) and d else \"\")" 2^>nul') do set "LATEST_TAG=%%T"
@@ -137,26 +139,23 @@ if not exist "!ZIP_PATH!" (
 echo [INFO] Extracting...
 powershell -NoProfile -Command "Expand-Archive -Path '!ZIP_PATH!' -DestinationPath '!TMP_DIR!\extracted' -Force"
 
-:: Find extracted subfolder
 set "EXTRACTED_DIR="
 for /d %%D in ("!TMP_DIR!\extracted\*") do (
     if "!EXTRACTED_DIR!"=="" set "EXTRACTED_DIR=%%D"
 )
 
 if not exist "!EXTRACTED_DIR!\src\main.py" (
-    echo [ERROR] Extraction failed — src\main.py not found.
+    echo [ERROR] Extraction failed - src\main.py not found.
     rmdir /s /q "!TMP_DIR!"
     exit /b 1
 )
 
-:: ── 6. Sync files with robocopy ────────────────────────────────────────────
+:: ── 6. Sync files with robocopy ─────────────────────────────────────────────
 echo [INFO] Syncing application files...
 
 set "SRC_MAIN=!EXTRACTED_DIR!\src"
 set "SRC_ASSETS=!EXTRACTED_DIR!\assets"
 
-:: robocopy exit codes 0-7 = success (0=no change, 1=copied, 2=extra, etc.)
-:: exit code >=8 = real error
 if exist "!SRC_MAIN!" (
     robocopy "!SRC_MAIN!" "!INSTALL_DIR!" /E /NJH /NJS /NP ^
         /XF pref.json user.json settings.json badwords_debug.log ^
@@ -183,50 +182,17 @@ if exist "!SRC_ASSETS!" (
     echo [INFO] Asset files synced.
 )
 
-:: ── 6b. Remove obsolete files — Python inline (identical logic to Linux updater) ─
+:: ── 6b. Remove obsolete files ────────────────────────────────────────────────
+:: Inline PowerShell one-liner — no temp file, no CMD echo escaping issues.
+:: Paths baked in from delayed-expansion variables before PS receives them.
+:: Logic identical to update-linux.sh: collect src filenames, remove extras.
 echo [INFO] Cleaning up obsolete files...
-"!PYTHON_CMD!" -c "
-import os, sys
-
-src_paths = [p for p in [r'!SRC_MAIN!', r'!SRC_ASSETS!'] if os.path.isdir(p)]
-dst = r'!INSTALL_DIR!'
-
-protected_files = {'pref.json','user.json','settings.json','badwords_debug.log',
-                   'BadWords.py','unins000.dat','unins000.exe'}
-protected_dirs  = {'models','saves','venv','bin','libs','icons','layout',
-                   '.git','.github','__pycache__'}
-
-# Collect every filename that exists in any source directory (top-level only)
-all_src_items = set()
-for src in src_paths:
-    all_src_items.update(os.listdir(src))
-
-# Remove top-level files in dst that are not in any source and not protected
-for item in os.listdir(dst):
-    full = os.path.join(dst, item)
-    if item in protected_files or item in protected_dirs:
-        continue
-    if item not in all_src_items:
-        try:
-            if os.path.isdir(full):
-                import shutil
-                shutil.rmtree(full)
-            else:
-                os.remove(full)
-            print('  Removed obsolete: ' + item)
-        except Exception as e:
-            print('  [WARN] Could not remove ' + item + ': ' + str(e))
-"
-if !errorlevel! neq 0 (
-    echo [WARN] Cleanup step exited with code !errorlevel! - continuing.
-)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$src='!SRC_MAIN!';$assets='!SRC_ASSETS!';$dst='!INSTALL_DIR!';$pf=@('pref.json','user.json','settings.json','badwords_debug.log','BadWords.py','unins000.dat','unins000.exe');$pd=@('models','saves','venv','bin','libs','icons','layout','.git','.github','__pycache__');$sf=@();foreach($d in @($src,$assets)){if(Test-Path $d){$sf+=(Get-ChildItem $d -File).Name}};foreach($item in (Get-ChildItem $dst -File)){if($item.Name -notin $sf -and $item.Name -notin $pf){Remove-Item $item.FullName -Force -EA SilentlyContinue;Write-Host('  Removed obsolete: '+$item.Name)}};foreach($item in (Get-ChildItem $dst -Directory)){if($item.Name -notin $pd -and (Get-ChildItem $item.FullName -Recurse -File).Count -eq 0){Remove-Item $item.FullName -Recurse -Force -EA SilentlyContinue;Write-Host('  Removed empty dir: '+$item.Name)}}"
 
 :: ── 7. Upgrade pip packages ─────────────────────────────────────────────────
 if exist "!VENV_PYTHON!" (
     echo [INFO] Upgrading pip packages...
-    REM First upgrade pip itself via python -m pip (pip.exe cannot self-update)
     "!VENV_PYTHON!" -m pip install --upgrade pip 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
-    REM Then upgrade app packages
     "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
 ) else if exist "!VENV_PIP!" (
     echo [INFO] Upgrading pip packages (pip fallback)...
@@ -235,8 +201,7 @@ if exist "!VENV_PYTHON!" (
     echo [WARN] venv not found, skipping package upgrade.
 )
 
-
-:: ── 8. Refresh libs junction ────────────────────────────────────────────────
+:: ── 8. Refresh libs junction ─────────────────────────────────────────────────
 set "LIBS_DIR=!INSTALL_DIR!\libs"
 if exist "!VENV_DIR!\Lib\site-packages" (
     if exist "!LIBS_DIR!" ( rmdir "!LIBS_DIR!" >nul 2>&1 )
