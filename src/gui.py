@@ -947,13 +947,21 @@ class SearchOverlayWidget(QFrame):
     def __init__(self, parent_widget, main_window):
         super().__init__(parent_widget)
         self.main_window = main_window
-        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect
-        from PySide6.QtCore import Qt, QTimer, QEvent
-        from PySide6.QtGui import QColor, QAction, QIcon
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame
+        from PySide6.QtCore import Qt, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect, QSize
+        from PySide6.QtGui import QColor, QAction, QIcon, QPixmap
+        import os
         
         self.setObjectName("SearchOverlay")
+        self.setProperty("expanded", False)
+        self.setFixedHeight(36)
+        
         self.setStyleSheet("""
             QFrame#SearchOverlay {
+                background-color: transparent;
+                border: none;
+            }
+            QFrame#SearchContainer {
                 background-color: #252525;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
@@ -978,22 +986,52 @@ class SearchOverlayWidget(QFrame):
                 background-color: #333333;
                 border-radius: 4px;
             }
+            QPushButton#BtnOpenSearch {
+                border-radius: 6px;
+                background-color: transparent;
+            }
+            QPushButton#BtnOpenSearch:hover {
+                background-color: #333333;
+            }
         """)
         
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(15)
-        shadow.setXOffset(0)
-        shadow.setYOffset(4)
-        shadow.setColor(QColor(0, 0, 0, 150))
-        self.setGraphicsEffect(shadow)
+        self.shadow = QGraphicsDropShadowEffect(self)
+        self.shadow.setBlurRadius(15)
+        self.shadow.setXOffset(0)
+        self.shadow.setYOffset(4)
+        self.shadow.setColor(QColor(0, 0, 0, 150))
+        self.shadow.setEnabled(True)
+        self.setGraphicsEffect(self.shadow)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _icon_path = os.path.join(_src_dir, "layout", "search.png")
+        
+        self.btn_open_search = QPushButton()
+        self.btn_open_search.setObjectName("BtnOpenSearch")
+        self.btn_open_search.setFixedSize(36, 36)
+        
+        pix = QPixmap(_icon_path)
+        if not pix.isNull():
+            self.btn_open_search.setIcon(QIcon(pix))
+            self.btn_open_search.setIconSize(QSize(18, 18))
+        else:
+            self.btn_open_search.setText("🔍")
+            
+        self.btn_open_search.setToolTip(self.main_window.txt("search_placeholder"))
+        self.btn_open_search.clicked.connect(self.toggle_search)
+        
+        self.search_container = QFrame()
+        self.search_container.setObjectName("SearchContainer")
+        search_layout = QHBoxLayout(self.search_container)
+        search_layout.setContentsMargins(8, 6, 8, 6)
+        search_layout.setSpacing(4)
         
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.main_window.txt("search_placeholder"))
-        self.search_input.setMinimumWidth(180)
         
         self.counter_label = QLabel(self.main_window.txt("search_results_counter_empty"))
         
@@ -1009,11 +1047,16 @@ class SearchOverlayWidget(QFrame):
         self.btn_close.setToolTip(self.main_window.txt("search_tooltip_close"))
         self.btn_close.setFixedSize(24, 24)
         
-        layout.addWidget(self.search_input)
-        layout.addWidget(self.counter_label)
-        layout.addWidget(self.btn_prev)
-        layout.addWidget(self.btn_next)
-        layout.addWidget(self.btn_close)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.counter_label)
+        search_layout.addWidget(self.btn_prev)
+        search_layout.addWidget(self.btn_next)
+        search_layout.addWidget(self.btn_close)
+        
+        layout.addWidget(self.btn_open_search)
+        layout.addWidget(self.search_container)
+        
+        self.search_container.hide()
         
         self.search_timer = QTimer(self)
         self.search_timer.setSingleShot(True)
@@ -1029,10 +1072,13 @@ class SearchOverlayWidget(QFrame):
         
         self.matches = []
         self.current_index = -1
-        self.hide()
+        self._anim = None
         
         if parent_widget:
             parent_widget.installEventFilter(self)
+            
+        self.show()
+        QTimer.singleShot(0, self._reposition)
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
@@ -1171,8 +1217,14 @@ class SearchOverlayWidget(QFrame):
         self._apply_active_highlight()
         self._update_counter()
 
+    def toggle_search(self):
+        if self.property("expanded"):
+            self.close_search()
+        else:
+            self.open_search()
+
     def close_search(self):
-        self.hide()
+        if not self.property("expanded"): return
         self.search_input.clear()
         
         canvas = getattr(self.main_window, 'text_canvas', None)
@@ -1181,20 +1233,74 @@ class SearchOverlayWidget(QFrame):
                 w.pop('_search_match', None)
                 w.pop('_search_active', None)
             canvas.update()
+            
+        self.setProperty("expanded", False)
+        
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
+        self._anim = QPropertyAnimation(self, b"geometry")
+        self._anim.setDuration(250)
+        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+        start_geom = self.geometry()
+        self._anim.setStartValue(start_geom)
+        
+        parent_w = self.parentWidget().width()
+        target_w = 36
+        target_x = parent_w - target_w - 20
+        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
+        
+        def on_finished():
+            self.search_container.hide()
+            self.btn_open_search.show()
+            self._reposition()
+            
+        self._anim.finished.connect(on_finished)
+        self._anim.start()
 
     def open_search(self):
+        if self.property("expanded"):
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+            return
+            
         self.show()
         self.raise_()
-        self.search_input.setFocus()
-        self.search_input.selectAll()
-        self._reposition()
+            
+        self.btn_open_search.hide()
+        self.search_container.show()
         
+        self.setProperty("expanded", True)
+        
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
+        self._anim = QPropertyAnimation(self, b"geometry")
+        self._anim.setDuration(250)
+        self._anim.setEasingCurve(QEasingCurve.OutBack)
+        
+        start_geom = self.geometry()
+        self._anim.setStartValue(start_geom)
+        
+        parent_w = self.parentWidget().width()
+        target_w = 300
+        target_x = parent_w - target_w - 20
+        
+        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
+        
+        def on_finished():
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+            
+        self._anim.finished.connect(on_finished)
+        self._anim.start()
+
     def _reposition(self):
         try:
             if not self.parentWidget(): return
             parent_w = self.parentWidget().width()
-            self.resize(self.sizeHint())
-            self.move(parent_w - self.width() - 20, 20)
+            if self.property("expanded"):
+                target_w = self.sizeHint().width()
+                if target_w < 300: target_w = 300
+                self.setGeometry(parent_w - target_w - 20, 20, target_w, 36)
+            else:
+                self.setGeometry(parent_w - 36 - 20, 20, 36, 36)
         except Exception as e:
             import osdoc
             osdoc.log_error(f"Search positioning error: {str(e)}")
@@ -8891,7 +8997,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 pass
 
         # search — open search overlay
-        _make(shortcuts.get('search', 'Ctrl+F'), self.search_overlay.open_search)
+        _make(shortcuts.get('search', 'Ctrl+F'), self.search_overlay.toggle_search)
 
         # open_settings — open settings dialog (default: Escape)
         # Note: Escape also closes search; handled by priority in event chain
