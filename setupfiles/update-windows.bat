@@ -23,12 +23,19 @@ for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
 
 set "INSTALL_DIR="
 if exist "!WRAPPER_FILE!" (
-    :: Use PowerShell to parse path — handles both r"""C:\path""" and r"C:\path"
-    for /f "delims=" %%P in ('powershell -NoProfile -Command ^
-        "$l = (Get-Content '!WRAPPER_FILE!' -ErrorAction SilentlyContinue) | Where-Object { $_ -match 'INSTALL_DIR' } | Select-Object -First 1; ^
-         if ($l -match 'INSTALL_DIR\s*=\s*r?\""{1,3}([^\"]+)\""{1,3}') { $matches[1].Trim() }" 2^>nul') do (
+    REM Write detection PS1 to avoid CMD mangling regex chars ({,} ^ in for/f inline)
+    set "DETECT_PS=%TEMP%\_bw_detect_path.ps1"
+    (
+    echo $f = '!WRAPPER_FILE!'
+    echo if ^(Test-Path $f^) {
+    echo     $line = Get-Content $f -ErrorAction SilentlyContinue ^| Where-Object { $_ -match 'INSTALL_DIR' } ^| Select-Object -First 1
+    echo     if ^($line -match 'INSTALL_DIR\s*=\s*r?"{1,3}([^"]+)"{1,3}'^) { $matches[1].Trim^(^) }
+    echo }
+    ) > "!DETECT_PS!"
+    for /f "delims=" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -File "!DETECT_PS!" 2^>nul') do (
         if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
     )
+    del "!DETECT_PS!" 2>nul
 )
 
 :: Validate detected path
@@ -62,7 +69,7 @@ if not defined PYTHON_CMD (
             goto :FOUND_PY
         )
     )
-    :: Last resort: winget install Python 3.11
+    REM Last resort: winget install Python 3.11
     echo [WARN] Python not found. Attempting to install via winget...
     winget install --id Python.Python.3.11 -e --silent --accept-source-agreements --accept-package-agreements
     set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
@@ -219,9 +226,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "!CLEANUP_PS!" 2>nul
 :: ── 7. Upgrade pip packages ─────────────────────────────────────────────────
 if exist "!VENV_PYTHON!" (
     echo [INFO] Upgrading pip packages...
-    :: First upgrade pip itself (pip.exe can't upgrade itself, python -m pip can)
+    REM First upgrade pip itself via python -m pip (pip.exe cannot self-update)
     "!VENV_PYTHON!" -m pip install --upgrade pip 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
-    :: Then upgrade app packages
+    REM Then upgrade app packages
     "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
 ) else if exist "!VENV_PIP!" (
     echo [INFO] Upgrading pip packages (pip fallback)...

@@ -3175,8 +3175,9 @@ class GlobalAppFilter(QObject):
 
     def eventFilter(self, obj, event):
         try:
+            etype = event.type()
             # 1. Global Focus Management: clear focus from QLineEdit on click anywhere outside
-            if event.type() == QEvent.MouseButtonPress:
+            if etype == QEvent.Type.MouseButtonPress:
                 focused = QApplication.focusWidget()
                 if isinstance(focused, QLineEdit):
                     global_pos = QCursor.pos()
@@ -3185,12 +3186,12 @@ class GlobalAppFilter(QObject):
                         focused.clearFocus()
 
             # 2. Enter/Return removes focus from QLineEdit
-            if event.type() == QEvent.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
+            if etype == QEvent.Type.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     obj.clearFocus()
 
             # 3. Tooltip handling
-            if event.type() == QEvent.ToolTip:
+            if etype == QEvent.Type.ToolTip:
                 if isinstance(obj, QWidget):
                     text = obj.toolTip()
                     if text:
@@ -3199,7 +3200,8 @@ class GlobalAppFilter(QObject):
                         self.active_widget = obj
                         self.tooltip_timer.start(500)
                         return True  # Stop native tooltip
-            elif event.type() in (QEvent.Leave, QEvent.Hide, QEvent.MouseButtonPress, QEvent.WindowDeactivate):
+            elif etype in (QEvent.Type.Leave, QEvent.Type.Hide,
+                           QEvent.Type.MouseButtonPress, QEvent.Type.WindowDeactivate):
                 if obj == self.active_widget or self.active_widget is None:
                     self.tooltip_timer.stop()
                     if hasattr(self, 'shared_tooltip'):
@@ -3208,6 +3210,7 @@ class GlobalAppFilter(QObject):
         except RuntimeError:
             pass
         return False
+
 
 
     def _do_show(self):
