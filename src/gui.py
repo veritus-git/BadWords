@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
     QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property
+    QPropertyAnimation, Property, QThread
 )
 from PySide6.QtGui import (
     QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
@@ -4080,7 +4080,417 @@ class CustomMsgBox(FramelessWindowMixin, QDialog):
         _center_on_screen(self, self.width(), self.height())
 
 
+# ---------------------------------------------------------------------------
+# AUTO-UPDATE: background thread + notification dialog
+# ---------------------------------------------------------------------------
+
+class UpdateCheckThread(QThread):
+    """
+    Stdlib-only background worker that checks GitHub (with GitLab fallback)
+    for a newer release of BadWords.
+
+    Signals
+    -------
+    update_available(str, str, str)
+        Emitted when a newer version is detected.
+        Args: (latest_version, github_release_url, gitlab_release_url)
+    """
+    update_available = Signal(str, str, str)
+
+    _GH_API  = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
+    _GL_API  = "https://gitlab.com/api/v4/projects/veritus-git%2FBadWords/releases/permalink/latest"
+    _GH_PAGE = "https://github.com/veritus-git/BadWords/releases/latest"
+    _GL_PAGE = "https://gitlab.com/veritus-git/BadWords/-/releases"
+
+    def __init__(self, current_version: str, parent=None):
+        super().__init__(parent)
+        self._current = current_version
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_version(tag: str):
+        """Convert '3.0', 'v2.0.3', '2.0.3' → tuple of ints for comparison."""
+        tag = tag.strip().lstrip('v').lstrip('V')
+        try:
+            return tuple(int(x) for x in tag.split('.'))
+        except ValueError:
+            return (0,)
+
+    @staticmethod
+    def _fetch_json(url: str, timeout: int = 5):
+        import urllib.request, json, ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent": "BadWords-UpdateCheck/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+
+    # ------------------------------------------------------------------
+    # main
+    # ------------------------------------------------------------------
+
+    def run(self):
+        from osdoc import log_info, log_error
+        current_tuple = self._parse_version(self._current)
+        latest_tag = None
+
+        # 1. Try GitHub
+        try:
+            data = self._fetch_json(self._GH_API)
+            latest_tag = data.get("tag_name", "").strip()
+            log_info(f"[UpdateCheck] GitHub latest tag: {latest_tag!r}")
+        except Exception as e:
+            log_error(f"[UpdateCheck] GitHub API failed: {e}")
+
+        # 2. Fallback: GitLab (strips leading 'v' for comparison)
+        if not latest_tag:
+            try:
+                data = self._fetch_json(self._GL_API)
+                latest_tag = data.get("tag_name", "").strip()
+                log_info(f"[UpdateCheck] GitLab latest tag: {latest_tag!r}")
+            except Exception as e:
+                log_error(f"[UpdateCheck] GitLab API failed: {e}")
+
+        if not latest_tag:
+            log_error("[UpdateCheck] Could not retrieve latest version from any source.")
+            return
+
+        latest_tuple = self._parse_version(latest_tag)
+        latest_display = latest_tag.lstrip('vV')   # show without leading v
+
+        if latest_tuple > current_tuple:
+            log_info(f"[UpdateCheck] New version available: {latest_display} (current: {self._current})")
+            self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE)
+        else:
+            log_info(f"[UpdateCheck] Already up-to-date ({self._current}).")
+
+
+class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
+    """
+    Custom frameless update-notification dialog.
+
+    Windows  → 'Download from GitHub' button (opens browser).
+    macOS    → 'Update Now' runs the macOS setup script silently in background.
+    Linux    → 'Update Now' runs the Linux setup script silently in background.
+
+    Layout: clean version badge (current → latest), no terminal command shown.
+    """
+
+    # URLs for the dedicated non-interactive update scripts
+    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-linux.sh'
+    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-mac.sh'
+    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-windows.bat'
+    # GitLab fallbacks
+    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-linux.sh'
+    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-mac.sh'
+    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-windows.bat'
+
+    # Class-level signal so Qt registers it properly
+    _update_done = Signal(bool, str)   # (success, error_message)
+
+    def __init__(self, parent, lang: str, current_ver: str, latest_ver: str,
+                 gh_url: str, gl_url: str, is_win: bool, is_mac: bool,
+                 install_dir: str):
+        super().__init__(parent)
+        self._lang    = lang
+        self._engine  = getattr(parent, 'engine', None)
+        self._is_mac  = is_mac
+        self._is_win  = is_win
+        self._gh_url  = gh_url
+
+        # Wire update result back to GUI thread
+        self._update_done.connect(self._on_update_done)
+
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{
+                background-color: {config.BG_COLOR};
+                border: 1px solid #111;
+                border-radius: 8px;
+            }}
+            QLabel {{ color: {config.FG_COLOR}; background: transparent; }}
+            QLabel#lbl_title  {{ font-size: 15pt; font-weight: bold; }}
+            QLabel#lbl_sub    {{ font-size: 10pt; color: #999; }}
+            QLabel#lbl_status {{ font-size: 10pt; color: #888; font-style: italic; }}
+            #ver_frame {{
+                background-color: #101010;
+                border: 1px solid #1e1e1e;
+                border-radius: 8px;
+            }}
+            QPushButton {{
+                background-color: {config.BTN_GHOST_BG};
+                color: {config.BTN_FG};
+                padding: 7px 20px;
+                border-radius: 5px;
+                min-width: 90px;
+                font-weight: bold;
+                font-size: 10pt;
+            }}
+            QPushButton:hover    {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton:disabled {{ color: #444; background-color: #181818; }}
+            QPushButton#btn_primary           {{ background-color: {config.BTN_BG}; }}
+            QPushButton#btn_primary:hover     {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_primary:disabled  {{ background-color: #1a2e1a; color: #3a5a3a; }}
+        """)
+
+        # ── Outer layout with drop shadow ──────────────────────────────────
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 14, 14, 14)
+
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(32)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        outer.addWidget(self.inner_frame)
+
+        # ── Inner structure ────────────────────────────────────────────────
+        root = QVBoxLayout(self.inner_frame)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._tb = CustomTitleBar(self, lang, parent=self.inner_frame)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        root.addWidget(self._tb)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(28, 20, 28, 24)
+        body.setSpacing(12)
+        root.addLayout(body)
+
+        # ── Headline ───────────────────────────────────────────────────────
+        lbl_title = QLabel(_txt(lang, 'update_notify_title'))
+        lbl_title.setObjectName("lbl_title")
+        body.addWidget(lbl_title)
+
+        lbl_sub = QLabel(_txt(lang, 'update_notify_sub'))
+        lbl_sub.setObjectName("lbl_sub")
+        body.addWidget(lbl_sub)
+
+        body.addSpacing(6)
+
+        # ── Version comparison card ────────────────────────────────────────
+        ver_frame = QFrame()
+        ver_frame.setObjectName("ver_frame")
+        ver_layout = QHBoxLayout(ver_frame)
+        ver_layout.setContentsMargins(24, 16, 24, 16)
+        ver_layout.setSpacing(0)
+
+        def _ver_col(label_txt, ver_txt, ver_color):
+            col = QVBoxLayout()
+            col.setSpacing(3)
+            lbl = QLabel(label_txt)
+            lbl.setStyleSheet("color: #555; font-size: 9pt; letter-spacing: 1px;")
+            val = QLabel(ver_txt)
+            val.setStyleSheet(f"color: {ver_color}; font-size: 20pt; font-weight: bold;")
+            col.addWidget(lbl)
+            col.addWidget(val)
+            return col
+
+        body.addWidget(ver_frame)
+        ver_layout.addLayout(_ver_col(
+            _txt(lang, 'update_notify_lbl_current'), current_ver, "#555"
+        ))
+
+        lbl_arrow = QLabel("→")
+        lbl_arrow.setStyleSheet("color: #333; font-size: 24pt; padding: 0 24px 0 20px;")
+        lbl_arrow.setAlignment(Qt.AlignCenter)
+        ver_layout.addWidget(lbl_arrow)
+
+        ver_layout.addLayout(_ver_col(
+            _txt(lang, 'update_notify_lbl_latest'), latest_ver, "#39ff7a"
+        ))
+        ver_layout.addStretch()
+
+        # ── Status label (shown during / after update) ─────────────────────
+        self._lbl_status = QLabel("")
+        self._lbl_status.setObjectName("lbl_status")
+        self._lbl_status.setWordWrap(True)
+        self._lbl_status.hide()
+        body.addWidget(self._lbl_status)
+
+        body.addSpacing(4)
+
+        # ── Button row ─────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        self._btn_dismiss = QPushButton(_txt(lang, 'update_notify_btn_dismiss'))
+        self._btn_dismiss.setCursor(Qt.PointingHandCursor)
+        self._btn_dismiss.clicked.connect(self._on_dismiss)
+        btn_row.addWidget(self._btn_dismiss)
+
+        btn_row.addSpacing(8)
+
+        self._btn_primary = QPushButton(_txt(lang, 'update_notify_btn_update'))
+        self._btn_primary.setObjectName("btn_primary")
+        self._btn_primary.setCursor(Qt.PointingHandCursor)
+        self._btn_primary.clicked.connect(self._on_update_now)
+
+        btn_row.addWidget(self._btn_primary)
+        body.addLayout(btn_row)
+
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height())
+
+    # ------------------------------------------------------------------
+    # Update logic
+    # ------------------------------------------------------------------
+
+    def _on_update_now(self):
+        """
+        Download the dedicated non-interactive update script from the repo and
+        run it with bash in a daemon thread.  The script (update-linux.sh /
+        update-mac.sh) handles GitHub→GitLab fallback, file sync, and pip
+        upgrades entirely on its own — no interactive prompts.
+        """
+        import threading, subprocess, tempfile, os
+
+        self._btn_primary.setEnabled(False)
+        self._btn_primary.setText(_txt(self._lang, 'update_notify_updating'))
+        self._btn_dismiss.setEnabled(False)
+        self._lbl_status.setText(_txt(self._lang, 'update_notify_wait'))
+        self._lbl_status.setStyleSheet("color: #888; font-style: italic; font-size: 10pt;")
+        self._lbl_status.show()
+        self.adjustSize()
+
+        is_mac = self._is_mac
+        is_win = self._is_win
+        if is_win:
+            url_primary  = self._UPDATE_SCRIPT_WIN
+            url_fallback = self._UPDATE_SCRIPT_WIN_GL
+        elif is_mac:
+            url_primary  = self._UPDATE_SCRIPT_MAC
+            url_fallback = self._UPDATE_SCRIPT_MAC_GL
+        else:
+            url_primary  = self._UPDATE_SCRIPT_LINUX
+            url_fallback = self._UPDATE_SCRIPT_LINUX_GL
+
+        def _worker():
+            tmp_script = None
+            try:
+                import urllib.request, ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode    = ssl.CERT_NONE
+
+                # Try primary (GitHub raw), then GitLab fallback
+                script_content = None
+                for url in (url_primary, url_fallback):
+                    try:
+                        with urllib.request.urlopen(url, timeout=20, context=ctx) as resp:
+                            script_content = resp.read()
+                        break
+                    except Exception:
+                        continue
+
+                if not script_content:
+                    self._update_done.emit(False, "Could not download update script from GitHub or GitLab.")
+                    return
+
+                # Write to a temp file and execute
+                suffix = '.bat' if is_win else '.sh'
+                fd, tmp_script = tempfile.mkstemp(suffix=suffix, prefix='bw_update_')
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(script_content)
+
+                if is_win:
+                    result = subprocess.run(
+                        ['cmd.exe', '/c', tmp_script],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        timeout=600,
+                    )
+                else:
+                    os.chmod(tmp_script, 0o755)
+                    result = subprocess.run(
+                        ['/bin/bash', tmp_script],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        timeout=600,
+                    )
+
+                # Log full output for diagnostics
+                from osdoc import log_info, log_error
+                for line in result.stdout.splitlines():
+                    log_info(f'[Updater] {line}')
+
+                if result.returncode == 0:
+                    self._update_done.emit(True, "")
+                else:
+                    self._update_done.emit(False, f"Exit code {result.returncode}")
+
+            except subprocess.TimeoutExpired:
+                self._update_done.emit(False, "Timeout (>10 min) — update may still be running.")
+            except Exception as e:
+                self._update_done.emit(False, str(e))
+            finally:
+                if tmp_script and os.path.exists(tmp_script):
+                    try: os.remove(tmp_script)
+                    except Exception: pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_update_done(self, success: bool, error_msg: str):
+        """Called on the main thread when the background update finishes."""
+        from osdoc import log_info, log_error
+        if success:
+            log_info("[UpdateCheck] Auto-update completed successfully.")
+            self._lbl_status.setText(_txt(self._lang, 'update_notify_success'))
+            self._lbl_status.setStyleSheet("color: #39ff7a; font-size: 10pt; font-style: normal;")
+            self._btn_primary.hide()
+            self._btn_dismiss.setText(_txt(self._lang, 'btn_close'))
+            self._btn_dismiss.setEnabled(True)
+        else:
+            log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
+            self._lbl_status.setText(_txt(self._lang, 'update_notify_failed'))
+            self._lbl_status.setStyleSheet("color: #ed4245; font-size: 10pt; font-style: normal;")
+            self._btn_primary.setText(_txt(self._lang, 'update_notify_btn_update'))
+            self._btn_primary.setEnabled(True)
+            self._btn_dismiss.setEnabled(True)
+        self.adjustSize()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _on_dismiss(self):
+        """Disable future auto-checks and close."""
+        if self._engine:
+            try:
+                prefs = self._engine.load_preferences() or {}
+                prefs['auto_check_updates'] = False
+                self._engine.save_preferences(prefs)
+            except Exception:
+                pass
+        self.reject()
+
+    @staticmethod
+    def _open_url(url: str):
+        import webbrowser
+        webbrowser.open(url)
+
+
+
 class MarkerDialog(FramelessWindowMixin, QDialog):
+
     """
     Custom frameless dialog for adding or editing a custom marker.
     Usage:
@@ -4875,8 +5285,38 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         io_row.addStretch()
         l_gen.addLayout(io_row)
 
+        # ── Auto-update toggle ─────────────────────────────────────────────
+        sep_upd = QFrame()
+        sep_upd.setFrameShape(QFrame.Shape.HLine)
+        sep_upd.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_gen.addSpacing(4)
+        l_gen.addWidget(sep_upd)
+        l_gen.addSpacing(10)
+
+        upd_row = QHBoxLayout()
+        upd_row.setContentsMargins(0, 0, 0, 16)
+        upd_row.setSpacing(10)
+
+        self.tgl_auto_check_updates = ToggleSwitch()
+        self.tgl_auto_check_updates.setChecked(
+            bool(prefs.get('auto_check_updates', True)), animated=False
+        )
+        self.tgl_auto_check_updates.setToolTip(self.txt("tt_auto_check_updates"))
+
+        lbl_upd = QLabel(self.txt("lbl_auto_check_updates"))
+        lbl_upd.setStyleSheet(
+            f"color: {config.FG_COLOR}; font-size: 11pt; background: transparent;"
+        )
+        lbl_upd.setToolTip(self.txt("tt_auto_check_updates"))
+
+        upd_row.addWidget(self.tgl_auto_check_updates)
+        upd_row.addWidget(lbl_upd)
+        upd_row.addStretch()
+        l_gen.addLayout(upd_row)
+
         l_gen.addStretch()
         _add_page_to_stack(page_gen)
+
 
         # ─────────────────────────────────────────────────────────────────
         # PAGE 1 — SHORTCUTS
@@ -6062,6 +6502,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 12), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
             'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
+            'auto_check_updates':   self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
         }
         
         if not is_basic:
@@ -6158,6 +6599,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 
         self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
         self._safe_set('tgl_timestamp_precise', state.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
+        self._safe_set('tgl_auto_check_updates', state.get('auto_check_updates', True), 'setChecked')
         
         if not is_basic:
             self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
@@ -6308,6 +6750,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 'algo_anchor_depth': f"{self.txt('tab_algorithms')}: {self.txt('lbl_algo_anchor')}",
                 'telemetry_opt_in': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_opt_in')}",
                 'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}",
+                'auto_check_updates': f"{self.txt('tab_general')}: {self.txt('lbl_auto_check_updates')}",
                 'custom_markers': self.txt('tab_custom_markers')
             }
             
@@ -6473,6 +6916,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # --- Telemetry check fires 500 ms after first paint ---
         QTimer.singleShot(500, self.check_telemetry)
+
+        # --- Auto-update check fires 1500 ms after first paint (after telemetry) ---
+        QTimer.singleShot(1500, self._start_update_check)
 
         # --- Populate timeline/track dropdowns synchronously since Resolve API is fast ---
         self._populate_timeline_track_combos()
@@ -9103,6 +9549,42 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             popup.exec()  # ApplicationModal — blocks until user responds
         elif opt_in is True:
             self.engine.send_telemetry_ping("app_started")
+
+    def _start_update_check(self):
+        """Start background update-check thread if the user has it enabled."""
+        try:
+            prefs = self.engine.load_preferences() or {}
+            if not prefs.get('auto_check_updates', True):
+                return
+            self._update_thread = UpdateCheckThread(config.VERSION, parent=self)
+            self._update_thread.update_available.connect(self._show_update_dialog)
+            self._update_thread.start()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"[UpdateCheck] Failed to start check thread: {e}")
+
+    def _show_update_dialog(self, latest_ver: str, gh_url: str, gl_url: str):
+        """Show the UpdateNotifyDialog on the main (GUI) thread."""
+        try:
+            is_win = self.engine.os_doc.is_win
+            is_mac = getattr(self.engine.os_doc, 'is_mac', False)
+            install_dir = self.engine.os_doc.install_dir
+            dlg = UpdateNotifyDialog(
+                parent=self,
+                lang=self.lang,
+                current_ver=config.VERSION,
+                latest_ver=latest_ver,
+                gh_url=gh_url,
+                gl_url=gl_url,
+                is_win=is_win,
+                is_mac=is_mac,
+                install_dir=install_dir,
+            )
+            self.engine.os_doc.force_dark_titlebar(int(dlg.winId()))
+            dlg.exec()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"[UpdateCheck] Failed to show update dialog: {e}")
 
     # ------------------------------------------------------------------
     # Translation helper

@@ -1,42 +1,53 @@
 @echo off
+:: --- BADWORDS WINDOWS ENVIRONMENT CONFIGURATOR v2.0 ---
+:: Called by the Inno Setup installer after files are copied.
+:: Args: %1=INSTALL_DIR  %2=GPU_MODE(0/1)  %3=FFMPEG_ZIP  %4=WIPE_MODE(0/1/2/3)
+:: WIPE_MODE: 0=Update(fast)  1=Repair  2=Move(re-link)  3=FullWipe(fresh)
 setlocal EnableDelayedExpansion
 
-:: --- CLEANUP ENVIRONMENT ---
-:: Remove variables that might interfere with Python (old installations)
 set "PYTHONHOME="
 set "PYTHONPATH="
 
-:: --- ARGUMENTS ---
 set "INSTALL_DIR=%~1"
 set "GPU_MODE=%~2"
 set "FFMPEG_ZIP=%~3"
 set "WIPE_MODE=%~4"
 set "VENV_DIR=%INSTALL_DIR%\venv"
 set "BIN_DIR=%INSTALL_DIR%\bin"
+set "MODELS_DIR=%INSTALL_DIR%\models"
 
 if "%INSTALL_DIR%"=="" goto :ERROR_ARGS
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
+if not exist "%MODELS_DIR%"  mkdir "%MODELS_DIR%"
+if not exist "%BIN_DIR%"     mkdir "%BIN_DIR%"
 
 cd /d "%INSTALL_DIR%"
 
 echo ==================================================
 echo      BadWords - Environment Configuration
 echo ==================================================
+echo [INFO] Install Dir : %INSTALL_DIR%
+echo [INFO] GPU Mode    : %GPU_MODE%
+echo [INFO] Wipe Mode   : %WIPE_MODE%
+
+:: ── Whisper cache cleanup ─────────────────────────────────────────────────────
+if exist "%USERPROFILE%\.cache\whisper" (
+    echo [INFO] Removing Whisper model cache...
+    rmdir /s /q "%USERPROFILE%\.cache\whisper" 2>nul
+)
 
 :: ==========================================
-:: 1. SEARCH FOR PYTHON (Prioritize PATH & AppData)
+:: 1. FIND PYTHON
 :: ==========================================
-echo [INFO] Searching for Python (3.10 - 3.12)...
+echo [INFO] Searching for Python 3.10 - 3.12...
 set "PYTHON_CMD="
 
-:: Strategy A: System PATH (Highest priority, as installer adds Python here)
 where python >nul 2>&1
 if !errorlevel! equ 0 (
     for /f "tokens=*" %%i in ('where python') do (
         set "CANDIDATE=%%i"
         echo !CANDIDATE! | findstr /i "WindowsApps" >nul
         if !errorlevel! neq 0 (
-            :: Found something in PATH, checking version
             call :CHECK_VERSION "!CANDIDATE!"
             if !IS_VALID! equ 1 (
                 set "PYTHON_CMD=!CANDIDATE!"
@@ -46,57 +57,44 @@ if !errorlevel! equ 0 (
     )
 )
 
-:: Strategy B: AppData (User Install) - Default for non-Admin installs
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" ( set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe" & goto :VERIFY_PYTHON )
 if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" ( set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe" & goto :VERIFY_PYTHON )
 if exist "%LOCALAPPDATA%\Programs\Python\Python310\python.exe" ( set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python310\python.exe" & goto :VERIFY_PYTHON )
-
-:: Strategy C: Program Files (Fallback)
 if exist "%ProgramFiles%\Python312\python.exe" ( set "PYTHON_CMD=%ProgramFiles%\Python312\python.exe" & goto :VERIFY_PYTHON )
 if exist "%ProgramFiles%\Python311\python.exe" ( set "PYTHON_CMD=%ProgramFiles%\Python311\python.exe" & goto :VERIFY_PYTHON )
 
-:: Strategy D: Launcher (Last resort)
 py -3.12 --version >nul 2>&1
 if !errorlevel! equ 0 ( set "PYTHON_CMD=py -3.12" & goto :FOUND_PYTHON )
+py -3.11 --version >nul 2>&1
+if !errorlevel! equ 0 ( set "PYTHON_CMD=py -3.11" & goto :FOUND_PYTHON )
 
 goto :PYTHON_NOT_FOUND
 
-:: --- SUBROUTINE: CHECK VERSION ---
 :CHECK_VERSION
 set "EXE=%~1"
 set "IS_VALID=0"
-for /f "tokens=2" %%v in ('"%EXE%" --version 2^>^&1') do set "VER=%%v"
+for /f "tokens=2" %%v in ('"%EXE%" --version 2^>&1') do set "VER=%%v"
 echo !VER! | findstr /b "3.10 3.11 3.12" >nul
-if !errorlevel! equ 0 (
-    echo [INFO] Found valid python in PATH: !VER!
-    set "IS_VALID=1"
-)
+if !errorlevel! equ 0 ( set "IS_VALID=1" )
 exit /b
 
 :VERIFY_PYTHON
 "!PYTHON_CMD!" --version >nul 2>&1
-if !errorlevel! neq 0 (
-    echo [WARN] Python at "!PYTHON_CMD!" is broken.
-    set "PYTHON_CMD="
-    goto :PYTHON_NOT_FOUND
-)
+if !errorlevel! neq 0 ( set "PYTHON_CMD=" & goto :PYTHON_NOT_FOUND )
 goto :FOUND_PYTHON
 
 :PYTHON_NOT_FOUND
-echo.
-echo [CRITICAL ERROR] Could not find Python 3.10-3.12.
-echo The installer should have installed it and added it to PATH.
+echo [CRITICAL] Could not find Python 3.10-3.12.
 pause
 exit /b 1
 
 :FOUND_PYTHON
-echo [INFO] Selected Interpreter: "!PYTHON_CMD!"
+echo [INFO] Selected: !PYTHON_CMD!
 
 :: ==========================================
 :: 2. CREATE VENV
 :: ==========================================
 if exist "%VENV_DIR%" (
-    echo [INFO] Venv exists. Checking integrity...
     if not exist "%VENV_DIR%\Scripts\python.exe" (
         echo [WARN] Venv corrupted. Recreating...
         rmdir /s /q "%VENV_DIR%"
@@ -107,14 +105,11 @@ if exist "%VENV_DIR%" (
 
 echo [INFO] Creating virtual environment...
 "!PYTHON_CMD!" -m venv "%VENV_DIR%"
-if !errorlevel! neq 0 (
-    echo [ERROR] Failed to create venv using "!PYTHON_CMD!"
-    pause
-    exit /b 1
-)
+if !errorlevel! neq 0 ( echo [ERROR] venv creation failed. & pause & exit /b 1 )
 
 :VENV_READY
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
+set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
 
 :: ==========================================
 :: 3. INSTALL DEPENDENCIES
@@ -122,156 +117,117 @@ set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 echo [INFO] Upgrading pip...
 "%VENV_PYTHON%" -m pip install --upgrade pip >nul 2>&1
 
-:: Flag logic based on Wipe Mode
-if "%WIPE_MODE%"=="0" (
-    echo [INFO] Standard Install/Update detected. Using fast upgrade...
-    set "PIP_FLAGS=--upgrade"
-) else (
-    echo [INFO] Repair/Reset Mode detected. Fresh environment expected...
-    set "PIP_FLAGS="
+:: Fast path for Update/Move: skip heavy AI downloads if already installed
+if "%WIPE_MODE%"=="0" goto :FAST_INSTALL
+if "%WIPE_MODE%"=="2" goto :FAST_INSTALL
+goto :FULL_INSTALL
+
+:FAST_INSTALL
+if exist "%VENV_DIR%\Lib\site-packages\torch" if exist "%VENV_DIR%\Lib\site-packages\faster_whisper" (
+    echo [INFO] AI libraries present. Quick upgrade only...
+    "%VENV_PIP%" install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied"
+    goto :SKIP_AI
 )
 
-:: --- SMART SKIP FOR AI LIBRARIES ---
-echo [INFO] Checking AI libraries...
-if "%WIPE_MODE%"=="0" (
-    if exist "%VENV_DIR%\Lib\site-packages\torch" if exist "%VENV_DIR%\Lib\site-packages\faster_whisper" (
-        echo [INFO] AI libraries already installed. Quick update detected.
-        echo [INFO] Skipping heavy downloads...
-        goto :SKIP_AI_INSTALL
-    )
-)
-
+:FULL_INSTALL
 echo [INFO] Installing AI libraries...
 if "%GPU_MODE%"=="1" (
-    echo [INFO] Hardware: NVIDIA GPU ^(CUDA + CPU Support^)
-    echo [INFO] Installing full PyTorch ^(Supports BOTH CUDA and CPU^)...
-    "%VENV_PYTHON%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 %PIP_FLAGS%
-    "%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf --extra-index-url https://download.pytorch.org/whl/cu121 %PIP_FLAGS%
-    goto :SKIP_AI_INSTALL
-)
-
-echo [INFO] Hardware: CPU ONLY
-echo [INFO] Downloading CPU-optimized PyTorch to save disk space...
-"%VENV_PYTHON%" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu %PIP_FLAGS%
-"%VENV_PYTHON%" -m pip install faster-whisper stable-ts pypdf --extra-index-url https://download.pytorch.org/whl/cpu %PIP_FLAGS%
-
-:SKIP_AI_INSTALL
-
-if !errorlevel! neq 0 (
-    echo [ERROR] Failed to install libraries.
-    pause
-    exit /b 1
-)
-
-:: --- PYSIDE6 SMART INSTALL ---
-echo.
-echo [INFO] Checking PySide6...
-"%VENV_DIR%\Scripts\python.exe" -c "import PySide6" >nul 2>&1
-if !errorlevel! equ 0 (
-    echo [INFO] PySide6 is already installed. Skipping...
+    echo [INFO] Mode: NVIDIA GPU (CUDA 12)
+    "%VENV_PIP%" install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+    "%VENV_PIP%" install faster-whisper stable-ts pypdf --extra-index-url https://download.pytorch.org/whl/cu121
 ) else (
-    echo [WARN] PySide6 not found. Downloading this large library may take a while...
-    "%VENV_PYTHON%" -m pip install PySide6 %PIP_FLAGS%
-    if !errorlevel! neq 0 (
-        echo [ERROR] PySide6 Install failed.
-        pause
-        exit /b 1
-    )
+    echo [INFO] Mode: CPU only
+    "%VENV_PIP%" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+    "%VENV_PIP%" install faster-whisper stable-ts pypdf
+)
+if !errorlevel! neq 0 ( echo [ERROR] AI library install failed. & pause & exit /b 1 )
+
+:SKIP_AI
+
+echo [INFO] Checking PySide6...
+"%VENV_PYTHON%" -c "import PySide6" >nul 2>&1
+if !errorlevel! neq 0 (
+    echo [WARN] PySide6 not found. Installing...
+    "%VENV_PIP%" install PySide6
+    if !errorlevel! neq 0 ( echo [ERROR] PySide6 install failed. & pause & exit /b 1 )
+) else (
+    echo [INFO] PySide6 already installed.
 )
 
 :: ==========================================
-:: 4. FFMPEG & FINALIZE
+:: 4. FFMPEG
 :: ==========================================
-
 if "%WIPE_MODE%"=="0" (
     if exist "%BIN_DIR%\ffmpeg.exe" (
-        echo [INFO] Portable FFmpeg found. Skipping extraction ^(Update mode^).
+        echo [INFO] FFmpeg present. Skipping (Update mode).
         goto :SKIP_FFMPEG
     )
 )
-
+if "%WIPE_MODE%"=="2" (
+    if exist "%BIN_DIR%\ffmpeg.exe" (
+        echo [INFO] FFmpeg present. Skipping (Move mode).
+        goto :SKIP_FFMPEG
+    )
+)
 if not exist "%FFMPEG_ZIP%" goto :SKIP_FFMPEG
 
 echo [INFO] Extracting FFmpeg...
-if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
-:: DEBUG FIX: Escaped double quotes protect apostrophes in usernames
-powershell -NoProfile -Command "Expand-Archive -Path \"!FFMPEG_ZIP!\" -DestinationPath \"!INSTALL_DIR!\ffmpeg_tmp\" -Force"
-echo [INFO] Installing binaries...
+powershell -NoProfile -Command "Expand-Archive -Path \"%FFMPEG_ZIP%\" -DestinationPath \"%INSTALL_DIR%\ffmpeg_tmp\" -Force"
 for /r "%INSTALL_DIR%\ffmpeg_tmp" %%F in (ffmpeg.exe, ffprobe.exe) do ( copy /y "%%F" "%BIN_DIR%\" >nul )
 rmdir /s /q "%INSTALL_DIR%\ffmpeg_tmp" 2>nul
 del /f /q "%FFMPEG_ZIP%" 2>nul
+echo [INFO] FFmpeg installed.
 
 :SKIP_FFMPEG
-if exist "libs" goto :LIBS_EXIST
-echo [INFO] Linking libraries...
-for /d %%D in ("%VENV_DIR%\Lib\site-packages") do set "SITE_PACKAGES=%%D"
-mklink /J "libs" "!SITE_PACKAGES!" >nul
-:LIBS_EXIST
 
 :: ==========================================
-:: 5. LINK WITH DAVINCI RESOLVE
+:: 5. LIBS JUNCTION
 :: ==========================================
-echo [INFO] Linking with DaVinci Resolve...
+if exist "%INSTALL_DIR%\libs" ( rmdir "%INSTALL_DIR%\libs" >nul 2>&1 )
+if exist "%VENV_DIR%\Lib\site-packages" (
+    mklink /J "%INSTALL_DIR%\libs" "%VENV_DIR%\Lib\site-packages" >nul
+    echo [INFO] libs junction created.
+)
 
-:: Determine default path
-set "RESOLVE_SCRIPT_DIR=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
+:: ==========================================
+:: 6. DAVINCI RESOLVE WRAPPER
+:: ==========================================
+echo [INFO] Configuring DaVinci Resolve wrapper...
+set "RESOLVE_DIR=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
 
-:: Check for Microsoft Store edition (overrides default path)
+:: Microsoft Store edition detection
 for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
     if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
-        set "RESOLVE_SCRIPT_DIR=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
+        set "RESOLVE_DIR=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility"
     )
 )
 
-:: Create subfolders if they do not exist (e.g., Utility)
-if not exist "!RESOLVE_SCRIPT_DIR!" (
-    mkdir "!RESOLVE_SCRIPT_DIR!"
-)
+if not exist "!RESOLVE_DIR!" mkdir "!RESOLVE_DIR!"
+set "WRAPPER_FILE=!RESOLVE_DIR!\BadWords.py"
 
-set "WRAPPER_FILE=!RESOLVE_SCRIPT_DIR!\BadWords.py"
+:: Generate wrapper using Python (avoids all batch escaping issues)
+"%VENV_PYTHON%" -c "
+import sys, os
+install = r\"\"\"%INSTALL_DIR%\"\"\"
+libs    = os.path.join(install, 'libs')
+venv_l  = os.path.join(install, 'venv', 'Lib', 'site-packages')
+main    = os.path.join(install, 'main.py')
+target  = r\"\"\"%WRAPPER_FILE%\"\"\"
 
-:: Generate clean Python code directly to file
-:: (Spaces before '>' removed to prevent trailing spaces in batch)
-echo import sys> "!WRAPPER_FILE!"
-echo import os>> "!WRAPPER_FILE!"
-echo import traceback>> "!WRAPPER_FILE!"
-:: DEBUG FIX: TRIPLE QUOTES PROTECT AGAINST APOSTROPHE ERRORS IN USERNAMES!
-echo INSTALL_DIR = r"""%INSTALL_DIR%""">> "!WRAPPER_FILE!"
-echo LIBS_DIR = os.path.join(INSTALL_DIR, 'libs')>> "!WRAPPER_FILE!"
-echo VENV_LIBS = os.path.join(INSTALL_DIR, 'venv', 'Lib', 'site-packages')>> "!WRAPPER_FILE!"
-echo MAIN_SCRIPT = os.path.join(INSTALL_DIR, 'main.py')>> "!WRAPPER_FILE!"
-echo if os.path.exists(VENV_LIBS) and VENV_LIBS not in sys.path:>> "!WRAPPER_FILE!"
-echo     sys.path.insert(0, VENV_LIBS)>> "!WRAPPER_FILE!"
-echo if os.path.exists(LIBS_DIR) and LIBS_DIR not in sys.path:>> "!WRAPPER_FILE!"
-echo     sys.path.insert(0, LIBS_DIR)>> "!WRAPPER_FILE!"
-echo if INSTALL_DIR not in sys.path:>> "!WRAPPER_FILE!"
-echo     sys.path.append(INSTALL_DIR)>> "!WRAPPER_FILE!"
-echo if os.path.exists(MAIN_SCRIPT):>> "!WRAPPER_FILE!"
-echo     try:>> "!WRAPPER_FILE!"
-echo         with open(MAIN_SCRIPT, 'r', encoding='utf-8') as f:>> "!WRAPPER_FILE!"
-echo             code = f.read()>> "!WRAPPER_FILE!"
-echo         g = globals().copy()>> "!WRAPPER_FILE!"
-echo         g['__file__'] = MAIN_SCRIPT>> "!WRAPPER_FILE!"
-echo         exec(code, g)>> "!WRAPPER_FILE!"
-echo     except Exception as e:>> "!WRAPPER_FILE!"
-echo         print(f"Error executing BadWords: {e}")>> "!WRAPPER_FILE!"
-echo         traceback.print_exc()>> "!WRAPPER_FILE!"
-echo else:>> "!WRAPPER_FILE!"
-echo     print(f"CRITICAL: Script not found at {MAIN_SCRIPT}")>> "!WRAPPER_FILE!"
+content = f'''import sys\nimport os\nimport traceback\n\nINSTALL_DIR = r\\\"\\\"\\\"{install}\\\"\\\"\\\"\nLIBS_DIR    = os.path.join(INSTALL_DIR, \"libs\")\nVENV_LIBS   = os.path.join(INSTALL_DIR, \"venv\", \"Lib\", \"site-packages\")\nMAIN_SCRIPT = os.path.join(INSTALL_DIR, \"main.py\")\n\nif os.path.exists(VENV_LIBS) and VENV_LIBS not in sys.path:\n    sys.path.insert(0, VENV_LIBS)\nif os.path.exists(LIBS_DIR) and LIBS_DIR not in sys.path:\n    sys.path.insert(0, LIBS_DIR)\nif INSTALL_DIR not in sys.path:\n    sys.path.append(INSTALL_DIR)\n\nif os.path.exists(MAIN_SCRIPT):\n    try:\n        with open(MAIN_SCRIPT, \"r\", encoding=\"utf-8\") as f:\n            code = f.read()\n        g = globals().copy()\n        g[\"__file__\"] = MAIN_SCRIPT\n        exec(code, g)\n    except Exception as e:\n        print(f\"Error executing BadWords: {e}\")\n        import traceback; traceback.print_exc()\nelse:\n    print(f\"CRITICAL: Script not found at {MAIN_SCRIPT}\")\n'''
 
-if exist "!WRAPPER_FILE!" (
-    echo [SUCCESS] Wrapper successfully created at: !WRAPPER_FILE!
-) else (
-    echo [ERROR] Failed to create wrapper file at: !WRAPPER_FILE!
-)
+os.makedirs(os.path.dirname(target), exist_ok=True)
+with open(target, 'w', encoding='utf-8') as f:
+    f.write(content)
+print('[OK] Wrapper created:', target)
+"
 
 echo.
 echo [SUCCESS] Configuration complete!
-:: Auto-close timeout (will gracefully exit without waiting for a key press)
 timeout /t 1 >nul
 exit /b 0
 
 :ERROR_ARGS
-echo [ERROR] Invalid arguments.
+echo [ERROR] Missing INSTALL_DIR argument.
 pause
 exit /b 1

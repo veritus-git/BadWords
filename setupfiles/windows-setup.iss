@@ -55,6 +55,7 @@ english.ModeDesc=Choose how you want to install BadWords
 english.ModeSub=Choose installation type:
 english.ModeUpdate=Standard Install/Update - Install or update the app. Keep your settings and models.
 english.ModeClean=Repair Installation - Fix bugs by replacing core files. Keep your settings and models.
+english.ModeMove=Move Installation - Change the BadWords folder (moves all your data).
 english.ModeWipe=Complete Reset - Delete absolutely EVERYTHING and install from scratch.
 
 ; --- POLISH ---
@@ -71,6 +72,7 @@ polish.ModeDesc=Wybierz sposób instalacji BadWords
 polish.ModeSub=Wybierz typ instalacji:
 polish.ModeUpdate=Standardowa Instalacja/Aktualizacja - Instaluje lub aktualizuje aplikację. Zachowuje Twoje ustawienia i modele.
 polish.ModeClean=Naprawa Instalacji - Naprawia błędy poprzez zastąpienie plików rdzenia. Zachowuje Twoje ustawienia i modele.
+polish.ModeMove=Przenieś Instalację - Zmień folder BadWords (przenosi wszystkie dane).
 polish.ModeWipe=Pełny Reset - Usuwa absolutnie WSZYSTKO i instaluje aplikację od zera.
 
 ; --- GERMAN ---
@@ -87,6 +89,7 @@ german.ModeDesc=Wählen Sie die Installationsart für BadWords
 german.ModeSub=Wählen Sie den Installationstyp:
 german.ModeUpdate=Standard-Installation/Update - Installiert oder aktualisiert die App. Einstellungen und Modelle bleiben erhalten.
 german.ModeClean=Reparatur-Installation - Behebt Fehler durch Ersetzen der Kerndateien. Einstellungen und Modelle bleiben erhalten.
+german.ModeMove=Installation verschieben - BadWords-Ordner ändern (alle Daten werden verschoben).
 german.ModeWipe=Vollständiger Reset - Löscht absolut ALLES und installiert die App von Grund auf neu.
 
 ; --- SPANISH ---
@@ -103,6 +106,7 @@ spanish.ModeDesc=Elija cómo desea instalar BadWords
 spanish.ModeSub=Elija el tipo de instalación:
 spanish.ModeUpdate=Instalación/Actualización estándar - Instala o actualiza la aplicación. Mantenga sus ajustes y modelos.
 spanish.ModeClean=Reparar instalación - Solucione errores reemplazando archivos principales. Mantenga sus ajustes y modelos.
+spanish.ModeMove=Mover instalación - Cambiar la carpeta de BadWords (mueve todos sus datos).
 spanish.ModeWipe=Restablecimiento completo - Elimine absolutamente TODO e instale desde cero.
 
 ; --- FRENCH ---
@@ -119,6 +123,7 @@ french.ModeDesc=Choisissez comment vous souhaitez installer BadWords
 french.ModeSub=Choisissez le type d'installation:
 french.ModeUpdate=Installation/Mise à jour standard - Installe ou met à jour l'application. Conserve vos paramètres et modèles.
 french.ModeClean=Réparer l'installation - Correction des bogues en remplaçant les fichiers principaux. Conserve vos paramètres et modèles.
+french.ModeMove=Déplacer l'installation - Changer le dossier BadWords (déplace toutes vos données).
 french.ModeWipe=Réinitialisation complète - Supprimez absolument TOUT et installez à partir de zéro.
 
 ; --- ITALIAN ---
@@ -135,6 +140,7 @@ italian.ModeDesc=Scegli come desideri installare BadWords
 italian.ModeSub=Scegli il tipo di installazione:
 italian.ModeUpdate=Installazione/Aggiornamento standard - Installa o aggiorna l'app. Mantiene le impostazioni e i modelli.
 italian.ModeClean=Ripara installazione - Risolve i bug sostituendo i file core. Mantiene le impostazioni e i modelli.
+italian.ModeMove=Sposta installazione - Cambia la cartella BadWords (sposta tutti i dati).
 italian.ModeWipe=Reset completo - Elimina assolutamente TUTTO e installa da zero.
 
 ; --- PORTUGUESE ---
@@ -151,6 +157,7 @@ portuguese.ModeDesc=Escolha como deseja instalar o BadWords
 portuguese.ModeSub=Escolha o tipo de instalação:
 portuguese.ModeUpdate=Instalação/Atualização padrão - Instala ou atualiza o app. Mantém suas configurações e modelos.
 portuguese.ModeClean=Reparar Instalação - Corrige bugs substituindo arquivos principais. Mantém suas configurações e modelos.
+portuguese.ModeMove=Mover instalação - Altere a pasta do BadWords (move todos os seus dados).
 portuguese.ModeWipe=Reset Completo - Exclui absolutamente TUDO e instala do zero.
 
 ; --- UKRAINIAN ---
@@ -167,6 +174,7 @@ ukrainian.ModeDesc=Виберіть спосіб інсталяції BadWords
 ukrainian.ModeSub=Виберіть тип інсталяції:
 ukrainian.ModeUpdate=Стандартна інсталяція/оновлення - Встановлює або оновлює програму. Зберігає ваші налаштування та моделі.
 ukrainian.ModeClean=Відновлення інсталяції - Виправляє помилки, замінюючи основні файли. Зберігає ваші налаштування та моделі.
+ukrainian.ModeMove=Перемістити інсталяцію - Змінити папку BadWords (переміщує всі дані).
 ukrainian.ModeWipe=Повне скидання - Видаляє абсолютно ВСЕ і встановлює з нуля.
 
 ; --- DUTCH ---
@@ -183,6 +191,7 @@ dutch.ModeDesc=Kies hoe u BadWords wilt installeren
 dutch.ModeSub=Kies het installatietype:
 dutch.ModeUpdate=Standaard installatie/update - Installeert of updatet de app. Behoudt uw instellingen en modellen.
 dutch.ModeClean=Reparatie-installatie - Herstel fouten door kernbestanden te vervangen. Behoudt uw instellingen en modellen.
+dutch.ModeMove=Installatie verplaatsen - Wijzig de BadWords-map (verplaatst al uw gegevens).
 dutch.ModeWipe=Volledige reset - Verwijdert absoluut ALLES en installeert vanaf nul.
 
 ; --- RUSSIAN ---
@@ -199,6 +208,7 @@ russian.ModeDesc=Выберите способ установки BadWords
 russian.ModeSub=Выберите тип установки:
 russian.ModeUpdate=Стандартная установка/обновление - Устанавливает или обновляет приложение. Сохраняет настройки и модели.
 russian.ModeClean=Восстановление установки - Исправляет ошибки путем замены основных файлов. Сохраняет настройки и модели.
+russian.ModeMove=Переместить установку - Изменить папку BadWords (перемещает все данные).
 russian.ModeWipe=Полный сброс - Удаляет абсолютно ВСЕ и устанавливает с нуля.
 
 [Types]
@@ -213,6 +223,7 @@ Name: "nvidia"; Description: "{cm:CompNvidia}"; Types: gpu
 Source: "src\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "assets\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "setup_windows.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "setupfiles\update-windows.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 Name: "{app}\bin"
@@ -226,6 +237,7 @@ Filename: "{tmp}\python_setup.exe"; Parameters: "/quiet PrependPath=1 Include_te
 var
   InstallModePage: TInputOptionWizardPage;
   DownloadsQueued: Boolean;
+  OldInstallPath: String;
 
 function NeedsPythonInstallation(): Boolean;
 var
@@ -244,11 +256,17 @@ begin
   idpDownloadAfter(wpReady);
   DownloadsQueued := False;
 
+  OldInstallPath := '';
+  RegQueryStringValue(HKCU,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1',
+    'InstallLocation', OldInstallPath);
+
   InstallModePage := CreateInputOptionPage(wpSelectComponents,
     CustomMessage('ModeTitle'), CustomMessage('ModeDesc'),
     CustomMessage('ModeSub'), True, False);
   InstallModePage.Add(CustomMessage('ModeUpdate'));
   InstallModePage.Add(CustomMessage('ModeClean'));
+  InstallModePage.Add(CustomMessage('ModeMove'));
   InstallModePage.Add(CustomMessage('ModeWipe'));
   InstallModePage.Values[0] := True; // Default to Standard Update
 end;
@@ -264,7 +282,7 @@ begin
       idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
       
     // SMART FFmpeg: Download ONLY if Wipe is chosen or ffmpeg doesn't exist
-    if InstallModePage.Values[2] or not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
+    if InstallModePage.Values[3] or not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
       idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
       
     DownloadsQueued := True;
@@ -345,14 +363,49 @@ begin
     RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords_is1');
     RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords');
 
-    if InstallModePage.Values[2] then // Complete Reset
+    if InstallModePage.Values[3] then // Complete Reset
     begin
       // Backup user data before full wipe
       if FileExists(ExpandConstant('{app}\user.json')) then
         FileCopy(ExpandConstant('{app}\user.json'), ExpandConstant('{tmp}\bw_user.json'), False);
       if FileExists(ExpandConstant('{app}\settings.json')) then
         FileCopy(ExpandConstant('{app}\settings.json'), ExpandConstant('{tmp}\bw_settings.json'), False);
+      if FileExists(ExpandConstant('{app}\pref.json')) then
+        FileCopy(ExpandConstant('{app}\pref.json'), ExpandConstant('{tmp}\bw_pref.json'), False);
       SmartCleanup(False, False);
+    end
+    else if InstallModePage.Values[2] then // Move Installation
+    begin
+      if (OldInstallPath <> '') and
+         (CompareText(OldInstallPath, ExpandConstant('{app}')) <> 0) and
+         DirExists(OldInstallPath) then
+      begin
+        Log('[MOVE] Moving from ' + OldInstallPath + ' to ' + ExpandConstant('{app}'));
+        Exec(ExpandConstant('{sys}\robocopy.exe'),
+             '"' + OldInstallPath + '\venv" "' + ExpandConstant('{app}') + '\venv" /E /MOVE /NP /NJH /NJS',
+             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        Exec(ExpandConstant('{sys}\robocopy.exe'),
+             '"' + OldInstallPath + '\models" "' + ExpandConstant('{app}') + '\models" /E /MOVE /NP /NJH /NJS',
+             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        Exec(ExpandConstant('{sys}\robocopy.exe'),
+             '"' + OldInstallPath + '\bin" "' + ExpandConstant('{app}') + '\bin" /E /MOVE /NP /NJH /NJS',
+             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        Exec(ExpandConstant('{sys}\robocopy.exe'),
+             '"' + OldInstallPath + '\saves" "' + ExpandConstant('{app}') + '\saves" /E /MOVE /NP /NJH /NJS',
+             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        // Move user data files
+        if FileExists(OldInstallPath + '\pref.json') then
+          FileCopy(OldInstallPath + '\pref.json', ExpandConstant('{app}') + '\pref.json', False);
+        if FileExists(OldInstallPath + '\user.json') then
+          FileCopy(OldInstallPath + '\user.json', ExpandConstant('{app}') + '\user.json', False);
+        if FileExists(OldInstallPath + '\settings.json') then
+          FileCopy(OldInstallPath + '\settings.json', ExpandConstant('{app}') + '\settings.json', False);
+        if FileExists(OldInstallPath + '\badwords_debug.log') then
+          FileCopy(OldInstallPath + '\badwords_debug.log', ExpandConstant('{app}') + '\badwords_debug.log', False);
+        // Remove old directory
+        DelTree(OldInstallPath, True, True, True);
+      end;
+      SmartCleanup(False, True); // treat rest as Repair
     end
     else if InstallModePage.Values[1] then // Repair Installation
       SmartCleanup(False, True)
@@ -363,18 +416,21 @@ begin
   if CurStep = ssPostInstall then
   begin
     // Restore user data after Full Wipe + fresh install
-    if InstallModePage.Values[2] then
+    if InstallModePage.Values[3] then
     begin
       if FileExists(ExpandConstant('{tmp}\bw_user.json')) then
         FileCopy(ExpandConstant('{tmp}\bw_user.json'), ExpandConstant('{app}\user.json'), False);
       if FileExists(ExpandConstant('{tmp}\bw_settings.json')) then
         FileCopy(ExpandConstant('{tmp}\bw_settings.json'), ExpandConstant('{app}\settings.json'), False);
+      if FileExists(ExpandConstant('{tmp}\bw_pref.json')) then
+        FileCopy(ExpandConstant('{tmp}\bw_pref.json'), ExpandConstant('{app}\pref.json'), False);
     end;
 
     if WizardIsComponentSelected('nvidia') then GpuFlag := '1' else GpuFlag := '0';
     FFmpegZip := ExpandConstant('{tmp}\ffmpeg.zip');
 
-    if InstallModePage.Values[2] then WipeMode := '2'
+    if InstallModePage.Values[3] then WipeMode := '3'
+    else if InstallModePage.Values[2] then WipeMode := '2'
     else if InstallModePage.Values[1] then WipeMode := '1'
     else WipeMode := '0';
       
