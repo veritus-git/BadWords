@@ -947,7 +947,7 @@ class SearchOverlayWidget(QFrame):
     def __init__(self, parent_widget, main_window):
         super().__init__(parent_widget)
         self.main_window = main_window
-        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame, QGraphicsOpacityEffect
         from PySide6.QtCore import Qt, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect, QSize
         from PySide6.QtGui import QColor, QAction, QIcon, QPixmap
         import os
@@ -995,13 +995,9 @@ class SearchOverlayWidget(QFrame):
             }
         """)
         
-        self.shadow = QGraphicsDropShadowEffect(self)
-        self.shadow.setBlurRadius(15)
-        self.shadow.setXOffset(0)
-        self.shadow.setYOffset(4)
-        self.shadow.setColor(QColor(0, 0, 0, 150))
-        self.shadow.setEnabled(True)
-        self.setGraphicsEffect(self.shadow)
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1026,6 +1022,7 @@ class SearchOverlayWidget(QFrame):
         
         self.search_container = QFrame()
         self.search_container.setObjectName("SearchContainer")
+        self.search_container.setFixedSize(300, 36)
         search_layout = QHBoxLayout(self.search_container)
         search_layout.setContentsMargins(8, 6, 8, 6)
         search_layout.setSpacing(4)
@@ -1053,10 +1050,20 @@ class SearchOverlayWidget(QFrame):
         search_layout.addWidget(self.btn_next)
         search_layout.addWidget(self.btn_close)
         
-        layout.addWidget(self.btn_open_search)
-        layout.addWidget(self.search_container)
+        from PySide6.QtWidgets import QScrollArea
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidget(self.search_container)
+        self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.scroll_area.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
-        self.search_container.hide()
+        layout.addWidget(self.scroll_area)
+        layout.addWidget(self.btn_open_search)
+        
+        self.scroll_area.hide()
         
         self.search_timer = QTimer(self)
         self.search_timer.setSingleShot(True)
@@ -1245,11 +1252,11 @@ class SearchOverlayWidget(QFrame):
         
         parent_w = self.parentWidget().width()
         target_w = 36
-        target_x = parent_w - target_w - 20
+        target_x = parent_w - target_w - 8
         self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
         
         def on_finished():
-            self.search_container.hide()
+            self.scroll_area.hide()
             self.btn_open_search.show()
             self._reposition()
             
@@ -1266,13 +1273,13 @@ class SearchOverlayWidget(QFrame):
         self.raise_()
             
         self.btn_open_search.hide()
-        self.search_container.show()
+        self.scroll_area.show()
         
         self.setProperty("expanded", True)
         
         from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
         self._anim = QPropertyAnimation(self, b"geometry")
-        self._anim.setDuration(250)
+        self._anim.setDuration(300)
         self._anim.setEasingCurve(QEasingCurve.OutBack)
         
         start_geom = self.geometry()
@@ -1280,7 +1287,7 @@ class SearchOverlayWidget(QFrame):
         
         parent_w = self.parentWidget().width()
         target_w = 300
-        target_x = parent_w - target_w - 20
+        target_x = parent_w - target_w - 8
         
         self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
         
@@ -1298,9 +1305,9 @@ class SearchOverlayWidget(QFrame):
             if self.property("expanded"):
                 target_w = self.sizeHint().width()
                 if target_w < 300: target_w = 300
-                self.setGeometry(parent_w - target_w - 20, 20, target_w, 36)
+                self.setGeometry(parent_w - target_w - 8, 8, target_w, 36)
             else:
-                self.setGeometry(parent_w - 36 - 20, 20, 36, 36)
+                self.setGeometry(parent_w - 36 - 8, 8, 36, 36)
         except Exception as e:
             import osdoc
             osdoc.log_error(f"Search positioning error: {str(e)}")
