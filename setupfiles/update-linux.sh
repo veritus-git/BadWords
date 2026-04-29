@@ -164,7 +164,7 @@ log "File sync complete."
 # ── 5. Upgrade pip packages ─────────────────────────────────────────────────
 if [ -f "$VENV_PIP" ]; then
     info "Upgrading pip packages..."
-    "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf 2>&1 | grep -v "^Requirement already"
+    "$VENV_PIP" install --upgrade faster-whisper stable-ts pypdf 2>&1 | grep -v "^Requirement already" || true
     log "Packages upgraded."
 else
     warn "venv pip not found — skipping package upgrade."

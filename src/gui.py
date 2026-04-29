@@ -4462,7 +4462,10 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
             log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
             self._lbl_status.setText(_txt(self._lang, 'update_notify_failed'))
             self._lbl_status.setStyleSheet("color: #ed4245; font-size: 10pt; font-style: normal;")
-            self._btn_primary.setText(_txt(self._lang, 'update_notify_btn_update'))
+            # Change primary button to open GitHub releases page
+            self._btn_primary.setText(_txt(self._lang, 'update_notify_win_btn'))
+            self._btn_primary.clicked.disconnect()
+            self._btn_primary.clicked.connect(lambda: self._open_url(self._gh_url))
             self._btn_primary.setEnabled(True)
             self._btn_dismiss.setEnabled(True)
         self.adjustSize()
