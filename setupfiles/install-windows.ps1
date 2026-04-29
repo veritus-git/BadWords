@@ -191,10 +191,9 @@ $isUpdate = ($Mode -eq 'Update')
 $protected = @('pref.json','user.json','settings.json','badwords_debug.log','models','saves','venv','bin','libs')
 
 if ($isUpdate) {
-    # Hash-based selective copy
-    $allSrc = @()
-    python3 -c "
-import os, shutil, hashlib, sys
+    # Write sync script to a temp file to avoid PowerShell f-string / brace conflicts
+    $syncScript = @"
+import os, shutil, hashlib
 
 def get_hash(p):
     try:
@@ -212,8 +211,14 @@ for src in [r'$SourcePath', r'$AssetsPath']:
             d = os.path.join(dst_dir, f)
             if get_hash(s) != get_hash(d):
                 shutil.copy2(s, d)
-                print(f'  Updated: {os.path.join(rel,f) if rel!=\".\" else f}')
-" 2>&1
+                name = os.path.join(rel, f) if rel != '.' else f
+                print('  Updated: ' + name)
+"@
+    $syncPy = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "bw_sync_$([System.IO.Path]::GetRandomFileName()).py")
+    [System.IO.File]::WriteAllText($syncPy, $syncScript, [System.Text.Encoding]::UTF8)
+    python3 $syncPy 2>&1
+    Remove-Item $syncPy -ErrorAction SilentlyContinue
+
 } else {
     # Full copy
     Copy-Item "$SourcePath\*"  $InstallDir -Recurse -Force

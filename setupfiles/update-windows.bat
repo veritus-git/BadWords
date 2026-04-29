@@ -34,7 +34,7 @@ if exist "!WRAPPER_FILE!" (
 
 :: Validate detected path
 if not defined INSTALL_DIR (
-    set "INSTALL_DIR=%LOCALAPPDATA%\BadWords"
+    set "INSTALL_DIR=%APPDATA%\BadWords"
     echo [WARN] Could not read wrapper, using default: !INSTALL_DIR!
 )
 if not exist "!INSTALL_DIR!\main.py" (

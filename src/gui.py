@@ -4112,6 +4112,8 @@ class UpdateCheckThread(QThread):
     # GitHub unauthenticated limit = 60 req/h — cache result for the session
     _cached_result: tuple | None = None   # (latest_display, gh_page, gl_page) | None
     _checked: bool = False                # True once a check completed (even if up-to-date)
+    _lock = None                          # threading.Lock — lazy init (import at use time)
+
 
     # ── API endpoints ─────────────────────────────────────────────────────
     _GH_API  = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
@@ -4161,10 +4163,17 @@ class UpdateCheckThread(QThread):
     # ------------------------------------------------------------------
 
     def run(self):
+        import threading
         from osdoc import log_info, log_error
+
+        # Lazy init of class-level lock (safe: done under GIL before threads diverge)
+        if UpdateCheckThread._lock is None:
+            UpdateCheckThread._lock = threading.Lock()
+
         current_tuple = self._parse_version(self._current)
 
         # ── Replay cached result if already checked this session ──────────
+        # Quick path without the lock — avoids blocking when _checked is set
         if UpdateCheckThread._checked:
             cached = UpdateCheckThread._cached_result
             if cached:
@@ -4178,47 +4187,61 @@ class UpdateCheckThread(QThread):
                 log_info("[UpdateCheck] (cached) No version info available.")
             return
 
-        latest_tag = None
+        # ── First check — hold lock so only ONE thread does the HTTP work ─
+        with UpdateCheckThread._lock:
+            # Re-check inside lock (another thread may have finished while we waited)
+            if UpdateCheckThread._checked:
+                cached = UpdateCheckThread._cached_result
+                if cached:
+                    latest_display, gh_page, gl_page = cached
+                    if self._parse_version(latest_display) > current_tuple:
+                        log_info(f"[UpdateCheck] (cached/lock) New version available: {latest_display}")
+                        self.update_available.emit(latest_display, gh_page, gl_page)
+                    else:
+                        log_info(f"[UpdateCheck] (cached/lock) Already up-to-date ({self._current}).")
+                return
 
-        # 1. Try GitHub
-        try:
-            data = self._fetch_json(self._GH_API)
-            latest_tag = data.get("tag_name", "").strip()
-            log_info(f"[UpdateCheck] GitHub latest tag: {latest_tag!r}")
-        except Exception as e:
-            log_error(f"[UpdateCheck] GitHub API failed: {e}")
+            latest_tag = None
 
-        # 2. Fallback: GitLab — /releases returns a JSON list; take first entry
-        if not latest_tag:
+            # 1. Try GitHub
             try:
-                data = self._fetch_json(self._GL_API)
-                if isinstance(data, list) and data:
-                    latest_tag = data[0].get("tag_name", "").strip()
-                elif isinstance(data, dict):
-                    latest_tag = data.get("tag_name", "").strip()
-                if latest_tag:
-                    log_info(f"[UpdateCheck] GitLab latest tag: {latest_tag!r}")
+                data = self._fetch_json(self._GH_API)
+                latest_tag = data.get("tag_name", "").strip()
+                log_info(f"[UpdateCheck] GitHub latest tag: {latest_tag!r}")
             except Exception as e:
-                log_error(f"[UpdateCheck] GitLab API failed: {e}")
+                log_error(f"[UpdateCheck] GitHub API failed: {e}")
 
-        # Mark as checked (even on failure) — prevents hammering APIs
-        UpdateCheckThread._checked = True
+            # 2. Fallback: GitLab — /releases returns a JSON list; take first entry
+            if not latest_tag:
+                try:
+                    data = self._fetch_json(self._GL_API)
+                    if isinstance(data, list) and data:
+                        latest_tag = data[0].get("tag_name", "").strip()
+                    elif isinstance(data, dict):
+                        latest_tag = data.get("tag_name", "").strip()
+                    if latest_tag:
+                        log_info(f"[UpdateCheck] GitLab latest tag: {latest_tag!r}")
+                except Exception as e:
+                    log_error(f"[UpdateCheck] GitLab API failed: {e}")
 
-        if not latest_tag:
-            log_error("[UpdateCheck] Could not retrieve latest version from any source.")
-            UpdateCheckThread._cached_result = None
-            return
+            # Mark as checked (even on failure) — prevents hammering APIs
+            UpdateCheckThread._checked = True
 
-        latest_tuple   = self._parse_version(latest_tag)
-        latest_display = latest_tag.lstrip('vV')
+            if not latest_tag:
+                log_error("[UpdateCheck] Could not retrieve latest version from any source.")
+                UpdateCheckThread._cached_result = None
+                return
 
-        if latest_tuple > current_tuple:
-            log_info(f"[UpdateCheck] New version available: {latest_display} (current: {self._current})")
-            UpdateCheckThread._cached_result = (latest_display, self._GH_PAGE, self._GL_PAGE)
-            self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE)
-        else:
-            log_info(f"[UpdateCheck] Already up-to-date ({self._current}).")
-            UpdateCheckThread._cached_result = None
+            latest_tuple   = self._parse_version(latest_tag)
+            latest_display = latest_tag.lstrip('vV')
+
+            if latest_tuple > current_tuple:
+                log_info(f"[UpdateCheck] New version available: {latest_display} (current: {self._current})")
+                UpdateCheckThread._cached_result = (latest_display, self._GH_PAGE, self._GL_PAGE)
+                self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE)
+            else:
+                log_info(f"[UpdateCheck] Already up-to-date ({self._current}).")
+                UpdateCheckThread._cached_result = None
 
 
 
