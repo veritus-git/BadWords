@@ -363,12 +363,27 @@ def option_install_update():
         console.print()
         log_step("Detecting GPU hardware...")
         has_nvidia = False
-        if shutil.which("lspci"):
-            r = subprocess.run(["lspci"], capture_output=True, text=True)
-            has_nvidia = "nvidia" in r.stdout.lower()
-        if not has_nvidia and shutil.which("lshw"):
-            r = subprocess.run(["lshw", "-C", "display"], capture_output=True, text=True)
-            has_nvidia = "nvidia" in r.stdout.lower()
+        if os.name == "nt":
+            # Windows: query WMI via PowerShell (same as legacy setup_windows.bat)
+            try:
+                r = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "try{$g=Get-WmiObject Win32_VideoController -EA Stop "
+                     "| Where-Object {$_.Name -like '*NVIDIA*'} "
+                     "| Select-Object -First 1; if($g){'1'}else{'0'}}catch{'0'}"],
+                    capture_output=True, text=True, timeout=15
+                )
+                has_nvidia = r.stdout.strip() == "1"
+            except Exception as e:
+                log_warn(f"GPU detection via WMI failed: {e}")
+        else:
+            # Linux/macOS: use lspci / lshw
+            if shutil.which("lspci"):
+                r = subprocess.run(["lspci"], capture_output=True, text=True)
+                has_nvidia = "nvidia" in r.stdout.lower()
+            if not has_nvidia and shutil.which("lshw"):
+                r = subprocess.run(["lshw", "-C", "display"], capture_output=True, text=True)
+                has_nvidia = "nvidia" in r.stdout.lower()
         mode_name   = "NVIDIA (CUDA 12)" if has_nvidia else "CPU (AMD/Intel)"
         nvidia_pkgs = "nvidia-cublas-cu12 nvidia-cudnn-cu12" if has_nvidia else ""
         log_ok(f"AI Engine Mode: {mode_name}")
@@ -395,29 +410,60 @@ def option_install_update():
 
         # ── FFmpeg ────────────────────────────────────────────
         console.print()
-        ffmpeg_bin = os.path.join(bin_dir, "ffmpeg")
+        ffmpeg_exe_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+        ffmpeg_bin = os.path.join(bin_dir, ffmpeg_exe_name)
         if is_update and os.path.isfile(ffmpeg_bin):
             log_ok("Portable FFmpeg already present. Skipping download.")
         else:
             log_step("Downloading portable FFmpeg...")
-            ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-            ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
-            if download(ffmpeg_url, ffmpeg_arc):
-                subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
-                for name in ["ffmpeg", "ffprobe"]:
-                    for root, _, files in os.walk(install_dir):
-                        if name in files and "ffmpeg-" in root:
-                            dest = os.path.join(bin_dir, name)
-                            shutil.move(os.path.join(root, name), dest)
-                            os.chmod(dest, 0o755)
-                            break
-                for item in os.listdir(install_dir):
-                    if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
-                        shutil.rmtree(os.path.join(install_dir, item))
-                os.remove(ffmpeg_arc)
-                log_ok("FFmpeg installed.")
+            if os.name == "nt":
+                # Windows: use Gyan.dev essentials build (ZIP, native .exe)
+                ffmpeg_url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
+                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_win.zip")
+                if download(ffmpeg_url, ffmpeg_arc):
+                    import zipfile
+                    try:
+                        with zipfile.ZipFile(ffmpeg_arc) as zf:
+                            for member in zf.namelist():
+                                fname = os.path.basename(member)
+                                if fname in ("ffmpeg.exe", "ffprobe.exe"):
+                                    data = zf.read(member)
+                                    dest = os.path.join(bin_dir, fname)
+                                    with open(dest, "wb") as out:
+                                        out.write(data)
+                        log_ok("FFmpeg installed (Windows native).")
+                    except Exception as e:
+                        log_warn(f"FFmpeg extraction failed: {e}")
+                    finally:
+                        try: os.remove(ffmpeg_arc)
+                        except Exception: pass
+                else:
+                    log_warn("FFmpeg download failed. App may not work without it.")
             else:
-                log_warn("FFmpeg download failed. App may not work without it.")
+                # Linux/macOS: use johnvansickle static build
+                ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
+                if download(ffmpeg_url, ffmpeg_arc):
+                    try:
+                        subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
+                        for name in ["ffmpeg", "ffprobe"]:
+                            for root, _, files in os.walk(install_dir):
+                                if name in files and "ffmpeg-" in root:
+                                    dest = os.path.join(bin_dir, name)
+                                    shutil.move(os.path.join(root, name), dest)
+                                    os.chmod(dest, 0o755)
+                                    break
+                        for item in os.listdir(install_dir):
+                            if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
+                                shutil.rmtree(os.path.join(install_dir, item))
+                    except Exception as e:
+                        log_warn(f"FFmpeg install error: {e}")
+                    finally:
+                        try: os.remove(ffmpeg_arc)
+                        except Exception: pass
+                    log_ok("FFmpeg installed.")
+                else:
+                    log_warn("FFmpeg download failed. App may not work without it.")
 
         # ── Python for venv ───────────────────────────────────
         bootstrap_py = ARGS.bootstrap_python
@@ -454,27 +500,54 @@ def option_install_update():
         # ── Dependencies ──────────────────────────────────────
         console.print()
         log_step("Installing / upgrading dependencies...")
-        subprocess.run([venv_py, "-m", "pip", "install", "--upgrade", "pip", "-q"], check=True)
+
+        def _pip_run(*args, label="pip"):
+            """Run pip command; log stderr on failure, never crash the installer."""
+            r = subprocess.run(
+                [venv_py, "-m", "pip"] + list(args),
+                capture_output=True, text=True
+            )
+            if r.returncode != 0:
+                log_warn(f"{label} returned non-zero ({r.returncode}).")
+                for line in (r.stderr or "").splitlines()[-12:]:
+                    if line.strip():
+                        log_warn(f"  {line.strip()}")
+            return r.returncode == 0
+
+        _pip_run("install", "--upgrade", "pip", "-q", label="pip upgrade")
 
         torch_ok = subprocess.run([venv_pip, "show", "torch"], capture_output=True).returncode == 0
         if is_update and torch_ok:
             log_info("PyTorch already present. Upgrading Whisper only...")
-            subprocess.run([venv_pip, "install", "--upgrade",
-                "faster-whisper", "stable-ts", "pypdf", "-q"], check=True)
+            _pip_run("install", "--upgrade", "faster-whisper", "stable-ts", "pypdf", "-q",
+                     label="whisper upgrade")
         elif not has_nvidia:
             log_step("Installing CPU-optimised PyTorch...")
-            subprocess.run([venv_pip, "install", "torch", "torchaudio",
-                "--index-url", "https://download.pytorch.org/whl/cpu", "-q"], check=True)
-            subprocess.run([venv_pip, "install", "faster-whisper", "stable-ts", "pypdf", "-q"], check=True)
+            ok1 = _pip_run("install", "torch", "torchaudio",
+                           "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
+                           label="torch-cpu")
+            if not ok1:
+                log_err("PyTorch (CPU) install failed. Check your internet connection and try again.")
+            _pip_run("install", "faster-whisper", "stable-ts", "pypdf", "-q",
+                     label="whisper+pypdf")
         else:
-            log_step("Installing NVIDIA-accelerated packages...")
-            subprocess.run([venv_pip, "install",
-                "faster-whisper", "stable-ts", "pypdf"] + nvidia_pkgs.split(), check=True)
+            log_step("Installing NVIDIA-accelerated PyTorch...")
+            ok1 = _pip_run("install", "torch", "torchaudio",
+                           "--index-url", "https://download.pytorch.org/whl/cu121", "-q",
+                           label="torch-cuda")
+            if not ok1:
+                log_warn("CUDA PyTorch failed — falling back to CPU build.")
+                _pip_run("install", "torch", "torchaudio",
+                         "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
+                         label="torch-cpu-fallback")
+            _pip_run("install", "faster-whisper", "stable-ts", "pypdf",
+                     *nvidia_pkgs.split(), "-q", label="whisper+cuda-pkgs")
 
         pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
         if not pyside_ok:
             log_step("Installing PySide6 GUI library...")
-            subprocess.run([venv_pip, "install", "PySide6", "-q"], check=True)
+            if not _pip_run("install", "PySide6", "-q", label="PySide6"):
+                log_err("PySide6 install failed. The app UI will not work.")
         else:
             log_info("PySide6 already installed.")
         log_ok("All dependencies installed.")

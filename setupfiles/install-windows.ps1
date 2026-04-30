@@ -190,9 +190,27 @@ if (-not $downloaded) {
 if (-not $downloaded) { die "Failed to download install.py from both GitHub and GitLab." }
 ok "Installer ready."
 
-# ── 7. Launch installer ───────────────────────────────────────
+# ── 7. Launch installer in a new CMD window (black background) ───────────────
 Write-Host ""
-& $BootstrapPy $InstallPy --platform windows --bootstrap-python $PythonExe
+Write-Host "  Launching BadWords Installer..." -ForegroundColor Cyan
+Write-Host ""
+
+# Build the Python command line — use quoted paths to handle spaces
+$PyArg  = "`"$InstallPy`" --platform windows --bootstrap-python `"$PythonExe`""
+
+# Pass PYTHONPATH through environment if we used the --target fallback
+$EnvBlock = ""
+if ($env:PYTHONPATH) {
+    $EnvBlock = "set PYTHONPATH=$($env:PYTHONPATH) && "
+}
+
+# /k keeps the window open after the installer exits (user sees the result)
+# Title is set so the taskbar shows "BadWords Installer"
+$CmdLine = "$($EnvBlock)`"$BootstrapPy`" $PyArg"
+Start-Process -FilePath "cmd.exe" `
+    -ArgumentList "/k title BadWords Installer && $CmdLine" `
+    -Wait `
+    -WindowStyle Normal
 
 } finally {
     if (Test-Path $BW_TMP) {
