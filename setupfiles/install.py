@@ -16,7 +16,7 @@ except ImportError:
 
 # ── Terminal dimensions & layout ──────────────────────────────
 TERM_W = 88
-TERM_H = 32
+TERM_H = 30
 PAD    = "    "   # 4-space left margin
 
 console = Console(width=TERM_W, highlight=False)
@@ -150,8 +150,8 @@ def header():
     _resize()
     clear()
     console.print()
-    console.print(Text(f"{PAD}BadWords Installer", style="bold white"), no_wrap=True)
-    console.print(Text(f"{PAD}Cross-Platform Setup  —  Linux / Windows / macOS", style="dim"), no_wrap=True)
+    console.print(Text("BadWords Installer", style="bold white"), justify="center", no_wrap=True)
+    console.print(Text("Cross-Platform Setup  —  Linux / Windows / macOS", style="dim"), justify="center", no_wrap=True)
     console.print()
     console.print(Text(f"{PAD}Tip: For a fresh install or update, choose [1] and press Enter at every prompt.", style="green"), no_wrap=True)
     console.print()
@@ -180,7 +180,6 @@ def menu():
         console.print()
     console.print(Text(f"{PAD}[0] Exit", style="white"), no_wrap=True)
     console.print()
-    console.print(Text(f"{PAD}[ESC] Quit  —  press a key to select:", style="dim"), no_wrap=True)
 
 def prompt_choice():
     """Single keypress — no Enter needed."""
@@ -445,8 +444,12 @@ def option_install_update():
         else:
             log_ok("Virtual environment already exists.")
 
-        venv_py  = os.path.join(venv_dir, "bin", "python")
-        venv_pip = os.path.join(venv_dir, "bin", "pip")
+        if os.name == "nt":
+            venv_py  = os.path.join(venv_dir, "Scripts", "python.exe")
+            venv_pip = os.path.join(venv_dir, "Scripts", "pip.exe")
+        else:
+            venv_py  = os.path.join(venv_dir, "bin", "python")
+            venv_pip = os.path.join(venv_dir, "bin", "pip")
 
         # ── Dependencies ──────────────────────────────────────
         console.print()
@@ -480,15 +483,24 @@ def option_install_update():
         console.print()
         log_step("Creating libs symlink...")
         site_pkgs = None
-        for root, dirs, _ in os.walk(os.path.join(venv_dir, "lib")):
+        lib_root = os.path.join(venv_dir, "Lib" if os.name == "nt" else "lib")
+        for root, dirs, _ in os.walk(lib_root):
             if "site-packages" in dirs:
                 site_pkgs = os.path.join(root, "site-packages")
                 break
         if site_pkgs:
-            if os.path.islink(libs_link):
-                os.remove(libs_link)
-            os.symlink(site_pkgs, libs_link)
-            log_ok(f"libs -> {site_pkgs}")
+            if os.path.islink(libs_link) or os.path.isdir(libs_link):
+                try:
+                    os.remove(libs_link)
+                except Exception:
+                    shutil.rmtree(libs_link, ignore_errors=True)
+            try:
+                os.symlink(site_pkgs, libs_link)
+                log_ok(f"libs -> {site_pkgs}")
+            except (OSError, NotImplementedError):
+                # Windows: symlink may need admin; copy as fallback
+                shutil.copytree(site_pkgs, libs_link, dirs_exist_ok=True)
+                log_ok(f"libs copied from {site_pkgs}")
         else:
             log_warn("Could not locate site-packages in venv.")
 

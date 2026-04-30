@@ -6,6 +6,7 @@
 # ============================================================
 
 INSTALLER_URL="https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/install.py"
+INSTALLER_URL_FALLBACK="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/install.py"
 PBS_FALLBACK_TAG="20250317"
 PBS_FALLBACK_VER="3.12.9"
 PBS_PERMANENT_DIR="$HOME/.local/share/badwords-python"
@@ -129,9 +130,13 @@ ok "Dependencies ready."
 INSTALL_PY="$BW_TMP/install.py"
 step "Downloading BadWords installer..."
 if command -v curl &>/dev/null; then
-    curl -fsSL "$INSTALLER_URL" -o "$INSTALL_PY" || die "Failed to download install.py"
+    curl -fsSL "$INSTALLER_URL" -o "$INSTALL_PY" 2>/dev/null \
+        || curl -fsSL "$INSTALLER_URL_FALLBACK" -o "$INSTALL_PY" \
+        || die "Failed to download install.py"
 elif command -v wget &>/dev/null; then
-    wget -qO "$INSTALL_PY" "$INSTALLER_URL" || die "Failed to download install.py"
+    wget -qO "$INSTALL_PY" "$INSTALLER_URL" 2>/dev/null \
+        || wget -qO "$INSTALL_PY" "$INSTALLER_URL_FALLBACK" \
+        || die "Failed to download install.py"
 else
     die "curl or wget required."
 fi
