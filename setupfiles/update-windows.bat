@@ -1,225 +1,116 @@
 @echo off
 :: --- BADWORDS AUTO-UPDATE (Windows, non-interactive) ---
-:: Logic mirrors update-linux.sh: Python sync+cleanup written to a temp script.
-:: IMPORTANT: ALL characters in this file must be plain ASCII (0x00-0x7F).
-:: Unicode chars (em-dash, box-drawing etc.) in batch files cause CMD to
-:: misread UTF-8 byte sequences as quote chars in CP1252, breaking the parser.
-:: Exits 0 on success, 1 on failure.
+:: Architecture: CMD bootstrap -> PowerShell runner -> Python payload.
+:: Python payload is Base64-embedded: only [A-Za-z0-9+/=] -- CMD-safe.
+:: PowerShell decodes payload, writes to TEMP, and executes with Python.
+:: Requires: Python 3.10+, PowerShell 5.1+ (both built into Win10/11).
+:: Exits 0 on success, non-zero on failure.
 setlocal EnableDelayedExpansion
 set "PYTHONHOME="
 set "PYTHONPATH="
 
 echo [UPDATE] BadWords Windows Auto-Update starting...
 
-:: --- 1. Find Python ---
-set "PYTHON_CMD="
+:: ===================================================================
+:: STEP 1 - Find Python (skip WindowsApps Store shims)
+:: ===================================================================
+set "PY="
 where python >nul 2>&1 && (
-    for /f "tokens=*" %%P in ('where python') do (
-        if "!PYTHON_CMD!"=="" (
-            echo %%P | findstr /i "WindowsApps" >nul || set "PYTHON_CMD=%%P"
+    for /f "tokens=*" %%P in ('where python 2^>nul') do (
+        if "!PY!"=="" (
+            echo %%P | findstr /i "WindowsApps" >nul || set "PY=%%P"
         )
     )
 )
-if not defined PYTHON_CMD (
+if not defined PY (
     for %%V in (313 312 311 310) do (
         if exist "%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe" (
-            set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe"
-            goto :FOUND_PY
+            set "PY=%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe"
+            goto :PY_OK
         )
     )
-    echo [WARN] Python not found. Trying winget...
-    winget install --id Python.Python.3.11 -e --silent --accept-source-agreements --accept-package-agreements
-    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-    if not exist "!PYTHON_CMD!" (
-        echo [ERROR] Python install failed. Please install Python 3.10-3.12 manually.
-        exit /b 1
-    )
 )
-:FOUND_PY
-echo [INFO] Using Python: !PYTHON_CMD!
+:PY_OK
+if not defined PY (
+    echo [ERROR] Python 3.10+ not found. Install from python.org.
+    exit /b 1
+)
+echo [INFO] Using Python: !PY!
 
-:: --- 2. Locate installation ---
-set "WRAPPER_FILE=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
+:: ===================================================================
+:: STEP 2 - Locate installation. Write wrapper path to temp file so
+:: PowerShell reads it without CMD quoting issues (spaces in paths).
+:: ===================================================================
+set "WRAPPER=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
 for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
     if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
-        set "WRAPPER_FILE=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
+        set "WRAPPER=%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
     )
 )
-set "INSTALL_DIR="
-if exist "!WRAPPER_FILE!" (
-    set "DETECT_PS=%TEMP%\_bw_det_%RANDOM%.ps1"
-    powershell -NoProfile -Command "Set-Content -Path '!DETECT_PS!' -Encoding UTF8 -Value 'foreach($l in (Get-Content ''!WRAPPER_FILE!'' -EA SilentlyContinue)){if($l -match ''INSTALL_DIR\s*=''){$v=($l -split ''='',2)[1].Trim().TrimStart(''r'').Trim([char]34).Trim([char]39).Trim([char]34).Trim([char]39);if($v){$v;break}}}'"
-    for /f "delims=" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -File "!DETECT_PS!" 2^>nul') do (
-        if "!INSTALL_DIR!"=="" set "INSTALL_DIR=%%P"
-    )
-    del "!DETECT_PS!" 2>nul
+(echo !WRAPPER!)> "%TEMP%\bw_wrapper.txt"
+
+set "IDIR="
+for /f "delims=" %%P in ('powershell -NoProfile -Command "$wf=[IO.File]::ReadAllText(''''%TEMP%\bw_wrapper.txt'''').Trim();if(Test-Path $wf){$lines=Get-Content $wf -EA SilentlyContinue;$m=$lines^|Select-String ''''INSTALL_DIR\s*=\s*(.+)'''';if($m){$v=$m.Matches[0].Groups[1].Value.Trim();$v=$v.TrimStart(''''r'''').Trim([char]39).Trim([char]34).Trim([char]39);$v}}" 2^>nul') do (
+    if "!IDIR!"=="" set "IDIR=%%P"
 )
-if not defined INSTALL_DIR (
-    set "INSTALL_DIR=%APPDATA%\BadWords"
-    echo [WARN] Could not read wrapper, using default: !INSTALL_DIR!
+del "%TEMP%\bw_wrapper.txt" 2>nul
+if not defined IDIR (
+    set "IDIR=%APPDATA%\BadWords"
+    echo [WARN] Could not read wrapper - using default: !IDIR!
 )
-if not exist "!INSTALL_DIR!\main.py" (
-    echo [ERROR] No valid BadWords installation at: !INSTALL_DIR!
+if not exist "!IDIR!\main.py" (
+    echo [ERROR] No valid BadWords installation at: !IDIR!
     exit /b 1
 )
-echo [INFO] Installation path: !INSTALL_DIR!
-set "VENV_DIR=!INSTALL_DIR!\venv"
-set "VENV_PYTHON=!VENV_DIR!\Scripts\python.exe"
-set "VENV_PIP=!VENV_DIR!\Scripts\pip.exe"
+echo [INFO] Installation: !IDIR!
 
-:: --- 3. Check curl ---
-where curl >nul 2>&1 || set "USE_PS_DL=1"
-
-:: --- 4. Fetch latest tag: GitHub first, GitLab fallback ---
-echo [INFO] Checking latest release...
-set "LATEST_TAG="
-set "REPO_ZIP_URL="
-set "SOURCE_REPO="
-if not defined USE_PS_DL (
-    for /f "delims=" %%T in ('curl -fsSL --connect-timeout 10 "https://api.github.com/repos/veritus-git/BadWords/releases/latest" ^| "!PYTHON_CMD!" -c "import json,sys;d=json.load(sys.stdin);print(d.get(\"tag_name\",\"\"))" 2^>nul') do set "LATEST_TAG=%%T"
-) else (
-    for /f "delims=" %%T in ('powershell -NoProfile -Command "(Invoke-RestMethod https://api.github.com/repos/veritus-git/BadWords/releases/latest).tag_name" 2^>nul') do set "LATEST_TAG=%%T"
-)
-if defined LATEST_TAG (
-    set "REPO_ZIP_URL=https://github.com/veritus-git/BadWords/archive/refs/tags/!LATEST_TAG!.zip"
-    set "SOURCE_REPO=GitHub"
-    goto :GOT_TAG
-)
-echo [WARN] GitHub unavailable, trying GitLab...
-if not defined USE_PS_DL (
-    for /f "delims=" %%T in ('curl -fsSL --connect-timeout 10 "https://gitlab.com/api/v4/projects/badwords%%2FBadWords/releases" ^| "!PYTHON_CMD!" -c "import json,sys;d=json.load(sys.stdin);print(d[0][\"tag_name\"] if isinstance(d,list) and d else \"\")" 2^>nul') do set "LATEST_TAG=%%T"
-) else (
-    for /f "delims=" %%T in ('powershell -NoProfile -Command "(Invoke-RestMethod \"https://gitlab.com/api/v4/projects/badwords%%2FBadWords/releases\")[0].tag_name" 2^>nul') do set "LATEST_TAG=%%T"
-)
-if defined LATEST_TAG (
-    set "REPO_ZIP_URL=https://gitlab.com/badwords/BadWords/-/archive/!LATEST_TAG!/BadWords-!LATEST_TAG!.zip"
-    set "SOURCE_REPO=GitLab"
-    goto :GOT_TAG
-)
-echo [ERROR] Could not determine latest version from GitHub or GitLab.
-exit /b 1
-
-:GOT_TAG
-echo [UPDATE] Latest release: !LATEST_TAG!  (source: !SOURCE_REPO!)
-
-:: --- 5. Download and extract ---
-set "TMP_DIR=%TEMP%\bw_update_%RANDOM%"
-mkdir "!TMP_DIR!"
-set "ZIP_PATH=!TMP_DIR!\repo.zip"
-echo [INFO] Downloading from !SOURCE_REPO!...
-if not defined USE_PS_DL (
-    curl -fsSL "!REPO_ZIP_URL!" -o "!ZIP_PATH!"
-) else (
-    powershell -NoProfile -Command "Invoke-WebRequest -Uri '!REPO_ZIP_URL!' -OutFile '!ZIP_PATH!'"
-)
-if not exist "!ZIP_PATH!" (
-    echo [ERROR] Download failed.
-    rmdir /s /q "!TMP_DIR!"
-    exit /b 1
-)
-echo [INFO] Extracting...
-powershell -NoProfile -Command "Expand-Archive -Path '!ZIP_PATH!' -DestinationPath '!TMP_DIR!\extracted' -Force"
-set "EXTRACTED_DIR="
-for /d %%D in ("!TMP_DIR!\extracted\*") do (
-    if "!EXTRACTED_DIR!"=="" set "EXTRACTED_DIR=%%D"
-)
-if not exist "!EXTRACTED_DIR!\src\main.py" (
-    echo [ERROR] Extraction failed - src\main.py not found.
-    rmdir /s /q "!TMP_DIR!"
-    exit /b 1
-)
-set "SRC_MAIN=!EXTRACTED_DIR!\src"
-set "SRC_ASSETS=!EXTRACTED_DIR!\assets"
-
-:: --- 6. Sync + cleanup via Python (mirrors update-linux.sh exactly) ---
-:: The Python script is written line-by-line using echo with DelayedExpansion
-:: DISABLED so Python's != operator and ! chars are treated as plain text.
-echo [INFO] Syncing files...
-set "SYNC_PY=%TEMP%\_bw_sync_%RANDOM%.py"
-
-setlocal DisableDelayedExpansion
-echo import os, shutil, hashlib, sys                                         > "%SYNC_PY%"
-echo src_paths = [p for p in [sys.argv[1], sys.argv[2]] if os.path.isdir(p)]>> "%SYNC_PY%"
-echo dst = sys.argv[3]                                                       >> "%SYNC_PY%"
-echo def get_hash(p):                                                        >> "%SYNC_PY%"
-echo     try:                                                                >> "%SYNC_PY%"
-echo         with open(p, 'rb') as fh: return hashlib.md5(fh.read()).hexdigest() >> "%SYNC_PY%"
-echo     except Exception: return None                                       >> "%SYNC_PY%"
-echo for src in src_paths:                                                   >> "%SYNC_PY%"
-echo     for root, dirs, files in os.walk(src):                             >> "%SYNC_PY%"
-echo         rel = os.path.relpath(root, src)                               >> "%SYNC_PY%"
-echo         d_dir = dst if rel == '.' else os.path.join(dst, rel)          >> "%SYNC_PY%"
-echo         os.makedirs(d_dir, exist_ok=True)                              >> "%SYNC_PY%"
-echo         for fn in files:                                                >> "%SYNC_PY%"
-echo             sf = os.path.join(root, fn)                                >> "%SYNC_PY%"
-echo             df = os.path.join(d_dir, fn)                               >> "%SYNC_PY%"
-echo             if get_hash(sf) != get_hash(df):                           >> "%SYNC_PY%"
-echo                 shutil.copy2(sf, df)                                   >> "%SYNC_PY%"
-echo                 lbl = fn if rel == '.' else os.path.join(rel, fn)      >> "%SYNC_PY%"
-echo                 print('  Updated: ' + lbl)                             >> "%SYNC_PY%"
-echo pf = {'pref.json','user.json','settings.json','badwords_debug.log','BadWords.py','unins000.dat','unins000.exe'} >> "%SYNC_PY%"
-echo pd = {'models','saves','venv','bin','libs','icons','layout','.git','.github','__pycache__'} >> "%SYNC_PY%"
-echo src_top = set()                                                         >> "%SYNC_PY%"
-echo for s in src_paths: src_top.update(os.listdir(s))                      >> "%SYNC_PY%"
-echo src_sub = {}                                                            >> "%SYNC_PY%"
-echo for s in src_paths:                                                     >> "%SYNC_PY%"
-echo     for r2, d2, f2 in os.walk(s):                                      >> "%SYNC_PY%"
-echo         rel2 = os.path.relpath(r2, s)                                  >> "%SYNC_PY%"
-echo         src_sub[rel2] = set(f2)                                        >> "%SYNC_PY%"
-echo for item in sorted(os.listdir(dst)):                                    >> "%SYNC_PY%"
-echo     if item in pf or item in pd: continue                              >> "%SYNC_PY%"
-echo     if item not in src_top:                                             >> "%SYNC_PY%"
-echo         full = os.path.join(dst, item)                                 >> "%SYNC_PY%"
-echo         try:                                                            >> "%SYNC_PY%"
-echo             if os.path.isdir(full): shutil.rmtree(full)                >> "%SYNC_PY%"
-echo             else: os.remove(full)                                       >> "%SYNC_PY%"
-echo             print('  Removed obsolete: ' + item)                       >> "%SYNC_PY%"
-echo         except Exception as ex: print('  [WARN] rm ' + item + ': ' + str(ex)) >> "%SYNC_PY%"
-echo for sub_rel, sub_files in src_sub.items():                             >> "%SYNC_PY%"
-echo     if sub_rel == '.': continue                                         >> "%SYNC_PY%"
-echo     sub_dst = os.path.join(dst, sub_rel)                               >> "%SYNC_PY%"
-echo     if not os.path.isdir(sub_dst): continue                            >> "%SYNC_PY%"
-echo     for df2 in sorted(os.listdir(sub_dst)):                            >> "%SYNC_PY%"
-echo         if df2 not in sub_files:                                        >> "%SYNC_PY%"
-echo             fp = os.path.join(sub_dst, df2)                            >> "%SYNC_PY%"
-echo             try:                                                        >> "%SYNC_PY%"
-echo                 if os.path.isdir(fp): shutil.rmtree(fp)                >> "%SYNC_PY%"
-echo                 else: os.remove(fp)                                     >> "%SYNC_PY%"
-echo                 print('  Removed obsolete: ' + os.path.join(sub_rel, df2)) >> "%SYNC_PY%"
-echo             except Exception as ex: print('  [WARN] rm ' + df2 + ': ' + str(ex)) >> "%SYNC_PY%"
-endlocal
-
-"!PYTHON_CMD!" "!SYNC_PY!" "!SRC_MAIN!" "!SRC_ASSETS!" "!INSTALL_DIR!"
-if !errorlevel! neq 0 echo [WARN] Sync exited with code !errorlevel! - continuing.
-del "!SYNC_PY!" 2>nul
-echo [INFO] File sync complete.
-
-:: --- 7. Upgrade pip packages ---
-:: Do NOT use pipes (|) inside if() blocks - CMD misparses them on some systems.
-:: Running pip commands sequentially outside blocks avoids all issues.
-set "PIP_OK=0"
-if exist "!VENV_PYTHON!" set "PIP_OK=1"
-if "!PIP_OK!"=="1" (
-    echo [INFO] Upgrading pip packages...
-    "!VENV_PYTHON!" -m pip install --upgrade pip >nul 2>&1
-    "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
-    echo [INFO] Packages upgraded.
-)
-if "!PIP_OK!"=="0" (
-    if exist "!VENV_PIP!" (
-        echo [INFO] Upgrading pip packages via pip fallback...
-        "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
-        echo [INFO] Packages upgraded.
-    ) else (
-        echo [WARN] venv not found, skipping package upgrade.
-    )
+:: ===================================================================
+:: STEP 3 - Prefer venv Python (same environment as the running app)
+:: ===================================================================
+if exist "!IDIR!\venv\Scripts\python.exe" (
+    set "PY=!IDIR!\venv\Scripts\python.exe"
+    echo [INFO] Using venv Python: !PY!
 )
 
-:: --- 8. Refresh libs junction via PowerShell - handles non-empty or existing dirs safely ---
-set "LIBS_DIR=!INSTALL_DIR!\libs"
-powershell -NoProfile -Command "$l='!LIBS_DIR!';$s='!VENV_DIR!\Lib\site-packages';if(Test-Path $l){Remove-Item $l -Recurse -Force -EA SilentlyContinue};if(Test-Path $s){New-Item -ItemType Junction -Path $l -Target $s -Force | Out-Null;Write-Host '[INFO] libs junction refreshed.'}"
+:: ===================================================================
+:: STEP 4 - Write PS1 runner to TEMP then execute
+:: PS1 only echoes: Base64 string assignments + PowerShell file I/O.
+:: No Python syntax in CMD echo -- completely safe.
+:: ===================================================================
+set "PS1=%TEMP%\bw_runner.ps1"
+(echo !IDIR!)> "%TEMP%\bw_idir.txt"
+(echo !PY!)> "%TEMP%\bw_ipy.txt"
 
-rmdir /s /q "!TMP_DIR!" 2>nul
-echo [UPDATE] BadWords updated to !LATEST_TAG! successfully!
-echo [UPDATE] Please restart BadWords (close and relaunch from DaVinci Resolve).
+(
+echo $ErrorActionPreference = "Stop"
+echo $b64  = "aW1wb3J0IG9zLCBzeXMsIHNodXRpbCwgaGFzaGxpYiwgemlwZmlsZSwganNvbiwgc3NsLCB1cmxsaWIucmVxdWVzdCwgdGVtcGZpbGUsIHN1YnByb2Nlc3MKCkdSRUVOPSdcMDMzWzA7MzJtJzsgWUVMTE9XPSdcMDMzWzE7MzNtJzsgUkVEPSdcMDMzWzA7MzFtJzsgQ1lBTj0nXDAzM1swOzM2bSc7IE5DPSdcMDMzWzBtJwpkZWYgbG9nKG0pOiAgcHJpbnQoR1JFRU4rJ1tVUERBVEVdICcrbStOQywgZmx1c2g9VHJ1ZSkKZGVmIGluZm8obSk6IHByaW50KENZQU4rJ1tJTkZPXSAgICcrbStOQywgZmx1c2g9VHJ1ZSkKZGVmIHdhcm4obSk6IHByaW50KFlFTExPVysnW1dBUk5dICAgJyttK05DLCBmbHVzaD1UcnVlKQpkZWYgZXJyKG0pOiAgcHJpbnQoUkVEKydbRVJST1JdICAnK20rTkMsIGZsdXNoPVRydWUsIGZpbGU9c3lzLnN0ZGVycikKCmRlZiBnZXRfaGFzaChwKToKICAgIHRyeToKICAgICAgICB3aXRoIG9wZW4ocCwncmInKSBhcyBmaDogcmV0dXJuIGhhc2hsaWIubWQ1KGZoLnJlYWQoKSkuaGV4ZGlnZXN0KCkKICAgIGV4Y2VwdDogcmV0dXJuIE5vbmUKCmRlZiBmZXRjaCh1cmwsIHRpbWVvdXQ9MjApOgogICAgY3R4PXNzbC5jcmVhdGVfZGVmYXVsdF9jb250ZXh0KCk7IGN0eC5jaGVja19ob3N0bmFtZT1GYWxzZTsgY3R4LnZlcmlmeV9tb2RlPXNzbC5DRVJUX05PTkUKICAgIHJlcT11cmxsaWIucmVxdWVzdC5SZXF1ZXN0KHVybCxoZWFkZXJzPXsnVXNlci1BZ2VudCc6J0JhZFdvcmRzLVVwZGF0ZXIvMy4wJ30pCiAgICB3aXRoIHVybGxpYi5yZXF1ZXN0LnVybG9wZW4ocmVxLHRpbWVvdXQ9dGltZW91dCxjb250ZXh0PWN0eCkgYXMgcjogcmV0dXJuIHIucmVhZCgpCgpkZWYgZmV0Y2hfanNvbih1cmwpOgogICAgcmV0dXJuIGpzb24ubG9hZHMoZmV0Y2godXJsKS5kZWNvZGUoJ3V0Zi04JykpCgpJTlNUQUxMX0RJUj1zeXMuYXJndlsxXQpWRU5WX0RJUj1vcy5wYXRoLmpvaW4oSU5TVEFMTF9ESVIsJ3ZlbnYnKQpWRU5WX1BZPW9zLnBhdGguam9pbihWRU5WX0RJUiwnU2NyaXB0cycsJ3B5dGhvbi5leGUnKQpMSUJTX0RJUj1vcy5wYXRoLmpvaW4oSU5TVEFMTF9ESVIsJ2xpYnMnKQoKaWYgbm90IG9zLnBhdGguaXNmaWxlKG9zLnBhdGguam9pbihJTlNUQUxMX0RJUiwnbWFpbi5weScpKToKICAgIGVycignTm8gdmFsaWQgQmFkV29yZHMgaW5zdGFsbGF0aW9uOiAnK0lOU1RBTExfRElSKTsgc3lzLmV4aXQoMSkKCiMgMS4gRmV0Y2ggbGF0ZXN0IHRhZwppbmZvKCdDaGVja2luZyBsYXRlc3QgcmVsZWFzZS4uLicpCkxBVEVTVF9UQUc9Jyc7IFJFUE9fWklQX1VSTD0nJzsgU09VUkNFX1JFUE89JycKR0hfQVBJPSdodHRwczovL2FwaS5naXRodWIuY29tL3JlcG9zL3Zlcml0dXMtZ2l0L0JhZFdvcmRzL3JlbGVhc2VzL2xhdGVzdCcKR0xfQVBJPSdodHRwczovL2dpdGxhYi5jb20vYXBpL3Y0L3Byb2plY3RzLzc4MTAxMDcyL3JlbGVhc2VzJwp0cnk6CiAgICBkPWZldGNoX2pzb24oR0hfQVBJKTsgTEFURVNUX1RBRz1kLmdldCgndGFnX25hbWUnLCcnKS5zdHJpcCgpCiAgICBpZiBMQVRFU1RfVEFHOgogICAgICAgIFJFUE9fWklQX1VSTD0naHR0cHM6Ly9naXRodWIuY29tL3Zlcml0dXMtZ2l0L0JhZFdvcmRzL2FyY2hpdmUvcmVmcy90YWdzLycrTEFURVNUX1RBRysnLnppcCcKICAgICAgICBTT1VSQ0VfUkVQTz0nR2l0SHViJzsgbG9nKCdMYXRlc3Q6ICcrTEFURVNUX1RBRysnIChHaXRIdWIpJykKZXhjZXB0IEV4Y2VwdGlvbiBhcyBleDogd2FybignR2l0SHViOiAnK3N0cihleCkpCgppZiBub3QgTEFURVNUX1RBRzoKICAgIHRyeToKICAgICAgICBkPWZldGNoX2pzb24oR0xfQVBJKQogICAgICAgIGlmIGlzaW5zdGFuY2UoZCxsaXN0KSBhbmQgZDogTEFURVNUX1RBRz1kWzBdLmdldCgndGFnX25hbWUnLCcnKS5zdHJpcCgpCiAgICAgICAgZWxpZiBpc2luc3RhbmNlKGQsZGljdCk6IExBVEVTVF9UQUc9ZC5nZXQoJ3RhZ19uYW1lJywnJykuc3RyaXAoKQogICAgICAgIGlmIExBVEVTVF9UQUc6CiAgICAgICAgICAgIFJFUE9fWklQX1VSTD0naHR0cHM6Ly9naXRsYWIuY29tL2JhZHdvcmRzL0JhZFdvcmRzLy0vYXJjaGl2ZS8nK0xBVEVTVF9UQUcrJy9CYWRXb3Jkcy0nK0xBVEVTVF9UQUcrJy56aXAnCiAgICAgICAgICAgIFNPVVJDRV9SRVBPPSdHaXRMYWInOyBsb2coJ0xhdGVzdDogJytMQVRFU1RfVEFHKycgKEdpdExhYiknKQogICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBleDogd2FybignR2l0TGFiOiAnK3N0cihleCkpCgppZiBub3QgTEFURVNUX1RBRzoKICAg"
+echo $b64 += "IGVycignQ291bGQgbm90IGRldGVybWluZSBsYXRlc3QgdmVyc2lvbiBmcm9tIEdpdEh1YiBvciBHaXRMYWIuJyk7IHN5cy5leGl0KDEpCgojIDIuIERvd25sb2FkClRNUD10ZW1wZmlsZS5ta2R0ZW1wKHByZWZpeD0nYndfdXBkXycpClpJUD1vcy5wYXRoLmpvaW4oVE1QLCdyZXBvLnppcCcpCmluZm8oJ0Rvd25sb2FkaW5nIGZyb20gJytTT1VSQ0VfUkVQTysnLi4uJykKdHJ5OgogICAgZGF0YT1mZXRjaChSRVBPX1pJUF9VUkwpCiAgICB3aXRoIG9wZW4oWklQLCd3YicpIGFzIGZoOiBmaC53cml0ZShkYXRhKQogICAgaW5mbygnRG93bmxvYWRlZCAnK3N0cihsZW4oZGF0YSkvLzEwMjQpKycgS0InKQpleGNlcHQgRXhjZXB0aW9uIGFzIGV4OgogICAgZXJyKCdEb3dubG9hZCBmYWlsZWQ6ICcrc3RyKGV4KSk7IHNodXRpbC5ybXRyZWUoVE1QLGlnbm9yZV9lcnJvcnM9VHJ1ZSk7IHN5cy5leGl0KDEpCgojIDMuIEV4dHJhY3QKaW5mbygnRXh0cmFjdGluZy4uLicpCnRyeToKICAgIHdpdGggemlwZmlsZS5aaXBGaWxlKFpJUCwncicpIGFzIHpmOiB6Zi5leHRyYWN0YWxsKG9zLnBhdGguam9pbihUTVAsJ3gnKSkKZXhjZXB0IEV4Y2VwdGlvbiBhcyBleDoKICAgIGVycignRXh0cmFjdCBmYWlsZWQ6ICcrc3RyKGV4KSk7IHNodXRpbC5ybXRyZWUoVE1QLGlnbm9yZV9lcnJvcnM9VHJ1ZSk7IHN5cy5leGl0KDEpCgpCQVNFPW9zLnBhdGguam9pbihUTVAsJ3gnKQp0b3BzPVtkIGZvciBkIGluIG9zLmxpc3RkaXIoQkFTRSkgaWYgb3MucGF0aC5pc2Rpcihvcy5wYXRoLmpvaW4oQkFTRSxkKSldCmlmIG5vdCB0b3BzOgogICAgZXJyKCdObyB0b3AtbGV2ZWwgZm9sZGVyIGluIGFyY2hpdmUuJyk7IHNodXRpbC5ybXRyZWUoVE1QLGlnbm9yZV9lcnJvcnM9VHJ1ZSk7IHN5cy5leGl0KDEpClhESVI9b3MucGF0aC5qb2luKEJBU0UsdG9wc1swXSkKU1JDX009b3MucGF0aC5qb2luKFhESVIsJ3NyYycpOyBTUkNfQT1vcy5wYXRoLmpvaW4oWERJUiwnYXNzZXRzJykKaWYgbm90IG9zLnBhdGguaXNmaWxlKG9zLnBhdGguam9pbihTUkNfTSwnbWFpbi5weScpKToKICAgIGVycignc3JjL21haW4ucHkgbWlzc2luZyBpbiBhcmNoaXZlLicpOyBzaHV0aWwucm10cmVlKFRNUCxpZ25vcmVfZXJyb3JzPVRydWUpOyBzeXMuZXhpdCgxKQoKIyA0LiBTeW5jIGZpbGVzIChoYXNoLWJhc2VkLCBhZGRpdGl2ZSArIG9ic29sZXRlIGNsZWFudXApCmluZm8oJ1N5bmNpbmcgZmlsZXMuLi4nKQpzcmNzPVtwIGZvciBwIGluIFtTUkNfTSxTUkNfQV0gaWYgb3MucGF0aC5pc2RpcihwKV0KRFNUPUlOU1RBTExfRElSCmZvciBzcmMgaW4gc3JjczoKICAgIGZvciByb290LGRpcnMsZmlsZXMgaW4gb3Mud2FsayhzcmMpOgogICAgICAgIHJlbD1vcy5wYXRoLnJlbHBhdGgocm9vdCxzcmMpCiAgICAgICAgZGRpcj1EU1QgaWYgcmVsPT0nLicgZWxzZSBvcy5wYXRoLmpvaW4oRFNULHJlbCkKICAgICAgICBvcy5tYWtlZGlycyhkZGlyLGV4aXN0X29rPVRydWUpCiAgICAgICAgZm9yIGZuIGluIGZpbGVzOgogICAgICAgICAgICBzZj1vcy5wYXRoLmpvaW4ocm9vdCxmbik7IGRmPW9zLnBhdGguam9pbihkZGlyLGZuKQogICAgICAgICAgICBpZiBnZXRfaGFzaChzZikhPWdldF9oYXNoKGRmKToKICAgICAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgICAgICBzaHV0aWwuY29weTIoc2YsZGYpCiAgICAgICAgICAgICAgICAgICAgaW5mbygnICBVcGRhdGVkOiAnKyhmbiBpZiByZWw9PScuJyBlbHNlIG9zLnBhdGguam9pbihyZWwsZm4pKSkKICAgICAgICAgICAgICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZXg6IHdhcm4oJyAgY29weSAnK2ZuKyc6ICcrc3RyKGV4KSkKClBGPXsncHJlZi5qc29uJywndXNlci5qc29uJywnc2V0dGluZ3MuanNvbicsJ2JhZHdvcmRzX2RlYnVnLmxvZycsJ0JhZFdvcmRzLnB5JywKICAgICd1bmluczAwMC5kYXQnLCd1bmluczAwMC5leGUnLCdmZm1wZWdfc3RhdGljLnRhci54eid9ClBEPXsnbW9kZWxzJywnc2F2ZXMnLCd2ZW52JywnYmluJywnbGlicycsJ2ljb25zJywnbGF5b3V0JywnLmdpdCcsJy5naXRodWInLCdfX3B5Y2FjaGVfXyd9CnNyY190b3A9c2V0KCkKZm9yIHMgaW4gc3Jjczogc3JjX3RvcC51cGRhdGUob3MubGlzdGRpcihzKSkKCmZvciBpdGVtIGluIHNvcnRlZChvcy5saXN0ZGlyKERTVCkpOgogICAgaWYgaXRlbSBpbiBQRiBvciBpdGVtIGluIFBEOiBjb250aW51ZQogICAgaWYgaXRlbSBub3QgaW4gc3JjX3RvcDoKICAgICAgICBmdWxsPW9zLnBhdGgu"
+echo $b64 += "am9pbihEU1QsaXRlbSkKICAgICAgICB0cnk6CiAgICAgICAgICAgIChzaHV0aWwucm10cmVlIGlmIG9zLnBhdGguaXNkaXIoZnVsbCkgZWxzZSBvcy5yZW1vdmUpKGZ1bGwpCiAgICAgICAgICAgIGluZm8oJyAgUmVtb3ZlZCBvYnNvbGV0ZTogJytpdGVtKQogICAgICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZXg6IHdhcm4oJyAgcm0gJytpdGVtKyc6ICcrc3RyKGV4KSkKCnNyY19zdWI9e30KZm9yIHMgaW4gc3JjczoKICAgIGZvciByMixkMixmMiBpbiBvcy53YWxrKHMpOgogICAgICAgIHJlbDI9b3MucGF0aC5yZWxwYXRoKHIyLHMpCiAgICAgICAgaWYgcmVsMiBub3QgaW4gc3JjX3N1Yjogc3JjX3N1YltyZWwyXT1zZXQoKQogICAgICAgIHNyY19zdWJbcmVsMl0udXBkYXRlKGYyKQoKZm9yIHN1Yl9yZWwsc3ViX2ZpbGVzIGluIHNyY19zdWIuaXRlbXMoKToKICAgIGlmIHN1Yl9yZWw9PScuJzogY29udGludWUKICAgIHN1Yl9kc3Q9b3MucGF0aC5qb2luKERTVCxzdWJfcmVsKQogICAgaWYgbm90IG9zLnBhdGguaXNkaXIoc3ViX2RzdCk6IGNvbnRpbnVlCiAgICBmb3IgZGYyIGluIHNvcnRlZChvcy5saXN0ZGlyKHN1Yl9kc3QpKToKICAgICAgICBpZiBkZjIgbm90IGluIHN1Yl9maWxlczoKICAgICAgICAgICAgZnA9b3MucGF0aC5qb2luKHN1Yl9kc3QsZGYyKQogICAgICAgICAgICB0cnk6CiAgICAgICAgICAgICAgICAoc2h1dGlsLnJtdHJlZSBpZiBvcy5wYXRoLmlzZGlyKGZwKSBlbHNlIG9zLnJlbW92ZSkoZnApCiAgICAgICAgICAgICAgICBpbmZvKCcgIFJlbW92ZWQgb2Jzb2xldGU6ICcrb3MucGF0aC5qb2luKHN1Yl9yZWwsZGYyKSkKICAgICAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBleDogd2FybignICBybSAnK2RmMisnOiAnK3N0cihleCkpCgpsb2coJ0ZpbGUgc3luYyBjb21wbGV0ZS4nKQoKIyA1LiBQaXAgdXBncmFkZQpQWV9FWEU9VkVOVl9QWSBpZiBvcy5wYXRoLmlzZmlsZShWRU5WX1BZKSBlbHNlIHN5cy5leGVjdXRhYmxlCmluZm8oJ1VwZ3JhZGluZyBwaXAgcGFja2FnZXMuLi4nKQp0cnk6CiAgICBzdWJwcm9jZXNzLnJ1bihbUFlfRVhFLCctbScsJ3BpcCcsJ2luc3RhbGwnLCctLXVwZ3JhZGUnLCdwaXAnXSwKICAgICAgICAgICAgICAgICAgIGNoZWNrPUZhbHNlLHN0ZG91dD1zdWJwcm9jZXNzLkRFVk5VTEwsc3RkZXJyPXN1YnByb2Nlc3MuREVWTlVMTCkKICAgIHN1YnByb2Nlc3MucnVuKFtQWV9FWEUsJy1tJywncGlwJywnaW5zdGFsbCcsJy0tdXBncmFkZScsCiAgICAgICAgICAgICAgICAgICAnZmFzdGVyLXdoaXNwZXInLCdzdGFibGUtdHMnLCdweXBkZiddLAogICAgICAgICAgICAgICAgICAgY2hlY2s9RmFsc2Usc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCxzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgbG9nKCdQYWNrYWdlcyB1cGdyYWRlZC4nKQpleGNlcHQgRXhjZXB0aW9uIGFzIGV4OiB3YXJuKCdwaXAgdXBncmFkZTogJytzdHIoZXgpKQoKIyA2LiBSZWZyZXNoIGxpYnMganVuY3Rpb24vc3ltbGluawpTSVRFPW9zLnBhdGguam9pbihWRU5WX0RJUiwnTGliJywnc2l0ZS1wYWNrYWdlcycpCmlmIG9zLnBhdGguaXNkaXIoU0lURSk6CiAgICB0cnk6CiAgICAgICAgaWYgb3MucGF0aC5leGlzdHMoTElCU19ESVIpIG9yIG9zLnBhdGguaXNsaW5rKExJQlNfRElSKToKICAgICAgICAgICAgaWYgb3MucGF0aC5pc2xpbmsoTElCU19ESVIpOiBvcy51bmxpbmsoTElCU19ESVIpCiAgICAgICAgICAgIGVsaWYgb3MucGF0aC5pc2RpcihMSUJTX0RJUik6IHNodXRpbC5ybXRyZWUoTElCU19ESVIpCiAgICAgICAgICAgIGVsc2U6IG9zLnJlbW92ZShMSUJTX0RJUikKICAgICAgICBvcy5zeW1saW5rKFNJVEUsTElCU19ESVIsdGFyZ2V0X2lzX2RpcmVjdG9yeT1UcnVlKQogICAgICAgIGluZm8oJ2xpYnMgc3ltbGluayByZWZyZXNoZWQuJykKICAgIGV4Y2VwdCAoT1NFcnJvcixOb3RJbXBsZW1lbnRlZEVycm9yKToKICAgICAgICB0cnk6CiAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKAogICAgICAgICAgICAgICAgWydjbWQuZXhlJywnL2MnLCdta2xpbmsnLCcvSicsTElCU19ESVIsU0lURV0sCiAgICAgICAgICAgICAgICBjaGVjaz1GYWxzZSxzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLHN0ZGVycj1zdWJwcm9jZXNzLkRFVk5VTEwsCiAgICAgICAgICAgICAgICBjcmVhdGlvbmZsYWdzPTB4MDgwMDAwMDApCiAgICAgICAgICAgIGluZm8oJ2xpYnMganVuY3Rpb24gcmVmcmVzaGVkIChta2xpbmsgL0opLicpCiAg"
+echo $b64 += "ICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBleDogd2FybignbGlicyBsaW5rOiAnK3N0cihleCkpCgojIDcuIENsZWFudXAKc2h1dGlsLnJtdHJlZShUTVAsaWdub3JlX2Vycm9ycz1UcnVlKQpsb2coJ0JhZFdvcmRzIHVwZGF0ZWQgdG8gJytMQVRFU1RfVEFHKycgc3VjY2Vzc2Z1bGx5IScpCmxvZygnUGxlYXNlIHJlc3RhcnQgQmFkV29yZHMgKGNsb3NlIGFuZCByZWxhdW5jaCBmcm9tIERhVmluY2kgUmVzb2x2ZSkuJykK"
+echo $bytes = [Convert]::FromBase64String($b64)
+echo $pfile = "$env:TEMP\bw_payload.py"
+echo $idir  = ([IO.File]::ReadAllText("$env:TEMP\bw_idir.txt")).Trim()
+echo $py    = ([IO.File]::ReadAllText("$env:TEMP\bw_ipy.txt")).Trim()
+echo [IO.File]::WriteAllBytes($pfile, $bytes)
+echo Write-Host "[INFO] Running Python update payload..."
+echo $p = Start-Process -FilePath $py -ArgumentList @($pfile,$idir) -Wait -PassThru -NoNewWindow
+echo Remove-Item $pfile -Force -EA SilentlyContinue
+echo exit $p.ExitCode
+) > "!PS1!"
+
+:: ===================================================================
+:: STEP 5 - Execute the PowerShell runner
+:: ===================================================================
+echo [INFO] Running update...
+powershell -NoProfile -ExecutionPolicy Bypass -File "!PS1!"
+set "RC=!errorlevel!"
+
+del "!PS1!" 2>nul
+del "%TEMP%\bw_idir.txt" 2>nul
+del "%TEMP%\bw_ipy.txt" 2>nul
+
+if !RC! neq 0 (
+    echo [ERROR] Update failed with exit code !RC!
+    exit /b !RC!
+)
 exit /b 0
