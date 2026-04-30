@@ -249,6 +249,11 @@ begin
   if (Length(OldInstallPath) > 0) and (OldInstallPath[Length(OldInstallPath)] = '\') then
     OldInstallPath := Copy(OldInstallPath, 1, Length(OldInstallPath) - 1);
 
+  // KEY FIX: pre-populate DirEdit with existing path so that {app} resolves
+  // to the real install location even when wpSelectDir is skipped.
+  if (OldInstallPath <> '') and DirExists(OldInstallPath) then
+    WizardForm.DirEdit.Text := OldInstallPath;
+
   // Mode page inserted BEFORE wpSelectDir (after wpWelcome) so that
   // ShouldSkipPage(wpSelectDir) can read the already-chosen mode.
   InstallModePage := CreateInputOptionPage(wpWelcome,
@@ -265,7 +270,6 @@ end;
 // ── Page visibility ──────────────────────────────────────────────────────────
 
 function ShouldSkipPage(PageID: Integer): Boolean;
-var FFmpegCheckPath: String;
 begin
   Result := False;
   if PageID = wpSelectDir then
@@ -276,7 +280,7 @@ begin
     else if InstallModePage.Values[1] then Result := True  // Repair: use existing
     else if InstallModePage.Values[0] and IsAlreadyInstalled() then Result := True; // Update: use existing
   end;
-  // Remove mode: skip wpReady (looks like installing, confuses user)
+  // Remove mode: skip wpReady so user doesn't see 'Ready to Install'
   if (PageID = wpReady) and IsRemoveMode() then Result := True;
 end;
 
@@ -417,11 +421,11 @@ begin
     else if InstallModePage.Values[3] then // Complete Reset
     begin
       if FileExists(ExpandConstant('{app}\user.json')) then
-        FileCopy(ExpandConstant('{app}\user.json'), ExpandConstant('{tmp}\bw_user.json'), False);
+        CopyFile(ExpandConstant('{app}\user.json'), ExpandConstant('{tmp}\bw_user.json'), False);
       if FileExists(ExpandConstant('{app}\settings.json')) then
-        FileCopy(ExpandConstant('{app}\settings.json'), ExpandConstant('{tmp}\bw_settings.json'), False);
+        CopyFile(ExpandConstant('{app}\settings.json'), ExpandConstant('{tmp}\bw_settings.json'), False);
       if FileExists(ExpandConstant('{app}\pref.json')) then
-        FileCopy(ExpandConstant('{app}\pref.json'), ExpandConstant('{tmp}\bw_pref.json'), False);
+        CopyFile(ExpandConstant('{app}\pref.json'), ExpandConstant('{tmp}\bw_pref.json'), False);
       SmartCleanup(False, False);
     end
     else if InstallModePage.Values[2] then // Move Installation
@@ -444,13 +448,13 @@ begin
           '"' + OldInstallPath + '\saves" "' + ExpandConstant('{app}') + '\saves" /E /MOVE /NP /NJH /NJS',
           '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
         if FileExists(OldInstallPath + '\pref.json') then
-          FileCopy(OldInstallPath + '\pref.json', ExpandConstant('{app}') + '\pref.json', False);
+          CopyFile(OldInstallPath + '\pref.json', ExpandConstant('{app}') + '\pref.json', False);
         if FileExists(OldInstallPath + '\user.json') then
-          FileCopy(OldInstallPath + '\user.json', ExpandConstant('{app}') + '\user.json', False);
+          CopyFile(OldInstallPath + '\user.json', ExpandConstant('{app}') + '\user.json', False);
         if FileExists(OldInstallPath + '\settings.json') then
-          FileCopy(OldInstallPath + '\settings.json', ExpandConstant('{app}') + '\settings.json', False);
+          CopyFile(OldInstallPath + '\settings.json', ExpandConstant('{app}') + '\settings.json', False);
         if FileExists(OldInstallPath + '\badwords_debug.log') then
-          FileCopy(OldInstallPath + '\badwords_debug.log', ExpandConstant('{app}') + '\badwords_debug.log', False);
+          CopyFile(OldInstallPath + '\badwords_debug.log', ExpandConstant('{app}') + '\badwords_debug.log', False);
         DelTree(OldInstallPath, True, True, True);
       end;
       SmartCleanup(False, True);
@@ -475,11 +479,11 @@ begin
     if InstallModePage.Values[3] then
     begin
       if FileExists(ExpandConstant('{tmp}\bw_user.json')) then
-        FileCopy(ExpandConstant('{tmp}\bw_user.json'), ExpandConstant('{app}\user.json'), False);
+        CopyFile(ExpandConstant('{tmp}\bw_user.json'), ExpandConstant('{app}\user.json'), False);
       if FileExists(ExpandConstant('{tmp}\bw_settings.json')) then
-        FileCopy(ExpandConstant('{tmp}\bw_settings.json'), ExpandConstant('{app}\settings.json'), False);
+        CopyFile(ExpandConstant('{tmp}\bw_settings.json'), ExpandConstant('{app}\settings.json'), False);
       if FileExists(ExpandConstant('{tmp}\bw_pref.json')) then
-        FileCopy(ExpandConstant('{tmp}\bw_pref.json'), ExpandConstant('{app}\pref.json'), False);
+        CopyFile(ExpandConstant('{tmp}\bw_pref.json'), ExpandConstant('{app}\pref.json'), False);
     end;
 
     FFmpegZip := ExpandConstant('{tmp}\ffmpeg.zip');
@@ -496,9 +500,13 @@ begin
 
     WizardForm.StatusLabel.Caption := CustomMessage('StatusConfig');
 
-    if not Exec(ExpandConstant('{app}\setup_windows.bat'),
-        '"' + ExpandConstant('{app}') + '" "' + FFmpegZip + '" "' + WipeMode + '" "' + OldDir + '"',
-        '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+    // IMPORTANT: Use cmd.exe /c to execute .bat file.
+    // ISS Exec cannot run .bat files directly on all Windows configs.
+    // Double-quote trick: /c ""path" arg1 arg2" wraps entire command.
+    if not Exec(ExpandConstant('{sys}\cmd.exe'),
+        '/c ""' + ExpandConstant('{app}\setup_windows.bat') + '" "' +
+        ExpandConstant('{app}') + '" "' + FFmpegZip + '" "' + WipeMode + '" "' + OldDir + '""',
+        ExpandConstant('{app}'), SW_SHOW, ewWaitUntilTerminated, ResultCode) then
     begin
       MsgBox(FmtMessage(CustomMessage('ErrConfig'), [IntToStr(ResultCode)]), mbError, MB_OK);
     end;
@@ -510,13 +518,9 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppPath: String;
-  FindRec: TFindRec;
-  StoreDir, ResolvePath: String;
 begin
   if CurUninstallStep = usUninstall then
-  begin
     RemoveResolveWrappers;
-  end;
 
   if CurUninstallStep = usPostUninstall then
   begin
