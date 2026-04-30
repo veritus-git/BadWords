@@ -14,29 +14,21 @@ except ImportError:
     from rich.console import Console
     from rich.text import Text
 
-# ── Terminal dimensions & layout constants ────────────────────
-TERM_W   = 86          # total terminal columns
-TERM_H   = 30          # total terminal rows
-PAD      = "    "      # 4-space left margin
-SEP_LEN  = TERM_W - 8  # separator width (4-char right margin)
-SEP_LINE = PAD + "─" * SEP_LEN
+# ── Terminal dimensions & layout ──────────────────────────────
+TERM_W = 88
+TERM_H = 32
+PAD    = "    "   # 4-space left margin
 
 console = Console(width=TERM_W, highlight=False)
-
-def _set_terminal_size():
-    """Resize terminal window via ANSI escape (xterm-compatible)."""
-    sys.stdout.write(f"\033[8;{TERM_H};{TERM_W}t")
-    sys.stdout.flush()
-    time.sleep(0.1)
 
 # ── Parse args ───────────────────────────────────────────────
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument("--platform", default=sys.platform)
 parser.add_argument("--bootstrap-python", default=sys.executable)
 ARGS, _ = parser.parse_known_args()
-PLAT = ARGS.platform.lower()   # "linux", "darwin"/"mac", "windows"/"win32"
+PLAT = ARGS.platform.lower()
 
-# ── Platform constants ───────────────────────────────────────
+# ── Platform helpers ─────────────────────────────────────────
 APP_NAME = "BadWords"
 
 def _default_install_dir():
@@ -56,35 +48,118 @@ def _resolve_script_dir():
     return os.path.join(os.path.expanduser("~"), ".local", "share",
                         "DaVinciResolve", "Fusion", "Scripts", "Utility")
 
-# ── UI helpers ───────────────────────────────────────────────
+# ── Cancellation ─────────────────────────────────────────────
+class UserCancelled(Exception):
+    pass
+
+# ── Single-keypress input ─────────────────────────────────────
+def getch():
+    """Read one keypress immediately (no Enter needed). Returns char or 'ESC'."""
+    if os.name == "nt":
+        import msvcrt
+        while True:
+            ch = msvcrt.getch()
+            if ch in (b"\x00", b"\xe0"):
+                msvcrt.getch()
+                continue
+            if ch in (b"\x1b", b"\x03"):
+                return "ESC"
+            try:
+                return ch.decode("utf-8")
+            except Exception:
+                continue
+    else:
+        import tty, termios, select
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+            if ch in ("\x1b", "\x03"):
+                r, _, _ = select.select([sys.stdin], [], [], 0.05)
+                if r:
+                    sys.stdin.read(10)
+                return "ESC"
+            return ch
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+def readline_with_esc(show_cursor=True):
+    """Read a line character-by-character. ESC/Ctrl+C cancels → raises UserCancelled."""
+    if os.name == "nt":
+        import msvcrt
+        buf = []
+        while True:
+            ch = msvcrt.getch()
+            if ch in (b"\x1b", b"\x03"):
+                raise UserCancelled()
+            if ch in (b"\r", b"\n"):
+                sys.stdout.write("\n"); sys.stdout.flush()
+                return "".join(buf)
+            if ch in (b"\x08", b"\x7f"):
+                if buf:
+                    buf.pop()
+                    sys.stdout.write("\b \b"); sys.stdout.flush()
+                continue
+            try:
+                c = ch.decode("utf-8")
+                if c.isprintable():
+                    buf.append(c)
+                    sys.stdout.write(c); sys.stdout.flush()
+            except Exception:
+                pass
+    else:
+        import tty, termios, select
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        buf = []
+        try:
+            tty.setraw(fd)
+            while True:
+                ch = sys.stdin.read(1)
+                if ch in ("\x1b", "\x03"):
+                    r, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if r:
+                        sys.stdin.read(10)
+                    raise UserCancelled()
+                if ch in ("\r", "\n"):
+                    sys.stdout.write("\n"); sys.stdout.flush()
+                    return "".join(buf)
+                if ch in ("\x7f", "\x08"):
+                    if buf:
+                        buf.pop()
+                        sys.stdout.write("\b \b"); sys.stdout.flush()
+                    continue
+                if ch.isprintable():
+                    buf.append(ch)
+                    sys.stdout.write(ch); sys.stdout.flush()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        return "".join(buf)
+
+# ── UI ───────────────────────────────────────────────────────
+def _resize():
+    sys.stdout.write(f"\033[8;{TERM_H};{TERM_W}t")
+    sys.stdout.flush()
+    time.sleep(0.15)
+
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
 
-def sep():
-    """Padded separator — never touches the terminal edges."""
-    console.print(Text(SEP_LINE, style="dim"), no_wrap=True)
-
 def header():
+    _resize()
     clear()
-    _set_terminal_size()
     console.print()
     console.print(Text(f"{PAD}BadWords Installer", style="bold white"), no_wrap=True)
     console.print(Text(f"{PAD}Cross-Platform Setup  —  Linux / Windows / macOS", style="dim"), no_wrap=True)
     console.print()
-    sep()
-    console.print()
-    console.print(
-        Text(f"{PAD}Tip: For a fresh install or update, choose [1] and press Enter at every prompt.",
-             style="green"), no_wrap=True
-    )
-    console.print()
-    sep()
+    console.print(Text(f"{PAD}Tip: For a fresh install or update, choose [1] and press Enter at every prompt.", style="green"), no_wrap=True)
     console.print()
 
 def menu():
     console.print(Text(f"{PAD}Installation Options:", style="bold white"), no_wrap=True)
     console.print()
-    lines = [
+    items = [
         ("[1]", "bold green",  "Standard Install / Update",
          "Install or update BadWords. Keeps your settings and models."),
         ("[2]", "bold cyan",   "Repair Installation",
@@ -96,36 +171,33 @@ def menu():
         ("[5]", "bold red",    "Uninstall",
          "Remove BadWords completely from this system."),
     ]
-    for key, style, name, desc in lines:
+    for key, style, name, desc in items:
         t = Text(no_wrap=True)
         t.append(f"{PAD}{key} ", style=style)
         t.append(f"{name}\n", style="bright_white")
         t.append(f"{PAD}    {desc}", style="dim")
         console.print(t, no_wrap=True)
         console.print()
-    sep()
     console.print(Text(f"{PAD}[0] Exit", style="white"), no_wrap=True)
     console.print()
-    sep()
+    console.print(Text(f"{PAD}[ESC] Quit  —  press a key to select:", style="dim"), no_wrap=True)
 
 def prompt_choice():
+    """Single keypress — no Enter needed."""
     console.print()
-    console.print(
-        Text(f"{PAD}Choose a menu option using your keyboard [1,2,3,4,5,0] : ", style="green"),
-        end="", no_wrap=True
-    )
-    try:
-        return input().strip()
-    except (KeyboardInterrupt, EOFError):
-        return "0"
+    console.print(Text(f"{PAD}Choose a menu option [1,2,3,4,5,0] : ", style="green"), end="", no_wrap=True)
+    sys.stdout.flush()
+    ch = getch()
+    console.print(Text(ch if ch != "ESC" else "ESC", style="dim"))
+    return ch
 
 def pause(msg=None):
     msg = msg or f"{PAD}Press Enter to return to the menu..."
     console.print()
     console.print(Text(msg, style="dim"), no_wrap=True)
     try:
-        input()
-    except (KeyboardInterrupt, EOFError):
+        readline_with_esc()
+    except (UserCancelled, KeyboardInterrupt):
         pass
 
 def log_info(msg):  console.print(Text(f"{PAD}[INFO] {msg}", style="green"), no_wrap=True)
@@ -144,29 +216,24 @@ def md5(path):
 
 def download(url, dest):
     if shutil.which("curl"):
-        r = subprocess.run(["curl", "-fsSL", url, "-o", dest])
-        return r.returncode == 0
+        return subprocess.run(["curl", "-fsSL", url, "-o", dest]).returncode == 0
     elif shutil.which("wget"):
-        r = subprocess.run(["wget", "-qO", dest, url])
-        return r.returncode == 0
+        return subprocess.run(["wget", "-qO", dest, url]).returncode == 0
     return False
 
 def get_latest_tag():
     import json, urllib.request
-    for url in [
-        "https://api.github.com/repos/veritus-git/BadWords/releases/latest",
-    ]:
-        try:
-            with urllib.request.urlopen(url, timeout=10) as r:
-                data = json.load(r)
-                tag = data.get("tag_name", "")
-                if tag:
-                    return tag, f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip", "GitHub"
-        except Exception:
-            pass
-    # GitLab fallback
     try:
-        import urllib.request, json
+        with urllib.request.urlopen(
+            "https://api.github.com/repos/veritus-git/BadWords/releases/latest", timeout=10
+        ) as r:
+            data = json.load(r)
+            tag = data.get("tag_name", "")
+            if tag:
+                return tag, f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip", "GitHub"
+    except Exception:
+        pass
+    try:
         with urllib.request.urlopen(
             "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases", timeout=10
         ) as r:
@@ -179,7 +246,6 @@ def get_latest_tag():
     return "main", "", ""
 
 def detect_existing_install(default_dir, resolve_script_dir):
-    """Read INSTALL_DIR from wrapper if valid."""
     wrapper = os.path.join(resolve_script_dir, "BadWords.py")
     for wf in [wrapper, os.path.join(resolve_script_dir, "BadWords (Linux).py")]:
         if not os.path.isfile(wf):
@@ -196,7 +262,6 @@ def detect_existing_install(default_dir, resolve_script_dir):
             pass
     return None
 
-# ── Sync logic ───────────────────────────────────────────────
 def two_way_sync(src_paths, dst, protected_files, protected_dirs):
     for src in src_paths:
         if not os.path.exists(src):
@@ -211,7 +276,6 @@ def two_way_sync(src_paths, dst, protected_files, protected_dirs):
                 if md5(sp) != md5(dp):
                     shutil.copy2(sp, dp)
                     log_info(f"Updated: {os.path.join(rel, fname)}")
-    # Cleanup obsolete
     for item in os.listdir(dst):
         dp = os.path.join(dst, item)
         in_src = any(os.path.exists(os.path.join(s, item)) for s in src_paths)
@@ -224,7 +288,7 @@ def two_way_sync(src_paths, dst, protected_files, protected_dirs):
                 log_warn(f"Removing obsolete file: {item}")
                 os.remove(dp)
 
-# ── Option 1 — Standard Install/Update ───────────────────────
+# ── Option 1 — Standard Install / Update ─────────────────────
 def option_install_update():
     header()
     console.print(Text(f"{PAD}── Standard Install / Update ──", style="bold green"), no_wrap=True)
@@ -233,7 +297,6 @@ def option_install_update():
     resolve_dir = _resolve_script_dir()
     default_dir = _default_install_dir()
 
-    # Smart path detection
     detected = detect_existing_install(default_dir, resolve_dir)
     if detected:
         log_ok(f"Existing installation detected: {detected}")
@@ -242,36 +305,32 @@ def option_install_update():
         install_dir = default_dir
         log_info(f"Default install path: {install_dir}")
 
-    # Custom path prompt
     console.print()
-    console.print(Text(f"  Install path: {install_dir}", style="dim"))
-    console.print(Text("  Press Enter to accept, or type a custom path: ", style="cyan"), end="")
-    try:
-        custom = input().strip()
-    except (KeyboardInterrupt, EOFError):
-        custom = ""
+    console.print(Text(f"{PAD}Install path: {install_dir}", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}Press Enter to accept, or type a custom path: ", style="cyan"), end="", no_wrap=True)
+    sys.stdout.flush()
+    custom = readline_with_esc()
 
     if custom:
-        custom = os.path.expanduser(custom)
+        custom = os.path.expanduser(custom.strip())
         if not custom.endswith(APP_NAME):
             custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
         install_dir = custom
         log_info(f"Using custom path: {install_dir}")
 
-    venv_dir    = os.path.join(install_dir, "venv")
-    libs_link   = os.path.join(install_dir, "libs")
-    models_dir  = os.path.join(install_dir, "models")
-    bin_dir     = os.path.join(install_dir, "bin")
-    log_file    = os.path.join(install_dir, "badwords_debug.log")
+    venv_dir  = os.path.join(install_dir, "venv")
+    libs_link = os.path.join(install_dir, "libs")
+    models_dir = os.path.join(install_dir, "models")
+    bin_dir   = os.path.join(install_dir, "bin")
+    log_file  = os.path.join(install_dir, "badwords_debug.log")
 
-    # ── Source fetch ─────────────────────────────────────────
+    # ── Source fetch ──────────────────────────────────────────
     console.print()
-    sep()
     log_step("Resolving source files...")
     tag, zip_url, source_repo = get_latest_tag()
     tmp_dl = tempfile.mkdtemp()
-    source_path = None
-    assets_path = None
+    source_path = assets_path = None
+
     try:
         if zip_url:
             log_step(f"Downloading latest release from {source_repo} ({tag})...")
@@ -295,14 +354,14 @@ def option_install_update():
                 log_err("Could not find src/ in downloaded archive.")
                 pause()
                 return
+
         if not source_path or not os.path.isfile(os.path.join(source_path, "main.py")):
             log_err("main.py not found in source. Aborting.")
             pause()
             return
 
-        # ── GPU detection (Linux) ─────────────────────────────
+        # ── GPU detection ─────────────────────────────────────
         console.print()
-        sep()
         log_step("Detecting GPU hardware...")
         has_nvidia = False
         if shutil.which("lspci"):
@@ -311,19 +370,17 @@ def option_install_update():
         if not has_nvidia and shutil.which("lshw"):
             r = subprocess.run(["lshw", "-C", "display"], capture_output=True, text=True)
             has_nvidia = "nvidia" in r.stdout.lower()
-        mode_name = "NVIDIA (CUDA 12)" if has_nvidia else "CPU (AMD/Intel)"
+        mode_name   = "NVIDIA (CUDA 12)" if has_nvidia else "CPU (AMD/Intel)"
         nvidia_pkgs = "nvidia-cublas-cu12 nvidia-cudnn-cu12" if has_nvidia else ""
         log_ok(f"AI Engine Mode: {mode_name}")
 
         # ── Directory setup ───────────────────────────────────
         console.print()
-        sep()
         log_step("Preparing directories...")
         os.makedirs(install_dir, exist_ok=True)
         os.makedirs(models_dir, exist_ok=True)
         os.makedirs(bin_dir, exist_ok=True)
 
-        # ── File sync ─────────────────────────────────────────
         log_step("Syncing application files...")
         protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", "ffmpeg_static.tar.xz"}
         protected_dirs  = {"models", "saves", "venv", "bin", "libs"}
@@ -339,7 +396,6 @@ def option_install_update():
 
         # ── FFmpeg ────────────────────────────────────────────
         console.print()
-        sep()
         ffmpeg_bin = os.path.join(bin_dir, "ffmpeg")
         if is_update and os.path.isfile(ffmpeg_bin):
             log_ok("Portable FFmpeg already present. Skipping download.")
@@ -350,16 +406,12 @@ def option_install_update():
             if download(ffmpeg_url, ffmpeg_arc):
                 subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
                 for name in ["ffmpeg", "ffprobe"]:
-                    found = None
                     for root, _, files in os.walk(install_dir):
                         if name in files and "ffmpeg-" in root:
-                            found = os.path.join(root, name)
+                            dest = os.path.join(bin_dir, name)
+                            shutil.move(os.path.join(root, name), dest)
+                            os.chmod(dest, 0o755)
                             break
-                    if found:
-                        dest = os.path.join(bin_dir, name)
-                        shutil.move(found, dest)
-                        os.chmod(dest, 0o755)
-                # Cleanup extracted dir
                 for item in os.listdir(install_dir):
                     if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
                         shutil.rmtree(os.path.join(install_dir, item))
@@ -368,11 +420,9 @@ def option_install_update():
             else:
                 log_warn("FFmpeg download failed. App may not work without it.")
 
-        # ── Python selection for venv ─────────────────────────
+        # ── Python for venv ───────────────────────────────────
         bootstrap_py = ARGS.bootstrap_python
         target_py = bootstrap_py if os.path.isfile(bootstrap_py) else sys.executable
-
-        # Prefer system Python 3.10-3.12
         for cmd in ["python3.12", "python3.11", "python3.10", "python3"]:
             exe = shutil.which(cmd)
             if exe:
@@ -388,7 +438,6 @@ def option_install_update():
 
         # ── Venv ──────────────────────────────────────────────
         console.print()
-        sep()
         if not os.path.isdir(venv_dir):
             log_step(f"Creating virtual environment ({target_py})...")
             subprocess.run([target_py, "-m", "venv", venv_dir], check=True)
@@ -401,30 +450,25 @@ def option_install_update():
 
         # ── Dependencies ──────────────────────────────────────
         console.print()
-        sep()
         log_step("Installing / upgrading dependencies...")
         subprocess.run([venv_py, "-m", "pip", "install", "--upgrade", "pip", "-q"], check=True)
 
-        torch_installed = subprocess.run(
-            [venv_pip, "show", "torch"], capture_output=True).returncode == 0
-
-        if is_update and torch_installed:
+        torch_ok = subprocess.run([venv_pip, "show", "torch"], capture_output=True).returncode == 0
+        if is_update and torch_ok:
             log_info("PyTorch already present. Upgrading Whisper only...")
             subprocess.run([venv_pip, "install", "--upgrade",
                 "faster-whisper", "stable-ts", "pypdf", "-q"], check=True)
         elif not has_nvidia:
-            log_step("Installing CPU-optimised PyTorch (smaller download)...")
+            log_step("Installing CPU-optimised PyTorch...")
             subprocess.run([venv_pip, "install", "torch", "torchaudio",
                 "--index-url", "https://download.pytorch.org/whl/cpu", "-q"], check=True)
-            subprocess.run([venv_pip, "install",
-                "faster-whisper", "stable-ts", "pypdf", "-q"], check=True)
+            subprocess.run([venv_pip, "install", "faster-whisper", "stable-ts", "pypdf", "-q"], check=True)
         else:
             log_step("Installing NVIDIA-accelerated packages...")
             subprocess.run([venv_pip, "install",
                 "faster-whisper", "stable-ts", "pypdf"] + nvidia_pkgs.split(), check=True)
 
-        pyside_ok = subprocess.run(
-            [venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
+        pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
         if not pyside_ok:
             log_step("Installing PySide6 GUI library...")
             subprocess.run([venv_pip, "install", "PySide6", "-q"], check=True)
@@ -434,7 +478,6 @@ def option_install_update():
 
         # ── Libs symlink ──────────────────────────────────────
         console.print()
-        sep()
         log_step("Creating libs symlink...")
         site_pkgs = None
         for root, dirs, _ in os.walk(os.path.join(venv_dir, "lib")):
@@ -451,15 +494,11 @@ def option_install_update():
 
         # ── DaVinci Resolve wrapper ───────────────────────────
         console.print()
-        sep()
         log_step("Configuring DaVinci Resolve integration...")
         os.makedirs(resolve_dir, exist_ok=True)
-
-        # Remove legacy wrapper
         legacy_w = os.path.join(resolve_dir, "BadWords (Linux).py")
         if os.path.isfile(legacy_w):
             os.remove(legacy_w)
-            log_info("Removed legacy wrapper.")
 
         wrapper_path = os.path.join(resolve_dir, "BadWords.py")
         qt_lib_dir   = os.path.join(install_dir, "libs", "PySide6", "Qt", "lib")
@@ -508,13 +547,10 @@ else:
         os.chmod(wrapper_path, 0o755)
         log_ok(f"Wrapper: {wrapper_path}")
 
-        # ── Log file ──────────────────────────────────────────
         open(log_file, "a").close()
         os.chmod(log_file, 0o666)
 
-        # ── Done ──────────────────────────────────────────────
-        console.print()
-        sep()
+        # ── Done ─────────────────────────────────────────────
         console.print()
         console.print(Text(f"{PAD}✓  INSTALLATION SUCCESSFUL!", style="bold green"), no_wrap=True)
         console.print(Text(f"{PAD}   Mode : {mode_name}", style="green"), no_wrap=True)
@@ -526,7 +562,7 @@ else:
     finally:
         shutil.rmtree(tmp_dl, ignore_errors=True)
 
-    pause("  Press Enter to exit...")
+    pause(f"{PAD}Press Enter to exit...")
 
 # ── Dummy stubs ───────────────────────────────────────────────
 def option_dummy(n, label):
@@ -538,26 +574,33 @@ def option_dummy(n, label):
 # ── Main loop ─────────────────────────────────────────────────
 def main():
     while True:
-        header()
-        menu()
-        choice = prompt_choice()
-        if choice == "1":
-            option_install_update()
-        elif choice == "2":
-            option_dummy(2, "Repair Installation")
-        elif choice == "3":
-            option_dummy(3, "Move Installation")
-        elif choice == "4":
-            option_dummy(4, "Complete Reset")
-        elif choice == "5":
-            option_dummy(5, "Uninstall")
-        elif choice == "0":
+        try:
+            header()
+            menu()
+            choice = prompt_choice()
+            if choice == "ESC" or choice == "0":
+                console.print(Text(f"\n{PAD}Goodbye.\n", style="dim"), no_wrap=True)
+                sys.exit(0)
+            elif choice == "1":
+                option_install_update()
+            elif choice == "2":
+                option_dummy(2, "Repair Installation")
+            elif choice == "3":
+                option_dummy(3, "Move Installation")
+            elif choice == "4":
+                option_dummy(4, "Complete Reset")
+            elif choice == "5":
+                option_dummy(5, "Uninstall")
+            else:
+                header()
+                console.print(Text(f"{PAD}Invalid option. Please try again.", style="red"), no_wrap=True)
+                time.sleep(1)
+        except UserCancelled:
+            # ESC pressed mid-operation → return to menu silently
+            pass
+        except KeyboardInterrupt:
             console.print(Text(f"\n{PAD}Goodbye.\n", style="dim"), no_wrap=True)
             sys.exit(0)
-        else:
-            header()
-            console.print(Text(f"{PAD}Invalid option. Please try again.", style="red"), no_wrap=True)
-            pause()
 
 if __name__ == "__main__":
     main()
