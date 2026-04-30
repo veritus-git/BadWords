@@ -249,8 +249,9 @@ begin
   if (Length(OldInstallPath) > 0) and (OldInstallPath[Length(OldInstallPath)] = '\') then
     OldInstallPath := Copy(OldInstallPath, 1, Length(OldInstallPath) - 1);
 
-  // Mode selection page (inserted after wpSelectDir)
-  InstallModePage := CreateInputOptionPage(wpSelectDir,
+  // Mode page inserted BEFORE wpSelectDir (after wpWelcome) so that
+  // ShouldSkipPage(wpSelectDir) can read the already-chosen mode.
+  InstallModePage := CreateInputOptionPage(wpWelcome,
     CustomMessage('ModeTitle'), CustomMessage('ModeDesc'),
     CustomMessage('ModeSub'), True, False);
   InstallModePage.Add(CustomMessage('ModeUpdate'));   // 0
@@ -264,37 +265,42 @@ end;
 // ── Page visibility ──────────────────────────────────────────────────────────
 
 function ShouldSkipPage(PageID: Integer): Boolean;
+var FFmpegCheckPath: String;
 begin
   Result := False;
   if PageID = wpSelectDir then
   begin
-    // Show dir selection only for: first install (mode 0, no prior install),
-    // Move (mode 2), Complete Reset (mode 3).
-    // Hide for: Repair (1), Remove (4), and Update when already installed (0+existing).
-    if InstallModePage.Values[4] then Result := True   // Remove
-    else if InstallModePage.Values[1] then Result := True  // Repair
-    else if InstallModePage.Values[0] and IsAlreadyInstalled() then Result := True; // Update
+    // Page order: Welcome -> Mode -> Dir -> ...
+    // By the time ShouldSkipPage(wpSelectDir) is called, mode IS already chosen.
+    if InstallModePage.Values[4] then Result := True   // Remove: no dir needed
+    else if InstallModePage.Values[1] then Result := True  // Repair: use existing
+    else if InstallModePage.Values[0] and IsAlreadyInstalled() then Result := True; // Update: use existing
   end;
-  // Skip downloads page if Remove mode
-  if (PageID = wpInstalling) and IsRemoveMode() then Result := False;
+  // Remove mode: skip wpReady (looks like installing, confuses user)
+  if (PageID = wpReady) and IsRemoveMode() then Result := True;
 end;
 
 // ── Download queuing ─────────────────────────────────────────────────────────
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var FFmpegCheckPath: String;
 begin
   Result := True;
   if (CurPageID = wpReady) and not DownloadsQueued then
   begin
-    // No downloads needed for Remove mode
+    // No downloads for Remove mode
     if not IsRemoveMode() then
     begin
       if NeedsPythonInstallation() then
         idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
 
-      // Download FFmpeg only if: Wipe/Remove/first-install OR ffmpeg missing
-      if InstallModePage.Values[3] or
-         not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
+      // FFmpeg: check against actual existing install path, not default {app}
+      if IsAlreadyInstalled() then
+        FFmpegCheckPath := OldInstallPath + '\bin\ffmpeg.exe'
+      else
+        FFmpegCheckPath := ExpandConstant('{app}\bin\ffmpeg.exe');
+
+      if InstallModePage.Values[3] or not FileExists(FFmpegCheckPath) then
         idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
     end;
     DownloadsQueued := True;

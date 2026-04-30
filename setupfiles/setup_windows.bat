@@ -317,7 +317,9 @@ if exist "!SITE_PKG!" (
 )
 
 :: =====================================================================
-:: STEP 13 - DAVINCI RESOLVE WRAPPER (via PS1 here-string - no escaping)
+:: STEP 13 - DAVINCI RESOLVE WRAPPER (Base64-encoded - no escaping issues)
+:: Wrapper Python is embedded as Base64 (pure [A-Za-z0-9+/=] - CMD safe).
+:: PowerShell decodes it, substitutes INSTALL_DIR, writes to Resolve scripts.
 :: =====================================================================
 echo [WRAPPER] Detecting DaVinci Resolve installation...
 
@@ -331,56 +333,34 @@ for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
 )
 if not exist "!RESOLVE_DIR!" mkdir "!RESOLVE_DIR!"
 
-:: Write paths to temp files (avoids CMD quoting issues completely)
-(echo !INSTALL_DIR!)> "%TEMP%\bw_idir.txt"
-(echo !RESOLVE_DIR!\BadWords.py)> "%TEMP%\bw_wpath.txt"
+:: Write INSTALL_DIR to temp file (no quoting issues)
+(echo !INSTALL_DIR!)> "%TEMP%\bw_setup_idir.txt"
+(echo !RESOLVE_DIR!\BadWords.py)> "%TEMP%\bw_setup_wpath.txt"
 
-:: Write PS1 wrapper generator using here-string (100% encoding-safe)
+:: Generate wrapper via PowerShell using Base64-encoded Python template.
+:: The template uses __IDIR__ as placeholder, replaced with actual path.
 set "WRAP_PS=%TEMP%\bw_wrap_gen.ps1"
-setlocal DisableDelayedExpansion
 (
-echo $idir  = [IO.File]::ReadAllText("$env:TEMP\bw_idir.txt").Trim()
-echo $wpath = [IO.File]::ReadAllText("$env:TEMP\bw_wpath.txt").Trim()
-echo [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($wpath)) ^| Out-Null
-echo $code = @'
-echo import sys, os, traceback
-echo INSTALL_DIR = r'__IDIR__'
-echo LIBS_DIR    = os.path.join(INSTALL_DIR, 'libs')
-echo VENV_LIBS   = os.path.join(INSTALL_DIR, 'venv', 'Lib', 'site-packages')
-echo MAIN_SCRIPT = os.path.join(INSTALL_DIR, 'main.py')
-echo if os.path.exists(VENV_LIBS) and VENV_LIBS not in sys.path:
-echo     sys.path.insert(0, VENV_LIBS)
-echo if os.path.exists(LIBS_DIR) and LIBS_DIR not in sys.path:
-echo     sys.path.insert(0, LIBS_DIR)
-echo if INSTALL_DIR not in sys.path:
-echo     sys.path.append(INSTALL_DIR)
-echo if os.path.exists(MAIN_SCRIPT):
-echo     try:
-echo         with open(MAIN_SCRIPT, 'r', encoding='utf-8') as f:
-echo             code = f.read()
-echo         g = globals().copy()
-echo         g['__file__'] = MAIN_SCRIPT
-echo         exec(code, g)
-echo     except Exception as e:
-echo         print('Error executing BadWords: ' + str(e))
-echo         traceback.print_exc()
-echo else:
-echo     print('CRITICAL: Not found: ' + MAIN_SCRIPT)
-echo '@
-echo $code = $code.Replace("__IDIR__", $idir)
+echo $idir  = [IO.File]::ReadAllText("$env:TEMP\bw_setup_idir.txt").Trim()
+echo $wpath = [IO.File]::ReadAllText("$env:TEMP\bw_setup_wpath.txt").Trim()
+echo $b64   = "aW1wb3J0IHN5cywgb3MsIHRyYWNlYmFjawpJTlNUQUxMX0RJUiA9IHInX19JRElSX18nCkxJQlNfRElSICAgID0gb3MucGF0aC5qb2luKElOU1RBTExfRElSLCAnbGlicycpClZFTlZfTElCUyAgID0gb3MucGF0aC5qb2luKElOU1RBTExfRElSLCAndmVudicsICdMaWInLCAnc2l0ZS1wYWNrYWdlcycpCk1BSU5fU0NSSVBUID0gb3MucGF0aC5qb2luKElOU1RBTExfRElSLCAnbWFpbi5weScpCmlmIG9zLnBhdGguZXhpc3RzKFZFTlZfTElCUykgYW5kIFZFTlZfTElCUyBub3QgaW4gc3lzLnBhdGg6CiAgICBzeXMucGF0aC5pbnNlcnQoMCwgVkVOVl9MSUJTKQppZiBvcy5wYXRoLmV4aXN0cyhMSUJTX0RJUikgYW5kIExJQlNfRElSIG5vdCBpbiBzeXMucGF0aDoKICAgIHN5cy5wYXRoLmluc2VydCgwLCBMSUJTX0RJUikKaWYgSU5TVEFMTF9ESVIgbm90IGluIHN5cy5wYXRoOgogICAgc3lzLnBhdGguYXBwZW5kKElOU1RBTExfRElSKQppZiBvcy5wYXRoLmV4aXN0cyhNQUlOX1NDUklQVCk6CiAgICB0cnk6CiAgICAgICAgd2l0aCBvcGVuKE1BSU5fU0NSSVBULCAncicsIGVuY29kaW5nPSd1dGYtOCcpIGFzIGY6CiAgICAgICAgICAgIGNvZGUgPSBmLnJlYWQoKQogICAgICAgIGcgPSBnbG9iYWxzKCkuY29weSgpCiAgICAgICAgZ1snX19maWxlX18nXSA9IE1BSU5fU0NSSVBUCiAgICAgICAgZXhlYyhjb2RlLCBnKQogICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgIHByaW50KCdFcnJvciBleGVjdXRpbmcgQmFkV29yZHM6ICcgKyBzdHIoZSkpCiAgICAgICAgdHJhY2ViYWNrLnByaW50X2V4YygpCmVsc2U6CiAgICBwcmludCgnQ1JJVElDQUw6IE5vdCBmb3VuZDogJyArIE1BSU5fU0NSSVBUKQo="
+echo $bytes  = [Convert]::FromBase64String($b64)
+echo $code   = [Text.Encoding]::UTF8.GetString($bytes)
+echo $code   = $code.Replace("__IDIR__", $idir)
+echo [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($wpath)) > $null
 echo [IO.File]::WriteAllText($wpath, $code, [Text.Encoding]::UTF8)
 echo Write-Host "[OK] Wrapper: $wpath"
 ) > "%WRAP_PS%"
-endlocal
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%WRAP_PS%"
 set "WRAP_RC=!errorlevel!"
 del "%WRAP_PS%" 2>nul
-del "%TEMP%\bw_idir.txt" 2>nul
-del "%TEMP%\bw_wpath.txt" 2>nul
+del "%TEMP%\bw_setup_idir.txt" 2>nul
+del "%TEMP%\bw_setup_wpath.txt" 2>nul
 if !WRAP_RC! neq 0 (
     echo [WARN] Wrapper generation failed (code !WRAP_RC!). Check DaVinci Resolve installation.
 )
+
 
 :: =====================================================================
 :: STEP 14 - RESTORE JSON AFTER FULL RESET
