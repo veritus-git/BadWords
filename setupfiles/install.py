@@ -38,15 +38,52 @@ def _default_install_dir():
         return os.path.join(os.path.expanduser("~"), "Library", "Application Support", APP_NAME)
     return os.path.join(os.path.expanduser("~"), ".local", "share", APP_NAME)
 
-def _resolve_script_dir():
+def _resolve_script_dirs():
+    """Return all plausible DaVinci Resolve Scripts/Utility dirs on this system.
+    Windows has many installation variants; we probe all of them."""
+    results = []
+
     if "win" in PLAT:
-        base = os.environ.get("APPDATA", "")
-        return os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility")
-    if "mac" in PLAT or "darwin" in PLAT:
-        return os.path.join(os.path.expanduser("~"), "Library", "Application Support",
-                            "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility")
-    return os.path.join(os.path.expanduser("~"), ".local", "share",
-                        "DaVinciResolve", "Fusion", "Scripts", "Utility")
+        appdata      = os.environ.get("APPDATA", "")
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        progdata     = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+        bmd_base     = os.path.join("Blackmagic Design", "DaVinci Resolve")
+
+        # 1. Per-user standard path (DaVinci 17+) — most common
+        if appdata:
+            results.append(os.path.join(appdata, bmd_base, "Support", "Fusion", "Scripts", "Utility"))
+        # 2. Per-user legacy path (DaVinci 16 and earlier, no 'Support' subfolder)
+        if appdata:
+            results.append(os.path.join(appdata, bmd_base, "Fusion", "Scripts", "Utility"))
+        # 3. Microsoft Store edition (wildcard package dir)
+        if localappdata:
+            pkg_root = os.path.join(localappdata, "Packages")
+            if os.path.isdir(pkg_root):
+                for pkg in os.listdir(pkg_root):
+                    if pkg.lower().startswith("blackmagicdesign.davinciresolve"):
+                        store_base = os.path.join(pkg_root, pkg, "LocalState",
+                                                   "AppDataRoaming", "Blackmagic Design",
+                                                   "DaVinci Resolve")
+                        results.append(os.path.join(store_base, "Support", "Fusion", "Scripts", "Utility"))
+                        results.append(os.path.join(store_base, "Fusion", "Scripts", "Utility"))
+        # 4. System-wide / all-users admin install
+        if progdata:
+            results.append(os.path.join(progdata, bmd_base, "Support", "Fusion", "Scripts", "Utility"))
+
+    elif "mac" in PLAT or "darwin" in PLAT:
+        results.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support",
+                                    "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+    else:
+        results.append(os.path.join(os.path.expanduser("~"), ".local", "share",
+                                    "DaVinciResolve", "Fusion", "Scripts", "Utility"))
+
+    # Remove duplicates while preserving order
+    seen, unique = set(), []
+    for d in results:
+        if d not in seen:
+            seen.add(d)
+            unique.append(d)
+    return unique
 
 # ── Cancellation ─────────────────────────────────────────────
 class UserCancelled(Exception):
@@ -193,14 +230,12 @@ def menu():
     console.print()
 
 def prompt_choice():
-    """Single keypress — no Enter needed."""
-    _set_scrollbar(True)
+    """Single keypress — no Enter needed. Scrollbar stays locked during menu."""
     console.print()
     console.print(Text(f"{PAD}Choose a menu option [1,2,3,4,5,0] : ", style="green"), end="", no_wrap=True)
     sys.stdout.flush()
     ch = getch()
     console.print(Text(ch if ch != "ESC" else "ESC", style="dim"))
-    _set_scrollbar(False)
     return ch
 
 def pause(msg=None):
@@ -348,21 +383,23 @@ def get_latest_tag():
         pass
     return "main", "", ""
 
-def detect_existing_install(default_dir, resolve_script_dir):
-    wrapper = os.path.join(resolve_script_dir, "BadWords.py")
-    for wf in [wrapper, os.path.join(resolve_script_dir, "BadWords (Linux).py")]:
-        if not os.path.isfile(wf):
-            continue
-        try:
-            with open(wf, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("INSTALL_DIR"):
-                        val = line.split("=", 1)[1].strip().strip("r\"'")
-                        if os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
-                            return val
-        except Exception:
-            pass
+def detect_existing_install(default_dir, resolve_script_dirs):
+    """Search all known Resolve script dirs for a BadWords wrapper with a valid INSTALL_DIR."""
+    for resolve_dir in resolve_script_dirs:
+        for wf in [os.path.join(resolve_dir, "BadWords.py"),
+                   os.path.join(resolve_dir, "BadWords (Linux).py")]:
+            if not os.path.isfile(wf):
+                continue
+            try:
+                with open(wf, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("INSTALL_DIR"):
+                            val = line.split("=", 1)[1].strip().strip("r\"'")
+                            if os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
+                                return val
+            except Exception:
+                pass
     return None
 
 def two_way_sync(src_paths, dst, protected_files, protected_dirs):
@@ -397,10 +434,10 @@ def option_install_update():
     console.print(Text(f"{PAD}── Standard Install / Update ──", style="bold green"), no_wrap=True)
     console.print()
 
-    resolve_dir = _resolve_script_dir()
-    default_dir = _default_install_dir()
+    resolve_dirs = _resolve_script_dirs()
+    default_dir  = _default_install_dir()
 
-    detected = detect_existing_install(default_dir, resolve_dir)
+    detected = detect_existing_install(default_dir, resolve_dirs)
     if detected:
         log_ok(f"Existing installation detected: {detected}")
         install_dir = detected
@@ -698,25 +735,41 @@ def option_install_update():
                     os.remove(libs_link)
                 except Exception:
                     shutil.rmtree(libs_link, ignore_errors=True)
-            try:
-                os.symlink(site_pkgs, libs_link)
-                log_ok(f"libs -> {site_pkgs}")
-            except (OSError, NotImplementedError):
-                # Windows: symlink may need admin; copy as fallback
-                shutil.copytree(site_pkgs, libs_link, dirs_exist_ok=True)
-                log_ok(f"libs copied from {site_pkgs}")
+
+            linked = False
+            if os.name == "nt":
+                # Junction point: instant, requires no admin privileges
+                r = subprocess.run(
+                    f'mklink /J "{libs_link}" "{site_pkgs}"',
+                    shell=True, capture_output=True
+                )
+                if r.returncode == 0:
+                    log_ok(f"libs [junction] → {site_pkgs}")
+                    linked = True
+
+            if not linked:
+                try:
+                    os.symlink(site_pkgs, libs_link)
+                    log_ok(f"libs [symlink] → {site_pkgs}")
+                    linked = True
+                except (OSError, NotImplementedError):
+                    pass
+
+            if not linked:
+                sp_copy = Spinner("Copying libs (one-time fallback)").start()
+                try:
+                    shutil.copytree(site_pkgs, libs_link, dirs_exist_ok=True)
+                    sp_copy.done(ok=True)
+                except Exception as e:
+                    sp_copy.done(ok=False)
+                    log_warn(f"libs copy failed: {e}")
         else:
             log_warn("Could not locate site-packages in venv.")
 
         # ── DaVinci Resolve wrapper ───────────────────────────
         console.print()
         log_step("Configuring DaVinci Resolve integration...")
-        os.makedirs(resolve_dir, exist_ok=True)
-        legacy_w = os.path.join(resolve_dir, "BadWords (Linux).py")
-        if os.path.isfile(legacy_w):
-            os.remove(legacy_w)
 
-        wrapper_path = os.path.join(resolve_dir, "BadWords.py")
         qt_lib_dir   = os.path.join(install_dir, "libs", "PySide6", "Qt", "lib")
         libs_dir_abs = os.path.join(install_dir, "libs")
         main_script  = os.path.join(install_dir, "main.py")
@@ -758,10 +811,39 @@ if os.path.exists(MAIN_SCRIPT):
 else:
     print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
 '''
-        with open(wrapper_path, "w", encoding="utf-8") as f:
-            f.write(wrapper_content)
-        os.chmod(wrapper_path, 0o755)
-        log_ok(f"Wrapper: {wrapper_path}")
+        # Check which Resolve dirs actually exist at the 'DaVinci Resolve' base level.
+        # This is more reliable than checking deeper sub-folders which may not exist
+        # until Resolve creates them on first launch.
+        def _resolve_base_exists(d):
+            p = d
+            for _ in range(7):
+                p = os.path.dirname(p)
+                if os.path.basename(p) == "DaVinci Resolve":
+                    return os.path.isdir(p)
+            return False
+
+        existing_resolve_dirs = [d for d in resolve_dirs if _resolve_base_exists(d)]
+        # Fall back to standard per-user path (resolve_dirs[0]) if Resolve not yet opened
+        targets = existing_resolve_dirs if existing_resolve_dirs else [resolve_dirs[0]]
+
+        wrapper_count = 0
+        for rd in targets:
+            try:
+                os.makedirs(rd, exist_ok=True)
+                legacy_w = os.path.join(rd, "BadWords (Linux).py")
+                if os.path.isfile(legacy_w):
+                    os.remove(legacy_w)
+                wp = os.path.join(rd, "BadWords.py")
+                with open(wp, "w", encoding="utf-8") as f:
+                    f.write(wrapper_content)
+                os.chmod(wp, 0o755)
+                log_ok(f"Wrapper → {wp}")
+                wrapper_count += 1
+            except Exception as exc:
+                log_warn(f"Could not write wrapper to {rd}: {exc}")
+
+        if wrapper_count == 0:
+            log_err("Failed to write wrapper to any Resolve location.")
 
         open(log_file, "a").close()
         os.chmod(log_file, 0o666)

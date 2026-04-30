@@ -58,7 +58,26 @@ if ((Test-Path $CacheMarker) -and (Test-Path $CacheVenvPy) -and (Test-Path $Cach
     if ($stored -eq $BootTime) {
         Write-Host ""
         Write-Host "  BadWords Setup" -ForegroundColor White
-        Write-Host "  Cache hit — launching instantly..." -ForegroundColor DarkGray
+        Write-Host "  Cached environment found — refreshing installer script..." -ForegroundColor DarkGray
+
+        # Venv is cached (saves ~30s) but install.py is always refreshed
+        # so the user always runs the latest version of the installer.
+        $refreshOk = $false
+        try {
+            Invoke-WebRequest -Uri $INSTALLER_URL -OutFile $CacheInstall -UseBasicParsing -ErrorAction Stop
+            $refreshOk = $true
+        } catch { warn "GitHub unreachable, trying GitLab..." }
+        if (-not $refreshOk) {
+            try {
+                Invoke-WebRequest -Uri $INSTALLER_URL_FB -OutFile $CacheInstall -UseBasicParsing -ErrorAction Stop
+                $refreshOk = $true
+            } catch {}
+        }
+        if (-not $refreshOk) {
+            warn "Could not refresh install.py — launching from cached copy."
+        }
+
+        Write-Host "  Launching instantly (cached environment)..." -ForegroundColor DarkGray
         Write-Host ""
         Launch-Installer $CacheVenvPy $CacheInstall $null
     }
