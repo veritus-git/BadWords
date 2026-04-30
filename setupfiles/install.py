@@ -3,7 +3,7 @@
 #  BadWords Installer  —  Cross-Platform GUI (Rich Terminal)
 #  Copyright (c) 2026 Szymon Wolarz
 # ============================================================
-import argparse, hashlib, os, shutil, subprocess, sys, tempfile, time
+import argparse, hashlib, os, shutil, subprocess, sys, tempfile, threading, time
 
 # ── Bootstrap rich if missing ────────────────────────────────
 try:
@@ -138,16 +138,27 @@ def readline_with_esc(show_cursor=True):
         return "".join(buf)
 
 # ── UI ───────────────────────────────────────────────────────
-def _resize():
-    sys.stdout.write(f"\033[8;{TERM_H};{TERM_W}t")
-    sys.stdout.flush()
-    time.sleep(0.15)
+def _resize(w=TERM_W, h=TERM_H):
+    """Resize terminal window. CMD-safe on Windows."""
+    if os.name == "nt":
+        os.system(f"mode con cols={w} lines={h}")
+    else:
+        sys.stdout.write(f"\033[8;{h};{w}t")
+        sys.stdout.flush()
+    time.sleep(0.2)
+
+def _set_title(title="BadWords Setup"):
+    """Set the terminal window title."""
+    if os.name == "nt":
+        os.system(f"title {title}")
+    else:
+        sys.stdout.write(f"\033]0;{title}\007")
+        sys.stdout.flush()
 
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
 
 def header():
-    _resize()
     clear()
     console.print()
     console.print(Text("BadWords Installer", style="bold white"), justify="center", no_wrap=True)
@@ -205,6 +216,41 @@ def log_ok(msg):    console.print(Text(f"{PAD}[ OK ] {msg}", style="bold green")
 def log_warn(msg):  console.print(Text(f"{PAD}[WARN] {msg}", style="yellow"), no_wrap=True)
 def log_err(msg):   console.print(Text(f"{PAD}[ERR!] {msg}", style="bold red"), no_wrap=True)
 
+# ── Spinner (runs in background thread during heavy ops) ──────
+class Spinner:
+    FRAMES = ["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]
+
+    def __init__(self, label, style="cyan"):
+        self.label  = label
+        self.style  = style
+        self._done  = threading.Event()
+        self._ok    = True
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+
+    def _spin(self):
+        i = 0
+        while not self._done.is_set():
+            frame = self.FRAMES[i % len(self.FRAMES)]
+            line  = f"{PAD}[{frame}]  {self.label}"
+            sys.stdout.write(f"\r{line:<{TERM_W - 1}}")
+            sys.stdout.flush()
+            time.sleep(0.09)
+            i += 1
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def done(self, ok=True):
+        self._ok = ok
+        self._done.set()
+        self._thread.join()
+        sys.stdout.write(f"\r{' ' * (TERM_W - 1)}\r")
+        sys.stdout.flush()
+        tag   = "[ OK ]" if ok else "[ERR!]"
+        color = "bold green" if ok else "bold red"
+        console.print(Text(f"{PAD}{tag} {self.label}", style=color), no_wrap=True)
+
 # ── Utility ──────────────────────────────────────────────────
 def md5(path):
     try:
@@ -214,10 +260,22 @@ def md5(path):
         return None
 
 def download(url, dest):
+    """Download url → dest. Returns True on success. Windows-aware."""
     if shutil.which("curl"):
-        return subprocess.run(["curl", "-fsSL", url, "-o", dest]).returncode == 0
-    elif shutil.which("wget"):
-        return subprocess.run(["wget", "-qO", dest, url]).returncode == 0
+        r = subprocess.run(["curl", "-fsSL", "--retry", "3", url, "-o", dest],
+                           capture_output=True)
+        return r.returncode == 0 and os.path.isfile(dest)
+    if shutil.which("wget"):
+        r = subprocess.run(["wget", "-qO", dest, url], capture_output=True)
+        return r.returncode == 0 and os.path.isfile(dest)
+    # Fallback: PowerShell (always available on Windows)
+    if os.name == "nt":
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"Invoke-WebRequest -Uri '{url}' -OutFile '{dest}' -UseBasicParsing"],
+            capture_output=True
+        )
+        return r.returncode == 0 and os.path.isfile(dest)
     return False
 
 def get_latest_tag():
@@ -332,12 +390,15 @@ def option_install_update():
 
     try:
         if zip_url:
-            log_step(f"Downloading latest release from {source_repo} ({tag})...")
+            sp_dl = Spinner(f"Downloading release {tag} from {source_repo}").start()
             zip_path = os.path.join(tmp_dl, "repo.zip")
-            if not download(zip_url, zip_path):
+            dl_ok = download(zip_url, zip_path)
+            sp_dl.done(ok=dl_ok)
+            if not dl_ok:
                 log_err("Download failed.")
                 pause()
                 return
+            sp_ex = Spinner("Extracting release archive").start()
             import zipfile
             with zipfile.ZipFile(zip_path) as z:
                 z.extractall(tmp_dl)
@@ -348,8 +409,9 @@ def option_install_update():
             if extracted and os.path.isdir(os.path.join(extracted, "src")):
                 source_path = os.path.join(extracted, "src")
                 assets_path = os.path.join(extracted, "assets")
-                log_ok("Source downloaded and extracted.")
+                sp_ex.done(ok=True)
             else:
+                sp_ex.done(ok=False)
                 log_err("Could not find src/ in downloaded archive.")
                 pause()
                 return
@@ -420,8 +482,12 @@ def option_install_update():
                 # Windows: use Gyan.dev essentials build (ZIP, native .exe)
                 ffmpeg_url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
                 ffmpeg_arc = os.path.join(install_dir, "ffmpeg_win.zip")
-                if download(ffmpeg_url, ffmpeg_arc):
+                sp_ff = Spinner("Downloading FFmpeg (Windows native)").start()
+                dl_ok = download(ffmpeg_url, ffmpeg_arc)
+                sp_ff.done(ok=dl_ok)
+                if dl_ok:
                     import zipfile
+                    sp_ex2 = Spinner("Extracting FFmpeg").start()
                     try:
                         with zipfile.ZipFile(ffmpeg_arc) as zf:
                             for member in zf.namelist():
@@ -431,8 +497,9 @@ def option_install_update():
                                     dest = os.path.join(bin_dir, fname)
                                     with open(dest, "wb") as out:
                                         out.write(data)
-                        log_ok("FFmpeg installed (Windows native).")
+                        sp_ex2.done(ok=True)
                     except Exception as e:
+                        sp_ex2.done(ok=False)
                         log_warn(f"FFmpeg extraction failed: {e}")
                     finally:
                         try: os.remove(ffmpeg_arc)
@@ -443,7 +510,11 @@ def option_install_update():
                 # Linux/macOS: use johnvansickle static build
                 ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
                 ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
-                if download(ffmpeg_url, ffmpeg_arc):
+                sp_ff = Spinner("Downloading FFmpeg (Linux static)").start()
+                dl_ok = download(ffmpeg_url, ffmpeg_arc)
+                sp_ff.done(ok=dl_ok)
+                if dl_ok:
+                    sp_ex2 = Spinner("Extracting FFmpeg").start()
                     try:
                         subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
                         for name in ["ffmpeg", "ffprobe"]:
@@ -456,12 +527,13 @@ def option_install_update():
                         for item in os.listdir(install_dir):
                             if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
                                 shutil.rmtree(os.path.join(install_dir, item))
+                        sp_ex2.done(ok=True)
                     except Exception as e:
+                        sp_ex2.done(ok=False)
                         log_warn(f"FFmpeg install error: {e}")
                     finally:
                         try: os.remove(ffmpeg_arc)
                         except Exception: pass
-                    log_ok("FFmpeg installed.")
                 else:
                     log_warn("FFmpeg download failed. App may not work without it.")
 
@@ -501,53 +573,66 @@ def option_install_update():
         console.print()
         log_step("Installing / upgrading dependencies...")
 
-        def _pip_run(*args, label="pip"):
-            """Run pip command; log stderr on failure, never crash the installer."""
+        def _pip_run(*args, label="pip", spinner=True):
+            """Run pip with optional spinner; logs stderr on failure, never crashes."""
+            sp = None
+            if spinner:
+                sp = Spinner(label).start()
             r = subprocess.run(
                 [venv_py, "-m", "pip"] + list(args),
                 capture_output=True, text=True
             )
-            if r.returncode != 0:
-                log_warn(f"{label} returned non-zero ({r.returncode}).")
+            ok = r.returncode == 0
+            if sp:
+                sp.done(ok=ok)
+            if not ok:
                 for line in (r.stderr or "").splitlines()[-12:]:
                     if line.strip():
                         log_warn(f"  {line.strip()}")
-            return r.returncode == 0
+            return ok
 
-        _pip_run("install", "--upgrade", "pip", "-q", label="pip upgrade")
+        _pip_run("install", "--upgrade", "pip", "-q", label="Upgrading pip", spinner=False)
 
         torch_ok = subprocess.run([venv_pip, "show", "torch"], capture_output=True).returncode == 0
         if is_update and torch_ok:
             log_info("PyTorch already present. Upgrading Whisper only...")
             _pip_run("install", "--upgrade", "faster-whisper", "stable-ts", "pypdf", "-q",
-                     label="whisper upgrade")
+                     label="Upgrading Whisper / Stable-TS / PyPDF")
         elif not has_nvidia:
-            log_step("Installing CPU-optimised PyTorch...")
-            ok1 = _pip_run("install", "torch", "torchaudio",
-                           "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
-                           label="torch-cpu")
-            if not ok1:
-                log_err("PyTorch (CPU) install failed. Check your internet connection and try again.")
+            _pip_run("install", "torch", "torchaudio",
+                     "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
+                     label="Installing PyTorch (CPU build)")
             _pip_run("install", "faster-whisper", "stable-ts", "pypdf", "-q",
-                     label="whisper+pypdf")
+                     label="Installing Faster-Whisper + Stable-TS")
         else:
-            log_step("Installing NVIDIA-accelerated PyTorch...")
-            ok1 = _pip_run("install", "torch", "torchaudio",
-                           "--index-url", "https://download.pytorch.org/whl/cu121", "-q",
-                           label="torch-cuda")
-            if not ok1:
-                log_warn("CUDA PyTorch failed — falling back to CPU build.")
+            # Try CUDA indexes newest → oldest, CPU as final fallback
+            cuda_ok = False
+            for cu_tag in ("cu124", "cu121", "cu118"):
+                sp = Spinner(f"Installing PyTorch (CUDA {cu_tag})").start()
+                r = subprocess.run(
+                    [venv_py, "-m", "pip", "install", "torch", "torchaudio",
+                     "--index-url", f"https://download.pytorch.org/whl/{cu_tag}", "-q"],
+                    capture_output=True, text=True
+                )
+                if r.returncode == 0:
+                    sp.done(ok=True)
+                    cuda_ok = True
+                    break
+                else:
+                    sp.done(ok=False)
+                    log_warn(f"  {cu_tag} unavailable for this Python version — trying next...")
+            if not cuda_ok:
+                log_warn("All CUDA indexes failed. Falling back to CPU PyTorch.")
                 _pip_run("install", "torch", "torchaudio",
                          "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
-                         label="torch-cpu-fallback")
+                         label="Installing PyTorch (CPU fallback)")
             _pip_run("install", "faster-whisper", "stable-ts", "pypdf",
-                     *nvidia_pkgs.split(), "-q", label="whisper+cuda-pkgs")
+                     *nvidia_pkgs.split(), "-q",
+                     label="Installing Faster-Whisper + Stable-TS + CUDA libs")
 
         pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
         if not pyside_ok:
-            log_step("Installing PySide6 GUI library...")
-            if not _pip_run("install", "PySide6", "-q", label="PySide6"):
-                log_err("PySide6 install failed. The app UI will not work.")
+            _pip_run("install", "PySide6", "-q", label="Installing PySide6 GUI library")
         else:
             log_info("PySide6 already installed.")
         log_ok("All dependencies installed.")
@@ -656,16 +741,30 @@ def option_dummy(n, label):
     console.print(Text(f"{PAD}(This option is not yet implemented.)", style="dim"), no_wrap=True)
     pause()
 
+# ── Exit animation ────────────────────────────────────────────
+def _goodbye():
+    """Shrink window, show centred goodbye, pause 2 s, exit."""
+    _resize(w=40, h=8)
+    clear()
+    console.print()
+    console.print()
+    console.print()
+    console.print(Text("  Goodbye.", style="bold green"), justify="center", no_wrap=True)
+    time.sleep(2)
+    sys.exit(0)
+
 # ── Main loop ─────────────────────────────────────────────────
 def main():
+    # One-time setup: resize + title on first launch
+    _resize()
+    _set_title("BadWords Setup")
     while True:
         try:
             header()
             menu()
             choice = prompt_choice()
             if choice == "ESC" or choice == "0":
-                console.print(Text(f"\n{PAD}Goodbye.\n", style="dim"), no_wrap=True)
-                sys.exit(0)
+                _goodbye()
             elif choice == "1":
                 option_install_update()
             elif choice == "2":
@@ -684,8 +783,7 @@ def main():
             # ESC pressed mid-operation → return to menu silently
             pass
         except KeyboardInterrupt:
-            console.print(Text(f"\n{PAD}Goodbye.\n", style="dim"), no_wrap=True)
-            sys.exit(0)
+            _goodbye()
 
 if __name__ == "__main__":
     main()

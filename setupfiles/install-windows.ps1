@@ -217,3 +217,6 @@ Start-Process -FilePath "cmd.exe" `
         Remove-Item -Path $BW_TMP -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+# Close this PowerShell window — installer is running in its own CMD window now
+exit 0
