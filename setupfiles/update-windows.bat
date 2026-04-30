@@ -207,7 +207,7 @@ if "!PIP_OK!"=="1" (
 )
 if "!PIP_OK!"=="0" (
     if exist "!VENV_PIP!" (
-        echo [INFO] Upgrading pip packages (pip fallback)...
+        echo [INFO] Upgrading pip packages via pip fallback...
         "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
         echo [INFO] Packages upgraded.
     ) else (
@@ -215,13 +215,9 @@ if "!PIP_OK!"=="0" (
     )
 )
 
-:: --- 8. Refresh libs junction (mirrors libs symlink in Linux) ---
+:: --- 8. Refresh libs junction via PowerShell - handles non-empty or existing dirs safely ---
 set "LIBS_DIR=!INSTALL_DIR!\libs"
-if exist "!VENV_DIR!\Lib\site-packages" (
-    if exist "!LIBS_DIR!" ( rmdir "!LIBS_DIR!" >nul 2>&1 )
-    mklink /J "!LIBS_DIR!" "!VENV_DIR!\Lib\site-packages" >nul 2>&1
-    echo [INFO] libs junction refreshed.
-)
+powershell -NoProfile -Command "$l='!LIBS_DIR!';$s='!VENV_DIR!\Lib\site-packages';if(Test-Path $l){Remove-Item $l -Recurse -Force -EA SilentlyContinue};if(Test-Path $s){New-Item -ItemType Junction -Path $l -Target $s -Force | Out-Null;Write-Host '[INFO] libs junction refreshed.'}"
 
 rmdir /s /q "!TMP_DIR!" 2>nul
 echo [UPDATE] BadWords updated to !LATEST_TAG! successfully!

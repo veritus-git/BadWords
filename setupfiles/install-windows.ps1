@@ -234,11 +234,44 @@ for src in [r'$SourcePath', r'$AssetsPath']:
     if ($earlyPy) {
         & $earlyPy $syncPy 2>&1
     } else {
-        Write-Warn "Python not found for sync — falling back to full copy for changed files."
+        Write-Warn "Python not found for sync - falling back to full copy for changed files."
         Copy-Item "$SourcePath\*"  $InstallDir -Recurse -Force
         if (Test-Path $AssetsPath) { Copy-Item "$AssetsPath\*" $InstallDir -Recurse -Force }
     }
     Remove-Item $syncPy -ErrorAction SilentlyContinue
+
+    # Remove obsolete top-level files and dirs (mirrors update-linux.sh cleanup logic)
+    $protectedItems = @('pref.json','user.json','settings.json','badwords_debug.log',
+                        'BadWords.py','unins000.dat','unins000.exe',
+                        'models','saves','venv','bin','libs','icons','layout',
+                        '.git','.github','__pycache__')
+    $srcTopNames = @()
+    foreach ($sp in @($SourcePath, $AssetsPath)) {
+        if (Test-Path $sp) { $srcTopNames += (Get-ChildItem $sp).Name }
+    }
+    foreach ($item in (Get-ChildItem $InstallDir -ErrorAction SilentlyContinue)) {
+        if ($item.Name -in $protectedItems) { continue }
+        if ($item.Name -notin $srcTopNames) {
+            Remove-Item $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Info "Removed obsolete: $($item.Name)"
+        }
+    }
+    # Remove obsolete files inside subdirectories
+    foreach ($sp in @($SourcePath, $AssetsPath)) {
+        if (-not (Test-Path $sp)) { continue }
+        foreach ($srcSub in (Get-ChildItem $sp -Directory -Recurse -ErrorAction SilentlyContinue)) {
+            $rel = $srcSub.FullName.Substring($sp.Length).TrimStart('\')
+            $dstSub = Join-Path $InstallDir $rel
+            if (-not (Test-Path $dstSub)) { continue }
+            $srcFileNames = (Get-ChildItem $srcSub.FullName -File -ErrorAction SilentlyContinue).Name
+            foreach ($dstFile in (Get-ChildItem $dstSub -File -ErrorAction SilentlyContinue)) {
+                if ($dstFile.Name -notin $srcFileNames) {
+                    Remove-Item $dstFile.FullName -Force -ErrorAction SilentlyContinue
+                    Write-Info "Removed obsolete: $rel\$($dstFile.Name)"
+                }
+            }
+        }
+    }
 
 
 } else {
