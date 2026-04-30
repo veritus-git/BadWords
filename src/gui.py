@@ -5476,12 +5476,16 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
                 threading.Thread(target=_worker, daemon=True).start()
 
-            # Disconnect any previous connections, then wire up
-
-            try:
-                self._btn_ver_update.clicked.disconnect()
-            except Exception:
-                pass
+            # Disconnect any previous connections, then wire up.
+            # PySide6 emits RuntimeWarning (not RuntimeError) when no connections
+            # exist — catch_warnings suppresses it cleanly without hiding real bugs.
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    self._btn_ver_update.clicked.disconnect()
+                except Exception:
+                    pass
             self._btn_ver_update.clicked.connect(_do_inline_update)
 
         def _on_check_done_for_card():

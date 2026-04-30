@@ -142,17 +142,34 @@ echo                 lbl = fn if rel == '.' else os.path.join(rel, fn)       >> 
 echo                 print('  Updated: ' + lbl)                              >> "%SYNC_PY%"
 echo pf = {'pref.json','user.json','settings.json','badwords_debug.log','BadWords.py','unins000.dat','unins000.exe'} >> "%SYNC_PY%"
 echo pd = {'models','saves','venv','bin','libs','icons','layout','.git','.github','__pycache__'} >> "%SYNC_PY%"
-echo src_items = set()                                                        >> "%SYNC_PY%"
-echo for src in src_paths: src_items.update(os.listdir(src))                 >> "%SYNC_PY%"
+echo src_items_top = set()                                                    >> "%SYNC_PY%"
+echo for src in src_paths: src_items_top.update(os.listdir(src))             >> "%SYNC_PY%"
+echo src_items_all = {}                                                       >> "%SYNC_PY%"
+echo for src in src_paths:                                                   >> "%SYNC_PY%"
+echo     for r2, dd, ff in os.walk(src):                                     >> "%SYNC_PY%"
+echo         rel2 = os.path.relpath(r2, src)                                 >> "%SYNC_PY%"
+echo         src_items_all[rel2] = set(ff)                                   >> "%SYNC_PY%"
 echo for item in sorted(os.listdir(dst)):                                    >> "%SYNC_PY%"
 echo     if item in pf or item in pd: continue                               >> "%SYNC_PY%"
-echo     if item not in src_items:                                            >> "%SYNC_PY%"
+echo     if item not in src_items_top:                                        >> "%SYNC_PY%"
 echo         full = os.path.join(dst, item)                                  >> "%SYNC_PY%"
 echo         try:                                                             >> "%SYNC_PY%"
 echo             if os.path.isdir(full): shutil.rmtree(full)                 >> "%SYNC_PY%"
 echo             else: os.remove(full)                                        >> "%SYNC_PY%"
 echo             print('  Removed obsolete: ' + item)                        >> "%SYNC_PY%"
 echo         except Exception as ex: print('  [WARN] ' + item + ': ' + str(ex)) >> "%SYNC_PY%"
+echo for sub_rel, sub_src_files in src_items_all.items():                    >> "%SYNC_PY%"
+echo     if sub_rel == '.': continue                                          >> "%SYNC_PY%"
+echo     sub_dst = os.path.join(dst, sub_rel)                                >> "%SYNC_PY%"
+echo     if not os.path.isdir(sub_dst): continue                             >> "%SYNC_PY%"
+echo     for df2 in sorted(os.listdir(sub_dst)):                             >> "%SYNC_PY%"
+echo         if df2 not in sub_src_files:                                    >> "%SYNC_PY%"
+echo             fp = os.path.join(sub_dst, df2)                             >> "%SYNC_PY%"
+echo             try:                                                         >> "%SYNC_PY%"
+echo                 if os.path.isdir(fp): shutil.rmtree(fp)                 >> "%SYNC_PY%"
+echo                 else: os.remove(fp)                                      >> "%SYNC_PY%"
+echo                 print('  Removed obsolete: ' + os.path.join(sub_rel, df2)) >> "%SYNC_PY%"
+echo             except Exception as ex: print('  [WARN] ' + df2 + ': ' + str(ex)) >> "%SYNC_PY%"
 endlocal
 
 "!PYTHON_CMD!" "!SYNC_PY!" "!SRC_MAIN!" "!SRC_ASSETS!" "!INSTALL_DIR!"
@@ -161,14 +178,18 @@ del "!SYNC_PY!" 2>nul
 
 echo [INFO] File sync complete.
 
-:: ── 7. pip upgrade ────────────────────────────────────────────────────────────
+:: ── 7. pip upgrade ──────────────────────────────────────────────────────────
+:: NOTE: Do NOT use 2>&1 | inside if() blocks — CMD crashes on ^ in "^$".
+:: Output suppressed cleanly with >nul 2>&1 instead.
 if exist "!VENV_PYTHON!" (
     echo [INFO] Upgrading pip packages...
-    "!VENV_PYTHON!" -m pip install --upgrade pip 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
-    "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied" | findstr /v "^$"
+    "!VENV_PYTHON!" -m pip install --upgrade pip >nul 2>&1
+    "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
+    echo [INFO] Packages upgraded.
 ) else if exist "!VENV_PIP!" (
-    echo [INFO] Upgrading pip packages (fallback)...
-    "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf 2>&1 | findstr /v "already satisfied"
+    echo [INFO] Upgrading pip packages (pip fallback)...
+    "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
+    echo [INFO] Packages upgraded.
 ) else (
     echo [WARN] venv not found, skipping package upgrade.
 )
