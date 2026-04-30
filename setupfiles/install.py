@@ -194,15 +194,18 @@ def menu():
 
 def prompt_choice():
     """Single keypress — no Enter needed."""
+    _set_scrollbar(True)
     console.print()
     console.print(Text(f"{PAD}Choose a menu option [1,2,3,4,5,0] : ", style="green"), end="", no_wrap=True)
     sys.stdout.flush()
     ch = getch()
     console.print(Text(ch if ch != "ESC" else "ESC", style="dim"))
+    _set_scrollbar(False)
     return ch
 
 def pause(msg=None):
     msg = msg or f"{PAD}Press Enter to return to the menu..."
+    _set_scrollbar(True)   # let user scroll while reading results
     console.print()
     console.print(Text(msg, style="dim"), no_wrap=True)
     try:
@@ -210,29 +213,72 @@ def pause(msg=None):
     except (UserCancelled, KeyboardInterrupt):
         pass
 
-def log_info(msg):  console.print(Text(f"{PAD}[INFO] {msg}", style="green"), no_wrap=True)
-def log_step(msg):  console.print(Text(f"{PAD}[....] {msg}", style="cyan"), no_wrap=True)
-def log_ok(msg):    console.print(Text(f"{PAD}[ OK ] {msg}", style="bold green"), no_wrap=True)
-def log_warn(msg):  console.print(Text(f"{PAD}[WARN] {msg}", style="yellow"), no_wrap=True)
-def log_err(msg):   console.print(Text(f"{PAD}[ERR!] {msg}", style="bold red"), no_wrap=True)
+def log_info(msg):  _log_print("[INFO]", msg, "green",      "green")
+def log_step(msg):  _log_print("[....]", msg, "cyan",       "cyan")
+def log_ok(msg):    _log_print("[ OK ]", msg, "bold green",  "bold green")
+def log_warn(msg):  _log_print("[WARN]", msg, "yellow",     "yellow")
+def log_err(msg):   _log_print("[ERR!]", msg, "bold red",   "bold red")
+
+# ── Smart-wrapped log printer ────────────────────────────────
+# Continuation lines are indented to align with the text start,
+# not crammed at the left edge.
+_LOG_PFX_LEN = len(PAD) + 7   # "    [TAG] " = 4 + 7 chars
+
+def _log_print(tag, msg, tag_style, msg_style):
+    prefix    = f"{PAD}{tag} "
+    available = TERM_W - _LOG_PFX_LEN
+    indent    = " " * _LOG_PFX_LEN
+    t = Text(no_wrap=True)
+    if len(msg) <= available:
+        t.append(prefix, style=tag_style)
+        t.append(msg,    style=msg_style)
+        console.print(t, no_wrap=True)
+        return
+    # First line
+    t.append(prefix,          style=tag_style)
+    t.append(msg[:available], style=msg_style)
+    console.print(t, no_wrap=True)
+    # Continuation lines
+    rest = msg[available:]
+    while rest:
+        chunk = rest[:TERM_W - _LOG_PFX_LEN]
+        rest  = rest[len(chunk):]
+        console.print(Text(indent + chunk, style=msg_style), no_wrap=True)
+
+# ── Scrollbar control (Windows CMD) ──────────────────────────
+def _set_scrollbar(enabled: bool):
+    """Lock/unlock CMD scrollbar by matching buffer height to window."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        STD_OUT = ctypes.windll.kernel32.GetStdHandle(-11)
+        height  = 9999 if enabled else TERM_H
+        # COORD is two packed WORDs: low=cols, high=rows
+        ctypes.windll.kernel32.SetConsoleScreenBufferSize(STD_OUT, TERM_W | (height << 16))
+    except Exception:
+        pass
 
 # ── Spinner (runs in background thread during heavy ops) ──────
+_ANSI_CYAN  = "\033[36m"
+_ANSI_RESET = "\033[0m"
+
 class Spinner:
     FRAMES = ["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]
 
-    def __init__(self, label, style="cyan"):
-        self.label  = label
-        self.style  = style
-        self._done  = threading.Event()
-        self._ok    = True
+    def __init__(self, label):
+        self.label   = label
+        self._done   = threading.Event()
         self._thread = threading.Thread(target=self._spin, daemon=True)
 
     def _spin(self):
         i = 0
         while not self._done.is_set():
-            frame = self.FRAMES[i % len(self.FRAMES)]
-            line  = f"{PAD}[{frame}]  {self.label}"
-            sys.stdout.write(f"\r{line:<{TERM_W - 1}}")
+            frame     = self.FRAMES[i % len(self.FRAMES)]
+            line_text = f"{PAD}[{frame}]  {self.label}"
+            # Pad without ANSI length confusion
+            padding   = " " * max(0, TERM_W - 1 - len(line_text))
+            sys.stdout.write(f"\r{_ANSI_CYAN}{line_text}{_ANSI_RESET}{padding}")
             sys.stdout.flush()
             time.sleep(0.09)
             i += 1
@@ -242,14 +288,14 @@ class Spinner:
         return self
 
     def done(self, ok=True):
-        self._ok = ok
         self._done.set()
         self._thread.join()
+        # Clear spinner line
         sys.stdout.write(f"\r{' ' * (TERM_W - 1)}\r")
         sys.stdout.flush()
         tag   = "[ OK ]" if ok else "[ERR!]"
         color = "bold green" if ok else "bold red"
-        console.print(Text(f"{PAD}{tag} {self.label}", style=color), no_wrap=True)
+        _log_print(tag, self.label, color, color)
 
 # ── Utility ──────────────────────────────────────────────────
 def md5(path):
@@ -726,7 +772,7 @@ else:
         console.print(Text(f"{PAD}   Mode : {mode_name}", style="green"), no_wrap=True)
         console.print(Text(f"{PAD}   Path : {install_dir}", style="green"), no_wrap=True)
         console.print(Text(f"{PAD}   Log  : {log_file}", style="green"), no_wrap=True)
-        console.print(Text(f"{PAD}   Open DaVinci Resolve → Workspace → Scripts → Utility", style="dim"), no_wrap=True)
+        console.print(Text(f"{PAD}   Find the script inside Davinci Resolve -> Workspace -> Scripts -> BadWords.", style="dim"), no_wrap=True)
         console.print()
 
     finally:
@@ -741,30 +787,21 @@ def option_dummy(n, label):
     console.print(Text(f"{PAD}(This option is not yet implemented.)", style="dim"), no_wrap=True)
     pause()
 
-# ── Exit animation ────────────────────────────────────────────
-def _goodbye():
-    """Shrink window, show centred goodbye, pause 2 s, exit."""
-    _resize(w=40, h=8)
-    clear()
-    console.print()
-    console.print()
-    console.print()
-    console.print(Text("  Goodbye.", style="bold green"), justify="center", no_wrap=True)
-    time.sleep(2)
-    sys.exit(0)
+
 
 # ── Main loop ─────────────────────────────────────────────────
 def main():
-    # One-time setup: resize + title on first launch
+    # One-time setup: resize + title + lock scrollbar
     _resize()
     _set_title("BadWords Setup")
+    _set_scrollbar(False)
     while True:
         try:
             header()
             menu()
             choice = prompt_choice()
             if choice == "ESC" or choice == "0":
-                _goodbye()
+                sys.exit(0)
             elif choice == "1":
                 option_install_update()
             elif choice == "2":
@@ -783,7 +820,7 @@ def main():
             # ESC pressed mid-operation → return to menu silently
             pass
         except KeyboardInterrupt:
-            _goodbye()
+            sys.exit(0)
 
 if __name__ == "__main__":
     main()
