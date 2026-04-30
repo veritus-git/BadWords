@@ -3,22 +3,31 @@
 #  BadWords Installer  —  Cross-Platform GUI (Rich Terminal)
 #  Copyright (c) 2026 Szymon Wolarz
 # ============================================================
-import argparse, hashlib, os, platform, shutil, subprocess, sys, tempfile
+import argparse, hashlib, os, shutil, subprocess, sys, tempfile, time
 
 # ── Bootstrap rich if missing ────────────────────────────────
 try:
     from rich.console import Console
     from rich.text import Text
-    from rich.rule import Rule
-    from rich import print as rprint
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "rich", "--quiet"])
     from rich.console import Console
     from rich.text import Text
-    from rich.rule import Rule
-    from rich import print as rprint
 
-console = Console(highlight=False)
+# ── Terminal dimensions & layout constants ────────────────────
+TERM_W   = 86          # total terminal columns
+TERM_H   = 30          # total terminal rows
+PAD      = "    "      # 4-space left margin
+SEP_LEN  = TERM_W - 8  # separator width (4-char right margin)
+SEP_LINE = PAD + "─" * SEP_LEN
+
+console = Console(width=TERM_W, highlight=False)
+
+def _set_terminal_size():
+    """Resize terminal window via ANSI escape (xterm-compatible)."""
+    sys.stdout.write(f"\033[8;{TERM_H};{TERM_W}t")
+    sys.stdout.flush()
+    time.sleep(0.1)
 
 # ── Parse args ───────────────────────────────────────────────
 parser = argparse.ArgumentParser(add_help=False)
@@ -51,24 +60,29 @@ def _resolve_script_dir():
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
 
-def separator():
-    console.print(Rule(style="dim white"))
+def sep():
+    """Padded separator — never touches the terminal edges."""
+    console.print(Text(SEP_LINE, style="dim"), no_wrap=True)
 
 def header():
     clear()
+    _set_terminal_size()
     console.print()
-    console.print(Text("  BadWords Installer", style="bold white"), justify="left")
-    console.print(Text("  Cross-Platform Setup — Linux / Windows / macOS", style="dim"), justify="left")
-    separator()
-    console.print(Text(
-        "  Tip: For a fresh install or update, choose [1] and press Enter at every prompt.",
-        style="green"
-    ))
-    separator()
+    console.print(Text(f"{PAD}BadWords Installer", style="bold white"), no_wrap=True)
+    console.print(Text(f"{PAD}Cross-Platform Setup  —  Linux / Windows / macOS", style="dim"), no_wrap=True)
+    console.print()
+    sep()
+    console.print()
+    console.print(
+        Text(f"{PAD}Tip: For a fresh install or update, choose [1] and press Enter at every prompt.",
+             style="green"), no_wrap=True
+    )
+    console.print()
+    sep()
     console.print()
 
 def menu():
-    console.print(Text("  Installation Options:", style="bold white"))
+    console.print(Text(f"{PAD}Installation Options:", style="bold white"), no_wrap=True)
     console.print()
     lines = [
         ("[1]", "bold green",  "Standard Install / Update",
@@ -83,38 +97,42 @@ def menu():
          "Remove BadWords completely from this system."),
     ]
     for key, style, name, desc in lines:
-        t = Text()
-        t.append(f"  {key} ", style=style)
+        t = Text(no_wrap=True)
+        t.append(f"{PAD}{key} ", style=style)
         t.append(f"{name}\n", style="bright_white")
-        t.append(f"      {desc}", style="dim")
-        console.print(t)
+        t.append(f"{PAD}    {desc}", style="dim")
+        console.print(t, no_wrap=True)
         console.print()
-    separator()
-    console.print(Text("  [0] Exit", style="white"))
-    separator()
+    sep()
+    console.print(Text(f"{PAD}[0] Exit", style="white"), no_wrap=True)
+    console.print()
+    sep()
 
 def prompt_choice():
     console.print()
-    t = Text("  Choose a menu option using your keyboard [1,2,3,4,5,0] : ", style="green")
-    console.print(t, end="")
+    console.print(
+        Text(f"{PAD}Choose a menu option using your keyboard [1,2,3,4,5,0] : ", style="green"),
+        end="", no_wrap=True
+    )
     try:
         return input().strip()
     except (KeyboardInterrupt, EOFError):
         return "0"
 
-def pause(msg="  Press Enter to return to the menu..."):
+def pause(msg=None):
+    msg = msg or f"{PAD}Press Enter to return to the menu..."
     console.print()
-    console.print(Text(msg, style="dim"))
+    console.print(Text(msg, style="dim"), no_wrap=True)
     try:
         input()
     except (KeyboardInterrupt, EOFError):
         pass
 
-def log_info(msg):  console.print(Text(f"  [INFO] {msg}", style="green"))
-def log_step(msg):  console.print(Text(f"  [....] {msg}", style="cyan"))
-def log_ok(msg):    console.print(Text(f"  [ OK ] {msg}", style="bold green"))
-def log_warn(msg):  console.print(Text(f"  [WARN] {msg}", style="yellow"))
-def log_err(msg):   console.print(Text(f"  [ERR!] {msg}", style="bold red"))
+def log_info(msg):  console.print(Text(f"{PAD}[INFO] {msg}", style="green"), no_wrap=True)
+def log_step(msg):  console.print(Text(f"{PAD}[....] {msg}", style="cyan"), no_wrap=True)
+def log_ok(msg):    console.print(Text(f"{PAD}[ OK ] {msg}", style="bold green"), no_wrap=True)
+def log_warn(msg):  console.print(Text(f"{PAD}[WARN] {msg}", style="yellow"), no_wrap=True)
+def log_err(msg):   console.print(Text(f"{PAD}[ERR!] {msg}", style="bold red"), no_wrap=True)
 
 # ── Utility ──────────────────────────────────────────────────
 def md5(path):
@@ -209,8 +227,8 @@ def two_way_sync(src_paths, dst, protected_files, protected_dirs):
 # ── Option 1 — Standard Install/Update ───────────────────────
 def option_install_update():
     header()
-    console.print(Text("  ── Standard Install / Update ──", style="bold green"))
-    separator()
+    console.print(Text(f"{PAD}── Standard Install / Update ──", style="bold green"), no_wrap=True)
+    console.print()
 
     resolve_dir = _resolve_script_dir()
     default_dir = _default_install_dir()
@@ -247,7 +265,8 @@ def option_install_update():
     log_file    = os.path.join(install_dir, "badwords_debug.log")
 
     # ── Source fetch ─────────────────────────────────────────
-    separator()
+    console.print()
+    sep()
     log_step("Resolving source files...")
     tag, zip_url, source_repo = get_latest_tag()
     tmp_dl = tempfile.mkdtemp()
@@ -282,7 +301,8 @@ def option_install_update():
             return
 
         # ── GPU detection (Linux) ─────────────────────────────
-        separator()
+        console.print()
+        sep()
         log_step("Detecting GPU hardware...")
         has_nvidia = False
         if shutil.which("lspci"):
@@ -296,7 +316,8 @@ def option_install_update():
         log_ok(f"AI Engine Mode: {mode_name}")
 
         # ── Directory setup ───────────────────────────────────
-        separator()
+        console.print()
+        sep()
         log_step("Preparing directories...")
         os.makedirs(install_dir, exist_ok=True)
         os.makedirs(models_dir, exist_ok=True)
@@ -317,7 +338,8 @@ def option_install_update():
         log_ok("Files synced.")
 
         # ── FFmpeg ────────────────────────────────────────────
-        separator()
+        console.print()
+        sep()
         ffmpeg_bin = os.path.join(bin_dir, "ffmpeg")
         if is_update and os.path.isfile(ffmpeg_bin):
             log_ok("Portable FFmpeg already present. Skipping download.")
@@ -365,7 +387,8 @@ def option_install_update():
                     pass
 
         # ── Venv ──────────────────────────────────────────────
-        separator()
+        console.print()
+        sep()
         if not os.path.isdir(venv_dir):
             log_step(f"Creating virtual environment ({target_py})...")
             subprocess.run([target_py, "-m", "venv", venv_dir], check=True)
@@ -377,7 +400,8 @@ def option_install_update():
         venv_pip = os.path.join(venv_dir, "bin", "pip")
 
         # ── Dependencies ──────────────────────────────────────
-        separator()
+        console.print()
+        sep()
         log_step("Installing / upgrading dependencies...")
         subprocess.run([venv_py, "-m", "pip", "install", "--upgrade", "pip", "-q"], check=True)
 
@@ -409,7 +433,8 @@ def option_install_update():
         log_ok("All dependencies installed.")
 
         # ── Libs symlink ──────────────────────────────────────
-        separator()
+        console.print()
+        sep()
         log_step("Creating libs symlink...")
         site_pkgs = None
         for root, dirs, _ in os.walk(os.path.join(venv_dir, "lib")):
@@ -425,7 +450,8 @@ def option_install_update():
             log_warn("Could not locate site-packages in venv.")
 
         # ── DaVinci Resolve wrapper ───────────────────────────
-        separator()
+        console.print()
+        sep()
         log_step("Configuring DaVinci Resolve integration...")
         os.makedirs(resolve_dir, exist_ok=True)
 
@@ -487,13 +513,14 @@ else:
         os.chmod(log_file, 0o666)
 
         # ── Done ──────────────────────────────────────────────
-        separator()
         console.print()
-        console.print(Text("  ✓  INSTALLATION SUCCESSFUL!", style="bold green"))
-        console.print(Text(f"     Mode : {mode_name}", style="green"))
-        console.print(Text(f"     Path : {install_dir}", style="green"))
-        console.print(Text(f"     Log  : {log_file}", style="green"))
-        console.print(Text("     Find BadWords in DaVinci Resolve → Workspace → Scripts", style="dim"))
+        sep()
+        console.print()
+        console.print(Text(f"{PAD}✓  INSTALLATION SUCCESSFUL!", style="bold green"), no_wrap=True)
+        console.print(Text(f"{PAD}   Mode : {mode_name}", style="green"), no_wrap=True)
+        console.print(Text(f"{PAD}   Path : {install_dir}", style="green"), no_wrap=True)
+        console.print(Text(f"{PAD}   Log  : {log_file}", style="green"), no_wrap=True)
+        console.print(Text(f"{PAD}   Open DaVinci Resolve → Workspace → Scripts → Utility", style="dim"), no_wrap=True)
         console.print()
 
     finally:
@@ -504,8 +531,8 @@ else:
 # ── Dummy stubs ───────────────────────────────────────────────
 def option_dummy(n, label):
     header()
-    console.print(Text(f"  You selected option {n}: {label}", style="cyan"))
-    console.print(Text("  (This option is not yet implemented.)", style="dim"))
+    console.print(Text(f"{PAD}You selected option {n}: {label}", style="cyan"), no_wrap=True)
+    console.print(Text(f"{PAD}(This option is not yet implemented.)", style="dim"), no_wrap=True)
     pause()
 
 # ── Main loop ─────────────────────────────────────────────────
@@ -525,11 +552,11 @@ def main():
         elif choice == "5":
             option_dummy(5, "Uninstall")
         elif choice == "0":
-            console.print(Text("\n  Goodbye.\n", style="dim"))
+            console.print(Text(f"\n{PAD}Goodbye.\n", style="dim"), no_wrap=True)
             sys.exit(0)
         else:
             header()
-            console.print(Text("  Invalid option. Please try again.", style="red"))
+            console.print(Text(f"{PAD}Invalid option. Please try again.", style="red"), no_wrap=True)
             pause()
 
 if __name__ == "__main__":
