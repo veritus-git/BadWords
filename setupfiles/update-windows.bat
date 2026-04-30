@@ -1,6 +1,9 @@
 @echo off
-:: --- BADWORDS AUTO-UPDATE (Windows) ---
-:: Logika identyczna z update-linux.sh: Python sync+cleanup jako temp skrypt.
+:: --- BADWORDS AUTO-UPDATE (Windows, non-interactive) ---
+:: Logic mirrors update-linux.sh: Python sync+cleanup written to a temp script.
+:: IMPORTANT: ALL characters in this file must be plain ASCII (0x00-0x7F).
+:: Unicode chars (em-dash, box-drawing etc.) in batch files cause CMD to
+:: misread UTF-8 byte sequences as quote chars in CP1252, breaking the parser.
 :: Exits 0 on success, 1 on failure.
 setlocal EnableDelayedExpansion
 set "PYTHONHOME="
@@ -8,7 +11,7 @@ set "PYTHONPATH="
 
 echo [UPDATE] BadWords Windows Auto-Update starting...
 
-:: ── 1. Python ────────────────────────────────────────────────────────────────
+:: --- 1. Find Python ---
 set "PYTHON_CMD="
 where python >nul 2>&1 && (
     for /f "tokens=*" %%P in ('where python') do (
@@ -27,12 +30,15 @@ if not defined PYTHON_CMD (
     echo [WARN] Python not found. Trying winget...
     winget install --id Python.Python.3.11 -e --silent --accept-source-agreements --accept-package-agreements
     set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-    if not exist "!PYTHON_CMD!" ( echo [ERROR] Python install failed. && exit /b 1 )
+    if not exist "!PYTHON_CMD!" (
+        echo [ERROR] Python install failed. Please install Python 3.10-3.12 manually.
+        exit /b 1
+    )
 )
 :FOUND_PY
 echo [INFO] Using Python: !PYTHON_CMD!
 
-:: ── 2. Locate installation ───────────────────────────────────────────────────
+:: --- 2. Locate installation ---
 set "WRAPPER_FILE=%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py"
 for /d %%D in ("%LOCALAPPDATA%\Packages\BlackmagicDesign.DaVinciResolve_*") do (
     if exist "%%D\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve" (
@@ -61,10 +67,10 @@ set "VENV_DIR=!INSTALL_DIR!\venv"
 set "VENV_PYTHON=!VENV_DIR!\Scripts\python.exe"
 set "VENV_PIP=!VENV_DIR!\Scripts\pip.exe"
 
-:: ── 3. curl ───────────────────────────────────────────────────────────────────
+:: --- 3. Check curl ---
 where curl >nul 2>&1 || set "USE_PS_DL=1"
 
-:: ── 4. Latest tag — GitHub, GitLab fallback ──────────────────────────────────
+:: --- 4. Fetch latest tag: GitHub first, GitLab fallback ---
 echo [INFO] Checking latest release...
 set "LATEST_TAG="
 set "REPO_ZIP_URL="
@@ -74,22 +80,29 @@ if not defined USE_PS_DL (
 ) else (
     for /f "delims=" %%T in ('powershell -NoProfile -Command "(Invoke-RestMethod https://api.github.com/repos/veritus-git/BadWords/releases/latest).tag_name" 2^>nul') do set "LATEST_TAG=%%T"
 )
-if defined LATEST_TAG ( set "REPO_ZIP_URL=https://github.com/veritus-git/BadWords/archive/refs/tags/!LATEST_TAG!.zip" & set "SOURCE_REPO=GitHub" & goto :GOT_TAG )
-
+if defined LATEST_TAG (
+    set "REPO_ZIP_URL=https://github.com/veritus-git/BadWords/archive/refs/tags/!LATEST_TAG!.zip"
+    set "SOURCE_REPO=GitHub"
+    goto :GOT_TAG
+)
 echo [WARN] GitHub unavailable, trying GitLab...
 if not defined USE_PS_DL (
     for /f "delims=" %%T in ('curl -fsSL --connect-timeout 10 "https://gitlab.com/api/v4/projects/badwords%%2FBadWords/releases" ^| "!PYTHON_CMD!" -c "import json,sys;d=json.load(sys.stdin);print(d[0][\"tag_name\"] if isinstance(d,list) and d else \"\")" 2^>nul') do set "LATEST_TAG=%%T"
 ) else (
     for /f "delims=" %%T in ('powershell -NoProfile -Command "(Invoke-RestMethod \"https://gitlab.com/api/v4/projects/badwords%%2FBadWords/releases\")[0].tag_name" 2^>nul') do set "LATEST_TAG=%%T"
 )
-if defined LATEST_TAG ( set "REPO_ZIP_URL=https://gitlab.com/badwords/BadWords/-/archive/!LATEST_TAG!/BadWords-!LATEST_TAG!.zip" & set "SOURCE_REPO=GitLab" & goto :GOT_TAG )
-echo [ERROR] Could not determine latest version.
+if defined LATEST_TAG (
+    set "REPO_ZIP_URL=https://gitlab.com/badwords/BadWords/-/archive/!LATEST_TAG!/BadWords-!LATEST_TAG!.zip"
+    set "SOURCE_REPO=GitLab"
+    goto :GOT_TAG
+)
+echo [ERROR] Could not determine latest version from GitHub or GitLab.
 exit /b 1
 
 :GOT_TAG
 echo [UPDATE] Latest release: !LATEST_TAG!  (source: !SOURCE_REPO!)
 
-:: ── 5. Download & extract ─────────────────────────────────────────────────────
+:: --- 5. Download and extract ---
 set "TMP_DIR=%TEMP%\bw_update_%RANDOM%"
 mkdir "!TMP_DIR!"
 set "ZIP_PATH=!TMP_DIR!\repo.zip"
@@ -99,12 +112,17 @@ if not defined USE_PS_DL (
 ) else (
     powershell -NoProfile -Command "Invoke-WebRequest -Uri '!REPO_ZIP_URL!' -OutFile '!ZIP_PATH!'"
 )
-if not exist "!ZIP_PATH!" ( echo [ERROR] Download failed. & rmdir /s /q "!TMP_DIR!" & exit /b 1 )
-
+if not exist "!ZIP_PATH!" (
+    echo [ERROR] Download failed.
+    rmdir /s /q "!TMP_DIR!"
+    exit /b 1
+)
 echo [INFO] Extracting...
 powershell -NoProfile -Command "Expand-Archive -Path '!ZIP_PATH!' -DestinationPath '!TMP_DIR!\extracted' -Force"
 set "EXTRACTED_DIR="
-for /d %%D in ("!TMP_DIR!\extracted\*") do ( if "!EXTRACTED_DIR!"=="" set "EXTRACTED_DIR=%%D" )
+for /d %%D in ("!TMP_DIR!\extracted\*") do (
+    if "!EXTRACTED_DIR!"=="" set "EXTRACTED_DIR=%%D"
+)
 if not exist "!EXTRACTED_DIR!\src\main.py" (
     echo [ERROR] Extraction failed - src\main.py not found.
     rmdir /s /q "!TMP_DIR!"
@@ -113,10 +131,9 @@ if not exist "!EXTRACTED_DIR!\src\main.py" (
 set "SRC_MAIN=!EXTRACTED_DIR!\src"
 set "SRC_ASSETS=!EXTRACTED_DIR!\assets"
 
-:: ── 6. Sync + cleanup via Python ──────────────────────────────────────────────
-:: Mirrors update-linux.sh exactly: MD5 hash compare, copy changed, remove obsolete.
-:: We write the Python script line-by-line with DelayedExpansion DISABLED so that
-:: Python's '!=' operator and any '!' chars are treated as literals by CMD.
+:: --- 6. Sync + cleanup via Python (mirrors update-linux.sh exactly) ---
+:: The Python script is written line-by-line using echo with DelayedExpansion
+:: DISABLED so Python's != operator and ! chars are treated as plain text.
 echo [INFO] Syncing files...
 set "SYNC_PY=%TEMP%\_bw_sync_%RANDOM%.py"
 
@@ -124,77 +141,81 @@ setlocal DisableDelayedExpansion
 echo import os, shutil, hashlib, sys                                         > "%SYNC_PY%"
 echo src_paths = [p for p in [sys.argv[1], sys.argv[2]] if os.path.isdir(p)]>> "%SYNC_PY%"
 echo dst = sys.argv[3]                                                       >> "%SYNC_PY%"
-echo def get_hash(p):                                                         >> "%SYNC_PY%"
-echo     try:                                                                 >> "%SYNC_PY%"
+echo def get_hash(p):                                                        >> "%SYNC_PY%"
+echo     try:                                                                >> "%SYNC_PY%"
 echo         with open(p, 'rb') as fh: return hashlib.md5(fh.read()).hexdigest() >> "%SYNC_PY%"
-echo     except Exception: return None                                        >> "%SYNC_PY%"
-echo for src in src_paths:                                                    >> "%SYNC_PY%"
-echo     for root, dirs, files in os.walk(src):                              >> "%SYNC_PY%"
-echo         rel = os.path.relpath(root, src)                                >> "%SYNC_PY%"
-echo         d_dir = dst if rel == '.' else os.path.join(dst, rel)           >> "%SYNC_PY%"
-echo         os.makedirs(d_dir, exist_ok=True)                               >> "%SYNC_PY%"
-echo         for fn in files:                                                 >> "%SYNC_PY%"
-echo             sf = os.path.join(root, fn)                                 >> "%SYNC_PY%"
-echo             df = os.path.join(d_dir, fn)                                >> "%SYNC_PY%"
-echo             if get_hash(sf) != get_hash(df):                            >> "%SYNC_PY%"
-echo                 shutil.copy2(sf, df)                                    >> "%SYNC_PY%"
-echo                 lbl = fn if rel == '.' else os.path.join(rel, fn)       >> "%SYNC_PY%"
-echo                 print('  Updated: ' + lbl)                              >> "%SYNC_PY%"
+echo     except Exception: return None                                       >> "%SYNC_PY%"
+echo for src in src_paths:                                                   >> "%SYNC_PY%"
+echo     for root, dirs, files in os.walk(src):                             >> "%SYNC_PY%"
+echo         rel = os.path.relpath(root, src)                               >> "%SYNC_PY%"
+echo         d_dir = dst if rel == '.' else os.path.join(dst, rel)          >> "%SYNC_PY%"
+echo         os.makedirs(d_dir, exist_ok=True)                              >> "%SYNC_PY%"
+echo         for fn in files:                                                >> "%SYNC_PY%"
+echo             sf = os.path.join(root, fn)                                >> "%SYNC_PY%"
+echo             df = os.path.join(d_dir, fn)                               >> "%SYNC_PY%"
+echo             if get_hash(sf) != get_hash(df):                           >> "%SYNC_PY%"
+echo                 shutil.copy2(sf, df)                                   >> "%SYNC_PY%"
+echo                 lbl = fn if rel == '.' else os.path.join(rel, fn)      >> "%SYNC_PY%"
+echo                 print('  Updated: ' + lbl)                             >> "%SYNC_PY%"
 echo pf = {'pref.json','user.json','settings.json','badwords_debug.log','BadWords.py','unins000.dat','unins000.exe'} >> "%SYNC_PY%"
 echo pd = {'models','saves','venv','bin','libs','icons','layout','.git','.github','__pycache__'} >> "%SYNC_PY%"
-echo src_items_top = set()                                                    >> "%SYNC_PY%"
-echo for src in src_paths: src_items_top.update(os.listdir(src))             >> "%SYNC_PY%"
-echo src_items_all = {}                                                       >> "%SYNC_PY%"
-echo for src in src_paths:                                                   >> "%SYNC_PY%"
-echo     for r2, dd, ff in os.walk(src):                                     >> "%SYNC_PY%"
-echo         rel2 = os.path.relpath(r2, src)                                 >> "%SYNC_PY%"
-echo         src_items_all[rel2] = set(ff)                                   >> "%SYNC_PY%"
+echo src_top = set()                                                         >> "%SYNC_PY%"
+echo for s in src_paths: src_top.update(os.listdir(s))                      >> "%SYNC_PY%"
+echo src_sub = {}                                                            >> "%SYNC_PY%"
+echo for s in src_paths:                                                     >> "%SYNC_PY%"
+echo     for r2, d2, f2 in os.walk(s):                                      >> "%SYNC_PY%"
+echo         rel2 = os.path.relpath(r2, s)                                  >> "%SYNC_PY%"
+echo         src_sub[rel2] = set(f2)                                        >> "%SYNC_PY%"
 echo for item in sorted(os.listdir(dst)):                                    >> "%SYNC_PY%"
-echo     if item in pf or item in pd: continue                               >> "%SYNC_PY%"
-echo     if item not in src_items_top:                                        >> "%SYNC_PY%"
-echo         full = os.path.join(dst, item)                                  >> "%SYNC_PY%"
-echo         try:                                                             >> "%SYNC_PY%"
-echo             if os.path.isdir(full): shutil.rmtree(full)                 >> "%SYNC_PY%"
-echo             else: os.remove(full)                                        >> "%SYNC_PY%"
-echo             print('  Removed obsolete: ' + item)                        >> "%SYNC_PY%"
-echo         except Exception as ex: print('  [WARN] ' + item + ': ' + str(ex)) >> "%SYNC_PY%"
-echo for sub_rel, sub_src_files in src_items_all.items():                    >> "%SYNC_PY%"
-echo     if sub_rel == '.': continue                                          >> "%SYNC_PY%"
-echo     sub_dst = os.path.join(dst, sub_rel)                                >> "%SYNC_PY%"
-echo     if not os.path.isdir(sub_dst): continue                             >> "%SYNC_PY%"
-echo     for df2 in sorted(os.listdir(sub_dst)):                             >> "%SYNC_PY%"
-echo         if df2 not in sub_src_files:                                    >> "%SYNC_PY%"
-echo             fp = os.path.join(sub_dst, df2)                             >> "%SYNC_PY%"
-echo             try:                                                         >> "%SYNC_PY%"
-echo                 if os.path.isdir(fp): shutil.rmtree(fp)                 >> "%SYNC_PY%"
-echo                 else: os.remove(fp)                                      >> "%SYNC_PY%"
+echo     if item in pf or item in pd: continue                              >> "%SYNC_PY%"
+echo     if item not in src_top:                                             >> "%SYNC_PY%"
+echo         full = os.path.join(dst, item)                                 >> "%SYNC_PY%"
+echo         try:                                                            >> "%SYNC_PY%"
+echo             if os.path.isdir(full): shutil.rmtree(full)                >> "%SYNC_PY%"
+echo             else: os.remove(full)                                       >> "%SYNC_PY%"
+echo             print('  Removed obsolete: ' + item)                       >> "%SYNC_PY%"
+echo         except Exception as ex: print('  [WARN] rm ' + item + ': ' + str(ex)) >> "%SYNC_PY%"
+echo for sub_rel, sub_files in src_sub.items():                             >> "%SYNC_PY%"
+echo     if sub_rel == '.': continue                                         >> "%SYNC_PY%"
+echo     sub_dst = os.path.join(dst, sub_rel)                               >> "%SYNC_PY%"
+echo     if not os.path.isdir(sub_dst): continue                            >> "%SYNC_PY%"
+echo     for df2 in sorted(os.listdir(sub_dst)):                            >> "%SYNC_PY%"
+echo         if df2 not in sub_files:                                        >> "%SYNC_PY%"
+echo             fp = os.path.join(sub_dst, df2)                            >> "%SYNC_PY%"
+echo             try:                                                        >> "%SYNC_PY%"
+echo                 if os.path.isdir(fp): shutil.rmtree(fp)                >> "%SYNC_PY%"
+echo                 else: os.remove(fp)                                     >> "%SYNC_PY%"
 echo                 print('  Removed obsolete: ' + os.path.join(sub_rel, df2)) >> "%SYNC_PY%"
-echo             except Exception as ex: print('  [WARN] ' + df2 + ': ' + str(ex)) >> "%SYNC_PY%"
+echo             except Exception as ex: print('  [WARN] rm ' + df2 + ': ' + str(ex)) >> "%SYNC_PY%"
 endlocal
 
 "!PYTHON_CMD!" "!SYNC_PY!" "!SRC_MAIN!" "!SRC_ASSETS!" "!INSTALL_DIR!"
-if !errorlevel! neq 0 echo [WARN] Sync script exited with code !errorlevel! — continuing.
+if !errorlevel! neq 0 echo [WARN] Sync exited with code !errorlevel! - continuing.
 del "!SYNC_PY!" 2>nul
-
 echo [INFO] File sync complete.
 
-:: ── 7. pip upgrade ──────────────────────────────────────────────────────────
-:: NOTE: Do NOT use 2>&1 | inside if() blocks — CMD crashes on ^ in "^$".
-:: Output suppressed cleanly with >nul 2>&1 instead.
-if exist "!VENV_PYTHON!" (
+:: --- 7. Upgrade pip packages ---
+:: Do NOT use pipes (|) inside if() blocks - CMD misparses them on some systems.
+:: Running pip commands sequentially outside blocks avoids all issues.
+set "PIP_OK=0"
+if exist "!VENV_PYTHON!" set "PIP_OK=1"
+if "!PIP_OK!"=="1" (
     echo [INFO] Upgrading pip packages...
     "!VENV_PYTHON!" -m pip install --upgrade pip >nul 2>&1
     "!VENV_PYTHON!" -m pip install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
     echo [INFO] Packages upgraded.
-) else if exist "!VENV_PIP!" (
-    echo [INFO] Upgrading pip packages (pip fallback)...
-    "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
-    echo [INFO] Packages upgraded.
-) else (
-    echo [WARN] venv not found, skipping package upgrade.
+)
+if "!PIP_OK!"=="0" (
+    if exist "!VENV_PIP!" (
+        echo [INFO] Upgrading pip packages (pip fallback)...
+        "!VENV_PIP!" install --upgrade faster-whisper stable-ts pypdf >nul 2>&1
+        echo [INFO] Packages upgraded.
+    ) else (
+        echo [WARN] venv not found, skipping package upgrade.
+    )
 )
 
-:: ── 8. Refresh libs junction (mirrors libs symlink in Linux) ──────────────────
+:: --- 8. Refresh libs junction (mirrors libs symlink in Linux) ---
 set "LIBS_DIR=!INSTALL_DIR!\libs"
 if exist "!VENV_DIR!\Lib\site-packages" (
     if exist "!LIBS_DIR!" ( rmdir "!LIBS_DIR!" >nul 2>&1 )
