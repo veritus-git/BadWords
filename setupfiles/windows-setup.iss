@@ -4,8 +4,8 @@
 #define MyAppPublisher "Szymon Wolarz"
 #define MyAppExeName "main.py"
 
-; URLs
-#define PythonUrl "https://www.python.org/ftp/python/3.12.2/python-3.12.2-amd64.exe"
+; URLs (GPU is AUTO-DETECTED in setup_windows.bat - no user choice)
+#define PythonUrl "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
 #define FFmpegUrl "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
 ; Include IDP (Must be installed in Inno Setup)
@@ -42,12 +42,9 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [CustomMessages]
 ; --- ENGLISH ---
-english.GpuDesc=Version with NVIDIA GPU acceleration (Recommended)
-english.CpuDesc=CPU Version (Slower, compatible)
-english.CompCore=Core program files
-english.CompNvidia=NVIDIA support libraries
 english.StatusPython=Installing Python environment (required)...
-english.StatusConfig=Configuring venv and AI libraries (this may take a while)...
+english.StatusConfig=Configuring environment and AI libraries (this may take a while)...
+english.StatusRemoving=Removing BadWords from this system...
 english.ErrResolve=Could not find DaVinci Resolve scripts folder.
 english.ErrConfig=Configuration failed (setup_windows.bat). Error code: %1
 english.ModeTitle=Installation Mode
@@ -57,14 +54,12 @@ english.ModeUpdate=Standard Install/Update - Install or update the app. Keep you
 english.ModeClean=Repair Installation - Fix bugs by replacing core files. Keep your settings and models.
 english.ModeMove=Move Installation - Change the BadWords folder (moves all your data).
 english.ModeWipe=Complete Reset - Delete absolutely EVERYTHING and install from scratch.
+english.ModeRemove=Remove Completely - Uninstall BadWords and delete ALL data, models and settings.
 
 ; --- POLISH ---
-polish.GpuDesc=Wersja z akceleracją NVIDIA GPU (Zalecane)
-polish.CpuDesc=Wersja CPU (Wolniejsza, kompatybilna)
-polish.CompCore=Główne pliki programu
-polish.CompNvidia=Biblioteki wsparcia NVIDIA
 polish.StatusPython=Instalowanie środowiska Python (wymagane)...
-polish.StatusConfig=Konfiguracja venv i bibliotek AI (to może chwilę potrwać)...
+polish.StatusConfig=Konfiguracja środowiska i bibliotek AI (to może chwilę potrwać)...
+polish.StatusRemoving=Usuwanie BadWords z tego systemu...
 polish.ErrResolve=Nie można znaleźć folderu skryptów DaVinci Resolve.
 polish.ErrConfig=Błąd konfiguracji (setup_windows.bat). Kod błędu: %1
 polish.ModeTitle=Tryb Instalacji
@@ -74,14 +69,12 @@ polish.ModeUpdate=Standardowa Instalacja/Aktualizacja - Instaluje lub aktualizuj
 polish.ModeClean=Naprawa Instalacji - Naprawia błędy poprzez zastąpienie plików rdzenia. Zachowuje Twoje ustawienia i modele.
 polish.ModeMove=Przenieś Instalację - Zmień folder BadWords (przenosi wszystkie dane).
 polish.ModeWipe=Pełny Reset - Usuwa absolutnie WSZYSTKO i instaluje aplikację od zera.
+polish.ModeRemove=Usuń Całkowicie - Odinstaluj BadWords i usuń WSZYSTKIE dane, modele i ustawienia.
 
 ; --- GERMAN ---
-german.GpuDesc=Version mit NVIDIA GPU-Beschleunigung (Empfohlen)
-german.CpuDesc=CPU-Version (Langsamer, kompatibel)
-german.CompCore=Kernprogrammdateien
-german.CompNvidia=NVIDIA-Supportbibliotheken
 german.StatusPython=Installiere Python-Umgebung (erforderlich)...
-german.StatusConfig=Konfiguriere venv und AI-Bibliotheken (dies kann eine Weile dauern)...
+german.StatusConfig=Konfiguriere Umgebung und AI-Bibliotheken (dies kann eine Weile dauern)...
+german.StatusRemoving=BadWords wird von diesem System entfernt...
 german.ErrResolve=DaVinci Resolve Skriptordner wurde nicht gefunden.
 german.ErrConfig=Konfiguration fehlgeschlagen (setup_windows.bat). Fehlercode: %1
 german.ModeTitle=Installationsmodus
@@ -91,14 +84,12 @@ german.ModeUpdate=Standard-Installation/Update - Installiert oder aktualisiert d
 german.ModeClean=Reparatur-Installation - Behebt Fehler durch Ersetzen der Kerndateien. Einstellungen und Modelle bleiben erhalten.
 german.ModeMove=Installation verschieben - BadWords-Ordner ändern (alle Daten werden verschoben).
 german.ModeWipe=Vollständiger Reset - Löscht absolut ALLES und installiert die App von Grund auf neu.
+german.ModeRemove=Vollständig entfernen - BadWords deinstallieren und ALLE Daten, Modelle und Einstellungen löschen.
 
 ; --- SPANISH ---
-spanish.GpuDesc=Versión con aceleración de GPU NVIDIA (Recomendado)
-spanish.CpuDesc=Versión de CPU (Más lenta, compatible)
-spanish.CompCore=Archivos principales del programa
-spanish.CompNvidia=Bibliotecas de soporte NVIDIA
 spanish.StatusPython=Instalando el entorno Python (requerido)...
-spanish.StatusConfig=Configurando venv y bibliotecas de IA (esto puede tardar)...
+spanish.StatusConfig=Configurando entorno y bibliotecas de IA (esto puede tardar)...
+spanish.StatusRemoving=Eliminando BadWords de este sistema...
 spanish.ErrResolve=No se pudo encontrar la carpeta de scripts de DaVinci Resolve.
 spanish.ErrConfig=Error de configuración (setup_windows.bat). Código de error: %1
 spanish.ModeTitle=Modo de instalación
@@ -108,14 +99,12 @@ spanish.ModeUpdate=Instalación/Actualización estándar - Instala o actualiza l
 spanish.ModeClean=Reparar instalación - Solucione errores reemplazando archivos principales. Mantenga sus ajustes y modelos.
 spanish.ModeMove=Mover instalación - Cambiar la carpeta de BadWords (mueve todos sus datos).
 spanish.ModeWipe=Restablecimiento completo - Elimine absolutamente TODO e instale desde cero.
+spanish.ModeRemove=Eliminar completamente - Desinstalar BadWords y eliminar TODOS los datos, modelos y ajustes.
 
 ; --- FRENCH ---
-french.GpuDesc=Version avec accélération GPU NVIDIA (Recommandé)
-french.CpuDesc=Version CPU (Plus lente, compatible)
-french.CompCore=Fichiers principaux du programme
-french.CompNvidia=Bibliothèques de support NVIDIA
 french.StatusPython=Installation de l'environnement Python (requis)...
-french.StatusConfig=Configuration du venv et des bibliothèques d'IA (cela peut prendre du temps)...
+french.StatusConfig=Configuration de l'environnement et des bibliothèques d'IA (cela peut prendre du temps)...
+french.StatusRemoving=Suppression de BadWords de ce système...
 french.ErrResolve=Impossible de trouver le dossier des scripts DaVinci Resolve.
 french.ErrConfig=Échec de la configuration (setup_windows.bat). Code d'erreur : %1
 french.ModeTitle=Mode d'installation
@@ -125,14 +114,12 @@ french.ModeUpdate=Installation/Mise à jour standard - Installe ou met à jour l
 french.ModeClean=Réparer l'installation - Correction des bogues en remplaçant les fichiers principaux. Conserve vos paramètres et modèles.
 french.ModeMove=Déplacer l'installation - Changer le dossier BadWords (déplace toutes vos données).
 french.ModeWipe=Réinitialisation complète - Supprimez absolument TOUT et installez à partir de zéro.
+french.ModeRemove=Supprimer complètement - Désinstaller BadWords et supprimer TOUTES les données, modèles et paramètres.
 
 ; --- ITALIAN ---
-italian.GpuDesc=Versione con accelerazione GPU NVIDIA (Consigliato)
-italian.CpuDesc=Versione CPU (Più lenta, compatibile)
-italian.CompCore=File core del programma
-italian.CompNvidia=Librerie di supporto NVIDIA
 italian.StatusPython=Installazione dell'ambiente Python (richiesto)...
-italian.StatusConfig=Configurazione di venv e librerie AI (potrebbe richiedere tempo)...
+italian.StatusConfig=Configurazione dell'ambiente e librerie AI (potrebbe richiedere tempo)...
+italian.StatusRemoving=Rimozione di BadWords da questo sistema...
 italian.ErrResolve=Impossibile trovare la cartella degli script di DaVinci Resolve.
 italian.ErrConfig=Configurazione fallita (setup_windows.bat). Codice errore: %1
 italian.ModeTitle=Modalità di installazione
@@ -142,14 +129,12 @@ italian.ModeUpdate=Installazione/Aggiornamento standard - Installa o aggiorna l'
 italian.ModeClean=Ripara installazione - Risolve i bug sostituendo i file core. Mantiene le impostazioni e i modelli.
 italian.ModeMove=Sposta installazione - Cambia la cartella BadWords (sposta tutti i dati).
 italian.ModeWipe=Reset completo - Elimina assolutamente TUTTO e installa da zero.
+italian.ModeRemove=Rimuovi completamente - Disinstalla BadWords ed elimina TUTTI i dati, modelli e impostazioni.
 
 ; --- PORTUGUESE ---
-portuguese.GpuDesc=Versão com aceleração de GPU NVIDIA (Recomendado)
-portuguese.CpuDesc=Versão CPU (Mais lenta, compatível)
-portuguese.CompCore=Arquivos principais do programa
-portuguese.CompNvidia=Bibliotecas de suporte NVIDIA
 portuguese.StatusPython=Instalando o ambiente Python (necessário)...
-portuguese.StatusConfig=Configurando venv e bibliotecas de IA (isso pode levar um tempo)...
+portuguese.StatusConfig=Configurando ambiente e bibliotecas de IA (isso pode levar um tempo)...
+portuguese.StatusRemoving=Removendo BadWords deste sistema...
 portuguese.ErrResolve=Não foi possível encontrar a pasta de scripts do DaVinci Resolve.
 portuguese.ErrConfig=Falha na configuração (setup_windows.bat). Código de erro: %1
 portuguese.ModeTitle=Modo de Instalação
@@ -159,14 +144,12 @@ portuguese.ModeUpdate=Instalação/Atualização padrão - Instala ou atualiza o
 portuguese.ModeClean=Reparar Instalação - Corrige bugs substituindo arquivos principais. Mantém suas configurações e modelos.
 portuguese.ModeMove=Mover instalação - Altere a pasta do BadWords (move todos os seus dados).
 portuguese.ModeWipe=Reset Completo - Exclui absolutamente TUDO e instala do zero.
+portuguese.ModeRemove=Remover Completamente - Desinstalar BadWords e excluir TODOS os dados, modelos e configurações.
 
 ; --- UKRAINIAN ---
-ukrainian.GpuDesc=Версія з прискоренням NVIDIA GPU (Рекомендовано)
-ukrainian.CpuDesc=Версія для CPU (Повільніша, сумісна)
-ukrainian.CompCore=Основні файли програми
-ukrainian.CompNvidia=Бібліотеки підтримки NVIDIA
 ukrainian.StatusPython=Встановлення середовища Python (обов'язково)...
-ukrainian.StatusConfig=Налаштування venv та бібліотек ШІ (це може зайняти час)...
+ukrainian.StatusConfig=Налаштування середовища та бібліотек ШІ (це може зайняти час)...
+ukrainian.StatusRemoving=Видалення BadWords з цієї системи...
 ukrainian.ErrResolve=Не вдалося знайти папку скриптів DaVinci Resolve.
 ukrainian.ErrConfig=Помилка налаштування (setup_windows.bat). Код помилки: %1
 ukrainian.ModeTitle=Режим інсталяції
@@ -176,14 +159,12 @@ ukrainian.ModeUpdate=Стандартна інсталяція/оновленн�
 ukrainian.ModeClean=Відновлення інсталяції - Виправляє помилки, замінюючи основні файли. Зберігає ваші налаштування та моделі.
 ukrainian.ModeMove=Перемістити інсталяцію - Змінити папку BadWords (переміщує всі дані).
 ukrainian.ModeWipe=Повне скидання - Видаляє абсолютно ВСЕ і встановлює з нуля.
+ukrainian.ModeRemove=Видалити повністю - Видалити BadWords та ВСІ дані, моделі та налаштування.
 
 ; --- DUTCH ---
-dutch.GpuDesc=Versie met NVIDIA GPU-versnelling (Aanbevolen)
-dutch.CpuDesc=CPU-versie (Langzamer, compatibel)
-dutch.CompCore=Kernbestanden van het programma
-dutch.CompNvidia=NVIDIA-ondersteuningsbibliotheken
 dutch.StatusPython=Python-omgeving installeren (vereist)...
-dutch.StatusConfig=Venv en AI-bibliotheken configureren (dit kan even duren)...
+dutch.StatusConfig=Omgeving en AI-bibliotheken configureren (dit kan even duren)...
+dutch.StatusRemoving=BadWords van dit systeem verwijderen...
 dutch.ErrResolve=Kon de DaVinci Resolve scripts map niet vinden.
 dutch.ErrConfig=Configuratie mislukt (setup_windows.bat). Foutcode: %1
 dutch.ModeTitle=Installatiemodus
@@ -193,15 +174,13 @@ dutch.ModeUpdate=Standaard installatie/update - Installeert of updatet de app. B
 dutch.ModeClean=Reparatie-installatie - Herstel fouten door kernbestanden te vervangen. Behoudt uw instellingen en modellen.
 dutch.ModeMove=Installatie verplaatsen - Wijzig de BadWords-map (verplaatst al uw gegevens).
 dutch.ModeWipe=Volledige reset - Verwijdert absoluut ALLES en installeert vanaf nul.
+dutch.ModeRemove=Volledig verwijderen - BadWords verwijderen en ALLE gegevens, modellen en instellingen wissen.
 
 ; --- RUSSIAN ---
-russian.GpuDesc=Версия с ускорением NVIDIA GPU (Рекомендуется)
-russian.CpuDesc=Версия для CPU (Медленнее, совместимая)
-russian.CompCore=Основные файлы программы
-russian.CompNvidia=Библиотеки поддержки NVIDIA
 russian.StatusPython=Установка среды Python (обязательно)...
-russian.StatusConfig=Настройка venv и библиотек ИИ (это может занять время)...
-russian.ErrResolve=Не удалось найти папку скриптів DaVinci Resolve.
+russian.StatusConfig=Настройка среды и библиотек ИИ (это может занять время)...
+russian.StatusRemoving=Удаление BadWords с этой системы...
+russian.ErrResolve=Не удалось найти папку скриптов DaVinci Resolve.
 russian.ErrConfig=Ошибка настройки (setup_windows.bat). Код ошибки: %1
 russian.ModeTitle=Режим установки
 russian.ModeDesc=Выберите способ установки BadWords
@@ -210,28 +189,22 @@ russian.ModeUpdate=Стандартная установка/обновлени�
 russian.ModeClean=Восстановление установки - Исправляет ошибки путем замены основных файлов. Сохраняет настройки и модели.
 russian.ModeMove=Переместить установку - Изменить папку BadWords (перемещает все данные).
 russian.ModeWipe=Полный сброс - Удаляет абсолютно ВСЕ и устанавливает с нуля.
+russian.ModeRemove=Удалить полностью - Удалить BadWords и ВСЕ данные, модели и настройки.
 
-[Types]
-Name: "gpu"; Description: "{cm:GpuDesc}"
-Name: "cpu"; Description: "{cm:CpuDesc}"
-
-[Components]
-Name: "core"; Description: "{cm:CompCore}"; Types: gpu cpu; Flags: fixed
-Name: "nvidia"; Description: "{cm:CompNvidia}"; Types: gpu
 
 [Files]
-Source: "src\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
-Source: "assets\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
-Source: "setup_windows.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "setupfiles\update-windows.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "src\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs; Check: not IsRemoveMode()
+Source: "assets\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs; Check: not IsRemoveMode()
+Source: "setup_windows.bat"; DestDir: "{app}"; Flags: ignoreversion; Check: not IsRemoveMode()
+Source: "setupfiles\update-windows.bat"; DestDir: "{app}"; Flags: ignoreversion; Check: not IsRemoveMode()
 
 [Dirs]
-Name: "{app}\bin"
-Name: "{app}\models"
-Name: "{app}\libs"
+Name: "{app}\bin"; Check: not IsRemoveMode()
+Name: "{app}\models"; Check: not IsRemoveMode()
+Name: "{app}\libs"; Check: not IsRemoveMode()
 
 [Run]
-Filename: "{tmp}\python_setup.exe"; Parameters: "/quiet PrependPath=1 Include_test=0"; StatusMsg: "{cm:StatusPython}"; Check: FileExists(ExpandConstant('{tmp}\python_setup.exe')); Flags: waituntilterminated
+Filename: "{tmp}\python_setup.exe"; Parameters: "/quiet PrependPath=1 Include_test=0"; StatusMsg: "{cm:StatusPython}"; Check: (not IsRemoveMode()) and FileExists(ExpandConstant('{tmp}\python_setup.exe')); Flags: waituntilterminated
 
 [Code]
 var
@@ -239,17 +212,29 @@ var
   DownloadsQueued: Boolean;
   OldInstallPath: String;
 
-function NeedsPythonInstallation(): Boolean;
-var
-  v10, v11, v12: Boolean;
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function IsRemoveMode(): Boolean;
 begin
-  v10 := RegKeyExists(HKCU, 'SOFTWARE\Python\PythonCore\3.10\InstallPath') or RegKeyExists(HKLM, 'SOFTWARE\Python\PythonCore\3.10\InstallPath');
-  v11 := RegKeyExists(HKCU, 'SOFTWARE\Python\PythonCore\3.11\InstallPath') or RegKeyExists(HKLM, 'SOFTWARE\Python\PythonCore\3.11\InstallPath');
-  v12 := RegKeyExists(HKCU, 'SOFTWARE\Python\PythonCore\3.12\InstallPath') or RegKeyExists(HKLM, 'SOFTWARE\Python\PythonCore\3.12\InstallPath');
-  
-  if v10 or v11 or v12 then Result := False
-  else Result := True;
+  Result := (InstallModePage <> nil) and InstallModePage.Values[4];
 end;
+
+function IsAlreadyInstalled(): Boolean;
+begin
+  Result := (OldInstallPath <> '') and FileExists(OldInstallPath + '\main.py');
+end;
+
+function NeedsPythonInstallation(): Boolean;
+var v10, v11, v12, v13: Boolean;
+begin
+  v10 := RegKeyExists(HKCU,'SOFTWARE\Python\PythonCore\3.10\InstallPath') or RegKeyExists(HKLM,'SOFTWARE\Python\PythonCore\3.10\InstallPath');
+  v11 := RegKeyExists(HKCU,'SOFTWARE\Python\PythonCore\3.11\InstallPath') or RegKeyExists(HKLM,'SOFTWARE\Python\PythonCore\3.11\InstallPath');
+  v12 := RegKeyExists(HKCU,'SOFTWARE\Python\PythonCore\3.12\InstallPath') or RegKeyExists(HKLM,'SOFTWARE\Python\PythonCore\3.12\InstallPath');
+  v13 := RegKeyExists(HKCU,'SOFTWARE\Python\PythonCore\3.13\InstallPath') or RegKeyExists(HKLM,'SOFTWARE\Python\PythonCore\3.13\InstallPath');
+  Result := not (v10 or v11 or v12 or v13);
+end;
+
+// ── Init ─────────────────────────────────────────────────────────────────────
 
 procedure InitializeWizard;
 begin
@@ -260,36 +245,64 @@ begin
   RegQueryStringValue(HKCU,
     'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1',
     'InstallLocation', OldInstallPath);
+  // Trim trailing backslash Inno sometimes adds
+  if (Length(OldInstallPath) > 0) and (OldInstallPath[Length(OldInstallPath)] = '\') then
+    OldInstallPath := Copy(OldInstallPath, 1, Length(OldInstallPath) - 1);
 
-  InstallModePage := CreateInputOptionPage(wpSelectComponents,
+  // Mode selection page (inserted after wpSelectDir)
+  InstallModePage := CreateInputOptionPage(wpSelectDir,
     CustomMessage('ModeTitle'), CustomMessage('ModeDesc'),
     CustomMessage('ModeSub'), True, False);
-  InstallModePage.Add(CustomMessage('ModeUpdate'));
-  InstallModePage.Add(CustomMessage('ModeClean'));
-  InstallModePage.Add(CustomMessage('ModeMove'));
-  InstallModePage.Add(CustomMessage('ModeWipe'));
-  InstallModePage.Values[0] := True; // Default to Standard Update
+  InstallModePage.Add(CustomMessage('ModeUpdate'));   // 0
+  InstallModePage.Add(CustomMessage('ModeClean'));    // 1
+  InstallModePage.Add(CustomMessage('ModeMove'));     // 2
+  InstallModePage.Add(CustomMessage('ModeWipe'));     // 3
+  InstallModePage.Add(CustomMessage('ModeRemove'));   // 4
+  InstallModePage.Values[0] := True;
 end;
+
+// ── Page visibility ──────────────────────────────────────────────────────────
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = wpSelectDir then
+  begin
+    // Show dir selection only for: first install (mode 0, no prior install),
+    // Move (mode 2), Complete Reset (mode 3).
+    // Hide for: Repair (1), Remove (4), and Update when already installed (0+existing).
+    if InstallModePage.Values[4] then Result := True   // Remove
+    else if InstallModePage.Values[1] then Result := True  // Repair
+    else if InstallModePage.Values[0] and IsAlreadyInstalled() then Result := True; // Update
+  end;
+  // Skip downloads page if Remove mode
+  if (PageID = wpInstalling) and IsRemoveMode() then Result := False;
+end;
+
+// ── Download queuing ─────────────────────────────────────────────────────────
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  
-  // Queue packages for download right before the "Ready to install" page (wpReady)
   if (CurPageID = wpReady) and not DownloadsQueued then
   begin
-    if NeedsPythonInstallation() then 
-      idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
-      
-    // SMART FFmpeg: Download ONLY if Wipe is chosen or ffmpeg doesn't exist
-    if InstallModePage.Values[3] or not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
-      idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
-      
+    // No downloads needed for Remove mode
+    if not IsRemoveMode() then
+    begin
+      if NeedsPythonInstallation() then
+        idpAddFile('{#PythonUrl}', ExpandConstant('{tmp}\python_setup.exe'));
+
+      // Download FFmpeg only if: Wipe/Remove/first-install OR ffmpeg missing
+      if InstallModePage.Values[3] or
+         not FileExists(ExpandConstant('{app}\bin\ffmpeg.exe')) then
+        idpAddFile('{#FFmpegUrl}', ExpandConstant('{tmp}\ffmpeg.zip'));
+    end;
     DownloadsQueued := True;
   end;
 end;
 
-// Unified Smart Cleanup to absolutely protect installer files
+// ── Smart cleanup helper ─────────────────────────────────────────────────────
+
 procedure SmartCleanup(KeepEnv: Boolean; KeepUserData: Boolean);
 var
   FindRec: TFindRec;
@@ -297,7 +310,6 @@ var
 begin
   AppPath := ExpandConstant('{app}');
   if not DirExists(AppPath) then Exit;
-
   if FindFirst(AppPath + '\*', FindRec) then
   begin
     try
@@ -305,38 +317,30 @@ begin
         if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
         begin
           FileName := FindRec.Name;
-          
-          // 1. ZAWSZE CHRONIMY PLIKI INSTALATORA INNO SETUP (Kluczowe dla dzialania deinstalacji)
-          if (CompareText(FileName, 'unins000.exe') = 0) or
-             (CompareText(FileName, 'unins000.dat') = 0) then
+          // Always keep Inno Setup uninstaller files
+          if (CompareText(FileName,'unins000.exe')=0) or
+             (CompareText(FileName,'unins000.dat')=0) then
           begin
             Log('[CLEANUP] Keeping InnoSetup tracker: ' + FileName);
           end
-          // 2. CHRONIMY DANE UZYTKOWNIKA
           else if KeepUserData and (
-             (CompareText(FileName, 'models') = 0) or
-             (CompareText(FileName, 'saves') = 0) or
-             (CompareText(FileName, 'pref.json') = 0) or
-             (CompareText(FileName, 'user.json') = 0) or
-             (CompareText(FileName, 'settings.json') = 0) or
-             (CompareText(FileName, 'badwords_debug.log') = 0)
+             (CompareText(FileName,'models')=0) or
+             (CompareText(FileName,'saves')=0) or
+             (CompareText(FileName,'pref.json')=0) or
+             (CompareText(FileName,'user.json')=0) or
+             (CompareText(FileName,'settings.json')=0) or
+             (CompareText(FileName,'badwords_debug.log')=0)
           ) then
-          begin
-            Log('[CLEANUP] Keeping user data: ' + FileName);
-          end
-          // 3. CHRONIMY SRODOWISKO (Tylko dla trybu Update)
+            Log('[CLEANUP] Keeping user data: ' + FileName)
           else if KeepEnv and (
-             (CompareText(FileName, 'venv') = 0) or
-             (CompareText(FileName, 'bin') = 0) or
-             (CompareText(FileName, 'libs') = 0)
+             (CompareText(FileName,'venv')=0) or
+             (CompareText(FileName,'bin')=0) or
+             (CompareText(FileName,'libs')=0)
           ) then
-          begin
-            Log('[CLEANUP] Keeping environment: ' + FileName);
-          end
-          // 4. USUWAMY STARE PLIKI I SKRYPTY
+            Log('[CLEANUP] Keeping environment: ' + FileName)
           else
           begin
-            Log('[CLEANUP] Deleting obsolete item: ' + FileName);
+            Log('[CLEANUP] Deleting: ' + FileName);
             if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
               DelTree(AppPath + '\' + FileName, True, True, True)
             else
@@ -350,22 +354,62 @@ begin
   end;
 end;
 
+// ── Remove wrapper files ─────────────────────────────────────────────────────
+
+procedure RemoveResolveWrappers;
+var
+  FindRec: TFindRec;
+  StoreDir, ResolvePath: String;
+begin
+  // Standard install
+  ResolvePath := ExpandConstant('{userappdata}\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py');
+  if FileExists(ResolvePath) then DeleteFile(ResolvePath);
+  // MS Store install
+  StoreDir := ExpandConstant('{localappdata}\Packages\');
+  if FindFirst(StoreDir + 'BlackmagicDesign.DaVinciResolve_*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+        begin
+          ResolvePath := StoreDir + FindRec.Name +
+            '\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py';
+          if FileExists(ResolvePath) then DeleteFile(ResolvePath);
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
+// ── Main install steps ───────────────────────────────────────────────────────
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
-  GpuFlag: String;
-  FFmpegZip: String;
-  WipeMode: String;
+  FFmpegZip, WipeMode, OldDir: String;
 begin
   if CurStep = ssInstall then
   begin
-    // ANTI-GHOST REGISTRY WIPE (Usuwamy z rejestru sieroty ze starych wersji bez GUID)
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords_is1');
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords');
+    // Clean ghost registry entries from old installs without GUID
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER,'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords_is1');
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER,'Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords');
 
-    if InstallModePage.Values[3] then // Complete Reset
+    if InstallModePage.Values[4] then // Remove Completely
     begin
-      // Backup user data before full wipe
+      WizardForm.StatusLabel.Caption := CustomMessage('StatusRemoving');
+      // Remove wrappers
+      RemoveResolveWrappers;
+      // Nuke everything
+      SmartCleanup(False, False);
+      if DirExists(ExpandConstant('{app}')) then
+        DelTree(ExpandConstant('{app}'), True, True, True);
+      // Clean registry (including keys ISS may have already written this session)
+      RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER,'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1');
+    end
+    else if InstallModePage.Values[3] then // Complete Reset
+    begin
       if FileExists(ExpandConstant('{app}\user.json')) then
         FileCopy(ExpandConstant('{app}\user.json'), ExpandConstant('{tmp}\bw_user.json'), False);
       if FileExists(ExpandConstant('{app}\settings.json')) then
@@ -382,18 +426,17 @@ begin
       begin
         Log('[MOVE] Moving from ' + OldInstallPath + ' to ' + ExpandConstant('{app}'));
         Exec(ExpandConstant('{sys}\robocopy.exe'),
-             '"' + OldInstallPath + '\venv" "' + ExpandConstant('{app}') + '\venv" /E /MOVE /NP /NJH /NJS',
-             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          '"' + OldInstallPath + '\venv" "' + ExpandConstant('{app}') + '\venv" /E /MOVE /NP /NJH /NJS',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
         Exec(ExpandConstant('{sys}\robocopy.exe'),
-             '"' + OldInstallPath + '\models" "' + ExpandConstant('{app}') + '\models" /E /MOVE /NP /NJH /NJS',
-             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          '"' + OldInstallPath + '\models" "' + ExpandConstant('{app}') + '\models" /E /MOVE /NP /NJH /NJS',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
         Exec(ExpandConstant('{sys}\robocopy.exe'),
-             '"' + OldInstallPath + '\bin" "' + ExpandConstant('{app}') + '\bin" /E /MOVE /NP /NJH /NJS',
-             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          '"' + OldInstallPath + '\bin" "' + ExpandConstant('{app}') + '\bin" /E /MOVE /NP /NJH /NJS',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
         Exec(ExpandConstant('{sys}\robocopy.exe'),
-             '"' + OldInstallPath + '\saves" "' + ExpandConstant('{app}') + '\saves" /E /MOVE /NP /NJH /NJS',
-             '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-        // Move user data files
+          '"' + OldInstallPath + '\saves" "' + ExpandConstant('{app}') + '\saves" /E /MOVE /NP /NJH /NJS',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
         if FileExists(OldInstallPath + '\pref.json') then
           FileCopy(OldInstallPath + '\pref.json', ExpandConstant('{app}') + '\pref.json', False);
         if FileExists(OldInstallPath + '\user.json') then
@@ -402,20 +445,27 @@ begin
           FileCopy(OldInstallPath + '\settings.json', ExpandConstant('{app}') + '\settings.json', False);
         if FileExists(OldInstallPath + '\badwords_debug.log') then
           FileCopy(OldInstallPath + '\badwords_debug.log', ExpandConstant('{app}') + '\badwords_debug.log', False);
-        // Remove old directory
         DelTree(OldInstallPath, True, True, True);
       end;
-      SmartCleanup(False, True); // treat rest as Repair
+      SmartCleanup(False, True);
     end
-    else if InstallModePage.Values[1] then // Repair Installation
+    else if InstallModePage.Values[1] then // Repair
       SmartCleanup(False, True)
-    else // Standard Update
+    else // Standard Install/Update
       SmartCleanup(True, True);
   end;
 
   if CurStep = ssPostInstall then
   begin
-    // Restore user data after Full Wipe + fresh install
+    // Remove mode: cleanup already done in ssInstall, just delete ISS own key and exit
+    if InstallModePage.Values[4] then
+    begin
+      RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER,
+        'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1');
+      Exit;
+    end;
+
+    // Restore JSONs after Complete Reset
     if InstallModePage.Values[3] then
     begin
       if FileExists(ExpandConstant('{tmp}\bw_user.json')) then
@@ -426,67 +476,50 @@ begin
         FileCopy(ExpandConstant('{tmp}\bw_pref.json'), ExpandConstant('{app}\pref.json'), False);
     end;
 
-    if WizardIsComponentSelected('nvidia') then GpuFlag := '1' else GpuFlag := '0';
     FFmpegZip := ExpandConstant('{tmp}\ffmpeg.zip');
 
+    // WipeMode mapping: 0=Update, 1=Repair, 2=Move, 3=Reset
     if InstallModePage.Values[3] then WipeMode := '3'
     else if InstallModePage.Values[2] then WipeMode := '2'
     else if InstallModePage.Values[1] then WipeMode := '1'
     else WipeMode := '0';
-      
+
+    // OLD_INSTALL_DIR for Move mode
+    if InstallModePage.Values[2] then OldDir := OldInstallPath
+    else OldDir := '';
+
     WizardForm.StatusLabel.Caption := CustomMessage('StatusConfig');
-    
-    if not Exec(ExpandConstant('{app}\setup_windows.bat'), 
-                '"' + ExpandConstant('{app}') + '" "' + GpuFlag + '" "' + FFmpegZip + '" "' + WipeMode + '"', 
-                '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+
+    if not Exec(ExpandConstant('{app}\setup_windows.bat'),
+        '"' + ExpandConstant('{app}') + '" "' + FFmpegZip + '" "' + WipeMode + '" "' + OldDir + '"',
+        '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
     begin
       MsgBox(FmtMessage(CustomMessage('ErrConfig'), [IntToStr(ResultCode)]), mbError, MB_OK);
     end;
   end;
 end;
 
-// ==========================================
-// FULL UNINSTALLER LOGIC
-// ==========================================
+// ── Uninstaller (standard Windows uninstall) ─────────────────────────────────
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppPath, ResolvePath, StoreDir: String;
+  AppPath: String;
   FindRec: TFindRec;
+  StoreDir, ResolvePath: String;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    // Delete standard Resolve script
-    ResolvePath := ExpandConstant('{userappdata}\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py');
-    if FileExists(ResolvePath) then DeleteFile(ResolvePath);
-
-    // Delete Windows Store Resolve script
-    StoreDir := ExpandConstant('{localappdata}\Packages\');
-    if FindFirst(StoreDir + 'BlackmagicDesign.DaVinciResolve_*', FindRec) then
-    begin
-      try
-        repeat
-          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
-          begin
-            ResolvePath := StoreDir + FindRec.Name + '\LocalState\AppDataRoaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\BadWords.py';
-            if FileExists(ResolvePath) then DeleteFile(ResolvePath);
-          end;
-        until not FindNext(FindRec);
-      finally
-        FindClose(FindRec);
-      end;
-    end;
+    RemoveResolveWrappers;
   end;
 
   if CurUninstallStep = usPostUninstall then
   begin
-    // Scorched Earth: Complete destruction of AppData footprint
     AppPath := ExpandConstant('{app}');
     if DirExists(AppPath) then
-    begin
       DelTree(AppPath, True, True, True);
-    end;
-    
-    // Explicitly destroy current registry keys to be 100% sure
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1');
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER,
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-1234567890}_is1');
   end;
 end;
+
+
