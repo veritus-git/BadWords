@@ -77,12 +77,12 @@ For the fastest setup, you can use this one-line installer. Open your terminal a
 
 ```bash
 # From GitHub
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/linux-setup.sh)"
 ```
 
 ```bash
 # Or from GitLab if you encounter issues
-/bin/bash -c "$(curl -fsSL https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/linux-setup.sh)"
+/bin/bash -c "$(curl -fsSL https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/legacy/linux-setup.sh)"
 ```
 
 **Terminal Installation Steps:**
