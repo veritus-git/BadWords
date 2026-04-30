@@ -4148,12 +4148,12 @@ class UpdateCheckThread(QThread):
     _GL_PAGE = "https://gitlab.com/badwords/BadWords/-/releases"
 
     # ── Update script URLs ────────────────────────────────────────────────
-    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-linux.sh'
-    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-mac.sh'
-    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-windows.bat'
-    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-linux.sh'
-    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-mac.sh'
-    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-windows.bat'
+    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-linux.sh'
+    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-mac.sh'
+    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/update-windows.bat'
+    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-linux.sh'
+    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-mac.sh'
+    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/legacy/update-windows.bat'
 
     def __init__(self, current_version: str, parent=None):
         super().__init__(parent)
@@ -4282,13 +4282,13 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
     """
 
     # URLs for the dedicated non-interactive update scripts
-    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-linux.sh'
-    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-mac.sh'
-    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-windows.bat'
+    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-linux.sh'
+    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-mac.sh'
+    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/update-windows.bat'
     # GitLab fallbacks
-    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-linux.sh'
-    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-mac.sh'
-    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/update-windows.bat'
+    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-linux.sh'
+    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-mac.sh'
+    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/legacy/update-windows.bat'
 
     # Class-level signal so Qt registers it properly
     _update_done = Signal(bool, str)   # (success, error_message)

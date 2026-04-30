@@ -196,12 +196,12 @@ def _run_auto_update_if_needed(os_doc, splash=None):
     # ── 1. Fetch latest tag ─────────────────────────────────────────────
     GH_API = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
     GL_API = "https://gitlab.com/api/v4/projects/veritus-git%2FBadWords/releases/permalink/latest"
-    GH_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-linux.sh"
-    GL_SCRIPT = "https://gitlab.com/veritus-git/BadWords/-/raw/main/setupfiles/update-linux.sh"
-    WIN_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-windows.bat"
-    WIN_SCRIPT_GL = "https://gitlab.com/veritus-git/BadWords/-/raw/main/setupfiles/update-windows.bat"
-    MAC_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/update-mac.sh"
-    MAC_SCRIPT_GL = "https://gitlab.com/veritus-git/BadWords/-/raw/main/setupfiles/update-mac.sh"
+    GH_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-linux.sh"
+    GL_SCRIPT = "https://gitlab.com/veritus-git/BadWords/-/raw/main/updaters/update-linux.sh"
+    WIN_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/update-windows.bat"
+    WIN_SCRIPT_GL = "https://gitlab.com/veritus-git/BadWords/-/raw/main/setupfiles/legacy/update-windows.bat"
+    MAC_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-mac.sh"
+    MAC_SCRIPT_GL = "https://gitlab.com/veritus-git/BadWords/-/raw/main/updaters/update-mac.sh"
 
     def _fetch_json(url):
         ctx = ssl.create_default_context()
