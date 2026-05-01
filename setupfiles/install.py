@@ -32,7 +32,7 @@ PLAT = ARGS.platform.lower()
 APP_NAME = "BadWords"
 
 def _default_install_dir():
-    if "win" in PLAT:
+    if PLAT.startswith("win"):
         return os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), APP_NAME)
     if "mac" in PLAT or "darwin" in PLAT:
         return os.path.join(os.path.expanduser("~"), "Library", "Application Support", APP_NAME)
@@ -43,7 +43,7 @@ def _resolve_script_dirs():
     Windows has many installation variants; we probe all of them."""
     results = []
 
-    if "win" in PLAT:
+    if PLAT.startswith("win"):
         appdata      = os.environ.get("APPDATA", "")
         localappdata = os.environ.get("LOCALAPPDATA", "")
         progdata     = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
@@ -422,7 +422,7 @@ def get_latest_tag():
     import json, urllib.request
 
     def _pick_asset_url(assets, tag):
-        if "win" in PLAT:
+        if PLAT.startswith("win"):
             kws = ["windows", "win"]
         elif "darwin" in PLAT or "mac" in PLAT:
             kws = ["linux", "mac", "macos"]   # macOS uses Linux zip
