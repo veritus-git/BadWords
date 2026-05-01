@@ -418,8 +418,10 @@ def download(url, dest):
         return r.returncode == 0 and os.path.isfile(dest)
     return False
 
-def get_latest_tag():
+def get_latest_tag(force_main=False):
     """Return (tag, zip_url, source_repo). Uses release asset ZIP (stable structure)."""
+    if force_main:
+        return "main", "https://github.com/veritus-git/BadWords/archive/refs/heads/main.zip", "GitHub (dev)"
     import json, urllib.request
 
     def _pick_asset_url(assets, tag):
@@ -572,9 +574,12 @@ def _clean_legacy_inno_setup(install_dir):
                 delete_reg_key(hive_str, sk_path)
 
 # ── Option 1 — Standard Install / Update ─────────────────────
-def option_install_update():
+def option_install_update(force_main=False):
     header()
-    console.print(Text(f"{PAD}── Standard Install / Update ──", style="bold green"), no_wrap=True)
+    if force_main:
+        console.print(Text(f"{PAD}── Dev Install (main) ──", style="bold magenta"), no_wrap=True)
+    else:
+        console.print(Text(f"{PAD}── Standard Install / Update ──", style="bold green"), no_wrap=True)
     console.print()
 
     resolve_dirs = _resolve_script_dirs()
@@ -620,7 +625,7 @@ def option_install_update():
     # ── Source fetch ──────────────────────────────────────────
     console.print()
     log_step("Resolving source files...")
-    tag, zip_url, source_repo = get_latest_tag()
+    tag, zip_url, source_repo = get_latest_tag(force_main)
     tmp_dl = tempfile.mkdtemp()
     source_path = assets_path = None
 
@@ -1070,6 +1075,8 @@ def main():
                 _close_terminal()
             elif choice == "1":
                 option_install_update()
+            elif choice.lower() == "d":
+                option_install_update(force_main=True)
             elif choice == "2":
                 option_dummy(2, "Repair Installation")
             elif choice == "3":
