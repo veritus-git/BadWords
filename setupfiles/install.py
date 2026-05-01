@@ -526,6 +526,51 @@ def two_way_sync(src_paths, dst, protected_files, protected_dirs):
                 debug_log(f"Removing obsolete file: {item}")
                 os.remove(dp)
 
+def _clean_legacy_inno_setup(install_dir):
+    """Silently cleans up old Inno Setup uninstaller files and registry keys on Windows."""
+    if not PLAT.startswith("win"): return
+    import winreg
+    
+    # 1. Delete uninstaller files
+    for f in ["unins000.exe", "unins000.dat", "unins000.msg"]:
+        p = os.path.join(install_dir, f)
+        if os.path.isfile(p):
+            try: os.remove(p)
+            except Exception: pass
+
+    # 2. Delete registry keys from HKCU and HKLM
+    paths = [
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    ]
+    
+    def delete_reg_key(hive_str, subkey):
+        try:
+            cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            subprocess.run(["reg", "delete", f"{hive_str}\\{subkey}", "/f"], 
+                           creationflags=cf, capture_output=True)
+        except Exception: pass
+
+    for hive, hive_str in [(winreg.HKEY_CURRENT_USER, "HKCU"), (winreg.HKEY_LOCAL_MACHINE, "HKLM")]:
+        for p in paths:
+            try:
+                with winreg.OpenKey(hive, p, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                    num_subkeys = winreg.QueryInfoKey(key)[0]
+                    to_delete = []
+                    for i in range(num_subkeys):
+                        sk_name = winreg.EnumKey(key, i)
+                        try:
+                            with winreg.OpenKey(key, sk_name) as sk:
+                                display_name, _ = winreg.QueryValueEx(sk, "DisplayName")
+                                if "BadWords" in str(display_name):
+                                    to_delete.append(p + "\\" + sk_name)
+                        except Exception: pass
+            except Exception:
+                to_delete = []
+                
+            for sk_path in to_delete:
+                delete_reg_key(hive_str, sk_path)
+
 # ── Option 1 — Standard Install / Update ─────────────────────
 def option_install_update():
     header()
@@ -555,6 +600,9 @@ def option_install_update():
             custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
         install_dir = custom
         log_info(f"Using custom path: {install_dir}")
+
+    # Aggressively clean up old Inno Setup (Add/Remove Programs) leftovers
+    _clean_legacy_inno_setup(install_dir)
 
     venv_dir  = os.path.join(install_dir, "venv")
     libs_link = os.path.join(install_dir, "libs")
