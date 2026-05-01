@@ -492,8 +492,8 @@ class OSDoctor:
         if self.is_win: portable_ffmpeg += ".exe"
         
         if os.path.exists(portable_ffmpeg):
-            # Verify execution permission on Linux
-            if self.is_linux and not os.access(portable_ffmpeg, os.X_OK):
+            # Verify execution permission on Linux and macOS
+            if (self.is_linux or self.is_mac) and not os.access(portable_ffmpeg, os.X_OK):
                 try: os.chmod(portable_ffmpeg, 0o755)
                 except: pass
             log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")

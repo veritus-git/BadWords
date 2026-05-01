@@ -4936,11 +4936,12 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             }}
             QPushButton {{
                 padding: 6px 16px;
+                outline: none;
             }}
             QLabel {{
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
+                font-size: {config.BASE_FONT_PT}pt;
                 background: transparent;
             }}
             QListWidget {{
@@ -4953,7 +4954,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             QListWidget::item {{
                 color: {config.NOTE_COL};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
+                font-size: {config.BASE_FONT_PT}pt;
                 padding: 10px 16px;
                 border-radius: 0px;
             }}
@@ -4970,18 +4971,22 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             QStackedWidget {{
                 background-color: {config.BG_COLOR};
             }}
-            QDoubleSpinBox, QSpinBox, QComboBox {{
-                background-color: #1e1e1e;
-                color: #d4d4d4;
+            QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
+                background-color: {config.INPUT_BG};
+                color: {config.INPUT_FG};
                 border: 1px solid #3a3a3a;
                 padding: 4px 8px;
                 border-radius: 3px;
-                min-height: 26px;
+                outline: none;
+            }}
+            QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{
+                border: 1px solid {config.BTN_BG};
+                outline: none;
             }}
             QCheckBox {{
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
+                font-size: {config.BASE_FONT_PT}pt;
                 spacing: 8px;
             }}
             QCheckBox::indicator {{
@@ -5001,7 +5006,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border-radius: 4px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
+                font-size: {config.BASE_FONT_PT}pt;
                 padding: 0 18px;
             }}
             QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
@@ -5012,7 +5017,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border: 1px solid #555;
                 border-radius: 4px;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: 10pt;
+                font-size: {config.BASE_FONT_PT}pt;
                 padding: 0 12px;
             }}
             QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
@@ -7203,7 +7208,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._title_bar.setFixedHeight(0)
             from PySide6.QtWidgets import QMenuBar
             self._mac_menu_bar = QMenuBar(self)
-            self._mac_action_source = self._mac_menu_bar.addAction("Source")
+            self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
+            self._mac_action_source = self._mac_menu_source.addAction("Timeline Info")
+            self._mac_action_source.setEnabled(False)
             self._mac_menu_edits = self._mac_menu_bar.addMenu("Edits")
             self._mac_menu_bar.setNativeMenuBar(True)
 
@@ -9517,9 +9524,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             if platform.system() == "Darwin":
                 import re
                 self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
-                if hasattr(self, '_mac_action_source'):
+                if hasattr(self, '_mac_menu_source'):
                     clean_title = re.sub('<[^<]+>', '', new_title)
-                    self._mac_action_source.setText(clean_title)
+                    self._mac_menu_source.setTitle(clean_title)
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)
