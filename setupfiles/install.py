@@ -50,11 +50,11 @@ def _resolve_script_dirs():
         bmd_base     = os.path.join("Blackmagic Design", "DaVinci Resolve")
 
         bases = []
-        if progdata:
-            bases.append(os.path.join(progdata, bmd_base, "Support"))
         if appdata:
             bases.append(os.path.join(appdata, bmd_base, "Support"))
             bases.append(os.path.join(appdata, bmd_base))
+        if progdata:
+            bases.append(os.path.join(progdata, bmd_base, "Support"))
         if localappdata:
             pkg_root = os.path.join(localappdata, "Packages")
             if os.path.isdir(pkg_root):
@@ -84,8 +84,8 @@ def _resolve_script_dirs():
     else:
         # Linux
         bases = [
-            os.path.join("/", "opt", "resolve", "libs"),
-            os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve")
+            os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve"),
+            os.path.join("/", "opt", "resolve", "libs")
         ]
         subs = ["Utility"]
         for b in bases:
@@ -226,6 +226,13 @@ def _set_title(title="BadWords Setup"):
     else:
         sys.stdout.write(f"\033]0;{title}\007")
         sys.stdout.flush()
+        if "mac" in PLAT or "darwin" in PLAT:
+            try:
+                subprocess.run([
+                    "osascript", "-e",
+                    f'tell application "Terminal" to set custom title of front window to "{title}"'
+                ], capture_output=True)
+            except: pass
 
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
@@ -937,7 +944,8 @@ else:
             p = d
             for _ in range(7):
                 p = os.path.dirname(p)
-                if os.path.basename(p) == "DaVinci Resolve":
+                bn = os.path.basename(p)
+                if bn in ("DaVinci Resolve", "DaVinciResolve", "resolve"):
                     return os.path.isdir(p)
             return False
 
