@@ -2685,13 +2685,13 @@ class SplashScreen(FramelessWindowMixin, QDialog):
                 color: #ffffff;
                 font-size: 18pt;
                 font-weight: bold;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
             QLabel#loading {{
                 color: {config.NOTE_COL};
                 font-size: 12pt;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
         """)
@@ -2766,7 +2766,7 @@ class _LangPickerDialog(QDialog):
             QListWidget {{
                 background-color: {config.MENU_BG};
                 color: {config.MENU_FG};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 11pt;
                 border: none;
                 outline: none;
@@ -2879,18 +2879,18 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
                 color: #ffffff;
                 font-size: 14pt;
                 font-weight: bold;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
             QLabel#lbl_msg {{
                 color: {config.FG_COLOR};
                 font-size: 11pt;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
             QPushButton#btn_lang {{
                 color: {config.GEAR_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 11pt;
                 font-weight: bold;
                 background: transparent;
@@ -2903,7 +2903,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             QPushButton#btn_yes {{
                 background-color: {config.BTN_BG};
                 color: #ffffff;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 10pt;
                 font-weight: bold;
                 border: none;
@@ -2916,7 +2916,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             QPushButton#btn_no {{
                 background-color: {config.CANCEL_BG};
                 color: #ffffff;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 10pt;
                 font-weight: bold;
                 border: none;
@@ -2928,7 +2928,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             }}
             QCheckBox {{
                 color: #aaaaaa;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 10pt;
                 background: transparent;
                 spacing: 8px;
@@ -4613,7 +4613,7 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
         self.setStyleSheet(f"""
             QDialog {{ background-color: transparent; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: 6px; }}
-            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; }}
             QLabel#lbl_title {{ font-size: 13pt; font-weight: bold; color: #ffffff; }}
             QLineEdit {{
                 background-color: #1e1e1e;
@@ -4621,7 +4621,7 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
                 border: 1px solid #3a3a3a;
                 border-radius: 3px;
                 padding: 5px 8px;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 10pt;
             }}
             QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
@@ -4632,7 +4632,7 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
                 border-radius: 4px;
                 min-width: 80px;
                 font-weight: bold;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
             }}
             QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton#btn_ok {{ background-color: {config.BTN_BG}; }}
@@ -4940,7 +4940,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             }}
             QLabel {{
                 color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: {config.BASE_FONT_PT}pt;
                 background: transparent;
             }}
@@ -4953,7 +4953,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             }}
             QListWidget::item {{
                 color: {config.NOTE_COL};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: {config.BASE_FONT_PT}pt;
                 padding: 10px 16px;
                 border-radius: 0px;
@@ -4985,7 +4985,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             }}
             QCheckBox {{
                 color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: {config.BASE_FONT_PT}pt;
                 spacing: 8px;
             }}
@@ -5005,7 +5005,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border: none;
                 border-radius: 4px;
                 font-weight: bold;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: {config.BASE_FONT_PT}pt;
                 padding: 0 18px;
             }}
@@ -5016,7 +5016,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 color: #d4d4d4;
                 border: 1px solid #555;
                 border-radius: 4px;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: {config.BASE_FONT_PT}pt;
                 padding: 0 12px;
             }}
@@ -5026,7 +5026,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 color: #888;
                 border: 1px solid #444;
                 border-radius: 4px;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 9pt;
                 padding: 0px;
                 text-align: center;
@@ -6097,7 +6097,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                     border: 1px solid #3a3a3a;
                     border-radius: 3px;
                     padding: 6px 8px;
-                    font-family: "{config.UI_FONT_NAME}";
+                    font-family: {config.UI_FONT_NAME};
                     font-size: 10pt;
                 }}
             """)
@@ -6376,7 +6376,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             }}
             QLabel {{
                 color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 10pt;
                 background: transparent;
             }}
@@ -7160,7 +7160,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             QWidget {{
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 font-size: 10pt;
             }}
             /* ---- Scrollbars (global) ---- */
@@ -8966,7 +8966,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 color: #ffffff;
                 font-size: 34pt;
                 font-weight: 900;
-                font-family: "{config.UI_FONT_NAME}";
+                font-family: {config.UI_FONT_NAME};
                 background: transparent;
                 letter-spacing: -2px;
             }}
@@ -9088,7 +9088,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         btn_import.setStyleSheet(f"""
             QPushButton#btn_ghost {{
                 background-color: #1e1e1e; color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}"; font-size: 10pt;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt;
                 border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
             }}
             QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
@@ -9104,7 +9104,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         btn_analyze.setStyleSheet(f"""
             QPushButton#btn_primary {{
                 background-color: {config.BTN_BG}; color: #ffffff;
-                font-family: "{config.UI_FONT_NAME}"; font-size: 10pt; font-weight: bold;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
                 border: none; border-radius: 3px; padding: 0 18px;
             }}
             QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
@@ -9305,7 +9305,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.btn_run_fs.setStyleSheet(f'''
             QPushButton {{
                 background-color: {config.BTN_BG}; color: #ffffff;
-                font-family: "{config.UI_FONT_NAME}"; font-size: 10pt; font-weight: bold;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
                 border: none; border-radius: 3px; padding: 0 18px;
             }}
             QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}

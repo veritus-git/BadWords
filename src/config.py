@@ -39,12 +39,12 @@ def get_system_font_name():
     if system == "Windows":
         return "Segoe UI"
     if system == "Darwin": # macOS
-        return "Noto Sans"
+        return "Helvetica Neue"
     # Linux / Fallback
     return "Noto Sans"
 
 UI_FONT_NAME = get_system_font_name()
-BASE_FONT_PT = 11 if platform.system() == "Darwin" else 10
+BASE_FONT_PT = 13 if platform.system() == "Darwin" else 10
 
 # ==========================================
 # ANALYSIS PARAMETERS
