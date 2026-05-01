@@ -50,11 +50,11 @@ def _resolve_script_dirs():
         bmd_base     = os.path.join("Blackmagic Design", "DaVinci Resolve")
 
         bases = []
+        if progdata:
+            bases.append(os.path.join(progdata, bmd_base, "Support"))
         if appdata:
             bases.append(os.path.join(appdata, bmd_base, "Support"))
             bases.append(os.path.join(appdata, bmd_base))
-        if progdata:
-            bases.append(os.path.join(progdata, bmd_base, "Support"))
         if localappdata:
             pkg_root = os.path.join(localappdata, "Packages")
             if os.path.isdir(pkg_root):
@@ -72,8 +72,8 @@ def _resolve_script_dirs():
 
     elif "mac" in PLAT or "darwin" in PLAT:
         bases = [
-            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
-            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
+            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
+            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
         ]
         subs = ["Utility"]
         for b in bases:
@@ -84,8 +84,8 @@ def _resolve_script_dirs():
     else:
         # Linux
         bases = [
-            os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve"),
-            os.path.join("/", "opt", "resolve", "libs")  # the prompt said /opt/resolve/libs/fusion/Scripts
+            os.path.join("/", "opt", "resolve", "libs"),
+            os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve")
         ]
         subs = ["Utility"]
         for b in bases:
@@ -945,21 +945,21 @@ else:
         # Fall back to standard per-user path (resolve_dirs[0]) if Resolve not yet opened
         targets = existing_resolve_dirs if existing_resolve_dirs else [resolve_dirs[0]]
 
+        # 1. First, aggressively clean up ALL old duplicate wrappers from EVERY possible scripts path
+        for rd in targets:
+            scripts_dir = os.path.dirname(rd)  # goes up from Utility to Scripts
+            if os.path.exists(scripts_dir):
+                for root, _, files in os.walk(scripts_dir):
+                    for f in files:
+                        if f.startswith("BadWords") and f.endswith(".py"):
+                            p = os.path.join(root, f)
+                            try: os.remove(p)
+                            except: pass
+
+        # 2. Then, write exactly ONE new wrapper in the first successful Utility directory
         wrapper_count = 0
         for rd in targets:
             try:
-                # Clean up legacy/duplicate wrappers in the parent Scripts folder
-                scripts_dir = os.path.dirname(rd)  # goes up from Utility to Scripts
-                if os.path.exists(scripts_dir):
-                    for root, _, files in os.walk(scripts_dir):
-                        for f in files:
-                            if f.startswith("BadWords") and f.endswith(".py"):
-                                p = os.path.join(root, f)
-                                # Don't delete the one we are about to create
-                                if p != os.path.join(rd, "BadWords.py"):
-                                    try: os.remove(p)
-                                    except: pass
-
                 os.makedirs(rd, exist_ok=True)
                 wp = os.path.join(rd, "BadWords.py")
                 with open(wp, "w", encoding="utf-8") as f:
@@ -967,6 +967,7 @@ else:
                 os.chmod(wp, 0o755)
                 debug_log(f"Wrapper written to: {wp}")
                 wrapper_count += 1
+                break  # Stop after first successful creation to prevent duplicate menu entries!
             except Exception as exc:
                 debug_log(f"Could not write wrapper to {rd}: {exc}")
 
