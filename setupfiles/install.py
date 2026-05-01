@@ -261,38 +261,39 @@ _LOG_PFX_LEN = len(PAD) + 7   # "    [TAG] " = 4 + 7 chars
 
 def _log_print(tag, msg, tag_style, msg_style):
     prefix    = f"{PAD}{tag} "
-    # Symmetric margins: wrap before right margin = left indent
-    available = TERM_W - 2 * _LOG_PFX_LEN
-    # ANSI cursor-right: visually indents continuation without inserting
-    # literal space characters, so paths copy cleanly from the terminal.
-    ansi_indent = f"\033[{_LOG_PFX_LEN}C"
+    available = TERM_W - 2 * _LOG_PFX_LEN  # symmetric right margin
+    indent    = " " * _LOG_PFX_LEN
 
-    def _split(text, width):
-        """Split text at last space or '/' within width. Returns (head, tail)."""
-        if len(text) <= width:
-            return text, ""
-        # Prefer space, fallback to '/' so paths break at component boundary
-        for sep in (' ', '/'):
-            bp = text.rfind(sep, 0, width + 1)
-            if bp > 0:
-                tail = text[bp + 1:] if sep == ' ' else text[bp + 1:]
-                head = text[:bp + (0 if sep == ' ' else 1)]  # keep '/' on first part
-                return head, tail
-        # No separator: let terminal soft-wrap (clean copy for bare long paths)
-        return text, ""
+    if len(msg) <= available:
+        # Fits on first line — print normally
+        t = Text(no_wrap=True)
+        t.append(prefix, style=tag_style)
+        t.append(msg, style=msg_style)
+        console.print(t, no_wrap=True)
+        return
 
-    head, tail = _split(msg, available)
-    # First line
+    # Break at last space within available window (word-wrap)
+    bp = msg.rfind(' ', 0, available + 1)
+    if bp > 0:
+        first = msg[:bp]
+        rest  = msg[bp + 1:]
+    else:
+        # No space in range: print everything on the tag line (terminal handles overflow)
+        first = msg
+        rest  = ""
+
+    # First line (tag prefix + first chunk)
     t = Text(no_wrap=True)
     t.append(prefix, style=tag_style)
-    t.append(head,   style=msg_style)
+    t.append(first,  style=msg_style)
     console.print(t, no_wrap=True)
-    # Continuation lines
-    while tail:
-        head, tail = _split(tail, available)
-        sys.stdout.write(ansi_indent)
-        sys.stdout.flush()
-        console.print(Text(head, style=msg_style), no_wrap=True)
+
+    # Continuation: ONE print call with soft_wrap=True.
+    # Rich outputs the text as-is without inserting any \n mid-string.
+    # The terminal soft-wraps if needed — clipboard selection gives the
+    # full unbroken string (no embedded newlines or indent spaces).
+    if rest:
+        console.print(Text(indent + rest, style=msg_style), soft_wrap=True)
 
 # ── Scrollbar control (Windows CMD) ──────────────────────────
 def _set_scrollbar(enabled: bool):
@@ -758,13 +759,13 @@ def option_install_update():
                     shell=True, capture_output=True
                 )
                 if r.returncode == 0:
-                    log_ok(f"libs [junction] → {site_pkgs}")
+                    log_ok("libs link created.")
                     linked = True
 
             if not linked:
                 try:
                     os.symlink(site_pkgs, libs_link)
-                    log_ok(f"libs [symlink] → {site_pkgs}")
+                    log_ok("libs link created.")
                     linked = True
                 except (OSError, NotImplementedError):
                     pass
@@ -851,7 +852,7 @@ else:
                 with open(wp, "w", encoding="utf-8") as f:
                     f.write(wrapper_content)
                 os.chmod(wp, 0o755)
-                log_ok(f"Wrapper → {wp}")
+                log_ok(f"Wrapper: {wp}")
                 wrapper_count += 1
             except Exception as exc:
                 log_warn(f"Could not write wrapper to {rd}: {exc}")
