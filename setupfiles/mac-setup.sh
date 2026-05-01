@@ -38,34 +38,20 @@ _boot_time() {
 }
 BOOT_TIME=$(_boot_time)
 
-# ── Helper: launch installer in a new Terminal.app window ─────
-_launch_terminal() {
+# ── Helper: run installer in THIS terminal window ─────────────
+_launch_installer() {
     local py="$1"
     local script="$2"
     local extra_pypath="${3:-}"
 
-    local env_prefix=""
     if [ -n "$extra_pypath" ]; then
-        env_prefix="export PYTHONPATH='$extra_pypath'; "
+        export PYTHONPATH="$extra_pypath"
     fi
-
-    # Build the shell command that will run inside the new Terminal window.
-    # We use exec to replace the shell so closing install.py closes the tab.
-    local cmd="${env_prefix}cd ~ && clear && exec '${py}' '${script}' --platform darwin --bootstrap-python '${py}'"
-
-    # AppleScript: open new Terminal window, set size, set title, run command
-    osascript <<APPLESCRIPT
-tell application "Terminal"
-    activate
-    set newTab to do script "${cmd}"
-    delay 0.3
-    tell newTab
-        set custom title to "BadWords Setup"
-    end tell
-    -- Resize the window to 88 columns x 30 rows
-    set bounds of front window to {100, 80, 860, 640}
-end tell
-APPLESCRIPT
+    # Set terminal title via ANSI escape (works in Terminal.app)
+    printf '\033]0;BadWords Setup\007'
+    # Clear screen, then replace this shell with Python (exec = no extra process)
+    clear
+    exec "$py" "$script" --platform darwin --bootstrap-python "$py"
 }
 
 # ── FAST PATH: boot-time cache ────────────────────────────────
@@ -89,7 +75,8 @@ if [ -f "$CACHE_MARKER" ] && [ -f "$CACHE_VENV_PY" ] && [ -f "$CACHE_INSTALL" ];
 
         echo -e "  ${CYAN}Launching instantly (cached environment)...${NC}"
         echo ""
-        _launch_terminal "$CACHE_VENV_PY" "$CACHE_INSTALL"
+        _launch_installer "$CACHE_VENV_PY" "$CACHE_INSTALL"
+        # exec above replaces the shell — this line is never reached
         exit 0
     fi
 fi
@@ -275,10 +262,10 @@ ok "Installer ready."
 echo "$BOOT_TIME" > "$CACHE_MARKER"
 ok "Cache marker written."
 
-# ── 8. Launch installer in Terminal.app and exit ──────────────
+# ── 8. Launch installer in this terminal window ──────────────
 echo ""
 echo -e "  ${CYAN}Launching BadWords Installer...${NC}"
-echo ""
-_launch_terminal "$CACHE_VENV_PY" "$CACHE_INSTALL" "$EXTRA_PYPATH"
-# This bootstrapper shell exits immediately after spawning the Terminal window.
+sleep 0.5
+_launch_installer "$CACHE_VENV_PY" "$CACHE_INSTALL" "$EXTRA_PYPATH"
+# exec above replaces the shell — this line is never reached
 exit 0

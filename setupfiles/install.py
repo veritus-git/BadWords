@@ -179,12 +179,11 @@ def _resize(w=TERM_W, h=TERM_H):
     """Resize terminal window."""
     if os.name == "nt":
         os.system(f"mode con cols={w} lines={h}")
-    elif "darwin" in PLAT or "mac" in PLAT:
-        # Terminal.app size is already set by the bootstrapper AppleScript.
-        # Issuing ANSI resize here would interfere, so we skip it on macOS.
-        pass
     else:
-        sys.stdout.write(f"\033[8;{h};{w}t")
+        # ANSI resize works in Terminal.app (macOS) and most Linux terminals.
+        # Use a slightly smaller height on macOS due to the menu bar.
+        mac_h = max(h - 2, 24) if ("darwin" in PLAT or "mac" in PLAT) else h
+        sys.stdout.write(f"\033[8;{mac_h};{w}t")
         sys.stdout.flush()
     time.sleep(0.2)
 
@@ -379,7 +378,31 @@ def download(url, dest):
     return False
 
 def get_latest_tag():
+    """Return (tag, zip_url, source_repo). zip_url points to the release asset ZIP
+    (not archive/refs/tags) because the asset has a known, stable internal structure."""
     import json, urllib.request
+
+    def _pick_asset_url(assets, tag):
+        """Pick the best release asset ZIP: prefer platform-specific, else source."""
+        plat_keywords = []
+        if "win" in PLAT:
+            plat_keywords = ["windows", "win"]
+        elif "darwin" in PLAT or "mac" in PLAT:
+            plat_keywords = ["mac", "macos", "darwin", "linux"]  # macOS uses Linux zip
+        else:
+            plat_keywords = ["linux"]
+
+        # Try platform-specific asset first, fall back to any .zip
+        for kw in plat_keywords:
+            for a in assets:
+                if kw in a["name"].lower() and a["name"].endswith(".zip"):
+                    return a["browser_download_url"]
+        for a in assets:
+            if a["name"].endswith(".zip"):
+                return a["browser_download_url"]
+        # Final fallback: GitHub source archive
+        return f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip"
+
     try:
         with urllib.request.urlopen(
             "https://api.github.com/repos/veritus-git/BadWords/releases/latest", timeout=10
@@ -387,7 +410,8 @@ def get_latest_tag():
             data = json.load(r)
             tag = data.get("tag_name", "")
             if tag:
-                return tag, f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip", "GitHub"
+                zip_url = _pick_asset_url(data.get("assets", []), tag)
+                return tag, zip_url, "GitHub"
     except Exception:
         pass
     try:
@@ -504,16 +528,29 @@ def option_install_update():
             import zipfile
             with zipfile.ZipFile(zip_path) as z:
                 z.extractall(tmp_dl)
-            extracted = next(
-                (os.path.join(tmp_dl, d) for d in os.listdir(tmp_dl)
-                 if os.path.isdir(os.path.join(tmp_dl, d)) and d != "__MACOSX"), None
-            )
-            if extracted and os.path.isdir(os.path.join(extracted, "src")):
+            sp_ex.done(ok=True)
+
+            # Support both archive structures:
+            # A) asset ZIP: src/main.py  (flat, no top-level subfolder)
+            # B) source ZIP: BadWords-2.0.3/src/main.py  (GitHub auto-archive)
+            top_dirs = [d for d in os.listdir(tmp_dl)
+                        if os.path.isdir(os.path.join(tmp_dl, d))
+                        and d not in ("__MACOSX", "repo.zip")]
+
+            candidate_roots = [tmp_dl]  # structure A: src/ at extract root
+            if top_dirs:
+                candidate_roots.insert(0, os.path.join(tmp_dl, top_dirs[0]))  # structure B
+
+            extracted = None
+            for root in candidate_roots:
+                if os.path.isdir(os.path.join(root, "src")):
+                    extracted = root
+                    break
+
+            if extracted:
                 source_path = os.path.join(extracted, "src")
                 assets_path = os.path.join(extracted, "assets")
-                sp_ex.done(ok=True)
             else:
-                sp_ex.done(ok=False)
                 log_err("Could not find src/ in downloaded archive.")
                 pause()
                 return
@@ -932,7 +969,10 @@ def _close_terminal():
             creationflags=0x08000000  # CREATE_NO_WINDOW
         )
     elif "darwin" in PLAT or "mac" in PLAT:
-        # Close Terminal.app window via AppleScript, then exit
+        # The bootstrapper used exec, so exiting Python closes the shell session.
+        # Terminal.app closes the tab automatically when the process exits
+        # (requires Terminal prefs: Shell → When shell exits: Close the window).
+        # We also try AppleScript as a best-effort for default Terminal settings.
         subprocess.Popen(
             ["osascript", "-e",
              'tell application "Terminal" to close front window'],
