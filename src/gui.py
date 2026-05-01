@@ -7209,8 +7209,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             from PySide6.QtWidgets import QMenuBar
             self._mac_menu_bar = QMenuBar(self)
             self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
-            self._mac_action_source = self._mac_menu_source.addAction("Timeline Info")
-            self._mac_action_source.setEnabled(False)
+            self._mac_action_timeline = self._mac_menu_source.addAction("Timeline: None")
+            self._mac_action_timeline.setEnabled(False)
+            self._mac_action_track = self._mac_menu_source.addAction("Track: None")
+            self._mac_action_track.setEnabled(False)
             self._mac_menu_edits = self._mac_menu_bar.addMenu("Edits")
             self._mac_menu_bar.setNativeMenuBar(True)
 
@@ -9522,11 +9524,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._title_bar.set_title(new_title)
             # On macOS native title bar: update the OS window title too
             if platform.system() == "Darwin":
-                import re
                 self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
-                if hasattr(self, '_mac_menu_source'):
-                    clean_title = re.sub('<[^<]+>', '', new_title)
-                    self._mac_menu_source.setTitle(clean_title)
+                if hasattr(self, '_mac_action_timeline'):
+                    self._mac_action_timeline.setText(f"Timeline: {selected_tl_name}")
+                    self._mac_action_track.setText(f"Track: {tracks_str}")
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)

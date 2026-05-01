@@ -39,7 +39,7 @@ def get_system_font_name():
     if system == "Windows":
         return "Segoe UI"
     if system == "Darwin": # macOS
-        return "Helvetica Neue"
+        return "Noto Sans"
     # Linux / Fallback
     return "Noto Sans"
 

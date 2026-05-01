@@ -481,6 +481,14 @@ class OSDoctor:
                 
         return paths[0] if paths else ""
 
+    def _test_executable(self, cmd_path):
+        try:
+            # -version exits cleanly if the binary is valid
+            subprocess.run([cmd_path, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            return True
+        except Exception:
+            return False
+
     def get_ffmpeg_cmd(self):
         """
         Returns FFmpeg command.
@@ -496,19 +504,22 @@ class OSDoctor:
             if (self.is_linux or self.is_mac) and not os.access(portable_ffmpeg, os.X_OK):
                 try: os.chmod(portable_ffmpeg, 0o755)
                 except: pass
-            log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")
-            return portable_ffmpeg
+            if self._test_executable(portable_ffmpeg):
+                log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")
+                return portable_ffmpeg
+            else:
+                log_error(f"[FFMPEG] Portable Binary {portable_ffmpeg} is corrupted or incompatible. Falling back...")
         
         # 2. Check Local User Bin (Legacy)
-        if self.is_linux:
+        if self.is_linux or self.is_mac:
             local_bin = os.path.expanduser("~/.local/bin/ffmpeg")
-            if os.path.exists(local_bin): 
+            if os.path.exists(local_bin) and self._test_executable(local_bin): 
                 log_info(f"[FFMPEG] Using Legacy Local Binary: {local_bin}")
                 return local_bin
             
         # 3. System PATH fallback
         sys_ffmpeg = shutil.which("ffmpeg")
-        if sys_ffmpeg:
+        if sys_ffmpeg and self._test_executable(sys_ffmpeg):
             log_info(f"[FFMPEG] Using System Binary: {sys_ffmpeg}")
             return sys_ffmpeg
         
