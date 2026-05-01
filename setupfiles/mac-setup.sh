@@ -49,9 +49,17 @@ _launch_installer() {
     fi
     # Set terminal title via ANSI escape (works in Terminal.app)
     printf '\033]0;BadWords Setup\007'
-    # Clear screen, then replace this shell with Python (exec = no extra process)
+    # Clear screen, then replace this shell with Python
     clear
-    exec "$py" "$script" --platform darwin --bootstrap-python "$py"
+    
+    # To ensure a perfectly clean window title in Terminal.app (without args cluttering it),
+    # we create a temporary script named "BadWords Setup" and execute it directly.
+    local clean_script="$CACHE_DIR/BadWords Setup"
+    echo "#!$py" > "$clean_script"
+    cat "$script" >> "$clean_script"
+    chmod +x "$clean_script"
+    
+    exec "$clean_script"
 }
 
 # ── FAST PATH: boot-time cache ────────────────────────────────

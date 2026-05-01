@@ -90,10 +90,10 @@ def _resolve_script_dirs():
         subs = ["Utility"]
         for b in bases:
             for s in subs:
-                p1 = os.path.join(b, "fusion", "Scripts", s)
-                p2 = os.path.join(b, "Fusion", "Scripts", s)
-                results.append(p1)
-                results.append(p2)
+                p_upper = os.path.join(b, "Fusion", "Scripts", s)
+                p_lower = os.path.join(b, "fusion", "Scripts", s)
+                results.append(p_upper)  # always try uppercase Fusion first
+                results.append(p_lower)
 
     # Remove duplicates while preserving order
     seen, unique = set(), []
