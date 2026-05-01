@@ -47,8 +47,7 @@ _launch_installer() {
     if [ -n "$extra_pypath" ]; then
         export PYTHONPATH="$extra_pypath"
     fi
-    # Set terminal title via ANSI escape (works in Terminal.app)
-    printf '\033]0;BadWords Setup\007'
+    
     # Clear screen, then replace this shell with Python
     clear
     

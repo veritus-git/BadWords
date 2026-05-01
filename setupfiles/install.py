@@ -91,7 +91,7 @@ def _resolve_script_dirs():
         for b in bases:
             for s in subs:
                 p_upper = os.path.join(b, "Fusion", "Scripts", s)
-                p_lower = os.path.join(b, "fusion", "Scripts", s)
+                p_lower = os.path.join(b, "Fusion", "Scripts", s)
                 results.append(p_upper)  # always try uppercase Fusion first
                 results.append(p_lower)
 
@@ -223,16 +223,13 @@ def _set_title(title="BadWords Setup"):
     """Set the terminal window title."""
     if os.name == "nt":
         os.system(f"title {title}")
+    elif "mac" in PLAT or "darwin" in PLAT:
+        # macOS terminal natively appends process name, which we already set to "BadWords Setup" via bash.
+        # Setting ANSI title here creates a duplicate like "BadWords Setup — BadWords Setup".
+        pass
     else:
         sys.stdout.write(f"\033]0;{title}\007")
         sys.stdout.flush()
-        if "mac" in PLAT or "darwin" in PLAT:
-            try:
-                subprocess.run([
-                    "osascript", "-e",
-                    f'tell application "Terminal" to set custom title of front window to "{title}"'
-                ], capture_output=True)
-            except: pass
 
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
@@ -667,7 +664,7 @@ def option_install_update():
         os.makedirs(bin_dir, exist_ok=True)
 
         log_step("Syncing application files...")
-        protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", "ffmpeg_static.tar.xz"}
+        protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log"}
         protected_dirs  = {"models", "saves", "venv", "bin", "libs"}
         src_list = [s for s in [source_path, assets_path] if s and os.path.isdir(s)]
         is_update = os.path.isdir(venv_dir)
