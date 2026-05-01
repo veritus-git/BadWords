@@ -766,34 +766,38 @@ def option_install_update(force_main=False):
                 else:
                     log_warn("FFmpeg download failed. App may not work without it.")
             elif "mac" in PLAT or "darwin" in PLAT:
-                # macOS: use evermeet.cx build
-                ffmpeg_url = "https://evermeet.cx/ffmpeg/getrelease/zip"
-                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_mac.zip")
-                sp_ff = Spinner("Downloading FFmpeg (macOS native)").start()
-                dl_ok = download(ffmpeg_url, ffmpeg_arc)
-                sp_ff.done(ok=dl_ok)
-                if dl_ok:
-                    import zipfile
-                    sp_ex2 = Spinner("Extracting FFmpeg").start()
+                # macOS: use Homebrew and symlink (Legacy behavior)
+                sp_ff = Spinner("Installing FFmpeg via Homebrew").start()
+                if not shutil.which("brew"):
+                    sp_ff.done(ok=False)
+                    log_err("Homebrew is required for macOS installation. Please install brew first.")
+                    raise UserCancelled()
+                
+                # Install ffmpeg using brew (blocks until done)
+                r = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True)
+                sp_ff.done(ok=(r.returncode == 0))
+                
+                if r.returncode == 0 or b"already installed" in r.stdout or b"already installed" in r.stderr:
                     try:
-                        with zipfile.ZipFile(ffmpeg_arc) as zf:
-                            for member in zf.namelist():
-                                fname = os.path.basename(member)
-                                if fname == "ffmpeg":
-                                    data = zf.read(member)
-                                    dest = os.path.join(bin_dir, fname)
-                                    with open(dest, "wb") as out:
-                                        out.write(data)
-                                    os.chmod(dest, 0o755)
-                        sp_ex2.done(ok=True)
+                        brew_prefix = subprocess.run(["brew", "--prefix", "ffmpeg"], capture_output=True, text=True).stdout.strip()
+                        brew_ffmpeg = os.path.join(brew_prefix, "bin", "ffmpeg")
+                        brew_ffprobe = os.path.join(brew_prefix, "bin", "ffprobe")
+                        
+                        if os.path.isfile(brew_ffmpeg):
+                            sym_ffmpeg = os.path.join(bin_dir, "ffmpeg")
+                            if os.path.lexists(sym_ffmpeg): os.remove(sym_ffmpeg)
+                            os.symlink(brew_ffmpeg, sym_ffmpeg)
+                            
+                        if os.path.isfile(brew_ffprobe):
+                            sym_ffprobe = os.path.join(bin_dir, "ffprobe")
+                            if os.path.lexists(sym_ffprobe): os.remove(sym_ffprobe)
+                            os.symlink(brew_ffprobe, sym_ffprobe)
+                            
+                        log_ok(f"Symlinked Homebrew FFmpeg into bin/ directory.")
                     except Exception as e:
-                        sp_ex2.done(ok=False)
-                        log_warn(f"FFmpeg extraction failed: {e}")
-                    finally:
-                        try: os.remove(ffmpeg_arc)
-                        except Exception: pass
+                        log_err(f"Symlink failed: {e}")
                 else:
-                    log_warn("FFmpeg download failed. App may not work without it.")
+                    log_warn("Homebrew FFmpeg installation failed.")
             else:
                 # Linux: use johnvansickle static build
                 ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
