@@ -46,16 +46,29 @@ function Launch-Installer($PyExe, $InstallPy, $ExtraPythonPath) {
     exit 0
 }
 
-# ── Get current boot time as a stable string ──────────────────
+# ── Session marker: file in $env:TEMP (cleared on reboot) ───
+# Much more reliable than Get-CimInstance which needs admin/WMI.
+$SessionFile = Join-Path $env:TEMP "bw_bootstrap_session.txt"
 $BootTime = "unknown"
 try {
     $BootTime = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToString("yyyyMMddHHmmss")
-} catch {}
+} catch {
+    # Use a hash of $env:TEMP path + machine name as stable per-session key
+    $BootTime = "$($env:COMPUTERNAME)_$($env:USERNAME)"
+}
 
 # ── FAST PATH: Check boot-time cache ─────────────────────────
-if ((Test-Path $CacheMarker) -and (Test-Path $CacheVenvPy) -and (Test-Path $CacheInstall)) {
+# We use TWO checks: (1) the session temp-file AND (2) the boot-time marker.
+# This handles both normal and fallback boot-time detection.
+$TempFileOk    = Test-Path $SessionFile
+$CacheFilesOk  = (Test-Path $CacheMarker) -and (Test-Path $CacheVenvPy) -and (Test-Path $CacheInstall)
+
+if ($TempFileOk -and $CacheFilesOk) {
+    # Double-check boot time if we have it (skip if "unknown" since temp file is sufficient)
     $stored = (Get-Content $CacheMarker -Raw -ErrorAction SilentlyContinue).Trim()
-    if ($stored -eq $BootTime) {
+    $bootOk = ($BootTime -eq "unknown") -or ($stored -eq $BootTime)
+
+    if ($bootOk) {
         Write-Host ""
         Write-Host "  BadWords Setup" -ForegroundColor White
         Write-Host "  Cached environment found — refreshing installer script..." -ForegroundColor DarkGray
@@ -243,9 +256,11 @@ if (-not $downloaded) {
 if (-not $downloaded) { die "Failed to download install.py from both GitHub and GitLab." }
 ok "Installer ready."
 
-# ── 7. Write boot-time cache marker ───────────────────────────
+# ── 7. Write cache markers ────────────────────────────────────
 $BootTime | Set-Content -Path $CacheMarker -Encoding UTF8
-ok "Cache marker written ($BootTime)."
+# Session temp-file: presence = same boot session
+"1" | Set-Content -Path $SessionFile -Encoding UTF8
+ok "Cache ready."
 
 # ── 8. Launch installer in CMD and exit PS1 immediately ───────
 Write-Host ""

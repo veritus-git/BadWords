@@ -378,52 +378,66 @@ def download(url, dest):
     return False
 
 def get_latest_tag():
-    """Return (tag, zip_url, source_repo). zip_url points to the release asset ZIP
-    (not archive/refs/tags) because the asset has a known, stable internal structure."""
+    """Return (tag, zip_url, source_repo). Uses release asset ZIP (stable structure)."""
     import json, urllib.request
 
     def _pick_asset_url(assets, tag):
-        """Pick the best release asset ZIP: prefer platform-specific, else source."""
-        plat_keywords = []
         if "win" in PLAT:
-            plat_keywords = ["windows", "win"]
+            kws = ["windows", "win"]
         elif "darwin" in PLAT or "mac" in PLAT:
-            plat_keywords = ["mac", "macos", "darwin", "linux"]  # macOS uses Linux zip
+            kws = ["linux", "mac", "macos"]   # macOS uses Linux zip
         else:
-            plat_keywords = ["linux"]
-
-        # Try platform-specific asset first, fall back to any .zip
-        for kw in plat_keywords:
+            kws = ["linux"]
+        for kw in kws:
             for a in assets:
                 if kw in a["name"].lower() and a["name"].endswith(".zip"):
                     return a["browser_download_url"]
         for a in assets:
             if a["name"].endswith(".zip"):
                 return a["browser_download_url"]
-        # Final fallback: GitHub source archive
         return f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip"
 
+    GH_API = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
+    UA     = "BadWords-Installer/2.0 (https://github.com/veritus-git/BadWords)"
+
+    # --- Try urllib first (with proper User-Agent GitHub requires) ---
     try:
-        with urllib.request.urlopen(
-            "https://api.github.com/repos/veritus-git/BadWords/releases/latest", timeout=10
-        ) as r:
+        req = urllib.request.Request(GH_API, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=15) as r:
             data = json.load(r)
-            tag = data.get("tag_name", "")
+            tag  = data.get("tag_name", "")
             if tag:
-                zip_url = _pick_asset_url(data.get("assets", []), tag)
-                return tag, zip_url, "GitHub"
+                return tag, _pick_asset_url(data.get("assets", []), tag), "GitHub"
     except Exception:
         pass
+
+    # --- Fallback: ask curl/wget to call the API (handles SSL quirks on macOS) ---
     try:
-        with urllib.request.urlopen(
-            "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases", timeout=10
-        ) as r:
+        import subprocess as _sp
+        _hdrs = ["-H", f"User-Agent: {UA}", "-H", "Accept: application/vnd.github+json"]
+        if shutil.which("curl"):
+            r = _sp.run(["curl", "-fsSL", "--max-time", "15"] + _hdrs + [GH_API],
+                        capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout:
+                data = json.loads(r.stdout)
+                tag  = data.get("tag_name", "")
+                if tag:
+                    return tag, _pick_asset_url(data.get("assets", []), tag), "GitHub"
+    except Exception:
+        pass
+
+    # --- GitLab fallback ---
+    try:
+        GL_API = "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases"
+        req = urllib.request.Request(GL_API, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=15) as r:
             data = json.load(r)
             if isinstance(data, list) and data:
                 tag = data[0]["tag_name"]
                 return tag, f"https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip", "GitLab"
     except Exception:
         pass
+
     return "main", "", ""
 
 def detect_existing_install(default_dir, resolve_script_dirs):
