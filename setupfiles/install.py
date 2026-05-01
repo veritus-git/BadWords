@@ -64,10 +64,10 @@ def _resolve_script_dirs():
                         bases.append(os.path.join(store_base, "Support"))
                         bases.append(store_base)
         
-        subs = ["Utility", "Resolve", "Comp", "Edit", ""]
+        subs = ["Utility"]
         for b in bases:
             for s in subs:
-                p = os.path.join(b, "Fusion", "Scripts", s) if s else os.path.join(b, "Fusion", "Scripts")
+                p = os.path.join(b, "Fusion", "Scripts", s)
                 results.append(p)
 
     elif "mac" in PLAT or "darwin" in PLAT:
@@ -75,10 +75,10 @@ def _resolve_script_dirs():
             os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
             os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
         ]
-        subs = ["Utility", "Comp", "Edit", "Resolve", ""]
+        subs = ["Utility"]
         for b in bases:
             for s in subs:
-                p = os.path.join(b, "Fusion", "Scripts", s) if s else os.path.join(b, "Fusion", "Scripts")
+                p = os.path.join(b, "Fusion", "Scripts", s)
                 results.append(p)
 
     else:
@@ -87,14 +87,11 @@ def _resolve_script_dirs():
             os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve"),
             os.path.join("/", "opt", "resolve", "libs")  # the prompt said /opt/resolve/libs/fusion/Scripts
         ]
-        subs = ["Utility", "Edit", "Comp", "Resolve", ""]
+        subs = ["Utility"]
         for b in bases:
             for s in subs:
-                # Linux Resolve paths sometimes use lowercase 'fusion' or uppercase 'Fusion'
-                # The user provided fusion/Scripts so we use that but fallback to Fusion/Scripts is good practice
-                # For safety, we will append both variants for the base subdirs.
-                p1 = os.path.join(b, "fusion", "Scripts", s) if s else os.path.join(b, "fusion", "Scripts")
-                p2 = os.path.join(b, "Fusion", "Scripts", s) if s else os.path.join(b, "Fusion", "Scripts")
+                p1 = os.path.join(b, "fusion", "Scripts", s)
+                p2 = os.path.join(b, "Fusion", "Scripts", s)
                 results.append(p1)
                 results.append(p2)
 
@@ -951,10 +948,19 @@ else:
         wrapper_count = 0
         for rd in targets:
             try:
+                # Clean up legacy/duplicate wrappers in the parent Scripts folder
+                scripts_dir = os.path.dirname(rd)  # goes up from Utility to Scripts
+                if os.path.exists(scripts_dir):
+                    for root, _, files in os.walk(scripts_dir):
+                        for f in files:
+                            if f.startswith("BadWords") and f.endswith(".py"):
+                                p = os.path.join(root, f)
+                                # Don't delete the one we are about to create
+                                if p != os.path.join(rd, "BadWords.py"):
+                                    try: os.remove(p)
+                                    except: pass
+
                 os.makedirs(rd, exist_ok=True)
-                legacy_w = os.path.join(rd, "BadWords (Linux).py")
-                if os.path.isfile(legacy_w):
-                    os.remove(legacy_w)
                 wp = os.path.join(rd, "BadWords.py")
                 with open(wp, "w", encoding="utf-8") as f:
                     f.write(wrapper_content)
