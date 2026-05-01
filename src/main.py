@@ -338,6 +338,7 @@ def main():
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
 
         if os_doc.is_mac:
+            app.setStyle('Fusion')
             app.setWindowIcon(gui._app_icon())
 
         # 3. Create controller (holds all GUI references → GC-safe)

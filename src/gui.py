@@ -5206,13 +5206,11 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             return lbl, container
 
         def _add_page_to_stack(page_widget):
-            if page_widget.layout():
-                page_widget.layout().setAlignment(Qt.AlignTop)
             scroll = QScrollArea()
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }")
+            scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
             scroll.setWidget(page_widget)
             self.stack.addWidget(scroll)
 
@@ -7240,11 +7238,21 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
     def _update_mac_chapter_menu(self):
         if not getattr(self, '_is_mac', False) or not hasattr(self, '_mac_menu_edits'):
             return
+            
+        from PySide6.QtGui import QActionGroup
+        if not hasattr(self, '_mac_menu_edits_group'):
+            self._mac_menu_edits_group = QActionGroup(self)
+            self._mac_menu_edits_group.setExclusive(True)
+            
+        for act in self._mac_menu_edits_group.actions():
+            self._mac_menu_edits_group.removeAction(act)
         self._mac_menu_edits.clear()
+        
         if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'chapter_dropdown'):
             for chap in self._title_bar.chapter_dropdown.options_list:
                 action = self._mac_menu_edits.addAction(chap)
                 action.setCheckable(True)
+                self._mac_menu_edits_group.addAction(action)
                 if chap == self._title_bar.chapter_dropdown.currentText().replace("  ▾", ""):
                     action.setChecked(True)
                 action.triggered.connect(lambda checked, c=chap: self._switch_chapter(c))
@@ -9508,9 +9516,11 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._title_bar.set_title(new_title)
             # On macOS native title bar: update the OS window title too
             if platform.system() == "Darwin":
-                self.setWindowTitle(new_title)
+                import re
+                self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
                 if hasattr(self, '_mac_menu_source'):
-                    self._mac_menu_source.setTitle(new_title)
+                    clean_title = re.sub('<[^<]+>', '', new_title)
+                    self._mac_menu_source.setTitle(clean_title)
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)
