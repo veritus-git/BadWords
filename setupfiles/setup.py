@@ -765,8 +765,37 @@ def option_install_update(force_main=False):
                         except Exception: pass
                 else:
                     log_warn("FFmpeg download failed. App may not work without it.")
+            elif "mac" in PLAT or "darwin" in PLAT:
+                # macOS: use evermeet.cx build
+                ffmpeg_url = "https://evermeet.cx/ffmpeg/getrelease/zip"
+                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_mac.zip")
+                sp_ff = Spinner("Downloading FFmpeg (macOS native)").start()
+                dl_ok = download(ffmpeg_url, ffmpeg_arc)
+                sp_ff.done(ok=dl_ok)
+                if dl_ok:
+                    import zipfile
+                    sp_ex2 = Spinner("Extracting FFmpeg").start()
+                    try:
+                        with zipfile.ZipFile(ffmpeg_arc) as zf:
+                            for member in zf.namelist():
+                                fname = os.path.basename(member)
+                                if fname == "ffmpeg":
+                                    data = zf.read(member)
+                                    dest = os.path.join(bin_dir, fname)
+                                    with open(dest, "wb") as out:
+                                        out.write(data)
+                                    os.chmod(dest, 0o755)
+                        sp_ex2.done(ok=True)
+                    except Exception as e:
+                        sp_ex2.done(ok=False)
+                        log_warn(f"FFmpeg extraction failed: {e}")
+                    finally:
+                        try: os.remove(ffmpeg_arc)
+                        except Exception: pass
+                else:
+                    log_warn("FFmpeg download failed. App may not work without it.")
             else:
-                # Linux/macOS: use johnvansickle static build
+                # Linux: use johnvansickle static build
                 ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
                 ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
                 sp_ff = Spinner("Downloading FFmpeg (Linux static)").start()
