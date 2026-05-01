@@ -2223,7 +2223,10 @@ class CustomTitleBar(QWidget):
                 win.setGeometry(saved_geo)
         else:
             win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
-            win.showMaximized()
+            if getattr(win, '_is_mac', False):
+                win.showFullScreen()
+            else:
+                win.showMaximized()
 
     def mousePressEvent(self, event):
         # Windows root window: OS handles dragging via HTCAPTION in nativeEvent.
@@ -3728,6 +3731,8 @@ class TitleDropdown(CustomDropdown):
         # Always append the down arrow for the title drop down
         clean_text = text.replace("  ▾", "")
         super().setText(f"{clean_text}  ▾")
+        if getattr(self.window(), '_update_mac_chapter_menu', None):
+            self.window()._update_mac_chapter_menu()
 
     def currentText(self):
         return super().currentText().replace("  ▾", "")
@@ -5201,11 +5206,13 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             return lbl, container
 
         def _add_page_to_stack(page_widget):
+            if page_widget.layout():
+                page_widget.layout().setAlignment(Qt.AlignTop)
             scroll = QScrollArea()
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+            scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }")
             scroll.setWidget(page_widget)
             self.stack.addWidget(scroll)
 
@@ -7196,6 +7203,12 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if _is_mac_root:
             self._title_bar.setVisible(False)
             self._title_bar.setFixedHeight(0)
+            from PySide6.QtWidgets import QMenuBar
+            self._mac_menu_bar = QMenuBar(self)
+            self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
+            self._mac_menu_source.setEnabled(False)
+            self._mac_menu_edits = self._mac_menu_bar.addMenu("Edits")
+            self._mac_menu_bar.setNativeMenuBar(True)
 
         # --- Build UI --- (sidebars + central workspace sit below title bar)
         self._build_sidebars()         # left + right activity frames
@@ -7223,6 +7236,18 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._populate_timeline_track_combos()
         
         self._bind_prefs()
+
+    def _update_mac_chapter_menu(self):
+        if not getattr(self, '_is_mac', False) or not hasattr(self, '_mac_menu_edits'):
+            return
+        self._mac_menu_edits.clear()
+        if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'chapter_dropdown'):
+            for chap in self._title_bar.chapter_dropdown.options_list:
+                action = self._mac_menu_edits.addAction(chap)
+                action.setCheckable(True)
+                if chap == self._title_bar.chapter_dropdown.currentText().replace("  ▾", ""):
+                    action.setChecked(True)
+                action.triggered.connect(lambda checked, c=chap: self._switch_chapter(c))
 
     def _save_single_pref(self, key: str, value):
         prefs = self.engine.load_preferences() or {}
@@ -9484,6 +9509,8 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             # On macOS native title bar: update the OS window title too
             if platform.system() == "Darwin":
                 self.setWindowTitle(new_title)
+                if hasattr(self, '_mac_menu_source'):
+                    self._mac_menu_source.setTitle(new_title)
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)
@@ -9528,7 +9555,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             self.resize(580, 670)
-            self.showMaximized()
+            if getattr(self, '_is_mac', False):
+                self.showFullScreen()
+            else:
+                self.showMaximized()
             return
         sg = screen.availableGeometry()
         # Center 580x670 on the target screen — this becomes the restore geometry
@@ -9537,7 +9567,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             sg.y() + (sg.height() - 670) // 2,
             580, 670
         )
-        self.showMaximized()
+        if getattr(self, '_is_mac', False):
+            self.showFullScreen()
+        else:
+            self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)
