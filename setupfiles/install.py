@@ -176,9 +176,13 @@ def readline_with_esc(show_cursor=True):
 
 # ── UI ───────────────────────────────────────────────────────
 def _resize(w=TERM_W, h=TERM_H):
-    """Resize terminal window. CMD-safe on Windows."""
+    """Resize terminal window."""
     if os.name == "nt":
         os.system(f"mode con cols={w} lines={h}")
+    elif "darwin" in PLAT or "mac" in PLAT:
+        # Terminal.app size is already set by the bootstrapper AppleScript.
+        # Issuing ANSI resize here would interfere, so we skip it on macOS.
+        pass
     else:
         sys.stdout.write(f"\033[8;{h};{w}t")
         sys.stdout.flush()
@@ -922,18 +926,23 @@ def main():
 def _close_terminal():
     """Exit the process AND close the terminal window."""
     if os.name == "nt":
-        # On Windows, kill the CMD window hosting this process
         pid = os.getpid()
         subprocess.Popen(
             ["taskkill", "/F", "/PID", str(pid)],
             creationflags=0x08000000  # CREATE_NO_WINDOW
         )
+    elif "darwin" in PLAT or "mac" in PLAT:
+        # Close Terminal.app window via AppleScript, then exit
+        subprocess.Popen(
+            ["osascript", "-e",
+             'tell application "Terminal" to close front window'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     else:
-        # On Linux/macOS: kill the parent process (the terminal emulator child)
+        # Linux: SIGHUP to parent closes the terminal session
         import signal
-        ppid = os.getppid()
         try:
-            os.kill(ppid, signal.SIGHUP)  # closes terminal session
+            os.kill(os.getppid(), signal.SIGHUP)
         except ProcessLookupError:
             pass
     sys.exit(0)
