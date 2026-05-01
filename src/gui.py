@@ -4297,6 +4297,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
         self._is_mac  = is_mac
         self._is_win  = is_win
         self._gh_url  = gh_url
+        self._install_dir = install_dir
 
         # Wire update result back to GUI thread
         self._update_done.connect(self._on_update_done)
@@ -4494,8 +4495,19 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                     f.write(script_content)
 
                 cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+
+                import os
+                if is_win:
+                    venv_py = os.path.join(self._install_dir, 'venv', 'Scripts', 'python.exe')
+                else:
+                    venv_py = os.path.join(self._install_dir, 'venv', 'bin', 'python3')
+
+                # Fallback just in case
+                if not os.path.isfile(venv_py):
+                    venv_py = sys.executable
+
                 result = subprocess.run(
-                    [sys.executable, tmp_script, '--install-dir', self._install_dir],
+                    [venv_py, tmp_script, '--install-dir', self._install_dir],
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -5420,7 +5432,17 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                         cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
                         
                         install_dir = getattr(_card_engine.os_doc, 'install_dir', '')
-                        cmd = [sys.executable, tmp]
+                        
+                        import os
+                        if is_win:
+                            venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
+                        else:
+                            venv_py = os.path.join(install_dir, 'venv', 'bin', 'python3')
+                        
+                        if not os.path.isfile(venv_py):
+                            venv_py = sys.executable
+
+                        cmd = [venv_py, tmp]
                         if install_dir:
                             cmd.extend(['--install-dir', install_dir])
 
@@ -9917,7 +9939,16 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
                 
                 install_dir = getattr(self.engine.os_doc, 'install_dir', '')
-                cmd = [sys.executable, tmp]
+                import os
+                if is_win:
+                    venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
+                else:
+                    venv_py = os.path.join(install_dir, 'venv', 'bin', 'python3')
+                    
+                if not os.path.isfile(venv_py):
+                    venv_py = sys.executable
+
+                cmd = [venv_py, tmp]
                 if install_dir:
                     cmd.extend(['--install-dir', install_dir])
 

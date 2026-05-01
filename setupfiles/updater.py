@@ -15,10 +15,10 @@ import json
 import urllib.request
 import ssl
 
-def log(msg): print(f"[UPDATE] {msg}", flush=True)
-def info(msg): print(f"[INFO]   {msg}", flush=True)
-def warn(msg): print(f"[WARN]   {msg}", flush=True)
-def err(msg): print(f"[ERROR]  {msg}", file=sys.stderr, flush=True)
+def log(msg): print(f"[UPDATE] {msg}")
+def info(msg): print(f"[INFO]   {msg}")
+def warn(msg): print(f"[WARN]   {msg}")
+def err(msg): print(f"[ERROR]  {msg}", file=sys.stderr)
 
 def md5(path):
     try:
