@@ -49,35 +49,54 @@ def _resolve_script_dirs():
         progdata     = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
         bmd_base     = os.path.join("Blackmagic Design", "DaVinci Resolve")
 
-        # 1. Per-user standard path (DaVinci 17+) — most common
+        bases = []
         if appdata:
-            results.append(os.path.join(appdata, bmd_base, "Support", "Fusion", "Scripts", "Utility"))
-        # 2. Per-user legacy path (DaVinci 16 and earlier, no 'Support' subfolder)
-        if appdata:
-            results.append(os.path.join(appdata, bmd_base, "Fusion", "Scripts", "Utility"))
-        # 3. Microsoft Store edition (wildcard package dir)
+            bases.append(os.path.join(appdata, bmd_base, "Support"))
+            bases.append(os.path.join(appdata, bmd_base))
+        if progdata:
+            bases.append(os.path.join(progdata, bmd_base, "Support"))
         if localappdata:
             pkg_root = os.path.join(localappdata, "Packages")
             if os.path.isdir(pkg_root):
                 for pkg in os.listdir(pkg_root):
                     if pkg.lower().startswith("blackmagicdesign.davinciresolve"):
-                        store_base = os.path.join(pkg_root, pkg, "LocalState",
-                                                   "AppDataRoaming", "Blackmagic Design",
-                                                   "DaVinci Resolve")
-                        results.append(os.path.join(store_base, "Support", "Fusion", "Scripts", "Utility"))
-                        results.append(os.path.join(store_base, "Fusion", "Scripts", "Utility"))
-        # 4. System-wide / all-users admin install
-        if progdata:
-            results.append(os.path.join(progdata, bmd_base, "Support", "Fusion", "Scripts", "Utility"))
+                        store_base = os.path.join(pkg_root, pkg, "LocalState", "AppDataRoaming", "Blackmagic Design", "DaVinci Resolve")
+                        bases.append(os.path.join(store_base, "Support"))
+                        bases.append(store_base)
+        
+        subs = ["Utility", "Resolve", "Comp", "Edit", ""]
+        for b in bases:
+            for s in subs:
+                p = os.path.join(b, "Fusion", "Scripts", s) if s else os.path.join(b, "Fusion", "Scripts")
+                results.append(p)
 
     elif "mac" in PLAT or "darwin" in PLAT:
-        results.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support",
-                                    "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
-        results.append(os.path.join("/", "Library", "Application Support",
-                                    "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+        bases = [
+            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
+            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
+        ]
+        subs = ["Utility", "Comp", "Edit", "Resolve", ""]
+        for b in bases:
+            for s in subs:
+                p = os.path.join(b, "Fusion", "Scripts", s) if s else os.path.join(b, "Fusion", "Scripts")
+                results.append(p)
+
     else:
-        results.append(os.path.join(os.path.expanduser("~"), ".local", "share",
-                                    "DaVinciResolve", "Fusion", "Scripts", "Utility"))
+        # Linux
+        bases = [
+            os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve"),
+            os.path.join("/", "opt", "resolve", "libs")  # the prompt said /opt/resolve/libs/fusion/Scripts
+        ]
+        subs = ["Utility", "Edit", "Comp", "Resolve", ""]
+        for b in bases:
+            for s in subs:
+                # Linux Resolve paths sometimes use lowercase 'fusion' or uppercase 'Fusion'
+                # The user provided fusion/Scripts so we use that but fallback to Fusion/Scripts is good practice
+                # For safety, we will append both variants for the base subdirs.
+                p1 = os.path.join(b, "fusion", "Scripts", s) if s else os.path.join(b, "fusion", "Scripts")
+                p2 = os.path.join(b, "Fusion", "Scripts", s) if s else os.path.join(b, "Fusion", "Scripts")
+                results.append(p1)
+                results.append(p2)
 
     # Remove duplicates while preserving order
     seen, unique = set(), []
@@ -627,7 +646,12 @@ def option_install_update():
             if not has_nvidia and shutil.which("lshw"):
                 r = subprocess.run(["lshw", "-C", "display"], capture_output=True, text=True)
                 has_nvidia = "nvidia" in r.stdout.lower()
-        mode_name   = "NVIDIA (CUDA 12)" if has_nvidia else "CPU (AMD/Intel)"
+        if "mac" in PLAT or "darwin" in PLAT:
+            import platform
+            is_arm = platform.machine().lower() == "arm64"
+            mode_name = "Apple Silicon Platform" if is_arm else "Intel Platform"
+        else:
+            mode_name   = "NVIDIA (CUDA 12)" if has_nvidia else "CPU (AMD/Intel)"
         nvidia_pkgs = "nvidia-cublas-cu12 nvidia-cudnn-cu12" if has_nvidia else ""
         log_ok(f"AI Engine Mode: {mode_name}")
 
