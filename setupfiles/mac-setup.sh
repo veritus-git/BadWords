@@ -3,7 +3,7 @@
 #  BadWords macOS Bootstrapper v1.0
 #  Run with: bash <(curl -fsSL https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh)
 #
-#  Purpose: prepare Python environment, launch install.py in a
+#  Purpose: prepare Python environment, launch setup.py in a
 #  fresh Terminal window, then exit immediately.
 #  Supports boot-time caching — subsequent runs within the same
 #  macOS session launch instantly from the persistent cache.
@@ -11,13 +11,13 @@
 
 set -euo pipefail
 
-INSTALLER_URL="https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/install.py"
-INSTALLER_URL_FB="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/install.py"
+INSTALLER_URL="https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/setup.py"
+INSTALLER_URL_FB="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
 
 # ── Persistent cache directory ────────────────────────────────
 CACHE_DIR="$HOME/Library/Caches/BadWords-bootstrap"
 CACHE_VENV_PY="$CACHE_DIR/venv/bin/python"
-CACHE_INSTALL="$CACHE_DIR/install.py"
+CACHE_INSTALL="$CACHE_DIR/setup.py"
 CACHE_MARKER="$CACHE_DIR/boot_marker.txt"
 
 # ── Colors ────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ if [ -f "$CACHE_MARKER" ] && [ -f "$CACHE_VENV_PY" ] && [ -f "$CACHE_INSTALL" ];
         echo -e "  ${GREEN}BadWords Setup${NC}"
         echo -e "  ${CYAN}Cached environment found — refreshing installer script...${NC}"
 
-        # Venv is cached (saves time) but install.py is always refreshed
+        # Venv is cached (saves time) but setup.py is always refreshed
         refresh_ok=false
         if curl -fsSL --max-time 15 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
             refresh_ok=true
@@ -77,7 +77,7 @@ if [ -f "$CACHE_MARKER" ] && [ -f "$CACHE_VENV_PY" ] && [ -f "$CACHE_INSTALL" ];
             refresh_ok=true
         fi
         if [ "$refresh_ok" = false ]; then
-            warn "Could not refresh install.py — launching from cached copy."
+            warn "Could not refresh setup.py — launching from cached copy."
         fi
 
         echo -e "  ${CYAN}Launching instantly (cached environment)...${NC}"
@@ -251,7 +251,7 @@ else
 fi
 ok "Dependencies ready."
 
-# ── 6. Download install.py into cache ────────────────────────
+# ── 6. Download setup.py into cache ────────────────────────
 step "Downloading BadWords installer..."
 downloaded=false
 if curl -fsSL --max-time 30 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
@@ -262,7 +262,7 @@ else
         downloaded=true
     fi
 fi
-[ "$downloaded" = true ] || die "Failed to download install.py from both GitHub and GitLab."
+[ "$downloaded" = true ] || die "Failed to download setup.py from both GitHub and GitLab."
 ok "Installer ready."
 
 # ── 7. Write boot-time cache marker ──────────────────────────

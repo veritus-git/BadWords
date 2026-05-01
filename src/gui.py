@@ -4281,14 +4281,9 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
     Layout: clean version badge (current → latest), no terminal command shown.
     """
 
-    # URLs for the dedicated non-interactive update scripts
-    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-linux.sh'
-    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-mac.sh'
-    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/update-windows.bat'
-    # GitLab fallbacks
-    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-linux.sh'
-    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-mac.sh'
-    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/legacy/update-windows.bat'
+    # URLs for the dedicated cross-platform python update script
+    _UPDATE_SCRIPT    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/updater.py'
+    _UPDATE_SCRIPT_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/updater.py'
 
     # Class-level signal so Qt registers it properly
     _update_done = Signal(bool, str)   # (success, error_message)
@@ -4468,22 +4463,13 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
         self._lbl_status.show()
         self.adjustSize()
 
-        is_mac = self._is_mac
-        is_win = self._is_win
-        if is_win:
-            url_primary  = self._UPDATE_SCRIPT_WIN
-            url_fallback = self._UPDATE_SCRIPT_WIN_GL
-        elif is_mac:
-            url_primary  = self._UPDATE_SCRIPT_MAC
-            url_fallback = self._UPDATE_SCRIPT_MAC_GL
-        else:
-            url_primary  = self._UPDATE_SCRIPT_LINUX
-            url_fallback = self._UPDATE_SCRIPT_LINUX_GL
+        url_primary  = self._UPDATE_SCRIPT
+        url_fallback = self._UPDATE_SCRIPT_GL
 
         def _worker():
             tmp_script = None
             try:
-                import urllib.request, ssl
+                import urllib.request, ssl, sys
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode    = ssl.CERT_NONE
@@ -4503,31 +4489,20 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                     return
 
                 # Write to a temp file and execute
-                suffix = '.bat' if is_win else '.sh'
-                fd, tmp_script = tempfile.mkstemp(suffix=suffix, prefix='bw_update_')
+                fd, tmp_script = tempfile.mkstemp(suffix='.py', prefix='bw_update_')
                 with os.fdopen(fd, 'wb') as f:
                     f.write(script_content)
 
-                if is_win:
-                    result = subprocess.run(
-                        ['cmd.exe', '/c', tmp_script],
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        encoding='utf-8', errors='replace',
-                        timeout=600,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-                else:
-                    os.chmod(tmp_script, 0o755)
-                    result = subprocess.run(
-                        ['/bin/bash', tmp_script],
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        encoding='utf-8', errors='replace',
-                        timeout=600,
-                    )
+                cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                result = subprocess.run(
+                    [sys.executable, tmp_script, '--install-dir', self._install_dir],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    encoding='utf-8', errors='replace',
+                    timeout=600,
+                    creationflags=cf,
+                )
 
                 # Log full output for diagnostics
                 from osdoc import log_info, log_error

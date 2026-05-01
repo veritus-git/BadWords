@@ -2,22 +2,22 @@
 #  BadWords Windows Bootstrapper v2.0
 #  Run with: irm https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/install-windows.ps1 | iex
 #
-#  Sole purpose: prepare Python environment and launch install.py
+#  Sole purpose: prepare Python environment and launch setup.py
 #  Supports boot-time caching — subsequent runs within the same
 #  Windows session launch instantly from the persistent cache.
 # ============================================================
 
 $ErrorActionPreference = "Continue"
 
-$INSTALLER_URL    = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/install.py"
-$INSTALLER_URL_FB = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/install.py"
+$INSTALLER_URL    = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/setup.py"
+$INSTALLER_URL_FB = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
 
 # ── Persistent cache directory ────────────────────────────────
 # Everything here survives between bootstrapper runs but is
 # invalidated automatically when Windows reboots (boot-time marker).
 $CacheDir     = Join-Path $env:LOCALAPPDATA "BadWords-bootstrap"
 $CacheVenvPy  = Join-Path $CacheDir "venv\Scripts\python.exe"
-$CacheInstall = Join-Path $CacheDir "install.py"
+$CacheInstall = Join-Path $CacheDir "setup.py"
 $CacheMarker  = Join-Path $CacheDir "boot_marker.txt"
 $EmbedPyDir   = Join-Path $CacheDir "python"   # embedded Python fallback
 $EmbedPyExe   = Join-Path $EmbedPyDir "python.exe"
@@ -73,7 +73,7 @@ if ($TempFileOk -and $CacheFilesOk) {
         Write-Host "  BadWords Setup" -ForegroundColor White
         Write-Host "  Cached environment found — refreshing installer script..." -ForegroundColor DarkGray
 
-        # Venv is cached (saves ~30s) but install.py is always refreshed
+        # Venv is cached (saves ~30s) but setup.py is always refreshed
         # so the user always runs the latest version of the installer.
         $refreshOk = $false
         try {
@@ -87,7 +87,7 @@ if ($TempFileOk -and $CacheFilesOk) {
             } catch {}
         }
         if (-not $refreshOk) {
-            warn "Could not refresh install.py — launching from cached copy."
+            warn "Could not refresh setup.py — launching from cached copy."
         }
 
         Write-Host "  Launching instantly (cached environment)..." -ForegroundColor DarkGray
@@ -237,7 +237,7 @@ if ($UseTargetFallback) {
 
 ok "Dependencies ready."
 
-# ── 6. Download install.py into cache ────────────────────────
+# ── 6. Download setup.py into cache ────────────────────────
 step "Downloading BadWords installer..."
 $downloaded = $false
 
@@ -253,7 +253,7 @@ if (-not $downloaded) {
     } catch {}
 }
 
-if (-not $downloaded) { die "Failed to download install.py from both GitHub and GitLab." }
+if (-not $downloaded) { die "Failed to download setup.py from both GitHub and GitLab." }
 ok "Installer ready."
 
 # ── 7. Write cache markers ────────────────────────────────────

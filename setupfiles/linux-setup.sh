@@ -9,15 +9,15 @@
 
 set -euo pipefail
 
-INSTALLER_URL="https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/install.py"
-INSTALLER_URL_FALLBACK="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/install.py"
+INSTALLER_URL="https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/setup.py"
+INSTALLER_URL_FALLBACK="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
 PBS_FALLBACK_TAG="20250317"
 PBS_FALLBACK_VER="3.12.9"
 
 # ── Persistent cache directory ────────────────────────────────
 CACHE_DIR="$HOME/.cache/BadWords-bootstrap"
 CACHE_VENV_PY="$CACHE_DIR/venv/bin/python"
-CACHE_INSTALL="$CACHE_DIR/install.py"
+CACHE_INSTALL="$CACHE_DIR/setup.py"
 CACHE_MARKER="$CACHE_DIR/boot_marker.txt"
 PBS_PERMANENT_DIR="$CACHE_DIR/python"
 
@@ -58,7 +58,7 @@ if [ -f "$CACHE_MARKER" ] && [ -f "$CACHE_VENV_PY" ] && [ -f "$CACHE_INSTALL" ];
         echo -e "  ${GREEN}BadWords Setup${NC}"
         echo -e "  ${CYAN}Cached environment found — refreshing installer script...${NC}"
 
-        # Venv is cached (saves time) but install.py is always refreshed
+        # Venv is cached (saves time) but setup.py is always refreshed
         refresh_ok=false
         if curl -fsSL --max-time 15 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
             refresh_ok=true
@@ -68,7 +68,7 @@ if [ -f "$CACHE_MARKER" ] && [ -f "$CACHE_VENV_PY" ] && [ -f "$CACHE_INSTALL" ];
             refresh_ok=true
         fi
         if [ "$refresh_ok" = false ]; then
-            warn "Could not refresh install.py — launching from cached copy."
+            warn "Could not refresh setup.py — launching from cached copy."
         fi
 
         echo -e "  ${CYAN}Launching instantly (cached environment)...${NC}"
@@ -190,7 +190,7 @@ step "Installing dependencies (rich)..."
     || die "Failed to install 'rich'. Check your internet connection."
 ok "Dependencies ready."
 
-# ── 6. Download install.py into cache ────────────────────────
+# ── 6. Download setup.py into cache ────────────────────────
 step "Downloading BadWords installer..."
 downloaded=false
 if command -v curl &>/dev/null; then
@@ -206,7 +206,7 @@ elif command -v wget &>/dev/null; then
         downloaded=true
     fi
 fi
-[ "$downloaded" = true ] || die "Failed to download install.py. Check your internet connection."
+[ "$downloaded" = true ] || die "Failed to download setup.py. Check your internet connection."
 ok "Installer ready."
 
 # ── 7. Write boot-time cache marker ──────────────────────────
