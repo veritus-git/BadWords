@@ -5352,17 +5352,8 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 from osdoc import log_info, log_error
 
                 is_win  = _card_engine.os_doc.is_win
-                is_mac  = getattr(_card_engine.os_doc, 'is_mac', False)
                 from gui import UpdateNotifyDialog as _UND
-                if is_win:
-                    urls = [_UND._UPDATE_SCRIPT_WIN, _UND._UPDATE_SCRIPT_WIN_GL]
-                    suffix = '.bat'
-                elif is_mac:
-                    urls = [_UND._UPDATE_SCRIPT_MAC, _UND._UPDATE_SCRIPT_MAC_GL]
-                    suffix = '.sh'
-                else:
-                    urls = [_UND._UPDATE_SCRIPT_LINUX, _UND._UPDATE_SCRIPT_LINUX_GL]
-                    suffix = '.sh'
+                urls = [_UND._UPDATE_SCRIPT, _UND._UPDATE_SCRIPT_GL]
 
                 # Disable button + show "Updating…"
                 self._btn_ver_update.setEnabled(False)
@@ -5422,17 +5413,21 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                         if not content:
                             _bridge.done.emit(False, "Could not download update script.")
                             return
-                        fd, tmp = tempfile.mkstemp(suffix=suffix, prefix='bw_upd_')
+                        import sys
+                        fd, tmp = tempfile.mkstemp(suffix='.py', prefix='bw_upd_')
                         with os.fdopen(fd, 'wb') as fh:
                             fh.write(content)
-                        if not is_win:
-                            os.chmod(tmp, 0o755)
-                        cmd = ['cmd.exe', '/c', tmp] if is_win else ['/bin/bash', tmp]
-                        extra = {'creationflags': subprocess.CREATE_NO_WINDOW} if is_win else {}
+                        cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                        
+                        install_dir = getattr(_card_engine.os_doc, 'install_dir', '')
+                        cmd = [sys.executable, tmp]
+                        if install_dir:
+                            cmd.extend(['--install-dir', install_dir])
+
                         result = subprocess.run(
                             cmd, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            encoding='utf-8', errors='replace', timeout=600, **extra
+                            encoding='utf-8', errors='replace', timeout=600, creationflags=cf
                         )
                         for line in (result.stdout or '').splitlines():
                             log_info(f'[Updater] {line}')
@@ -9881,16 +9876,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         log_info(f"[AutoUpdate] Silent auto-update to {latest_ver} starting in background...")
 
         is_win = self.engine.os_doc.is_win
-        is_mac = getattr(self.engine.os_doc, 'is_mac', False)
-        if is_win:
-            urls   = [UpdateNotifyDialog._UPDATE_SCRIPT_WIN, UpdateNotifyDialog._UPDATE_SCRIPT_WIN_GL]
-            suffix = '.bat'
-        elif is_mac:
-            urls   = [UpdateNotifyDialog._UPDATE_SCRIPT_MAC, UpdateNotifyDialog._UPDATE_SCRIPT_MAC_GL]
-            suffix = '.sh'
-        else:
-            urls   = [UpdateNotifyDialog._UPDATE_SCRIPT_LINUX, UpdateNotifyDialog._UPDATE_SCRIPT_LINUX_GL]
-            suffix = '.sh'
+        urls   = [UpdateNotifyDialog._UPDATE_SCRIPT, UpdateNotifyDialog._UPDATE_SCRIPT_GL]
 
         # Signal bridge — safe cross-thread UI callback
         class _Bridge(QObject):
@@ -9924,17 +9910,21 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 if not content:
                     _bridge.done.emit(False, "Could not download update script.")
                     return
-                fd, tmp = tempfile.mkstemp(suffix=suffix, prefix='bw_autoupd_')
+                import sys
+                fd, tmp = tempfile.mkstemp(suffix='.py', prefix='bw_autoupd_')
                 with os.fdopen(fd, 'wb') as fh:
                     fh.write(content)
-                if not is_win:
-                    os.chmod(tmp, 0o755)
-                cmd = ['cmd.exe', '/c', tmp] if is_win else ['/bin/bash', tmp]
-                extra = {'creationflags': subprocess.CREATE_NO_WINDOW} if is_win else {}
+                cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                
+                install_dir = getattr(self.engine.os_doc, 'install_dir', '')
+                cmd = [sys.executable, tmp]
+                if install_dir:
+                    cmd.extend(['--install-dir', install_dir])
+
                 result = subprocess.run(
                     cmd, stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    encoding='utf-8', errors='replace', timeout=600, **extra
+                    encoding='utf-8', errors='replace', timeout=600, creationflags=cf
                 )
                 for line in (result.stdout or '').splitlines():
                     log_info(f'[AutoUpdate] {line}')
