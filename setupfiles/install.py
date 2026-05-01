@@ -160,7 +160,7 @@ def readline_with_esc(show_cursor=True):
                         sys.stdin.read(10)
                     raise UserCancelled()
                 if ch in ("\r", "\n"):
-                    sys.stdout.write("\n"); sys.stdout.flush()
+                    sys.stdout.write("\r\n"); sys.stdout.flush()
                     return "".join(buf)
                 if ch in ("\x7f", "\x08"):
                     if buf:
@@ -261,25 +261,38 @@ _LOG_PFX_LEN = len(PAD) + 7   # "    [TAG] " = 4 + 7 chars
 
 def _log_print(tag, msg, tag_style, msg_style):
     prefix    = f"{PAD}{tag} "
-    # Symmetric margins: left indent = right margin = _LOG_PFX_LEN
+    # Symmetric margins: wrap before right margin = left indent
     available = TERM_W - 2 * _LOG_PFX_LEN
-    indent    = " " * _LOG_PFX_LEN
-    t = Text(no_wrap=True)
-    if len(msg) <= available:
-        t.append(prefix, style=tag_style)
-        t.append(msg,    style=msg_style)
-        console.print(t, no_wrap=True)
-        return
+    # ANSI cursor-right: visually indents continuation without inserting
+    # literal space characters, so paths copy cleanly from the terminal.
+    ansi_indent = f"\033[{_LOG_PFX_LEN}C"
+
+    def _split(text, width):
+        """Split text at last space or '/' within width. Returns (head, tail)."""
+        if len(text) <= width:
+            return text, ""
+        # Prefer space, fallback to '/' so paths break at component boundary
+        for sep in (' ', '/'):
+            bp = text.rfind(sep, 0, width + 1)
+            if bp > 0:
+                tail = text[bp + 1:] if sep == ' ' else text[bp + 1:]
+                head = text[:bp + (0 if sep == ' ' else 1)]  # keep '/' on first part
+                return head, tail
+        # No separator: let terminal soft-wrap (clean copy for bare long paths)
+        return text, ""
+
+    head, tail = _split(msg, available)
     # First line
-    t.append(prefix,          style=tag_style)
-    t.append(msg[:available], style=msg_style)
+    t = Text(no_wrap=True)
+    t.append(prefix, style=tag_style)
+    t.append(head,   style=msg_style)
     console.print(t, no_wrap=True)
-    # Continuation lines (same available width)
-    rest = msg[available:]
-    while rest:
-        chunk = rest[:available]
-        rest  = rest[len(chunk):]
-        console.print(Text(indent + chunk, style=msg_style), no_wrap=True)
+    # Continuation lines
+    while tail:
+        head, tail = _split(tail, available)
+        sys.stdout.write(ansi_indent)
+        sys.stdout.flush()
+        console.print(Text(head, style=msg_style), no_wrap=True)
 
 # ── Scrollbar control (Windows CMD) ──────────────────────────
 def _set_scrollbar(enabled: bool):
@@ -884,7 +897,7 @@ def main():
             menu()
             choice = prompt_choice()
             if choice == "ESC" or choice == "0":
-                sys.exit(0)
+                _close_terminal()
             elif choice == "1":
                 option_install_update()
             elif choice == "2":
@@ -903,7 +916,26 @@ def main():
             # ESC pressed mid-operation → return to menu silently
             pass
         except KeyboardInterrupt:
-            sys.exit(0)
+            _close_terminal()
+
+def _close_terminal():
+    """Exit the process AND close the terminal window."""
+    if os.name == "nt":
+        # On Windows, kill the CMD window hosting this process
+        pid = os.getpid()
+        subprocess.Popen(
+            ["taskkill", "/F", "/PID", str(pid)],
+            creationflags=0x08000000  # CREATE_NO_WINDOW
+        )
+    else:
+        # On Linux/macOS: kill the parent process (the terminal emulator child)
+        import signal
+        ppid = os.getppid()
+        try:
+            os.kill(ppid, signal.SIGHUP)  # closes terminal session
+        except ProcessLookupError:
+            pass
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
