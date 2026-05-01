@@ -331,14 +331,14 @@ def main():
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
         else:
             import os
-            os.environ["QT_FONT_DPI"] = "80"
+            os.environ["QT_FONT_DPI"] = "96"
 
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
 
         if os_doc.is_mac:
-            app.setStyle('Fusion')
+            app.setStyle('Windows')
             app.setWindowIcon(gui._app_icon())
 
         # 3. Create controller (holds all GUI references → GC-safe)

@@ -7203,8 +7203,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._title_bar.setFixedHeight(0)
             from PySide6.QtWidgets import QMenuBar
             self._mac_menu_bar = QMenuBar(self)
-            self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
-            self._mac_menu_source.setEnabled(False)
+            self._mac_action_source = self._mac_menu_bar.addAction("Source")
             self._mac_menu_edits = self._mac_menu_bar.addMenu("Edits")
             self._mac_menu_bar.setNativeMenuBar(True)
 
@@ -9518,9 +9517,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             if platform.system() == "Darwin":
                 import re
                 self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
-                if hasattr(self, '_mac_menu_source'):
+                if hasattr(self, '_mac_action_source'):
                     clean_title = re.sub('<[^<]+>', '', new_title)
-                    self._mac_menu_source.setTitle(clean_title)
+                    self._mac_action_source.setText(clean_title)
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)
