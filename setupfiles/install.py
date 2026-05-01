@@ -131,7 +131,7 @@ def readline_with_esc(show_cursor=True):
             if ch in (b"\x1b", b"\x03"):
                 raise UserCancelled()
             if ch in (b"\r", b"\n"):
-                sys.stdout.write("\n"); sys.stdout.flush()
+                sys.stdout.write("\r\n"); sys.stdout.flush()
                 return "".join(buf)
             if ch in (b"\x08", b"\x7f"):
                 if buf:
@@ -261,7 +261,8 @@ _LOG_PFX_LEN = len(PAD) + 7   # "    [TAG] " = 4 + 7 chars
 
 def _log_print(tag, msg, tag_style, msg_style):
     prefix    = f"{PAD}{tag} "
-    available = TERM_W - _LOG_PFX_LEN
+    # Symmetric margins: left indent = right margin = _LOG_PFX_LEN
+    available = TERM_W - 2 * _LOG_PFX_LEN
     indent    = " " * _LOG_PFX_LEN
     t = Text(no_wrap=True)
     if len(msg) <= available:
@@ -273,24 +274,24 @@ def _log_print(tag, msg, tag_style, msg_style):
     t.append(prefix,          style=tag_style)
     t.append(msg[:available], style=msg_style)
     console.print(t, no_wrap=True)
-    # Continuation lines
+    # Continuation lines (same available width)
     rest = msg[available:]
     while rest:
-        chunk = rest[:TERM_W - _LOG_PFX_LEN]
+        chunk = rest[:available]
         rest  = rest[len(chunk):]
         console.print(Text(indent + chunk, style=msg_style), no_wrap=True)
 
 # ── Scrollbar control (Windows CMD) ──────────────────────────
 def _set_scrollbar(enabled: bool):
-    """Lock/unlock CMD scrollbar by matching buffer height to window."""
+    """Keep CMD scroll buffer always large so content is never lost.
+    The 'enabled' flag is kept for API compatibility but we never shrink the buffer."""
     if os.name != "nt":
         return
     try:
         import ctypes
         STD_OUT = ctypes.windll.kernel32.GetStdHandle(-11)
-        height  = 9999 if enabled else TERM_H
-        # COORD is two packed WORDs: low=cols, high=rows
-        ctypes.windll.kernel32.SetConsoleScreenBufferSize(STD_OUT, TERM_W | (height << 16))
+        # Always 9999 — never shrink to TERM_H (that would cut history)
+        ctypes.windll.kernel32.SetConsoleScreenBufferSize(STD_OUT, TERM_W | (9999 << 16))
     except Exception:
         pass
 
