@@ -4470,7 +4470,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
         def _worker():
             tmp_script = None
             try:
-                import urllib.request, ssl, sys
+                import urllib.request, ssl, sys, os
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode    = ssl.CERT_NONE
@@ -4496,8 +4496,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
 
                 cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
 
-                import os
-                if is_win:
+                if self._is_win:
                     venv_py = os.path.join(self._install_dir, 'venv', 'Scripts', 'python.exe')
                 else:
                     venv_py = os.path.join(self._install_dir, 'venv', 'bin', 'python3')
@@ -5411,6 +5410,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 def _worker():
                     tmp = None
                     try:
+                        import sys, os
                         ctx = ssl.create_default_context()
                         ctx.check_hostname = False
                         ctx.verify_mode = ssl.CERT_NONE
@@ -5433,7 +5433,6 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                         
                         install_dir = getattr(_card_engine.os_doc, 'install_dir', '')
                         
-                        import os
                         if is_win:
                             venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
                         else:
@@ -9918,6 +9917,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         def _worker():
             tmp = None
             try:
+                import sys, os
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
@@ -9939,7 +9939,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
                 
                 install_dir = getattr(self.engine.os_doc, 'install_dir', '')
-                import os
                 if is_win:
                     venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
                 else:
