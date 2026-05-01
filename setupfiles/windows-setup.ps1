@@ -40,7 +40,7 @@ function Launch-Installer($PyExe, $InstallPy, $ExtraPythonPath) {
     }
     $CmdLine = "$($EnvBlock)`"$PyExe`" $PyArg"
     Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/k title BadWords Setup && $CmdLine" `
+        -ArgumentList "/c title BadWords Setup && $CmdLine" `
         -WindowStyle Normal
     # PS1 is no longer needed — close immediately
     exit 0

@@ -73,6 +73,8 @@ def _resolve_script_dirs():
     elif "mac" in PLAT or "darwin" in PLAT:
         results.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support",
                                     "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+        results.append(os.path.join("/", "Library", "Application Support",
+                                    "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
     else:
         results.append(os.path.join(os.path.expanduser("~"), ".local", "share",
                                     "DaVinciResolve", "Fusion", "Scripts", "Utility"))
@@ -84,6 +86,20 @@ def _resolve_script_dirs():
             seen.add(d)
             unique.append(d)
     return unique
+
+_LOG_MESSAGES = []
+_DEBUG_LOG_FILE = None
+
+def debug_log(msg):
+    import datetime
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"[{now}] {msg}"
+    _LOG_MESSAGES.append(entry)
+    if _DEBUG_LOG_FILE:
+        try:
+            with open(_DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(entry + "\n")
+        except: pass
 
 # ── Cancellation ─────────────────────────────────────────────
 class UserCancelled(Exception):
@@ -254,15 +270,20 @@ def pause(msg=None):
 def log_info(msg):  _log_print("[INFO]", msg, "green",      "green")
 def log_step(msg):  _log_print("[....]", msg, "cyan",       "cyan")
 def log_ok(msg):    _log_print("[ OK ]", msg, "bold green",  "bold green")
-def log_warn(msg):  _log_print("[WARN]", msg, "yellow",     "yellow")
-def log_err(msg):   _log_print("[ERR!]", msg, "bold red",   "bold red")
+def log_warn(msg):
+    _log_print("[WARN]", msg, "yellow", "yellow")
+    if _DEBUG_LOG_FILE: _log_print("[INFO]", f"More info in: {_DEBUG_LOG_FILE}", "dim", "dim")
 
-# ── Smart-wrapped log printer ────────────────────────────────
+def log_err(msg):
+    _log_print("[ERR!]", msg, "bold red", "bold red")
+    if _DEBUG_LOG_FILE: _log_print("[INFO]", f"More info in: {_DEBUG_LOG_FILE}", "dim", "dim")
+
 # Continuation lines are indented to align with the text start,
 # not crammed at the left edge.
 _LOG_PFX_LEN = len(PAD) + 7   # "    [TAG] " = 4 + 7 chars
 
 def _log_print(tag, msg, tag_style, msg_style):
+    debug_log(f"{tag} {msg}")
     prefix    = f"{PAD}{tag} "
     available = TERM_W - 2 * _LOG_PFX_LEN  # symmetric right margin
     indent    = " " * _LOG_PFX_LEN
@@ -472,17 +493,17 @@ def two_way_sync(src_paths, dst, protected_files, protected_dirs):
                 dp = os.path.join(dst_dir, fname)
                 if md5(sp) != md5(dp):
                     shutil.copy2(sp, dp)
-                    log_info(f"Updated: {os.path.join(rel, fname)}")
+                    debug_log(f"Updated: {os.path.join(rel, fname)}")
     for item in os.listdir(dst):
         dp = os.path.join(dst, item)
         in_src = any(os.path.exists(os.path.join(s, item)) for s in src_paths)
         if os.path.isdir(dp):
             if item not in protected_dirs and not in_src:
-                log_warn(f"Removing obsolete dir: {item}")
+                debug_log(f"Removing obsolete dir: {item}")
                 shutil.rmtree(dp)
         else:
             if item not in protected_files and not in_src:
-                log_warn(f"Removing obsolete file: {item}")
+                debug_log(f"Removing obsolete file: {item}")
                 os.remove(dp)
 
 # ── Option 1 — Standard Install / Update ─────────────────────
@@ -520,6 +541,13 @@ def option_install_update():
     models_dir = os.path.join(install_dir, "models")
     bin_dir   = os.path.join(install_dir, "bin")
     log_file  = os.path.join(install_dir, "badwords_debug.log")
+    
+    global _DEBUG_LOG_FILE
+    _DEBUG_LOG_FILE = log_file
+    try:
+        with open(_DEBUG_LOG_FILE, "w", encoding="utf-8") as f:
+            for entry in _LOG_MESSAGES: f.write(entry + "\n")
+    except: pass
 
     # ── Source fetch ──────────────────────────────────────────
     console.print()
@@ -808,18 +836,18 @@ def option_install_update():
 
             linked = False
             if os.name == "nt":
-                # Junction point: instant, requires no admin privileges
                 r = subprocess.run(
                     f'mklink /J "{libs_link}" "{site_pkgs}"',
                     shell=True, capture_output=True
                 )
                 if r.returncode == 0:
+                    debug_log(f"libs junction created: {libs_link} -> {site_pkgs}")
                     log_ok("libs link created.")
                     linked = True
-
-            if not linked:
+            else:
                 try:
-                    os.symlink(site_pkgs, libs_link)
+                    os.symlink(site_pkgs, libs_link, target_is_directory=True)
+                    debug_log(f"libs symlink created: {libs_link} -> {site_pkgs}")
                     log_ok("libs link created.")
                     linked = True
                 except (OSError, NotImplementedError):
@@ -907,12 +935,14 @@ else:
                 with open(wp, "w", encoding="utf-8") as f:
                     f.write(wrapper_content)
                 os.chmod(wp, 0o755)
-                log_ok(f"Wrapper: {wp}")
+                debug_log(f"Wrapper written to: {wp}")
                 wrapper_count += 1
             except Exception as exc:
-                log_warn(f"Could not write wrapper to {rd}: {exc}")
+                debug_log(f"Could not write wrapper to {rd}: {exc}")
 
-        if wrapper_count == 0:
+        if wrapper_count > 0:
+            log_ok("DaVinci Resolve wrapper installed.")
+        else:
             log_err("Failed to write wrapper to any Resolve location.")
 
         open(log_file, "a").close()
@@ -973,15 +1003,19 @@ def main():
             pass
         except KeyboardInterrupt:
             _close_terminal()
+        except Exception as e:
+            import traceback
+            err_msg = traceback.format_exc()
+            debug_log(f"CRASH: {err_msg}")
+            log_err(f"An unexpected error occurred: {e}")
+            pause("Press Enter to exit...")
+            _close_terminal()
 
 def _close_terminal():
     """Exit the process AND close the terminal window."""
     if os.name == "nt":
-        pid = os.getpid()
-        subprocess.Popen(
-            ["taskkill", "/F", "/PID", str(pid)],
-            creationflags=0x08000000  # CREATE_NO_WINDOW
-        )
+        # cmd /c automatically closes when python exits
+        pass
     elif "darwin" in PLAT or "mac" in PLAT:
         # The bootstrapper used exec, so exiting Python closes the shell session.
         # Terminal.app closes the tab automatically when the process exits
