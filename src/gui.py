@@ -7207,12 +7207,14 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._title_bar.setVisible(False)
             self._title_bar.setFixedHeight(0)
             from PySide6.QtWidgets import QMenuBar
+            from PySide6.QtGui import QAction
             self._mac_menu_bar = QMenuBar(self)
             
-            # 1. Settings
-            self._mac_menu_settings = self._mac_menu_bar.addMenu(self.txt("tool_settings") if hasattr(self, "txt") else "Settings")
-            self._mac_action_settings = self._mac_menu_settings.addAction("Open Settings")
-            self._mac_action_settings.triggered.connect(self._on_settings)
+            # 1. Settings (in App Menu)
+            self._mac_action_settings = QAction(self.txt("tool_settings") if hasattr(self, "txt") else "Settings", self)
+            self._mac_action_settings.setMenuRole(QAction.MenuRole.PreferencesRole)
+            self._mac_action_settings.triggered.connect(lambda: self._on_settings())
+            self._mac_menu_bar.addAction(self._mac_action_settings)
             
             # 2. Source
             self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
