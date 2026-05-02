@@ -14,6 +14,14 @@ set -euo pipefail
 INSTALLER_URL="https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/setup.py"
 INSTALLER_URL_FB="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
 
+# ── Local File Detection ──────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd 2>/dev/null || echo "")"
+LOCAL_SETUP="$SCRIPT_DIR/setup.py"
+LOCAL_REPO=""
+if [ -f "$LOCAL_SETUP" ]; then
+    LOCAL_REPO="$(dirname "$SCRIPT_DIR")"
+fi
+
 # ── Persistent cache directory ────────────────────────────────
 CACHE_DIR="$HOME/Library/Caches/BadWords-bootstrap"
 CACHE_VENV_PY="$CACHE_DIR/venv/bin/python"
@@ -58,7 +66,11 @@ _launch_installer() {
     cat "$script" >> "$clean_script"
     chmod +x "$clean_script"
     
-    exec "$clean_script"
+    if [ -n "$LOCAL_REPO" ]; then
+        exec "$clean_script" --platform macos --bootstrap-python "$py" --local-repo "$LOCAL_REPO"
+    else
+        exec "$clean_script" --platform macos --bootstrap-python "$py"
+    fi
 }
 
 # ── FAST PATH: boot-time cache ────────────────────────────────
@@ -71,7 +83,10 @@ if [ -f "$CACHE_MARKER" ] && [ -f "$CACHE_VENV_PY" ] && [ -f "$CACHE_INSTALL" ];
 
         # Venv is cached (saves time) but setup.py is always refreshed
         refresh_ok=false
-        if curl -fsSL --max-time 15 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
+        if [ -f "$LOCAL_SETUP" ]; then
+            cp "$LOCAL_SETUP" "$CACHE_INSTALL"
+            refresh_ok=true
+        elif curl -fsSL --max-time 15 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
             refresh_ok=true
         elif curl -fsSL --max-time 15 "$INSTALLER_URL_FB" -o "$CACHE_INSTALL" 2>/dev/null; then
             refresh_ok=true
@@ -254,7 +269,11 @@ ok "Dependencies ready."
 # ── 6. Download setup.py into cache ────────────────────────
 step "Downloading BadWords installer..."
 downloaded=false
-if curl -fsSL --max-time 30 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
+if [ -f "$LOCAL_SETUP" ]; then
+    ok "Found local setup.py."
+    cp "$LOCAL_SETUP" "$CACHE_INSTALL"
+    downloaded=true
+elif curl -fsSL --max-time 30 "$INSTALLER_URL" -o "$CACHE_INSTALL" 2>/dev/null; then
     downloaded=true
 else
     warn "GitHub unavailable. Trying GitLab fallback..."
