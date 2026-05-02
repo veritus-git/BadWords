@@ -25,6 +25,7 @@ console = Console(width=TERM_W, highlight=False)
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument("--platform", default=sys.platform)
 parser.add_argument("--bootstrap-python", default=sys.executable)
+parser.add_argument("--local-repo", default="")
 ARGS, _ = parser.parse_known_args()
 PLAT = ARGS.platform.lower()
 
@@ -625,12 +626,26 @@ def option_install_update(force_main=False):
     # ── Source fetch ──────────────────────────────────────────
     console.print()
     log_step("Resolving source files...")
-    tag, zip_url, source_repo = get_latest_tag(force_main)
-    tmp_dl = tempfile.mkdtemp()
+    
+    repo_root = ARGS.local_repo if ARGS.local_repo else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_src = os.path.join(repo_root, "src")
+    local_assets = os.path.join(repo_root, "assets")
+    local_main = os.path.join(local_src, "main.py")
+
     source_path = assets_path = None
+    tmp_dl = None
+
+    if os.path.isfile(local_main):
+        log_ok("Local source repository detected. Using local files.")
+        source_path = local_src
+        assets_path = local_assets if os.path.isdir(local_assets) else None
+
+    if not source_path:
+        tag, zip_url, source_repo = get_latest_tag(force_main)
+        tmp_dl = tempfile.mkdtemp()
 
     try:
-        if zip_url:
+        if not source_path and zip_url and tmp_dl:
             sp_dl = Spinner(f"Downloading release {tag} from {source_repo}").start()
             zip_path = os.path.join(tmp_dl, "repo.zip")
             dl_ok = download(zip_url, zip_path)
@@ -1080,7 +1095,8 @@ else:
         console.print()
 
     finally:
-        shutil.rmtree(tmp_dl, ignore_errors=True)
+        if tmp_dl:
+            shutil.rmtree(tmp_dl, ignore_errors=True)
 
     pause(f"{PAD}Press Enter to exit...")
 

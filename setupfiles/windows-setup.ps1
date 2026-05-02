@@ -12,6 +12,14 @@ $ErrorActionPreference = "Continue"
 $INSTALLER_URL    = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/setup.py"
 $INSTALLER_URL_FB = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
 
+# ── Local File Detection ──────────────────────────────────────
+$ScriptDir = ""
+if ($MyInvocation.MyCommand.Path) {
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$LocalSetup = if ($ScriptDir) { Join-Path $ScriptDir "setup.py" } else { "" }
+$LocalRepo  = if ($ScriptDir) { Split-Path -Parent $ScriptDir } else { "" }
+
 # ── Persistent cache directory ────────────────────────────────
 # Everything here survives between bootstrapper runs but is
 # invalidated automatically when Windows reboots (boot-time marker).
@@ -34,6 +42,9 @@ function die($m)  { Write-Host "[X]  $m" -ForegroundColor Red; Read-Host "Press 
 # ── Helper: launch CMD and exit PS1 immediately ───────────────
 function Launch-Installer($PyExe, $InstallPy, $ExtraPythonPath) {
     $PyArg = "`"$InstallPy`" --platform windows --bootstrap-python `"$PyExe`""
+    if ($LocalRepo -and (Test-Path $LocalSetup)) {
+        $PyArg += " --local-repo `"$LocalRepo`""
+    }
     $EnvBlock = ""
     if ($ExtraPythonPath) {
         $EnvBlock = "set PYTHONPATH=$ExtraPythonPath && "
@@ -76,10 +87,16 @@ if ($TempFileOk -and $CacheFilesOk) {
         # Venv is cached (saves ~30s) but setup.py is always refreshed
         # so the user always runs the latest version of the installer.
         $refreshOk = $false
-        try {
-            Invoke-WebRequest -Uri $INSTALLER_URL -OutFile $CacheInstall -UseBasicParsing -ErrorAction Stop
+        if ($LocalSetup -and (Test-Path $LocalSetup)) {
+            Copy-Item -Path $LocalSetup -Destination $CacheInstall -Force
             $refreshOk = $true
-        } catch { warn "GitHub unreachable, trying GitLab..." }
+        }
+        if (-not $refreshOk) {
+            try {
+                Invoke-WebRequest -Uri $INSTALLER_URL -OutFile $CacheInstall -UseBasicParsing -ErrorAction Stop
+                $refreshOk = $true
+            } catch { warn "GitHub unreachable, trying GitLab..." }
+        }
         if (-not $refreshOk) {
             try {
                 Invoke-WebRequest -Uri $INSTALLER_URL_FB -OutFile $CacheInstall -UseBasicParsing -ErrorAction Stop
@@ -241,10 +258,18 @@ ok "Dependencies ready."
 step "Downloading BadWords installer..."
 $downloaded = $false
 
-try {
-    Invoke-WebRequest -Uri $INSTALLER_URL -OutFile $CacheInstall -UseBasicParsing
-    if (Test-Path $CacheInstall) { $downloaded = $true }
-} catch { warn "GitHub unavailable. Trying GitLab fallback..." }
+if ($LocalSetup -and (Test-Path $LocalSetup)) {
+    ok "Found local setup.py."
+    Copy-Item -Path $LocalSetup -Destination $CacheInstall -Force
+    $downloaded = $true
+}
+
+if (-not $downloaded) {
+    try {
+        Invoke-WebRequest -Uri $INSTALLER_URL -OutFile $CacheInstall -UseBasicParsing
+        if (Test-Path $CacheInstall) { $downloaded = $true }
+    } catch { warn "GitHub unavailable. Trying GitLab fallback..." }
+}
 
 if (-not $downloaded) {
     try {
