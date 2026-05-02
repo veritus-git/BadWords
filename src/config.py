@@ -44,7 +44,11 @@ def get_system_font_name():
     return "Noto Sans"
 
 UI_FONT_NAME = get_system_font_name()
-BASE_FONT_PT = 10
+BASE_FONT_PT = 12 if platform.system() == "Darwin" else 10
+
+def FS(size):
+    """Dynamically scales font sizes based on OS."""
+    return size + 2 if platform.system() == "Darwin" else size
 
 # ==========================================
 # ANALYSIS PARAMETERS
