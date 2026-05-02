@@ -258,13 +258,32 @@ class AudioEngine:
     def _get_python_executable(self):
         return self.os_doc.get_venv_python_path()
 
-    def download_whisper_model_interactive(self, model_name, progress_callback=None):
+    def download_whisper_model_interactive(self, model_name, progress_callback=None, status_callback=None):
         log_info(f"Starting interactive download for Faster-Whisper model: {model_name}")
         if model_name == "large": model_name = "large-v3"
         
         script_content = f"""
 import sys
 import os
+import re
+
+# Force tqdm to render progress bar even if not in terminal
+class FakeTTY:
+    def __init__(self, stream):
+        self.stream = stream
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
+    def isatty(self):
+        return True
+    def write(self, *args, **kwargs):
+        self.stream.write(*args, **kwargs)
+        self.stream.flush()
+
+sys.stderr = FakeTTY(sys.stderr)
+sys.stdout = FakeTTY(sys.stdout)
+os.environ["PYTHONUNBUFFERED"] = "1"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
+os.environ["TQDM_DISABLE"] = "0"
 
 # SUPPRESS HF WARNINGS
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
@@ -282,7 +301,7 @@ try:
     print("DL-START: Target dir " + {repr(self.models_dir)})
     from faster_whisper import download_model
     print("Downloading {model_name}...")
-    download_model("{model_name}")
+    download_model("{model_name}", cache_dir={repr(self.models_dir)})
     print("Download Complete.")
 except Exception as e:
     print(f"Error: {{e}}")
@@ -298,31 +317,43 @@ except Exception as e:
         env["HF_HOME"] = self.models_dir
         
         try:
-            process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, 
-                encoding='utf-8', errors='replace', env=env, **self.os_doc.get_subprocess_kwargs()
-            )
-            while True:
-                line = process.stdout.readline()
-                if not line and process.poll() is not None: break
-                if line: log_info(f"[FW-DL] {line.strip()}")
+            # Disable tqdm in huggingface_hub so it doesn't pollute stdout with \r
+            env["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
             
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True,
+                env=env, **self.os_doc.get_subprocess_kwargs()
+            )
+            
+            for line in process.stdout:
+                line_s = line.strip()
+                if line_s:
+                    log_info(f"[FW-DL] {line_s}")
+
+
+            process.wait()
             if process.returncode == 0:
                 log_info(f"Model {model_name} ready.")
-                if progress_callback: progress_callback(100)
                 return True
             else:
-                err = process.stderr.read()
-                log_error(f"Model download failed (STDERR): {err}")
+                log_error(f"Model download failed (return code {process.returncode})")
                 return False
         except Exception as e:
             log_error(f"Download execution failed: {e}")
             return False
         finally:
-            if os.path.exists(runner_path): os.remove(runner_path)
+            if os.path.exists(runner_path):
+                try: os.remove(runner_path)
+                except: pass
 
-    def check_model_exists(self, tech_name):
-        return True
+
+
+    def check_model_exists(self, model_name):
+        if model_name == "large": model_name = "large-v3"
+        model_folder = os.path.join(self.models_dir, f"models--Systran--faster-whisper-{model_name}")
+        snapshots_dir = os.path.join(model_folder, "snapshots")
+        return os.path.exists(snapshots_dir) and len(os.listdir(snapshots_dir)) > 0
 
     def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type,
                     filler_words_list=None, initial_prompt=None, progress_callback=None):
@@ -888,18 +919,23 @@ except Exception as e:
 
             update_status(self.txt("status_check_model"))
             
-            # Switch to Indeterminate (Phase 2)
-            update_progress(-1) 
-            
-            def dl_progress_cb(val): pass
-            
+            # Switch to Indeterminate during model check phase
+            update_progress(-1)
+
             # Check/Download logic for Faster-Whisper
-            if self.os_doc.needs_manual_model_install():
-                self.download_whisper_model_interactive(model, dl_progress_cb)
+            if not self.check_model_exists(model):
+                update_status(self.txt("status_downloading_model"))
+                dl_ok = self.download_whisper_model_interactive(
+                    model,
+                    progress_callback=update_progress,
+                    status_callback=update_status,
+                )
+                if not dl_ok:
+                    log_error("Model download/verification failed. Cannot proceed.")
+                    return None, None
             
             update_status(self.txt("status_whisper_init"))
             update_progress(-1)  # Indeterminate bar during init
-            update_status(self.txt("status_whisper_init"))
             
             def whisper_live_progress(pct):
                 update_progress(int(pct))
@@ -946,9 +982,21 @@ except Exception as e:
                 update_status(self.txt("status_finalize"))
                 # Wyrzuciliśmy automatyczne odpalanie algorytmów na start (pełen RAW text dla GUI)
                 words_data = algorithms.absorb_inaudible_into_repeats(words_data)
+                # Mark model as successfully used via a marker file
+                try:
+                    _hist_key = model if model != "large" else "large-v3"
+                    model_folder_name = f"models--Systran--faster-whisper-{_hist_key}"
+                    model_folder_path = os.path.join(self.models_dir, model_folder_name)
+                    if os.path.exists(model_folder_path):
+                        marker_path = os.path.join(model_folder_path, ".badwords_initialized")
+                        with open(marker_path, "w") as mf:
+                            mf.write("1")
+                except Exception as e:
+                    log_error(f"Failed to save model init marker: {e}")
 
             update_progress(100)
             return words_data, segments_data
+
 
         except Exception as e:
             log_error(f"Pipeline Critical Error: {traceback.format_exc()}")
