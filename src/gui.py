@@ -2881,7 +2881,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
 
         # --- Root QSS (window is transparent; styling lives on inner_frame) ---
         self.setStyleSheet(f"""
-            TelemetryPopup {{ background-color: transparent; }}
+            QDialog, TelemetryPopup {{ background-color: transparent; }}
             QFrame#MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #000000;
@@ -2947,15 +2947,6 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             }}
             QCheckBox::indicator {{
                 width: 14px;
-                height: 14px;
-                border: 1px solid #555555;
-                border-radius: 2px;
-                background: #1a1a1a;
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {config.BTN_BG};
-                border-color: {config.BTN_BG};
-            }}
         """)
 
         # --- Outer wrapper (transparent, holds shadow) ---
@@ -3020,10 +3011,17 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         content_layout.addWidget(self._lbl_msg)
         content_layout.addSpacing(10)
 
-        # Geo checkbox
-        self._chk_geo = QCheckBox("", container)
-        self._chk_geo.setChecked(True)
-        content_layout.addWidget(self._chk_geo)
+        # Geo Toggle
+        geo_layout = QHBoxLayout()
+        geo_layout.setContentsMargins(0, 0, 0, 0)
+        self._lbl_geo = QLabel("", container)
+        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 11pt; background: transparent;")
+        self._chk_geo = ToggleSwitch(container)
+        self._chk_geo.setChecked(True, animated=False)
+        geo_layout.addWidget(self._lbl_geo)
+        geo_layout.addWidget(self._chk_geo)
+        geo_layout.addStretch()
+        content_layout.addLayout(geo_layout)
         content_layout.addSpacing(20)
 
         # Buttons row (No | Yes)
@@ -3066,7 +3064,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         self._btn_yes.setText(self._t("btn_telemetry_yes"))
         self._btn_no.setText(self._t("btn_telemetry_no"))
         self._btn_lang.setText(self._lang.upper())
-        self._chk_geo.setText(self._t("chk_telemetry_geo"))
+        self._lbl_geo.setText(self._t("chk_telemetry_geo"))
         # Keep title bar in sync when language changes
         if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
             self._tb._lbl_title.setText(self._t("title_telemetry"))
