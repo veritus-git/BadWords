@@ -49,6 +49,18 @@ import config
 import osdoc
 
 # ==========================================
+# MACOS UI SCALE MONKEY PATCH
+# ==========================================
+_orig_set_style_sheet = QWidget.setStyleSheet
+def _scaled_set_style_sheet(self, qss):
+    if platform.system() == "Darwin" and qss and isinstance(qss, str):
+        # Scale all pt and px by +2 globally
+        qss = re.sub(r'font-size:\s*(\d+)pt;', lambda m: f"font-size: {int(m.group(1)) + 2}pt;", qss)
+        qss = re.sub(r'font-size:\s*(\d+)px;', lambda m: f"font-size: {int(m.group(1)) + 2}px;", qss)
+    _orig_set_style_sheet(self, qss)
+QWidget.setStyleSheet = _scaled_set_style_sheet
+
+# ==========================================
 # CONSTANTS
 # ==========================================
 RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Languages
@@ -7207,27 +7219,15 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self._title_bar.setVisible(False)
             self._title_bar.setFixedHeight(0)
             from PySide6.QtWidgets import QMenuBar
-            from PySide6.QtGui import QAction
             self._mac_menu_bar = QMenuBar(self)
-            
-            # 1. Settings (in App Menu)
-            self._mac_action_settings = QAction(self.txt("tool_settings") if hasattr(self, "txt") else "Settings", self)
-            self._mac_action_settings.setMenuRole(QAction.MenuRole.PreferencesRole)
-            self._mac_action_settings.triggered.connect(lambda: self._on_settings())
-            self._mac_menu_bar.addAction(self._mac_action_settings)
-            
-            # 2. Source
             self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
             self._mac_action_timeline = self._mac_menu_source.addAction("Timeline: None")
             self._mac_action_timeline.setEnabled(False)
             self._mac_action_track = self._mac_menu_source.addAction("Track: None")
             self._mac_action_track.setEnabled(False)
             self._mac_menu_source.menuAction().setVisible(False)
-            
-            # 3. Edits
             self._mac_menu_edits = self._mac_menu_bar.addMenu("Edits")
             self._mac_menu_edits.menuAction().setVisible(False)
-            
             self._mac_menu_bar.setNativeMenuBar(True)
 
         # --- Build UI --- (sidebars + central workspace sit below title bar)
@@ -7373,8 +7373,6 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.btn_nav_settings = SidebarButton("\u2699", self.txt("tool_settings"), "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_settings.clicked.connect(self._on_settings)
         left_layout.addWidget(self.btn_nav_settings)
-        if platform.system() == "Darwin":
-            self.btn_nav_settings.setVisible(False)
         
         self._sidebar_left.show()
 
