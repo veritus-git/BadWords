@@ -9070,12 +9070,12 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # ── Model
         model_items = [
-            "Tiny (I wouldn't | <1 GB)",
-            "Base (Dogshit | ~1 GB)",
-            "Small (Bearable | ~2 GB)",
-            "Medium (If you have to | ~5 GB)",
-            "Large Turbo (Okayish | ~6 GB)",
-            "Large (Recommended | ~10 GB)",
+            "Tiny (I wouldn't, <1 GB)",
+            "Base (Dogshit, ~1 GB)",
+            "Small (Bearable, ~2 GB)",
+            "Medium (If you have to, ~5 GB)",
+            "Large Turbo (Okayish, ~6 GB)",
+            "Large (Recommended, ~10 GB)",
         ]
         self._combo_model = CustomDropdown(model_items)
         self._combo_model.setFixedHeight(30)
