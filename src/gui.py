@@ -9357,6 +9357,25 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.bar_processing = LiquidProgressBar(page)
         self.bar_processing.setFixedWidth(400)
         layout.addWidget(self.bar_processing, 0, Qt.AlignCenter)
+
+        # ── First-run hint label (shown only when model is being used for the first time) ──
+        layout.addSpacing(20)
+        self.lbl_first_run_hint = QLabel("", page)
+        self.lbl_first_run_hint.setAlignment(Qt.AlignCenter)
+        self.lbl_first_run_hint.setWordWrap(False)
+        self.lbl_first_run_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.lbl_first_run_hint.setStyleSheet(
+            f"color: #666666; font-size: 10pt; font-style: italic;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0 20px;"
+        )
+        # Opacity effect for smooth fade-in / fade-out
+        from PySide6.QtWidgets import QGraphicsOpacityEffect as _OFX
+        self._hint_opacity = _OFX(self.lbl_first_run_hint)
+        self._hint_opacity.setOpacity(0.0)
+        self.lbl_first_run_hint.setGraphicsEffect(self._hint_opacity)
+        self.lbl_first_run_hint.hide()
+        layout.addWidget(self.lbl_first_run_hint, 0, Qt.AlignCenter)
+
         return page
 
     def _update_processing_progress(self, val: int):
@@ -9430,6 +9449,99 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText(self.txt("txt_initializing_analysis"))
 
+        # ── First-run hint: check if chosen model has been run before ────────────
+        raw_model_for_check = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
+        model_key = raw_model_for_check.split()[0].lower()
+        if model_key == 'large': model_key = 'large-v3'
+        
+        # Check for marker file instead of settings.json
+        model_folder_name = f"models--Systran--faster-whisper-{model_key}"
+        import os
+        marker_path = os.path.join(self.engine.models_dir, model_folder_name, ".badwords_initialized")
+        _is_first_model_run = not os.path.exists(marker_path)
+
+        # Stop any existing hint timer / animations
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except: pass
+            setattr(self, _aref, None)
+
+        if hasattr(self, 'lbl_first_run_hint'):
+            import random as _random
+            if _is_first_model_run:
+                _hint_keys = [
+                    'first_run_hint_1', 'first_run_hint_2', 'first_run_hint_3',
+                    'first_run_hint_4', 'first_run_hint_5', 'first_run_hint_6',
+                    'first_run_hint_7', 'first_run_hint_8', 'first_run_hint_9',
+                    'first_run_hint_10',
+                ]
+            else:
+                _hint_keys = [
+                    'analysis_hint_1', 'analysis_hint_2', 'analysis_hint_3',
+                    'analysis_hint_4', 'analysis_hint_5', 'analysis_hint_6',
+                    'analysis_hint_7', 'analysis_hint_8', 'analysis_hint_9',
+                    'analysis_hint_10',
+                ]
+
+            _shuffled = _hint_keys[:]
+            _random.shuffle(_shuffled)
+            self._hint_cycle_idx = 0
+            self._hint_cycle_keys = _shuffled
+
+            def _fade_to_next_hint():
+                """Fade out current hint, swap text, fade back in."""
+                if not hasattr(self, 'lbl_first_run_hint'): return
+                if not hasattr(self, '_hint_opacity'): return
+
+                def _do_swap():
+                    try:
+                        key = self._hint_cycle_keys[
+                            self._hint_cycle_idx % len(self._hint_cycle_keys)
+                        ]
+                        self.lbl_first_run_hint.setText(self.txt(key))
+                        self._hint_cycle_idx += 1
+                    except Exception: pass
+                    # Fade in
+                    anim_in = QPropertyAnimation(self._hint_opacity, b"opacity")
+                    anim_in.setDuration(600)
+                    anim_in.setStartValue(0.0)
+                    anim_in.setEndValue(1.0)
+                    anim_in.setEasingCurve(QEasingCurve.OutQuad)
+                    anim_in.start()
+                    self._hint_anim_in = anim_in
+
+                anim_out = QPropertyAnimation(self._hint_opacity, b"opacity")
+                anim_out.setDuration(500)
+                anim_out.setStartValue(1.0)
+                anim_out.setEndValue(0.0)
+                anim_out.setEasingCurve(QEasingCurve.InQuad)
+                anim_out.finished.connect(_do_swap)
+                anim_out.start()
+                self._hint_anim_out = anim_out
+
+            # Show first hint immediately (fade in from scratch)
+            first_key = _shuffled[0]
+            self.lbl_first_run_hint.setText(self.txt(first_key))
+            self._hint_cycle_idx = 1
+            self.lbl_first_run_hint.show()
+            anim_first_in = QPropertyAnimation(self._hint_opacity, b"opacity")
+            anim_first_in.setDuration(700)
+            anim_first_in.setStartValue(0.0)
+            anim_first_in.setEndValue(1.0)
+            anim_first_in.setEasingCurve(QEasingCurve.OutQuad)
+            anim_first_in.start()
+            self._hint_anim_in = anim_first_in
+
+            self._hint_timer = QTimer(self)
+            self._hint_timer.timeout.connect(_fade_to_next_hint)
+            self._hint_timer.start(10500)  # rotate hint every 10.5 seconds
+
+
         # 3. Gather settings
         raw_lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
         lang_code = "auto"
@@ -9493,10 +9605,40 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             self.lbl_processing_status.setText(msg)
 
     def _on_analysis_error(self, err):
+        # Stop hint rotation and animations
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except: pass
+            setattr(self, _aref, None)
+        if hasattr(self, 'lbl_first_run_hint'):
+            self.lbl_first_run_hint.hide()
+            if hasattr(self, '_hint_opacity'):
+                self._hint_opacity.setOpacity(0.0)
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText(f"Error: {err}")
 
     def _on_analysis_finished(self, words_data, segments_data):
+        # Stop hint rotation and animations on finish
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except: pass
+            setattr(self, _aref, None)
+        if hasattr(self, 'lbl_first_run_hint'):
+            self.lbl_first_run_hint.hide()
+            if hasattr(self, '_hint_opacity'):
+                self._hint_opacity.setOpacity(0.0)
+
+
         if not words_data:
             dlg = CustomMsgBox(self, self.txt("msg_analysis_failed"), self.txt("msg_the_transcription_process"), self.txt("btn_ok"))
             dlg.exec()
