@@ -49,6 +49,18 @@ import config
 import osdoc
 
 # ==========================================
+# MACOS UI SCALE MONKEY PATCH
+# ==========================================
+_orig_set_style_sheet = QWidget.setStyleSheet
+def _scaled_set_style_sheet(self, qss):
+    if platform.system() == "Darwin" and qss and isinstance(qss, str):
+        # Scale all pt and px by +2 globally
+        qss = re.sub(r'font-size:\s*(\d+)pt;', lambda m: f"font-size: {int(m.group(1)) + 2}pt;", qss)
+        qss = re.sub(r'font-size:\s*(\d+)px;', lambda m: f"font-size: {int(m.group(1)) + 2}px;", qss)
+    _orig_set_style_sheet(self, qss)
+QWidget.setStyleSheet = _scaled_set_style_sheet
+
+# ==========================================
 # CONSTANTS
 # ==========================================
 RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Languages
@@ -852,7 +864,7 @@ class ShortcutCaptureButton(QPushButton):
             max-height: 26px;
             text-align: center;
             font-family: monospace;
-            font-size: {config.BASE_FONT_PT}pt;
+            font-size: 10pt;
         }}
         QPushButton:hover {{
             background-color: #252525;
@@ -2129,7 +2141,7 @@ class CustomTitleBar(QWidget):
         self._lbl_title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._lbl_title.setStyleSheet(
             f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
-            f"font-size: {config.FS(9)}pt; background: transparent;"
+            f"font-size: 9pt; background: transparent;"
         )
         lay.addWidget(self._lbl_title)
         lay.addStretch()
@@ -2683,14 +2695,14 @@ class SplashScreen(FramelessWindowMixin, QDialog):
             }}
             QLabel#title {{
                 color: #ffffff;
-                font-size: {config.FS(18)}pt;
+                font-size: 18pt;
                 font-weight: bold;
                 font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
             QLabel#loading {{
                 color: {config.NOTE_COL};
-                font-size: {config.FS(12)}pt;
+                font-size: 12pt;
                 font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
@@ -2767,7 +2779,7 @@ class _LangPickerDialog(QDialog):
                 background-color: {config.MENU_BG};
                 color: {config.MENU_FG};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.FS(11)}pt;
+                font-size: 11pt;
                 border: none;
                 outline: none;
             }}
@@ -2877,21 +2889,21 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
-                font-size: {config.FS(14)}pt;
+                font-size: 14pt;
                 font-weight: bold;
                 font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
             QLabel#lbl_msg {{
                 color: {config.FG_COLOR};
-                font-size: {config.FS(11)}pt;
+                font-size: 11pt;
                 font-family: {config.UI_FONT_NAME};
                 background: transparent;
             }}
             QPushButton#btn_lang {{
                 color: {config.GEAR_COLOR};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.FS(11)}pt;
+                font-size: 11pt;
                 font-weight: bold;
                 background: transparent;
                 border: none;
@@ -2904,7 +2916,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
                 background-color: {config.BTN_BG};
                 color: #ffffff;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 font-weight: bold;
                 border: none;
                 padding: 6px 16px;
@@ -2917,7 +2929,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
                 background-color: {config.CANCEL_BG};
                 color: #ffffff;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 font-weight: bold;
                 border: none;
                 padding: 6px 16px;
@@ -2929,7 +2941,7 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
             QCheckBox {{
                 color: #aaaaaa;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 background: transparent;
                 spacing: 8px;
             }}
@@ -3149,7 +3161,7 @@ class IDETooltip(QLabel):
                 border: 1px solid #454545;
                 padding: 4px 8px;
                 font-family: 'Segoe UI', sans-serif;
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
             }
         """)
         self.hide()
@@ -3266,7 +3278,7 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: {config.FS(18)}pt; 
+                    font-size: 18pt; 
                     background-color: #333333; 
                     border-radius: 4px;
                     border: none;
@@ -3277,7 +3289,7 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: {config.FS(18)}pt; 
+                    font-size: 18pt; 
                     background: transparent; 
                     border-radius: 4px;
                     border: none;
@@ -3720,7 +3732,7 @@ class TitleDropdown(CustomDropdown):
                 color: #aaaaaa;
                 text-align: center;
                 border: none;
-                font-size: {config.FS(9)}pt;
+                font-size: 9pt;
                 padding: 2px 6px;
             }
             QPushButton:hover { color: #ffffff; }
@@ -3832,7 +3844,7 @@ class MultiSelectDropdown(QPushButton):
                 self.tick_box.setAlignment(Qt.AlignCenter)
                 
                 self.lbl = QLabel(text)
-                self.lbl.setStyleSheet(f"border: none; outline: none; color: #d4d4d4; font-size: {config.BASE_FONT_PT}pt; background: transparent;")
+                self.lbl.setStyleSheet("border: none; outline: none; color: #d4d4d4; font-size: 10pt; background: transparent;")
                 
                 lay.addWidget(self.tick_box)
                 lay.addWidget(self.lbl)
@@ -3842,7 +3854,7 @@ class MultiSelectDropdown(QPushButton):
             def update_ui(self):
                 if self.is_checked:
                     self.tick_box.setText("✔")
-                    self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: {config.FS(11)}px;")
+                    self.tick_box.setStyleSheet("background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: 11px;")
                 else:
                     self.tick_box.setText("")
                     self.tick_box.setStyleSheet("background: #111; border: 1px solid #333;")
@@ -4040,8 +4052,8 @@ class CustomMsgBox(FramelessWindowMixin, QDialog):
             QDialog {{ background-color: transparent; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
             QLabel {{ color: {config.FG_COLOR}; }}
-            QLabel#lbl_title {{ font-size: {config.FS(14)}pt; font-weight: bold; }}
-            QLabel#lbl_msg {{ font-size: {config.FS(11)}pt; }}
+            QLabel#lbl_title {{ font-size: 14pt; font-weight: bold; }}
+            QLabel#lbl_msg {{ font-size: 11pt; }}
             QPushButton {{
                 background-color: {config.BTN_GHOST_BG};
                 color: {config.BTN_FG};
@@ -4319,9 +4331,9 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                 border-radius: 8px;
             }}
             QLabel {{ color: {config.FG_COLOR}; background: transparent; }}
-            QLabel#lbl_title  {{ font-size: {config.FS(15)}pt; font-weight: bold; }}
-            QLabel#lbl_sub    {{ font-size: {config.BASE_FONT_PT}pt; color: #999; }}
-            QLabel#lbl_status {{ font-size: {config.BASE_FONT_PT}pt; color: #888; font-style: italic; }}
+            QLabel#lbl_title  {{ font-size: 15pt; font-weight: bold; }}
+            QLabel#lbl_sub    {{ font-size: 10pt; color: #999; }}
+            QLabel#lbl_status {{ font-size: 10pt; color: #888; font-style: italic; }}
             #ver_frame {{
                 background-color: #101010;
                 border: 1px solid #1e1e1e;
@@ -4334,7 +4346,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
                 border-radius: 5px;
                 min-width: 90px;
                 font-weight: bold;
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
             }}
             QPushButton:hover    {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton:disabled {{ color: #444; background-color: #181818; }}
@@ -4395,9 +4407,9 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
             col = QVBoxLayout()
             col.setSpacing(3)
             lbl = QLabel(label_txt)
-            lbl.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; letter-spacing: 1px;")
+            lbl.setStyleSheet("color: #555; font-size: 9pt; letter-spacing: 1px;")
             val = QLabel(ver_txt)
-            val.setStyleSheet(f"color: {ver_color}; font-size: {config.FS(20)}pt; font-weight: bold;")
+            val.setStyleSheet(f"color: {ver_color}; font-size: 20pt; font-weight: bold;")
             col.addWidget(lbl)
             col.addWidget(val)
             return col
@@ -4408,7 +4420,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
         ))
 
         lbl_arrow = QLabel("→")
-        lbl_arrow.setStyleSheet(f"color: #333; font-size: {config.FS(24)}pt; padding: 0 24px 0 20px;")
+        lbl_arrow.setStyleSheet("color: #333; font-size: 24pt; padding: 0 24px 0 20px;")
         lbl_arrow.setAlignment(Qt.AlignCenter)
         ver_layout.addWidget(lbl_arrow)
 
@@ -4465,7 +4477,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
         self._btn_primary.setText(_txt(self._lang, 'update_notify_updating'))
         self._btn_dismiss.setEnabled(False)
         self._lbl_status.setText(_txt(self._lang, 'update_notify_wait'))
-        self._lbl_status.setStyleSheet(f"color: #888; font-style: italic; font-size: {config.BASE_FONT_PT}pt;")
+        self._lbl_status.setStyleSheet("color: #888; font-style: italic; font-size: 10pt;")
         self._lbl_status.show()
         self.adjustSize()
 
@@ -4547,14 +4559,14 @@ class UpdateNotifyDialog(FramelessWindowMixin, QDialog):
         if success:
             log_info("[UpdateCheck] Auto-update completed successfully.")
             self._lbl_status.setText(_txt(self._lang, 'update_notify_success'))
-            self._lbl_status.setStyleSheet(f"color: #39ff7a; font-size: {config.BASE_FONT_PT}pt; font-style: normal;")
+            self._lbl_status.setStyleSheet("color: #39ff7a; font-size: 10pt; font-style: normal;")
             self._btn_primary.hide()
             self._btn_dismiss.setText(_txt(self._lang, 'btn_close'))
             self._btn_dismiss.setEnabled(True)
         else:
             log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
             self._lbl_status.setText(_txt(self._lang, 'update_notify_failed'))
-            self._lbl_status.setStyleSheet(f"color: #ed4245; font-size: {config.BASE_FONT_PT}pt; font-style: normal;")
+            self._lbl_status.setStyleSheet("color: #ed4245; font-size: 10pt; font-style: normal;")
             # Change primary button to open GitHub releases page
             self._btn_primary.setText(_txt(self._lang, 'update_notify_win_btn'))
             self._btn_primary.clicked.disconnect()
@@ -4614,7 +4626,7 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
             QDialog {{ background-color: transparent; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: 6px; }}
             QLabel {{ color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; }}
-            QLabel#lbl_title {{ font-size: {config.FS(13)}pt; font-weight: bold; color: #ffffff; }}
+            QLabel#lbl_title {{ font-size: 13pt; font-weight: bold; color: #ffffff; }}
             QLineEdit {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
@@ -4622,7 +4634,7 @@ class MarkerDialog(FramelessWindowMixin, QDialog):
                 border-radius: 3px;
                 padding: 5px 8px;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
             }}
             QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
             QPushButton {{
@@ -4800,7 +4812,7 @@ class UnsavedChangesDialog(FramelessWindowMixin, QDialog):
         root_layout.addLayout(content_layout)
         
         lbl_title = QLabel(parent.txt('msg_unsaved_title'))
-        lbl_title.setStyleSheet(f"font-size: {config.FS(14)}pt; font-weight: bold;")
+        lbl_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
         content_layout.addWidget(lbl_title)
         content_layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
         
@@ -4941,7 +4953,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             QLabel {{
                 color: {config.FG_COLOR};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 background: transparent;
             }}
             QListWidget {{
@@ -4954,7 +4966,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             QListWidget::item {{
                 color: {config.NOTE_COL};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 padding: 10px 16px;
                 border-radius: 0px;
             }}
@@ -4986,7 +4998,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             QCheckBox {{
                 color: {config.FG_COLOR};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 spacing: 8px;
             }}
             QCheckBox::indicator {{
@@ -5006,7 +5018,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border-radius: 4px;
                 font-weight: bold;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 padding: 0 18px;
             }}
             QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
@@ -5017,7 +5029,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border: 1px solid #555;
                 border-radius: 4px;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 padding: 0 12px;
             }}
             QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
@@ -5027,7 +5039,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border: 1px solid #444;
                 border-radius: 4px;
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.FS(9)}pt;
+                font-size: 9pt;
                 padding: 0px;
                 text-align: center;
             }}
@@ -5039,7 +5051,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border: 1px solid #444;
                 border-radius: 3px;
                 color: #888;
-                font-size: {config.FS(12)}pt;
+                font-size: 12pt;
                 font-weight: bold;
             }}
         """)
@@ -5280,14 +5292,14 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         ver_row = QHBoxLayout()
         ver_row.setSpacing(6)
         lbl_ver_key = QLabel(self.txt("lbl_ver_installed") + ":")
-        lbl_ver_key.setStyleSheet(f"color: #666; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        lbl_ver_key.setStyleSheet("color: #666; font-size: 9pt; background: transparent; border: none;")
         lbl_ver_val = QLabel(config.VERSION)
-        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent; border: none;")
+        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 11pt; font-weight: bold; background: transparent; border: none;")
         self._lbl_ver_status = QLabel("…")
-        self._lbl_ver_status.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        self._lbl_ver_status.setStyleSheet("color: #555; font-size: 9pt; background: transparent; border: none;")
         self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"))
         self._btn_ver_update.setObjectName("btn_ghost_sm")
-        self._btn_ver_update.setStyleSheet(f"padding: 3px 10px; font-size: {config.FS(9)}pt;")
+        self._btn_ver_update.setStyleSheet("padding: 3px 10px; font-size: 9pt;")
         self._btn_ver_update.setCursor(Qt.PointingHandCursor)
         self._btn_ver_update.hide()
         ver_row.addWidget(lbl_ver_key)
@@ -5313,7 +5325,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         )
         self.tgl_auto_check_updates.setToolTip(self.txt("tt_auto_check_updates"))
         lbl_notify = QLabel(self.txt("lbl_auto_check_updates"))
-        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.BASE_FONT_PT}pt; background: transparent; border: none;")
+        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
         lbl_notify.setToolTip(self.txt("tt_auto_check_updates"))
         tgl_notify_row.addWidget(self.tgl_auto_check_updates)
         tgl_notify_row.addWidget(lbl_notify)
@@ -5329,7 +5341,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         )
         self.tgl_auto_update_on_start.setToolTip(self.txt("tt_auto_update_on_start"))
         lbl_autoupd = QLabel(self.txt("lbl_auto_update_on_start"))
-        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.BASE_FONT_PT}pt; background: transparent; border: none;")
+        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
         lbl_autoupd.setToolTip(self.txt("tt_auto_update_on_start"))
         tgl_autoupd_row.addWidget(self.tgl_auto_update_on_start)
         tgl_autoupd_row.addWidget(lbl_autoupd)
@@ -5354,7 +5366,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             if pending and pending == latest_ver:
                 self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
                 self._lbl_ver_status.setStyleSheet(
-                    "color: #f4a641; font-size: {config.FS(9)}pt; font-weight: bold; background: transparent; border: none;"
+                    "color: #f4a641; font-size: 9pt; font-weight: bold; background: transparent; border: none;"
                 )
                 self._btn_ver_update.hide()
                 return
@@ -5364,7 +5376,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 f"{self.txt('lbl_ver_update_avail')} {latest_ver}"
             )
             self._lbl_ver_status.setStyleSheet(
-                "color: #f4a641; font-size: {config.FS(9)}pt; background: transparent; border: none;"
+                "color: #f4a641; font-size: 9pt; background: transparent; border: none;"
             )
             self._btn_ver_update.show()
 
@@ -5381,7 +5393,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_updating'))
                 self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_wait'))
                 self._lbl_ver_status.setStyleSheet(
-                    "color: #888; font-size: {config.FS(9)}pt; font-style: italic; background: transparent; border: none;"
+                    "color: #888; font-size: 9pt; font-style: italic; background: transparent; border: none;"
                 )
 
                 # Signal bridge: safe cross-thread UI update
@@ -5394,14 +5406,14 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                         log_info("[Updater] Card update succeeded.")
                         self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_success'))
                         self._lbl_ver_status.setStyleSheet(
-                            "color: #39ff7a; font-size: {config.FS(9)}pt; background: transparent; border: none;"
+                            "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
                         )
                         self._btn_ver_update.hide()
                     else:
                         log_error(f"[Updater] Card update failed: {err}")
                         self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_failed'))
                         self._lbl_ver_status.setStyleSheet(
-                            "color: #ed4245; font-size: {config.FS(9)}pt; background: transparent; border: none;"
+                            "color: #ed4245; font-size: 9pt; background: transparent; border: none;"
                         )
                         self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_win_btn'))
                         self._btn_ver_update.setEnabled(True)
@@ -5493,7 +5505,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             if self._lbl_ver_status.text() == "…":
                 self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
                 self._lbl_ver_status.setStyleSheet(
-                    "color: #39ff7a; font-size: {config.FS(9)}pt; background: transparent; border: none;"
+                    "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
                 )
 
         _thr = UpdateCheckThread(config.VERSION, parent=self)
@@ -6082,7 +6094,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
             # Initial prompt label + QTextEdit
             lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
-            lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt; background: transparent;")
+            lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
             l_ai.addWidget(lbl_prompt)
             l_ai.addSpacing(4)
 
@@ -6098,7 +6110,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                     border-radius: 3px;
                     padding: 6px 8px;
                     font-family: {config.UI_FONT_NAME};
-                    font-size: {config.BASE_FONT_PT}pt;
+                    font-size: 10pt;
                 }}
             """)
             l_ai.addWidget(self.textedit_prompt)
@@ -6288,7 +6300,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
         # Info label
         lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
         lbl_telem_info.setWordWrap(True)
-        lbl_telem_info.setStyleSheet(f"color: #AAAAAA; font-size: {config.FS(9)}pt;")
+        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
         l_telem.addWidget(lbl_telem_info)
 
         form_telem = QFormLayout()
@@ -6377,7 +6389,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             QLabel {{
                 color: {config.FG_COLOR};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
                 background: transparent;
             }}
             QPushButton {{
@@ -6386,7 +6398,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
                 border: 1px solid #3a3a3a;
                 border-radius: 3px;
                 padding: 2px 8px;
-                font-size: {config.FS(9)}pt;
+                font-size: 9pt;
                 min-height: 22px;
             }}
             QPushButton:hover {{
@@ -6414,7 +6426,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
             # Color dot indicator
             dot = QLabel("●")
-            dot.setStyleSheet(f"color: {hex_col}; font-size: {config.FS(14)}pt; background: transparent;")
+            dot.setStyleSheet(f"color: {hex_col}; font-size: 14pt; background: transparent;")
             dot.setFixedWidth(20)
             row_layout.addWidget(dot)
 
@@ -6424,7 +6436,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             row_layout.addWidget(lbl_name, 1)
 
             lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
-            lbl_color.setStyleSheet(f"color: #666666; font-size: {config.FS(9)}pt; background: transparent;")
+            lbl_color.setStyleSheet(f"color: #666666; font-size: 9pt; background: transparent;")
             row_layout.addWidget(lbl_color)
 
             # Edit button
@@ -7161,7 +7173,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.BASE_FONT_PT}pt;
+                font-size: 10pt;
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{
@@ -7321,7 +7333,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # Restore pinned favorites
         for fav_id in prefs.get('favorites', []):
             if fav_id in self._pin_buttons:
-                self._pin_buttons[fav_id].setStyleSheet(f"QPushButton { background: transparent; border: none; color: #eebb00; font-size: {config.FS(11)}pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
+                self._pin_buttons[fav_id].setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
                 self._pin_buttons[fav_id].click()
 
     def resizeEvent(self, event):
@@ -7630,7 +7642,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.btn_analyze_compare = QPushButton(self.txt("btn_analyze_compare"))
         self.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_analyze_compare.setFixedHeight(35)
-        self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: {config.FS(12)}pt; border: none; border-radius: 4px; padding: 10px;")
+        self.btn_analyze_compare.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 12pt; border: none; border-radius: 4px; padding: 10px;")
         l_script_analysis.addWidget(self.btn_analyze_compare)
         
         self._analyze_color_anim = QVariantAnimation(self)
@@ -7684,7 +7696,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         )
         _sil_rst_style = (
             "QPushButton { background: transparent; border: 1px solid #444; "
-            "border-radius: 3px; color: #777; font-size: {config.BASE_FONT_PT}pt; } "
+            "border-radius: 3px; color: #777; font-size: 10pt; } "
             "QPushButton:hover { color: #ccc; border-color: #666; }"
         )
 
@@ -7791,7 +7803,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         filler_tools_layout.setContentsMargins(0, 2, 0, 0)
         
         self.lbl_filler_count = QLabel(self.txt("lbl_words"))
-        self.lbl_filler_count.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt;")
+        self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
         filler_tools_layout.addWidget(self.lbl_filler_count)
         
         filler_tools_layout.addStretch()
@@ -7841,7 +7853,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.btn_clear_transcript.setFixedSize(26, 26)
         self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
         self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_clear_transcript.setStyleSheet(f"background: transparent; border: none; font-size: {config.FS(12)}pt; padding: 2px;")
+        self.btn_clear_transcript.setStyleSheet("background: transparent; border: none; font-size: 12pt; padding: 2px;")
         self.btn_clear_transcript.clicked.connect(self._on_clear_transcript)
         row_marking_title.addWidget(self.btn_clear_transcript)
         l_main.addLayout(row_marking_title)
@@ -7861,7 +7873,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         
         # Favorites section
         self.lbl_pinned_favorites = QLabel(self.txt("lbl_pinned_favorites"))
-        self.lbl_pinned_favorites.setStyleSheet(f"color: #888888; font-size: {config.FS(8)}pt; font-weight: bold; text-transform: uppercase;")
+        self.lbl_pinned_favorites.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
         self.lbl_pinned_favorites.setVisible(False)  # Hidden until at least one favorite is pinned
         l_main.addWidget(self.lbl_pinned_favorites)
         
@@ -7902,7 +7914,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             btn = QPushButton("★")
             btn.setFixedSize(20, 20)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"QPushButton { background: transparent; border: none; color: #555555; font-size: {config.FS(11)}pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
             self._pin_buttons[fav_id] = btn
             return btn
         
@@ -8142,10 +8154,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.lbl_filler_count.setText(f"{count} / 150 {self.txt('lbl_words')}")
         
         if count > 150:
-            self.lbl_filler_count.setStyleSheet(f"color: #ed4245; font-size: {config.FS(9)}pt; font-weight: bold;")
+            self.lbl_filler_count.setStyleSheet("color: #ed4245; font-size: 9pt; font-weight: bold;")
             self.btn_save_fillers.setEnabled(False)
         else:
-            self.lbl_filler_count.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt;")
+            self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
             self.btn_save_fillers.setEnabled(True)
 
     def _get_clean_words_data(self):
@@ -8709,7 +8721,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             proxy_row = entry['row_widget']
             self.layout_favorites.removeWidget(proxy_row)
             proxy_row.deleteLater()
-            pin_btn.setStyleSheet(f"QPushButton { background: transparent; border: none; color: #555555; font-size: {config.FS(11)}pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
             # Persist removal
             prefs = self.engine.load_preferences() or {}
             favs = prefs.get('favorites', [])
@@ -8731,7 +8743,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             row_layout.addStretch()
 
             proxy_toggle = ToggleSwitch()
-            pin_btn.setStyleSheet(f"QPushButton { background: transparent; border: none; color: #eebb00; font-size: {config.FS(11)}pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
             proxy_toggle.setChecked(source_toggle.isChecked(), animated=False)
             row_layout.addWidget(proxy_toggle)
 
@@ -8752,7 +8764,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
                 'prx_conn': prx_conn,
                 'src_conn': src_conn,
             }
-            pin_btn.setStyleSheet(f"QPushButton { background: transparent; border: none; color: #f0b429; font-size: {config.FS(11)}pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
             # Persist addition
             prefs = self.engine.load_preferences() or {}
             favs = prefs.get('favorites', [])
@@ -8966,7 +8978,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         lbl_title.setStyleSheet(f"""
             QLabel#welcome_title {{
                 color: #ffffff;
-                font-size: {config.FS(34)}pt;
+                font-size: 34pt;
                 font-weight: 900;
                 font-family: {config.UI_FONT_NAME};
                 background: transparent;
@@ -8990,7 +9002,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             row.setSpacing(3)
             lbl = QLabel(label_text)
             lbl.setStyleSheet(
-                f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
+                f"color: {config.NOTE_COL}; font-size: 9pt;"
                 f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
             )
             row.addWidget(lbl)
@@ -9008,7 +9020,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         lbl_sub.setAlignment(Qt.AlignCenter)
         lbl_sub.setFixedHeight(20)
         lbl_sub.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: {config.BASE_FONT_PT}pt;"
+            f"color: {config.NOTE_COL}; font-size: 10pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         l_trans.addWidget(lbl_sub)
@@ -9024,7 +9036,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _vbox_tl0.setSpacing(3)
         _lbl_tl0 = QLabel(self.txt("lbl_timeline_selection"))
         _lbl_tl0.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         _hbox_tl0 = QHBoxLayout()
@@ -9037,7 +9049,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _btn_ref_tl0.setToolTip(self.txt("tt_refresh_timelines"))
         _btn_ref_tl0.setStyleSheet(
             "QPushButton { background: transparent; border: 1px solid #444; "
-            "border-radius: 3px; color: #777; font-size: {config.FS(11)}pt; } "
+            "border-radius: 3px; color: #777; font-size: 11pt; } "
             "QPushButton:hover { color: #ccc; border-color: #666; }"
         )
         _btn_ref_tl0.clicked.connect(self._populate_timeline_track_combos)
@@ -9090,7 +9102,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         btn_import.setStyleSheet(f"""
             QPushButton#btn_ghost {{
                 background-color: #1e1e1e; color: {config.FG_COLOR};
-                font-family: {config.UI_FONT_NAME}; font-size: {config.BASE_FONT_PT}pt;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt;
                 border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
             }}
             QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
@@ -9106,7 +9118,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         btn_analyze.setStyleSheet(f"""
             QPushButton#btn_primary {{
                 background-color: {config.BTN_BG}; color: #ffffff;
-                font-family: {config.UI_FONT_NAME}; font-size: {config.BASE_FONT_PT}pt; font-weight: bold;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
                 border: none; border-radius: 3px; padding: 0 18px;
             }}
             QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
@@ -9122,7 +9134,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         btn_switch_fast.setCursor(Qt.PointingHandCursor)
         btn_switch_fast.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-            " font-size: {config.FS(9)}pt; text-decoration: underline; border: none; padding: 0;"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0;"
         )
         btn_switch_fast.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(1))
         l_trans.addWidget(btn_switch_fast, 0, Qt.AlignCenter)
@@ -9144,7 +9156,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         lbl_fs_title.setAlignment(Qt.AlignCenter)
         lbl_fs_title.setFixedHeight(20)
         lbl_fs_title.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: {config.BASE_FONT_PT}pt;"
+            f"color: {config.NOTE_COL}; font-size: 10pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         l_fast.addWidget(lbl_fs_title)
@@ -9160,7 +9172,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _vbox_tl1.setSpacing(3)
         _lbl_tl1 = QLabel(self.txt("lbl_timeline_selection"))
         _lbl_tl1.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         _hbox_tl1 = QHBoxLayout()
@@ -9173,7 +9185,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         _btn_ref_tl1.setToolTip(self.txt("tt_refresh_timelines"))
         _btn_ref_tl1.setStyleSheet(
             "QPushButton { background: transparent; border: 1px solid #444; "
-            "border-radius: 3px; color: #777; font-size: {config.FS(11)}pt; } "
+            "border-radius: 3px; color: #777; font-size: 11pt; } "
             "QPushButton:hover { color: #ccc; border-color: #666; }"
         )
         _btn_ref_tl1.clicked.connect(self._populate_timeline_track_combos)
@@ -9206,7 +9218,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             vbox.setSpacing(3)
             lbl = QLabel(label_text)
             lbl.setStyleSheet(
-                f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
+                f"color: {config.NOTE_COL}; font-size: 9pt;"
                 f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
             )
             vbox.addWidget(lbl)
@@ -9221,7 +9233,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             rst.setCursor(Qt.PointingHandCursor)
             rst.setStyleSheet(
                 "QPushButton { background: transparent; border: 1px solid #444; "
-                "border-radius: 3px; color: #777; font-size: {config.BASE_FONT_PT}pt; } "
+                "border-radius: 3px; color: #777; font-size: 10pt; } "
                 "QPushButton:hover { color: #ccc; border-color: #666; }"
             )
             rst.clicked.connect(lambda: widget.setText(reset_val_str))
@@ -9260,7 +9272,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # MODE TOGGLES (Mutually Exclusive)
         row_fs_cut = QHBoxLayout()
         lbl_fs_cut = QLabel(self.txt("lbl_cut_silence_directly"))
-        lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.BASE_FONT_PT}pt; background: transparent;")
+        lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
         row_fs_cut.addWidget(lbl_fs_cut)
         row_fs_cut.addStretch()
         self.tgl_fs_cut = ToggleSwitch()
@@ -9271,7 +9283,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         row_fs_mark = QHBoxLayout()
         lbl_fs_mark = QLabel(self.txt("lbl_mark_silence_with_color"))
-        lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.BASE_FONT_PT}pt; background: transparent;")
+        lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
         row_fs_mark.addWidget(lbl_fs_mark)
         row_fs_mark.addStretch()
         self.tgl_fs_mark = ToggleSwitch()
@@ -9294,7 +9306,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         btn_back.setCursor(Qt.PointingHandCursor)
         btn_back.setStyleSheet(
             f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-            " font-size: {config.FS(9)}pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
         )
         btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
         btn_row_fs.addWidget(btn_back)
@@ -9307,7 +9319,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.btn_run_fs.setStyleSheet(f'''
             QPushButton {{
                 background-color: {config.BTN_BG}; color: #ffffff;
-                font-family: {config.UI_FONT_NAME}; font-size: {config.BASE_FONT_PT}pt; font-weight: bold;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
                 border: none; border-radius: 3px; padding: 0 18px;
             }}
             QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
@@ -9343,7 +9355,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.lbl_processing_status = QLabel(self.txt("lbl_initializing"), page)
         self.lbl_processing_status.setAlignment(Qt.AlignCenter)
         self.lbl_processing_status.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: {config.FS(13)}pt;"
+            f"color: {config.NOTE_COL}; font-size: 13pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         layout.addWidget(self.lbl_processing_status)
@@ -9659,7 +9671,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             rb.setStyleSheet(f"""
                 QRadioButton {{
                     color: {color};
-                    font-size: {config.FS(11)}pt;
+                    font-size: 11pt;
                     font-weight: bold;
                     background: transparent;
                     padding: 2px 5px;
@@ -9701,7 +9713,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         rb_eraser.setProperty("status_id", "eraser")
         rb_eraser.setStyleSheet("""
             QRadioButton {
-                color: #aaaaaa; font-size: {config.FS(11)}pt; font-weight: bold;
+                color: #aaaaaa; font-size: 11pt; font-weight: bold;
                 background: transparent;
                 padding: 2px 5px;
             }
