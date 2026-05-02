@@ -2873,8 +2873,6 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         self.frameless_init(is_popup=True)
         # WindowModal blocks only the parent — avoids ApplicationModal event-queue
         # pileup where pending main-window signals fire all at once after exec() returns.
-        # WindowStaysOnTopHint is redundant with a modal dialog and can cause DWM issues.
-        self.setWindowFlags(self.windowFlags() | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setWindowModality(Qt.WindowModal)
         self.setWindowIcon(_app_icon())
@@ -2949,19 +2947,12 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
                 width: 14px;
         """)
 
-        # --- Outer wrapper (transparent, holds shadow) ---
+        # --- Outer wrapper ---
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(1, 1, 1, 1)
 
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
-        shadow.setColor(QColor(0, 0, 0, 160))
-        shadow.setOffset(0, 4)
-        self.inner_frame.setGraphicsEffect(shadow)
 
         main_layout.addWidget(self.inner_frame)
 
@@ -3014,12 +3005,16 @@ class TelemetryPopup(FramelessWindowMixin, QDialog):
         # Geo Toggle
         geo_layout = QHBoxLayout()
         geo_layout.setContentsMargins(0, 0, 0, 0)
-        self._lbl_geo = QLabel("", container)
-        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 11pt; background: transparent;")
+        
         self._chk_geo = ToggleSwitch(container)
         self._chk_geo.setChecked(True, animated=False)
-        geo_layout.addWidget(self._lbl_geo)
+        
+        self._lbl_geo = QLabel("", container)
+        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 11pt; background: transparent;")
+        
         geo_layout.addWidget(self._chk_geo)
+        geo_layout.addSpacing(10)
+        geo_layout.addWidget(self._lbl_geo)
         geo_layout.addStretch()
         content_layout.addLayout(geo_layout)
         content_layout.addSpacing(20)
@@ -9075,16 +9070,16 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # ── Model
         model_items = [
-            "Tiny  (Fast, <1 GB)",
-            "Base  (Balanced, 1 GB)",
-            "Small  (Good, 2 GB)",
-            "Medium  (5 GB)",
-            "Large Turbo  (Fast & Precise, 6 GB)",
-            "Large  (Accurate, 10 GB)",
+            "Tiny (I wouldn't | <1 GB)",
+            "Base (Dogshit | ~1 GB)",
+            "Small (Bearable | ~2 GB)",
+            "Medium (If you have to | ~5 GB)",
+            "Large Turbo (Okayish | ~6 GB)",
+            "Large (Recommended | ~10 GB)",
         ]
         self._combo_model = CustomDropdown(model_items)
         self._combo_model.setFixedHeight(30)
-        self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[4])
+        self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[5])
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         l_trans.addLayout(_row(self.txt("lbl_model"), self._combo_model))
         l_trans.addSpacing(24)
