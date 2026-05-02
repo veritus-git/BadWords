@@ -44,7 +44,7 @@ def get_system_font_name():
     return "Noto Sans"
 
 UI_FONT_NAME = get_system_font_name()
-BASE_FONT_PT = 13 if platform.system() == "Darwin" else 10
+BASE_FONT_PT = 10
 
 # ==========================================
 # ANALYSIS PARAMETERS
