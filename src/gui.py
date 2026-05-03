@@ -3261,8 +3261,35 @@ class SidebarButton(QPushButton):
         super().__init__()
         if parent:
             self.setParent(parent)
-        self.setText(icon_text)
+        
         self.activity_id = activity_id
+        
+        image_name = ""
+        if activity_id == "script_analysis":
+            image_name = "script.png"
+        elif activity_id == "silence":
+            image_name = "silence.png"
+        elif activity_id == "fillers":
+            image_name = "fillers.png"
+        elif activity_id == "main_panel":
+            image_name = "main.png"
+        elif activity_id == "assembly":
+            image_name = "assembly.png"
+        elif activity_id == "settings":
+            image_name = "settings.png"
+            
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        
+        icon_path = os.path.join(_assets_dir, image_name) if image_name else ""
+        
+        if icon_path and os.path.exists(icon_path):
+            self.setIcon(QIcon(icon_path))
+            self.setIconSize(QSize(24, 24))
+        else:
+            self.setText(icon_text)
         self.setFixedSize(40, 40)
         self.setCursor(Qt.PointingHandCursor)
         self.custom_tooltip_text = label_text
@@ -9097,10 +9124,10 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         # ── Model
         model_items = [
             "Tiny (I wouldn't, <1 GB)",
-            "Base (Dogshit, ~1 GB)",
+            "Base (Dogsh!t, ~1 GB)",
             "Small (Bearable, ~2 GB)",
-            "Medium (Best Balance, ~5 GB)",
-            "Large Turbo (Okayish, ~6 GB)",
+            "Medium (Okayish, ~5 GB)",
+            "Large Turbo (Best Balance, ~6 GB)",
             "Large (Recommended, ~10 GB)",
         ]
         self._combo_model = CustomDropdown(model_items)
@@ -9118,8 +9145,17 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         lbl_ultra = QLabel(self.txt("lbl_ultra_precise"))
         lbl_ultra.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 10pt;")
         
-        info_ultra = QLabel("🛈")
-        info_ultra.setStyleSheet("color: #888888; font-size: 11pt;")
+        info_ultra = QLabel()
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        info_icon_path = os.path.join(_assets_dir, "information.png")
+        if os.path.exists(info_icon_path):
+            info_ultra.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            info_ultra.setText("🛈")
+            info_ultra.setStyleSheet("color: #888888; font-size: 11pt;")
         # Wrap text in div to force word wrapping and prevent clipping, save to custom attribute
         tt_text = self.txt("tt_ultra_precise")
         info_ultra.custom_tooltip_text = f"<div style='max-width: 300px; white-space: pre-wrap;'>{tt_text}</div>"
