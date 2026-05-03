@@ -141,7 +141,12 @@ def getch():
     else:
         import tty, termios, select
         fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
+        try:
+            old = termios.tcgetattr(fd)
+        except (termios.error, OSError):
+            # stdin is not a TTY (pipe, subshell, CI, etc.) — fallback to plain readline
+            line = sys.stdin.readline()
+            return line[0] if line else "ESC"
         try:
             tty.setraw(fd)
             ch = sys.stdin.read(1)
@@ -155,7 +160,8 @@ def getch():
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 def readline_with_esc(show_cursor=True):
-    """Read a line character-by-character. ESC/Ctrl+C cancels → raises UserCancelled."""
+    """Read a line character-by-character. ESC/Ctrl+C cancels → raises UserCancelled.
+    On Windows, Ctrl+V pastes from the clipboard."""
     if os.name == "nt":
         import msvcrt
         buf = []
@@ -171,6 +177,27 @@ def readline_with_esc(show_cursor=True):
                     buf.pop()
                     sys.stdout.write("\b \b"); sys.stdout.flush()
                 continue
+            # Ctrl+V — paste from Windows clipboard
+            if ch == b"\x16":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.OpenClipboard(0)
+                    hData = ctypes.windll.user32.GetClipboardData(13)  # CF_UNICODETEXT
+                    pData = ctypes.windll.kernel32.GlobalLock(hData)
+                    raw_paste = ctypes.wstring_at(pData)
+                    ctypes.windll.kernel32.GlobalUnlock(hData)
+                    ctypes.windll.user32.CloseClipboard()
+                    # Only paste printable chars, strip newlines
+                    for c in raw_paste:
+                        if c in ("\r", "\n"):
+                            break
+                        if c.isprintable():
+                            buf.append(c)
+                            sys.stdout.write(c)
+                    sys.stdout.flush()
+                except Exception:
+                    pass
+                continue
             try:
                 c = ch.decode("utf-8")
                 if c.isprintable():
@@ -181,7 +208,14 @@ def readline_with_esc(show_cursor=True):
     else:
         import tty, termios, select
         fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
+        try:
+            old = termios.tcgetattr(fd)
+        except (termios.error, OSError):
+            # stdin is not a TTY — fallback to plain input()
+            try:
+                return input()
+            except (EOFError, KeyboardInterrupt):
+                raise UserCancelled()
         buf = []
         try:
             tty.setraw(fd)
@@ -1269,7 +1303,12 @@ def option_move():
 
     new_path = os.path.expanduser(raw.strip())
     if not new_path.endswith(APP_NAME):
-        new_path = os.path.join(new_path.rstrip("/\\"), APP_NAME)
+        base = new_path.rstrip("/\\")
+        # On Windows, bare drive letters like "G:" need a trailing sep
+        # otherwise os.path.join("G:", "BadWords") → "G:BadWords" (relative!)
+        if os.name == "nt" and len(base) == 2 and base[1] == ":":
+            base = base + "\\"
+        new_path = os.path.join(base, APP_NAME)
 
     if os.path.abspath(install_dir) == os.path.abspath(new_path):
         console.print()
@@ -1398,6 +1437,17 @@ def option_move():
             sp_swap.done(ok=True)
             log_ok("All packages transplanted — no downloads needed.")
             transplanted = True
+            # On Windows, PySide6 DLLs have path-sensitive internal references
+            # that break when moved between drives/directories. Force-reinstall
+            # only PySide6 (small) to get correct DLL paths — PyTorch stays cached.
+            if os.name == "nt":
+                sp_ps = Spinner("Fixing PySide6 DLL paths (Windows)").start()
+                r = subprocess.run(
+                    [venv_py, "-m", "pip", "install", "--force-reinstall", "PySide6", "-q"],
+                    capture_output=True, text=True)
+                sp_ps.done(ok=r.returncode == 0)
+                if r.returncode != 0:
+                    log_warn("PySide6 re-install failed — app may not start correctly.")
         except Exception as e:
             sp_swap.done(ok=False)
             log_warn(f"Transplant failed: {e}")
