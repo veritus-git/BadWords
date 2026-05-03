@@ -1204,6 +1204,8 @@ except Exception as e:
             if not ultra_precise_mode:
                 islands = None
             
+            update_status(self.txt("status_whisper_init"))
+            
             # Note: Bar remains indeterminate (from status_whisper_init above) until runner emits first progress
             json_path = self.run_whisper(
                 target_wav, model, lang, True, device_mode, fw_compute,
