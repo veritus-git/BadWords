@@ -1088,6 +1088,7 @@ class SearchOverlayWidget(QFrame):
         
         self.search_input.textChanged.connect(self._on_text_changed)
         self.search_input.returnPressed.connect(self._on_enter_pressed)
+        self.search_input.installEventFilter(self)
         
         self.btn_prev.clicked.connect(self.prev_match)
         self.btn_next.clicked.connect(self.next_match)
@@ -1104,9 +1105,16 @@ class SearchOverlayWidget(QFrame):
         QTimer.singleShot(0, self._reposition)
 
     def eventFilter(self, obj, event):
-        from PySide6.QtCore import QEvent
+        from PySide6.QtCore import QEvent, Qt
         if obj == self.parentWidget() and event.type() == QEvent.Resize:
             self._reposition()
+        elif obj == self.search_input and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Up:
+                self.prev_match()
+                return True
+            elif event.key() == Qt.Key_Down:
+                self.next_match()
+                return True
         return super().eventFilter(obj, event)
 
     def _on_text_changed(self, text):
@@ -2780,7 +2788,7 @@ class _LangPickerDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setFixedWidth(180)
 
@@ -2800,7 +2808,7 @@ class _LangPickerDialog(QDialog):
             QListWidget::item {{
                 padding: 5px 8px;
             }}
-            QListWidget::item:focus { border: none; outline: none; }
+            QListWidget::item:focus {{ border: none; outline: none; }}
             QListWidget::item:hover, QListWidget::item:selected {{
                 background-color: #4a4e56;
                 color: #ffffff;
@@ -3702,9 +3710,9 @@ class CustomDropdown(QPushButton):
         list_widget.setStyleSheet("""
             QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
             QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
-            QListWidget::item:selected { background-color: #2a5f8f; }
+            QListWidget::item:selected { background-color: #333333; color: #ffffff; }
             QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #333333; }
+            QListWidget::item:hover { background-color: #333333; color: #ffffff; }
         """)
         list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
         
@@ -3988,9 +3996,9 @@ class SearchableDropdown(QPushButton):
         self.list_widget.setStyleSheet("""
             QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
             QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
-            QListWidget::item:selected { background-color: #2a5f8f; }
+            QListWidget::item:selected { background-color: #333333; color: #ffffff; }
             QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #333333; }
+            QListWidget::item:hover { background-color: #333333; color: #ffffff; }
         """)
         self.list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, self.popup))
         
@@ -4002,10 +4010,14 @@ class SearchableDropdown(QPushButton):
             QLineEdit {
                 border: none; border-bottom: 1px solid #3a3a3a; padding: 6px;
                 color: #d4d4d4; background: transparent;
+                outline: none;
+            }
+            QLineEdit:focus {
+                border-bottom: 1px solid #555555;
             }
         """)
         self.line_edit.textChanged.connect(self._on_text_changed)
-        self.line_edit.returnPressed.connect(lambda: self._select_first_visible(self.popup))
+        self.line_edit.installEventFilter(self)
         layout.addWidget(self.line_edit)
         
         layout.addWidget(self.list_widget)
@@ -4021,16 +4033,58 @@ class SearchableDropdown(QPushButton):
     def _on_text_changed(self, text):
         search_str = text.lower()
         visible_count = 0
+        first_visible = None
         
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             if search_str in item.text().lower():
                 item.setHidden(False)
                 visible_count += 1
+                if not first_visible:
+                    first_visible = item
             else:
                 item.setHidden(True)
                 
+        if first_visible:
+            self.list_widget.setCurrentItem(first_visible)
+                
         self._update_height(visible_count, is_searching=bool(text.strip()))
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent, Qt
+        if obj == self.line_edit and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Up:
+                self._move_selection(-1)
+                return True
+            elif event.key() == Qt.Key_Down:
+                self._move_selection(1)
+                return True
+            elif event.key() in (Qt.Key_Enter, Qt.Key_Return):
+                self._select_current_visible(self.popup)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _move_selection(self, step):
+        visible_items = [self.list_widget.item(i) for i in range(self.list_widget.count()) if not self.list_widget.item(i).isHidden()]
+        if not visible_items:
+            return
+        
+        current = self.list_widget.currentItem()
+        if current in visible_items:
+            idx = visible_items.index(current)
+            new_idx = max(0, min(len(visible_items) - 1, idx + step))
+            self.list_widget.setCurrentItem(visible_items[new_idx])
+        else:
+            self.list_widget.setCurrentItem(visible_items[0])
+
+    def _select_current_visible(self, popup):
+        current = self.list_widget.currentItem()
+        if current and not current.isHidden():
+            self.setText(current.text())
+            self.valueChanged.emit(current.text())
+            popup.close()
+            return
+        self._select_first_visible(popup)
 
     def _update_height(self, visible_count, is_searching):
         row_h = 26
@@ -5907,7 +5961,7 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         # Font family, size, line height
         from PySide6.QtGui import QFontDatabase
-        self.combo_font = CustomDropdown(QFontDatabase.families())
+        self.combo_font = SearchableDropdown(QFontDatabase.families())
         self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
 
         self.spin_fsize = QSpinBox()
