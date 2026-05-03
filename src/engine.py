@@ -453,9 +453,9 @@ try:
             condition_on_previous_text=False,
             vad_filter={repr(prefs.get('ai_vad_filter', False))},
             temperature={repr(prefs.get('ai_temperature', 0.0))},
-            no_speech_threshold={repr(prefs.get('ai_no_speech_threshold', 0.2))},
+            no_speech_threshold={0.6 if islands is not None else repr(prefs.get('ai_no_speech_threshold', 0.2))},
             log_prob_threshold={repr(prefs.get('ai_logprob_threshold', -1.0))},
-            compression_ratio_threshold={repr(prefs.get('ai_compression_ratio_threshold', 10.0))},
+            compression_ratio_threshold={2.4 if islands is not None else repr(prefs.get('ai_compression_ratio_threshold', 10.0))},
             no_repeat_ngram_size={repr(prefs.get('ai_no_repeat_ngram_size', 0))},
             regroup={repr(prefs.get('ai_regroup', False))},
             suppress_silence={repr(prefs.get('ai_suppress_silence', False))},
@@ -1222,45 +1222,48 @@ except Exception as e:
         def clean_word(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
         def clean_for_match(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
 
-        # --- PASS 1: EXTRACT & COMPRESS HALLUCINATIONS ---
+        # --- PASS 1: N-GRAM HALLUCINATION COMPRESSOR ---
+        # Detects and compresses perfectly repeating consecutive phrases (from 1 to 15 words)
+        # into a single tile e.g. "I went to the store [x30]"
         all_raw_words = []
         for seg in json_data.get('segments', []):
             for w in seg.get('words', []):
                 all_raw_words.append(w)
-                
-        compressed_words = []
+
         if all_raw_words:
-            current_group = [all_raw_words[0]]
-            for i in range(1, len(all_raw_words)):
-                w = all_raw_words[i]
-                prev_w = current_group[-1]
-                w_clean = clean_for_match(w['word'])
-                prev_clean = clean_for_match(prev_w['word'])
-                
-                # Check if words are identical and not empty punctuation
-                if w_clean and w_clean == prev_clean:
-                    current_group.append(w)
-                else:
-                    if len(current_group) >= 5:
-                        merged = current_group[0].copy()
-                        merged['end'] = current_group[-1]['end']
-                        merged['word'] = f"{merged['word'].strip()} [x{len(current_group)}]"
+            for n in range(1, 16):
+                i = 0
+                while i <= len(all_raw_words) - n * 2:
+                    ngram = [clean_for_match(w['word']) for w in all_raw_words[i:i+n]]
+                    if not any(ngram): 
+                        i += 1
+                        continue
+                    
+                    repeats = 1
+                    curr_idx = i + n
+                    while curr_idx <= len(all_raw_words) - n:
+                        next_ngram = [clean_for_match(w['word']) for w in all_raw_words[curr_idx:curr_idx+n]]
+                        if next_ngram == ngram:
+                            repeats += 1
+                            curr_idx += n
+                        else:
+                            break
+                            
+                    threshold = 4 if n > 1 else 5
+                    if repeats >= threshold:
+                        merged_word_text = " ".join(w['word'].strip() for w in all_raw_words[i : i+n])
+                        
+                        merged = all_raw_words[i].copy()
+                        merged['word'] = f"{merged_word_text} [x{repeats}]"
+                        merged['end'] = all_raw_words[curr_idx - 1]['end']
                         merged['_is_hallucination'] = True
-                        compressed_words.append(merged)
-                    else:
-                        compressed_words.extend(current_group)
-                    current_group = [w]
-            
-            # Process the last group left in memory
-            if current_group:
-                if len(current_group) >= 5:
-                    merged = current_group[0].copy()
-                    merged['end'] = current_group[-1]['end']
-                    merged['word'] = f"{merged['word'].strip()} [x{len(current_group)}]"
-                    merged['_is_hallucination'] = True
-                    compressed_words.append(merged)
-                else:
-                    compressed_words.extend(current_group)
+                        
+                        # Replace the entire repeating sequence with the single compressed dictionary
+                        all_raw_words[i : curr_idx] = [merged]
+                    
+                    i += 1
+
+        compressed_words = all_raw_words
 
         # --- PASS 2: SMART CHUNKING (Z LOOKAHEAD) ---
         c_max = int(prefs.get('chunk_max_words', 30))
@@ -1464,6 +1467,17 @@ except Exception as e:
                         })
 
                 final_words.append(curr_w)
+
+        # Identify start noise
+        first_good_found = False
+        for w in final_words:
+            if w.get('type') == 'silence':
+                continue
+            if w.get('status') in ['bad', 'inaudible']:
+                if not first_good_found:
+                    w['is_hidden_start'] = True
+            else:
+                first_good_found = True
 
         for i, w in enumerate(final_words): w['id'] = i
         if final_words:
