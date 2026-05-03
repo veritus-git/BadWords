@@ -3652,6 +3652,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Update failed. Please try again or update manually.',
         'update_notify_btn_later':   'Remind me later',
         'update_notify_btn_dismiss': "Don't notify me again",
+        'lbl_ultra_precise': "Ultra Precise Mode (Chunking)",
+        'tt_ultra_precise': "This option GREATLY improves transcription precision even on weaker models, but takes NOTICEABLY MORE TIME.",
     },
     'pl': {
         'lbl_auto_check_updates':    'Powiadamiaj o nowych wersjach',
@@ -3676,6 +3678,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Aktualizacja nie powiodła się. Spróbuj ponownie.',
         'update_notify_btn_later':   'Przypomnij później',
         'update_notify_btn_dismiss': 'Nie powiadamiaj mnie ponownie',
+        'lbl_ultra_precise': "Tryb Ultra Precyzyjny (Chunking)",
+        'tt_ultra_precise': "Ta opcja BARDZO ulepsza precyzję transkrypcji nawet na gorszych modelach, ale zajmuje ZAUWAŻALNIE WIĘCEJ CZASU.",
     },
     'de': {
         'lbl_auto_check_updates':    'Über neue Versionen benachrichtigen',
@@ -3700,6 +3704,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Update fehlgeschlagen. Bitte erneut versuchen.',
         'update_notify_btn_later':   'Später erinnern',
         'update_notify_btn_dismiss': 'Nicht mehr benachrichtigen',
+        'lbl_ultra_precise': "Ultra Präziser Modus (Chunking)",
+        'tt_ultra_precise': "Diese Option VERBESSERT die Transkriptionspräzision auch auf schwächeren Modellen ERHEBLICH, benötigt aber SPÜRBAR MEHR ZEIT.",
     },
     'es': {
         'lbl_auto_check_updates':    'Notificarme sobre nuevas versiones',
@@ -3724,6 +3730,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Actualización fallida. Por favor inténtalo de nuevo.',
         'update_notify_btn_later':   'Recordarme más tarde',
         'update_notify_btn_dismiss': 'No notificarme más',
+        'lbl_ultra_precise': "Modo Ultra Preciso (Chunking)",
+        'tt_ultra_precise': "Esta opción MEJORA ENORMEMENTE la precisión de la transcripción incluso en modelos más débiles, pero toma NOTABLEMENTE MÁS TIEMPO.",
     },
     'fr': {
         'lbl_auto_check_updates':    'Me notifier des nouvelles versions',
@@ -3749,6 +3757,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Échec de la mise à jour. Veuillez réessayer.',
         'update_notify_btn_later':   'Me rappeler plus tard',
         'update_notify_btn_dismiss': 'Ne plus me notifier',
+        'lbl_ultra_precise': "Mode Ultra Précis (Chunking)",
+        'tt_ultra_precise': "Cette option AMÉLIORE GRANDEMENT la précision de la transcription même sur des modèles plus faibles, mais prend NETTEMENT PLUS DE TEMPS.",
     },
     'it': {
         'lbl_auto_check_updates':    'Notificami delle nuove versioni',
@@ -3773,6 +3783,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Aggiornamento fallito. Riprova.',
         'update_notify_btn_later':   'Ricordamelo più tardi',
         'update_notify_btn_dismiss': 'Non notificarmi più',
+        'lbl_ultra_precise': "Modalità Ultra Precisa (Chunking)",
+        'tt_ultra_precise': "Questa opzione MIGLIORA NOTEVOLMENTE la precisione della trascrizione anche su modelli più deboli, ma richiede NOTEVOLMENTE PIÙ TEMPO.",
     },
     'pt': {
         'lbl_auto_check_updates':    'Notificar-me sobre novas versões',
@@ -3797,6 +3809,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Atualização falhou. Por favor tente novamente.',
         'update_notify_btn_later':   'Lembrar mais tarde',
         'update_notify_btn_dismiss': 'Não me notificar mais',
+        'lbl_ultra_precise': "Modo Ultra Preciso (Chunking)",
+        'tt_ultra_precise': "Esta opção MELHORA IMENSAMENTE a precisão da transcrição mesmo em modelos mais fracos, mas leva NOTAVELMENTE MAIS TEMPO.",
     },
     'uk': {
         'lbl_auto_check_updates':    'Сповіщати про нові версії',
@@ -3821,6 +3835,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Оновлення не вдалося. Спробуйте ще раз.',
         'update_notify_btn_later':   'Нагадати пізніше',
         'update_notify_btn_dismiss': 'Більше не сповіщати',
+        'lbl_ultra_precise': "Ультраточний режим (Чанкінг)",
+        'tt_ultra_precise': "Ця опція ЗНАЧНО покращує точність транскрипції навіть на слабких моделях, але займає ПОМІТНО БІЛЬШЕ ЧАСУ.",
     },
     'nl': {
         'lbl_auto_check_updates':    'Mij informeren over nieuwe versies',
@@ -3845,6 +3861,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Update mislukt. Probeer het opnieuw.',
         'update_notify_btn_later':   'Herinner me later',
         'update_notify_btn_dismiss': 'Niet meer melden',
+        'lbl_ultra_precise': "Ultra Precieze Modus (Chunking)",
+        'tt_ultra_precise': "Deze optie VERBETERT de transcriptieprecisie aanzienlijk, zelfs op zwakkere modellen, maar neemt MERKBAAR MEER TIJD in beslag.",
     },
     'ru': {
         'lbl_auto_check_updates':    'Уведомлять о новых версиях',
@@ -3869,6 +3887,8 @@ _UPDATE_I18N = {
         'update_notify_failed':      'Обновление не удалось. Попробуйте ещё раз.',
         'update_notify_btn_later':   'Напомнить позже',
         'update_notify_btn_dismiss': 'Больше не уведомлять',
+        'lbl_ultra_precise': "Ультраточный режим (Чанкинг)",
+        'tt_ultra_precise': "Эта опция ЗНАЧИТЕЛЬНО улучшает точность транскрипции даже на слабых моделях, но занимает ЗАМЕТНО БОЛЬШЕ ВРЕМЕНИ.",
     },
 }
 for _lang_code, _upd_keys in _UPDATE_I18N.items():
