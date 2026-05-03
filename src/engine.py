@@ -186,32 +186,43 @@ class AudioEngine:
     # 0. SMART COMPUTE DETECTION
     # ==========================================
 
-    def _get_optimal_compute_type(self):
+    def _get_optimal_compute_type(self, device="cpu"):
         """
-        Sprawdza wersję Compute Capability karty NVIDIA bez użycia PyTorch.
-        Zwraca: "float16", "float32" lub "int8"
+        3-LEVEL SMART COMPUTE DETECTION:
+          CPU (any):         → int8   (safest, universal)
+          GPU cc < 7.0:      → int8_float32  (Pascal/Maxwell: GTX 9xx/10xx)
+          GPU cc >= 7.0:     → int8_float16  (Volta/Turing/Ampere+: RTX 2xxx+)
+
+        NOTE: This is only called when ai_compute_type == 'Auto'.
+        If the user explicitly sets float16 or float32, that value is used
+        directly without calling this function.
         """
+        if device != "cuda":
+            return "int8"
         try:
             result = subprocess.run(
                 ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
-                capture_output=True, 
+                capture_output=True,
                 text=True,
                 encoding='utf-8',
                 errors='replace',
                 **self.os_doc.get_subprocess_kwargs()
             )
             output = result.stdout.strip()
-            if not output: return "int8"
-                
-            first_gpu_cap = output.split('\n')[0]
+            if not output:
+                return "int8_float32"  # fallback for GPU with unknown cap
+
+            first_gpu_cap = output.split('\n')[0].strip()
             if '.' in first_gpu_cap:
-                major, minor = first_gpu_cap.split('.')
+                major, _minor = first_gpu_cap.split('.', 1)
                 major = int(major)
-                # Generacja 7 (Volta/Turing - RTX 20xx) i nowsze -> float16
-                if major >= 7: return "float16"
-                else: return "float32"
-            return "float32" 
-        except (FileNotFoundError, ValueError, Exception):
+                if major >= 7:
+                    return "int8_float16"   # RTX 2000+ (Volta/Turing/Ampere/Ada)
+                else:
+                    return "int8_float32"   # GTX 900/1000 (Maxwell/Pascal)
+            return "int8_float32"
+        except (FileNotFoundError, ValueError, Exception) as e:
+            log_info(f"[ComputeDetect] nvidia-smi failed ({e}); falling back to int8")
             return "int8"
 
     def verify_hardware_compute(self, device_pref: str, compute_pref: str) -> bool:
@@ -753,6 +764,111 @@ except Exception as e:
             log_error(f"Slow Motion Generation Failed: {e}")
             return input_path
 
+    def _extract_audio_direct(self, source_info, output_wav_path, callback_status=None):
+        """
+        Extracts and concatenates audio directly from source file(s) using FFmpeg,
+        bypassing DaVinci Resolve render. The source file is NEVER modified —
+        we write to output_wav_path (a temp file).
+
+        NOTE: Resolve clip effects (EQ, gain, normalisation) are intentionally
+        NOT applied here. Raw source audio is better for Whisper transcription
+        accuracy, as Resolve processing may introduce compression artefacts that
+        confuse VAD and silence detection.
+
+        Supports:
+          single_uncut            → simple -ss / -t trim
+          single_source_multicopy → filter_complex atrim+concat per clip
+
+        Returns True on success, False on failure.
+        """
+        mode        = source_info.get("mode")
+        source_file = source_info.get("source_file")
+        clips       = source_info.get("clips", [])  # [{src_in_s, duration_s}, ...]
+
+        if not source_file or not clips:
+            log_error("_extract_audio_direct: missing source_file or clips.")
+            return False
+
+        if callback_status:
+            callback_status(self.txt("status_direct_source"))
+
+        try:
+            if mode == "single_uncut":
+                # ── Single uncut clip: direct trim ────────────────────────────
+                c   = clips[0]
+                in_s  = c["src_in_s"]
+                dur_s = c["duration_s"]
+                log_info(f"[DirectAudio] single_uncut: in={in_s:.3f}s dur={dur_s:.3f}s")
+
+                cmd = [
+                    self.ffmpeg_cmd, "-y",
+                    "-ss", str(in_s),
+                    "-t",  str(dur_s),
+                    "-i",  source_file,
+                    "-vn",
+                    "-ar", "48000",
+                    "-ac", "1",
+                    output_wav_path,
+                ]
+
+            else:
+                # ── Multi-clip concat via filter_complex atrim ────────────────
+                log_info(f"[DirectAudio] single_source_multicopy: {len(clips)} clips")
+
+                # Build filter_complex:
+                # [0:a]atrim=start=IN:end=END,asetpts=PTS-STARTPTS[s0];
+                # [0:a]atrim=start=IN:end=END,asetpts=PTS-STARTPTS[s1];
+                # [s0][s1]concat=n=N:v=0:a=1[out]
+                filter_parts = []
+                concat_inputs = ""
+                for idx, c in enumerate(clips):
+                    in_s  = c["src_in_s"]
+                    end_s = in_s + c["duration_s"]
+                    filter_parts.append(
+                        f"[0:a]atrim=start={in_s:.6f}:end={end_s:.6f},"
+                        f"asetpts=PTS-STARTPTS[s{idx}]"
+                    )
+                    concat_inputs += f"[s{idx}]"
+
+                n = len(clips)
+                filter_parts.append(f"{concat_inputs}concat=n={n}:v=0:a=1[out]")
+                filter_complex = ";".join(filter_parts)
+
+                cmd = [
+                    self.ffmpeg_cmd, "-y",
+                    "-i",  source_file,
+                    "-filter_complex", filter_complex,
+                    "-map", "[out]",
+                    "-ar", "48000",
+                    "-ac", "1",
+                    output_wav_path,
+                ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                **self.os_doc.get_subprocess_kwargs()
+            )
+
+            if result.returncode != 0:
+                log_error(f"[DirectAudio] FFmpeg failed (rc={result.returncode}): {result.stderr[-400:]}")
+                return False
+
+            if not os.path.exists(output_wav_path) or os.path.getsize(output_wav_path) == 0:
+                log_error("[DirectAudio] Output WAV is missing or empty.")
+                return False
+
+            log_info(f"[DirectAudio] Success → {output_wav_path}")
+            return True
+
+        except Exception as e:
+            log_error(f"[DirectAudio] Exception: {e}")
+            return False
+
     def detect_silence(self, audio_path, threshold_db, min_dur):
         cmd = [self.ffmpeg_cmd, "-i", audio_path, "-af", 
                f"silencedetect=noise={threshold_db}dB:d={min_dur}", "-f", "null", "-"]
@@ -933,12 +1049,43 @@ except Exception as e:
                     end_frame_override = int(round(end_seconds * fps))
                     log_info(f"transcribe_audio: render end_frame_override={end_frame_override} ({end_seconds:.2f}s)")
 
-            wav_path = self.resolve_handler.render_audio(
-                unique_id, temp_dir,
-                timeline_name=settings.get('timeline_name'),
-                track_indices=track_indices_for_render,
-                end_frame_override=end_frame_override,
+            # ── Try Direct Audio first (skip Resolve render when possible) ───
+            tl_name_for_direct = settings.get('timeline_name') or (
+                self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
             )
+            direct_info = None
+            if tl_name_for_direct:
+                try:
+                    direct_info = self.resolve_handler.get_direct_audio_info(
+                        tl_name_for_direct, track_indices_for_render
+                    )
+                except Exception as _di_err:
+                    log_info(f"[DirectAudio] Inspection error (harmless, using render): {_di_err}")
+
+            wav_path = None
+            if direct_info:
+                # Build unique output path for the direct-extracted WAV
+                _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
+                ok_direct = self._extract_audio_direct(
+                    direct_info, _direct_wav,
+                    callback_status=update_status,
+                )
+                if ok_direct:
+                    wav_path = _direct_wav
+                    log_info(f"[DirectAudio] Using direct source audio ({direct_info['mode']})")
+                else:
+                    log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
+
+            if not wav_path:
+                update_status(self.txt("status_render"))
+                update_progress(-1)  # Indeterminate infinite progress bar
+
+                wav_path = self.resolve_handler.render_audio(
+                    unique_id, temp_dir,
+                    timeline_name=settings.get('timeline_name'),
+                    track_indices=track_indices_for_render,
+                    end_frame_override=end_frame_override,
+                )
             if not wav_path:
                 log_error("Fast Silence: render failed.")
                 return None, None
@@ -1084,20 +1231,24 @@ except Exception as e:
             # Store so GUI-triggered compare calls can reuse them
             self._last_algo_settings = algo_settings
 
-            fw_compute = "int8"
+            fw_compute = "int8"  # universal CPU fallback
             if "GPU" in device_mode:
-                if saved_compute and saved_compute.lower() != "auto":
+                fw_device_str = "cuda"
+                if saved_compute and saved_compute.lower() not in ("auto", ""):
+                    # User explicitly chose float16 or float32 — respect it unconditionally
                     fw_compute = saved_compute
-                    log_info(f"Compute Type (user setting): {fw_compute}")
+                    log_info(f"[Compute] User override (GPU): {fw_compute}")
                 else:
-                    fw_compute = self._get_optimal_compute_type()
-                    log_info(f"Auto-Detected Compute Type: {fw_compute}")
+                    fw_compute = self._get_optimal_compute_type(device="cuda")
+                    log_info(f"[Compute] Auto-detected (GPU cc-based): {fw_compute}")
             else:
-                if saved_compute and saved_compute.lower() != "auto":
+                fw_device_str = "cpu"
+                if saved_compute and saved_compute.lower() not in ("auto", ""):
                     fw_compute = saved_compute
-                    log_info(f"Compute Type (user setting, CPU): {fw_compute}")
+                    log_info(f"[Compute] User override (CPU): {fw_compute}")
                 else:
-                    log_info(f"Using standard CPU compute: {fw_compute}")
+                    fw_compute = "int8"
+                    log_info(f"[Compute] Auto (CPU): {fw_compute}")
 
             filler_words = settings.get('filler_words', [])
             fps = self.resolve_handler.fps
@@ -1126,12 +1277,43 @@ except Exception as e:
                     end_frame_override_tx = int(round(_end_s * _fps))
                     log_info(f"transcribe_audio: render end_frame_override={end_frame_override_tx} ({_end_s:.2f}s)")
 
-            wav_path = self.resolve_handler.render_audio(
-                unique_id, temp_dir,
-                timeline_name=settings.get('timeline_name'),
-                track_indices=track_indices_for_render,
-                end_frame_override=end_frame_override_tx,
+            # ── Try Direct Audio first (skip Resolve render when possible) ───
+            tl_name_for_direct = settings.get('timeline_name') or (
+                self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
             )
+            direct_info = None
+            if tl_name_for_direct:
+                try:
+                    direct_info = self.resolve_handler.get_direct_audio_info(
+                        tl_name_for_direct, track_indices_for_render
+                    )
+                except Exception as _di_err:
+                    log_info(f"[DirectAudio] Inspection error (harmless, using render): {_di_err}")
+
+            wav_path = None
+            if direct_info:
+                _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
+                ok_direct = self._extract_audio_direct(
+                    direct_info, _direct_wav,
+                    callback_status=update_status,
+                )
+                if ok_direct:
+                    wav_path = _direct_wav
+                    log_info(f"[DirectAudio] Using direct source audio ({direct_info['mode']})")
+                    update_progress(40)
+                else:
+                    log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
+
+            if not wav_path:
+                update_status(self.txt("status_render"))
+                update_progress(-1)  # Indeterminate infinite progress bar
+
+                wav_path = self.resolve_handler.render_audio(
+                    unique_id, temp_dir,
+                    timeline_name=settings.get('timeline_name'),
+                    track_indices=track_indices_for_render,
+                    end_frame_override=end_frame_override_tx,
+                )
             if not wav_path:
                 log_error("Render failed.")
                 return None, None

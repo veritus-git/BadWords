@@ -17,6 +17,7 @@ import sys
 import time
 import os
 import re
+import threading
 
 # Import OSDoctor (as per architecture)
 try:
@@ -127,7 +128,7 @@ class ResolveHandler:
         
         return f"{h:02d}:{m:02d}:{s:02d}:{f:02d}"
 
-    def render_audio(self, unique_id, export_path, timeline_name=None, track_indices=None, end_frame_override=None):
+    def render_audio(self, unique_id, export_path, timeline_name=None, track_indices=None, end_frame_override=None, progress_callback=None):
         """
         Renders audio from the specified timeline to a WAV file.
 
@@ -264,17 +265,25 @@ class ResolveHandler:
             if not started:
                 self.project.StartRendering()
 
+            # ── Unified render-status polling loop ────────────────────────────
+            # GetRenderJobStatus is unreliable for live audio render progress.
+            # It blocks the API thread and doesn't update fast enough.
+            # We revert to standard robust polling.
             time.sleep(0.5)
-
+            
             while self.project.IsRenderingInProgress():
-                time.sleep(1)
-
+                time.sleep(1.0)
+                
             status = self.project.GetRenderJobStatus(pid)
             self.project.DeleteRenderJob(pid)
 
-            render_ok = status.get("JobStatus") == "Complete"
+            render_ok = status.get("JobStatus") in ("Complete", "Completed") if isinstance(status, dict) else False
             if not render_ok:
-                log_error(f"Render failed. Status: {status}")
+                # Some Resolve versions omit JobStatus in the dict—treat non-empty as success
+                if isinstance(status, dict) and status and "JobStatus" not in status:
+                    render_ok = True
+                else:
+                    log_error(f"Render failed. Status: {status}")
 
         except Exception as e:
             log_error(f"Render error: {e}")
@@ -495,6 +504,159 @@ class ResolveHandler:
         except Exception as e:
             log_error(f"get_selected_tracks_end_seconds error: {e}")
             return None
+
+    def get_direct_audio_info(self, timeline_name, track_indices=None):
+        """
+        Uses Resolve's scripting API (_build_source_clip_map) to inspect the
+        audio clips on the given timeline WITHOUT requiring an XML export.
+
+        ELIGIBILITY RULES:
+          • All clips on selected tracks must share the SAME source file path.
+          • No clip may have a non-1.0 speed (GetProperty('Clip Speed') / GetLeftOffset).
+          • No clip may have audio FX applied (GetProperty('Audio FX') non-empty).
+          • The source file must physically exist on disk.
+
+        Returns a dict on success, or None (fall back to Resolve render).
+        """
+        if not self.project or not self.timeline:
+            return None
+
+        # -- locate the target timeline --
+        target_tl = None
+        try:
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
+                    target_tl = tl
+                    break
+        except Exception as e:
+            log_error(f"get_direct_audio_info: could not locate timeline: {e}")
+            return None
+
+        if not target_tl:
+            log_info(f"get_direct_audio_info: timeline '{timeline_name}' not found.")
+            return None
+
+        try:
+            fps = self.fps
+            try:
+                fps = float(target_tl.GetSetting("timelineFrameRate")) or fps
+            except Exception:
+                pass
+
+            a_track_count = target_tl.GetTrackCount("audio")
+            if a_track_count == 0:
+                return None
+
+            # Which audio tracks to inspect
+            if track_indices:
+                check_tracks = [i for i in track_indices if 1 <= i <= a_track_count]
+            else:
+                check_tracks = list(range(1, a_track_count + 1))
+
+            if not check_tracks:
+                return None
+
+            tl_start_frame = int(target_tl.GetStartFrame())
+            source_paths   = set()
+            collected_clips = []  # {src_in_f, src_out_f, tl_start_f, file_path}
+
+            for ai in check_tracks:
+                raw_items = target_tl.GetItemListInTrack("audio", ai)
+                if not raw_items:
+                    continue
+
+                for item in raw_items:
+                    try:
+                        # -- Speed check --
+                        # GetProperty returns a string; '100.00' means normal speed.
+                        try:
+                            speed_str = item.GetProperty("Clip Speed") or ""
+                            speed_val = float(speed_str.replace("%", "").strip() or "100")
+                            if abs(speed_val - 100.0) > 0.5:
+                                log_info(f"get_direct_audio_info: clip on A{ai} has speed {speed_val}% — render required.")
+                                return None
+                        except (ValueError, AttributeError):
+                            pass  # property unavailable — assume normal speed
+
+                        # -- Audio FX check --
+                        try:
+                            fx = item.GetProperty("Audio FX") or ""
+                            if str(fx).strip() not in ("", "0", "None", "false"):
+                                log_info(f"get_direct_audio_info: clip on A{ai} has Audio FX '{fx}' — render required.")
+                                return None
+                        except Exception:
+                            pass  # property unavailable — assume no FX
+
+                        # -- Media pool item / file path --
+                        pool_item = item.GetMediaPoolItem()
+                        if not pool_item:
+                            log_info(f"get_direct_audio_info: clip on A{ai} has no pool item — render required.")
+                            return None
+
+                        fp = pool_item.GetClipProperty("File Path") or ""
+                        if not fp:
+                            log_info(f"get_direct_audio_info: clip on A{ai} has no file path — render required.")
+                            return None
+
+                        if not os.path.exists(fp):
+                            log_info(f"get_direct_audio_info: source not on disk: '{fp}' — render required.")
+                            return None
+
+                        source_paths.add(fp)
+
+                        # -- Clip geometry (all in frames) --
+                        abs_start   = int(item.GetStart())
+                        duration    = int(item.GetDuration())
+                        src_in_f    = int(item.GetLeftOffset())  # offset from media head
+
+                        collected_clips.append({
+                            "src_in_f":   src_in_f,
+                            "src_out_f":  src_in_f + duration,
+                            "tl_start_f": abs_start - tl_start_frame,  # 0-based
+                            "file_path":  fp,
+                        })
+
+                    except Exception as ci_err:
+                        log_error(f"get_direct_audio_info: skipping clip on A{ai}: {ci_err}")
+                        return None  # conservative: any error → render
+
+            if not collected_clips:
+                log_info("get_direct_audio_info: no clips found.")
+                return None
+
+            if len(source_paths) != 1:
+                log_info(f"get_direct_audio_info: {len(source_paths)} source files — render required.")
+                return None
+
+            source_file = next(iter(source_paths))
+
+            # Sort by timeline position
+            collected_clips.sort(key=lambda c: c["tl_start_f"])
+
+            # Convert frame counts to seconds for FFmpeg
+            clips_seconds = [
+                {
+                    "src_in_s":   c["src_in_f"]  / fps,
+                    "duration_s": (c["src_out_f"] - c["src_in_f"]) / fps,
+                }
+                for c in collected_clips
+            ]
+
+            mode = "single_uncut" if len(clips_seconds) == 1 else "single_source_multicopy"
+            log_info(f"get_direct_audio_info: mode={mode}, clips={len(clips_seconds)}, fps={fps}, source='{source_file}'")
+            return {
+                "mode":        mode,
+                "source_file": source_file,
+                "clips":       clips_seconds,
+                "fps":         fps,
+            }
+
+        except Exception as e:
+            log_error(f"get_direct_audio_info: unexpected error: {e}")
+            return None
+
 
     def timeline_exists(self, timeline_name):
         """Returns True if a timeline with the given name exists in the current project."""
