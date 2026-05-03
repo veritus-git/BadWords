@@ -421,7 +421,52 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
 try:
     import stable_whisper
     from faster_whisper.audio import decode_audio
-    ISLANDS = {repr(islands)}
+    
+    RAW_ISLANDS = {repr(islands)}
+    MAX_CLUSTER_DUR = 22.0
+    MIN_CLUSTER_DUR = 8.0
+    MIN_SAFE_GAP = 0.5
+    ISLANDS = []
+    
+    if RAW_ISLANDS:
+        i = 0
+        while i < len(RAW_ISLANDS):
+            c_start = RAW_ISLANDS[i][0]
+            
+            J = []
+            for j in range(i, len(RAW_ISLANDS)):
+                if RAW_ISLANDS[j][1] - c_start <= MAX_CLUSTER_DUR:
+                    J.append(j)
+                else:
+                    break
+                    
+            if not J:
+                J = [i]
+                
+            if J[-1] == len(RAW_ISLANDS) - 1:
+                best_j = J[-1]
+            else:
+                optimal = []
+                safe = []
+                for j in J:
+                    gap = RAW_ISLANDS[j+1][0] - RAW_ISLANDS[j][1]
+                    dur = RAW_ISLANDS[j][1] - c_start
+                    if gap >= MIN_SAFE_GAP:
+                        safe.append(j)
+                        if dur >= MIN_CLUSTER_DUR:
+                            optimal.append(j)
+                            
+                if optimal:
+                    best_j = max(optimal, key=lambda j: RAW_ISLANDS[j+1][0] - RAW_ISLANDS[j][1])
+                elif safe:
+                    best_j = max(safe, key=lambda j: RAW_ISLANDS[j+1][0] - RAW_ISLANDS[j][1])
+                else:
+                    best_j = max(J, key=lambda j: RAW_ISLANDS[j+1][0] - RAW_ISLANDS[j][1])
+                    
+            c_end = RAW_ISLANDS[best_j][1]
+            ISLANDS.append((c_start, c_end))
+            i = best_j + 1
+        
     model_size     = {repr(model)}
     target_device  = {repr(fw_device)}
     target_compute = {repr(compute_type)}
@@ -436,6 +481,7 @@ try:
     print(f"[Chunked] {{total_chunks}} islands to process.")
     print("CHUNK_PROGRESS: 0")
     output_segments = []
+    
     for chunk_idx, (island_start, island_end) in enumerate(ISLANDS):
         s_idx = int(island_start * 16000)
         e_idx = int(island_end   * 16000)
@@ -444,6 +490,7 @@ try:
             print(f"CHUNK_PROGRESS: {{int((chunk_idx+1)/total_chunks*100)}}")
             continue
         print(f"[Chunked] Island {{chunk_idx+1}}/{{total_chunks}}: {{island_start:.2f}}s—{{island_end:.2f}}s")
+        
         chunk_result = model.transcribe(
             chunk,
             beam_size={repr(prefs.get('ai_beam_size', 1))},
@@ -481,6 +528,7 @@ try:
                         }})
                 output_segments.append(seg_obj)
                 print(f"Segment processed: {{seg.start + island_start:.2f}}s")
+                
         print(f"CHUNK_PROGRESS: {{int((chunk_idx+1)/total_chunks*100)}}")
     final_data = {{"segments": output_segments, "language": {repr(lang)}}}
     with open({repr(json_output_path)}, "w", encoding="utf-8") as f:
