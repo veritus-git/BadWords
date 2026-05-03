@@ -641,6 +641,8 @@ SUPPORTED_LANGS = {
 }
 TRANS = {
     'en': {
+        "lbl_hidden_start": "Start of audio detected as inaudible, skipped.",
+        "btn_show_anyway": "show it anyway",
         "chk_sync_davinci": "Sync DaVinci Timeline on Chapter Switch",
         "tt_refresh_timelines": "Refresh Timelines",
         "tt_reset_to_default": "Reset to Default",
@@ -937,6 +939,8 @@ TRANS = {
         "tt_timestamp_precise": "Show full millisecond precision in segment timestamps (e.g. [01:07.986] instead of [01:08]).",
     },
     'pl': {
+        "lbl_hidden_start": "Początek audio oznaczony jako niezrozumiały, pominięto.",
+        "btn_show_anyway": "pokaż mimo to",
         "chk_sync_davinci": "Synchronizuj oś czasu DaVinci przy zmianie edycji",
         "tt_refresh_timelines": "Odśwież Oś Czasu",
         "tt_reset_to_default": "Resetuj do Domyślnych",
@@ -1232,6 +1236,8 @@ TRANS = {
         "tt_timestamp_precise": "Pokazuje pełną precyzję milisekundową w znacznikach czasu (np. [01:07.986] zamiast [01:08]).",
     },
     'de': {
+        "lbl_hidden_start": "Anfang des Audios als unverständlich erkannt, übersprungen.",
+        "btn_show_anyway": "trotzdem anzeigen",
         "chk_sync_davinci": "DaVinci Timeline bei Editionswechsel synchronisieren",
         "tt_refresh_timelines": "Timelines aktualisieren",
         "tt_reset_to_default": "Auf Standard zurücksetzen",
@@ -1527,6 +1533,8 @@ TRANS = {
         "tt_timestamp_precise": "Zeigt Millisekunden-Genauigkeit in Segment-Zeitstempeln (z.B. [01:07.986] statt [01:08]).",
     },
     'es': {
+        "lbl_hidden_start": "Inicio del audio detectado como inaudible, omitido.",
+        "btn_show_anyway": "mostrar de todos modos",
         "chk_sync_davinci": "Sincronizar línea de tiempo de DaVinci al cambiar de edición",
         "tt_refresh_timelines": "Actualizar líneas de tiempo",
         "tt_reset_to_default": "Restablecer por defecto",
@@ -1821,6 +1829,8 @@ TRANS = {
         "tt_timestamp_precise": "Muestra la precisión completa en milisegundos en las marcas de tiempo (p. ej. [01:07.986] en lugar de [01:08]).",
     },
     'fr': {
+        "lbl_hidden_start": "Début de l'audio détecté comme inaudible, ignoré.",
+        "btn_show_anyway": "afficher quand même",
         "chk_sync_davinci": "Synchroniser la timeline DaVinci lors du changement d'édition",
         "tt_refresh_timelines": "Rafraîchir les timelines",
         "tt_reset_to_default": "Réinitialiser par défaut",
@@ -2116,6 +2126,8 @@ TRANS = {
         "tt_timestamp_precise": "Affiche la précision en millisecondes dans les horodatages de segments (ex. [01:07.986] au lieu de [01:08]).",
     },
     'it': {
+        "lbl_hidden_start": "Inizio dell'audio rilevato come inaudibile, saltato.",
+        "btn_show_anyway": "mostra comunque",
         "chk_sync_davinci": "Sincronizza timeline DaVinci al cambio di edizione",
         "tt_refresh_timelines": "Aggiorna le timeline",
         "tt_reset_to_default": "Ripristina impostazioni predefinite",
@@ -2411,6 +2423,8 @@ TRANS = {
         "tt_timestamp_precise": "Mostra la precisione in millisecondi nei timestamp dei segmenti (es. [01:07.986] invece di [01:08]).",
     },
     'pt': {
+        "lbl_hidden_start": "Início do áudio detectado como inaudível, ignorado.",
+        "btn_show_anyway": "mostrar mesmo assim",
         "chk_sync_davinci": "Sincronizar linha do tempo DaVinci ao mudar de edição",
         "tt_refresh_timelines": "Atualizar linhas do tempo",
         "tt_reset_to_default": "Restaurar padrões",
@@ -2706,6 +2720,8 @@ TRANS = {
         "tt_timestamp_precise": "Exibe precisão total em milissegundos nos timestamps dos segmentos (ex. [01:07.986] em vez de [01:08]).",
     },
     'uk': {
+        "lbl_hidden_start": "Початок аудіо розпізнано як нерозбірливий, пропущено.",
+        "btn_show_anyway": "все одно показати",
         "chk_sync_davinci": "Синхронізувати таймлайн DaVinci при зміні редакції",
         "tt_refresh_timelines": "Оновити таймлайни",
         "tt_reset_to_default": "Скинути до замовчувань",
@@ -3001,6 +3017,8 @@ TRANS = {
         "tt_timestamp_precise": "Показує повну точність у мілісекундах у мітках часу сегментів (напр. [01:07.986] замість [01:08]).",
     },
     'nl': {
+        "lbl_hidden_start": "Begin van audio gedetecteerd als onverstaanbaar, overgeslagen.",
+        "btn_show_anyway": "toch weergeven",
         "chk_sync_davinci": "DaVinci-tijdlijn synchroniseren bij het wisselen van bewerking",
         "tt_refresh_timelines": "Tijdlijnen vernieuwen",
         "tt_reset_to_default": "Herstellen naar standaard",
@@ -3296,6 +3314,8 @@ TRANS = {
         "tt_timestamp_precise": "Toont volledige millisecondeprecisie in segmenttijdstempels (bijv. [01:07.986] in plaats van [01:08]).",
     },
     'ru': {
+        "lbl_hidden_start": "Начало аудио распознано как неразборчивое, пропущено.",
+        "btn_show_anyway": "все равно показать",
         "chk_sync_davinci": "Синхронизировать таймлайн DaVinci при смене редакции",
         "tt_refresh_timelines": "Обновить таймлайны",
         "tt_reset_to_default": "Сбросить по умолчанию",

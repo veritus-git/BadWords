@@ -1505,9 +1505,15 @@ class TranscriptionCanvas(QWidget):
         
         vis = []
         previous_was_inaudible = False
+        force_segment_start = False
 
         for w in self.words_data:
             if w.get('type') == 'silence':
+                continue
+                
+            if w.get('is_hidden_start') and not getattr(self.main_window, 'show_hidden_start', False):
+                if w.get('is_segment_start'):
+                    force_segment_start = True
                 continue
                 
             is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
@@ -1515,6 +1521,8 @@ class TranscriptionCanvas(QWidget):
             if is_inaudible:
                 # Hide if the user toggled inaudible off
                 if hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
+                    if w.get('is_segment_start'):
+                        force_segment_start = True
                     previous_was_inaudible = True
                     continue
                 # STAGE 9: Skip consecutive (...) clutter — show only the first of a run
@@ -1524,7 +1532,13 @@ class TranscriptionCanvas(QWidget):
             else:
                 previous_was_inaudible = False
 
-            vis.append(w)
+            if force_segment_start:
+                w_copy = w.copy()
+                w_copy['is_segment_start'] = True
+                vis.append(w_copy)
+                force_segment_start = False
+            else:
+                vis.append(w)
         return vis
 
     def _get_clip_rect(self):
@@ -9085,7 +9099,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             "Tiny (I wouldn't, <1 GB)",
             "Base (Dogshit, ~1 GB)",
             "Small (Bearable, ~2 GB)",
-            "Medium (If you have to, ~5 GB)",
+            "Medium (Best Balance, ~5 GB)",
             "Large Turbo (Okayish, ~6 GB)",
             "Large (Recommended, ~10 GB)",
         ]
@@ -9439,11 +9453,27 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setStyleSheet(f"QScrollArea {{ background-color: {config.BG_COLOR}; border: none; }}")
         
+        self.lbl_skipped_noise = QLabel()
+        self.lbl_skipped_noise.setStyleSheet("color: #444444; font-size: 9pt; padding: 10px;")
+        lbl_text = self.txt("lbl_hidden_start")
+        btn_text = self.txt("btn_show_anyway")
+        self.lbl_skipped_noise.setText(f'{lbl_text} <a href="show" style="color:#666666; text-decoration: underline;">[{btn_text}]</a>')
+        self.lbl_skipped_noise.linkActivated.connect(self._show_start_noise)
+        self.lbl_skipped_noise.hide()
+        layout.addWidget(self.lbl_skipped_noise)
+        
         self.text_canvas = TranscriptionCanvas(main_window=self)
         self.scroll_area.setWidget(self.text_canvas)
         layout.addWidget(self.scroll_area)
         
         return page
+
+    def _show_start_noise(self, link):
+        self.show_hidden_start = True
+        self.lbl_skipped_noise.hide()
+        if hasattr(self, 'text_canvas'):
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
 
     def _populate_editor(self, words_data, segments_data):
         import copy
@@ -9461,6 +9491,12 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._title_bar.update_dropdown_placement()
         
         if hasattr(self, 'text_canvas'):
+            self.show_hidden_start = False
+            has_hidden_start = any(w.get('is_hidden_start') for w in words_data)
+            if has_hidden_start:
+                self.lbl_skipped_noise.show()
+            else:
+                self.lbl_skipped_noise.hide()
             self.text_canvas.load_data(words_data)
 
     # ------------------------------------------------------------------
