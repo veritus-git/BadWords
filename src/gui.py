@@ -9094,6 +9094,38 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[5])
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         l_trans.addLayout(_row(self.txt("lbl_model"), self._combo_model))
+        l_trans.addSpacing(15)
+
+        # ── Ultra Precise Mode
+        self.tgl_ultra_precise = ToggleSwitch()
+        self.tgl_ultra_precise.setChecked(prefs.get('ai_ultra_precise', False))
+        self.tgl_ultra_precise.toggled.connect(lambda v: self.engine.save_preferences({"ai_ultra_precise": v}))
+        
+        lbl_ultra = QLabel(self.txt("lbl_ultra_precise"))
+        lbl_ultra.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 10pt;")
+        
+        info_ultra = QLabel("🛈")
+        info_ultra.setStyleSheet("color: #888888; font-size: 11pt;")
+        # Wrap text in div to force word wrapping and prevent clipping, save to custom attribute
+        tt_text = self.txt("tt_ultra_precise")
+        info_ultra.custom_tooltip_text = f"<div style='max-width: 300px; white-space: pre-wrap;'>{tt_text}</div>"
+        info_ultra.setCursor(Qt.WhatsThisCursor)
+        
+        # Make tooltip appear instantly on hover, using the custom IDE tooltip
+        def instant_tooltip(event):
+            if hasattr(self, 'shared_tooltip'):
+                self.shared_tooltip.show_global(info_ultra.custom_tooltip_text, QCursor.pos())
+        info_ultra.enterEvent = instant_tooltip
+        info_ultra.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
+        
+        row_ultra = QHBoxLayout()
+        row_ultra.setSpacing(12)  # Adds spacing between toggle and text
+        row_ultra.addWidget(self.tgl_ultra_precise)
+        row_ultra.addWidget(lbl_ultra)
+        row_ultra.addSpacing(-6)  # Bring the info icon a bit closer to text
+        row_ultra.addWidget(info_ultra)
+        row_ultra.addStretch()
+        l_trans.addLayout(row_ultra)
         l_trans.addSpacing(24)
 
         # ── Action buttons

@@ -356,7 +356,8 @@ except Exception as e:
         return os.path.exists(snapshots_dir) and len(os.listdir(snapshots_dir)) > 0
 
     def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type,
-                    filler_words_list=None, initial_prompt=None, progress_callback=None):
+                    filler_words_list=None, initial_prompt=None, progress_callback=None,
+                    islands=None):
         """
         Modified v11.0: Uses stable-ts (stable_whisper) with faster-whisper backend.
         FIXED v11.2: Injects portable bin path to OS PATH for sub-dependencies.
@@ -364,6 +365,7 @@ except Exception as e:
         STAGE 9: Enabled VAD filter (min_silence_duration_ms=400) + no_repeat_ngram_size=0 to kill hallucination loops.
         STAGE 6A: initial_prompt injected via repr() for safe quoting in generated script.
         UPDATED v13.0: initial_prompt is now per-language aware via config.get_whisper_prompt_for_lang().
+        UPDATED v14.0: True In-Memory Chunking via islands list (NumPy slicing, zero disk I/O).
         """
         unique_name = os.path.splitext(os.path.basename(audio_path))[0]
         output_dir = self.os_doc.get_temp_folder()
@@ -400,8 +402,98 @@ except Exception as e:
                 current_ld = env.get("LD_LIBRARY_PATH", "")
                 new_ld_paths = ":".join(nvidia_libs_paths)
                 env["LD_LIBRARY_PATH"] = f"{new_ld_paths}:{current_ld}"
-        
-        script_content = f"""
+
+        # ── Chunked mode: in-memory NumPy slicing ────────────────────────────
+        use_chunking = islands is not None and len(islands) > 1
+        if use_chunking:
+            log_info(f"[Chunked] {len(islands)} sound islands → in-memory NumPy slicing.")
+            script_content = f"""
+import sys, os, json, time
+import numpy as np
+
+os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["HF_HOME"] = {repr(self.models_dir)}
+libs_dir = {repr(self.libs_dir)}
+if os.path.exists(libs_dir) and libs_dir not in sys.path:
+    sys.path.insert(0, libs_dir)
+try:
+    import stable_whisper
+    from faster_whisper.audio import decode_audio
+    ISLANDS = {repr(islands)}
+    model_size     = {repr(model)}
+    target_device  = {repr(fw_device)}
+    target_compute = {repr(compute_type)}
+    print(f"[Chunked] Loading model {{model_size}} on {{target_device}} ({{target_compute}})...")
+    model = stable_whisper.load_faster_whisper(
+        model_size, device=target_device, compute_type=target_compute,
+        download_root={repr(self.models_dir)}
+    )
+    print("[Chunked] Model loaded. Decoding audio array...")
+    audio_array  = decode_audio({repr(audio_path)}, sampling_rate=16000)
+    total_chunks = len(ISLANDS)
+    print(f"[Chunked] {{total_chunks}} islands to process.")
+    print("CHUNK_PROGRESS: 0")
+    output_segments = []
+    for chunk_idx, (island_start, island_end) in enumerate(ISLANDS):
+        s_idx = int(island_start * 16000)
+        e_idx = int(island_end   * 16000)
+        chunk = audio_array[s_idx:e_idx]
+        if len(chunk) == 0:
+            print(f"CHUNK_PROGRESS: {{int((chunk_idx+1)/total_chunks*100)}}")
+            continue
+        print(f"[Chunked] Island {{chunk_idx+1}}/{{total_chunks}}: {{island_start:.2f}}s—{{island_end:.2f}}s")
+        chunk_result = model.transcribe(
+            chunk,
+            beam_size={repr(prefs.get('ai_beam_size', 1))},
+            patience={repr(prefs.get('ai_patience', 1.0))},
+            language={repr(lang) if lang != 'Auto' else 'None'},
+            initial_prompt={repr(initial_prompt_str)},
+            condition_on_previous_text=False,
+            vad_filter={repr(prefs.get('ai_vad_filter', False))},
+            temperature={repr(prefs.get('ai_temperature', 0.0))},
+            no_speech_threshold={repr(prefs.get('ai_no_speech_threshold', 0.2))},
+            log_prob_threshold={repr(prefs.get('ai_logprob_threshold', -1.0))},
+            compression_ratio_threshold={repr(prefs.get('ai_compression_ratio_threshold', 10.0))},
+            no_repeat_ngram_size={repr(prefs.get('ai_no_repeat_ngram_size', 0))},
+            regroup={repr(prefs.get('ai_regroup', False))},
+            suppress_silence={repr(prefs.get('ai_suppress_silence', False))},
+            q_levels={repr(prefs.get('ai_q_levels', 20))},
+            k_size={repr(prefs.get('ai_k_size', 5))},
+            verbose=False
+        )
+        if chunk_result.segments:
+            for seg in chunk_result.segments:
+                seg_obj = {{
+                    "start": seg.start + island_start,
+                    "end":   seg.end   + island_start,
+                    "text":  seg.text,
+                    "words": []
+                }}
+                if seg.words:
+                    for w in seg.words:
+                        seg_obj["words"].append({{
+                            "word":        w.word,
+                            "start":       w.start + island_start,
+                            "end":         w.end   + island_start,
+                            "probability": w.probability if hasattr(w, 'probability') else 1.0
+                        }})
+                output_segments.append(seg_obj)
+                print(f"Segment processed: {{seg.start + island_start:.2f}}s")
+        print(f"CHUNK_PROGRESS: {{int((chunk_idx+1)/total_chunks*100)}}")
+    final_data = {{"segments": output_segments, "language": {repr(lang)}}}
+    with open({repr(json_output_path)}, "w", encoding="utf-8") as f:
+        json.dump(final_data, f)
+    print("Transcription Done.")
+except Exception as e:
+    print(f"FW_ERROR: {{e}}")
+    import traceback; traceback.print_exc()
+    sys.exit(1)
+"""
+        else:
+            # ── Original single-file runner (unchanged) ──────────────────────
+            script_content = f"""
 import sys
 import os
 import json
@@ -525,13 +617,24 @@ except Exception as e:
             )
             
             segments_count = 0
-            spam_markers = ["Transcribe:", "Adjustment:", "Segment processed:"]
+            # Lines that are filtered from [RUNNER] log but still parsed for progress signals
+            spam_markers = [
+                "Transcribe:", "Adjustment:", "Segment processed:",
+                "CHUNK_PROGRESS:", "[Chunked]",
+                "Transcribing with faster-whisper",
+                "Detected language:", "Detected Language:",
+            ]
             for line in iter(process.stdout.readline, ''):
                 if any(marker in line for marker in spam_markers):
-                    match = re.search(r'Transcribe:\s*(\d+)%', line)
-                    if match and progress_callback:
-                        pct = int(match.group(1))
-                        progress_callback(pct)
+                    # Standard stable-ts % (only parse if not in chunked mode to prevent bouncing)
+                    if not use_chunking:
+                        match = re.search(r'Transcribe:\s*(\d+)%', line)
+                        if match and progress_callback:
+                            progress_callback(int(match.group(1)))
+                    # Chunked mode % — checked unconditionally inside the filtered block
+                    chunk_match = re.search(r'CHUNK_PROGRESS:\s*(\d+)', line)
+                    if chunk_match and progress_callback:
+                        progress_callback(int(chunk_match.group(1)))
                     if "Segment processed:" in line:
                         segments_count += 1
                 else:
@@ -620,6 +723,92 @@ except Exception as e:
         except Exception as e:
             log_error(f"Silence Detection Error: {e}")
             return []
+
+    def _get_audio_duration(self, wav_path):
+        """Return audio duration in seconds via ffprobe."""
+        try:
+            ffprobe = self.ffmpeg_cmd.replace("ffmpeg", "ffprobe")
+            cmd = [ffprobe, "-v", "error", "-show_entries", "format=duration",
+                   "-of", "default=noprint_wrappers=1:nokey=1", wav_path]
+            res = subprocess.run(cmd, capture_output=True, text=True,
+                                 **self.os_doc.get_subprocess_kwargs())
+            return float(res.stdout.strip())
+        except Exception:
+            return 9999.0
+
+    def _compute_sound_islands(self, silence_ranges, total_duration,
+                               min_island_dur=0.3, pad_fixed=0.25, pad_threshold=0.5):
+        """
+        Convert silence_ranges into smart-padded sound islands for chunked transcription.
+
+        Steps:
+          1. Invert silences  →  raw islands [(start, end), ...]
+          2. Merge islands shorter than min_island_dur with their nearest neighbour
+          3. Smart Padding: eat into surrounding silence
+               gap >= pad_threshold  →  each side += pad_fixed
+               gap <  pad_threshold  →  each side += gap / 2  (never overlap!)
+          4. Clip to [0, total_duration] and return list of (start, end) tuples.
+
+        All timings are in the same time-domain as silence_ranges (slow-WAV time).
+        """
+        if not silence_ranges:
+            return [(0.0, total_duration)]
+
+        # Step 1: invert silences → raw islands
+        raw = []
+        prev_end = 0.0
+        for s in sorted(silence_ranges, key=lambda x: x['s']):
+            if s['s'] > prev_end:
+                raw.append([prev_end, s['s']])
+            prev_end = max(prev_end, s['e'])
+        if prev_end < total_duration:
+            raw.append([prev_end, total_duration])
+
+        if not raw:
+            return [(0.0, total_duration)]
+
+        # Step 2: merge short islands
+        changed = True
+        while changed:
+            changed = False
+            out = []
+            i = 0
+            while i < len(raw):
+                dur = raw[i][1] - raw[i][0]
+                if dur < min_island_dur and len(raw) > 1:
+                    if i + 1 < len(raw):
+                        raw[i + 1][0] = raw[i][0]
+                    elif out:
+                        out[-1][1] = raw[i][1]
+                        i += 1
+                        changed = True
+                        continue
+                    i += 1
+                    changed = True
+                    continue
+                out.append(raw[i])
+                i += 1
+            raw = out
+
+        # Step 3: smart padding — compute amounts from ORIGINAL positions
+        n = len(raw)
+        start_pad = [0.0] * n
+        end_pad   = [0.0] * n
+        for i in range(n):
+            gap_before = raw[i][0] if i == 0 else raw[i][0] - raw[i - 1][1]
+            gap_after  = (total_duration - raw[i][1]) if i == n - 1 else raw[i + 1][0] - raw[i][1]
+            start_pad[i] = pad_fixed if gap_before >= pad_threshold else gap_before / 2.0
+            end_pad[i]   = pad_fixed if gap_after  >= pad_threshold else gap_after  / 2.0
+
+        # Step 4: apply padding and clip
+        result = []
+        for i in range(n):
+            s = max(0.0, raw[i][0] - start_pad[i])
+            e = min(total_duration, raw[i][1] + end_pad[i])
+            if e > s:
+                result.append((s, e))
+
+        return result if result else [(0.0, total_duration)]
 
     # ==========================================
     # 2.5 HELPER: ENFORCE HALLUCINATION STATUS
@@ -942,30 +1131,45 @@ except Exception as e:
             
             update_status(self.txt("status_whisper_init"))
             update_progress(-1)  # Indeterminate bar during init
-            
+
             def whisper_live_progress(pct):
                 update_progress(int(pct))
                 update_status(f"{self.txt('status_transcribing')} {pct}%")
-            
+
+            # ── Silence detection BEFORE Whisper ─────────────────────────────
+            # Results are reused both for island computation and _build_data_structure
+            # (single FFmpeg call, same quality as before).
+            update_status(self.txt("status_silence"))
+            _silence_prefs       = self.os_doc.get_all_prefs()
+            silence_threshold_db = _silence_prefs.get('silence_threshold_db', -42.0)
+            silence_min_dur      = _silence_prefs.get('silence_min_dur', 0.2)
+            silence_ranges       = self.detect_silence(target_wav, silence_threshold_db, silence_min_dur)
+
+            # ── Compute sound islands for chunked transcription ───────────────
+            total_dur = self._get_audio_duration(target_wav)
+            islands   = self._compute_sound_islands(silence_ranges, total_dur)
+            log_info(f"[Chunked] {len(islands)} sound island(s) detected (total_dur={total_dur:.2f}s).")
+
             # Execute Faster-Whisper via Runner with RESOLVED parameters
+            # Chunked mode (Ultra Precise) activates only if requested and len(islands) > 1
+            ultra_precise_mode = self.os_doc.get_all_prefs().get('ai_ultra_precise', False)
+            if not ultra_precise_mode:
+                islands = None
+            
+            # Note: Bar remains indeterminate (from status_whisper_init above) until runner emits first progress
             json_path = self.run_whisper(
                 target_wav, model, lang, True, device_mode, fw_compute,
                 filler_words,
                 initial_prompt=ai_initial_prompt,
                 progress_callback=whisper_live_progress,
+                islands=islands,
             )
             
             if not json_path:
                 log_error("Whisper failed.")
                 return None, None
 
-            update_status(self.txt("status_silence"))
-            # Read silence params from user prefs so the same GUI controls affect
-            # both Fast Silence and post-transcription silence detection.
-            _silence_prefs = self.os_doc.get_all_prefs()
-            silence_threshold_db = _silence_prefs.get('silence_threshold_db', -42.0)
-            silence_min_dur      = _silence_prefs.get('silence_min_dur', 0.2)
-            silence_ranges = self.detect_silence(target_wav, silence_threshold_db, silence_min_dur)
+            # silence_ranges already computed above — reused here for data structure
             
             # Cleanup
             for p in [wav_path, current_wav_path, normalized_wav]:
@@ -1159,63 +1363,8 @@ except Exception as e:
                     if is_first: is_first = False
                     temp_words.append(w_obj)
 
-        # --- PASS 3.5: STRETCHED WORD DETECTOR (STAGE 9) ---
-        # Stable-TS's DTW alignment can stretch a word's end-timestamp over the
-        # acoustic noise/silence of a fast stutter, leaving no gap for GAP BRIDGING.
-        # We detect abnormally long words and split off the excess as an inaudible token.
-        split_words = []
-        for word_obj in temp_words:
-            # Skip non-speech objects — they have correct timestamps by construction
-            if word_obj.get('type') in ('inaudible', 'silence') or word_obj.get('_is_hallucination'):
-                split_words.append(word_obj)
-                continue
-
-            dur = round(word_obj['end'] - word_obj['start'], 3)
-
-            # Calculate generous upper bound for how long this word should take
-            clean_text = re.sub(r'[^\w]', '', word_obj.get('text', ''))
-            char_count = max(1, len(clean_text))
-            expected_dur = round(char_count * 0.12, 3)   # ~120ms per character
-            max_allowed  = round(expected_dur + 0.65, 3)  # +650ms natural pause buffer
-
-            if dur > max_allowed:
-                # Shrink the original word to its allowed window
-                new_end = round(word_obj['start'] + max_allowed, 3)
-                inaud_start = new_end
-                inaud_end   = word_obj['end']
-
-                # Guard: inaudible token must meet minimum duration to avoid sub-frame micro-cuts.
-                # GOLDEN fix: was hardcoded 0.15s (150ms) in new, restored to configurable inaud_min_dur
-                # which defaults to 0.02s (20ms) — matching src_old's original 20ms threshold.
-                inaud_min = float(prefs.get('inaud_min_dur', 0.02))
-                if round(inaud_end - inaud_start, 3) >= inaud_min:
-                    shortened = dict(word_obj)  # shallow copy is safe — all values are immutable scalars
-                    shortened['end'] = new_end
-
-                    inaud_obj = {
-                        'text':             txt_inaudible,
-                        'start':            inaud_start,
-                        'end':              inaud_end,
-                        'type':             'inaudible',
-                        'status':           'inaudible',
-                        'selected':         True,
-                        'is_inaudible':     True,
-                        'is_auto':          True,
-                        'seg_start':        word_obj.get('seg_start', inaud_start),
-                        'seg_end':          word_obj.get('seg_end',   inaud_end),
-                        'is_segment_start': False,
-                        'manual_status':    None,
-                        'algo_status':      'inaudible',
-                        'id':               0,
-                    }
-                    split_words.append(shortened)
-                    split_words.append(inaud_obj)
-                    log_info(f"[StretchDetect] '{clean_text}' {dur:.3f}s > {max_allowed:.3f}s → split at {new_end:.3f}s")
-                    continue
-
-            split_words.append(word_obj)
-
-        temp_words = split_words
+        # NOTE: Stretched-word inaudible detector removed (v14.1) — replaced by
+        # gap-based inaudible detection below which has no false positives.
 
         # --- GAP BRIDGING & PADDING (SILENCE LOGIC) ---
         scaled_silence = []
@@ -1273,7 +1422,7 @@ except Exception as e:
                 relevant.sort(key=lambda x: x['s'])
 
                 if not relevant:
-                    if (gap_end - gap_start) >= 0.35:  # STAGE 9: 0.35s catches fast stutter gaps (was 1.2s)
+                    if (gap_end - gap_start) >= 0.5:  # v14.1: raised to 0.5s — gap must be significant
                         final_words.append({
                             "start": gap_start, "end": gap_end,
                             "text": txt_inaudible,
@@ -1286,7 +1435,7 @@ except Exception as e:
                         valid_start = max(current_pos, s['s'])
                         valid_end = min(s['e'], gap_end)
                         
-                        if valid_start - current_pos > 0.35:  # STAGE 9: 0.35s (was 1.2s)
+                        if valid_start - current_pos >= 0.5:  # v14.1: 0.5s minimum
                              final_words.append({
                                 "start": current_pos, "end": valid_start,
                                 "text": txt_inaudible,
@@ -1305,7 +1454,7 @@ except Exception as e:
                             })
                             current_pos = valid_end
                     
-                    if gap_end - current_pos > 0.35:  # STAGE 9: 0.35s (was 1.2s)
+                    if gap_end - current_pos >= 0.5:
                         final_words.append({
                             "start": current_pos, "end": gap_end,
                             "text": txt_inaudible,
