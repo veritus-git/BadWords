@@ -363,6 +363,7 @@ except Exception as e:
         UPDATED v12.1: Replaced subprocess.run with Popen for real-time output streaming.
         STAGE 9: Enabled VAD filter (min_silence_duration_ms=400) + no_repeat_ngram_size=0 to kill hallucination loops.
         STAGE 6A: initial_prompt injected via repr() for safe quoting in generated script.
+        UPDATED v13.0: initial_prompt is now per-language aware via config.get_whisper_prompt_for_lang().
         """
         unique_name = os.path.splitext(os.path.basename(audio_path))[0]
         output_dir = self.os_doc.get_temp_folder()
@@ -832,8 +833,13 @@ except Exception as e:
             # Determine Compute Type based on detected device
             # Stage 6A: Prefer user-saved ai_compute_type from settings; auto-detect as fallback
             saved_prefs     = self.os_doc.get_all_prefs()
-            saved_compute   = saved_prefs.get('ai_compute_type', '')
-            ai_initial_prompt = saved_prefs.get('ai_initial_prompt', config.DEFAULT_WHISPER_PROMPT)
+            saved_compute        = saved_prefs.get('ai_compute_type', '')
+            user_custom_prompt   = saved_prefs.get('ai_initial_prompt', '').strip()
+            # Per-language prompt selection: respects custom user prompt first,
+            # then falls back to a language-specific verbatim prompt, then GOLDEN baseline.
+            # lang is resolved above (None = auto-detect, str = specific language code)
+            ai_initial_prompt = config.get_whisper_prompt_for_lang(lang, user_custom_prompt)
+            log_info(f"[Prompt] lang={lang!r} → using {'custom' if user_custom_prompt else 'per-lang/golden'} prompt.")
             algo_settings   = {k: saved_prefs[k] for k in (
                 'algo_fuzzy_threshold', 'algo_retake_lookahead',
                 'algo_distance_penalty', 'algo_anchor_depth',
