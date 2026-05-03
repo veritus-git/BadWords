@@ -9193,7 +9193,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
 
         # ── Ultra Precise Mode
         self.tgl_ultra_precise = ToggleSwitch()
-        self.tgl_ultra_precise.setChecked(prefs.get('ai_ultra_precise', False))
+        self.tgl_ultra_precise.setChecked(prefs.get('ai_ultra_precise', True))
         self.tgl_ultra_precise.toggled.connect(lambda v: self.engine.save_preferences({"ai_ultra_precise": v}))
         
         lbl_ultra = QLabel(self.txt("lbl_ultra_precise"))

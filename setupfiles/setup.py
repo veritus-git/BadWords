@@ -1119,6 +1119,231 @@ def option_dummy(n, label):
 
 
 
+
+# ── Option 5 — Uninstall (Deep Search) ───────────────────────
+
+# Signature files unique to a BadWords installation.
+# If a directory contains at least _BW_MATCH_MIN of these, it's ours.
+_BW_SIGNATURES = frozenset({
+    "main.py", "engine.py", "api.py",
+    "algorythms.py", "gui.py", "osdoc.py", "config.py"
+})
+_BW_MATCH_MIN = 3   # >=3 of 7 files = confirmed BadWords dir
+
+
+def _is_badwords_dir(d):
+    """Return True if directory d contains enough BadWords signature files."""
+    try:
+        contents = set(os.listdir(d))
+    except OSError:
+        return False
+    return len(_BW_SIGNATURES & contents) >= _BW_MATCH_MIN
+
+
+def _deep_search_badwords():
+    """
+    Scan well-known OS-specific locations for BadWords installation dirs.
+    Strategy (2-level walk to stay fast):
+      1. Any immediate child named 'badwords' (case-insensitive) + verified with signatures
+      2. Any immediate child (any name) containing >=3 signature files
+      3. Any grandchild named 'badwords' + verified with signatures
+      4. Any grandchild (any name) containing >=3 signature files
+    Returns a sorted list of unique absolute directory paths.
+    """
+    home = os.path.expanduser("~")
+
+    if PLAT.startswith("win"):
+        roots = list(filter(None, [
+            os.environ.get("LOCALAPPDATA", ""),
+            os.environ.get("APPDATA", ""),
+            os.environ.get("PROGRAMFILES", ""),
+            os.environ.get("PROGRAMFILES(X86)", ""),
+            home,
+            "C:\\",
+        ]))
+    elif "darwin" in PLAT or "mac" in PLAT:
+        roots = [
+            os.path.join(home, "Library", "Application Support"),
+            os.path.join(home, "Applications"),
+            home,
+            "/Applications",
+            "/usr/local",
+            "/opt",
+        ]
+    else:  # Linux
+        roots = [
+            os.path.join(home, ".local", "share"),
+            os.path.join(home, ".local"),
+            home,
+            "/opt",
+            "/usr/local",
+        ]
+
+    found = set()
+
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        try:
+            level1 = os.listdir(root)
+        except OSError:
+            continue
+
+        for name1 in level1:
+            path1 = os.path.join(root, name1)
+            if not os.path.isdir(path1):
+                continue
+
+            # Level-1: name match OR signature match
+            if name1.lower() == "badwords":
+                if _is_badwords_dir(path1):
+                    found.add(os.path.abspath(path1))
+            elif _is_badwords_dir(path1):
+                found.add(os.path.abspath(path1))
+
+            # Level-2: scan children of this dir
+            try:
+                for name2 in os.listdir(path1):
+                    path2 = os.path.join(path1, name2)
+                    if not os.path.isdir(path2):
+                        continue
+                    if name2.lower() == "badwords" and _is_badwords_dir(path2):
+                        found.add(os.path.abspath(path2))
+                    elif name2.lower() != "badwords" and _is_badwords_dir(path2):
+                        found.add(os.path.abspath(path2))
+            except OSError:
+                pass
+
+    return sorted(found)
+
+
+def option_uninstall():
+    header()
+    console.print(Text(f"{PAD}-- Uninstall BadWords --", style="bold red"), no_wrap=True)
+    console.print()
+
+    resolve_dirs = _resolve_script_dirs()
+    default_dir  = _default_install_dir()
+
+    # Fast path: detect via Resolve wrapper
+    log_step("Searching via DaVinci Resolve wrapper...")
+    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+    if wrapper_dir:
+        log_ok(f"Wrapper found -> {wrapper_dir}")
+    else:
+        log_warn("No wrapper detected (may be corrupted or already removed).")
+
+    # Deep search across popular OS locations
+    sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+    found_dirs = _deep_search_badwords()
+    sp_scan.done(ok=True)
+
+    # Merge wrapper result + deep search (deduplicated, wrapper first)
+    all_install_dirs = list(dict.fromkeys(
+        [os.path.abspath(d) for d in ([wrapper_dir] if wrapper_dir else []) + found_dirs]
+    ))
+
+    if not all_install_dirs:
+        console.print()
+        log_warn("No BadWords installation found anywhere on this system.")
+        log_info(f"Default location checked: {default_dir}")
+        pause()
+        return
+
+    # Show what was found
+    console.print()
+    console.print(Text(f"{PAD}Found {len(all_install_dirs)} BadWords installation(s):", style="bold white"), no_wrap=True)
+    for d in all_install_dirs:
+        console.print(Text(f"{PAD}  * {d}", style="red"), no_wrap=True)
+    console.print()
+    console.print(Text(f"{PAD}Additionally, ALL BadWords wrappers will be removed from", style="white"), no_wrap=True)
+    console.print(Text(f"{PAD}every DaVinci Resolve script directory on this system.", style="white"), no_wrap=True)
+    console.print()
+    console.print(Text(f"{PAD}This removes EVERYTHING -- app files, venv, models, settings.", style="bold red"), no_wrap=True)
+    console.print()
+    console.print(Text(f'{PAD}Type "yes" to confirm and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        answer = readline_with_esc()
+    except UserCancelled:
+        console.print()
+        log_info("Uninstall cancelled.")
+        pause()
+        return
+    console.print()
+
+    if answer.strip().lower() != "yes":
+        log_info("Uninstall cancelled.")
+        pause()
+        return
+
+    errors = []
+
+    # Step 1: Remove DaVinci Resolve wrappers
+    log_step("Removing DaVinci Resolve wrappers...")
+    wrappers_removed = 0
+    for rd in resolve_dirs:
+        scripts_dir = os.path.dirname(rd)
+        if not os.path.exists(scripts_dir):
+            continue
+        for root, dirs, files in os.walk(scripts_dir):
+            for fname in files:
+                if fname.startswith("BadWords") and fname.endswith(".py"):
+                    wp = os.path.join(root, fname)
+                    try:
+                        os.remove(wp)
+                        debug_log(f"Removed wrapper: {wp}")
+                        wrappers_removed += 1
+                    except Exception as e:
+                        debug_log(f"Could not remove wrapper {wp}: {e}")
+                        errors.append(f"Wrapper: {wp}")
+
+    if wrappers_removed > 0:
+        log_ok(f"Removed {wrappers_removed} wrapper file(s) from Resolve script directories.")
+    else:
+        log_warn("No DaVinci Resolve wrappers found (may have already been removed).")
+
+    # Step 2: Clean Windows registry (before dir removal)
+    if PLAT.startswith("win"):
+        log_step("Cleaning Windows registry entries...")
+        for d in all_install_dirs:
+            try:
+                _clean_legacy_inno_setup(d)
+            except Exception as e:
+                log_warn(f"Registry cleanup error for {d}: {e}")
+        log_ok("Registry cleaned.")
+
+    # Step 3: Remove all found installation directories
+    for install_dir in all_install_dirs:
+        log_step(f"Deleting: {install_dir}")
+        sp = Spinner(f"Removing {os.path.basename(install_dir)}").start()
+        try:
+            shutil.rmtree(install_dir)
+            sp.done(ok=True)
+        except Exception as e:
+            sp.done(ok=False)
+            debug_log(f"rmtree error on {install_dir}: {e}")
+            errors.append(f"{install_dir}: {e}")
+            log_err(f"Could not fully remove {install_dir}: {e}")
+
+    # Done
+    console.print()
+    if not errors:
+        console.print(Text(f"{PAD}+ UNINSTALL SUCCESSFUL!", style="bold green"), no_wrap=True)
+        console.print(Text(f"{PAD}  BadWords has been completely removed from this system.", style="green"), no_wrap=True)
+    else:
+        console.print(Text(f"{PAD}! UNINSTALL COMPLETED WITH ERRORS:", style="bold yellow"), no_wrap=True)
+        for err in errors:
+            console.print(Text(f"{PAD}  * {err}", style="yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}  Please remove the remaining items manually.", style="dim"), no_wrap=True)
+    console.print()
+
+    pause(f"{PAD}Press Enter to exit...")
+
+
+
+
+
 # ── Main loop ─────────────────────────────────────────────────
 def main():
     # One-time setup: resize + title + lock scrollbar
@@ -1143,7 +1368,7 @@ def main():
             elif choice == "4":
                 option_dummy(4, "Complete Reset")
             elif choice == "5":
-                option_dummy(5, "Uninstall")
+                option_uninstall()
             else:
                 header()
                 console.print(Text(f"{PAD}Invalid option. Please try again.", style="red"), no_wrap=True)
