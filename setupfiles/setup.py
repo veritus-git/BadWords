@@ -574,38 +574,125 @@ def _clean_legacy_inno_setup(install_dir):
             for sk_path in to_delete:
                 delete_reg_key(hive_str, sk_path)
 
+def _create_davinci_wrappers(install_dir, resolve_dirs):
+    """Generates and writes the DaVinci Resolve Python wrapper for the given install_dir."""
+    qt_lib_dir   = os.path.join(install_dir, "libs", "PySide6", "Qt", "lib")
+    libs_dir_abs = os.path.join(install_dir, "libs")
+    main_script  = os.path.join(install_dir, "main.py")
+
+    wrapper_content = f'''\
+import sys, os, traceback
+
+if sys.platform.startswith('linux'):
+    import ctypes
+    _qt_lib_dir = r'{qt_lib_dir}'
+    _qt_preload = [
+        'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+        'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+    ]
+    if os.path.isdir(_qt_lib_dir):
+        for _lib in _qt_preload:
+            _p = os.path.join(_qt_lib_dir, _lib)
+            if os.path.exists(_p):
+                try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                except OSError: pass
+
+INSTALL_DIR = r'{install_dir}'
+LIBS_DIR    = r'{libs_dir_abs}'
+MAIN_SCRIPT = r'{main_script}'
+
+if os.path.exists(LIBS_DIR):
+    if LIBS_DIR in sys.path: sys.path.remove(LIBS_DIR)
+    sys.path.insert(0, LIBS_DIR)
+if INSTALL_DIR not in sys.path:
+    sys.path.append(INSTALL_DIR)
+
+if os.path.exists(MAIN_SCRIPT):
+    try:
+        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+        gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
+        exec(code, gv)
+    except Exception as e:
+        print(f'Error: {{e}}'); traceback.print_exc()
+else:
+    print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
+'''
+    def _resolve_base_exists(d):
+        p = d
+        for _ in range(7):
+            p = os.path.dirname(p)
+            bn = os.path.basename(p)
+            if bn in ("DaVinci Resolve", "DaVinciResolve", "resolve"):
+                return os.path.isdir(p)
+        return False
+
+    existing_resolve_dirs = [d for d in resolve_dirs if _resolve_base_exists(d)]
+    targets = existing_resolve_dirs if existing_resolve_dirs else [resolve_dirs[0]]
+
+    for rd in targets:
+        scripts_dir = os.path.dirname(rd)
+        if os.path.exists(scripts_dir):
+            for root, _, files in os.walk(scripts_dir):
+                for f in files:
+                    if f.startswith("BadWords") and f.endswith(".py"):
+                        p = os.path.join(root, f)
+                        try: os.remove(p)
+                        except: pass
+
+    wrapper_count = 0
+    for rd in targets:
+        try:
+            os.makedirs(rd, exist_ok=True)
+            wp = os.path.join(rd, "BadWords.py")
+            with open(wp, "w", encoding="utf-8") as f:
+                f.write(wrapper_content)
+            os.chmod(wp, 0o755)
+            debug_log(f"Wrapper written to: {wp}")
+            wrapper_count += 1
+            break
+        except Exception as exc:
+            debug_log(f"Could not write wrapper to {rd}: {exc}")
+
+    return wrapper_count > 0
+
+
 # ── Option 1 — Standard Install / Update ─────────────────────
-def option_install_update(force_main=False):
+def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green"):
     header()
     if force_main:
         console.print(Text(f"{PAD}── Dev Install (main) ──", style="bold magenta"), no_wrap=True)
     else:
-        console.print(Text(f"{PAD}── Standard Install / Update ──", style="bold green"), no_wrap=True)
+        console.print(Text(f"{PAD}{title}", style=f"bold {title_color}"), no_wrap=True)
     console.print()
 
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
 
-    detected = detect_existing_install(default_dir, resolve_dirs)
-    if detected:
-        log_ok(f"Existing installation detected: {detected}")
-        install_dir = detected
+    if preset_path:
+        # Path was chosen upstream (e.g. by option_reset) — skip detect & prompt
+        install_dir = preset_path
+        log_info(f"Using preset install path: {install_dir}")
     else:
-        install_dir = default_dir
-        log_info(f"Default install path: {install_dir}")
+        detected = detect_existing_install(default_dir, resolve_dirs)
+        if detected:
+            log_ok(f"Existing installation detected: {detected}")
+            install_dir = detected
+        else:
+            install_dir = default_dir
+            log_info(f"Default install path: {install_dir}")
 
-    console.print()
-    console.print(Text(f"{PAD}Install path: {install_dir}", style="dim"), no_wrap=True)
-    console.print(Text(f"{PAD}Press Enter to accept, or type a custom path: ", style="cyan"), end="", no_wrap=True)
-    sys.stdout.flush()
-    custom = readline_with_esc()
+        console.print()
+        console.print(Text(f"{PAD}Install path: {install_dir}", style="dim"), no_wrap=True)
+        console.print(Text(f"{PAD}Press Enter to accept, or type a custom path: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        custom = readline_with_esc()
 
-    if custom:
-        custom = os.path.expanduser(custom.strip())
-        if not custom.endswith(APP_NAME):
-            custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
-        install_dir = custom
-        log_info(f"Using custom path: {install_dir}")
+        if custom:
+            custom = os.path.expanduser(custom.strip())
+            if not custom.endswith(APP_NAME):
+                custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
+            install_dir = custom
+            log_info(f"Using custom path: {install_dir}")
 
     # Aggressively clean up old Inno Setup (Add/Remove Programs) leftovers
     _clean_legacy_inno_setup(install_dir)
@@ -993,94 +1080,14 @@ def option_install_update(force_main=False):
         # ── DaVinci Resolve wrapper ───────────────────────────
         console.print()
         log_step("Configuring DaVinci Resolve integration...")
-
-        qt_lib_dir   = os.path.join(install_dir, "libs", "PySide6", "Qt", "lib")
-        libs_dir_abs = os.path.join(install_dir, "libs")
-        main_script  = os.path.join(install_dir, "main.py")
-
-        wrapper_content = f'''\
-import sys, os, traceback
-
-if sys.platform.startswith('linux'):
-    import ctypes
-    _qt_lib_dir = r'{qt_lib_dir}'
-    _qt_preload = [
-        'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-        'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-    ]
-    if os.path.isdir(_qt_lib_dir):
-        for _lib in _qt_preload:
-            _p = os.path.join(_qt_lib_dir, _lib)
-            if os.path.exists(_p):
-                try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                except OSError: pass
-
-INSTALL_DIR = r'{install_dir}'
-LIBS_DIR    = r'{libs_dir_abs}'
-MAIN_SCRIPT = r'{main_script}'
-
-if os.path.exists(LIBS_DIR):
-    if LIBS_DIR in sys.path: sys.path.remove(LIBS_DIR)
-    sys.path.insert(0, LIBS_DIR)
-if INSTALL_DIR not in sys.path:
-    sys.path.append(INSTALL_DIR)
-
-if os.path.exists(MAIN_SCRIPT):
-    try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
-    except Exception as e:
-        print(f'Error: {{e}}'); traceback.print_exc()
-else:
-    print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
-'''
-        # Check which Resolve dirs actually exist at the 'DaVinci Resolve' base level.
-        # This is more reliable than checking deeper sub-folders which may not exist
-        # until Resolve creates them on first launch.
-        def _resolve_base_exists(d):
-            p = d
-            for _ in range(7):
-                p = os.path.dirname(p)
-                bn = os.path.basename(p)
-                if bn in ("DaVinci Resolve", "DaVinciResolve", "resolve"):
-                    return os.path.isdir(p)
-            return False
-
-        existing_resolve_dirs = [d for d in resolve_dirs if _resolve_base_exists(d)]
-        # Fall back to standard per-user path (resolve_dirs[0]) if Resolve not yet opened
-        targets = existing_resolve_dirs if existing_resolve_dirs else [resolve_dirs[0]]
-
-        # 1. First, aggressively clean up ALL old duplicate wrappers from EVERY possible scripts path
-        for rd in targets:
-            scripts_dir = os.path.dirname(rd)  # goes up from Utility to Scripts
-            if os.path.exists(scripts_dir):
-                for root, _, files in os.walk(scripts_dir):
-                    for f in files:
-                        if f.startswith("BadWords") and f.endswith(".py"):
-                            p = os.path.join(root, f)
-                            try: os.remove(p)
-                            except: pass
-
-        # 2. Then, write exactly ONE new wrapper in the first successful Utility directory
-        wrapper_count = 0
-        for rd in targets:
-            try:
-                os.makedirs(rd, exist_ok=True)
-                wp = os.path.join(rd, "BadWords.py")
-                with open(wp, "w", encoding="utf-8") as f:
-                    f.write(wrapper_content)
-                os.chmod(wp, 0o755)
-                debug_log(f"Wrapper written to: {wp}")
-                wrapper_count += 1
-                break  # Stop after first successful creation to prevent duplicate menu entries!
-            except Exception as exc:
-                debug_log(f"Could not write wrapper to {rd}: {exc}")
-
-        if wrapper_count > 0:
+        
+        success = _create_davinci_wrappers(install_dir, resolve_dirs)
+        if success:
             log_ok("DaVinci Resolve wrapper installed.")
         else:
-            log_err("Failed to write wrapper to any Resolve location.")
+            log_warn("Failed to write wrapper to any Resolve location.")
+
+
 
         open(log_file, "a").close()
         os.chmod(log_file, 0o666)
@@ -1116,6 +1123,379 @@ def option_dummy(n, label):
     console.print(Text(f"{PAD}You selected option {n}: {label}", style="cyan"), no_wrap=True)
     console.print(Text(f"{PAD}(This option is not yet implemented.)", style="dim"), no_wrap=True)
     pause()
+
+
+# ── Option 2 — Repair Installation ─────────────────────────────
+def option_repair():
+    header()
+    console.print(Text(f"{PAD}-- Repair Installation --", style="bold cyan"), no_wrap=True)
+    console.print()
+    console.print(Text(f"{PAD}This will:", style="bold white"), no_wrap=True)
+    console.print(Text(f"{PAD}  1. Remove core files, venv, and binaries", style="cyan"), no_wrap=True)
+    console.print(Text(f"{PAD}  2. Preserve your models, saves, and settings", style="green"), no_wrap=True)
+    console.print(Text(f"{PAD}  3. Reinstall the core components from scratch", style="cyan"), no_wrap=True)
+    console.print()
+
+    resolve_dirs = _resolve_script_dirs()
+    default_dir  = _default_install_dir()
+
+    log_step("Searching via DaVinci Resolve wrapper...")
+    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+    if wrapper_dir:
+        log_ok(f"Wrapper found -> {wrapper_dir}")
+        install_dir = wrapper_dir
+    else:
+        log_warn("No wrapper detected. Falling back to deep scan...")
+        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+        found_dirs = _deep_search_badwords()
+        sp_scan.done(ok=True)
+        if not found_dirs:
+            console.print()
+            log_err("No BadWords installation found to repair.")
+            pause()
+            return
+        install_dir = found_dirs[0]
+        log_ok(f"Installation found -> {install_dir}")
+
+    console.print()
+    console.print(Text(f'{PAD}Type "yes" to confirm Repair and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        answer = readline_with_esc()
+    except UserCancelled:
+        console.print()
+        log_info("Repair cancelled.")
+        pause()
+        return
+    console.print()
+
+    if answer.strip().lower() != "yes":
+        log_info("Repair cancelled.")
+        pause()
+        return
+
+    console.print()
+    log_step(f"Cleaning core files in: {install_dir}")
+    
+    # Files/folders to KEEP
+    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json"}
+    
+    sp_rm = Spinner("Removing core components").start()
+    errors = []
+    try:
+        if os.path.exists(install_dir):
+            for item in os.listdir(install_dir):
+                if item in protected:
+                    continue
+                p = os.path.join(install_dir, item)
+                try:
+                    if os.path.isdir(p):
+                        def on_rm_error(func, path, exc_info):
+                            import stat
+                            try:
+                                os.chmod(path, stat.S_IWRITE)
+                                func(path)
+                            except Exception:
+                                pass
+                        shutil.rmtree(p, onerror=on_rm_error)
+                        if os.path.exists(p):
+                            if os.name == "nt":
+                                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", p], capture_output=True)
+                            else:
+                                subprocess.run(["rm", "-rf", p], capture_output=True)
+                    else:
+                        os.remove(p)
+                except Exception as e:
+                    errors.append(f"{item}: {e}")
+        sp_rm.done(ok=not bool(errors))
+    except Exception as e:
+        sp_rm.done(ok=False)
+        errors.append(str(e))
+
+    if errors:
+        for err in errors:
+            log_warn(f"Failed to remove {err}")
+
+    console.print()
+    log_step("Starting fresh installation phase...")
+    option_install_update(preset_path=install_dir, title="── Repair Installation ──", title_color="cyan")
+
+
+# ── Option 3 — Move Installation ───────────────────────────────
+def option_move():
+    header()
+    console.print(Text(f"{PAD}── Move Installation ──", style="bold blue"), no_wrap=True)
+    console.print()
+
+    resolve_dirs = _resolve_script_dirs()
+    default_dir  = _default_install_dir()
+
+    # ── Detect current installation ────────────────────────
+    log_step("Searching via DaVinci Resolve wrapper...")
+    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+    if wrapper_dir:
+        log_ok(f"Found -> {wrapper_dir}")
+        install_dir = wrapper_dir
+    else:
+        log_warn("No wrapper detected — falling back to deep scan...")
+        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+        found_dirs = _deep_search_badwords()
+        sp_scan.done(ok=True)
+        if not found_dirs:
+            console.print()
+            log_err("No BadWords installation found to move.")
+            pause()
+            return
+        install_dir = found_dirs[0]
+        log_ok(f"Found -> {install_dir}")
+
+    # ── Ask for destination ────────────────────────────
+    console.print()
+    console.print(Text(f"{PAD}Current location: {install_dir}", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}New location (or Enter to cancel): ", style="blue"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        raw = readline_with_esc()
+    except UserCancelled:
+        console.print()
+        log_info("Move cancelled.")
+        pause()
+        return
+
+    if not raw.strip():
+        log_info("Move cancelled.")
+        pause()
+        return
+
+    new_path = os.path.expanduser(raw.strip())
+    if not new_path.endswith(APP_NAME):
+        new_path = os.path.join(new_path.rstrip("/\\"), APP_NAME)
+
+    if os.path.abspath(install_dir) == os.path.abspath(new_path):
+        console.print()
+        log_warn("Source and destination are the same. Nothing to do.")
+        pause()
+        return
+
+    if os.path.exists(new_path):
+        console.print()
+        log_err(f"Destination already exists: {new_path}")
+        pause()
+        return
+
+    console.print()
+
+    # ── Step 1: Move directory ───────────────────────────
+    sp_mv = Spinner(f"Moving files to {new_path}").start()
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(new_path)), exist_ok=True)
+        shutil.move(install_dir, new_path)
+        sp_mv.done(ok=True)
+    except Exception as e:
+        sp_mv.done(ok=False)
+        log_err(f"Move failed: {e}")
+        pause()
+        return
+
+    # ── Step 2: Transplant venv — no re-download needed ──────────
+    # Python venv executables (bin/pip, bin/python) contain hardcoded
+    # absolute shebangs → broken after shutil.move. Fix: rescue the
+    # site-packages (all the actual packages), delete only the broken
+    # venv shell, create a fresh venv with correct shebangs, then swap
+    # the new empty site-packages for the rescued ones.
+    old_venv = os.path.join(new_path, "venv")
+    old_libs = os.path.join(new_path, "libs")
+    new_venv = os.path.join(new_path, "venv")
+    new_libs = os.path.join(new_path, "libs")
+
+    # Locate site-packages inside the (broken) moved venv
+    console.print()
+    log_step("Locating installed packages in moved venv...")
+    old_lib_root = os.path.join(old_venv, "Lib" if os.name == "nt" else "lib")
+    old_site_pkgs = None
+    for root, dirs, _ in os.walk(old_lib_root):
+        if "site-packages" in dirs:
+            old_site_pkgs = os.path.join(root, "site-packages")
+            break
+
+    # Rescue: move site-packages to a temp sibling dir BEFORE deleting venv
+    rescued_pkgs = os.path.join(new_path, ".bw_pkgs_rescue")
+    if old_site_pkgs and os.path.isdir(old_site_pkgs):
+        sp_rescue = Spinner("Rescuing packages from stale venv").start()
+        try:
+            if os.path.exists(rescued_pkgs):
+                shutil.rmtree(rescued_pkgs, ignore_errors=True)
+            shutil.move(old_site_pkgs, rescued_pkgs)
+            sp_rescue.done(ok=True)
+        except Exception as e:
+            sp_rescue.done(ok=False)
+            log_warn(f"Could not rescue packages: {e} — will re-install from internet.")
+            rescued_pkgs = None
+    else:
+        log_warn("No site-packages found in moved venv — will re-install from internet.")
+        rescued_pkgs = None
+
+    # Delete the stale venv shell (executables with wrong shebangs)
+    if os.path.exists(old_venv):
+        sp_rm = Spinner("Removing stale venv shell").start()
+        shutil.rmtree(old_venv, ignore_errors=True)
+        if os.name != "nt":
+            subprocess.run(["rm", "-rf", old_venv], capture_output=True)
+        sp_rm.done(ok=not os.path.exists(old_venv))
+    if os.path.islink(old_libs) or os.path.isdir(old_libs):
+        try:
+            os.remove(old_libs)
+        except Exception:
+            shutil.rmtree(old_libs, ignore_errors=True)
+
+    # Pick best available Python
+    bootstrap_py = ARGS.bootstrap_python
+    target_py = bootstrap_py if os.path.isfile(bootstrap_py) else sys.executable
+    for cmd in ["python3.12", "python3.11", "python3.10", "python3"]:
+        exe = shutil.which(cmd)
+        if exe:
+            try:
+                r = subprocess.run([exe, "-c",
+                    "import sys; exit(0 if (3,10) <= sys.version_info < (3,13) else 1)"],
+                    capture_output=True)
+                if r.returncode == 0:
+                    target_py = exe
+                    break
+            except Exception:
+                pass
+
+    log_step(f"Creating fresh venv ({target_py})...")
+    try:
+        subprocess.run([target_py, "-m", "venv", new_venv], check=True, capture_output=True)
+        log_ok("Virtual environment created.")
+    except Exception as e:
+        log_err(f"Failed to create venv: {e}")
+        if rescued_pkgs and os.path.exists(rescued_pkgs):
+            shutil.rmtree(rescued_pkgs, ignore_errors=True)
+        pause()
+        return
+
+    if os.name == "nt":
+        venv_py = os.path.join(new_venv, "Scripts", "python.exe")
+    else:
+        venv_py = os.path.join(new_venv, "bin", "python")
+
+    # Locate where new venv's (empty) site-packages are
+    new_lib_root = os.path.join(new_venv, "Lib" if os.name == "nt" else "lib")
+    new_site_pkgs = None
+    for root, dirs, _ in os.walk(new_lib_root):
+        if "site-packages" in dirs:
+            new_site_pkgs = os.path.join(root, "site-packages")
+            break
+
+    transplanted = False
+    if rescued_pkgs and new_site_pkgs:
+        # Swap: remove the new empty site-packages, put in the rescued ones
+        sp_swap = Spinner("Transplanting packages into new venv").start()
+        try:
+            shutil.rmtree(new_site_pkgs, ignore_errors=True)
+            shutil.move(rescued_pkgs, new_site_pkgs)
+            sp_swap.done(ok=True)
+            log_ok("All packages transplanted — no downloads needed.")
+            transplanted = True
+        except Exception as e:
+            sp_swap.done(ok=False)
+            log_warn(f"Transplant failed: {e}")
+            if os.path.exists(rescued_pkgs):
+                shutil.rmtree(rescued_pkgs, ignore_errors=True)
+    elif rescued_pkgs:
+        shutil.rmtree(rescued_pkgs, ignore_errors=True)
+
+    if not transplanted:
+        # Fallback: full re-install (only if transplant wasn't possible)
+        console.print()
+        log_step("Re-installing dependencies (fallback)...")
+
+        def _pip(label, *args):
+            sp = Spinner(label).start()
+            r = subprocess.run([venv_py, "-m", "pip"] + list(args),
+                               capture_output=True, text=True)
+            sp.done(ok=r.returncode == 0)
+            if r.returncode != 0:
+                for ln in (r.stderr or "").splitlines()[-8:]:
+                    if ln.strip():
+                        log_warn(f"  {ln.strip()}")
+            return r.returncode == 0
+
+        _pip("Upgrading pip", "install", "--upgrade", "pip", "-q")
+        has_nvidia = False
+        try:
+            has_nvidia = subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0
+        except Exception:
+            pass
+        if not has_nvidia:
+            _pip("Installing PyTorch (CPU)", "install", "torch", "torchaudio",
+                 "--index-url", "https://download.pytorch.org/whl/cpu", "-q")
+        else:
+            cuda_ok = False
+            for cu_tag in ("cu124", "cu121", "cu118"):
+                if _pip(f"Installing PyTorch (CUDA {cu_tag})", "install", "torch", "torchaudio",
+                        "--index-url", f"https://download.pytorch.org/whl/{cu_tag}", "-q"):
+                    cuda_ok = True
+                    break
+            if not cuda_ok:
+                _pip("Installing PyTorch (CPU fallback)", "install", "torch", "torchaudio",
+                     "--index-url", "https://download.pytorch.org/whl/cpu", "-q")
+        _pip("Installing Faster-Whisper + Stable-TS + PyPDF",
+             "install", "faster-whisper", "stable-ts", "pypdf", "-q")
+        if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode != 0:
+            _pip("Installing PySide6", "install", "PySide6", "-q")
+        log_ok("Dependencies installed.")
+
+    # ── Step 3: Recreate libs symlink ────────────────────────
+    console.print()
+    log_step("Creating libs link...")
+    final_site_pkgs = new_site_pkgs
+    if not final_site_pkgs or not os.path.isdir(final_site_pkgs):
+        for root, dirs, _ in os.walk(new_lib_root):
+            if "site-packages" in dirs:
+                final_site_pkgs = os.path.join(root, "site-packages")
+                break
+    if final_site_pkgs:
+        linked = False
+        if os.name == "nt":
+            r = subprocess.run(f'mklink /J "{new_libs}" "{final_site_pkgs}"',
+                               shell=True, capture_output=True)
+            linked = (r.returncode == 0)
+        else:
+            try:
+                os.symlink(final_site_pkgs, new_libs, target_is_directory=True)
+                linked = True
+            except (OSError, NotImplementedError):
+                pass
+        if not linked:
+            sp_copy = Spinner("Copying libs (fallback)").start()
+            try:
+                shutil.copytree(final_site_pkgs, new_libs, dirs_exist_ok=True)
+                sp_copy.done(ok=True)
+            except Exception as e:
+                sp_copy.done(ok=False)
+                log_warn(f"libs copy failed: {e}")
+        else:
+            log_ok("libs link created.")
+    else:
+        log_warn("Could not locate site-packages in new venv.")
+
+    # ── Step 6: Update DaVinci Resolve wrapper ───────────────
+    console.print()
+    log_step("Updating DaVinci Resolve wrapper...")
+    if _create_davinci_wrappers(new_path, resolve_dirs):
+        log_ok("Wrapper updated.")
+    else:
+        log_warn("Failed to update wrapper.")
+
+    # ── Done ─────────────────────────────────────────
+    console.print()
+    console.print(Text(f"{PAD}+ MOVE SUCCESSFUL!", style="bold blue"), no_wrap=True)
+    console.print(Text(f"{PAD}  BadWords is now at: {new_path}", style="blue"), no_wrap=True)
+    console.print()
+    pause(f"{PAD}Press Enter to exit...")
+
 
 
 
@@ -1277,6 +1657,24 @@ def option_uninstall():
         pause()
         return
 
+    _do_uninstall(resolve_dirs, all_install_dirs)
+
+    # Done summary
+    console.print()
+    console.print(Text(f"{PAD}+ UNINSTALL SUCCESSFUL!", style="bold green"), no_wrap=True)
+    console.print(Text(f"{PAD}  BadWords has been completely removed from this system.", style="green"), no_wrap=True)
+    console.print()
+    pause(f"{PAD}Press Enter to exit...")
+
+
+
+def _do_uninstall(resolve_dirs, all_install_dirs):
+    """
+    Core deletion engine — no UI prompts, no pause.
+    Removes all Resolve wrappers and every directory in all_install_dirs.
+    Called by both option_uninstall() and option_reset().
+    Returns a list of error strings (empty = all OK).
+    """
     errors = []
 
     # Step 1: Remove DaVinci Resolve wrappers
@@ -1318,30 +1716,136 @@ def option_uninstall():
         log_step(f"Deleting: {install_dir}")
         sp = Spinner(f"Removing {os.path.basename(install_dir)}").start()
         try:
-            shutil.rmtree(install_dir)
+            def on_rm_error(func, path, exc_info):
+                import stat
+                try:
+                    os.chmod(path, stat.S_IWRITE)
+                    func(path)
+                except Exception:
+                    pass
+            
+            shutil.rmtree(install_dir, onerror=on_rm_error)
+            
+            # Robust OS-level fallback if Python's rmtree fails on tricky symlinks/permissions
+            if os.path.exists(install_dir):
+                if os.name == "nt":
+                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", install_dir], capture_output=True)
+                else:
+                    subprocess.run(["rm", "-rf", install_dir], capture_output=True)
+            
+            if os.path.exists(install_dir):
+                raise OSError("Directory is locked or contains undeletable files.")
+                
             sp.done(ok=True)
         except Exception as e:
             sp.done(ok=False)
             debug_log(f"rmtree error on {install_dir}: {e}")
             errors.append(f"{install_dir}: {e}")
-            log_err(f"Could not fully remove {install_dir}: {e}")
+            # Removed log_err to prevent duplicated UI spam; caller handles printing the errors.
 
-    # Done
+    return errors
+
+
+# ── Option 4 — Complete Reset ──────────────────────────────────
+def option_reset():
+    header()
+    console.print(Text(f"{PAD}-- Complete Reset --", style="bold magenta"), no_wrap=True)
     console.print()
-    if not errors:
-        console.print(Text(f"{PAD}+ UNINSTALL SUCCESSFUL!", style="bold green"), no_wrap=True)
-        console.print(Text(f"{PAD}  BadWords has been completely removed from this system.", style="green"), no_wrap=True)
+    console.print(Text(f"{PAD}This will:", style="bold white"), no_wrap=True)
+    console.print(Text(f"{PAD}  1. Remove EVERYTHING (app, venv, models, settings, wrappers)", style="magenta"), no_wrap=True)
+    console.print(Text(f"{PAD}  2. Perform a fresh Standard Install from scratch", style="cyan"), no_wrap=True)
+    console.print()
+
+    resolve_dirs = _resolve_script_dirs()
+    default_dir  = _default_install_dir()
+
+    # Fast path: detect via Resolve wrapper
+    log_step("Searching via DaVinci Resolve wrapper...")
+    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+    if wrapper_dir:
+        log_ok(f"Wrapper found -> {wrapper_dir}")
     else:
-        console.print(Text(f"{PAD}! UNINSTALL COMPLETED WITH ERRORS:", style="bold yellow"), no_wrap=True)
-        for err in errors:
-            console.print(Text(f"{PAD}  * {err}", style="yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}  Please remove the remaining items manually.", style="dim"), no_wrap=True)
+        log_warn("No wrapper detected (will still deep-scan for leftovers).")
+
+    # Deep search
+    sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+    found_dirs = _deep_search_badwords()
+    sp_scan.done(ok=True)
+
+    # Merge + deduplicate
+    all_install_dirs = list(dict.fromkeys(
+        [os.path.abspath(d) for d in ([wrapper_dir] if wrapper_dir else []) + found_dirs]
+    ))
+    
+    # Save the old path so we can reinstall there by default
+    reinstall_default = all_install_dirs[0] if all_install_dirs else default_dir
+
+    # Show what will be wiped
+    console.print()
+    if all_install_dirs:
+        console.print(Text(f"{PAD}The following installation(s) will be wiped:", style="bold white"), no_wrap=True)
+        for d in all_install_dirs:
+            console.print(Text(f"{PAD}  * {d}", style="magenta"), no_wrap=True)
+    else:
+        console.print(Text(f"{PAD}No existing installation found — will do a clean install.", style="dim"), no_wrap=True)
+    console.print()
+    console.print(Text(f"{PAD}All data (models, settings, saves) will be permanently lost.", style="bold magenta"), no_wrap=True)
+    console.print()
+    console.print(Text(f'{PAD}Type "yes" to confirm Complete Reset and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        answer = readline_with_esc()
+    except UserCancelled:
+        console.print()
+        log_info("Reset cancelled.")
+        pause()
+        return
     console.print()
 
-    pause(f"{PAD}Press Enter to exit...")
+    if answer.strip().lower() != "yes":
+        log_info("Reset cancelled.")
+        pause()
+        return
 
+    # ── Phase 1: Uninstall ────────────────────────────────────
+    console.print()
+    console.print(Text(f"{PAD}[ Phase 1 / 2 ]  Wiping existing installation...", style="bold magenta"), no_wrap=True)
+    console.print()
 
+    if all_install_dirs:
+        errors = _do_uninstall(resolve_dirs, all_install_dirs)
+        if errors:
+            console.print()
+            log_warn("Some items could not be removed — continuing with install anyway:")
+            for err in errors:
+                console.print(Text(f"{PAD}  * {err}", style="yellow"), no_wrap=True)
+    else:
+        log_info("Nothing to wipe — proceeding directly to install.")
 
+    # ── Phase 2: Fresh install ────────────────────────────────
+    console.print()
+    console.print(Text(f"{PAD}[ Phase 2 / 2 ]  Installing BadWords from scratch...", style="bold cyan"), no_wrap=True)
+    console.print()
+
+    # Let the user pick a new install path (or keep the default which is the previous install location)
+    console.print(Text(f"{PAD}Install path: {reinstall_default}", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}Press Enter to use this path, or type a custom path: ", style="cyan"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        custom_path = readline_with_esc()
+    except UserCancelled:
+        custom_path = ""
+
+    if custom_path.strip():
+        custom_path = os.path.expanduser(custom_path.strip())
+        if not custom_path.endswith(APP_NAME):
+            custom_path = os.path.join(custom_path.rstrip("/\\"), APP_NAME)
+        log_info(f"New install path: {custom_path}")
+    else:
+        custom_path = reinstall_default
+        log_info(f"Using path: {custom_path}")
+
+    option_install_update(preset_path=custom_path, title="── Complete Reset ──", title_color="yellow")
 
 
 # ── Main loop ─────────────────────────────────────────────────
@@ -1362,11 +1866,11 @@ def main():
             elif choice.lower() == "d":
                 option_install_update(force_main=True)
             elif choice == "2":
-                option_dummy(2, "Repair Installation")
+                option_repair()
             elif choice == "3":
-                option_dummy(3, "Move Installation")
+                option_move()
             elif choice == "4":
-                option_dummy(4, "Complete Reset")
+                option_reset()
             elif choice == "5":
                 option_uninstall()
             else:
