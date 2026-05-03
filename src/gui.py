@@ -6094,7 +6094,19 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
             self.textedit_prompt = QTextEdit()
             self.textedit_prompt.setMaximumHeight(80)
             self.textedit_prompt.setPlaceholderText("e.g. Transcribe film dialogue with punctuation.")
-            self.textedit_prompt.setPlainText(prefs.get('ai_initial_prompt', config.DEFAULT_WHISPER_PROMPT))
+            saved_prompt = prefs.get('ai_initial_prompt', '').strip()
+            if saved_prompt and saved_prompt != config.DEFAULT_WHISPER_PROMPT and saved_prompt != config.GOLDEN_INITIAL_PROMPT:
+                display_prompt = saved_prompt
+            else:
+                # Resolve ISO code from display name in prefs
+                current_lang_display = prefs.get('lang', 'Auto')
+                current_lang_iso = "Auto"
+                for iso, display in config.SUPPORTED_LANGUAGES.items():
+                    if display == current_lang_display:
+                        current_lang_iso = iso
+                        break
+                display_prompt = config.get_whisper_prompt_for_lang(current_lang_iso)
+            self.textedit_prompt.setPlainText(display_prompt)
             self.textedit_prompt.setStyleSheet(f"""
                 QTextEdit {{
                     background-color: #1e1e1e;

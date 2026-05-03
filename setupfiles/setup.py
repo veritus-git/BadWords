@@ -1085,6 +1085,16 @@ else:
         open(log_file, "a").close()
         os.chmod(log_file, 0o666)
 
+        if force_main:
+            try:
+                import json
+                dev_path = os.path.join(install_dir, "dev.json")
+                with open(dev_path, "w", encoding="utf-8") as f:
+                    json.dump({"dev_mode": True}, f)
+                log_ok("Created dev.json for dev installation.")
+            except Exception as e:
+                log_warn(f"Failed to create dev.json: {e}")
+
         # ── Done ─────────────────────────────────────────────
         console.print()
         console.print(Text(f"{PAD}✓  INSTALLATION SUCCESSFUL!", style="bold green"), no_wrap=True)

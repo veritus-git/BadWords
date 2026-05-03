@@ -69,6 +69,248 @@ GOLDEN_INITIAL_PROMPT = (
     "I went... I went to the st... store, tak tak."
 )
 
+# ==========================================
+# PER-LANGUAGE VERBATIM INITIAL PROMPTS
+# ==========================================
+# Each prompt is tailored to its language's native hesitation/filler phonemes.
+# This prevents Whisper from hallucinating foreign filler sounds when operating
+# in a specific language mode, and forces raw acoustic capture (stutters, withdrawals,
+# broken words) instead of grammatically smoothed output.
+# Follows the same philosophy as GOLDEN_INITIAL_PROMPT.
+# Key: Whisper ISO language code. "Auto" → falls back to GOLDEN_INITIAL_PROMPT.
+WHISPER_PROMPTS = {
+    # Afrikaans — generated native fillers
+    "af": "uh, uhm... uh, uhm, h-hello, i... i will check. I went... I went to the store, uh.",
+    # Amharic — generated native fillers
+    "am": "እህ, እም... እህ, እም, h-hello, i... i will check. I went... I went to the store, እህ.",
+    # Arabic
+    "ar": "يعني، آه، إيه... إيه، صح، أ-أنا، ذهبت... ذهبت إلى، يعني.",
+    # Assamese — generated native fillers
+    "as": "উম, এহ... উম, এহ, h-hello, i... i will check. I went... I went to the store, উম.",
+    # Azerbaijani — generated native fillers
+    "az": "ıı, eee... ıı, eee, h-hello, i... i will check. I went... I went to the store, ıı.",
+    # Bashkir — generated native fillers
+    "ba": "эээ, ммм... эээ, ммм, h-hello, i... i will check. I went... I went to the store, эээ.",
+    # Belarusian — generated native fillers
+    "be": "эээ, ммм... эээ, ммм, h-hello, i... i will check. I went... I went to the store, эээ.",
+    # Bulgarian — generated native fillers
+    "bg": "ааа, ъъъ... ааа, ъъъ, h-hello, i... i will check. I went... I went to the store, ааа.",
+    # Bengali — generated native fillers
+    "bn": "উম, এহ... উম, এহ, h-hello, i... i will check. I went... I went to the store, উম.",
+    # Tibetan — generated native fillers
+    "bo": "ཨ་མ... ཨ་མ, h-hello, i... i will check. I went... I went to the store, ཨ་མ.",
+    # Breton — generated native fillers
+    "br": "euh, bah... euh, bah, h-hello, i... i will check. I went... I went to the store, euh.",
+    # Bosnian — generated native fillers
+    "bs": "ehm, pa... ehm, pa, h-hello, i... i will check. I went... I went to the store, ehm.",
+    # Catalan — generated native fillers
+    "ca": "eh, hmm... eh, hmm, h-hello, i... i will check. I went... I went to the store, eh.",
+    # Czech
+    "cs": "Ehm, no, prostě... prostě vlastně, já... já šel, š-šel do, ehm, obchodu.",
+    # Welsh — generated native fillers
+    "cy": "ym, ych... ym, ych, h-hello, i... i will check. I went... I went to the store, ym.",
+    # Danish
+    "da": "Øh, altså... altså ligesom, jeg... jeg gik, g-gik til, øh, butikken.",
+    # German
+    "de": "Ähm, äh, hm, also... also ich, ne, ich woll... wollte sagen, ich bin ge-gegangen, äh, genau.",
+    # Greek
+    "el": "Εμ, δηλαδή... δηλαδή, ε, εγώ... εγώ πήγα, πή-πήγα στο, εμ, μαγαζί.",
+    # English
+    "en": "Umm, yyy, eh, mmm, tsk, h-h-hello, i... i will check. I went... I went to the st... store, you know.",
+    # Spanish
+    "es": "Eh, este... este, o sea, mmm, bueno, yo... yo fui, fu-fui al, al al-almacén, ¿no?",
+    # Estonian — generated native fillers
+    "et": "ee, mm... ee, mm, h-hello, i... i will check. I went... I went to the store, ee.",
+    # Basque — generated native fillers
+    "eu": "eh, ba... eh, ba, h-hello, i... i will check. I went... I went to the store, eh.",
+    # Persian — generated native fillers
+    "fa": "um, eh... um, eh, h-hello, i... i will check. I went... I went to the store, um.",
+    # Finnish
+    "fi": "Öö, tota... tota niinku, mä... mä menin, me-menin sinne, öö, kauppaan.",
+    # Faroese — generated native fillers
+    "fo": "øh, hmm... øh, hmm, h-hello, i... i will check. I went... I went to the store, øh.",
+    # French
+    "fr": "Euh, ben, voilà... voilà donc, hm, j-j'ai, je vou... voulais dire, je suis al-allé, euh, voilà.",
+    # Galician — generated native fillers
+    "gl": "eh, hmm... eh, hmm, h-hello, i... i will check. I went... I went to the store, eh.",
+    # Gujarati — generated native fillers
+    "gu": "ઉમ, એહ... ઉમ, એહ, h-hello, i... i will check. I went... I went to the store, ઉમ.",
+    # Hausa — generated native fillers
+    "ha": "uhm, toh... uhm, toh, h-hello, i... i will check. I went... I went to the store, uhm.",
+    # Hawaiian — generated native fillers
+    "haw": "ʻō, um... ʻō, um, h-hello, i... i will check. I went... I went to the store, ʻō.",
+    # Hebrew
+    "he": "אמ, כלומר... כלומר, נו, אני... אני הלכתי, ה-הלכתי ל, אמ, חנות.",
+    # Hindi
+    "hi": "मतलब, हां, अच्छा, वो... वो, म-मैं गया, म-मतलब दुकान को, हां।",
+    # Croatian — generated native fillers
+    "hr": "ehm, pa... ehm, pa, h-hello, i... i will check. I went... I went to the store, ehm.",
+    # Haitian Creole — generated native fillers
+    "ht": "en, um... en, um, h-hello, i... i will check. I went... I went to the store, en.",
+    # Hungarian
+    "hu": "Hm, tehát... tehát szóval, izé, én... én mentem, me-mentem a, hm, boltba.",
+    # Armenian — generated native fillers
+    "hy": "ըըը, մմմ... ըըը, մմմ, h-hello, i... i will check. I went... I went to the store, ըըը.",
+    # Indonesian — generated native fillers
+    "id": "anu, em... anu, em, h-hello, i... i will check. I went... I went to the store, anu.",
+    # Icelandic — generated native fillers
+    "is": "öh, hmm... öh, hmm, h-hello, i... i will check. I went... I went to the store, öh.",
+    # Italian
+    "it": "Ehm, cioè... cioè, beh, allora, io... io vol-volevo dire, sono an-andato, ehm, ecco.",
+    # Japanese
+    "ja": "えーと、あの、んー、わ-わたしは、い...いきました、そのー。",
+    # Javanese — generated native fillers
+    "jw": "anu, em... anu, em, h-hello, i... i will check. I went... I went to the store, anu.",
+    # Georgian — generated native fillers
+    "ka": "აა, მმ... აა, მმ, h-hello, i... i will check. I went... I went to the store, აა.",
+    # Kazakh — generated native fillers
+    "kk": "эээ, ммм... эээ, ммм, h-hello, i... i will check. I went... I went to the store, эээ.",
+    # Khmer — generated native fillers
+    "km": "អឺ, អឹម... អឺ, អឹម, h-hello, i... i will check. I went... I went to the store, អឺ.",
+    # Kannada — generated native fillers
+    "kn": "ಉಮ್, ಎಹ್... ಉಮ್, ಎಹ್, h-hello, i... i will check. I went... I went to the store, ಉಮ್.",
+    # Korean
+    "ko": "음, 어, 그... 그러니까, 뭐, 나-나는, 갔...갔어요, 음.",
+    # Latin — generated native fillers
+    "la": "ehem, um... ehem, um, h-hello, i... i will check. I went... I went to the store, ehem.",
+    # Luxembourgish — generated native fillers
+    "lb": "ehm, majo... ehm, majo, h-hello, i... i will check. I went... I went to the store, ehm.",
+    # Lingala — generated native fillers
+    "ln": "euh, um... euh, um, h-hello, i... i will check. I went... I went to the store, euh.",
+    # Lao — generated native fillers
+    "lo": "ເອີ, ອືມ... ເອີ, ອືມ, h-hello, i... i will check. I went... I went to the store, ເອີ.",
+    # Lithuanian — generated native fillers
+    "lt": "ėė, mm... ėė, mm, h-hello, i... i will check. I went... I went to the store, ėė.",
+    # Latvian — generated native fillers
+    "lv": "ēē, mm... ēē, mm, h-hello, i... i will check. I went... I went to the store, ēē.",
+    # Malagasy — generated native fillers
+    "mg": "euh, um... euh, um, h-hello, i... i will check. I went... I went to the store, euh.",
+    # Maori — generated native fillers
+    "mi": "ā, um... ā, um, h-hello, i... i will check. I went... I went to the store, ā.",
+    # Macedonian — generated native fillers
+    "mk": "ааа, еее... ааа, еее, h-hello, i... i will check. I went... I went to the store, ааа.",
+    # Malayalam — generated native fillers
+    "ml": "ഉം, ഏഹ്... ഉം, ഏഹ്, h-hello, i... i will check. I went... I went to the store, ഉം.",
+    # Mongolian — generated native fillers
+    "mn": "ээ, мм... ээ, мм, h-hello, i... i will check. I went... I went to the store, ээ.",
+    # Marathi — generated native fillers
+    "mr": "उम, एह... उम, एह, h-hello, i... i will check. I went... I went to the store, उम.",
+    # Malay — generated native fillers
+    "ms": "anu, em... anu, em, h-hello, i... i will check. I went... I went to the store, anu.",
+    # Maltese — generated native fillers
+    "mt": "ehm, mela... ehm, mela, h-hello, i... i will check. I went... I went to the store, ehm.",
+    # Myanmar — generated native fillers
+    "my": "အင်း, အဲ... အင်း, အဲ, h-hello, i... i will check. I went... I went to the store, အင်း.",
+    # Nepali — generated native fillers
+    "ne": "उम, एह... उम, एह, h-hello, i... i will check. I went... I went to the store, उम.",
+    # Dutch
+    "nl": "Eh, uhm, nou... nou eigenlijk, ik... ik wilde zeggen, ik ben ge-gegaan, uhm, ja.",
+    # Norwegian Nynorsk — generated native fillers
+    "nn": "øhm, liksom... øhm, liksom, h-hello, i... i will check. I went... I went to the store, øhm.",
+    # Norwegian
+    "no": "Øhm, eh, liksom... liksom altså, jeg... jeg gikk, g-gikk til, øhm, butikken.",
+    # Occitan — generated native fillers
+    "oc": "euh, ben... euh, ben, h-hello, i... i will check. I went... I went to the store, euh.",
+    # Punjabi — generated native fillers
+    "pa": "ਉਮ, ਏਹ... ਉਮ, ਏਹ, h-hello, i... i will check. I went... I went to the store, ਉਮ.",
+    # Polish
+    "pl": "Yyy, eee, eeee, yyyy, no tak, znaczy... znaczy to jest, wiesz, no... Ja po-pójdę, id... idę do sk... sklepu, no właśnie.",
+    # Pashto — generated native fillers
+    "ps": "امم, اې... امم, اې, h-hello, i... i will check. I went... I went to the store, امم.",
+    # Portuguese
+    "pt": "É, né, ahn... ahn, então, eu... eu fui, fu-fui ao, ao ar-armazém, né?",
+    # Romanian
+    "ro": "Ăă, deci, adică... adică, păi, eu... eu am mers, am-am mers la, ăă, magazin.",
+    # Russian
+    "ru": "Эм, ну, значит... значит это, вот, я-я пошёл, по-пошёл в, в ма-магазин, ну вот.",
+    # Sanskrit — generated native fillers
+    "sa": "उम्, एह्... उम्, एह्, h-hello, i... i will check. I went... I went to the store, उम्.",
+    # Sindhi — generated native fillers
+    "sd": "امم, اې... امم, اې, h-hello, i... i will check. I went... I went to the store, امم.",
+    # Sinhala — generated native fillers
+    "si": "උම්, එහ්... උම්, එහ්, h-hello, i... i will check. I went... I went to the store, උම්.",
+    # Slovak
+    "sk": "Ehm, no, teda... teda vlastne, ja... ja som išiel, i-išiel do, ehm, obchodu.",
+    # Slovenian — generated native fillers
+    "sl": "um, eh... um, eh, h-hello, i... i will check. I went... I went to the store, um.",
+    # Shona — generated native fillers
+    "sn": "ehm, um... ehm, um, h-hello, i... i will check. I went... I went to the store, ehm.",
+    # Somali — generated native fillers
+    "so": "ee, um... ee, um, h-hello, i... i will check. I went... I went to the store, ee.",
+    # Albanian — generated native fillers
+    "sq": "ëëë, hmm... ëëë, hmm, h-hello, i... i will check. I went... I went to the store, ëëë.",
+    # Serbian — generated native fillers
+    "sr": "ehm, pa... ehm, pa, h-hello, i... i will check. I went... I went to the store, ehm.",
+    # Sundanese — generated native fillers
+    "su": "euh, em... euh, em, h-hello, i... i will check. I went... I went to the store, euh.",
+    # Swedish
+    "sv": "Öh, eh, alltså... alltså liksom, jag... jag gick, g-gick till, öh, butiken.",
+    # Swahili — generated native fillers
+    "sw": "eh, um... eh, um, h-hello, i... i will check. I went... I went to the store, eh.",
+    # Tamil — generated native fillers
+    "ta": "உம், ஏஹ்... உம், ஏஹ், h-hello, i... i will check. I went... I went to the store, உம்.",
+    # Telugu — generated native fillers
+    "te": "ఉమ్, ఏహ్... ఉమ్, ఏహ్, h-hello, i... i will check. I went... I went to the store, ఉమ్.",
+    # Tajik — generated native fillers
+    "tg": "эээ, ммм... эээ, ммм, h-hello, i... i will check. I went... I went to the store, эээ.",
+    # Thai — generated native fillers
+    "th": "เอ้อ, อืม... เอ้อ, อืม, h-hello, i... i will check. I went... I went to the store, เอ้อ.",
+    # Turkmen — generated native fillers
+    "tk": "eee, mmm... eee, mmm, h-hello, i... i will check. I went... I went to the store, eee.",
+    # Tagalog — generated native fillers
+    "tl": "ano, um... ano, um, h-hello, i... i will check. I went... I went to the store, ano.",
+    # Turkish
+    "tr": "Şey, yani... yani, hm, ben... ben git-gittim, şey, markete, yani.",
+    # Tatar — generated native fillers
+    "tt": "эээ, ммм... эээ, ммм, h-hello, i... i will check. I went... I went to the store, эээ.",
+    # Ukrainian
+    "uk": "Ееее, ммм, ну, значить... значить це, тобто, я-я пішов, пі-пішов до, ну, магазину.",
+    # Urdu — generated native fillers
+    "ur": "اُم، اے... اُم، اے, h-hello, i... i will check. I went... I went to the store, اُم، اے.",
+    # Uzbek — generated native fillers
+    "uz": "eee, mmm... eee, mmm, h-hello, i... i will check. I went... I went to the store, eee.",
+    # Vietnamese — generated native fillers
+    "vi": "ờ, ừm... ờ, ừm, h-hello, i... i will check. I went... I went to the store, ờ.",
+    # Yiddish — generated native fillers
+    "yi": "אהם, עה... אהם, עה, h-hello, i... i will check. I went... I went to the store, אהם.",
+    # Yoruba — generated native fillers
+    "yo": "ẹn, um... ẹn, um, h-hello, i... i will check. I went... I went to the store, ẹn.",
+    # Chinese
+    "zh": "那个，就是，嗯，啊，我...我去了，去-去了那个，那个商店，就是。",
+    # Cantonese — generated native fillers
+    "yue": "嗰個, 呢... 嗰個, 呢, h-hello, i... i will check. I went... I went to the store, 嗰個.",
+}
+
+def get_whisper_prompt_for_lang(lang, user_custom_prompt=None):
+    """
+    Returns the appropriate Whisper initial prompt for a given transcription language.
+
+    Priority:
+      1. User's custom prompt (ai_initial_prompt from settings) — if set and non-empty.
+      2. Per-language prompt from WHISPER_PROMPTS — if lang is a known ISO code.
+      3. GOLDEN_INITIAL_PROMPT — universal English-based fallback (for Auto or unknown langs).
+
+    Args:
+        lang: Whisper ISO language code (e.g. 'pl', 'en', 'de') or None/'Auto' for auto-detect.
+        user_custom_prompt: The user's custom ai_initial_prompt value from settings.
+
+    Returns:
+        str: The resolved initial prompt string.
+    """
+    # 1. User has set a non-empty custom prompt — always respect it
+    if user_custom_prompt and user_custom_prompt.strip():
+        return user_custom_prompt.strip()
+
+    # 2. Specific language selected — look up per-language prompt
+    if lang and lang not in (None, "Auto", "auto", "None", ""):
+        lang_code = str(lang).lower().strip()
+        if lang_code in WHISPER_PROMPTS:
+            return WHISPER_PROMPTS[lang_code]
+
+    # 3. Auto-detect or unknown language — use the universal GOLDEN baseline
+    return GOLDEN_INITIAL_PROMPT
+
+
 # Official DaVinci Resolve marker colors
 RESOLVE_COLORS = [
     "Orange", "Apricot", "Yellow", "Lime", "Green", "Olive",
