@@ -369,7 +369,7 @@ DEFAULT_SETTINGS = {
     "settings_view_mode":   "basic",
     # ── Chunking ────────────────────────────────────────────────────────────
     "chunk_punct_count":    1,
-    "chunk_max_words":      30,
+    "chunk_max_words":      15,
     "chunk_lookahead":      3,
     "chunk_min_chars":      7,
     "chunk_min_words":      7,
@@ -382,7 +382,7 @@ DEFAULT_SETTINGS = {
     "silence_min_dur":      0.2,    # Minimum silence duration (seconds) for FFmpeg silencedetect
     "silence_threshold_db": -42.0,  # Silence threshold in dB (both standalone and post-transcript)
     "ui_spin_thresh":       -42.0,
-    "ui_spin_pad":          0.05,
+    "ui_spin_pad":          0.1,
     "fs_cut_mode":          True,
     "fs_mark_mode":         False,
     "sync_davinci_chapter": True,
