@@ -19,7 +19,7 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-VERSION = "3.0"
+VERSION = "3.0.1"
 POSTHOG_API_KEY = "phc_NRFaTKhPJJE8cBa3o9gXYo2mlktR5qup5tn7PdxuRsr"
 POSTHOG_HOST = "https://eu.i.posthog.com"
 
@@ -391,7 +391,8 @@ DEFAULT_SETTINGS = {
     "ai_compute_type":      "Auto",
     "device":               "auto",
     "ai_initial_prompt":    GOLDEN_INITIAL_PROMPT,
-    "ai_vad_filter":            False,
+    "ai_ultra_precise":     True,
+    "ai_vad_filter":        False,
     "ai_beam_size":             1,
     "ai_temperature":           0.0,
     "ai_condition_on_prev":     False,

@@ -1382,7 +1382,7 @@ except Exception as e:
 
             # Execute Faster-Whisper via Runner with RESOLVED parameters
             # Chunked mode (Ultra Precise) activates only if requested and len(islands) > 1
-            ultra_precise_mode = self.os_doc.get_all_prefs().get('ai_ultra_precise', False)
+            ultra_precise_mode = self.os_doc.get_all_prefs().get('ai_ultra_precise', config.DEFAULT_SETTINGS.get('ai_ultra_precise', False))
             if not ultra_precise_mode:
                 islands = None
             

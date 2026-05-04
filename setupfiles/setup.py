@@ -161,33 +161,44 @@ def getch():
 
 def readline_with_esc(show_cursor=True):
     """Read a line character-by-character. ESC/Ctrl+C cancels → raises UserCancelled.
-    On Windows, Ctrl+V pastes from the clipboard."""
+    Handles bracketed paste and Windows Ctrl+V."""
     if os.name == "nt":
         import msvcrt
         buf = []
         while True:
-            ch = msvcrt.getch()
-            if ch in (b"\x1b", b"\x03"):
+            ch = msvcrt.getwch()
+            if ch == "\x03":
                 raise UserCancelled()
-            if ch in (b"\r", b"\n"):
+            if ch == "\x1b":
+                if msvcrt.kbhit():
+                    next_ch = msvcrt.getwch()
+                    if next_ch in ("[", "O"):
+                        while msvcrt.kbhit():
+                            seq_ch = msvcrt.getwch()
+                            if seq_ch.isalpha() or seq_ch == "~":
+                                break
+                    continue
+                else:
+                    raise UserCancelled()
+            if ch in ("\r", "\n"):
                 sys.stdout.write("\r\n"); sys.stdout.flush()
                 return "".join(buf)
-            if ch in (b"\x08", b"\x7f"):
+            if ch in ("\x08", "\x7f"):
                 if buf:
                     buf.pop()
                     sys.stdout.write("\b \b"); sys.stdout.flush()
                 continue
-            # Ctrl+V — paste from Windows clipboard
-            if ch == b"\x16":
+            if ch == "\x16":
                 try:
                     import ctypes
                     ctypes.windll.user32.OpenClipboard(0)
-                    hData = ctypes.windll.user32.GetClipboardData(13)  # CF_UNICODETEXT
-                    pData = ctypes.windll.kernel32.GlobalLock(hData)
-                    raw_paste = ctypes.wstring_at(pData)
-                    ctypes.windll.kernel32.GlobalUnlock(hData)
+                    hData = ctypes.windll.user32.GetClipboardData(13)
+                    raw_paste = ""
+                    if hData:
+                        pData = ctypes.windll.kernel32.GlobalLock(hData)
+                        raw_paste = ctypes.wstring_at(pData)
+                        ctypes.windll.kernel32.GlobalUnlock(hData)
                     ctypes.windll.user32.CloseClipboard()
-                    # Only paste printable chars, strip newlines
                     for c in raw_paste:
                         if c in ("\r", "\n"):
                             break
@@ -198,20 +209,19 @@ def readline_with_esc(show_cursor=True):
                 except Exception:
                     pass
                 continue
-            try:
-                c = ch.decode("utf-8")
-                if c.isprintable():
-                    buf.append(c)
-                    sys.stdout.write(c); sys.stdout.flush()
-            except Exception:
-                pass
+            if ch in ("\x00", "\xe0"):
+                if msvcrt.kbhit():
+                    msvcrt.getwch()
+                continue
+            if ch.isprintable():
+                buf.append(ch)
+                sys.stdout.write(ch); sys.stdout.flush()
     else:
         import tty, termios, select
         fd = sys.stdin.fileno()
         try:
             old = termios.tcgetattr(fd)
         except (termios.error, OSError):
-            # stdin is not a TTY — fallback to plain input()
             try:
                 return input()
             except (EOFError, KeyboardInterrupt):
@@ -221,11 +231,24 @@ def readline_with_esc(show_cursor=True):
             tty.setraw(fd)
             while True:
                 ch = sys.stdin.read(1)
-                if ch in ("\x1b", "\x03"):
+                if ch == "\x03":
+                    raise UserCancelled()
+                if ch == "\x1b":
                     r, _, _ = select.select([sys.stdin], [], [], 0.05)
                     if r:
-                        sys.stdin.read(10)
-                    raise UserCancelled()
+                        next_ch = sys.stdin.read(1)
+                        if next_ch in ("[", "O"):
+                            while True:
+                                r2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                if r2:
+                                    seq_ch = sys.stdin.read(1)
+                                    if seq_ch.isalpha() or seq_ch == "~":
+                                        break
+                                else:
+                                    break
+                        continue
+                    else:
+                        raise UserCancelled()
                 if ch in ("\r", "\n"):
                     sys.stdout.write("\r\n"); sys.stdout.flush()
                     return "".join(buf)
@@ -1212,7 +1235,7 @@ def option_repair():
     log_step(f"Cleaning core files in: {install_dir}")
     
     # Files/folders to KEEP
-    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json"}
+    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json", "venv"}
     
     sp_rm = Spinner("Removing core components").start()
     errors = []
@@ -1227,7 +1250,8 @@ def option_repair():
                         def on_rm_error(func, path, exc_info):
                             import stat
                             try:
-                                os.chmod(path, stat.S_IWRITE)
+                                current_mode = os.stat(path).st_mode
+                                os.chmod(path, current_mode | stat.S_IWRITE)
                                 func(path)
                             except Exception:
                                 pass
@@ -1595,7 +1619,6 @@ def _deep_search_badwords():
         roots = [
             os.path.join(home, "Library", "Application Support"),
             os.path.join(home, "Applications"),
-            home,
             "/Applications",
             "/usr/local",
             "/opt",

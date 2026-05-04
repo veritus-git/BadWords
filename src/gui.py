@@ -1392,7 +1392,7 @@ class LiquidProgressBar(QWidget):
             self._anim.start()
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter, QColor, QLinearGradient
+        from PySide6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath
         from PySide6.QtCore import QRectF
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -1401,6 +1401,10 @@ class LiquidProgressBar(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#2b2b2b"))
         p.drawRoundedRect(rect, 4, 4)
+        
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 4, 4)
+        p.setClipPath(path)
         
         if self._indeterminate:
             pill_width = rect.width() * 0.25
@@ -1411,7 +1415,6 @@ class LiquidProgressBar(QWidget):
             grad.setColorAt(1.0, QColor("#b8d035"))
             
             p.setBrush(grad)
-            p.setClipRect(rect)
             p.drawRoundedRect(QRectF(x_pos, 0, pill_width, rect.height()), 4, 4)
         elif self._value > 0:
             fill_width = (self._value / 100.0) * rect.width()
@@ -2816,6 +2819,7 @@ class _LangPickerDialog(QDialog):
             QScrollBar:vertical {{
                 background: {config.MENU_BG};
                 width: 8px;
+                border: none;
             }}
             QScrollBar::handle:vertical {{
                 background: {config.SCROLL_FG};
@@ -2827,6 +2831,9 @@ class _LangPickerDialog(QDialog):
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
             }}
         """)
 
@@ -7279,6 +7286,7 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             QScrollBar:vertical {{
                 background: {config.SCROLL_BG};
                 width: 8px;
+                border: none;
             }}
             QScrollBar::handle:vertical {{
                 background: {config.SCROLL_FG};
@@ -7290,6 +7298,9 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
             }}
         """)
 
@@ -9186,14 +9197,14 @@ class BadWordsGUI(FramelessWindowMixin, QMainWindow):
         ]
         self._combo_model = CustomDropdown(model_items)
         self._combo_model.setFixedHeight(30)
-        self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[5])
+        self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[4])
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         l_trans.addLayout(_row(self.txt("lbl_model"), self._combo_model))
         l_trans.addSpacing(15)
 
         # ── Ultra Precise Mode
         self.tgl_ultra_precise = ToggleSwitch()
-        self.tgl_ultra_precise.setChecked(prefs.get('ai_ultra_precise', True))
+        self.tgl_ultra_precise.setChecked(prefs.get('ai_ultra_precise', config.DEFAULT_SETTINGS.get('ai_ultra_precise', False)))
         self.tgl_ultra_precise.toggled.connect(lambda v: self.engine.save_preferences({"ai_ultra_precise": v}))
         
         lbl_ultra = QLabel(self.txt("lbl_ultra_precise"))
