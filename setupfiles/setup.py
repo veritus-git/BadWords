@@ -168,7 +168,7 @@ def readline_with_esc(show_cursor=True):
 
         def _win_paste_from_clipboard():
             """Try to read clipboard text on Windows."""
-            # Method 1: ctypes WinAPI
+            # Method 1: ctypes WinAPI (fastest, no subprocess)
             try:
                 import ctypes
                 ok = ctypes.windll.user32.OpenClipboard(0)
@@ -183,15 +183,15 @@ def readline_with_esc(show_cursor=True):
                     ctypes.windll.user32.CloseClipboard()
             except Exception:
                 pass
-            # Method 2: PowerShell (works in all Windows Terminal variants)
+            # Method 2: PowerShell fallback — force UTF-8 output to avoid cp1250 crash
             try:
                 r = subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive",
-                     "-Command", "Get-Clipboard"],
-                    capture_output=True, text=True, timeout=3
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                     "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Clipboard"],
+                    capture_output=True, text=False, timeout=3
                 )
-                if r.returncode == 0:
-                    return r.stdout
+                if r.returncode == 0 and r.stdout:
+                    return r.stdout.decode("utf-8", errors="replace")
             except Exception:
                 pass
             return ""
@@ -527,6 +527,25 @@ def _set_scrollbar(enabled: bool):
         STD_OUT = ctypes.windll.kernel32.GetStdHandle(-11)
         # Always 9999 — never shrink to TERM_H (that would cut history)
         ctypes.windll.kernel32.SetConsoleScreenBufferSize(STD_OUT, TERM_W | (9999 << 16))
+    except Exception:
+        pass
+
+
+def _win_enable_quick_edit():
+    """Enable Quick Edit Mode on Windows so users can select and copy text
+    from the terminal with the mouse at any time."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        STD_IN = ctypes.windll.kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if ctypes.windll.kernel32.GetConsoleMode(STD_IN, ctypes.byref(mode)):
+            # ENABLE_MOUSE_INPUT      = 0x0010
+            # ENABLE_QUICK_EDIT_MODE  = 0x0040
+            # ENABLE_EXTENDED_FLAGS   = 0x0080  (must be set to use Quick Edit)
+            mode.value |= 0x0010 | 0x0040 | 0x0080
+            ctypes.windll.kernel32.SetConsoleMode(STD_IN, mode.value)
     except Exception:
         pass
 
@@ -2042,10 +2061,11 @@ def option_reset():
 
 # ── Main loop ─────────────────────────────────────────────────
 def main():
-    # One-time setup: resize + title + lock scrollbar
+    # One-time setup: resize + title + lock scrollbar + Quick Edit
     _resize()
     _set_title("BadWords Setup")
     _set_scrollbar(False)
+    _win_enable_quick_edit()  # allow mouse text selection & copy at all times
     while True:
         try:
             header()
