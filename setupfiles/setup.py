@@ -161,25 +161,95 @@ def getch():
 
 def readline_with_esc(show_cursor=True):
     """Read a line character-by-character. ESC/Ctrl+C cancels → raises UserCancelled.
-    Handles bracketed paste and Windows Ctrl+V."""
+    Handles bracketed paste (Windows Terminal ConPTY) and direct Ctrl+V / Cmd+V."""
     if os.name == "nt":
         import msvcrt
         buf = []
+
+        def _win_paste_from_clipboard():
+            """Try to read clipboard text on Windows."""
+            # Method 1: ctypes WinAPI
+            try:
+                import ctypes
+                ok = ctypes.windll.user32.OpenClipboard(0)
+                if ok:
+                    hData = ctypes.windll.user32.GetClipboardData(13)  # CF_UNICODETEXT
+                    if hData:
+                        pData = ctypes.windll.kernel32.GlobalLock(hData)
+                        text = ctypes.wstring_at(pData)
+                        ctypes.windll.kernel32.GlobalUnlock(hData)
+                        ctypes.windll.user32.CloseClipboard()
+                        return text
+                    ctypes.windll.user32.CloseClipboard()
+            except Exception:
+                pass
+            # Method 2: PowerShell (works in all Windows Terminal variants)
+            try:
+                r = subprocess.run(
+                    ["powershell", "-NoProfile", "-NonInteractive",
+                     "-Command", "Get-Clipboard"],
+                    capture_output=True, text=True, timeout=3
+                )
+                if r.returncode == 0:
+                    return r.stdout
+            except Exception:
+                pass
+            return ""
+
         while True:
             ch = msvcrt.getwch()
             if ch == "\x03":
                 raise UserCancelled()
+
+            # ESC — could be a plain ESC or a bracketed paste from Windows Terminal
             if ch == "\x1b":
                 if msvcrt.kbhit():
                     next_ch = msvcrt.getwch()
-                    if next_ch in ("[", "O"):
+                    if next_ch == "[":
+                        # Read digits to distinguish \x1b[200~ (paste start) from arrow keys etc.
+                        digits = ""
                         while msvcrt.kbhit():
-                            seq_ch = msvcrt.getwch()
-                            if seq_ch.isalpha() or seq_ch == "~":
+                            c2 = msvcrt.getwch()
+                            if c2 == "~":
                                 break
+                            if c2.isdigit():
+                                digits += c2
+                                continue
+                            # Non-digit, non-~: it's a regular ANSI key (e.g. arrow)
+                            # consume and stop
+                            digits = ""
+                            break
+                        if digits == "200":
+                            # Bracketed paste start — collect until \x1b[201~
+                            while True:
+                                if not msvcrt.kbhit():
+                                    time.sleep(0.01)
+                                    # give buffer time to fill; if still nothing after
+                                    # a short wait, treat as end of paste
+                                    if not msvcrt.kbhit():
+                                        break
+                                pc = msvcrt.getwch()
+                                if pc == "\x1b":
+                                    # Consume [201~
+                                    while msvcrt.kbhit():
+                                        ec = msvcrt.getwch()
+                                        if ec == "~":
+                                            break
+                                    break
+                                if pc in ("\r", "\n"):
+                                    break
+                                if pc.isprintable():
+                                    buf.append(pc)
+                                    sys.stdout.write(pc)
+                            sys.stdout.flush()
+                        # else: consumed a regular ANSI escape sequence
+                    elif next_ch == "O":
+                        if msvcrt.kbhit():
+                            msvcrt.getwch()
                     continue
                 else:
                     raise UserCancelled()
+
             if ch in ("\r", "\n"):
                 sys.stdout.write("\r\n"); sys.stdout.flush()
                 return "".join(buf)
@@ -188,26 +258,16 @@ def readline_with_esc(show_cursor=True):
                     buf.pop()
                     sys.stdout.write("\b \b"); sys.stdout.flush()
                 continue
+            # Ctrl+V — explicit paste shortcut
             if ch == "\x16":
-                try:
-                    import ctypes
-                    ctypes.windll.user32.OpenClipboard(0)
-                    hData = ctypes.windll.user32.GetClipboardData(13)
-                    raw_paste = ""
-                    if hData:
-                        pData = ctypes.windll.kernel32.GlobalLock(hData)
-                        raw_paste = ctypes.wstring_at(pData)
-                        ctypes.windll.kernel32.GlobalUnlock(hData)
-                    ctypes.windll.user32.CloseClipboard()
-                    for c in raw_paste:
-                        if c in ("\r", "\n"):
-                            break
-                        if c.isprintable():
-                            buf.append(c)
-                            sys.stdout.write(c)
-                    sys.stdout.flush()
-                except Exception:
-                    pass
+                raw_paste = _win_paste_from_clipboard()
+                for c in raw_paste:
+                    if c in ("\r", "\n"):
+                        break
+                    if c.isprintable():
+                        buf.append(c)
+                        sys.stdout.write(c)
+                sys.stdout.flush()
                 continue
             if ch in ("\x00", "\xe0"):
                 if msvcrt.kbhit():
@@ -238,81 +298,43 @@ def readline_with_esc(show_cursor=True):
                     if r:
                         next_ch = sys.stdin.read(1)
                         if next_ch == "[":
-                            # Could be a bracketed paste sequence \x1b[200~ or an ANSI escape
-                            # Read up to 4 more chars to distinguish them
+                            # Read up to 3 digits + ~ to detect bracketed paste \x1b[200~
                             r2, _, _ = select.select([sys.stdin], [], [], 0.05)
                             if r2:
-                                code_ch = sys.stdin.read(1)
-                                if code_ch == "2":
-                                    # Possibly \x1b[200~ (bracketed paste start)
-                                    r3, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                    if r3:
-                                        code_ch2 = sys.stdin.read(1)
-                                        if code_ch2 == "0":
-                                            r4, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                            if r4:
-                                                code_ch3 = sys.stdin.read(1)
-                                                if code_ch3 == "0":
-                                                    # Consume the trailing "~"
-                                                    r5, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                                    if r5:
-                                                        sys.stdin.read(1)  # consume "~"
-                                                    # Now read pasted content until \x1b[201~
-                                                    while True:
-                                                        rc, _, _ = select.select([sys.stdin], [], [], 0.2)
-                                                        if not rc:
-                                                            break
-                                                        pc = sys.stdin.read(1)
-                                                        if pc == "\x1b":
-                                                            # Consume [201~
-                                                            r_end, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                                            if r_end:
-                                                                sys.stdin.read(10)  # consume tail
-                                                            break
-                                                        if pc in ("\r", "\n"):
-                                                            break  # single-line input: stop at newline
-                                                        if pc.isprintable():
-                                                            buf.append(pc)
-                                                            sys.stdout.write(pc)
-                                                    sys.stdout.flush()
-                                                    continue
-                                                else:
-                                                    # Not bracketed paste — consume until letter/~
-                                                    seq = code_ch3
-                                                    while True:
-                                                        rq, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                                        if not rq:
-                                                            break
-                                                        sc = sys.stdin.read(1)
-                                                        if sc.isalpha() or sc == "~":
-                                                            break
-                                                    continue
-                                        else:
-                                            # Consume until end of sequence
-                                            seq = code_ch2
-                                            while True:
-                                                rq, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                                if not rq:
-                                                    break
-                                                sc = sys.stdin.read(1)
-                                                if sc.isalpha() or sc == "~":
-                                                    break
-                                            continue
-                                    continue
-                                else:
-                                    # Regular ANSI escape (arrow keys etc.) — consume until letter/~
-                                    seq = code_ch
+                                digits = ""
+                                while True:
+                                    rc2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                    if not rc2:
+                                        break
+                                    c2 = sys.stdin.read(1)
+                                    if c2 == "~":
+                                        break
+                                    if c2.isdigit():
+                                        digits += c2
+                                    else:
+                                        digits = ""
+                                        break
+                                if digits == "200":
+                                    # Bracketed paste — collect until \x1b[201~
                                     while True:
-                                        rq, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                        if not rq:
+                                        rp, _, _ = select.select([sys.stdin], [], [], 0.2)
+                                        if not rp:
                                             break
-                                        sc = sys.stdin.read(1)
-                                        if sc.isalpha() or sc == "~":
+                                        pc = sys.stdin.read(1)
+                                        if pc == "\x1b":
+                                            rend, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                            if rend:
+                                                sys.stdin.read(10)
                                             break
-                                    continue
+                                        if pc in ("\r", "\n"):
+                                            break
+                                        if pc.isprintable():
+                                            buf.append(pc)
+                                            sys.stdout.write(pc)
+                                    sys.stdout.flush()
+                                # else: regular ANSI escape, already consumed
                             continue
                         elif next_ch == "O":
-                            # F-key or cursor key sequence
                             r2, _, _ = select.select([sys.stdin], [], [], 0.05)
                             if r2:
                                 sys.stdin.read(1)
@@ -328,20 +350,20 @@ def readline_with_esc(show_cursor=True):
                         buf.pop()
                         sys.stdout.write("\b \b"); sys.stdout.flush()
                     continue
-                # Ctrl+V on Linux/macOS — read clipboard via system tools
+                # Ctrl+V — try to read clipboard via system tools (Linux/macOS)
                 if ch == "\x16":
                     try:
-                        import subprocess as _sp
                         clip_txt = ""
-                        for _cmd in (["xclip", "-selection", "clipboard", "-o"],
-                                     ["xsel", "--clipboard", "--output"],
-                                     ["pbpaste"]):
+                        for _cmd in (["pbpaste"],
+                                     ["xclip", "-selection", "clipboard", "-o"],
+                                     ["xsel", "--clipboard", "--output"]):
                             try:
-                                res = _sp.run(_cmd, capture_output=True, text=True, timeout=2)
-                                if res.returncode == 0:
+                                res = subprocess.run(_cmd, capture_output=True,
+                                                     text=True, timeout=2)
+                                if res.returncode == 0 and res.stdout:
                                     clip_txt = res.stdout
                                     break
-                            except (FileNotFoundError, _sp.TimeoutExpired):
+                            except (FileNotFoundError, subprocess.TimeoutExpired):
                                 continue
                         for c in clip_txt:
                             if c in ("\r", "\n"):
@@ -359,6 +381,7 @@ def readline_with_esc(show_cursor=True):
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         return "".join(buf)
+
 
 # ── UI ───────────────────────────────────────────────────────
 def _resize(w=TERM_W, h=TERM_H):
