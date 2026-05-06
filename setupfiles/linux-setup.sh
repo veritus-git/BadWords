@@ -55,10 +55,12 @@ _launch_installer() {
     # Set terminal title
     printf '\033]0;BadWords Setup\007'
     clear
+    # Redirect stdin from /dev/tty so Python can read keyboard input
+    # even when this script was launched via pipe (curl ... | bash).
     if [ -n "$LOCAL_REPO" ]; then
-        exec "$py" "$script" --platform linux --bootstrap-python "$py" --local-repo "$LOCAL_REPO"
+        exec "$py" "$script" --platform linux --bootstrap-python "$py" --local-repo "$LOCAL_REPO" < /dev/tty
     else
-        exec "$py" "$script" --platform linux --bootstrap-python "$py"
+        exec "$py" "$script" --platform linux --bootstrap-python "$py" < /dev/tty
     fi
 }
 

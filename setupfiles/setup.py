@@ -237,15 +237,86 @@ def readline_with_esc(show_cursor=True):
                     r, _, _ = select.select([sys.stdin], [], [], 0.05)
                     if r:
                         next_ch = sys.stdin.read(1)
-                        if next_ch in ("[", "O"):
-                            while True:
-                                r2, _, _ = select.select([sys.stdin], [], [], 0.05)
-                                if r2:
-                                    seq_ch = sys.stdin.read(1)
-                                    if seq_ch.isalpha() or seq_ch == "~":
-                                        break
+                        if next_ch == "[":
+                            # Could be a bracketed paste sequence \x1b[200~ or an ANSI escape
+                            # Read up to 4 more chars to distinguish them
+                            r2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                            if r2:
+                                code_ch = sys.stdin.read(1)
+                                if code_ch == "2":
+                                    # Possibly \x1b[200~ (bracketed paste start)
+                                    r3, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                    if r3:
+                                        code_ch2 = sys.stdin.read(1)
+                                        if code_ch2 == "0":
+                                            r4, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                            if r4:
+                                                code_ch3 = sys.stdin.read(1)
+                                                if code_ch3 == "0":
+                                                    # Consume the trailing "~"
+                                                    r5, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                                    if r5:
+                                                        sys.stdin.read(1)  # consume "~"
+                                                    # Now read pasted content until \x1b[201~
+                                                    while True:
+                                                        rc, _, _ = select.select([sys.stdin], [], [], 0.2)
+                                                        if not rc:
+                                                            break
+                                                        pc = sys.stdin.read(1)
+                                                        if pc == "\x1b":
+                                                            # Consume [201~
+                                                            r_end, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                                            if r_end:
+                                                                sys.stdin.read(10)  # consume tail
+                                                            break
+                                                        if pc in ("\r", "\n"):
+                                                            break  # single-line input: stop at newline
+                                                        if pc.isprintable():
+                                                            buf.append(pc)
+                                                            sys.stdout.write(pc)
+                                                    sys.stdout.flush()
+                                                    continue
+                                                else:
+                                                    # Not bracketed paste — consume until letter/~
+                                                    seq = code_ch3
+                                                    while True:
+                                                        rq, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                                        if not rq:
+                                                            break
+                                                        sc = sys.stdin.read(1)
+                                                        if sc.isalpha() or sc == "~":
+                                                            break
+                                                    continue
+                                        else:
+                                            # Consume until end of sequence
+                                            seq = code_ch2
+                                            while True:
+                                                rq, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                                if not rq:
+                                                    break
+                                                sc = sys.stdin.read(1)
+                                                if sc.isalpha() or sc == "~":
+                                                    break
+                                            continue
+                                    continue
                                 else:
-                                    break
+                                    # Regular ANSI escape (arrow keys etc.) — consume until letter/~
+                                    seq = code_ch
+                                    while True:
+                                        rq, _, _ = select.select([sys.stdin], [], [], 0.05)
+                                        if not rq:
+                                            break
+                                        sc = sys.stdin.read(1)
+                                        if sc.isalpha() or sc == "~":
+                                            break
+                                    continue
+                            continue
+                        elif next_ch == "O":
+                            # F-key or cursor key sequence
+                            r2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                            if r2:
+                                sys.stdin.read(1)
+                            continue
                         continue
                     else:
                         raise UserCancelled()
@@ -256,6 +327,31 @@ def readline_with_esc(show_cursor=True):
                     if buf:
                         buf.pop()
                         sys.stdout.write("\b \b"); sys.stdout.flush()
+                    continue
+                # Ctrl+V on Linux/macOS — read clipboard via system tools
+                if ch == "\x16":
+                    try:
+                        import subprocess as _sp
+                        clip_txt = ""
+                        for _cmd in (["xclip", "-selection", "clipboard", "-o"],
+                                     ["xsel", "--clipboard", "--output"],
+                                     ["pbpaste"]):
+                            try:
+                                res = _sp.run(_cmd, capture_output=True, text=True, timeout=2)
+                                if res.returncode == 0:
+                                    clip_txt = res.stdout
+                                    break
+                            except (FileNotFoundError, _sp.TimeoutExpired):
+                                continue
+                        for c in clip_txt:
+                            if c in ("\r", "\n"):
+                                break
+                            if c.isprintable():
+                                buf.append(c)
+                                sys.stdout.write(c)
+                        sys.stdout.flush()
+                    except Exception:
+                        pass
                     continue
                 if ch.isprintable():
                     buf.append(ch)

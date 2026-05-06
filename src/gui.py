@@ -6438,6 +6438,55 @@ class SettingsDialog(FramelessWindowMixin, QDialog):
 
         l_telem.addLayout(form_telem)
         l_telem.addStretch()
+
+        # ── Project links — pinned at the bottom ───────────────────────────
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        _BTN_LINK_SS = """
+            QPushButton {
+                color: #1a7a45;
+                background: transparent;
+                border: none;
+                text-align: left;
+                padding: 0px;
+                font-size: 9pt;
+                text-decoration: underline;
+            }
+            QPushButton:hover {
+                color: #2dcc70;
+            }
+        """
+
+        # Buy Me a Coffee link — description above, URL as button
+        lbl_coffee_desc = QLabel(self.txt("link_coffee_desc"))
+        lbl_coffee_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
+        l_telem.addWidget(lbl_coffee_desc)
+
+        btn_coffee = QPushButton("buymeacoffee.com/badwords")
+        btn_coffee.setFlat(True)
+        btn_coffee.setCursor(Qt.PointingHandCursor)
+        btn_coffee.setStyleSheet(_BTN_LINK_SS)
+        btn_coffee.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/badwords")))
+        l_telem.addWidget(btn_coffee)
+
+        l_telem.addSpacing(10)
+
+        # GitHub repo link — description above, URL as button
+        lbl_repo_desc = QLabel(self.txt("link_repo_desc"))
+        lbl_repo_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
+        l_telem.addWidget(lbl_repo_desc)
+
+        btn_repo = QPushButton("github.com/veritus-git/BadWords")
+        btn_repo.setFlat(True)
+        btn_repo.setCursor(Qt.PointingHandCursor)
+        btn_repo.setStyleSheet(_BTN_LINK_SS)
+        btn_repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/veritus-git/BadWords")))
+        l_telem.addWidget(btn_repo)
+
+        l_telem.addSpacing(12)
+
+
         _add_page_to_stack(page_telem)
 
         # FIX: Capture the exact UI state right after full construction
