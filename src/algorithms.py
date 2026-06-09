@@ -46,9 +46,9 @@ from osdoc import log_info
 STOP_WORDS = {"a", "an", "the", "in", "on", "at", "to", "of", "i", "you", "he", "she", "it", "we", "they", "is", "are", "and", "or"}
 
 # Fuzzy Thresholds
-THRESH_SHORT = 0.50  # < 4 chars
-THRESH_MID   = 0.65  # 4-7 chars
-THRESH_LONG  = 0.75  # > 7 chars
+THRESH_LONG = 0.65   # v7.5 Relaxed from 0.70 to reduce false positives
+THRESH_MID = 0.55    # v7.5 Relaxed from 0.65
+THRESH_SHORT = 0.45  # v7.5 Relaxed from 0.50
 
 # ==========================================
 # 0. HALLUCINATION SANITIZER (STAGE 9)
@@ -214,6 +214,11 @@ def check_fuzzy_match(s1, s2):
     
     sim = calculate_similarity(c1, c2)
     length = max(len(c1), len(c2))
+    min_length = min(len(c1), len(c2))
+    
+    # v7.5 Anti-Cascade: Prevent absurd matches like "are" vs "a"
+    if length > 0 and (min_length / length) < 0.4:
+        return False
     
     threshold = THRESH_LONG
     if length < 4: threshold = THRESH_SHORT
@@ -270,6 +275,10 @@ class CompareEngineV5:
         
         for idx, w in enumerate(words_data):
             if w.get('type') == 'silence' or w.get('is_inaudible') or w.get('_is_hallucination'):
+                # v7.6 Clean up skipped words so they don't retain colors from previous runs
+                w['status'] = w.get('manual_status')
+                w['selected'] = bool(w['status'])
+                w['is_auto'] = False
                 continue
             
             # W transkrypcie Whisper daje czyste słowa, ale upewnijmy się
@@ -353,6 +362,11 @@ class CompareEngineV5:
             return False
         sim = calculate_similarity(c1, c2)
         length = max(len(c1), len(c2))
+        min_length = min(len(c1), len(c2))
+        
+        # v7.5 Anti-Cascade: Prevent absurd matches like "are" vs "a"
+        if length > 0 and (min_length / length) < 0.4:
+            return False
         # Scale short/mid thresholds relative to the user's long threshold
         thresh = self.fuzzy_thresh
         if length < 4:   thresh = min(thresh, THRESH_SHORT)
@@ -549,16 +563,9 @@ class CompareEngineV5:
                 # Weryfikacja kotwicy (Anchor Check)
                 is_anchor_candidate = self.super_compare(s_candidate, t_word)
                 if not is_anchor_candidate:
-                    c_cand = super_clean(s_candidate)
-                    c_tword = super_clean(t_word)
-                    if len(c_cand) >= 4:
-                        # Normal words: use instance fuzzy match (respects algo_fuzzy_threshold)
-                        is_anchor_candidate = self._fuzzy_match(s_candidate, t_word)
-                    else:
-                        # STAGE 9: Short words (< 4 chars) get a lower threshold (0.40)
-                        # so real human stutters ("hi... hi world") are caught as 'repeat'
-                        sim = calculate_similarity(c_cand, c_tword)
-                        is_anchor_candidate = (sim >= 0.40)
+                    # Always use standard _fuzzy_match for anchor candidates
+                    # v7.5: Removed the dangerous 0.40 threshold for < 4 chars that caused cascade failures
+                    is_anchor_candidate = self._fuzzy_match(s_candidate, t_word)
                 
                 if is_anchor_candidate:
                     confirmed = False
@@ -597,7 +604,35 @@ class CompareEngineV5:
                     if confirmed:
                         j_start = self.history_map.get(k)
                         if j_start is not None and j_start < j:
+                            # v7.5 Anti Blue Ocean: Don't color massive gaps!
+                            if j - j_start > 40:
+                                continue
+                                
                             self.mark_range(j_start, j, 'repeat')
+                            
+                            # --- v7.4 STRICT FIRST WORD RECOVERY ---
+                            # Only recover words safely, avoiding infinite fuzzy match loops.
+                            # We step backward strictly checking exact super_compare.
+                            walk_k = k - 1
+                            walk_j = j - 1
+                            walk_j_start = j_start - 1
+                            
+                            while walk_k >= 0 and walk_j >= 0 and walk_j_start >= 0:
+                                # Strict exact match only! No fuzzy match to prevent cascades.
+                                curr_match = self.super_compare(self.script_tokens[walk_k], self.trans_tokens[walk_j])
+                                prev_match = self.super_compare(self.script_tokens[walk_k], self.trans_tokens[walk_j_start])
+                                
+                                if curr_match and prev_match:
+                                    self._add_trace(walk_j, walk_k)
+                                    self._add_trace(walk_j_start, walk_k)
+                                    self.history_map[walk_k] = walk_j
+                                    
+                                    walk_k -= 1
+                                    walk_j -= 1
+                                    walk_j_start -= 1
+                                else:
+                                    break
+                            
                             i = k + 1
                             self.history_map[k] = j 
                             self._add_trace(j, k)
@@ -637,6 +672,16 @@ class CompareEngineV5:
         
         self.missing_script_indices = real_missing
         log_info(f"[Phase E] Coverage Validation complete. Final missing count: {len(self.missing_script_indices)}")
+
+        # --- PHASE F: STOP WORD FILTER (v7.6) ---
+        # User request: "If an inserted word is just 'the' or 'a', don't mark it red, just ignore it."
+        for w in self.words_data:
+            if w.get('status') == 'bad' and not w.get('manual_status'):
+                clean = w.get('text', '').strip(".,?!:;\"'()[]{}").lower()
+                if clean in STOP_WORDS:
+                    w['status'] = None
+                    w['selected'] = False
+                    w['is_auto'] = False
 
         # PATCH v6.4: ANTI-FREEZE HYBRID RETURN
         # Zamiast krotki, zwracamy listę (AnalysisResult), która ma atrybut .missing_indices.
@@ -693,9 +738,16 @@ class CompareEngineV5:
                 continue
             
             # --- LOCAL FLOOD FILL ---
+            # v7.4 Anti Blue-Ocean Shield: Do not flood-fill absurdly large gaps.
+            # If the span between the first take and the second take is huge,
+            # it's a mapping error or a false positive retake on a stop word.
             local_start = times[0]
             local_end = times[-1]
             
+            if local_end - local_start > 50:
+                log_info(f"[Phase D] Skipping massive gap {local_end - local_start} words to prevent Blue Ocean.")
+                continue
+                
             self.mark_range(local_start, local_end, 'repeat')
             count_retakes += 1
 
