@@ -938,7 +938,6 @@ else:
             os.chmod(wp, 0o755)
             debug_log(f"Wrapper written to: {wp}")
             wrapper_count += 1
-            break
 
         except Exception as exc:
             debug_log(f"Could not write wrapper to {rd}: {exc}")
@@ -1317,6 +1316,25 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 except Exception as e:
                     sp_py.done(ok=False)
                     log_warn(f"Failed to auto-install Python: {e}")
+
+        elif "mac" in PLAT or "darwin" in PLAT:
+            # DaVinci Resolve on macOS requires a Python framework from python.org.
+            # Homebrew or Xcode command-line tools Python will NOT work.
+            framework_base = "/Library/Frameworks/Python.framework/Versions"
+            has_framework = False
+            if os.path.isdir(framework_base):
+                for ver in ["3.12", "3.11", "3.10", "3.9", "3.8", "3.7", "3.6"]:
+                    if os.path.isdir(os.path.join(framework_base, ver)):
+                        has_framework = True
+                        break
+            
+            if not has_framework:
+                console.print()
+                log_warn("System Python framework not detected. DaVinci Resolve requires it!")
+                log_warn("Homebrew or Apple's default Python will NOT work with DaVinci Resolve.")
+                log_warn("Please install Python (e.g. 3.10 or 3.12) directly from: https://www.python.org/downloads/mac-osx/")
+                console.print(Text(f"{PAD}DaVinci Resolve will not show BadWords until the official Python is installed.", style="bold yellow"), no_wrap=True)
+                pause("Press Enter to continue installation anyway...")
 
         # ── Python for venv ───────────────────────────────────
         # The bootstrap Python (from the bootstrapper) may be embedded/portable
