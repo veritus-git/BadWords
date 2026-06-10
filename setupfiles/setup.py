@@ -938,6 +938,7 @@ else:
             os.chmod(wp, 0o755)
             debug_log(f"Wrapper written to: {wp}")
             wrapper_count += 1
+            break
 
         except Exception as exc:
             debug_log(f"Could not write wrapper to {rd}: {exc}")
@@ -1331,10 +1332,90 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             if not has_framework:
                 console.print()
                 log_warn("System Python framework not detected. DaVinci Resolve requires it!")
-                log_warn("Homebrew or Apple's default Python will NOT work with DaVinci Resolve.")
-                log_warn("Please install Python (e.g. 3.10 or 3.12) directly from: https://www.python.org/downloads/mac-osx/")
-                console.print(Text(f"{PAD}DaVinci Resolve will not show BadWords until the official Python is installed.", style="bold yellow"), no_wrap=True)
-                pause("Press Enter to continue installation anyway...")
+                console.print(Text(f"{PAD}BadWords cannot integrate with DaVinci Resolve without the official Python.", style="bold yellow"), no_wrap=True)
+                console.print(Text(f"{PAD}Setup will now download and install the official Python 3.10 from python.org.", style="cyan"), no_wrap=True)
+                console.print(Text(f"{PAD}This is a safe, standard installation, but it requires your Mac password.", style="bold red"), no_wrap=True)
+                pause("Press Enter to proceed with the Python installation...")
+                
+                sp_py = Spinner("Downloading Python 3.10 for macOS...").start()
+                py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-macos11.pkg"
+                py_pkg = os.path.join(tempfile.gettempdir(), "python_installer.pkg")
+                
+                try:
+                    if download(py_url, py_pkg):
+                        sp_py.done(ok=True)
+                        log_step("Installing Python (please enter your Mac password if prompted)...")
+                        # Run the installer interactively so sudo password prompt is visible
+                        res = subprocess.run(["sudo", "installer", "-pkg", py_pkg, "-target", "/"])
+                        if res.returncode == 0:
+                            log_ok("System Python 3.10 installed successfully.")
+                            py_auto_installed = True
+                            try:
+                                with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
+                                    f.write("1")
+                            except Exception: pass
+                        else:
+                            log_warn(f"Failed to auto-install Python: exit code {res.returncode}")
+                    else:
+                        sp_py.done(ok=False)
+                        log_warn("Failed to download Python installer.")
+                except Exception as e:
+                    sp_py.done(ok=False)
+                    log_warn(f"Failed to auto-install Python: {e}")
+
+        else:
+            # Linux
+            def _has_linux_python():
+                import shutil, subprocess
+                for cmd in ["python3", "python"]:
+                    exe = shutil.which(cmd)
+                    if exe:
+                        try:
+                            r = subprocess.run([exe, "-V"], capture_output=True, text=True, timeout=2)
+                            if "Python 3." in r.stdout or "Python 3." in r.stderr:
+                                return True
+                        except Exception: pass
+                return False
+                
+            if not _has_linux_python():
+                console.print()
+                log_warn("System Python not detected. DaVinci Resolve requires it!")
+                console.print(Text(f"{PAD}Setup will try to safely install Python using your system package manager.", style="cyan"), no_wrap=True)
+                console.print(Text(f"{PAD}This requires administrator privileges. You may be prompted for your password.", style="bold red"), no_wrap=True)
+                pause("Press Enter to proceed with the Python installation...")
+                
+                log_step("Installing Python (please enter your sudo password if prompted)...")
+                try:
+                    pkg_mgrs = [
+                        (["apt-get", "update"], ["apt-get", "install", "-y", "python3", "python3-venv"]),
+                        (["dnf", "install", "-y", "python3"]),
+                        (["yum", "install", "-y", "python3"]),
+                        (["pacman", "-Sy", "--noconfirm", "python"])
+                    ]
+                    installed = False
+                    import shutil
+                    for cmds in pkg_mgrs:
+                        base_cmd = cmds[-1] if len(cmds) > 1 else cmds[0]
+                        cmd_name = base_cmd[0]
+                        if shutil.which(cmd_name):
+                            if len(cmds) > 1:
+                                subprocess.run(["sudo"] + cmds[0], check=False)
+                            res = subprocess.run(["sudo"] + base_cmd)
+                            if res.returncode == 0:
+                                installed = True
+                                log_ok(f"Python installed via {cmd_name}.")
+                                py_auto_installed = True
+                                try:
+                                    with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
+                                        f.write("1")
+                                except Exception: pass
+                                break
+                                
+                    if not installed:
+                        log_warn("Failed to automatically install Python using package manager.")
+                        log_warn("Please install python3 manually.")
+                except Exception as e:
+                    log_warn(f"Failed to auto-install Python: {e}")
 
         # ── Python for venv ───────────────────────────────────
         # The bootstrap Python (from the bootstrapper) may be embedded/portable
