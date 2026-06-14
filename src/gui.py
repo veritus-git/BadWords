@@ -6252,6 +6252,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.dropdown_compute.setFixedHeight(30)
             saved_compute = prefs.get('ai_compute_type', 'Auto')
             self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
+            self.dropdown_compute.setToolTip(
+                "Applies to NVIDIA GPU and CPU (CTranslate2) only. "
+                "On AMD/Intel GPUs the Vulkan (whisper.cpp) backend ignores this setting."
+            )
             _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
 
             l_ai.addLayout(form_ai)

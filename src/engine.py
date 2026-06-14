@@ -61,6 +61,10 @@ class AudioEngine:
         # Determine path to local libs for subprocess injection
         self.libs_dir = os.path.join(os.path.dirname(__file__), "libs")
         
+        # Active transcription backend: 'ctranslate2' (faster-whisper, NVIDIA/CPU)
+        # or 'whispercpp' (Vulkan, AMD/Intel GPUs). Resolved per-run in the pipeline.
+        self._backend = "ctranslate2"
+
         # Define local models directory (in install folder)
         self.models_dir = os.path.join(self.os_doc.install_dir, "models")
         try:
@@ -281,6 +285,396 @@ class AudioEngine:
             return True  # Don't block the user if the probe itself errors
 
     # ==========================================
+    # 0b. WHISPER.CPP / VULKAN BACKEND (AMD / Intel GPUs)
+    # ==========================================
+
+    def _resolve_backend(self, device_mode: str) -> str:
+        """
+        Picks the transcription backend for the resolved device_mode:
+          - 'ctranslate2' for NVIDIA GPU and for CPU (faster-whisper, the default).
+          - 'whispercpp'  for a GPU request on AMD/Intel hardware where the bundled
+                          whisper.cpp Vulkan binary + a Vulkan loader are present.
+        """
+        if "GPU" in (device_mode or "") and not self.os_doc.has_nvidia_support():
+            if self.os_doc.detect_gpu_vendor() in ("amd", "intel") and self.os_doc.has_vulkan_support():
+                return "whispercpp"
+        return "ctranslate2"
+
+    def _ggml_model_filename(self, model: str) -> str:
+        m = "large-v3" if model == "large" else model
+        return f"ggml-{m}.bin"
+
+    def _ggml_model_path(self, model: str) -> str:
+        return os.path.join(self.models_dir, self._ggml_model_filename(model))
+
+    def _dtw_preset(self, model: str) -> str:
+        """Maps a BadWords model size to a whisper.cpp --dtw alignment preset name."""
+        m = "large-v3" if model == "large" else model
+        return {
+            "tiny": "tiny", "tiny.en": "tiny.en",
+            "base": "base", "base.en": "base.en",
+            "small": "small", "small.en": "small.en",
+            "medium": "medium", "medium.en": "medium.en",
+            "large-v1": "large.v1", "large-v2": "large.v2", "large-v3": "large.v3",
+        }.get(m, "large.v3")
+
+    def check_ggml_model_exists(self, model: str) -> bool:
+        p = self._ggml_model_path(model)
+        return os.path.exists(p) and os.path.getsize(p) > 0
+
+    def download_ggml_model_interactive(self, model, progress_callback=None, status_callback=None):
+        """
+        Downloads a GGML model file for the whisper.cpp backend from the official
+        ggerganov/whisper.cpp HuggingFace repo. Mirrors the CT2 downloader's contract
+        (returns True on success). Streams with a percentage progress callback.
+        """
+        import urllib.request
+
+        filename = self._ggml_model_filename(model)
+        dest = self._ggml_model_path(model)
+        url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{filename}"
+        tmp = dest + ".part"
+        log_info(f"[GGML-DL] Downloading {filename} from {url}")
+        try:
+            os.makedirs(self.models_dir, exist_ok=True)
+            req = urllib.request.Request(url, headers={"User-Agent": "BadWords"})
+            with urllib.request.urlopen(req, timeout=60) as resp, open(tmp, "wb") as out:
+                total = int(resp.headers.get("Content-Length", 0))
+                read = 0
+                chunk = 1024 * 256
+                while True:
+                    buf = resp.read(chunk)
+                    if not buf:
+                        break
+                    out.write(buf)
+                    read += len(buf)
+                    if total and progress_callback:
+                        progress_callback(int(read * 100 / total))
+            os.replace(tmp, dest)
+            log_info(f"[GGML-DL] Model {filename} ready ({os.path.getsize(dest)} bytes).")
+            return True
+        except Exception as e:
+            log_error(f"[GGML-DL] Download failed: {e}")
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+            return False
+
+    def _whispercpp_env(self):
+        """Subprocess env so the bundled whisper-cli finds its shared libraries
+        (libwhisper / libggml*) sitting next to it. Windows resolves DLLs from the
+        binary's own directory automatically; Linux/macOS need the loader path."""
+        env = os.environ.copy()
+        cli = self.os_doc.get_whispercpp_cmd()
+        if cli:
+            bin_dir = os.path.dirname(os.path.abspath(cli))
+            if self.os_doc.is_linux:
+                env["LD_LIBRARY_PATH"] = bin_dir + os.pathsep + env.get("LD_LIBRARY_PATH", "")
+            elif self.os_doc.is_mac:
+                env["DYLD_LIBRARY_PATH"] = bin_dir + os.pathsep + env.get("DYLD_LIBRARY_PATH", "")
+            env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
+        return env
+
+    def verify_whispercpp_device(self) -> bool:
+        """
+        Cheap necessary-condition check that the bundled whisper.cpp build actually
+        carries the Vulkan ggml backend library. Whether a GPU device truly initializes
+        (whisper.cpp can silently fall back to CPU on some AMD/Linux setups) is verified
+        authoritatively from the live transcription log — see _run_whispercpp, which
+        scans stderr for 'using Vulkan'/'init_gpu' and warns on CPU fallback.
+
+        Returns True if the Vulkan backend lib is bundled. Never raises.
+        """
+        cli = self.os_doc.get_whispercpp_cmd()
+        if not cli:
+            return False
+        bin_dir = os.path.dirname(os.path.abspath(cli))
+        try:
+            has_vk_lib = any("ggml-vulkan" in f for f in os.listdir(bin_dir))
+        except Exception:
+            has_vk_lib = False
+        log_info(f"[VerifyVulkan] ggml-vulkan backend lib bundled = {has_vk_lib}")
+        return has_vk_lib
+
+    def _cluster_islands(self, raw_islands):
+        """
+        Groups raw (start,end) sound islands into transcription clusters.
+        Mirrors the clustering used by the CT2 chunked runner so both backends
+        chunk identically.
+        """
+        MAX_CLUSTER_DUR = 22.0
+        MIN_CLUSTER_DUR = 8.0
+        MIN_SAFE_GAP = 0.5
+        clusters = []
+        if not raw_islands:
+            return clusters
+        i = 0
+        n = len(raw_islands)
+        while i < n:
+            c_start = raw_islands[i][0]
+            J = []
+            for j in range(i, n):
+                if raw_islands[j][1] - c_start <= MAX_CLUSTER_DUR:
+                    J.append(j)
+                else:
+                    break
+            if not J:
+                J = [i]
+            if J[-1] == n - 1:
+                best_j = J[-1]
+            else:
+                optimal, safe = [], []
+                for j in J:
+                    gap = raw_islands[j + 1][0] - raw_islands[j][1]
+                    dur = raw_islands[j][1] - c_start
+                    if gap >= MIN_SAFE_GAP:
+                        safe.append(j)
+                        if dur >= MIN_CLUSTER_DUR:
+                            optimal.append(j)
+                if optimal:
+                    best_j = max(optimal, key=lambda j: raw_islands[j + 1][0] - raw_islands[j][1])
+                elif safe:
+                    best_j = max(safe, key=lambda j: raw_islands[j + 1][0] - raw_islands[j][1])
+                else:
+                    best_j = max(J, key=lambda j: raw_islands[j + 1][0] - raw_islands[j][1])
+            c_end = raw_islands[best_j][1]
+            clusters.append((c_start, c_end))
+            i = best_j + 1
+        return clusters
+
+    def _to_wav16k(self, src, dst, start=None, dur=None):
+        """Extracts (optionally a [start, start+dur] slice of) src as 16 kHz mono WAV
+        for whisper.cpp, using the bundled ffmpeg. Returns dst on success else None."""
+        cmd = [self.ffmpeg_cmd, "-y"]
+        if start is not None:
+            cmd += ["-ss", f"{start:.3f}"]
+        if dur is not None:
+            cmd += ["-t", f"{dur:.3f}"]
+        cmd += ["-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", dst]
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           check=True, **self.os_doc.get_subprocess_kwargs())
+            return dst
+        except Exception as e:
+            log_error(f"_to_wav16k failed: {e}")
+            return None
+
+    def _parse_whispercpp_json(self, raw, time_offset=0.0):
+        """Converts whisper.cpp --output-json-full data into the canonical
+        segment/word contract, merging subword tokens into words. Returns
+        (segments_list, language)."""
+        language = ""
+        try:
+            language = raw.get("result", {}).get("language", "") or ""
+        except Exception:
+            language = ""
+
+        segments = []
+        for seg in raw.get("transcription", []) or []:
+            offs = seg.get("offsets", {}) or {}
+            seg_start = offs.get("from", 0) / 1000.0 + time_offset
+            seg_end = offs.get("to", 0) / 1000.0 + time_offset
+            seg_text = seg.get("text", "")
+
+            words = []
+            cur = None
+            for tok in seg.get("tokens", []) or []:
+                t_text = tok.get("text", "")
+                # Skip whisper.cpp special tokens ([_BEG_], [_TT_xx], etc.)
+                if not t_text or t_text.startswith("[_") or t_text.startswith("<|"):
+                    continue
+                t_offs = tok.get("offsets", {}) or {}
+                t_start = t_offs.get("from", 0) / 1000.0 + time_offset
+                t_end = t_offs.get("to", 0) / 1000.0 + time_offset
+                t_prob = tok.get("p", 1.0)
+
+                # A new word begins on a leading space (or the first token of the segment).
+                if cur is None or t_text.startswith(" "):
+                    if cur is not None:
+                        words.append(cur)
+                    cur = {"word": t_text, "start": t_start, "end": t_end,
+                           "_psum": float(t_prob), "_pn": 1}
+                else:
+                    cur["word"] += t_text
+                    cur["end"] = t_end
+                    cur["_psum"] += float(t_prob)
+                    cur["_pn"] += 1
+            if cur is not None:
+                words.append(cur)
+
+            for w in words:
+                w["probability"] = w.pop("_psum") / max(1, w.pop("_pn"))
+
+            segments.append({
+                "start": seg_start, "end": seg_end,
+                "text": seg_text, "words": words,
+            })
+        return segments, language
+
+    def _run_whispercpp(self, audio_path, model, lang, verbatim, initial_prompt=None,
+                        filler_words_list=None, progress_callback=None, islands=None):
+        """
+        Transcribes via the bundled whisper.cpp Vulkan CLI and writes the canonical
+        JSON contract to <temp>/<name>.json (same shape as the CT2 runner). Returns
+        the JSON path, or None on failure.
+
+        whisper.cpp can't accept an in-memory NumPy array like CTranslate2, so chunked
+        (Ultra Precise) mode slices each island to a temp 16 kHz WAV via ffmpeg and
+        offsets the timestamps back — the deliberate trade-off vs the CT2 in-memory path.
+        """
+        cli = self.os_doc.get_whispercpp_cmd()
+        if not cli:
+            log_error("[WhisperCpp] whisper-cli binary not found.")
+            return None
+
+        if model == "large":
+            model = "large-v3"
+        ggml_path = self._ggml_model_path(model)
+        if not os.path.exists(ggml_path):
+            log_error(f"[WhisperCpp] GGML model missing: {ggml_path}")
+            return None
+
+        if not self.verify_whispercpp_device():
+            log_info("[WhisperCpp] WARNING: Vulkan GPU device not confirmed — "
+                     "whisper.cpp may run on CPU.")
+
+        output_dir = self.os_doc.get_temp_folder()
+        unique_name = os.path.splitext(os.path.basename(audio_path))[0]
+        json_output_path = os.path.join(output_dir, unique_name + ".json")
+
+        prefs = self.os_doc.get_all_prefs()
+        beam_size = int(prefs.get('ai_beam_size', 1) or 1)
+        prompt_str = ""
+        if verbatim:
+            base_prompt = initial_prompt if initial_prompt else config.DEFAULT_WHISPER_PROMPT
+            prompt_str = base_prompt
+            if filler_words_list:
+                prompt_str += f" {', '.join(filler_words_list)}"
+
+        def build_cmd(in_wav, out_prefix):
+            cmd = [
+                cli,
+                "-m", ggml_path,
+                "-f", in_wav,
+                "-of", out_prefix,
+                "-ojf",                         # --output-json-full (token timestamps + probs)
+                "--dtw", self._dtw_preset(model),  # DTW word-timestamp alignment
+                "-bs", str(max(1, beam_size)),
+                "-t", str(max(1, (os.cpu_count() or 4))),
+                "--print-progress",
+            ]
+            if lang and str(lang).lower() != "none":
+                cmd += ["-l", str(lang)]
+            else:
+                cmd += ["-l", "auto"]
+            if prompt_str:
+                cmd += ["--prompt", prompt_str]
+            return cmd
+
+        wcpp_env = self._whispercpp_env()
+        gpu_log = {"seen_gpu": False, "seen_cpu_fallback": False}
+
+        def run_one(in_wav, out_prefix, prog_lo=0, prog_hi=100):
+            """Runs whisper-cli once, mapping its 0-100% progress into [prog_lo, prog_hi].
+            Also scans stderr to confirm the run used the Vulkan GPU (not a silent CPU fallback)."""
+            cmd = build_cmd(in_wav, out_prefix)
+            log_info(f"[WhisperCpp] {' '.join(cmd)}")
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding='utf-8', errors='replace', bufsize=1,
+                env=wcpp_env,
+                **self.os_doc.get_subprocess_kwargs()
+            )
+            for line in iter(proc.stdout.readline, ''):
+                low = line.lower()
+                if "init_gpu" in low or "using vulkan" in low or "using device vulkan" in low:
+                    gpu_log["seen_gpu"] = True
+                if "whisper_backend_init: using cpu backend" in low:
+                    gpu_log["seen_cpu_fallback"] = True
+                m = re.search(r'progress\s*=\s*(\d+)%', line)
+                if m and progress_callback:
+                    pct = int(m.group(1))
+                    progress_callback(int(prog_lo + (prog_hi - prog_lo) * pct / 100.0))
+                else:
+                    ls = line.strip()
+                    if ls:
+                        log_info(f"[WhisperCpp] {ls}")
+            proc.wait()
+            return proc.returncode == 0
+
+        temp_files = []
+        try:
+            clusters = self._cluster_islands(islands) if (islands and len(islands) > 1) else None
+
+            if not clusters:
+                # ── Whole-file transcription ──────────────────────────────
+                wav16 = os.path.join(output_dir, unique_name + "_16k.wav")
+                temp_files.append(wav16)
+                if not self._to_wav16k(audio_path, wav16):
+                    return None
+                # Distinct prefix so whisper.cpp's raw JSON never collides with our
+                # canonical json_output_path (which we write last and must not delete).
+                out_prefix = os.path.join(output_dir, unique_name + "_wcpp")
+                temp_files.append(out_prefix + ".json")
+                if not run_one(wav16, out_prefix):
+                    log_error("[WhisperCpp] CLI returned non-zero.")
+                    return None
+                with open(out_prefix + ".json", "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                segments, language = self._parse_whispercpp_json(raw)
+            else:
+                # ── Chunked (Ultra Precise): one ffmpeg slice per cluster ──
+                log_info(f"[WhisperCpp] Chunked: {len(clusters)} clusters.")
+                segments, language = [], ""
+                total = len(clusters)
+                for idx, (c_start, c_end) in enumerate(clusters):
+                    dur = max(0.0, c_end - c_start)
+                    slice_wav = os.path.join(output_dir, f"{unique_name}_c{idx}.wav")
+                    slice_pref = os.path.join(output_dir, f"{unique_name}_c{idx}")
+                    temp_files += [slice_wav, slice_pref + ".json"]
+                    if not self._to_wav16k(audio_path, slice_wav, start=c_start, dur=dur):
+                        continue
+                    lo = int(idx * 100 / total)
+                    hi = int((idx + 1) * 100 / total)
+                    if not run_one(slice_wav, slice_pref, lo, hi):
+                        log_error(f"[WhisperCpp] Cluster {idx} failed.")
+                        continue
+                    try:
+                        with open(slice_pref + ".json", "r", encoding="utf-8") as f:
+                            raw = json.load(f)
+                    except Exception as e:
+                        log_error(f"[WhisperCpp] Cluster {idx} json missing: {e}")
+                        continue
+                    seg_part, lang_part = self._parse_whispercpp_json(raw, time_offset=c_start)
+                    if lang_part and not language:
+                        language = lang_part
+                    segments.extend(seg_part)
+
+            if gpu_log["seen_cpu_fallback"] or not gpu_log["seen_gpu"]:
+                log_info("[WhisperCpp] WARNING: run did not confirm a Vulkan GPU device — "
+                         "transcription may have run on CPU.")
+            else:
+                log_info("[WhisperCpp] Confirmed Vulkan GPU acceleration.")
+
+            final_data = {"segments": segments, "language": language or (lang or "")}
+            with open(json_output_path, "w", encoding="utf-8") as f:
+                json.dump(final_data, f)
+            log_info(f"[WhisperCpp] Done. {len(segments)} segment(s).")
+            return json_output_path
+        except Exception as e:
+            log_error(f"[WhisperCpp] Exception: {e}\n{traceback.format_exc()}")
+            return None
+        finally:
+            for p in temp_files:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+
+    # ==========================================
     # 1. EXTERNAL PROCESS MANAGEMENT (FASTER-WHISPER)
     # ==========================================
 
@@ -396,7 +790,18 @@ except Exception as e:
         STAGE 6A: initial_prompt injected via repr() for safe quoting in generated script.
         UPDATED v13.0: initial_prompt is now per-language aware via config.get_whisper_prompt_for_lang().
         UPDATED v14.0: True In-Memory Chunking via islands list (NumPy slicing, zero disk I/O).
+        UPDATED v15.0: Dispatches to the whisper.cpp/Vulkan backend on AMD/Intel GPUs.
         """
+        # ── Backend dispatch ─────────────────────────────────────────────
+        if self._backend == "whispercpp":
+            return self._run_whispercpp(
+                audio_path, model, lang, verbatim,
+                initial_prompt=initial_prompt,
+                filler_words_list=filler_words_list,
+                progress_callback=progress_callback,
+                islands=islands,
+            )
+
         unique_name = os.path.splitext(os.path.basename(audio_path))[0]
         output_dir = self.os_doc.get_temp_folder()
         json_output_path = os.path.join(output_dir, unique_name + ".json")
@@ -1232,15 +1637,22 @@ except Exception as e:
             raw_device = settings.get('device', 'Auto')
             
             if raw_device == "Auto":
-                # Check for physical existence of NVIDIA libs in venv
+                # NVIDIA libs → CUDA GPU; else AMD/Intel + Vulkan whisper.cpp → GPU; else CPU
                 if self.os_doc.has_nvidia_support():
                     device_mode = "GPU"
                     log_info("Auto Mode: Detected NVIDIA libs. Using GPU.")
+                elif self.os_doc.detect_gpu_vendor() in ("amd", "intel") and self.os_doc.has_vulkan_support():
+                    device_mode = "GPU"
+                    log_info("Auto Mode: Detected AMD/Intel GPU + Vulkan. Using GPU (whisper.cpp).")
                 else:
                     device_mode = "CPU"
-                    log_info("Auto Mode: No NVIDIA libs found. Using CPU.")
+                    log_info("Auto Mode: No GPU acceleration available. Using CPU.")
             else:
                 device_mode = raw_device
+
+            # Resolve which transcription backend serves this device.
+            self._backend = self._resolve_backend(device_mode)
+            log_info(f"Active backend: {self._backend} (device_mode={device_mode})")
 
             # Determine Compute Type based on detected device
             # Stage 6A: Prefer user-saved ai_compute_type from settings; auto-detect as fallback
@@ -1375,10 +1787,16 @@ except Exception as e:
             # Switch to Indeterminate during model check phase
             update_progress(-1)
 
-            # Check/Download logic for Faster-Whisper
-            if not self.check_model_exists(model):
+            # Check/Download logic — model format depends on the active backend
+            if self._backend == "whispercpp":
+                model_present = self.check_ggml_model_exists(model)
+                downloader = self.download_ggml_model_interactive
+            else:
+                model_present = self.check_model_exists(model)
+                downloader = self.download_whisper_model_interactive
+            if not model_present:
                 update_status(self.txt("status_downloading_model"))
-                dl_ok = self.download_whisper_model_interactive(
+                dl_ok = downloader(
                     model,
                     progress_callback=update_progress,
                     status_callback=update_status,

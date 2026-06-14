@@ -2,3 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Install/runtime artifacts (delivered by the installer / CI release assets, not source)
+bin/
+src/bin/

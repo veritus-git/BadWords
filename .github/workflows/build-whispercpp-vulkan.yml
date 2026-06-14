@@ -1,0 +1,91 @@
+name: Build whisper.cpp (Vulkan) binaries
+
+# Builds the whisper.cpp CLI with the Vulkan backend for Windows + Linux and
+# attaches the archives to a release. BadWords' installer (setupfiles/setup.py)
+# downloads these for AMD/Intel GPUs to enable native GPU transcription.
+#
+# Trigger manually (Actions tab → "Run workflow", or `gh workflow run`) and pass
+# the whisper.cpp tag to build + the BadWords release tag to publish to (must match
+# WHISPERCPP_TAG in setup.py, e.g. whispercpp-vulkan-v1).
+# NOTE: pin a Vulkan-working whisper.cpp tag — Vulkan was broken in v1.8.0. v1.7.4 is verified.
+
+on:
+  workflow_dispatch:
+    inputs:
+      whispercpp_ref:
+        description: "whisper.cpp git tag/branch to build (Vulkan-verified)"
+        required: true
+        default: "v1.7.4"
+      release_tag:
+        description: "BadWords release tag to upload assets to (match WHISPERCPP_TAG)"
+        required: true
+        default: "whispercpp-vulkan-v1"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Vulkan SDK (headers + glslc + loader)
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.3.296.0
+          install_runtime: true
+          cache: true
+      - name: Checkout whisper.cpp
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: ${{ inputs.whispercpp_ref }}
+      - name: Build (Vulkan)
+        run: |
+          cmake -B build -DGGML_VULKAN=1 -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build build --config Release -j --target whisper-cli
+      - name: Stage binary + shared libs (preserve sonames/symlinks)
+        run: |
+          mkdir -p out
+          cp -a build/bin/whisper-cli out/ 2>/dev/null || cp -a build/whisper-cli out/
+          cp -a build/src/libwhisper.so* out/ 2>/dev/null || true
+          find build -name 'libggml*.so*' -exec cp -a {} out/ \;
+          echo "=== staged ===" && ls -la out
+          tar -czhf whisper-cli-vulkan-linux-x64.tar.gz -C out .
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: whisper-cli-vulkan-linux-x64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    needs: build-linux   # serialize so both jobs don't race to create the release
+    steps:
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.3.296.0
+          install_runtime: true
+          cache: true
+      - name: Checkout whisper.cpp
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: ${{ inputs.whispercpp_ref }}
+      - name: Build (Vulkan)
+        shell: pwsh
+        run: |
+          cmake -B build -DGGML_VULKAN=1 -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build build --config Release -j --target whisper-cli
+      - name: Stage binary + DLLs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Get-ChildItem -Recurse build -Include whisper-cli.exe,*.dll | ForEach-Object { Copy-Item $_.FullName out\ -Force }
+          Write-Host "=== staged ==="; Get-ChildItem out
+          Compress-Archive -Path out\* -DestinationPath whisper-cli-vulkan-win-x64.zip -Force
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: whisper-cli-vulkan-win-x64.zip

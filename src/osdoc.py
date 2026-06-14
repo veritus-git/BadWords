@@ -26,6 +26,7 @@ import uuid
 import json
 import hashlib
 import ctypes
+import ctypes.util
 
 # ==========================================
 # 1. LOGGING & STREAM PROXY
@@ -676,12 +677,142 @@ class OSDoctor:
 
         if self.is_win:
             return True # Na Windowsie polegamy na sterownikach systemowych, jeśli karta istnieje
-            
+
         # 2. Weryfikacja bibliotek (Linux)
         libs_path = os.path.join(self.install_dir, "libs")
         cublas_path = os.path.join(libs_path, "nvidia", "cublas")
-        
+
         return os.path.exists(cublas_path)
+
+    def detect_gpu_vendor(self):
+        """
+        Detects the primary discrete GPU vendor → 'nvidia' | 'amd' | 'intel' | 'none'.
+        Used to pick a transcription backend: NVIDIA → CTranslate2/CUDA,
+        AMD/Intel → whisper.cpp/Vulkan, none → CPU.
+
+        Result is cached for the session.
+        """
+        if getattr(self, "_gpu_vendor_cache", None) is not None:
+            return self._gpu_vendor_cache
+
+        vendor = "none"
+
+        # NVIDIA wins if present (CTranslate2/CUDA is the faster path).
+        if self.has_nvidia_support():
+            vendor = "nvidia"
+        else:
+            names = ""
+            try:
+                if self.is_win:
+                    # Reuse the WMI adapter-name query pattern from setup.py
+                    r = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command",
+                         "(Get-CimInstance Win32_VideoController).Name"],
+                        capture_output=True, text=True, timeout=15,
+                        **self.get_subprocess_kwargs()
+                    )
+                    names = (r.stdout or "").lower()
+                elif self.is_linux:
+                    if shutil.which("lspci"):
+                        r = subprocess.run(["lspci"], capture_output=True, text=True, timeout=15)
+                        names = (r.stdout or "").lower()
+                    else:
+                        # Fallback: scan /sys/class/drm for vendor ids (0x1002 = AMD, 0x8086 = Intel)
+                        drm = "/sys/class/drm"
+                        if os.path.isdir(drm):
+                            for entry in os.listdir(drm):
+                                vfile = os.path.join(drm, entry, "device", "vendor")
+                                try:
+                                    with open(vfile) as f:
+                                        names += f.read().strip().lower() + " "
+                                except Exception:
+                                    pass
+                elif self.is_mac:
+                    r = subprocess.run(
+                        ["system_profiler", "SPDisplaysDataType"],
+                        capture_output=True, text=True, timeout=20
+                    )
+                    names = (r.stdout or "").lower()
+            except Exception as e:
+                log_error(f"detect_gpu_vendor: probe failed: {e}")
+                names = ""
+
+            if any(k in names for k in ("amd", "radeon", "advanced micro devices", "0x1002")):
+                vendor = "amd"
+            elif any(k in names for k in ("intel", "0x8086")):
+                vendor = "intel"
+
+        self._gpu_vendor_cache = vendor
+        log_info(f"detect_gpu_vendor: {vendor}")
+        return vendor
+
+    def get_whispercpp_cmd(self):
+        """
+        Returns the path to the bundled whisper.cpp CLI (Vulkan build), or None.
+        Mirrors get_ffmpeg_cmd: Portable 'bin' folder is the only supported source.
+        """
+        portable = os.path.join(self.bin_dir, "whisper-cli")
+        if self.is_win:
+            portable += ".exe"
+
+        if os.path.exists(portable):
+            if (self.is_linux or self.is_mac) and not os.access(portable, os.X_OK):
+                try:
+                    os.chmod(portable, 0o755)
+                except Exception as e:
+                    log_error(f"get_whispercpp_cmd: chmod failed on {portable}: {e}")
+            return portable
+        return None
+
+    def has_vulkan_support(self):
+        """
+        True only if BOTH the bundled whisper.cpp Vulkan binary exists AND a Vulkan
+        loader is present on the system. Used to decide if AMD/Intel GPU mode is safe.
+
+        NOTE: this confirms the loader is installed; it does NOT guarantee the runtime
+        will actually initialize a GPU device. The engine performs an explicit
+        verify_whispercpp_device() probe before relying on the GPU (whisper.cpp is
+        known to silently fall back to CPU on some AMD/Linux setups).
+
+        Result is cached for the session.
+        """
+        if getattr(self, "_vulkan_support_cache", None) is not None:
+            return self._vulkan_support_cache
+
+        ok = False
+        if self.get_whispercpp_cmd():
+            if self.is_win:
+                # Vulkan loader ships with the GPU driver as vulkan-1.dll (in System32).
+                # ctypes.util.find_library is unreliable on Windows, so load the DLL
+                # directly (searches the standard DLL paths) and fall back to an
+                # explicit System32 check.
+                try:
+                    ctypes.WinDLL("vulkan-1")
+                    ok = True
+                except OSError:
+                    sysroot = os.environ.get("SystemRoot", r"C:\Windows")
+                    for cand in (os.path.join(sysroot, "System32", "vulkan-1.dll"),
+                                 os.path.join(sysroot, "SysWOW64", "vulkan-1.dll")):
+                        if os.path.exists(cand):
+                            ok = True
+                            break
+            elif self.is_mac:
+                # MoltenVK / Vulkan loader
+                ok = bool(ctypes.util.find_library("vulkan") or ctypes.util.find_library("MoltenVK"))
+            else:
+                # Linux: libvulkan.so.1 from the loader package
+                ok = bool(ctypes.util.find_library("vulkan"))
+                if not ok:
+                    for cand in ("/usr/lib/libvulkan.so.1",
+                                 "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
+                                 "/usr/lib64/libvulkan.so.1"):
+                        if os.path.exists(cand):
+                            ok = True
+                            break
+
+        self._vulkan_support_cache = ok
+        log_info(f"has_vulkan_support: {ok}")
+        return ok
 
     def needs_manual_model_install(self):
         """

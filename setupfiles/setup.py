@@ -35,6 +35,16 @@ _IS_WINDOWS_TERMINAL = bool(os.environ.get("WT_SESSION", ""))
 # ── Platform helpers ─────────────────────────────────────────
 APP_NAME = "BadWords"
 
+# whisper.cpp Vulkan CLI bundle — self-built in CI and attached to a BadWords release.
+# These are downloaded for AMD/Intel GPUs (Windows + Linux) to enable native GPU
+# transcription via Vulkan. Pinned to a known-good whisper.cpp tag (Vulkan was broken
+# in v1.8.0). Update the tag/URLs when a new verified build is published.
+WHISPERCPP_TAG = "whispercpp-vulkan-v1"
+WHISPERCPP_URLS = {
+    "win":   f"https://github.com/veritus-git/BadWords/releases/download/{WHISPERCPP_TAG}/whisper-cli-vulkan-win-x64.zip",
+    "linux": f"https://github.com/veritus-git/BadWords/releases/download/{WHISPERCPP_TAG}/whisper-cli-vulkan-linux-x64.tar.gz",
+}
+
 def _default_install_dir():
     if PLAT.startswith("win"):
         return os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), APP_NAME)
@@ -1089,33 +1099,45 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         console.print()
         log_step("Detecting GPU hardware...")
         has_nvidia = False
+        has_amd = False
         if os.name == "nt":
             # Windows: query WMI via PowerShell (same as legacy setup_windows.bat)
             try:
                 r = subprocess.run(
                     ["powershell", "-NoProfile", "-Command",
-                     "try{$g=Get-WmiObject Win32_VideoController -EA Stop "
-                     "| Where-Object {$_.Name -like '*NVIDIA*'} "
-                     "| Select-Object -First 1; if($g){'1'}else{'0'}}catch{'0'}"],
+                     "(Get-CimInstance Win32_VideoController).Name"],
                     capture_output=True, text=True, timeout=15
                 )
-                has_nvidia = r.stdout.strip() == "1"
+                names = (r.stdout or "").lower()
+                has_nvidia = "nvidia" in names
+                has_amd = ("amd" in names or "radeon" in names or "advanced micro devices" in names)
             except Exception as e:
                 log_warn(f"GPU detection via WMI failed: {e}")
         else:
             # Linux/macOS: use lspci / lshw
+            names = ""
             if shutil.which("lspci"):
                 r = subprocess.run(["lspci"], capture_output=True, text=True)
-                has_nvidia = "nvidia" in r.stdout.lower()
-            if not has_nvidia and shutil.which("lshw"):
+                names = (r.stdout or "").lower()
+            if not names and shutil.which("lshw"):
                 r = subprocess.run(["lshw", "-C", "display"], capture_output=True, text=True)
-                has_nvidia = "nvidia" in r.stdout.lower()
+                names = (r.stdout or "").lower()
+            has_nvidia = "nvidia" in names
+            has_amd = ("amd" in names or "radeon" in names or "advanced micro devices" in names)
+
+        # AMD/Intel get Vulkan acceleration via whisper.cpp; NVIDIA gets CUDA via CTranslate2.
+        use_vulkan = bool(has_amd and not has_nvidia)
         if "mac" in PLAT or "darwin" in PLAT:
             import platform
             is_arm = platform.machine().lower() == "arm64"
             mode_name = "Apple Silicon Platform" if is_arm else "Intel Platform"
+            use_vulkan = False  # macOS uses Metal/CPU path, not the Vulkan whisper.cpp bundle
+        elif has_nvidia:
+            mode_name = "NVIDIA (CUDA 12)"
+        elif use_vulkan:
+            mode_name = "AMD/Intel (Vulkan · whisper.cpp)"
         else:
-            mode_name   = "NVIDIA (CUDA 12)" if has_nvidia else "CPU (AMD/Intel)"
+            mode_name = "CPU"
         nvidia_pkgs = "nvidia-cublas-cu12 nvidia-cudnn-cu12" if has_nvidia else ""
         log_ok(f"AI Engine Mode: {mode_name}")
 
@@ -1255,6 +1277,54 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 else:
                     log_warn("FFmpeg download failed. App may not work without it.")
 
+        # ── whisper.cpp Vulkan CLI (AMD/Intel GPU acceleration) ──
+        if use_vulkan:
+            console.print()
+            wcpp_exe = os.path.join(bin_dir, "whisper-cli.exe" if os.name == "nt" else "whisper-cli")
+            if is_update and os.path.isfile(wcpp_exe):
+                log_ok("whisper.cpp Vulkan CLI already present. Skipping download.")
+            else:
+                log_step("Downloading whisper.cpp Vulkan engine (AMD/Intel GPU)...")
+                key = "win" if os.name == "nt" else "linux"
+                url = WHISPERCPP_URLS.get(key)
+                arc = os.path.join(install_dir, os.path.basename(url)) if url else None
+                sp_w = Spinner("Downloading whisper.cpp (Vulkan)").start()
+                dl_ok = bool(url) and download(url, arc)
+                sp_w.done(ok=dl_ok)
+                if dl_ok:
+                    sp_ex = Spinner("Extracting whisper.cpp").start()
+                    try:
+                        if arc.endswith(".zip"):
+                            import zipfile
+                            with zipfile.ZipFile(arc) as zf:
+                                for member in zf.namelist():
+                                    fname = os.path.basename(member)
+                                    if not fname:
+                                        continue
+                                    # Place the CLI + any shipped libs (ggml/vulkan .dll/.so) into bin/
+                                    if fname.endswith((".exe", ".dll")) or fname == "whisper-cli":
+                                        with open(os.path.join(bin_dir, fname), "wb") as out:
+                                            out.write(zf.read(member))
+                        else:
+                            subprocess.run(["tar", "-xf", arc, "-C", bin_dir], check=True)
+                            cli = os.path.join(bin_dir, "whisper-cli")
+                            if os.path.isfile(cli):
+                                os.chmod(cli, 0o755)
+                        sp_ex.done(ok=True)
+                        log_ok("whisper.cpp Vulkan engine installed.")
+                        if os.name != "nt":
+                            log_warn("Linux: ensure the Vulkan loader is installed "
+                                     "(e.g. 'vulkan-loader' / 'libvulkan1') for GPU acceleration.")
+                    except Exception as e:
+                        sp_ex.done(ok=False)
+                        log_warn(f"whisper.cpp extraction failed: {e}. Falling back to CPU transcription.")
+                    finally:
+                        try: os.remove(arc)
+                        except Exception: pass
+                else:
+                    log_warn("whisper.cpp Vulkan download failed. AMD GPU acceleration "
+                             "unavailable — the app will fall back to CPU transcription.")
+
         # ── System Python Check ───────────────────────────────
         if os.name == "nt":
             def _has_system_python():
@@ -1393,7 +1463,6 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                         (["pacman", "-Sy", "--noconfirm", "python"])
                     ]
                     installed = False
-                    import shutil
                     for cmds in pkg_mgrs:
                         base_cmd = cmds[-1] if len(cmds) > 1 else cmds[0]
                         cmd_name = base_cmd[0]
