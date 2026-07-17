@@ -274,8 +274,8 @@ class ResolveHandler:
             # We revert to standard robust polling with shorter intervals.
             time.sleep(0.1)
             
-            # Max 5 min timeout for audio render
-            deadline = time.time() + 300.0
+            # Max 10 min timeout for audio render
+            deadline = time.time() + 600.0
             while self.project.IsRenderingInProgress() and time.time() < deadline:
                 time.sleep(0.1)
                 
