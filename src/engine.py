@@ -2519,12 +2519,17 @@ except Exception as e:
 
     def assemble_timeline(self, words_data, settings, callback_status=None, callback_progress=None):
         """
-        PRIMARY PATH: Builds a complete FCP7 XML in Python and imports it into
-        Resolve in a single API call (ImportTimelineFromFile).
+        3-TIER ASSEMBLY PIPELINE:
 
-        ABSOLUTE EMERGENCY FALLBACK: If XML build or import fails, falls back to
-        the old AppendToTimeline method (generate_timeline_from_ops). The fallback
-        is logged clearly and should never be reached under normal operation.
+        TIER 1 — DRT (primary): Export source timeline as native .drt,
+        modify SeqContainer XML (Start/Duration/In only), reimport.
+        Preserves 100% of DaVinci-specific data.
+
+        TIER 2 — FCP7 XML (fallback): Export as FCP7 XML, apply ops,
+        reimport.  Handles most clip types but loses some DaVinci specifics.
+
+        TIER 3 — AppendToTimeline (emergency): Legacy clip-by-clip method.
+        Used only when both DRT and XML paths fail completely.
         """
         warning_code = None
 
@@ -2605,7 +2610,7 @@ except Exception as e:
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
             new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
 
-            # ── LOAD PRESERVE TRACK ORDER + AUTO_DEL SETTINGS ────────────────
+            # ── LOAD SETTINGS ─────────────────────────────────────────────────
             import config
             prefs = self.os_doc.get_all_prefs()
             preserve_track_order = bool(prefs.get(
@@ -2615,121 +2620,156 @@ except Exception as e:
             # auto_del is already baked into clean_ops by calculate_timeline_structure().
             # No need to pass it further down the XML pipeline.
 
+            # ══════════════════════════════════════════════════════════════════
+            # TIER 1 — PRIMARY: NATIVE .drt ASSEMBLY
+            # Preserves 100% of DaVinci-specific data (adjustment clips,
+            # generators, Fusion comps, color grading, all binary metadata).
+            # ══════════════════════════════════════════════════════════════════
+            drt_success = False
+            drt_tl_name = None
+
+            try:
+                import assembler
+
+                set_status(self.txt("status_assembly_xml_build"))
+                set_progress(-1)
+
+                temp_dir = self.os_doc.get_temp_folder()
+                os.makedirs(temp_dir, exist_ok=True)
+
+                log_info("assemble_timeline: TIER 1 — attempting DRT primary path...")
+                drt_ok, drt_colors, drt_name = assembler.assemble_via_drt(
+                    self.resolve_handler,
+                    original_tl_name,
+                    clean_ops,
+                    new_tl_name,
+                    audio_only_mode=audio_only_mode,
+                    temp_dir=temp_dir
+                )
+
+                if drt_ok and drt_name:
+                    drt_success = True
+                    drt_tl_name = drt_name
+                    log_info(f"assemble_timeline: DRT path succeeded → '{drt_tl_name}'")
+
+                    # Apply / verify clip colors
+                    set_status(self.txt("status_assembly_colors"))
+                    self.resolve_handler.reapply_clip_colors(drt_tl_name, drt_colors or {})
+                    new_tl_name = drt_tl_name
+                else:
+                    log_error("assemble_timeline: DRT path failed, falling to TIER 2 (XML)...")
+
+            except Exception as drt_err:
+                log_error(f"assemble_timeline: DRT path exception: {drt_err}")
+                import traceback as _tb
+                log_error(_tb.format_exc())
+
             # ──────────────────────────────────────────────────────────────────
-            # PRIMARY PATH: EXPORT → CUT → IMPORT  (all timeline types)
+            # TIER 2 — FALLBACK #1: FCP7 XML EXPORT → CUT → IMPORT
+            # Used when DRT path fails (e.g. EXPORT_DRT not available,
+            # or .drt import returned None).
             # ──────────────────────────────────────────────────────────────────
-            # We use Resolve's OWN FCP7 XML export as the base, then apply the
-            # op-cuts to it. This preserves ALL clip types: regular video/audio,
-            # adjustment clips, generators, Fusion comps, clips from other sources.
-            # importSourceClips:True tells Resolve to link to EXISTING pool items
-            # (the clips are already there from the user's original timeline),
-            # preventing any source clip duplication or new folder creation.
             xml_success  = False
             xml_tl_name  = None
             src_xml_path = ""  # initialised before try so finally block can reference them
             cut_xml_path = ""
 
-            try:
-                temp_dir = self.os_doc.get_temp_folder()
-                os.makedirs(temp_dir, exist_ok=True)
-                safe_name = "".join(c for c in new_tl_name if c.isalnum() or c in '_-')
-                src_xml_path = os.path.join(temp_dir, f"bw_src_{safe_name}.xml")
-                cut_xml_path = os.path.join(temp_dir, f"bw_cut_{safe_name}.xml")
+            if not drt_success:
 
-                # Step 1: Export source timeline XML (Resolve native, all clip types)
-                set_status(self.txt("status_assembly_xml_build"))
-                set_progress(-1)
-                time.sleep(0.05)
-                export_ok = self.resolve_handler.export_timeline_xml(
-                    original_tl_name, src_xml_path
-                )
-                time.sleep(0.05)
-                if not export_ok:
-                    log_error("assemble_timeline: source XML export failed.")
-                else:
-                    # Step 2: Apply op-cuts to the exported XML
-                    ok_cut, color_schedule = self.resolve_handler.apply_ops_cuts_to_timeline_xml(
-                        src_xml_path, clean_ops, cut_xml_path, audio_only_mode=audio_only_mode
+                try:
+                    temp_dir = self.os_doc.get_temp_folder()
+                    os.makedirs(temp_dir, exist_ok=True)
+                    safe_name = "".join(c for c in new_tl_name if c.isalnum() or c in '_-')
+                    src_xml_path = os.path.join(temp_dir, f"bw_src_{safe_name}.xml")
+                    cut_xml_path = os.path.join(temp_dir, f"bw_cut_{safe_name}.xml")
+
+                    # Step 1: Export source timeline XML (Resolve native, all clip types)
+                    set_status(self.txt("status_assembly_xml_build"))
+                    set_progress(-1)
+                    time.sleep(0.05)
+                    log_info("assemble_timeline: TIER 2 — attempting FCP7 XML fallback...")
+                    export_ok = self.resolve_handler.export_timeline_xml(
+                        original_tl_name, src_xml_path
                     )
                     time.sleep(0.05)
-
-                    if ok_cut:
-                        set_status(self.txt("status_assembly_xml_import"))
-                        set_progress(-1)
-
-                        # CRITICAL: Reset current folder to Root before import.
-                        # If a subfolder (like 'BadWords/') is currently active, Resolve
-                        # might fail to link to existing clips in Master and instead
-                        # import fresh copies (creating "clip copy" duplicates) into the
-                        # active folder. Setting Root ensures global pool search.
-                        root_folder = self.resolve_handler.media_pool.GetRootFolder()
-                        if root_folder:
-                            self.resolve_handler.media_pool.SetCurrentFolder(root_folder)
-
-                        # Import modified XML.
-                        # We MUST use importSourceClips: True to prevent "Media Offline" for clips in sub-bins.
-                        import_options = {
-                            "timelineName": new_tl_name,
-                            "importSourceClips": True
-                        }
-
-                        new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
-                            cut_xml_path,
-                            import_options,
+                    if not export_ok:
+                        log_error("assemble_timeline: source XML export failed.")
+                    else:
+                        # Step 2: Apply op-cuts to the exported XML
+                        ok_cut, color_schedule = self.resolve_handler.apply_ops_cuts_to_timeline_xml(
+                            src_xml_path, clean_ops, cut_xml_path, audio_only_mode=audio_only_mode
                         )
                         time.sleep(0.05)
 
+                        if ok_cut:
+                            set_status(self.txt("status_assembly_xml_import"))
+                            set_progress(-1)
 
-                        if new_tl:
-                            actual_name = new_tl.GetName()
-                            log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
-                            xml_tl_name = actual_name
+                            # CRITICAL: Reset current folder to Root before import.
+                            root_folder = self.resolve_handler.media_pool.GetRootFolder()
+                            if root_folder:
+                                self.resolve_handler.media_pool.SetCurrentFolder(root_folder)
 
-                            # Move timeline directly into BadWords/ root bin (no Edits subfolder).
-                            bw_bin = self.resolve_handler.get_badwords_root_bin()
-                            if bw_bin:
-                                try:
-                                    tl_item = self.resolve_handler.find_timeline_item_recursive(
-                                        self.resolve_handler.media_pool.GetRootFolder(), actual_name
-                                    )
-                                    if tl_item:
-                                        self.resolve_handler.media_pool.MoveClips([tl_item], bw_bin)
-                                        log_info(f"assemble_timeline: moved '{actual_name}' → BadWords/")
-                                    else:
-                                        log_error("assemble_timeline: timeline item not found in pool")
-                                except Exception as move_err:
-                                    log_error(f"assemble_timeline: MoveClips error: {move_err}")
+                            import_options = {
+                                "timelineName": new_tl_name,
+                                "importSourceClips": True
+                            }
 
-                            # Apply / verify clip colors
-                            set_status(self.txt("status_assembly_colors"))
-                            self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
+                            new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
+                                cut_xml_path,
+                                import_options,
+                            )
+                            time.sleep(0.05)
 
-                            xml_success = True
+                            if new_tl:
+                                actual_name = new_tl.GetName()
+                                log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
+                                xml_tl_name = actual_name
+
+                                # Move timeline into BadWords/ root bin
+                                bw_bin = self.resolve_handler.get_badwords_root_bin()
+                                if bw_bin:
+                                    try:
+                                        tl_item = self.resolve_handler.find_timeline_item_recursive(
+                                            self.resolve_handler.media_pool.GetRootFolder(), actual_name
+                                        )
+                                        if tl_item:
+                                            self.resolve_handler.media_pool.MoveClips([tl_item], bw_bin)
+                                            log_info(f"assemble_timeline: moved '{actual_name}' → BadWords/")
+                                        else:
+                                            log_error("assemble_timeline: timeline item not found in pool")
+                                    except Exception as move_err:
+                                        log_error(f"assemble_timeline: MoveClips error: {move_err}")
+
+                                # Apply / verify clip colors
+                                set_status(self.txt("status_assembly_colors"))
+                                self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
+
+                                xml_success = True
+                                new_tl_name = xml_tl_name
+                            else:
+                                log_error("assemble_timeline: ImportTimelineFromFile returned None.")
                         else:
-                            log_error("assemble_timeline: ImportTimelineFromFile returned None.")
-                    else:
-                        log_error("assemble_timeline: apply_ops_cuts_to_timeline_xml failed.")
+                            log_error("assemble_timeline: apply_ops_cuts_to_timeline_xml failed.")
 
-            except Exception as xml_err:
-                log_error(f"assemble_timeline: XML path exception: {xml_err}")
-                import traceback as _tb
-                log_error(_tb.format_exc())
-            finally:
-                # Cleanup temp XMLs
-                for _p in (src_xml_path, cut_xml_path):
-                    try:
-                        if os.path.exists(_p):
-                            os.remove(_p)
-                    except Exception:
-                        pass
-
-
+                except Exception as xml_err:
+                    log_error(f"assemble_timeline: XML path exception: {xml_err}")
+                    import traceback as _tb
+                    log_error(_tb.format_exc())
+                finally:
+                    # Cleanup temp XMLs
+                    for _p in (src_xml_path, cut_xml_path):
+                        try:
+                            if os.path.exists(_p):
+                                os.remove(_p)
+                        except Exception:
+                            pass
 
             # ──────────────────────────────────────────────────────────────────
-            # ABSOLUTE EMERGENCY FALLBACK: AppendToTimeline
-            # Triggered ONLY if XML path completely failed.
+            # TIER 3 — EMERGENCY FALLBACK: AppendToTimeline
+            # Triggered ONLY if both DRT and XML paths completely failed.
             # ──────────────────────────────────────────────────────────────────
-            if not xml_success:
+            if not drt_success and not xml_success:
                 log_error("assemble_timeline: !! EMERGENCY FALLBACK — AppendToTimeline !!")
                 log_error("assemble_timeline: XML path failed. Using legacy method.")
 
