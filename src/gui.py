@@ -1759,6 +1759,32 @@ class AudioPreviewWidget(QFrame):
 
         self.lbl_status = QLabel("")
         self.lbl_status.setObjectName("StatusLabel")
+        self.lbl_status.setFixedHeight(70)
+        self.lbl_status.setAlignment(Qt.AlignCenter)
+        self.lbl_status.setOpenExternalLinks(False)
+        self.lbl_status.setTextFormat(Qt.RichText)
+        self.lbl_status.setStyleSheet("""
+            QLabel#StatusLabel {
+                background-color: #1a1a1a;
+                color: #d0d0d0;
+                font-size: 13px;
+                padding: 12px;
+                border-top: 1px solid #2a2a2a;
+                border-left: none;
+                border-right: none;
+                border-bottom: none;
+            }
+            QLabel#StatusLabel a {
+                color: #1a7a45;
+                font-weight: 600;
+                text-decoration: underline;
+                text-underline-offset: 3px;
+            }
+            QLabel#StatusLabel a:hover {
+                color: #23a559;
+            }
+        """)
+        self.lbl_status.linkActivated.connect(self._on_fetch_missing_audio)
         self.lbl_status.hide()
         content_layout.addWidget(self.lbl_status)
 
@@ -1794,7 +1820,7 @@ class AudioPreviewWidget(QFrame):
         self.slider_vol.setValue(100)
         self.slider_vol.setFixedWidth(60)
         
-        self.cb_speed = QComboBox()
+        self.cb_speed = SpeedDropdown()
         self.cb_speed.addItems(["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x", "3.0x"])
         self.cb_speed.setCurrentText("1.0x")
         self.cb_speed.setFixedWidth(60)
@@ -1866,35 +1892,6 @@ class AudioPreviewWidget(QFrame):
         right_layout = QHBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(6)
-        
-        self.cb_speed.setStyleSheet("""
-            QComboBox {
-                background: transparent;
-                border: none;
-                color: #b0b0b0;
-                font-weight: 600;
-                padding: 4px;
-            }
-            QComboBox:hover {
-                color: #1ed760;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 0px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #1a1a1a;
-                border: 1px solid #333333;
-                selection-background-color: #2c2c2c;
-                selection-color: #1ed760;
-                color: #b0b0b0;
-                outline: 0px;
-                padding: 0px;
-            }
-            QComboBox QAbstractItemView::item {
-                min-height: 24px;
-            }
-        """)
         
         right_layout.addWidget(self.cb_speed)
         right_layout.addSpacing(4)
@@ -2043,6 +2040,93 @@ class AudioPreviewWidget(QFrame):
             self._anim.finished.connect(on_expand_finished)
             self._anim.start()
 
+    def _show_missing_audio_ui(self, is_loading=False, failed=False):
+        if is_loading:
+            loading_txt = self.main_window.txt("msg_audio_preview_preparing")
+            self.lbl_status.setText(f"<span style='color: #b0b0b0;'>{loading_txt}</span>")
+        elif failed:
+            failed_txt = self.main_window.txt("msg_audio_preview_failed")
+            html = f"<a href='fetch_audio' style='color: #e74c3c; text-decoration: none;'>{failed_txt}</a>"
+            self.lbl_status.setText(html)
+        else:
+            prefix = self.main_window.txt("msg_audio_preview_missing")
+            link_txt = self.main_window.txt("msg_audio_preview_get_now")
+            html = f"{prefix} <a href='fetch_audio' style='color: #1a7a45; text-decoration: underline;'>{link_txt}</a>"
+            self.lbl_status.setText(html)
+
+        self.lbl_status.show()
+        self.controls_widget.hide()
+        if getattr(self, 'is_collapsed', False):
+            self.content_widget.hide()
+        else:
+            self.content_widget.show()
+        self.show()
+
+    def _on_fetch_missing_audio(self, url=None):
+        if getattr(self, '_fetching_audio', False):
+            return
+        self._fetching_audio = True
+        self._show_missing_audio_ui(is_loading=True)
+
+        from PySide6.QtCore import QThread, Signal
+        import os
+
+        class FetchAudioWorker(QThread):
+            finished = Signal(str)
+
+            def __init__(self, main_window):
+                super().__init__()
+                self.main_window = main_window
+
+            def run(self):
+                try:
+                    settings = {}
+                    snap = getattr(self.main_window, '_transcription_source', None) or {}
+                    tl_name = snap.get('timeline_name')
+                    if not tl_name and hasattr(self.main_window, 'combo_tl_0') and self.main_window.combo_tl_0:
+                        tl_name = self.main_window.combo_tl_0.text()
+                    if tl_name:
+                        settings['timeline_name'] = tl_name
+
+                    track_indices = snap.get('track_indices')
+                    if not track_indices and hasattr(self.main_window, 'get_selected_track_indices'):
+                        track_indices = self.main_window.get_selected_track_indices()
+                    if track_indices:
+                        settings['track_indices'] = track_indices
+
+                    source_files = snap.get('source_files') or []
+                    if not source_files:
+                        canvas = getattr(self.main_window, 'text_canvas', None)
+                        if canvas and getattr(canvas, 'words_data', None):
+                            audio_p = canvas.words_data[0].get('meta_audio_path')
+                            if audio_p:
+                                source_files = [audio_p]
+                    if source_files:
+                        settings['source_files'] = source_files
+
+                    wav_path = self.main_window.engine.prepare_preview_audio(settings)
+                    self.finished.emit(wav_path or "")
+                except Exception as e:
+                    from osdoc import log_error
+                    log_error(f"FetchAudioWorker error: {e}")
+                    self.finished.emit("")
+
+        self._fetch_thread = FetchAudioWorker(self.main_window)
+
+        def _on_fetch_done(wav_path):
+            self._fetching_audio = False
+            if wav_path and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                canvas = getattr(self.main_window, 'text_canvas', None)
+                if canvas and getattr(canvas, 'words_data', None):
+                    for w in canvas.words_data:
+                        w['meta_audio_path'] = wav_path
+                self.check_audio_availability()
+            else:
+                self._show_missing_audio_ui(is_loading=False, failed=True)
+
+        self._fetch_thread.finished.connect(_on_fetch_done)
+        self._fetch_thread.start()
+
     def check_audio_availability(self):
         import os
         canvas = getattr(self.main_window, 'text_canvas', None)
@@ -2054,10 +2138,7 @@ class AudioPreviewWidget(QFrame):
         audio_path = words[0].get('meta_audio_path') if words else None
         
         if not audio_path or not os.path.exists(audio_path):
-            self.lbl_status.setText(self.main_window.txt("msg_audio_preview_unavailable"))
-            self.lbl_status.show()
-            self.controls_widget.hide()
-            self.show()
+            self._show_missing_audio_ui(is_loading=getattr(self, '_fetching_audio', False))
             return
         
         # If assembled audio is loaded for this same source, don't revert
@@ -3808,6 +3889,9 @@ class FramelessWindowMixin:
 
             self._was_maximized = now_max
             self._refresh_max_state()
+        elif event.type() == QEvent.Type.ActivationChange:
+            if hasattr(self, '_update_shortcut_enabled_states'):
+                self._update_shortcut_enabled_states()
         super().changeEvent(event)
 
     def _dwm_uncloak(self):
@@ -5176,8 +5260,9 @@ class TitleDropdown(CustomDropdown):
         popup.setAttribute(Qt.WA_DeleteOnClose)
         popup.setStyleSheet("""
             QFrame {
-                background-color: #383838;
-                border: none;
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
                 padding: 0px;
                 margin: 0px;
             }
@@ -5193,12 +5278,45 @@ class TitleDropdown(CustomDropdown):
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.addItems(self.options_list)
         list_widget.setStyleSheet("""
-            QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #e6e6e6; }
-            QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
-            QListWidget::item:selected { background-color: #555555; }
-            QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #4a4a4a; }
+            QListWidget {
+                border: none;
+                padding: 0px;
+                margin: 0px;
+                outline: none;
+                background: transparent;
+                color: #b0b0b0;
+                font-size: 9pt;
+            }
+            QListWidget::item {
+                height: 26px;
+                padding: 0px 8px;
+                border: none;
+            }
+            QListWidget::item:selected {
+                background-color: #171717;
+                color: #1ed760;
+                font-weight: bold;
+            }
+            QListWidget::item:focus {
+                border: none;
+                outline: none;
+            }
+            QListWidget::item:hover {
+                background-color: #222222;
+                color: #ffffff;
+            }
+            QListWidget::item:selected:hover {
+                background-color: #171717;
+                color: #1ed760;
+            }
         """)
+        
+        cur = self.currentText()
+        for row in range(list_widget.count()):
+            if list_widget.item(row).text() == cur:
+                list_widget.setCurrentRow(row)
+                break
+
         list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
         layout.addWidget(list_widget)
         
@@ -5206,11 +5324,136 @@ class TitleDropdown(CustomDropdown):
         display_count = list_widget.count()
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
-        popup.setFixedHeight(list_height)
+        popup.setFixedHeight(list_height + 2)
         
         global_pos = self.mapToGlobal(QPoint(0, self.height() + 2))
         popup.move(global_pos)
         popup.setFixedWidth(self.width())
+        popup.show()
+
+class SpeedDropdown(QPushButton):
+    currentTextChanged = Signal(str)
+    valueChanged = Signal(str)
+
+    def __init__(self, options_list=None, parent=None):
+        super().__init__(parent=parent)
+        self.options_list = list(options_list) if options_list else []
+        self._current_text = ""
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #b0b0b0;
+                font-weight: 600;
+                font-size: 12px;
+                padding: 4px;
+                text-align: center;
+            }
+            QPushButton:hover {
+                color: #1ed760;
+            }
+        """)
+
+    def addItems(self, items):
+        self.options_list.extend(items)
+        if items and not self._current_text:
+            self.setCurrentText(items[0])
+
+    def setCurrentText(self, text):
+        self._current_text = text
+        self.setText(text)
+        self.currentTextChanged.emit(text)
+        self.valueChanged.emit(text)
+
+    def currentText(self):
+        return self._current_text if self._current_text else self.text()
+
+    def mousePressEvent(self, event):
+        if not self.options_list:
+            return
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
+        
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        list_widget = QListWidget()
+        list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.addItems(self.options_list)
+        list_widget.setStyleSheet("""
+            QListWidget {
+                border: none;
+                padding: 0px;
+                margin: 0px;
+                outline: none;
+                background: transparent;
+                color: #b0b0b0;
+                font-size: 12px;
+            }
+            QListWidget::item {
+                height: 26px;
+                padding: 0px 8px;
+                border: none;
+                text-align: center;
+            }
+            QListWidget::item:selected {
+                background-color: #171717;
+                color: #1ed760;
+                font-weight: bold;
+            }
+            QListWidget::item:focus {
+                border: none;
+                outline: none;
+            }
+            QListWidget::item:hover {
+                background-color: #222222;
+                color: #ffffff;
+            }
+            QListWidget::item:selected:hover {
+                background-color: #171717;
+                color: #1ed760;
+            }
+        """)
+        
+        cur = self.currentText()
+        for row in range(list_widget.count()):
+            if list_widget.item(row).text() == cur:
+                list_widget.setCurrentRow(row)
+                break
+
+        def _on_item_clicked(item):
+            self.setCurrentText(item.text())
+            popup.close()
+
+        list_widget.itemClicked.connect(_on_item_clicked)
+        layout.addWidget(list_widget)
+        
+        row_h = 26
+        display_count = list_widget.count()
+        list_height = display_count * row_h
+        list_widget.setFixedHeight(list_height)
+        popup.setFixedHeight(list_height + 2)
+        
+        popup_w = max(self.width(), 64)
+        
+        global_pos = self.mapToGlobal(QPoint(0, 0))
+        popup_x = global_pos.x() + (self.width() - popup_w) // 2
+        popup_y = global_pos.y() - (list_height + 2)
+        
+        popup.setGeometry(popup_x, popup_y, popup_w, list_height + 2)
         popup.show()
 
 class MultiSelectDropdown(QPushButton):
@@ -9912,39 +10155,70 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_import_proj.clicked.connect(self._on_import_project)
         self.btn_export_proj.clicked.connect(self._on_export_project)
         
+    def _is_input_widget(self, w=None):
+        if w is None:
+            from PySide6.QtWidgets import QApplication
+            w = QApplication.focusWidget()
+        if w is None:
+            return False
+        from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox
+        if isinstance(w, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox)):
+            return True
+        meta = w.metaObject()
+        while meta:
+            cname = meta.className()
+            if any(k in cname for k in ('Edit', 'Input', 'Spin', 'Text', 'Search')):
+                return True
+            meta = meta.superClass()
+        return False
+
+    def _update_shortcut_enabled_states(self):
+        from PySide6.QtWidgets import QApplication
+        active = self.isActiveWindow() and QApplication.activeWindow() is not None
+        in_input = self._is_input_widget()
+        enable_shortcuts = active and not in_input
+
+        for sc in getattr(self, '_active_shortcuts', []):
+            try:
+                sc.setEnabled(enable_shortcuts)
+            except RuntimeError:
+                pass
+
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         from PySide6.QtCore import QEvent, Qt
-        from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
+        from PySide6.QtWidgets import QApplication
         
         if event.type() == QEvent.Type.KeyPress:
-            fw = self.focusWidget()
-            if not isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit)):
-                if hasattr(self, 'audio_preview') and getattr(self.audio_preview, 'is_preview_active', lambda: False)():
-                    try:
-                        from PySide6.QtGui import QKeySequence
-                        prefs = self.engine.load_preferences() or {}
-                        scs = prefs.get('shortcuts', {}) if isinstance(prefs, dict) else {}
-                        play_key = scs.get('play_stop', 'Space')
-                        back_key = scs.get('skip_backward', 'Left')
-                        fwd_key  = scs.get('skip_forward', 'Right')
-                        
-                        key_val = event.key()
-                        mods = event.modifiers()
-                        mod_val = mods.value if hasattr(mods, 'value') else int(mods)
-                        combo = key_val | mod_val
-                        seq_str = QKeySequence(combo).toString()
-                        
-                        if play_key and seq_str == play_key:
-                            self.audio_preview.toggle_play()
-                            return True
-                        elif back_key and seq_str == back_key:
-                            self.audio_preview.skip_backward()
-                            return True
-                        elif fwd_key and seq_str == fwd_key:
-                            self.audio_preview.skip_forward()
-                            return True
-                    except Exception:
-                        pass
+            if not self.isActiveWindow() or QApplication.activeWindow() is None:
+                return super().eventFilter(watched, event)
+            if self._is_input_widget():
+                return super().eventFilter(watched, event)
+            if hasattr(self, 'audio_preview') and getattr(self.audio_preview, 'is_preview_active', lambda: False)():
+                try:
+                    from PySide6.QtGui import QKeySequence
+                    prefs = self.engine.load_preferences() or {}
+                    scs = prefs.get('shortcuts', {}) if isinstance(prefs, dict) else {}
+                    play_key = scs.get('play_stop', 'Space')
+                    back_key = scs.get('skip_backward', 'Left')
+                    fwd_key  = scs.get('skip_forward', 'Right')
+                    
+                    key_val = event.key()
+                    mods = event.modifiers()
+                    mod_val = mods.value if hasattr(mods, 'value') else int(mods)
+                    combo = key_val | mod_val
+                    seq_str = QKeySequence(combo).toString()
+                    
+                    if play_key and seq_str == play_key:
+                        self.audio_preview.toggle_play()
+                        return True
+                    elif back_key and seq_str == back_key:
+                        self.audio_preview.skip_backward()
+                        return True
+                    elif fwd_key and seq_str == fwd_key:
+                        self.audio_preview.skip_forward()
+                        return True
+                except Exception:
+                    pass
                         
         if event.type() == QEvent.Type.Enter:
             if watched == getattr(self, 'btn_analyze_standalone', None):
@@ -11387,12 +11661,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         # ── Script Container
         self.script_container = QWidget()
-        # 335 includes the 15px margin to prevent the right border from being cut off
-        self.script_container.setFixedWidth(335 if is_more_accurate else 0)
+        # 350 includes 15px left and 15px right margins to prevent shake animation from being clipped on edges
+        self.script_container.setFixedWidth(350 if is_more_accurate else 0)
         self.script_container.setStyleSheet("background: transparent;")
         
         self.script_container_layout = QHBoxLayout(self.script_container)
-        self.script_container_layout.setContentsMargins(15, 0, 0, 0)
+        self.script_container_layout.setContentsMargins(15, 0, 15, 0)
         # AlignRight ensures the text box moves properly to create the "slide out" effect
         self.script_container_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
         
@@ -11946,7 +12220,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
         
         start_w = self.script_container.width()
-        end_w = 335 if checked else 0
+        end_w = 350 if checked else 0
         
         def _on_step(v):
             self.script_container.setFixedWidth(int(start_w + (end_w - start_w) * v))
@@ -12013,6 +12287,49 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 
                 from PySide6.QtCore import QTimer as _QT
                 _QT.singleShot(1250, lambda: self._combo_lang.setStyleSheet(_orig_ss))
+            return  # Do NOT start analysis
+
+        # ── Script / Scenario validation ────────────────────────────────────────
+        _script_is_required = hasattr(self, 'tgl_more_accurate') and self.tgl_more_accurate.isChecked()
+        _script_text = self.welcome_script_edit.toPlainText().strip() if hasattr(self, 'welcome_script_edit') else ''
+        if _script_is_required and not _script_text:
+            if hasattr(self, 'welcome_script_edit'):
+                _orig_script_ss = f'''
+                    QTextEdit {{
+                        background-color: #1e1e1e; color: #d4d4d4; 
+                        border: 1px solid #3a3a3a; border-radius: 3px; 
+                        padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+                    }}
+                    QTextEdit:focus {{ border: 1px solid #1a7a3e; }}
+                '''
+                _err_script_ss = f'''
+                    QTextEdit {{
+                        background-color: #1e1e1e; color: #d4d4d4; 
+                        border: 1px solid #ed4245; border-radius: 3px; 
+                        padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+                    }}
+                    QTextEdit:focus {{ border: 1px solid #ed4245; }}
+                '''
+                self.welcome_script_edit.setStyleSheet(_err_script_ss)
+                
+                target_widget = self.script_content_widget if hasattr(self, 'script_content_widget') else self.welcome_script_edit
+                parent_widget = self.script_container if hasattr(self, 'script_container') else self
+                
+                from PySide6.QtCore import QPropertyAnimation as _QPA, QPoint as _QP
+                anim = _QPA(target_widget, b"pos", parent_widget)
+                anim.setDuration(300)
+                pos = target_widget.pos()
+                anim.setKeyValueAt(0, pos)
+                anim.setKeyValueAt(0.2, pos + _QP(5, 0))
+                anim.setKeyValueAt(0.4, pos - _QP(5, 0))
+                anim.setKeyValueAt(0.6, pos + _QP(5, 0))
+                anim.setKeyValueAt(0.8, pos - _QP(5, 0))
+                anim.setKeyValueAt(1, pos)
+                anim.start()
+                self._script_shake_anim = anim # keep ref
+                
+                from PySide6.QtCore import QTimer as _QT
+                _QT.singleShot(1250, lambda: self.welcome_script_edit.setStyleSheet(_orig_script_ss))
             return  # Do NOT start analysis
 
         # 1. Hide side panels
@@ -12259,11 +12576,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
         track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
 
+        source_files = []
+        try:
+            if self.resolve_handler:
+                d_info = self.resolve_handler.get_direct_audio_info(selected_tl_name, track_indices)
+                if d_info and d_info.get("clips"):
+                    source_files = list(set(c["file_path"] for c in d_info["clips"] if c.get("file_path")))
+        except Exception:
+            pass
+
         self._transcription_source = {
             "timeline_name":  selected_tl_name,
             "track_names":    selected_track_names,
             "track_indices":  track_indices,
             "all_tracks":     (not selected_track_names) or (len(selected_track_names) >= len(all_tracks_available)),
+            "source_files":   source_files,
         }
         # Persist snapshot so it survives project export/import
         try:
@@ -12562,26 +12889,26 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Note: Escape also closes search; handled by priority in event chain
         _make(shortcuts.get('open_settings', 'Escape'), self._on_settings)
         
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app and not getattr(self, '_focus_signal_connected', False):
+            app.focusChanged.connect(lambda old_w, new_w: self._update_shortcut_enabled_states())
+            self._focus_signal_connected = True
+
         def safe_toggle_play():
-            from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
-            focus_widget = QApplication.focusWidget()
-            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+            if self._is_input_widget() or not self.isActiveWindow():
                 return
             if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.toggle_play()
 
         def safe_skip_backward():
-            from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
-            focus_widget = QApplication.focusWidget()
-            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+            if self._is_input_widget() or not self.isActiveWindow():
                 return
             if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.skip_backward()
 
         def safe_skip_forward():
-            from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
-            focus_widget = QApplication.focusWidget()
-            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+            if self._is_input_widget() or not self.isActiveWindow():
                 return
             if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.skip_forward()
@@ -12594,6 +12921,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         def _check_rb(rb):
             """Click (check) the given radio button if it exists."""
             def _do():
+                if self._is_input_widget() or not self.isActiveWindow():
+                    return
                 try:
                     rb.setChecked(True)
                 except RuntimeError:
@@ -12634,6 +12963,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         pass
             if rb_target is not None:
                 _make(seq, _check_rb(rb_target))
+
+        self._update_shortcut_enabled_states()
 
 
     def _on_settings(self):

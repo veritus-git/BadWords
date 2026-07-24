@@ -884,10 +884,11 @@ except Exception as e:
 
                 cmd = [
                     self.ffmpeg_cmd, "-y",
-                    "-ss", str(in_s),
-                    "-t",  str(dur_s),
                     "-i",  source_file,
+                    "-ss", f"{in_s:.6f}",
+                    "-t",  f"{dur_s:.6f}",
                     "-vn",
+                    "-map", "0:a?",
                     "-ar", "48000",
                     "-ac", "1",
                     output_wav_path,
@@ -1077,6 +1078,123 @@ except Exception as e:
                 w['algo_status'] = 'bad'
                 w['manual_status'] = 'bad'
         return words_data
+
+    def prepare_preview_audio(self, settings=None, callback_status=None):
+        """
+        Extracts audio for preview directly from source clip files via FFmpeg first,
+        or via Resolve render, ONLY IF the target timeline and source clips match the expected settings.
+        Returns the output wav path on success, or None on failure.
+        """
+        if settings is None:
+            settings = {}
+        unique_id = f"BW_PREVIEW_{int(time.time())}"
+        temp_dir = self.os_doc.get_temp_folder()
+        os.makedirs(temp_dir, exist_ok=True)
+
+        tl_name = settings.get('timeline_name') or ""
+        track_indices = settings.get('track_indices') or None
+        expected_source_files = settings.get('source_files') or []
+
+        if not self.resolve_handler or not getattr(self.resolve_handler, 'project', None):
+            log_error("[PreviewAudio] DaVinci Resolve is not connected.")
+            return None
+
+        # ── 1. VALIDATE TIMELINE EXISTENCE & MATCHING ────────────────────────
+        matching_tl = None
+        if tl_name and self.resolve_handler.project and hasattr(self.resolve_handler.project, "GetTimelineCount"):
+            try:
+                count = int(self.resolve_handler.project.GetTimelineCount())
+                for i in range(1, count + 1):
+                    t = self.resolve_handler.project.GetTimelineByIndex(i)
+                    if t and t.GetName() == tl_name:
+                        matching_tl = t
+                        break
+            except Exception as e:
+                log_info(f"[PreviewAudio] Timeline lookup error: {e}")
+
+        if not matching_tl:
+            curr_tl = getattr(self.resolve_handler, 'timeline', None)
+            if curr_tl and (not tl_name or curr_tl.GetName() == tl_name):
+                matching_tl = curr_tl
+
+        if not matching_tl:
+            log_error(f"[PreviewAudio] Target timeline '{tl_name}' not found in DaVinci Resolve.")
+            return None
+
+        inspect_tl_name = matching_tl.GetName()
+
+        # ── 2. VALIDATE SOURCE CLIPS MATCHING ──────────────────────────────
+        direct_info = None
+        try:
+            direct_info = self.resolve_handler.get_direct_audio_info(
+                inspect_tl_name, track_indices
+            )
+        except Exception as e:
+            log_info(f"[PreviewAudio] get_direct_audio_info error: {e}")
+
+        if expected_source_files:
+            expected_basenames = {os.path.basename(f).lower() for f in expected_source_files if f}
+            
+            actual_basenames = set()
+            if direct_info and direct_info.get('clips'):
+                actual_basenames = {os.path.basename(c['file_path']).lower() for c in direct_info['clips'] if c.get('file_path')}
+            else:
+                try:
+                    for i in range(1, matching_tl.GetTrackCount("audio") + 1):
+                        items = matching_tl.GetItemListInTrack("audio", i) or []
+                        for item in items:
+                            pi = item.GetMediaPoolItem()
+                            if pi:
+                                fp = pi.GetClipProperty("File Path") or ""
+                                if fp:
+                                    actual_basenames.add(os.path.basename(fp).lower())
+                except Exception:
+                    pass
+
+            if expected_basenames and actual_basenames:
+                intersection = expected_basenames.intersection(actual_basenames)
+                if not intersection:
+                    log_error(
+                        f"[PreviewAudio] Source clip mismatch on timeline '{inspect_tl_name}'. "
+                        f"Expected: {expected_basenames}, Found: {actual_basenames}. Aborting preview audio recovery."
+                    )
+                    return None
+
+        # ── 3. EXTRACT AUDIO (DIRECT OR RENDER) ─────────────────────────────
+        if direct_info:
+            _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
+            ok_direct = self._extract_audio_direct(direct_info, _direct_wav, callback_status=callback_status)
+            if ok_direct and os.path.exists(_direct_wav) and os.path.getsize(_direct_wav) > 0:
+                log_info(f"[PreviewAudio] Direct source clip audio extraction successful → {_direct_wav}")
+                return _direct_wav
+
+        # Fallback to Resolve render
+        end_frame_override = None
+        if track_indices and self.resolve_handler:
+            try:
+                end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
+                    inspect_tl_name, track_indices
+                )
+                if end_seconds:
+                    fps = self.resolve_handler.fps or 60.0
+                    end_frame_override = int(round(end_seconds * fps))
+            except Exception as e:
+                log_info(f"prepare_preview_audio: track end calculation error: {e}")
+
+        try:
+            wav_path = self.resolve_handler.render_audio(
+                unique_id, temp_dir,
+                timeline_name=inspect_tl_name,
+                track_indices=track_indices,
+                end_frame_override=end_frame_override,
+            )
+            if wav_path and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                log_info(f"[PreviewAudio] Resolve audio render successful → {wav_path}")
+                return wav_path
+        except Exception as e:
+            log_error(f"prepare_preview_audio render failed: {e}")
+
+        return None
 
     # ==========================================
     # 3. MAIN ANALYSIS PIPELINE
