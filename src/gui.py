@@ -1520,10 +1520,95 @@ class AnimatedPlayerButton(QPushButton):
         super().mouseReleaseEvent(e)
 
 
+class AudioToggleTab(QPushButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.is_collapsed = False
+        self.hovered = False
+        self.setFixedHeight(16)
+        self.setFixedWidth(130)
+        from PySide6.QtCore import Qt
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet("background: transparent; border: none;")
+
+    def set_collapsed(self, collapsed: bool):
+        if self.is_collapsed != collapsed:
+            self.is_collapsed = collapsed
+            self.update()
+
+    def enterEvent(self, event):
+        self.hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QPen, QPainterPath, QBrush
+        from PySide6.QtCore import Qt, QPointF
+        
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        
+        w = float(self.width())
+        h = float(self.height())
+        
+        # Smooth trapezoid path with sloped, curved sides
+        path = QPainterPath()
+        path.moveTo(0.0, h)
+        path.cubicTo(12.0, h, 15.0, 0.0, 25.0, 0.0)
+        path.lineTo(w - 25.0, 0.0)
+        path.cubicTo(w - 15.0, 0.0, w - 12.0, h, w, h)
+        path.closeSubpath()
+        
+        # Fill matches the player background (#191919) seamlessly! Hover gives subtle highlight.
+        bg_col = QColor("#262626") if self.hovered else QColor("#191919")
+        border_col = QColor("#444444") if self.hovered else QColor("#2a2a2a")
+        
+        p.fillPath(path, QBrush(bg_col))
+        
+        # Top & side border outline (if collapsed, close bottom edge for floating tab look)
+        border_path = QPainterPath()
+        border_path.moveTo(0.5, h)
+        border_path.cubicTo(12.0, h - 0.5, 15.0, 0.5, 25.0, 0.5)
+        border_path.lineTo(w - 25.0, 0.5)
+        border_path.cubicTo(w - 15.0, 0.5, w - 12.0, h - 0.5, w - 0.5, h)
+        if self.is_collapsed:
+            border_path.lineTo(0.5, h)
+        
+        p.setPen(QPen(border_col, 1.0))
+        p.drawPath(border_path)
+        
+        cx = w / 2.0
+        cy = h / 2.0
+        
+        chevron_col = QColor("#ffffff") if self.hovered else QColor("#999999")
+        pen_chevron = QPen(chevron_col, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(pen_chevron)
+        
+        half_w = 5.0
+        offset_y = 2.5
+        
+        if self.is_collapsed:
+            # Arrow pointing UP (▲)
+            p.drawLine(QPointF(cx - half_w, cy + offset_y - 0.5), QPointF(cx, cy - offset_y - 0.5))
+            p.drawLine(QPointF(cx, cy - offset_y - 0.5), QPointF(cx + half_w, cy + offset_y - 0.5))
+        else:
+            # Arrow pointing DOWN (▼)
+            p.drawLine(QPointF(cx - half_w, cy - offset_y + 0.5), QPointF(cx, cy + offset_y + 0.5))
+            p.drawLine(QPointF(cx, cy + offset_y + 0.5), QPointF(cx + half_w, cy - offset_y + 0.5))
+
+
 class AudioPreviewWidget(QFrame):
     def __init__(self, parent_widget, main_window):
         super().__init__(parent_widget)
         self.main_window = main_window
+        self.is_collapsed = False
+        self._anim = None
         
         import os
         if os.name == 'posix':
@@ -1537,7 +1622,7 @@ class AudioPreviewWidget(QFrame):
             vbar = self.main_window.scroll_area.verticalScrollBar()
             vbar.actionTriggered.connect(self._on_user_scroll)
             
-        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QComboBox, QSlider, QLabel, QWidget
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QComboBox, QSlider, QLabel, QWidget, QVBoxLayout
         from PySide6.QtCore import Qt, QUrl, QTimer, QEvent
         from PySide6.QtGui import QColor, QFont
         from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -1546,12 +1631,16 @@ class AudioPreviewWidget(QFrame):
         self.setObjectName("AudioPreview")
         self.setStyleSheet(f"""
             QFrame#AudioPreview {{
+                background: transparent;
+                border: none;
+            }}
+            QWidget#AudioContent {{
                 background-color: #191919;
                 border-top: 1px solid #2a2a2a;
-                border-radius: 0px;
-                border-left: none;
-                border-right: none;
-                border-bottom: none;
+            }}
+            QWidget#TabContainer {{
+                background: transparent;
+                border: none;
             }}
             QWidget#AudioControls {{
                 background: transparent;
@@ -1647,16 +1736,31 @@ class AudioPreviewWidget(QFrame):
             }}
         """)
 
-        from PySide6.QtWidgets import QVBoxLayout
-        
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Content container (collapsible)
+        self.content_widget = QWidget()
+        self.content_widget.setObjectName("AudioContent")
+        content_layout = QVBoxLayout(self.content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        
+        layout.addWidget(self.content_widget)
+
+        # Floating toggle tab (wysepka parented to parent page for true zero-margin overlay)
+        self.toggle_tab = AudioToggleTab(parent_widget)
+        self.toggle_tab.setToolTip(self.main_window.txt("tooltip_toggle_audio_preview"))
+        self.toggle_tab.clicked.connect(self.toggle_collapse)
+        
+        if parent_widget:
+            parent_widget.installEventFilter(self)
+
         self.lbl_status = QLabel("")
         self.lbl_status.setObjectName("StatusLabel")
         self.lbl_status.hide()
-        layout.addWidget(self.lbl_status)
+        content_layout.addWidget(self.lbl_status)
 
         self.controls_widget = QWidget()
         self.controls_widget.setObjectName("AudioControls")
@@ -1694,8 +1798,6 @@ class AudioPreviewWidget(QFrame):
         self.cb_speed.addItems(["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x", "3.0x"])
         self.cb_speed.setCurrentText("1.0x")
         self.cb_speed.setFixedWidth(60)
-        
-
         
         # Center controls (Playback + Seek slider)
         center_widget = QWidget()
@@ -1803,7 +1905,8 @@ class AudioPreviewWidget(QFrame):
         controls_layout.addWidget(center_widget, 3, Qt.AlignCenter)
         controls_layout.addWidget(right_widget, 1, Qt.AlignRight | Qt.AlignVCenter)
 
-        layout.addWidget(self.controls_widget)
+        content_layout.addWidget(self.controls_widget)
+        layout.addWidget(self.content_widget)
 
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
@@ -1832,6 +1935,114 @@ class AudioPreviewWidget(QFrame):
         
         self.hide()
 
+    def update_tab_position(self):
+        if not hasattr(self, 'toggle_tab') or not self.toggle_tab:
+            return
+        parent = self.parentWidget()
+        if not parent or not self.isVisible():
+            if hasattr(self, 'toggle_tab') and self.toggle_tab:
+                self.toggle_tab.hide()
+            return
+        
+        pw = parent.width()
+        tw = self.toggle_tab.width()
+        th = self.toggle_tab.height()
+        
+        target_x = (pw - tw) // 2
+        target_y = self.y() - th
+        
+        self.toggle_tab.move(target_x, target_y)
+        self.toggle_tab.raise_()
+        self.toggle_tab.show()
+
+    def eventFilter(self, watched, event):
+        from PySide6.QtCore import QEvent
+        if watched == self.parentWidget() and event.type() == QEvent.Resize:
+            self.update_tab_position()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_tab_position()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_tab_position()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if hasattr(self, 'toggle_tab') and self.toggle_tab:
+            self.toggle_tab.hide()
+
+    def is_preview_active(self):
+        return self.isVisible() and not getattr(self, 'is_collapsed', False)
+
+    def toggle_collapse(self):
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve
+        from PySide6.QtMultimedia import QMediaPlayer
+        
+        if getattr(self, '_anim', None) and self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+            
+        target_collapsed = not self.is_collapsed
+        self.is_collapsed = target_collapsed
+        self.toggle_tab.set_collapsed(target_collapsed)
+        
+        target_h = self.controls_widget.sizeHint().height()
+        if target_h < 50:
+            target_h = 70
+        self.controls_widget.setFixedHeight(target_h)
+
+        if target_collapsed:
+            if self.player.playbackState() == QMediaPlayer.PlayingState:
+                self.player.pause()
+            self.update_timer.stop()
+            self._clear_highlights()
+            
+            start_h = self.content_widget.height()
+            if start_h <= 0:
+                start_h = target_h
+            self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
+            self._anim.setDuration(320)
+            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim.setStartValue(start_h)
+            self._anim.setEndValue(0)
+            self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
+            
+            def on_collapse_finished():
+                if self.is_collapsed:
+                    self.content_widget.hide()
+                    self.controls_widget.setMaximumHeight(16777215)
+                    self.controls_widget.setMinimumHeight(0)
+                self.update_tab_position()
+                    
+            self._anim.finished.connect(on_collapse_finished)
+            self._anim.start()
+        else:
+            self.content_widget.show()
+            self.content_widget.setMaximumHeight(0)
+            
+            # Immediately restore highlight state for the currently active word
+            self.current_word_idx = -1
+            self.sync_playback()
+            
+            self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
+            self._anim.setDuration(320)
+            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim.setStartValue(0)
+            self._anim.setEndValue(target_h)
+            self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
+            
+            def on_expand_finished():
+                if not self.is_collapsed:
+                    self.content_widget.setMaximumHeight(16777215)
+                    self.controls_widget.setMaximumHeight(16777215)
+                    self.controls_widget.setMinimumHeight(0)
+                self.update_tab_position()
+                    
+            self._anim.finished.connect(on_expand_finished)
+            self._anim.start()
+
     def check_audio_availability(self):
         import os
         canvas = getattr(self.main_window, 'text_canvas', None)
@@ -1854,11 +2065,19 @@ class AudioPreviewWidget(QFrame):
             if self.original_audio_path and os.path.exists(self.original_audio_path):
                 self.lbl_status.hide()
                 self.controls_widget.show()
+                if getattr(self, 'is_collapsed', False):
+                    self.content_widget.hide()
+                else:
+                    self.content_widget.show()
                 self.show()
                 return
             
         self.lbl_status.hide()
         self.controls_widget.show()
+        if getattr(self, 'is_collapsed', False):
+            self.content_widget.hide()
+        else:
+            self.content_widget.show()
         self.show()
         
         if self._source_audio_path != audio_path:
@@ -1880,6 +2099,10 @@ class AudioPreviewWidget(QFrame):
             self.player.setSource(QUrl.fromLocalFile(assembled_audio_path))
             self.lbl_status.hide()
             self.controls_widget.show()
+            if getattr(self, 'is_collapsed', False):
+                self.content_widget.hide()
+            else:
+                self.content_widget.show()
             self.slider_seek.setValue(0)
             self.current_word_idx = -1
             self.last_jumped_ts = -1.0
@@ -2065,6 +2288,9 @@ class AudioPreviewWidget(QFrame):
         return current_audio_f / fps
 
     def sync_playback(self):
+        if getattr(self, 'is_collapsed', False):
+            self._clear_highlights()
+            return
         canvas = getattr(self.main_window, 'text_canvas', None)
         if not canvas or not getattr(canvas, 'words_data', None): return
         
@@ -3121,7 +3347,7 @@ class TranscriptionCanvas(QWidget):
                     if '_rect' in w and w['_rect'].adjusted(-10, -5, 10, 5).contains(event.pos()):
                         start_time = w.get('start', 0.0)
                         
-                        if hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.isVisible():
+                        if hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.is_preview_active():
                             audio_ts = self.main_window.audio_preview._original_to_audio_time(start_time)
                             self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000))
                         else:
@@ -7008,10 +7234,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Keys and their ordering in the final form
         MARKER_KEYS  = {'mark_red', 'mark_blue', 'mark_green', 'mark_eraser'}
-        NAV_KEYS     = {'search', 'open_settings', 'jump_to_word'}
+        NAV_KEYS     = {'search', 'open_settings', 'jump_to_word', 'play_stop', 'skip_backward', 'skip_forward'}
         DISPLAY_ONLY = set()
         KEY_ORDER    = ['mark_red', 'mark_blue', 'mark_green', 'mark_eraser',
-                        'search', 'open_settings', 'jump_to_word']
+                        'search', 'open_settings', 'jump_to_word', 'play_stop', 'skip_backward', 'skip_forward']
 
         def make_setter(w, check_fn):
             def _setter(v):
@@ -9691,18 +9917,34 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
         
         if event.type() == QEvent.Type.KeyPress:
-            # Global intercept for media keys (Space, Left, Right)
-            if event.key() in (Qt.Key_Space, Qt.Key_Left, Qt.Key_Right):
-                fw = self.focusWidget()
-                if not isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit)):
-                    if hasattr(self, 'audio_preview') and getattr(self.audio_preview, 'isVisible', lambda: False)():
-                        if event.key() == Qt.Key_Space:
+            fw = self.focusWidget()
+            if not isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                if hasattr(self, 'audio_preview') and getattr(self.audio_preview, 'is_preview_active', lambda: False)():
+                    try:
+                        from PySide6.QtGui import QKeySequence
+                        prefs = self.engine.load_preferences() or {}
+                        scs = prefs.get('shortcuts', {}) if isinstance(prefs, dict) else {}
+                        play_key = scs.get('play_stop', 'Space')
+                        back_key = scs.get('skip_backward', 'Left')
+                        fwd_key  = scs.get('skip_forward', 'Right')
+                        
+                        key_val = event.key()
+                        mods = event.modifiers()
+                        mod_val = mods.value if hasattr(mods, 'value') else int(mods)
+                        combo = key_val | mod_val
+                        seq_str = QKeySequence(combo).toString()
+                        
+                        if play_key and seq_str == play_key:
                             self.audio_preview.toggle_play()
-                        elif event.key() == Qt.Key_Left:
+                            return True
+                        elif back_key and seq_str == back_key:
                             self.audio_preview.skip_backward()
-                        elif event.key() == Qt.Key_Right:
+                            return True
+                        elif fwd_key and seq_str == fwd_key:
                             self.audio_preview.skip_forward()
-                        return True  # Consume the event
+                            return True
+                    except Exception:
+                        pass
                         
         if event.type() == QEvent.Type.Enter:
             if watched == getattr(self, 'btn_analyze_standalone', None):
@@ -12325,10 +12567,28 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             focus_widget = QApplication.focusWidget()
             if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
                 return
-            if hasattr(self, 'audio_preview') and self.audio_preview.isVisible():
+            if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.toggle_play()
 
+        def safe_skip_backward():
+            from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
+            focus_widget = QApplication.focusWidget()
+            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                return
+            if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
+                self.audio_preview.skip_backward()
+
+        def safe_skip_forward():
+            from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
+            focus_widget = QApplication.focusWidget()
+            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                return
+            if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
+                self.audio_preview.skip_forward()
+
         _make(shortcuts.get('play_stop', 'Space'), safe_toggle_play)
+        _make(shortcuts.get('skip_backward', 'Left'), safe_skip_backward)
+        _make(shortcuts.get('skip_forward', 'Right'), safe_skip_forward)
 
         # Marker shortcuts — click the corresponding radio button
         def _check_rb(rb):

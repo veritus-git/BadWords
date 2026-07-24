@@ -434,6 +434,8 @@ DEFAULT_SETTINGS = {
         "mark_eraser":     "4",
         "jump_to_word":    "opt_ctrl_lmb",
         "play_stop":       "Space",
+        "skip_backward":   "Left",
+        "skip_forward":    "Right",
         "search":          "Ctrl+F",
         "open_settings":   "Escape",
     },
@@ -874,6 +876,8 @@ TRANS = {
         "shortcut_mark_eraser": "Switch to Eraser",
         "shortcut_jump_to_word": "Jump to word",
         "shortcut_play_stop": "Play / Stop",
+        "shortcut_skip_backward": "Skip Backward",
+        "shortcut_skip_forward": "Skip Forward",
         "shortcut_search": "Search",
         "shortcut_open_settings": "Open Settings",
         "shortcut_none": "(none)",
@@ -1017,6 +1021,7 @@ TRANS = {
         "tt_jump_to_word_info": "Jumps the DaVinci playhead to the exact moment the clicked word was spoken.\n\nAvailable shortcuts:\nCTRL/ALT/SHIFT + Left/Right Click.",        "ph_support_email": "Your Email Address (Optional)",
         "btn_copy_path": "Copy Path",
         "msg_audio_preview_unavailable": "Audio preview unavailable until next transcription.",
+        "tooltip_toggle_audio_preview": "Toggle Audio Preview",
 
     },
     'pl': {
@@ -1242,6 +1247,8 @@ TRANS = {
         "shortcut_mark_eraser": "Przełącz na Gumkę",
         "shortcut_jump_to_word": "Skocz do słowa",
         "shortcut_play_stop": "Odtwórz / Zatrzymaj",
+        "shortcut_skip_backward": "Przewiń do tyłu",
+        "shortcut_skip_forward": "Przewiń do przodu",
         "shortcut_search": "Szukaj",
         "shortcut_open_settings": "Otwórz Ustawienia",
         "shortcut_none": "(brak)",
@@ -1385,6 +1392,7 @@ TRANS = {
         "tt_jump_to_word_info": "Skacze kursorem (playhead) DaVinci do momentu, w którym kliknięte słowo zostało wypowiedziane w audio.\n\nDostępne skróty:\nCTRL/ALT/SHIFT + Lewy/Prawy Przycisk Myszy.",        "ph_support_email": "Twój adres e-mail (Opcjonalnie)",
         "btn_copy_path": "Kopiuj ścieżkę",
         "msg_audio_preview_unavailable": "Podgląd audio niedostępny do następnej transkrypcji.",
+        "tooltip_toggle_audio_preview": "Przełącz podgląd audio",
 
     },
     'de': {
@@ -1610,6 +1618,8 @@ TRANS = {
         "shortcut_mark_eraser": "Zum Radiergummi wechseln",
         "shortcut_jump_to_word": "Zum Wort springen",
         "shortcut_play_stop": "Abspielen / Stopp",
+        "shortcut_skip_backward": "Rückwärts springen",
+        "shortcut_skip_forward": "Vorwärts springen",
         "shortcut_search": "Suchen",
         "shortcut_open_settings": "Einstellungen öffnen",
         "shortcut_none": "(keine)",
@@ -1753,6 +1763,7 @@ TRANS = {
         "tt_jump_to_word_info": "Springt mit dem DaVinci-Playhead genau an den Moment, an dem das angeklickte Wort gesprochen wurde.\n\nVerfügbare Tastenkürzel:\nSTRG/ALT/UMSCHALT + Links-/Rechtsklick.",        "ph_support_email": "Ihre E-Mail-Adresse (Optional)",
         "btn_copy_path": "Pfad kopieren",
         "msg_audio_preview_unavailable": "Audiovorschau nicht verfügbar bis zur nächsten Transkription.",
+        "tooltip_toggle_audio_preview": "Audiovorschau umschalten",
 
     },
     'es': {
@@ -1978,6 +1989,8 @@ TRANS = {
         "shortcut_mark_eraser": "Cambiar a la Goma",
         "shortcut_jump_to_word": "Saltar a la palabra",
         "shortcut_play_stop": "Reproducir / Detener",
+        "shortcut_skip_backward": "Retroceder",
+        "shortcut_skip_forward": "Avanzar",
         "shortcut_search": "Buscar",
         "shortcut_open_settings": "Abrir Ajustes",
         "shortcut_none": "(ninguno)",
@@ -2121,6 +2134,7 @@ TRANS = {
         "tt_jump_to_word_info": "Salta el cabezal de reproducción de DaVinci al momento exacto en que se pronunció la palabra clickeada.\n\nAtajos disponibles:\nCTRL/ALT/MAYÚS + Clic Izquierdo/Derecho.",        "ph_support_email": "Tu correo electrónico (Opcional)",
         "btn_copy_path": "Copiar ruta",
         "msg_audio_preview_unavailable": "Vista previa de audio no disponible hasta la próxima transcripción.",
+        "tooltip_toggle_audio_preview": "Alternar vista previa de audio",
 
     },
     'fr': {
@@ -2346,6 +2360,8 @@ TRANS = {
         "shortcut_mark_eraser": "Passer à la Gomme",
         "shortcut_jump_to_word": "Aller au mot",
         "shortcut_play_stop": "Lecture / Pause",
+        "shortcut_skip_backward": "Reculer",
+        "shortcut_skip_forward": "Avancer",
         "shortcut_search": "Rechercher",
         "shortcut_open_settings": "Ouvrir les paramètres",
         "shortcut_none": "(aucun)",
@@ -2489,6 +2505,7 @@ TRANS = {
         "tt_jump_to_word_info": "Déplace la tête de lecture de DaVinci au moment exact où le mot cliqué a été prononcé.\n\nRaccourcis disponibles :\nCTRL/ALT/MAJ + Clic Gauche/Droit.",        "ph_support_email": "Votre adresse e-mail (Facultatif)",
         "btn_copy_path": "Copier le chemin",
         "msg_audio_preview_unavailable": "Aperçu audio indisponible jusqu'à la prochaine transcription.",
+        "tooltip_toggle_audio_preview": "Basculer l'aperçu audio",
 
     },
     'it': {
@@ -2714,6 +2731,8 @@ TRANS = {
         "shortcut_mark_eraser": "Passa alla Gomma",
         "shortcut_jump_to_word": "Salta alla parola",
         "shortcut_play_stop": "Riproduci / Ferma",
+        "shortcut_skip_backward": "Salta indietro",
+        "shortcut_skip_forward": "Salta avanti",
         "shortcut_search": "Cerca",
         "shortcut_open_settings": "Apri Impostazioni",
         "shortcut_none": "(nessuna)",
@@ -2857,6 +2876,7 @@ TRANS = {
         "tt_jump_to_word_info": "Sposta il cursore di riproduzione di DaVinci nel momento esatto in cui è stata pronunciata la parola cliccata.\n\nScorciatoie disponibili:\nCTRL/ALT/MAIUSC + Clic Sinistro/Destro.",        "ph_support_email": "Il tuo indirizzo email (Opzionale)",
         "btn_copy_path": "Copia percorso",
         "msg_audio_preview_unavailable": "Anteprima audio non disponibile fino alla prossima trascrizione.",
+        "tooltip_toggle_audio_preview": "Attiva/disattiva anteprima audio",
 
     },
     'pt': {
@@ -3082,6 +3102,8 @@ TRANS = {
         "shortcut_mark_eraser": "Mudar para Borracha",
         "shortcut_jump_to_word": "Pular para a palavra",
         "shortcut_play_stop": "Reproduzir / Parar",
+        "shortcut_skip_backward": "Retroceder",
+        "shortcut_skip_forward": "Avançar",
         "shortcut_search": "Pesquisar",
         "shortcut_open_settings": "Abrir Configurações",
         "shortcut_none": "(nenhum)",
@@ -3225,6 +3247,7 @@ TRANS = {
         "tt_jump_to_word_info": "Salta o cursor do DaVinci para o momento exato em que a palavra clicada foi dita.\n\nAtalhos disponíveis:\nCTRL/ALT/SHIFT + Clique Esquerdo/Direito.",        "ph_support_email": "Seu endereço de e-mail (Opcional)",
         "btn_copy_path": "Copiar caminho",
         "msg_audio_preview_unavailable": "Pré-visualização de áudio indisponível até a próxima transcrição.",
+        "tooltip_toggle_audio_preview": "Alternar pré-visualização de áudio",
 
     },
     'nl': {
@@ -3450,6 +3473,8 @@ TRANS = {
         "shortcut_mark_eraser": "Wisselen naar Gum",
         "shortcut_jump_to_word": "Spring naar woord",
         "shortcut_play_stop": "Afspelen / Stoppen",
+        "shortcut_skip_backward": "Terugspoelen",
+        "shortcut_skip_forward": "Doorspoelen",
         "shortcut_search": "Zoeken",
         "shortcut_open_settings": "Instellingen openen",
         "shortcut_none": "(geen)",
@@ -3593,6 +3618,7 @@ TRANS = {
         "tt_jump_to_word_info": "Springt met de DaVinci-afspeelkop precies naar het moment waarop het geklikte woord werd uitgesproken.\n\nBeschikbare sneltoetsen:\nCTRL/ALT/SHIFT + Linker/Rechter Muisklik.",        "ph_support_email": "Jouw e-mailadres (Optioneel)",
         "btn_copy_path": "Pad kopiëren",
         "msg_audio_preview_unavailable": "Audiovoorbeeld niet beschikbaar tot de volgende transcriptie.",
+        "tooltip_toggle_audio_preview": "Audiovoorbeeld in-/uitschakelen",
 
     },
     'uk': {
@@ -3818,6 +3844,8 @@ TRANS = {
         "shortcut_mark_eraser": "Перемкнути на Гумку",
         "shortcut_jump_to_word": "Перейти до слова",
         "shortcut_play_stop": "Відтворити / Зупинити",
+        "shortcut_skip_backward": "Перемотати назад",
+        "shortcut_skip_forward": "Перемотати вперед",
         "shortcut_search": "Пошук",
         "shortcut_open_settings": "Відкрити налаштування",
         "shortcut_none": "(немає)",
@@ -3961,6 +3989,7 @@ TRANS = {
         "tt_jump_to_word_info": "Переміщує курсор (playhead) DaVinci на точний момент, коли було вимовлено вибране слово.\n\nДоступні комбінації:\nCTRL/ALT/SHIFT + Лівий/Правий клік.",        "ph_support_email": "Ваша електронна адреса (необов'язково)",
         "btn_copy_path": "Копіювати шлях",
         "msg_audio_preview_unavailable": "Попередній перегляд аудіо недоступний до наступної транскрипції.",
+        "tooltip_toggle_audio_preview": "Перемкнути попередній перегляд аудіо",
 
     },
     'ru': {
@@ -4186,6 +4215,8 @@ TRANS = {
         "shortcut_mark_eraser": "Переключить на Ластик",
         "shortcut_jump_to_word": "Перейти к слову",
         "shortcut_play_stop": "Воспроизведение / Пауза",
+        "shortcut_skip_backward": "Перемотать назад",
+        "shortcut_skip_forward": "Перемотать вперед",
         "shortcut_search": "Поиск",
         "shortcut_open_settings": "Открыть настройки",
         "shortcut_none": "(нет)",
@@ -4329,6 +4360,7 @@ TRANS = {
         "tt_jump_to_word_info": "Перемещает курсор (playhead) DaVinci на точный момент, когда было произнесено выбранное слово.\n\nДоступные сочетания:\nCTRL/ALT/SHIFT + Левый/Правый клик.",        "ph_support_email": "Ваш адрес электронной почты (необязательно)",
         "btn_copy_path": "Копировать путь",
         "msg_audio_preview_unavailable": "Предпросмотр аудио недоступен до следующей транскрипции.",
+        "tooltip_toggle_audio_preview": "Переключить предпросмотр аудио",
 
     }
 }
