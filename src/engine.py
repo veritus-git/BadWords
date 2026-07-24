@@ -114,9 +114,12 @@ class AudioEngine:
             if last_ping == current_version:
                 log_info(f"Telemetry: Ping for version {current_version} already sent. Skipping.")
                 return 
+
+            if getattr(self, "_telemetry_pinging", False):
+                log_info("Telemetry: Ping attempt already in progress. Skipping duplicate thread.")
+                return
                 
-            # Natychmiastowe nadpisanie zabezpieczające przed dublowaniem żądań z innych wątków/okien
-            self.os_doc.set_telemetry_pref("last_pinged_version", current_version)
+            self._telemetry_pinging = True
             
             # Globalny marker pozwalający na identyfikację jako "Update" nawet po całkowitym usunięciu aplikacji
             global_marker = os.path.join(self.os_doc.home_dir, ".badwords_installed")
@@ -142,7 +145,7 @@ class AudioEngine:
             allow_geo = self.os_doc.get_telemetry_pref("telemetry_allow_geo")
             machine_id = self.os_doc.get_telemetry_pref("analytics_uuid") or ""
             
-            def _ping_thread(previous_version):
+            def _ping_thread():
                 import ssl
                 try:
                     # distinct_id dla bezpieczeństwa dublujemy w properties i na zewnątrz (wymogi PostHog API)
@@ -167,7 +170,6 @@ class AudioEngine:
                     
                     if not payload["api_key"] or "TUTAJ_WKLEISZ" in payload["api_key"]:
                         log_info("Telemetry skip: Default/Empty API Key in config.")
-                        self.os_doc.set_telemetry_pref("last_pinged_version", previous_version)
                         return
 
                     data = json.dumps(payload).encode('utf-8')
@@ -182,22 +184,27 @@ class AudioEngine:
                     req = urllib.request.Request(url, data=data, headers=headers)
                     
                     # OMINIECIE PROBLEMU Z BRAKIEM CERTYFIKATOW SSL W PORTABLE PYTHON
-                    import certifi
-                    ctx = ssl.create_default_context(cafile=certifi.where())
+                    try:
+                        import certifi
+                        ctx = ssl.create_default_context(cafile=certifi.where())
+                    except ImportError:
+                        ctx = ssl.create_default_context()
                     
                     with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
                         if response.getcode() == 200:
+                            self.os_doc.set_telemetry_pref("last_pinged_version", current_version)
                             log_info(f"Telemetry ping sent successfully ({install_type} - {current_version}).")
                         else:
-                            self.os_doc.set_telemetry_pref("last_pinged_version", previous_version)
                             log_error(f"Telemetry ping failed with HTTP code {response.getcode()}")
                 except Exception as e:
-                    self.os_doc.set_telemetry_pref("last_pinged_version", previous_version)
                     log_error(f"Telemetry ping HTTP request failed: {e}")
+                finally:
+                    self._telemetry_pinging = False
 
-            threading.Thread(target=_ping_thread, args=(last_ping,), daemon=True).start()
+            threading.Thread(target=_ping_thread, daemon=True).start()
 
         except Exception as e:
+            self._telemetry_pinging = False
             log_error(f"Telemetry initialization failed: {e}")
 
     # ==========================================

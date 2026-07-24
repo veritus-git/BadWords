@@ -441,9 +441,6 @@ DEFAULT_SETTINGS = {
     },
     # ── Custom markers ───────────────────────────────────────────────────────
     "custom_markers":       [],
-    # ── Telemetry ────────────────────────────────────────────────────────────
-    "telemetry_opt_in":     False,
-    "telemetry_geo":        False,
     # ── Assembly / XML Pipeline ──────────────────────────────────────────────
     # False (default): audio tracks are re-mapped sequentially (A1, A2, A3...)
     # True: original source track indices are preserved in the output timeline
