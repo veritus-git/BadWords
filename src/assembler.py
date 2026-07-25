@@ -142,8 +142,17 @@ def _op_color(op):
             c = parts[1]
     return c
 
+def _filter_tracks(track_vec, keep_indices):
+    """Remove track Elements not in keep_indices (1-based)."""
+    if not keep_indices:
+        return
+    elements = track_vec.findall('Element')
+    for i, el in enumerate(elements):
+        if (i + 1) not in keep_indices:
+            track_vec.remove(el)
 
-def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_mode=False):
+
+def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_mode=False, audio_track_filter=None, video_track_filter=None):
     """
     Apply BadWords ops cuts to the SeqContainer XML in-place.
 
@@ -191,6 +200,11 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
                 continue
 
             is_video_vec = (track_vec_name == 'VideoTrackVec')
+
+            if is_video_vec and video_track_filter is not None:
+                _filter_tracks(track_vec, video_track_filter)
+            elif (not is_video_vec) and audio_track_filter is not None:
+                _filter_tracks(track_vec, audio_track_filter)
 
             # If audio-only mode, clear all video track items
             if audio_only_mode and is_video_vec:
@@ -324,6 +338,7 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
 
 def assemble_via_drt(resolve_handler, original_tl_name, ops,
                      new_tl_name, audio_only_mode=False,
+                     audio_track_filter=None, video_track_filter=None,
                      temp_dir=None):
     """
     Full DRT assembly pipeline — direct vertical slicing.
@@ -387,7 +402,8 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
 
         # ── Step 3: Apply ops cuts ────────────────────────────────────────────
         ok, color_schedule = apply_ops_to_seq_container(
-            seq_xml, ops, base_offset, fps, audio_only_mode=audio_only_mode
+            seq_xml, ops, base_offset, fps, audio_only_mode=audio_only_mode,
+            audio_track_filter=audio_track_filter, video_track_filter=video_track_filter
         )
         if not ok:
             log_error("drt_assemble: apply_ops_to_seq_container failed.")

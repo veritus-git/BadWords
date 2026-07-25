@@ -2636,6 +2636,21 @@ except Exception as e:
 
                 temp_dir = self.os_doc.get_temp_folder()
                 os.makedirs(temp_dir, exist_ok=True)
+                
+                audio_track_filter = None
+                video_track_filter = None
+                
+                track_config = source_snapshot.get('assembly_track_config')
+                if track_config:
+                    amode = track_config.get('audio_mode', 'all')
+                    if amode == 'tr':
+                        audio_track_filter = track_indices if track_indices else None
+                    elif amode == 'cust':
+                        audio_track_filter = track_config.get('audio_custom', [])
+                    
+                    vmode = track_config.get('video_mode', 'all')
+                    if vmode == 'cust':
+                        video_track_filter = track_config.get('video_custom', [])
 
                 log_info("assemble_timeline: TIER 1 — attempting DRT primary path...")
                 drt_ok, drt_colors, drt_name = assembler.assemble_via_drt(
@@ -2644,6 +2659,8 @@ except Exception as e:
                     clean_ops,
                     new_tl_name,
                     audio_only_mode=audio_only_mode,
+                    audio_track_filter=audio_track_filter,
+                    video_track_filter=video_track_filter,
                     temp_dir=temp_dir
                 )
 
