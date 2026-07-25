@@ -981,7 +981,7 @@ TRANS = {
         "txt_all_tracks": "All tracks",
         "msg_transcription_source": "BadWords - Source Timeline: <i>{tl}</i> - Tracks: <i>{tr}</i>",
         "txt_all": "All",
-        "lbl_xml_preserve_track_order": "Preserve original audio track order",
+        "lbl_xml_preserve_track_order": "Preserve original tracks order",
         "tt_xml_preserve_track_order": "Maintains original track numbers (e.g. A3 stays A3).\nIf disabled, tracks are placed sequentially starting\nfrom A1.",
         "status_assembly_xml_build": "Building XML assembly...",
         "status_assembly_xml_import": "Importing XML timeline...",

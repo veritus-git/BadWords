@@ -739,10 +739,10 @@ class ToggleSwitch(QWidget):
         self._bg_color = QColor("#555555")
         
         # Animators
-        self._anim_group = QPropertyAnimation(self, b"thumb_x")
+        self._anim_group = QPropertyAnimation(self, b"thumb_x", self)
         self._anim_group.setDuration(150)
         
-        self._color_anim = QPropertyAnimation(self, b"bg_color")
+        self._color_anim = QPropertyAnimation(self, b"bg_color", self)
         self._color_anim.setDuration(150)
 
     @Property(float)
@@ -794,7 +794,10 @@ class ToggleSwitch(QWidget):
         end_x = 18 if self._is_checked else 2
         end_color = QColor("#1ed760") if self._is_checked else QColor("#555555")
         
+        self._anim_group.setStartValue(self._thumb_x)
         self._anim_group.setEndValue(float(end_x))
+        
+        self._color_anim.setStartValue(self._bg_color)
         self._color_anim.setEndValue(end_color)
         
         self._anim_group.start()
@@ -5865,89 +5868,292 @@ class TrackSquareCheckbox(QWidget):
         super().mousePressEvent(event)
 
 
-class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
-    def __init__(self, parent_gui, engine, default_config=None, tl_name=None, tr_indices=None):
-        super().__init__(parent_gui)
-        self.engine = engine
+class MarqueeLabel(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+        self._mq_timer = QTimer(self)
+        self._mq_timer.setInterval(25)
+        self._mq_timer.timeout.connect(self._scroll_step)
+        self._mq_pos = 0.0
+        self._hovered = False
+        self.setMouseTracking(True)
+        self.setStyleSheet("color: #d4d4d4; font-size: 9.5pt;")
+
+    def setText(self, text):
+        self._full_text = text
+        self._mq_pos = 0.0
+        super().setText(text)
+        self.update()
+
+    def text(self):
+        return self._full_text
+
+    def enterEvent(self, event):
+        self._hovered = True
+        if self._is_truncated():
+            self._mq_timer.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self._mq_timer.stop()
+        self._mq_pos = 0.0
+        self.update()
+        super().leaveEvent(event)
+
+    def _is_truncated(self):
+        fm = self.fontMetrics()
+        return fm.horizontalAdvance(self._full_text) > self.width()
+
+    def _scroll_step(self):
+        fm = self.fontMetrics()
+        txt_w = fm.horizontalAdvance(self._full_text)
+        self._mq_pos += 1.2
+        if self._mq_pos > txt_w + 20:
+            self._mq_pos = -self.width()
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtCore import Qt
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        fm = self.fontMetrics()
+
+        if self._hovered and self._is_truncated() and self._mq_timer.isActive():
+            p.setPen(QColor("#ffffff"))
+            p.drawText(int(-self._mq_pos), fm.ascent() + (self.height() - fm.height()) // 2, self._full_text)
+        else:
+            elided = fm.elidedText(self._full_text, Qt.ElideRight, max(1, self.width()))
+            p.setPen(QColor("#d4d4d4"))
+            p.drawText(0, fm.ascent() + (self.height() - fm.height()) // 2, elided)
+
+
+class AssembleArrowButton(QPushButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.is_open = False
+        self.hovered = False
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet("background: transparent; border: none;")
+
+    def set_open(self, open_state: bool):
+        if self.is_open != open_state:
+            self.is_open = open_state
+            self.update()
+
+    def enterEvent(self, event):
+        self.hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QPen
+        from PySide6.QtCore import Qt, QPointF
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        w = float(self.width())
+        h = float(self.height())
+        cx = w / 2.0
+        cy = h / 2.0
+
+        if self.hovered:
+            p.fillRect(0, 0, int(w), int(h), QColor(255, 255, 255, 25))
+
+        chevron_col = QColor("#ffffff") if self.hovered else QColor("#e0e0e0")
+        pen_chevron = QPen(chevron_col, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(pen_chevron)
+
+        half_w = 4.5
+        offset_y = 2.0
+
+        if self.is_open:
+            # Arrow pointing UP (▲)
+            p.drawLine(QPointF(cx - half_w, cy + offset_y), QPointF(cx, cy - offset_y))
+            p.drawLine(QPointF(cx, cy - offset_y), QPointF(cx + half_w, cy + offset_y))
+        else:
+            # Arrow pointing DOWN (▼)
+            p.drawLine(QPointF(cx - half_w, cy - offset_y), QPointF(cx, cy + offset_y))
+            p.drawLine(QPointF(cx, cy + offset_y), QPointF(cx + half_w, cy - offset_y))
+
+
+class AssembleSplitButton(QFrame):
+    assembleClicked = Signal()
+    toggleDrawerClicked = Signal()
+
+    def __init__(self, text, parent_gui, parent=None):
+        super().__init__(parent)
         self.parent_gui = parent_gui
-        self.tl_name = tl_name
-        self.tr_indices = tr_indices or []
-        self.result_config = None
-        self.is_accepted = False
+        self.is_open = False
+        self.setFixedHeight(35)
 
-        self.setWindowTitle(self.parent_gui.txt("dlg_track_selection_title"))
-        self.frameless_init(is_popup=True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedWidth(440)
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QFrame
+        from PySide6.QtCore import Qt
 
-        self.setStyleSheet(f"""
-            QDialog {{ background: transparent; }}
-            #MainInnerFrame {{
-                background-color: {config.BG_COLOR};
-                border: 1px solid #2a2a2a;
-                border-radius: 0px;
-            }}
-            QLabel {{ color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 9.5pt; }}
-            QFrame {{ border: none; }}
+        self.setObjectName("AssembleSplitButtonFrame")
+        self.update_style()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.btn_main = QPushButton(text)
+        self.btn_main.setFixedHeight(33)
+        self.btn_main.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_main.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 13px;
+                border: none;
+                padding-left: 14px;
+                padding-right: 10px;
+                text-align: center;
+            }
         """)
+        self.btn_main.clicked.connect(self.assembleClicked)
 
-        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGraphicsDropShadowEffect
-        from PySide6.QtGui import QColor
+        self.sep = QFrame()
+        self.sep.setFixedWidth(1)
+        self.sep.setFixedHeight(18)
+        self.sep.setStyleSheet("background-color: rgba(255, 255, 255, 0.3); border: none;")
+
+        self.btn_arrow = AssembleArrowButton(self)
+        self.btn_arrow.setFixedSize(32, 33)
+        self.btn_arrow.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_arrow.clicked.connect(self._on_arrow_click)
+
+        layout.addWidget(self.btn_main, 1)
+        layout.addWidget(self.sep)
+        layout.addWidget(self.btn_arrow)
+
+    def _on_arrow_click(self):
+        self.set_open(not self.is_open)
+        self.toggleDrawerClicked.emit()
+
+    def set_open(self, is_open: bool):
+        self.is_open = is_open
+        self.btn_arrow.set_open(is_open)
+        self.update_style()
+
+    def update_style(self):
+        if self.is_open:
+            self.setStyleSheet("""
+                QFrame#AssembleSplitButtonFrame {
+                    background-color: #11703c;
+                    border-top-left-radius: 4px;
+                    border-top-right-radius: 4px;
+                    border-bottom-left-radius: 0px;
+                    border-bottom-right-radius: 0px;
+                    border: 1px solid #11703c;
+                    border-bottom: none;
+                }
+                QFrame#AssembleSplitButtonFrame:hover {
+                    background-color: #168f4d;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QFrame#AssembleSplitButtonFrame {
+                    background-color: #11703c;
+                    border-radius: 4px;
+                    border: 1px solid #0a4d28;
+                }
+                QFrame#AssembleSplitButtonFrame:hover {
+                    background-color: #168f4d;
+                }
+            """)
+
+
+class TrackOptionsDrawer(QWidget):
+    def __init__(self, parent_gui, engine, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QWidget, QFrame, QGridLayout
+        from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+
+        self.parent_gui = parent_gui
+        self.engine = engine
+        self.is_expanded = False
+        self._anim = None
+        self._block_signals = False
+
+        self.setMaximumHeight(0)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        self.inner_frame = QFrame(self)
-        self.inner_frame.setObjectName("MainInnerFrame")
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setObjectName("TrackOptionsScroll")
+        self.scroll_area.setStyleSheet("""
+            QScrollArea#TrackOptionsScroll {
+                background-color: #0f2d1e;
+                border: 1px solid #11703c;
+                border-top: none;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 0px;
+                border-bottom-left-radius: 6px;
+                border-bottom-right-radius: 6px;
+            }
+            QScrollArea#TrackOptionsScroll > QWidget > QWidget {
+                background: transparent;
+            }
+        """)
+        main_layout.addWidget(self.scroll_area, 1)
 
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 160))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
+        self.inner_frame = QFrame()
+        self.inner_frame.setObjectName("TrackOptionsInnerFrame")
+        self.inner_frame.setStyleSheet("""
+            QFrame#TrackOptionsInnerFrame {
+                background: transparent;
+                border: none;
+            }
+            QFrame#TrackOptionsInnerFrame QWidget {
+                border: none;
+                background: transparent;
+            }
+            QFrame#TrackOptionsInnerFrame QLabel {
+                border: none;
+                background: transparent;
+            }
+        """)
+        self.scroll_area.setWidget(self.inner_frame)
+        self.scroll_area.setAlignment(Qt.AlignTop)
 
-        main_layout.addWidget(self.inner_frame)
-
-        outer_layout = QVBoxLayout(self.inner_frame)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
-        outer_layout.setSpacing(0)
-
-        prefs = self.engine.load_preferences() or {}
-        lang = prefs.get("gui_lang", "en")
-        self._tb = CustomTitleBar(self, lang, parent=self.inner_frame)
-        self._tb.movable = False
-        if hasattr(self._tb, "_lbl_title"):
-            self._tb._lbl_title.setText(self.parent_gui.txt("dlg_track_selection_title"))
-        self._tb.btn_min.hide()
-        self._tb.btn_max.hide()
-        outer_layout.addWidget(self._tb)
-
-        body_widget = QWidget()
-        body_layout = QVBoxLayout(body_widget)
-        body_layout.setContentsMargins(14, 8, 14, 8)
-        body_layout.setSpacing(4)
-
-        lbl_desc = QLabel(self.parent_gui.txt("dlg_track_selection_desc"))
-        lbl_desc.setWordWrap(True)
-        lbl_desc.setStyleSheet("color: #b8b8b8; font-size: 9.5pt; line-height: 135%; margin-bottom: 6px;")
-        body_layout.addWidget(lbl_desc)
+        inner_layout = QVBoxLayout(self.inner_frame)
+        inner_layout.setContentsMargins(10, 6, 10, 8)
+        inner_layout.setSpacing(4)
 
         def make_section_header(title_text):
             w = QWidget()
             lay = QHBoxLayout(w)
             lay.setContentsMargins(0, 4, 0, 2)
-            lay.setSpacing(8)
+            lay.setSpacing(6)
             lbl = QLabel(title_text)
-            lbl.setStyleSheet("font-size: 9.5pt; color: #888888; font-weight: bold;")
+            lbl.setStyleSheet("font-size: 8.5pt; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
             line = QFrame()
             line.setFrameShape(QFrame.HLine)
-            line.setStyleSheet("background-color: #2a2a2a; max-height: 1px; border: none;")
+            line.setStyleSheet("background-color: #1a5433; max-height: 1px; border: none;")
             lay.addWidget(lbl)
             lay.addWidget(line, 1)
             return w
 
-        # Audio section header with divider line
-        body_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_audio_tracks')))
+        # Audio section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_audio_tracks')))
 
         self.tgl_a_all = ToggleSwitch()
         self.tgl_a_tr = ToggleSwitch()
@@ -5955,123 +6161,97 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
 
         def make_toggle_row(lbl_text, tgl):
             w = QWidget()
+            w.setFixedHeight(26)
             l = QHBoxLayout(w)
-            l.setContentsMargins(4, 1, 4, 1)
-            lbl = QLabel(lbl_text)
-            lbl.setStyleSheet("font-size: 9.5pt; color: #d4d4d4;")
-            l.addWidget(lbl)
-            l.addStretch()
+            l.setContentsMargins(2, 0, 2, 0)
+            lbl = MarqueeLabel(lbl_text)
+            l.addWidget(lbl, 1)
             l.addWidget(tgl)
             return w
 
-        body_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
 
+        src = getattr(self.parent_gui, '_transcription_source', None) or {}
+        tr_indices = src.get('track_indices', [])
         tr_label_text = self.parent_gui.txt("dlg_transcription_tracks")
-        if self.tr_indices:
-            tr_str = f" (A{', A'.join(str(i) for i in self.tr_indices)})"
-            tr_label_text += tr_str
+        if tr_indices:
+            tr_label_text += f" (A{', A'.join(str(i) for i in tr_indices)})"
         self.w_a_tr = make_toggle_row(tr_label_text, self.tgl_a_tr)
-        body_layout.addWidget(self.w_a_tr)
+        inner_layout.addWidget(self.w_a_tr)
 
-        body_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_a_cust))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_a_cust))
 
         # Query project audio & video tracks
         audio_tracks, video_tracks = self._get_project_tracks()
 
-        from PySide6.QtWidgets import QGridLayout
         cols_per_row = 6
 
-        self.w_a_cust_list = QWidget()
-        grid_a = QGridLayout(self.w_a_cust_list)
-        grid_a.setContentsMargins(12, 4, 4, 4)
-        grid_a.setHorizontalSpacing(16)
-        grid_a.setVerticalSpacing(6)
+        self.w_a_cust_list = QScrollArea()
+        self.w_a_cust_list.setFrameShape(QFrame.NoFrame)
+        self.w_a_cust_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.w_a_cust_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.w_a_cust_list.setWidgetResizable(True)
+        self.w_a_cust_list.setMaximumHeight(0)
+        self.w_a_cust_list.setStyleSheet("background: transparent; border: none;")
+        
+        a_inner = QWidget()
+        a_inner.setStyleSheet("background: transparent; border: none;")
+        grid_a = QGridLayout(a_inner)
+        grid_a.setAlignment(Qt.AlignTop)
+        grid_a.setContentsMargins(8, 4, 2, 4)
+        grid_a.setHorizontalSpacing(14)
+        grid_a.setVerticalSpacing(4)
+        self.w_a_cust_list.setWidget(a_inner)
         self.a_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(audio_tracks):
             row = i // cols_per_row
             col = i % cols_per_row
             cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
+            cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
             grid_a.addWidget(cb, row, col)
             self.a_track_checkboxes[idx] = cb
         grid_a.setColumnStretch(cols_per_row, 1)
-        body_layout.addWidget(self.w_a_cust_list)
+        inner_layout.addWidget(self.w_a_cust_list)
 
-        body_layout.addSpacing(4)
+        inner_layout.addSpacing(2)
 
-        # Video section header with divider line
-        body_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_video_tracks')))
+        # Video section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_video_tracks')))
 
         self.tgl_v_all = ToggleSwitch()
         self.tgl_v_cust = ToggleSwitch()
 
-        body_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
-        body_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
 
-        self.w_v_cust_list = QWidget()
-        grid_v = QGridLayout(self.w_v_cust_list)
-        grid_v.setContentsMargins(12, 4, 4, 4)
-        grid_v.setHorizontalSpacing(16)
-        grid_v.setVerticalSpacing(6)
+        self.w_v_cust_list = QScrollArea()
+        self.w_v_cust_list.setFrameShape(QFrame.NoFrame)
+        self.w_v_cust_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.w_v_cust_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.w_v_cust_list.setWidgetResizable(True)
+        self.w_v_cust_list.setMaximumHeight(0)
+        self.w_v_cust_list.setStyleSheet("background: transparent; border: none;")
+        
+        v_inner = QWidget()
+        v_inner.setStyleSheet("background: transparent; border: none;")
+        grid_v = QGridLayout(v_inner)
+        grid_v.setAlignment(Qt.AlignTop)
+        grid_v.setContentsMargins(8, 4, 2, 4)
+        grid_v.setHorizontalSpacing(14)
+        grid_v.setVerticalSpacing(4)
+        self.w_v_cust_list.setWidget(v_inner)
         self.v_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(video_tracks):
             row = i // cols_per_row
             col = i % cols_per_row
             cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
+            cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
             grid_v.addWidget(cb, row, col)
             self.v_track_checkboxes[idx] = cb
         grid_v.setColumnStretch(cols_per_row, 1)
-        body_layout.addWidget(self.w_v_cust_list)
-
-        outer_layout.addWidget(body_widget)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.setContentsMargins(14, 8, 14, 12)
-        btn_layout.setSpacing(10)
-
-        btn_cancel = QPushButton(self.parent_gui.txt("btn_cancel"))
-        btn_cancel.setCursor(Qt.PointingHandCursor)
-        btn_cancel.setFixedHeight(30)
-        btn_cancel.setStyleSheet("""
-            QPushButton {
-                background-color: #333333;
-                color: #e0e0e0;
-                font-weight: bold;
-                border-radius: 3px;
-                border: 1px solid #444444;
-                padding: 5px 18px;
-                min-width: 75px;
-            }
-            QPushButton:hover {
-                background-color: #444444;
-            }
-        """)
-        btn_cancel.clicked.connect(self.reject)
-
-        self.btn_go = QPushButton(self.parent_gui.txt("btn_assemble_go"))
-        self.btn_go.setCursor(Qt.PointingHandCursor)
-        self.btn_go.setFixedHeight(30)
-        self.btn_go.setStyleSheet("""
-            QPushButton {
-                background-color: #11703c;
-                color: white;
-                font-weight: bold;
-                border-radius: 3px;
-                border: 1px solid #0a4d28;
-                padding: 5px 18px;
-                min-width: 75px;
-            }
-            QPushButton:hover {
-                background-color: #168f4d;
-            }
-        """)
-        self.btn_go.clicked.connect(self.accept_dialog)
-
-        btn_layout.addStretch()
-        btn_layout.addWidget(btn_cancel)
-        btn_layout.addWidget(self.btn_go)
-        outer_layout.addLayout(btn_layout)
+        inner_layout.addWidget(self.w_v_cust_list)
 
         self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
         self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
@@ -6080,45 +6260,170 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
         self.tgl_v_all.toggled.connect(lambda c: self._update_v_radios('all', c))
         self.tgl_v_cust.toggled.connect(lambda c: self._update_v_radios('cust', c))
 
-        conf = default_config or {}
-        amode = conf.get('audio_mode', 'all')
-        vmode = conf.get('video_mode', 'all')
+        self.load_config()
 
-        if amode == 'tr' and self.tr_indices:
-            self.tgl_a_tr.setChecked(True)
-        elif amode == 'cust':
-            self.tgl_a_cust.setChecked(True)
-        else:
-            self.tgl_a_all.setChecked(True)
+    def toggle_expand(self):
+        self.is_expanded = not self.is_expanded
+        if self.is_expanded:
+            self.load_config()
+        self._animate_to_size()
 
-        if vmode == 'cust':
-            self.tgl_v_cust.setChecked(True)
-        else:
-            self.tgl_v_all.setChecked(True)
+    def _animate_to_size(self):
+        if getattr(self, '_block_signals', False):
+            return
+            
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 
-        saved_a_custom = conf.get('audio_custom', [])
-        for i, cb in self.a_track_checkboxes.items():
-            if saved_a_custom:
-                cb.setChecked(i in saved_a_custom)
+        a_cust_visible = self.tgl_a_cust.isChecked()
+        v_cust_visible = self.tgl_v_cust.isChecked()
+
+        # 1. Save start heights
+        a_cust_start = self.w_a_cust_list.maximumHeight()
+        v_cust_start = self.w_v_cust_list.maximumHeight()
+        drawer_start = self.maximumHeight()
+
+        # 2. Get full heights of the inner widgets
+        a_inner = self.w_a_cust_list.widget()
+        v_inner = self.w_v_cust_list.widget()
+        a_inner.layout().activate()
+        v_inner.layout().activate()
+        a_cust_full_h = a_inner.sizeHint().height()
+        v_cust_full_h = v_inner.sizeHint().height()
+
+        # 3. Target heights for sublists
+        a_cust_target = a_cust_full_h if a_cust_visible else 0
+        v_cust_target = v_cust_full_h if v_cust_visible else 0
+
+        # 4. Measure drawer target height by temporarily applying targets
+        self.w_a_cust_list.setMaximumHeight(a_cust_target)
+        self.w_v_cust_list.setMaximumHeight(v_cust_target)
+        self.inner_frame.layout().activate()
+        
+        # Add 2px for the QScrollArea border on the outer drawer
+        drawer_target = self.inner_frame.sizeHint().height() + 2 if self.is_expanded else 0
+
+        # 5. RESTORE start heights so the animation plays from start to target!
+        self.w_a_cust_list.setMaximumHeight(a_cust_start)
+        self.w_v_cust_list.setMaximumHeight(v_cust_start)
+        self.setMaximumHeight(drawer_start)
+        self.inner_frame.layout().activate()
+
+        # 6. Play Animations
+        if getattr(self, '_anim_group', None) and self._anim_group.state() == QParallelAnimationGroup.Running:
+            self._anim_group.stop()
+
+        self._anim_group = QParallelAnimationGroup(self)
+
+        if drawer_start != drawer_target:
+            anim_drawer_max = QPropertyAnimation(self, b"maximumHeight", self)
+            anim_drawer_max.setDuration(350)
+            anim_drawer_max.setStartValue(drawer_start)
+            anim_drawer_max.setEndValue(drawer_target)
+            anim_drawer_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_drawer_max)
+            
+            anim_drawer_min = QPropertyAnimation(self, b"minimumHeight", self)
+            anim_drawer_min.setDuration(350)
+            anim_drawer_min.setStartValue(drawer_start)
+            anim_drawer_min.setEndValue(drawer_target)
+            anim_drawer_min.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_drawer_min)
+
+        if a_cust_start != a_cust_target:
+            anim_a_max = QPropertyAnimation(self.w_a_cust_list, b"maximumHeight", self)
+            anim_a_max.setDuration(350)
+            anim_a_max.setStartValue(a_cust_start)
+            anim_a_max.setEndValue(a_cust_target)
+            anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_a_max)
+            
+            anim_a_min = QPropertyAnimation(self.w_a_cust_list, b"minimumHeight", self)
+            anim_a_min.setDuration(350)
+            anim_a_min.setStartValue(a_cust_start)
+            anim_a_min.setEndValue(a_cust_target)
+            anim_a_min.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_a_min)
+
+        if v_cust_start != v_cust_target:
+            anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
+            anim_v_max.setDuration(350)
+            anim_v_max.setStartValue(v_cust_start)
+            anim_v_max.setEndValue(v_cust_target)
+            anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_v_max)
+            
+            anim_v_min = QPropertyAnimation(self.w_v_cust_list, b"minimumHeight", self)
+            anim_v_min.setDuration(350)
+            anim_v_min.setStartValue(v_cust_start)
+            anim_v_min.setEndValue(v_cust_target)
+            anim_v_min.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_v_min)
+
+        self._anim_group.start()
+
+    def load_config(self):
+        self._block_signals = True
+        try:
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            conf = src.get('assembly_track_config') or {}
+            amode = conf.get('audio_mode', 'all')
+            vmode = conf.get('video_mode', 'all')
+
+            self.tgl_a_all.setChecked(amode == 'all', animated=False)
+            self.tgl_a_tr.setChecked(amode == 'tr', animated=False)
+            self.tgl_a_cust.setChecked(amode == 'cust', animated=False)
+
+            self.tgl_v_all.setChecked(vmode == 'all', animated=False)
+            self.tgl_v_cust.setChecked(vmode == 'cust', animated=False)
+
+            saved_a_custom = conf.get('audio_custom', [])
+            for i, cb in self.a_track_checkboxes.items():
+                if saved_a_custom:
+                    cb.setChecked(i in saved_a_custom)
+                else:
+                    cb.setChecked(True)
+
+            saved_v_custom = conf.get('video_custom', [])
+            for i, cb in self.v_track_checkboxes.items():
+                if saved_v_custom:
+                    cb.setChecked(i in saved_v_custom)
+                else:
+                    cb.setChecked(True)
+
+            if amode == 'cust':
+                self.w_a_cust_list.setMaximumHeight(self.w_a_cust_list.widget().sizeHint().height())
             else:
-                cb.setChecked(True)
-
-        saved_v_custom = conf.get('video_custom', [])
-        for i, cb in self.v_track_checkboxes.items():
-            if saved_v_custom:
-                cb.setChecked(i in saved_v_custom)
+                self.w_a_cust_list.setMaximumHeight(0)
+                
+            if vmode == 'cust':
+                self.w_v_cust_list.setMaximumHeight(self.w_v_cust_list.widget().sizeHint().height())
             else:
-                cb.setChecked(True)
+                self.w_v_cust_list.setMaximumHeight(0)
+        finally:
+            self._block_signals = False
 
-        self._update_a_radios(amode, True)
-        self._update_v_radios(vmode, True)
-        self._refit_window()
+    def save_config(self):
+        if getattr(self, '_block_signals', False):
+            return
+        amode = 'all'
+        if self.tgl_a_tr.isChecked(): amode = 'tr'
+        elif self.tgl_a_cust.isChecked(): amode = 'cust'
 
-    def _refit_window(self):
-        from PySide6.QtWidgets import QApplication
-        QApplication.processEvents()
-        self.adjustSize()
-        self.resize(self.sizeHint())
+        vmode = 'all'
+        if self.tgl_v_cust.isChecked(): vmode = 'cust'
+
+        a_custom = [i for i, cb in getattr(self, 'a_track_checkboxes', {}).items() if cb.isChecked()]
+        v_custom = [i for i, cb in getattr(self, 'v_track_checkboxes', {}).items() if cb.isChecked()]
+
+        res = {
+            'audio_mode': amode,
+            'audio_custom': a_custom,
+            'video_mode': vmode,
+            'video_custom': v_custom
+        }
+        src = getattr(self.parent_gui, '_transcription_source', None)
+        if isinstance(src, dict):
+            src['assembly_track_config'] = res
 
     def _get_project_tracks(self):
         audio_tracks = []
@@ -6127,18 +6432,18 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
         rh = getattr(self.engine, 'resolve_handler', None)
         target_tl = None
         if rh and rh.project:
-            # 1. ALWAYS prioritize finding the ORIGINAL source timeline by self.tl_name
-            if self.tl_name:
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            tl_name = src.get('timeline_name')
+            if tl_name:
                 try:
                     cnt = rh.project.GetTimelineCount()
                     for i in range(1, cnt + 1):
                         tl = rh.project.GetTimelineByIndex(i)
-                        if tl and tl.GetName() == self.tl_name:
+                        if tl and tl.GetName() == tl_name:
                             target_tl = tl
                             break
                 except Exception:
                     pass
-            # 2. Fallback to rh.timeline if not found by name
             if not target_tl and rh.timeline:
                 target_tl = rh.timeline
 
@@ -6147,12 +6452,6 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
                 ac = target_tl.GetTrackCount("audio")
                 _get_a_name = getattr(target_tl, "GetTrackName", None)
                 for i in range(1, ac + 1):
-                    try:
-                        items = target_tl.GetItemListInTrack("audio", i)
-                        if not items:
-                            continue
-                    except Exception:
-                        pass
                     tname = ""
                     if callable(_get_a_name):
                         try: tname = _get_a_name("audio", i)
@@ -6165,12 +6464,6 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
                 vc = target_tl.GetTrackCount("video")
                 _get_v_name = getattr(target_tl, "GetTrackName", None)
                 for i in range(1, vc + 1):
-                    try:
-                        items = target_tl.GetItemListInTrack("video", i)
-                        if not items:
-                            continue
-                    except Exception:
-                        pass
                     tname = ""
                     if callable(_get_v_name):
                         try: tname = _get_v_name("video", i)
@@ -6181,8 +6474,10 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
 
         if not audio_tracks:
             max_a = 4
-            if self.tr_indices:
-                max_a = max(max_a, max(self.tr_indices))
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            tr_indices = src.get('track_indices', [])
+            if tr_indices:
+                max_a = max(max_a, max(tr_indices))
             for i in range(1, max_a + 1):
                 audio_tracks.append((i, f"Audio {i}"))
 
@@ -6193,51 +6488,61 @@ class TrackSelectionDialog(FramelessWindowMixin, _BaseDialog):
         return audio_tracks, video_tracks
 
     def _update_a_radios(self, src, checked):
+        if getattr(self, '_block_signals', False):
+            return
         if not checked:
             if not (self.tgl_a_all.isChecked() or self.tgl_a_tr.isChecked() or self.tgl_a_cust.isChecked()):
-                self.tgl_a_all.setChecked(True, animated=False)
-            return
-        if src != 'all': self.tgl_a_all.setChecked(False, animated=False)
-        if src != 'tr': self.tgl_a_tr.setChecked(False, animated=False)
-        if src != 'cust': self.tgl_a_cust.setChecked(False, animated=False)
-        was_vis = self.w_a_cust_list.isVisible()
-        now_vis = (src == 'cust')
-        self.w_a_cust_list.setVisible(now_vis)
-        if was_vis != now_vis:
-            self._refit_window()
+                self.tgl_a_all.setChecked(True)
+                return
+        else:
+            self._block_signals = True
+            try:
+                if src != 'all': self.tgl_a_all.setChecked(False)
+                if src != 'tr': self.tgl_a_tr.setChecked(False)
+                if src != 'cust': self.tgl_a_cust.setChecked(False)
+            finally:
+                self._block_signals = False
+
+        self._animate_to_size()
+        self.save_config()
 
     def _update_v_radios(self, src, checked):
+        if getattr(self, '_block_signals', False):
+            return
         if not checked:
             if not (self.tgl_v_all.isChecked() or self.tgl_v_cust.isChecked()):
-                self.tgl_v_all.setChecked(True, animated=False)
-            return
-        if src != 'all': self.tgl_v_all.setChecked(False, animated=False)
-        if src != 'cust': self.tgl_v_cust.setChecked(False, animated=False)
-        was_vis = self.w_v_cust_list.isVisible()
-        now_vis = (src == 'cust')
-        self.w_v_cust_list.setVisible(now_vis)
-        if was_vis != now_vis:
-            self._refit_window()
-        
-    def accept_dialog(self):
-        amode = 'all'
-        if self.tgl_a_tr.isChecked(): amode = 'tr'
-        elif self.tgl_a_cust.isChecked(): amode = 'cust'
-        
-        vmode = 'all'
-        if self.tgl_v_cust.isChecked(): vmode = 'cust'
-        
-        a_custom = [i for i, cb in getattr(self, 'a_track_checkboxes', {}).items() if cb.isChecked()]
-        v_custom = [i for i, cb in getattr(self, 'v_track_checkboxes', {}).items() if cb.isChecked()]
+                self.tgl_v_all.setChecked(True)
+                return
+        else:
+            self._block_signals = True
+            try:
+                if src != 'all': self.tgl_v_all.setChecked(False)
+                if src != 'cust': self.tgl_v_cust.setChecked(False)
+            finally:
+                self._block_signals = False
 
-        self.result_config = {
-            'audio_mode': amode,
-            'audio_custom': a_custom,
-            'video_mode': vmode,
-            'video_custom': v_custom
-        }
-        self.is_accepted = True
-        self.accept()
+        self._animate_to_size()
+        self.save_config()
+
+    def _on_a_cb_toggled(self, idx, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            any_checked = any(cb.isChecked() for cb in self.a_track_checkboxes.values())
+            if not any_checked:
+                self.a_track_checkboxes[idx].setChecked(True)
+                return
+        self.save_config()
+
+    def _on_v_cb_toggled(self, idx, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            any_checked = any(cb.isChecked() for cb in self.v_track_checkboxes.values())
+            if not any_checked:
+                self.v_track_checkboxes[idx].setChecked(True)
+                return
+        self.save_config()
 
 
 class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
@@ -10545,24 +10850,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         row_proj.addWidget(self.btn_import_proj)
         row_proj.addWidget(self.btn_export_proj)
         l_main.addLayout(row_proj)
-        row_assemble = QHBoxLayout()
-        self.btn_assemble = QPushButton(self.txt("btn_assemble"))
-        self.btn_assemble.setFixedHeight(35)
-        self.btn_assemble.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_assemble.setStyleSheet("QPushButton { background-color: #11703c; color: white; font-weight: bold; border-radius: 4px; border: 1px solid #0a4d28; } QPushButton:hover { background-color: #168f4d; } QPushButton:pressed { background-color: #0d5c31; }")
-        
-        self.btn_assemble_settings = QPushButton()
-        self.btn_assemble_settings.setFixedSize(35, 35)
-        self.btn_assemble_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_assemble_settings.setStyleSheet("QPushButton { background-color: transparent; border: none; border-radius: 4px; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); }")
-        wrench_path = os.path.join(_assets_dir, "wrench.png")
-        if os.path.exists(wrench_path):
-            self.btn_assemble_settings.setIcon(QIcon(QPixmap(wrench_path)))
-            self.btn_assemble_settings.setIconSize(QSize(20, 20))
-            
-        row_assemble.addWidget(self.btn_assemble)
-        row_assemble.addWidget(self.btn_assemble_settings)
-        l_main.addLayout(row_assemble)
+        layout_assemble_group = QVBoxLayout()
+        layout_assemble_group.setContentsMargins(0, 0, 0, 0)
+        layout_assemble_group.setSpacing(0)
+
+        self.btn_assemble = AssembleSplitButton(self.txt("btn_assemble"), self)
+        layout_assemble_group.addWidget(self.btn_assemble)
+
+        self.w_track_options = TrackOptionsDrawer(self, self.engine)
+        layout_assemble_group.addWidget(self.w_track_options)
+        self.btn_assemble.toggleDrawerClicked.connect(self.w_track_options.toggle_expand)
+
+        l_main.addLayout(layout_assemble_group)
         
         self._build_marker_radio_buttons()
         self.activities["main_panel"] = _wrap_activity(p_main)
@@ -10653,8 +10952,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.tgl_auto_filler.toggled.connect(self._on_auto_filler_toggled)
         
         # Right Panel Signals
-        self.btn_assemble.clicked.connect(lambda: self._on_assemble(open_dialog=False))
-        self.btn_assemble_settings.clicked.connect(lambda: self._on_assemble(open_dialog=True))
+        self.btn_assemble.assembleClicked.connect(self._on_assemble)
         self.btn_import_proj.clicked.connect(self._on_import_project)
         self.btn_export_proj.clicked.connect(self._on_export_project)
         
@@ -11645,7 +11943,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'lbl_pinned_favorites'):
                 self.lbl_pinned_favorites.setVisible(True)
 
-    def _on_assemble(self, open_dialog=False):
+    def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
 
         from PySide6.QtWidgets import QApplication
@@ -11662,22 +11960,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 
         if src:
             track_config = src.get('assembly_track_config')
-            if not track_config or open_dialog:
-                tl_name = src.get('timeline_name')
-                tr_indices = src.get('track_indices')
-
-                dim_overlay = AnimatedDimOverlay(self, opacity_target=0.4, duration=200)
-                dim_overlay.fade_in()
-
-                try:
-                    dlg = TrackSelectionDialog(self, self.engine, track_config, tl_name, tr_indices)
-                    dlg.exec()
-                finally:
-                    dim_overlay.fade_out()
-
-                if not dlg.is_accepted:
-                    return
-                src['assembly_track_config'] = dlg.result_config
+            if not track_config:
+                track_config = {'audio_mode': 'all', 'video_mode': 'all'}
+                src['assembly_track_config'] = track_config
                 prefs['transcription_source'] = src
                 self.engine.save_preferences(prefs)
             prefs["source_snapshot"] = src

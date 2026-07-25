@@ -2661,6 +2661,7 @@ except Exception as e:
                     audio_only_mode=audio_only_mode,
                     audio_track_filter=audio_track_filter,
                     video_track_filter=video_track_filter,
+                    preserve_track_order=preserve_track_order,
                     temp_dir=temp_dir
                 )
 
