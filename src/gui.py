@@ -284,7 +284,12 @@ class MainPanelWidget(QWidget):
         self.layer2.setGeometry(0, self.height() - hint.height(), self.width(), hint.height())
         
         # Dynamic overlap check
-        l1_hint = self.layer1.layout().sizeHint().height() if self.layer1.layout() else 0
+        if event is None and hasattr(self, '_last_l1_hint'):
+            l1_hint = self._last_l1_hint
+        else:
+            l1_hint = self.layer1.layout().sizeHint().height() if self.layer1.layout() else 0
+            self._last_l1_hint = l1_hint
+            
         overlap = (l1_hint + hint.height() + 20) > self.height()
         if overlap != getattr(self, '_is_overlapping', False):
             self._is_overlapping = overlap
