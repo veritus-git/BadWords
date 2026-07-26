@@ -476,7 +476,7 @@ class OSDoctor:
     def _log_system_info(self):
         """Logs detailed system information for debugging."""
         log_info("="*30)
-        log_info(f"BadWords Session Started (v9.0 Portable)")
+        log_info(f"BadWords Session Started")
         log_info(f"OS: {self.os_type} {platform.release()}")
         log_info(f"Install Dir: {self.install_dir}")
         log_info(f"Bin Dir (FFmpeg): {self.bin_dir}")

@@ -3654,10 +3654,32 @@ class CustomTitleBar(QWidget):
     • Resize    → handled by library's nativeEvent (WM_NCHITTEST border edges)
     """
 
+    # ── Shared titlebar menu button style ────────────────────────────────────
+    _MENU_BTN_QSS = """
+        QPushButton {{
+            background: transparent;
+            color: {fg};
+            font-family: "{font}";
+            font-size: 9pt;
+            border: none;
+            padding: 2px 8px;
+            border-radius: 3px;
+        }}
+        QPushButton:hover {{ background: #2b2b2b; color: #ffffff; }}
+        QPushButton:pressed {{ background: #333333; color: #ffffff; }}
+    """
+
+    # Signal emitted when the user picks an action from a menu dropdown
+    projectExportRequested = Signal()
+    projectImportRequested = Signal()
+    transcriptExportTxtRequested = Signal()
+    transcriptCopyRequested = Signal()
+
     def __init__(self, window: QWidget, lang: str, parent=None):
         super().__init__(parent)
         self._win  = window
         self._lang = lang
+        self._transcription_active = False  # True after first transcription
         self.setObjectName("CustomTitleBar")
         self.setFixedHeight(32)
         self.setAutoFillBackground(True)
@@ -3680,8 +3702,7 @@ class CustomTitleBar(QWidget):
         lay.addWidget(icon_lbl)
         lay.addSpacing(6)
 
-        # Title text — RichText for italic parts; WA_TransparentForMouseEvents blocks the
-        # hover-reflow quirk (Qt's mini-browser switching to plain text on mouseover).
+        # ── DEFAULT title label (shown before transcription) ──
         self._lbl_title = QLabel(config.APP_NAME)
         self._full_title = config.APP_NAME
         self._lbl_title.setTextFormat(Qt.RichText)
@@ -3691,13 +3712,62 @@ class CustomTitleBar(QWidget):
             f"font-size: 9pt; background: transparent;"
         )
         lay.addWidget(self._lbl_title)
+
+        # ── POST-TRANSCRIPTION menu buttons container ──
+        self._menu_container = QWidget(self)
+        self._menu_container.setStyleSheet("background: transparent;")
+        menu_lay = QHBoxLayout(self._menu_container)
+        menu_lay.setContentsMargins(0, 0, 0, 0)
+        menu_lay.setSpacing(2)
+
+        _btn_qss = self._MENU_BTN_QSS.format(fg="#888888", font=config.UI_FONT_NAME)
+
+        def _t(key):
+            return config.get_trans(key, lang)
+
+        self.btn_menu_project = QPushButton(_t("titlebar_project"))
+        self.btn_menu_project.setStyleSheet(_btn_qss)
+        self.btn_menu_project.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_project.clicked.connect(self._show_project_menu)
+        menu_lay.addWidget(self.btn_menu_project)
+
+        self.btn_menu_transcript = QPushButton(_t("titlebar_transcript"))
+        self.btn_menu_transcript.setStyleSheet(_btn_qss)
+        self.btn_menu_transcript.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_transcript.clicked.connect(self._show_transcript_menu)
+        menu_lay.addWidget(self.btn_menu_transcript)
+
+        # Edit dropdown — always visible after transcription with at least "Original"
+        self.btn_menu_edit = QPushButton(_t("titlebar_edit"))
+        self.btn_menu_edit.setStyleSheet(_btn_qss)
+        self.btn_menu_edit.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_edit.clicked.connect(self._show_edit_menu)
+        menu_lay.addWidget(self.btn_menu_edit)
+
+        self._menu_container.hide()  # hidden until transcription
+
+        lay.addWidget(self._menu_container)
+
         lay.addStretch()
 
-        # Chapter Dropdown (absolutely centered via resizeEvent)
-        self.chapter_dropdown = TitleDropdown(['Original'], parent=self)
+        # ── CENTERED source info label (replaces old left-aligned title after transcription) ──
+        self._lbl_source_info = QLabel(self)
+        self._lbl_source_info.setTextFormat(Qt.RichText)
+        self._lbl_source_info.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._lbl_source_info.setStyleSheet(
+            f"color: #777777; font-family: \"{config.UI_FONT_NAME}\"; "
+            f"font-size: 9pt; background: transparent;"
+        )
+        self._lbl_source_info.hide()
+        self._full_source_info = ""
+        # Absolutely positioned — updated in resizeEvent
+
+        # Chapter Dropdown — kept for backwards compat but now internal to Edit menu
+        _orig_label = config.get_trans("titlebar_original", lang)
+        self.chapter_dropdown = TitleDropdown([_orig_label], parent=self)
         self.chapter_dropdown.setFixedHeight(24)
         self.chapter_dropdown.setMinimumWidth(100)
-        self.chapter_dropdown.hide() # Hidden until at least one assembly happens
+        self.chapter_dropdown.hide()  # Always hidden — Edit menu now owns this
         
         # Resolve icon directory (assets/layout/ sibling to src/)
         _src_dir    = os.path.dirname(os.path.abspath(__file__))
@@ -3720,20 +3790,166 @@ class CustomTitleBar(QWidget):
         for btn in (self.btn_min, self.btn_max, self.btn_close):
             lay.addWidget(btn)
 
+    # ── Titlebar menu dropdowns ───────────────────────────────────────────────
+    def _show_titlebar_popup(self, anchor_btn, items):
+        """Generic popup for titlebar menus. items = [(label, callback), ...]"""
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 4px 0;
+            }
+        """)
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(0)
+
+        for label, callback in items:
+            btn = QPushButton(label)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: #b0b0b0;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: 9pt;
+                    text-align: left;
+                    padding: 5px 14px;
+                    border: none;
+                    border-radius: 0px;
+                }}
+                QPushButton:hover {{ background: #222222; color: #ffffff; }}
+            """)
+            btn.clicked.connect(lambda checked, cb=callback, p=popup: (p.close(), cb()))
+            layout.addWidget(btn)
+
+        global_pos = anchor_btn.mapToGlobal(QPoint(0, anchor_btn.height() + 2))
+        popup.adjustSize()
+        popup.setMinimumWidth(max(anchor_btn.width(), popup.sizeHint().width()))
+        popup.move(global_pos)
+        popup.show()
+
+    def _show_project_menu(self):
+        def _t(key):
+            return config.get_trans(key, self._lang)
+        self._show_titlebar_popup(self.btn_menu_project, [
+            (_t("titlebar_export_project"), lambda: self.projectExportRequested.emit()),
+            (_t("titlebar_import_project"), lambda: self.projectImportRequested.emit()),
+        ])
+
+    def _show_transcript_menu(self):
+        def _t(key):
+            return config.get_trans(key, self._lang)
+        self._show_titlebar_popup(self.btn_menu_transcript, [
+            (_t("titlebar_export_txt"), lambda: self.transcriptExportTxtRequested.emit()),
+            (_t("titlebar_copy_clipboard"), lambda: self.transcriptCopyRequested.emit()),
+        ])
+
+    def _show_edit_menu(self):
+        """Shows the edit/chapter selection popup (same as old chapter_dropdown)."""
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        list_widget = QListWidget()
+        list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.addItems(self.chapter_dropdown.options_list)
+        list_widget.setStyleSheet("""
+            QListWidget {
+                border: none; padding: 0px; margin: 0px; outline: none;
+                background: transparent; color: #b0b0b0; font-size: 9pt;
+            }
+            QListWidget::item { height: 26px; padding: 0px 8px; border: none; }
+            QListWidget::item:selected { background-color: #171717; color: #1ed760; font-weight: bold; }
+            QListWidget::item:focus { border: none; outline: none; }
+            QListWidget::item:hover { background-color: #222222; color: #ffffff; }
+            QListWidget::item:selected:hover { background-color: #171717; color: #1ed760; }
+        """)
+
+        cur = self.chapter_dropdown.currentText()
+        for row in range(list_widget.count()):
+            if list_widget.item(row).text() == cur:
+                list_widget.setCurrentRow(row)
+                break
+
+        def _on_item(item):
+            self.chapter_dropdown._on_item_clicked(item, popup)
+
+        list_widget.itemClicked.connect(_on_item)
+        layout.addWidget(list_widget)
+
+        row_h = 26
+        display_count = list_widget.count()
+        list_height = display_count * row_h
+        list_widget.setFixedHeight(list_height)
+        popup.setFixedHeight(list_height + 2)
+
+        global_pos = self.btn_menu_edit.mapToGlobal(QPoint(0, self.btn_menu_edit.height() + 2))
+        popup.move(global_pos)
+        popup.setFixedWidth(max(self.btn_menu_edit.width(), 140))
+        popup.show()
+
+    # ── Activate post-transcription mode ──────────────────────────────────────
+    def activate_transcription_mode(self):
+        """Switch from simple 'BadWords' title to [Project] [Transcript] [Edit] menus."""
+        self._transcription_active = True
+        self._lbl_title.hide()
+        self._menu_container.show()
+        self._lbl_source_info.show()
+
+    def deactivate_transcription_mode(self):
+        """Switch back to simple 'BadWords' title."""
+        self._transcription_active = False
+        self._lbl_title.show()
+        self._lbl_title.setText(config.APP_NAME)
+        self._full_title = config.APP_NAME
+        self._menu_container.hide()
+        self._lbl_source_info.hide()
+
+    def set_source_info(self, tl_name, tracks_str):
+        """Update the centered source info label."""
+        def _t(key):
+            return config.get_trans(key, self._lang)
+        msg = _t("titlebar_source_info")
+        if "{tl}" in msg:
+            text = msg.replace("{tl}", tl_name).replace("{tr}", tracks_str)
+        else:
+            text = f"Source: <i>{tl_name}</i> — Tracks: <i>{tracks_str}</i>"
+        self._full_source_info = text
+        self._lbl_source_info.setText(text)
+        self._update_source_info_placement()
+
     def set_title(self, text):
+        """Legacy title setter — for backward compat. Now also updates source info if in transcription mode."""
         self._full_title = text
-        self._lbl_title.setText(text)
-        self.update_elision()
+        if not self._transcription_active:
+            self._lbl_title.setText(text)
+            self.update_elision()
 
     def update_elision(self):
         from PySide6.QtGui import QFontMetrics, QTextDocument
-        if hasattr(self, 'chapter_dropdown') and self.chapter_dropdown.isVisible():
-            dw = self.chapter_dropdown.sizeHint().width()
-            dx = (self.width() - dw) // 2
-            max_w = max(10, dx - self._lbl_title.x() - 4)
-        else:
-            btn_area = self.btn_min.width() * 3 + 4
-            max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 4)
+        if self._transcription_active:
+            self._update_source_info_placement()
+            return
+
+        btn_area = self.btn_min.width() * 3 + 4
+        max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 4)
 
         # Measure using plain text (HTML tags would inflate the pixel width)
         doc = QTextDocument()
@@ -3742,19 +3958,38 @@ class CustomTitleBar(QWidget):
 
         fm = QFontMetrics(self._lbl_title.font())
         if fm.horizontalAdvance(plain) <= max_w:
-            # Fits — keep full RichText (preserves <i> italic)
             self._lbl_title.setText(self._full_title)
         else:
-            # Doesn't fit — elide plain text
             elided = fm.elidedText(plain, Qt.ElideRight, max_w)
             self._lbl_title.setText(elided)
 
+    def _update_source_info_placement(self):
+        """Centers the source info label between menu buttons and window controls."""
+        if not self._lbl_source_info.isVisible():
+            return
+        from PySide6.QtGui import QFontMetrics, QTextDocument
+        doc = QTextDocument()
+        doc.setHtml(self._full_source_info)
+        plain = doc.toPlainText()
+        fm = QFontMetrics(self._lbl_source_info.font())
+        text_w = min(fm.horizontalAdvance(plain) + 10, self.width() // 2)
+
+        # Center in the title bar
+        lbl_x = (self.width() - text_w) // 2
+        self._lbl_source_info.setGeometry(lbl_x, 0, text_w, self.height())
+
+        # Elide if needed
+        avail = text_w - 4
+        if fm.horizontalAdvance(plain) > avail:
+            self._lbl_source_info.setText(fm.elidedText(plain, Qt.ElideRight, avail))
+        else:
+            self._lbl_source_info.setText(self._full_source_info)
+
     def update_dropdown_placement(self):
-        if hasattr(self, 'chapter_dropdown') and self.chapter_dropdown.isVisible():
-            cw = self.chapter_dropdown.sizeHint().width()
-            ch = self.chapter_dropdown.height()
-            self.chapter_dropdown.setGeometry((self.width() - cw) // 2, (self.height() - ch) // 2, cw, ch)
-        self.update_elision()
+        # Chapter dropdown is now hidden — Edit menu owns this
+        self._update_source_info_placement()
+        if not self._transcription_active:
+            self.update_elision()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -10193,6 +10428,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
             self.setTitleBar(self._title_bar)
         self._title_bar.chapter_dropdown.valueChanged.connect(self._switch_chapter)
+        self._title_bar.projectExportRequested.connect(self._on_export_project)
+        self._title_bar.projectImportRequested.connect(self._on_import_project)
+        self._title_bar.transcriptExportTxtRequested.connect(self._on_export_transcript_txt)
+        self._title_bar.transcriptCopyRequested.connect(self._on_copy_transcript_clipboard)
         self._root_layout.addWidget(self._title_bar)
 
         # On macOS: hide custom CSD title bar — native title bar handles close/min/max/fullscreen.
@@ -10202,14 +10441,35 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._title_bar.setFixedHeight(0)
             from PySide6.QtWidgets import QMenuBar
             self._mac_menu_bar = QMenuBar(self)
+            
+            # Project Menu
+            self._mac_menu_project = self._mac_menu_bar.addMenu(self.txt("titlebar_project"))
+            self._mac_action_export_proj = self._mac_menu_project.addAction(self.txt("titlebar_export_project"))
+            self._mac_action_export_proj.triggered.connect(self._on_export_project)
+            self._mac_action_import_proj = self._mac_menu_project.addAction(self.txt("titlebar_import_project"))
+            self._mac_action_import_proj.triggered.connect(self._on_import_project)
+            self._mac_menu_project.menuAction().setVisible(False)
+
+            # Transcript Menu
+            self._mac_menu_transcript = self._mac_menu_bar.addMenu(self.txt("titlebar_transcript"))
+            self._mac_action_export_txt = self._mac_menu_transcript.addAction(self.txt("titlebar_export_txt"))
+            self._mac_action_export_txt.triggered.connect(self._on_export_transcript_txt)
+            self._mac_action_copy = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_clipboard"))
+            self._mac_action_copy.triggered.connect(self._on_copy_transcript_clipboard)
+            self._mac_menu_transcript.menuAction().setVisible(False)
+
+            # Source Info Menu
             self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
             self._mac_action_timeline = self._mac_menu_source.addAction("Timeline: None")
             self._mac_action_timeline.setEnabled(False)
             self._mac_action_track = self._mac_menu_source.addAction("Track: None")
             self._mac_action_track.setEnabled(False)
             self._mac_menu_source.menuAction().setVisible(False)
-            self._mac_menu_edits = self._mac_menu_bar.addMenu("Edits")
+            
+            # Edit Menu
+            self._mac_menu_edits = self._mac_menu_bar.addMenu(self.txt("titlebar_edit"))
             self._mac_menu_edits.menuAction().setVisible(False)
+            
             self._mac_menu_bar.setNativeMenuBar(True)
 
         # --- Build UI --- (sidebars + central workspace sit below title bar)
@@ -10264,7 +10524,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 action = self._mac_menu_edits.addAction(chap)
                 action.setCheckable(True)
                 self._mac_menu_edits_group.addAction(action)
-                if chap == self._title_bar.chapter_dropdown.currentText().replace("  ▾", ""):
+                if chap == self._title_bar.chapter_dropdown.currentText():
                     action.setChecked(True)
                 action.triggered.connect(lambda checked, c=chap: self._switch_chapter(c))
 
@@ -10939,15 +11199,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.layout_favorites.setSpacing(10)
         l_layer2.addLayout(self.layout_favorites)
         
-        row_proj = QHBoxLayout()
-        self.btn_import_proj = QPushButton(self.txt("btn_import_project"))
-        self.btn_import_proj.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_export_proj = QPushButton(self.txt("btn_export_project"))
-        self.btn_export_proj.setCursor(Qt.CursorShape.PointingHandCursor)
-        row_proj.addWidget(self.btn_import_proj)
-        row_proj.addWidget(self.btn_export_proj)
-        l_layer2.addLayout(row_proj)
-        
         layout_assemble_group = QVBoxLayout()
         layout_assemble_group.setContentsMargins(0, 0, 0, 0)
         layout_assemble_group.setSpacing(0)
@@ -11052,8 +11303,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         # Right Panel Signals
         self.btn_assemble.assembleClicked.connect(self._on_assemble)
-        self.btn_import_proj.clicked.connect(self._on_import_project)
-        self.btn_export_proj.clicked.connect(self._on_export_project)
         
     def _is_input_widget(self, w=None):
         if w is None:
@@ -11512,6 +11761,118 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         }
         self.engine.save_project_state(path, data_packet)
 
+    def _build_transcript_plaintext(self):
+        """Build a plain-text representation of the current transcript.
+        Segmented view → one line per segment.
+        Continuous view → one long paragraph.
+        Returns str or None if no data."""
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            return None
+
+        prefs = self.engine.load_preferences() or {}
+        view_mode = prefs.get('view_mode', 'segmented')
+        is_segmented = (view_mode == 'segmented')
+
+        lines = []
+        current_line_words = []
+
+        for w in self.text_canvas.words_data:
+            # Skip silence tokens and inaudible markers
+            if w.get('type') in ('silence', 'inaudible'):
+                continue
+            if w.get('is_inaudible'):
+                continue
+            # Skip hidden start words
+            if w.get('is_hidden_start') and not getattr(self, 'show_hidden_start', False):
+                continue
+
+            if is_segmented and w.get('is_segment_start') and current_line_words:
+                lines.append(' '.join(current_line_words))
+                current_line_words = []
+
+            text = w.get('text', '').strip()
+            if text:
+                current_line_words.append(text)
+
+        if current_line_words:
+            lines.append(' '.join(current_line_words))
+
+        if is_segmented:
+            return '\n'.join(lines)
+        else:
+            return ' '.join(lines)
+
+    def _on_export_transcript_txt(self):
+        """Export the transcript as a plain .txt file."""
+        text = self._build_transcript_plaintext()
+        if not text:
+            return
+
+        from PySide6.QtWidgets import QFileDialog
+        import os
+
+        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        os.makedirs(saves_dir, exist_ok=True)
+
+        # Build default filename from source info
+        timeline_name = "Transcript"
+        snap = getattr(self, '_transcription_source', None)
+        if snap and snap.get('timeline_name'):
+            timeline_name = snap['timeline_name']
+        safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        default_filename = f"BadWords_{safe_name}_transcript.txt"
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.txt("titlebar_export_txt"),
+            os.path.join(saves_dir, default_filename),
+            "Text Files (*.txt)"
+        )
+        if not path:
+            return
+
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+
+        # Brief notification
+        self._show_temporary_status(self.txt("msg_transcript_exported"))
+
+    def _on_copy_transcript_clipboard(self):
+        """Copy the transcript as plain text to the system clipboard."""
+        text = self._build_transcript_plaintext()
+        if not text:
+            return
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text)
+
+        # Brief notification
+        self._show_temporary_status(self.txt("msg_transcript_copied"))
+
+    def _show_temporary_status(self, msg, duration_ms=5000):
+        """Shows a temporary message on lbl_analysis_duration, restoring previous text after timeout."""
+        if not hasattr(self, 'lbl_analysis_duration'):
+            return
+            
+        self.lbl_analysis_duration.setText(msg)
+        self.lbl_analysis_duration.setVisible(True)
+        
+        def _restore():
+            if not hasattr(self, 'lbl_analysis_duration'): return
+            raw_time = getattr(self, '_last_analysis_time_raw', None)
+            if raw_time:
+                if len(raw_time) > 0 and raw_time[0].isdigit():
+                    self.lbl_analysis_duration.setText(self.txt("txt_analyzed_in").replace("{time}", raw_time))
+                else:
+                    self.lbl_analysis_duration.setText(raw_time)
+                self.lbl_analysis_duration.setVisible(True)
+            else:
+                self.lbl_analysis_duration.setVisible(False)
+                
+        from PySide6.QtCore import QTimer
+        if hasattr(self, '_status_timer') and self._status_timer.isActive():
+            self._status_timer.stop()
+        self._status_timer = QTimer.singleShot(duration_ms, _restore)
+
     def _on_import_project(self):
         try:
             from PySide6.QtWidgets import QFileDialog, QApplication
@@ -11540,18 +11901,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if imported_snapshot:
                 self._transcription_source = imported_snapshot
                 
-            # Rebuild title from snapshot
+            # Rebuild title from snapshot using new title bar mode
             if getattr(self, '_transcription_source', None):
                 snap = self._transcription_source
                 tl_name = snap.get('timeline_name', '')
                 track_names = snap.get('track_names', [])
                 all_tl_tracks = snap.get('all_tracks', True)
                 tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
-                msg = self.txt('msg_transcription_source')
-                if msg and '{tl}' in msg:
-                    rebuilt_title = msg.replace('{tl}', tl_name).replace('{tr}', tracks_str)
-                    if hasattr(self, '_title_bar'):
-                        self._title_bar.set_title(rebuilt_title)
+                if hasattr(self, '_title_bar'):
+                    self._title_bar.activate_transcription_mode()
+                    self._title_bar.set_source_info(tl_name, tracks_str)
 
             # --- Restore Analysis Time ---
             analysis_time = state.get('analysis_time', "")
@@ -11599,7 +11958,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             else:
                 import copy
                 self._chapters = [{
-                    "name": "Original",
+                    "name": self.txt("titlebar_original"),
                     "tl_name": self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else "",
                     "words": copy.deepcopy(state.get('words_data', []))
                 }]
@@ -11610,10 +11969,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._title_bar.chapter_dropdown.options_list = [ch['name'] for ch in self._chapters]
                 if 0 <= self._current_chapter_idx < len(self._chapters):
                     self._title_bar.chapter_dropdown.setText(self._chapters[self._current_chapter_idx]['name'])
-                if len(self._chapters) > 1:
-                    self._title_bar.chapter_dropdown.show()
-                else:
-                    self._title_bar.chapter_dropdown.hide()
                 self._title_bar.update_dropdown_placement()
                 
             if hasattr(self, 'audio_preview'):
@@ -12272,7 +12627,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Update dropdown
         self._title_bar.chapter_dropdown.options_list = [ch['name'] for ch in self._chapters]
         self._title_bar.chapter_dropdown.setText(chapter_name)
-        self._title_bar.chapter_dropdown.show()
         self._title_bar.update_dropdown_placement()
         
         # Load the new state
@@ -13073,17 +13427,17 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _populate_editor(self, words_data, segments_data):
         import copy
+        _orig_label = self.txt("titlebar_original")
         self._chapters = [{
-            "name": "Original",
+            "name": _orig_label,
             "tl_name": self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else "",
             "words": copy.deepcopy(words_data)
         }]
         self._current_chapter_idx = 0
         
         # Reset UI Dropdown
-        self._title_bar.chapter_dropdown.hide()
-        self._title_bar.chapter_dropdown.options_list = ["Original"]
-        self._title_bar.chapter_dropdown.setText("Original")
+        self._title_bar.chapter_dropdown.options_list = [_orig_label]
+        self._title_bar.chapter_dropdown.setText(_orig_label)
         self._title_bar.update_dropdown_placement()
         
         if hasattr(self, 'text_canvas'):
@@ -13470,18 +13824,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             else:
                 tracks_str = ", ".join(sorted(tracks))
 
-        msg = self.txt("msg_transcription_source")
-        if msg and "{tl}" in msg:
-            new_title = msg.replace("{tl}", selected_tl_name).replace("{tr}", tracks_str)
-            self._title_bar.set_title(new_title)
-            # On macOS native title bar: update the OS window title too
-            if platform.system() == "Darwin":
-                self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
-                if hasattr(self, '_mac_action_timeline'):
-                    self._mac_menu_source.menuAction().setVisible(True)
-                    self._mac_menu_edits.menuAction().setVisible(True)
-                    self._mac_action_timeline.setText(f"Timeline: {selected_tl_name}")
-                    self._mac_action_track.setText(f"Track: {tracks_str}")
+        # Activate the new title bar mode: [Project▾] [Transcript▾] [Edit▾] + centered source info
+        self._title_bar.activate_transcription_mode()
+        self._title_bar.set_source_info(selected_tl_name, tracks_str)
+        
+        # On macOS native title bar: update the OS window title too
+        if platform.system() == "Darwin":
+            self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
+            if hasattr(self, '_mac_action_timeline'):
+                self._mac_menu_project.menuAction().setVisible(True)
+                self._mac_menu_transcript.menuAction().setVisible(True)
+                self._mac_menu_source.menuAction().setVisible(True)
+                self._mac_menu_edits.menuAction().setVisible(True)
+                self._mac_action_timeline.setText(f"Timeline: {selected_tl_name}")
+                self._mac_action_track.setText(f"Track: {tracks_str}")
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         # Compute track indices from names (needed for engine assembly)
@@ -13910,6 +14266,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         Switch the central QStackedWidget to *index*.
         """
         self._stack.setCurrentIndex(index)
+        if index != 2:
+            if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'deactivate_transcription_mode'):
+                self._title_bar.deactivate_transcription_mode()
+            if getattr(self, '_is_mac', False):
+                if hasattr(self, '_mac_menu_project'):
+                    self._mac_menu_project.menuAction().setVisible(False)
+                    self._mac_menu_transcript.menuAction().setVisible(False)
+                    self._mac_menu_source.menuAction().setVisible(False)
+                    self._mac_menu_edits.menuAction().setVisible(False)
 
     # ------------------------------------------------------------------
     # Telemetry
