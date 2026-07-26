@@ -2306,6 +2306,411 @@ except Exception as e:
         return segments
 
     # ==========================================
+    # 5b. BWS PROJECT ARCHIVE (v2)
+    # ==========================================
+
+    def save_bws(self, file_path, data_packet, audio_path=None, drt_path=None,
+                 assembly_recipe=None, timeline_fingerprint=None, media_inventory=None):
+        """
+        Save project as .bws archive (ZIP-based).
+
+        Archive structure:
+            project.json           — transcript data, chapters, source info
+            manifest.json          — archive metadata, fingerprints, file inventory
+            audio/source.flac       — source audio converted to FLAC (preview-only)
+            timeline/source.drt    — original unedited DaVinci timeline (optional)
+            recipes/assembly_ops.json — FFmpeg recipe to recreate assembled audio
+        """
+        import zipfile
+        import hashlib
+        from datetime import datetime, timezone
+
+        try:
+            # 1. Build optimized project.json (reuse existing logic)
+            optimized_words = self._optimize_words_floats(data_packet.get("words_data", []))
+            chapters = data_packet.get("chapters", [])
+            for ch in chapters:
+                if "words" in ch:
+                    ch["words"] = self._optimize_words_floats(ch["words"])
+
+            project_state = data_packet.copy()
+            project_state["version"] = config.VERSION
+            project_state["timestamp"] = time.time()
+            project_state["words_data"] = optimized_words
+            if "chapters" in project_state:
+                project_state["chapters"] = chapters
+
+            # Strip absolute audio path from words_data for portability
+            for w in project_state.get("words_data", []):
+                w.pop("meta_audio_path", None)
+            for ch in project_state.get("chapters", []):
+                for w in ch.get("words", []):
+                    w.pop("meta_audio_path", None)
+
+            project_json_bytes = json.dumps(project_state, separators=(',', ':')).encode('utf-8')
+
+            # 2. Convert WAV → FLAC (if audio available)
+            flac_temp_path = None
+            if audio_path and os.path.exists(audio_path):
+                flac_temp_path = audio_path.rsplit('.', 1)[0] + '_bws_preview.flac'
+                if not self._convert_wav_to_flac(audio_path, flac_temp_path):
+                    flac_temp_path = None  # Fallback: no audio in archive
+
+            # 3. Build manifest
+            manifest = {
+                "bws_version": 2,
+                "badwords_version": config.VERSION,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "platform": platform.system(),
+                "timeline_fingerprint": timeline_fingerprint,
+                "timeline_name": (data_packet.get("transcription_source") or {}).get("timeline_name", ""),
+                "resolve_project": self._get_resolve_project_name(),
+                "media_inventory": media_inventory or [],
+                "files": {}
+            }
+
+            # 4. Create ZIP
+            with zipfile.ZipFile(file_path, 'w') as zf:
+                # project.json (compressed)
+                zf.writestr('project.json', project_json_bytes, compress_type=zipfile.ZIP_DEFLATED)
+                manifest["files"]["project.json"] = {"size": len(project_json_bytes)}
+
+                # audio/source.flac (stored — already compressed by Vorbis)
+                if flac_temp_path and os.path.exists(flac_temp_path):
+                    zf.write(flac_temp_path, 'audio/source.flac', compress_type=zipfile.ZIP_STORED)
+                    manifest["files"]["audio/source.flac"] = {"size": os.path.getsize(flac_temp_path)}
+
+                # timeline/source.drt (stored — already a ZIP itself)
+                if drt_path and os.path.exists(drt_path):
+                    zf.write(drt_path, 'timeline/source.drt', compress_type=zipfile.ZIP_STORED)
+                    manifest["files"]["timeline/source.drt"] = {"size": os.path.getsize(drt_path)}
+
+                # recipes/assembly_ops.json (compressed)
+                if assembly_recipe:
+                    recipe_bytes = json.dumps(assembly_recipe, separators=(',', ':')).encode('utf-8')
+                    zf.writestr('recipes/assembly_ops.json', recipe_bytes, compress_type=zipfile.ZIP_DEFLATED)
+                    manifest["files"]["recipes/assembly_ops.json"] = {"size": len(recipe_bytes)}
+
+                # manifest.json (compressed, written last so file sizes are known)
+                manifest_bytes = json.dumps(manifest, indent=2).encode('utf-8')
+                zf.writestr('manifest.json', manifest_bytes, compress_type=zipfile.ZIP_DEFLATED)
+
+            log_info(f"save_bws: wrote {file_path} ({os.path.getsize(file_path)} bytes)")
+
+            # Cleanup temp FLAC
+            if flac_temp_path and os.path.exists(flac_temp_path):
+                try: os.remove(flac_temp_path)
+                except Exception: pass
+
+            return True
+
+        except Exception as e:
+            log_error(f"save_bws error: {e}\n{traceback.format_exc()}")
+            # Cleanup temp FLAC on error
+            if flac_temp_path and os.path.exists(flac_temp_path):
+                try: os.remove(flac_temp_path)
+                except Exception: pass
+            raise e
+
+    def load_bws(self, file_path):
+        """
+        Load project from .bws archive.
+
+        Returns:
+            (project_state, segments, bws_extras)
+            bws_extras is a dict with:
+                - audio_path: str|None — path to extracted FLAC in temp
+                - drt_path: str|None — path to extracted DRT in temp
+                - assembly_recipe: dict|None — FFmpeg recipe for assembled audio
+                - manifest: dict — full manifest
+                - media_inventory: list — source file references
+                - timeline_fingerprint: str|None — SHA-256 content hash
+        """
+        import zipfile
+
+        try:
+            temp_dir = self.os_doc.get_temp_folder()
+            bws_extract_dir = os.path.join(temp_dir, f"bws_import_{int(time.time())}")
+            os.makedirs(bws_extract_dir, exist_ok=True)
+
+            manifest = {}
+            audio_path = None
+            drt_path = None
+            assembly_recipe = None
+
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                namelist = zf.namelist()
+
+                # 1. Read project data
+                project_state = json.loads(zf.read('project.json'))
+
+                # 2. Read manifest
+                if 'manifest.json' in namelist:
+                    manifest = json.loads(zf.read('manifest.json'))
+
+                # 3. Extract audio to temp
+                if 'audio/source.flac' in namelist:
+                    audio_path = os.path.join(bws_extract_dir, 'source.flac')
+                    with zf.open('audio/source.flac') as src, open(audio_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+
+                # 4. Extract DRT to temp
+                if 'timeline/source.drt' in namelist:
+                    drt_path = os.path.join(bws_extract_dir, 'source.drt')
+                    with zf.open('timeline/source.drt') as src, open(drt_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+
+                # 5. Read assembly recipe
+                if 'recipes/assembly_ops.json' in namelist:
+                    assembly_recipe = json.loads(zf.read('recipes/assembly_ops.json'))
+
+            # Inject audio path into words_data so AudioPreview can find it
+            words = project_state.get('words_data', [])
+            if audio_path and words:
+                words[0]['meta_audio_path'] = audio_path
+
+            segments = self._reconstruct_segments(words)
+
+            bws_extras = {
+                "audio_path": audio_path,
+                "drt_path": drt_path,
+                "assembly_recipe": assembly_recipe,
+                "manifest": manifest,
+                "media_inventory": manifest.get("media_inventory", []),
+                "timeline_fingerprint": manifest.get("timeline_fingerprint"),
+                "timeline_name": manifest.get("timeline_name", ""),
+                "resolve_project": manifest.get("resolve_project", ""),
+                "extract_dir": bws_extract_dir,
+            }
+
+            log_info(f"load_bws: loaded from {file_path} "
+                     f"(audio={'yes' if audio_path else 'no'}, "
+                     f"drt={'yes' if drt_path else 'no'}, "
+                     f"recipe={'yes' if assembly_recipe else 'no'})")
+
+            return project_state, segments, bws_extras
+
+        except Exception as e:
+            log_error(f"load_bws error: {e}\n{traceback.format_exc()}")
+            raise e
+
+    def _convert_wav_to_flac(self, wav_path, flac_path):
+        """Convert WAV to FLAC Vorbis using FFmpeg. Returns True on success."""
+        try:
+            cmd = [
+                self.ffmpeg_cmd, "-y",
+                "-i", wav_path,
+                "-codec:a", "flac",
+                "-compression_level", "5",
+                flac_path
+            ]
+            result = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, timeout=120,
+                **self.os_doc.get_subprocess_kwargs()
+            )
+            if result.returncode == 0 and os.path.exists(flac_path):
+                wav_size = os.path.getsize(wav_path)
+                flac_size = os.path.getsize(flac_path)
+                log_info(f"_convert_wav_to_flac: {wav_size} → {flac_size} bytes "
+                         f"({flac_size/wav_size*100:.1f}%)")
+                return True
+            else:
+                log_error(f"_convert_wav_to_flac failed: {result.stderr[:500]}")
+                return False
+        except Exception as e:
+            log_error(f"_convert_wav_to_flac error: {e}")
+            return False
+
+    def build_assembly_recipe(self, clean_ops, fps):
+        """Build an FFmpeg recipe dict from assembly ops for storage in .bws."""
+        if not clean_ops:
+            return None
+        return {
+            "type": "ffmpeg_concat",
+            "fps": fps,
+            "source": "audio/source.flac",
+            "ops": [{"s": op["s"], "e": op["e"], "type": op["type"]} for op in clean_ops]
+        }
+
+    def execute_assembly_recipe(self, recipe, source_audio_path, output_path):
+        """
+        Execute an FFmpeg concat recipe against a source audio file.
+        Produces the assembled/cut audio at output_path.
+        Returns True on success.
+        """
+        if not recipe or recipe.get("type") != "ffmpeg_concat":
+            return False
+
+        ops = recipe.get("ops", [])
+        fps = recipe.get("fps", 24.0)
+        if not ops or not source_audio_path or not os.path.exists(source_audio_path):
+            return False
+
+        try:
+            import tempfile
+            list_fd, list_path = tempfile.mkstemp(suffix=".txt", text=True)
+            with os.fdopen(list_fd, 'w') as f:
+                for op in ops:
+                    start_s = op['s'] / fps
+                    end_s = op['e'] / fps
+                    f.write(f"file '{source_audio_path}'\ninpoint {start_s:.6f}\noutpoint {end_s:.6f}\n")
+
+            cmd = [
+                self.ffmpeg_cmd, "-y", "-f", "concat", "-safe", "0",
+                "-i", list_path, "-c", "copy", output_path
+            ]
+            result = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, timeout=120,
+                **self.os_doc.get_subprocess_kwargs()
+            )
+
+            try: os.remove(list_path)
+            except Exception: pass
+
+            if result.returncode == 0 and os.path.exists(output_path):
+                log_info(f"execute_assembly_recipe: wrote {output_path}")
+                return True
+            else:
+                log_error(f"execute_assembly_recipe failed: {result.stderr[:500]}")
+                return False
+        except Exception as e:
+            log_error(f"execute_assembly_recipe error: {e}")
+            return False
+
+    def build_media_inventory(self, source_files):
+        """
+        Build a media inventory list from source file paths.
+        Each entry stores basename, size, and a partial 4KB checksum for fast verification.
+        """
+        import hashlib
+        inventory = []
+        for fp in (source_files or []):
+            if not fp:
+                continue
+            entry = {
+                "path": fp,
+                "basename": os.path.basename(fp),
+                "size_bytes": 0,
+                "checksum_sha256_4k": "",
+                "last_modified": 0.0,
+            }
+            try:
+                if os.path.exists(fp):
+                    stat = os.stat(fp)
+                    entry["size_bytes"] = stat.st_size
+                    entry["last_modified"] = stat.st_mtime
+                    # Hash first 4 KB for fast integrity check
+                    with open(fp, 'rb') as f:
+                        head = f.read(4096)
+                    entry["checksum_sha256_4k"] = hashlib.sha256(head).hexdigest()
+            except Exception as e:
+                log_error(f"build_media_inventory: error reading {fp}: {e}")
+            inventory.append(entry)
+        return inventory
+
+    def verify_media_inventory(self, inventory):
+        """
+        Verify that all media files from an inventory exist and match.
+        Returns (missing: list, changed: list) of inventory entries.
+        """
+        missing = []
+        changed = []
+        import hashlib
+        for entry in (inventory or []):
+            path = entry.get("path", "")
+            if not path or not os.path.exists(path):
+                missing.append(entry)
+                continue
+            try:
+                actual_size = os.path.getsize(path)
+                if actual_size != entry.get("size_bytes", 0):
+                    changed.append(entry)
+                    continue
+                # Verify partial checksum
+                expected_hash = entry.get("checksum_sha256_4k", "")
+                if expected_hash:
+                    with open(path, 'rb') as f:
+                        head = f.read(4096)
+                    actual_hash = hashlib.sha256(head).hexdigest()
+                    if actual_hash != expected_hash:
+                        changed.append(entry)
+            except Exception:
+                changed.append(entry)
+        return missing, changed
+
+    def export_source_drt(self, timeline_name):
+        """
+        Export the source timeline as .drt for bundling into .bws.
+        Returns the path to the exported .drt file, or None on failure.
+        """
+        if not self.resolve_handler:
+            return None
+        try:
+            target_tl = None
+            count = self.resolve_handler.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.resolve_handler.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
+                    target_tl = tl
+                    break
+
+            if not target_tl:
+                log_error(f"export_source_drt: timeline '{timeline_name}' not found.")
+                return None
+
+            export_type = getattr(self.resolve_handler.resolve, 'EXPORT_DRT', None)
+            if export_type is None:
+                log_info("export_source_drt: EXPORT_DRT not available in this Resolve version.")
+                return None
+
+            temp_dir = self.os_doc.get_temp_folder()
+            os.makedirs(temp_dir, exist_ok=True)
+            safe_name = "".join(c for c in timeline_name if c.isalnum() or c in '_- ')
+            drt_path = os.path.join(temp_dir, f"bws_source_{safe_name.replace(' ', '_')}.drt")
+
+            if os.path.exists(drt_path):
+                try:
+                    os.remove(drt_path)
+                except Exception as e:
+                    log_error(f"export_source_drt: could not remove existing file: {e}")
+
+            export_ok = target_tl.Export(drt_path, export_type)
+            if export_ok and os.path.exists(drt_path):
+                log_info(f"export_source_drt: exported '{timeline_name}' → {drt_path} "
+                         f"({os.path.getsize(drt_path)} bytes)")
+                return drt_path
+            else:
+                log_error("export_source_drt: Export() failed.")
+                return None
+
+        except Exception as e:
+            log_error(f"export_source_drt error: {e}")
+            return None
+
+    def _get_resolve_project_name(self):
+        """Get the current DaVinci Resolve project name, or empty string."""
+        try:
+            if self.resolve_handler and self.resolve_handler.project:
+                return self.resolve_handler.project.GetName() or ""
+        except Exception:
+            pass
+        return ""
+
+    def _optimize_words_floats(self, words):
+        """Round float fields in words list for compact JSON."""
+        optimized = []
+        for w in words:
+            w_clean = w.copy()
+            if 'start' in w_clean: w_clean['start'] = round(w['start'], 3)
+            if 'end' in w_clean: w_clean['end'] = round(w['end'], 3)
+            if 'seg_start' in w_clean: w_clean['seg_start'] = round(w['seg_start'], 3)
+            if 'seg_end' in w_clean: w_clean['seg_end'] = round(w['seg_end'], 3)
+            optimized.append(w_clean)
+        return optimized
+
+    # ==========================================
     # 6. WRAPPERS (Logic Orchestration)
     # ==========================================
 

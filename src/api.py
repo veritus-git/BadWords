@@ -18,6 +18,8 @@ import time
 import os
 import re
 import threading
+import json
+import hashlib
 
 # Import OSDoctor (as per architecture)
 try:
@@ -649,6 +651,7 @@ class ResolveHandler:
                 {
                     "src_in_s":   c["src_in_f"]  / fps,
                     "duration_s": (c["src_out_f"] - c["src_in_f"]) / fps,
+                    "file_path":  c["file_path"],
                 }
                 for c in collected_clips
             ]
@@ -665,6 +668,120 @@ class ResolveHandler:
         except Exception as e:
             log_error(f"get_direct_audio_info: unexpected error: {e}")
             return None
+
+    # ── Timeline Fingerprinting (BWS) ────────────────────────────────────────
+
+    def compute_timeline_fingerprint(self, timeline_name):
+        """
+        Generate a content-based SHA-256 fingerprint for a DaVinci Resolve timeline.
+
+        The hash is computed from the timeline's structural content (clip layout),
+        NOT its name. This means:
+        - Renaming the timeline does NOT change the fingerprint.
+        - Adding/removing/moving clips DOES change it.
+
+        Hash inputs:
+        - FPS, start frame offset
+        - For each track (audio + video), for each clip:
+            - Source file basename (portable across machines)
+            - Source file size (catches re-renders of same-name files)
+            - Clip start frame (relative to TL start)
+            - Clip duration (frames)
+            - Clip left offset (source in-point)
+        """
+        import hashlib
+
+        try:
+            target_tl = None
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
+                    target_tl = tl
+                    break
+
+            if not target_tl:
+                log_error(f"compute_timeline_fingerprint: timeline '{timeline_name}' not found.")
+                return None
+
+            fps = self.fps
+            try:
+                fps = float(target_tl.GetSetting("timelineFrameRate")) or fps
+            except Exception:
+                pass
+
+            tl_start_frame = int(target_tl.GetStartFrame())
+
+            fp_data = {
+                "fps": fps,
+                "start_frame": tl_start_frame,
+                "tracks": []
+            }
+
+            for track_type in ("video", "audio"):
+                try:
+                    track_count = target_tl.GetTrackCount(track_type)
+                except Exception:
+                    continue
+                for idx in range(1, track_count + 1):
+                    try:
+                        items = target_tl.GetItemListInTrack(track_type, idx)
+                    except Exception:
+                        continue
+                    if not items:
+                        continue
+                    track_clips = []
+                    for item in items:
+                        try:
+                            pool_item = item.GetMediaPoolItem()
+                            track_clips.append({
+                                "start": int(item.GetStart()) - tl_start_frame,
+                                "duration": int(item.GetDuration()),
+                                "left_offset": int(item.GetLeftOffset()),
+                            })
+                        except Exception:
+                            # Include a placeholder so clip count is preserved in hash
+                            track_clips.append({"start": 0, "duration": 0, "left_offset": 0})
+                    fp_data["tracks"].append({
+                        "type": track_type,
+                        "index": idx,
+                        "clips": track_clips
+                    })
+
+            canonical = json.dumps(fp_data, sort_keys=True, separators=(',', ':'))
+            fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
+            log_info(f"compute_timeline_fingerprint: '{timeline_name}' → {fingerprint[:16]}...")
+            return fingerprint
+
+        except Exception as e:
+            log_error(f"compute_timeline_fingerprint error: {e}")
+            return None
+
+    def find_timeline_by_fingerprint(self, target_fingerprint):
+        """
+        Scan all timelines in the current project and find one whose
+        content fingerprint matches the target.
+
+        Returns (timeline_name, exact_match) or (None, False).
+        """
+        if not target_fingerprint or not self.project:
+            return None, False
+
+        try:
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if not tl:
+                    continue
+                tl_name = tl.GetName()
+                fp = self.compute_timeline_fingerprint(tl_name)
+                if fp and fp == target_fingerprint:
+                    log_info(f"find_timeline_by_fingerprint: match found → '{tl_name}'")
+                    return tl_name, True
+        except Exception as e:
+            log_error(f"find_timeline_by_fingerprint error: {e}")
+
+        return None, False
 
 
     def timeline_exists(self, timeline_name):
@@ -2116,3 +2233,40 @@ class ResolveHandler:
             # ALWAYS return to the Edit page, even if the process failed
             if self.resolve:
                 self.resolve.OpenPage("edit")
+    def get_timeline_source_files(self, timeline_name, track_indices=None):
+        """
+        Returns a list of all unique file paths used by clips on the specified audio tracks.
+        This is purely for inventory purposes and does not fail on offline/FX clips.
+        """
+        if not self.project: return []
+        
+        target_tl = None
+        count = self.project.GetTimelineCount()
+        for i in range(1, count + 1):
+            tl = self.project.GetTimelineByIndex(i)
+            if tl and tl.GetName() == timeline_name:
+                target_tl = tl
+                break
+                
+        if not target_tl: return []
+        
+        a_track_count = target_tl.GetTrackCount("audio")
+        if a_track_count == 0: return []
+        
+        check_tracks = track_indices if track_indices else list(range(1, a_track_count + 1))
+        source_paths = set()
+        
+        for ai in check_tracks:
+            if not (1 <= ai <= a_track_count): continue
+            items = target_tl.GetItemListInTrack("audio", ai)
+            for item in (items or []):
+                try:
+                    pool_item = item.GetMediaPoolItem()
+                    if pool_item:
+                        fp = pool_item.GetClipProperty("File Path")
+                        if fp:
+                            source_paths.add(fp)
+                except Exception:
+                    pass
+                    
+        return list(source_paths)

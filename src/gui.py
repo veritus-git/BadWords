@@ -2638,6 +2638,61 @@ class LiquidProgressBar(QWidget):
             p.drawRoundedRect(fill_rect, 4, 4)
 
 
+
+class AutoSaveManager:
+    """Transparent background auto-save with debouncing."""
+    
+    def __init__(self, engine, saves_dir):
+        from PySide6.QtCore import QTimer
+        self._engine = engine
+        self._save_path = os.path.join(saves_dir, "autosave", "recovery.bws")
+        self._meta_path = os.path.join(saves_dir, "autosave", "recovery_meta.json")
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._do_save)
+        self._pending_packet_fn = None
+        self._DEBOUNCE_MS = 3000
+    
+    def schedule(self, data_packet_fn):
+        """Schedule an auto-save. data_packet_fn is called only when save fires."""
+        self._pending_packet_fn = data_packet_fn
+        if not self._timer.isActive():
+            self._timer.start(self._DEBOUNCE_MS)
+    
+    def _do_save(self):
+        """Execute auto-save in background thread — invisible to user."""
+        if not self._pending_packet_fn: return
+        try:
+            packet = self._pending_packet_fn()
+        except Exception:
+            return
+        import threading
+        threading.Thread(target=self._save_worker, args=(packet,), daemon=True).start()
+    
+    def _save_worker(self, packet):
+        try:
+            import json, time, os
+            import config
+            # Try to grab audio path if available
+            audio_path = None
+            words = packet.get("words_data", [])
+            if words and words[0].get("meta_audio_path"):
+                audio_path = words[0].get("meta_audio_path")
+                
+            self._engine.save_bws(self._save_path, packet, audio_path=audio_path)
+            # Write metadata alongside for crash recovery
+            meta = {
+                "timeline_name": packet.get("transcription_source", {}).get("timeline_name", ""),
+                "resolve_project": self._engine._get_resolve_project_name(),
+                "saved_at": time.time(),
+                "badwords_version": config.VERSION
+            }
+            with open(self._meta_path, 'w') as f:
+                json.dump(meta, f)
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"AutoSave failed: {e}")
+
 class UndoManager:
     def __init__(self, main_window, canvas):
         from collections import deque
@@ -4066,6 +4121,14 @@ class CustomTitleBar(QWidget):
             self._is_dragging = True
             self._click_pos = event.position().toPoint()
             event.accept()
+            # Write clean exit flag
+            try:
+                import os
+                flag_path = os.path.join(self.engine.os_doc.get_autosave_dir(), '.clean_exit')
+                with open(flag_path, 'w') as f:
+                    f.write('ok')
+            except Exception:
+                pass
             return
         super().mousePressEvent(event)
 
@@ -10323,6 +10386,127 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 # CLASS 3: MAIN APPLICATION WINDOW
 # ==========================================
 
+
+class WorkspaceWarningOverlay(QFrame):
+    def __init__(self, parent_stack, title, description, btn_accept_text, btn_reject_text=None, btn_cancel_text=None):
+        super().__init__()
+        self._stack = parent_stack
+        from PySide6.QtCore import QEventLoop, Qt
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+        self._loop = QEventLoop()
+        self._result = QDialog.Rejected
+        
+        import config
+        self.setStyleSheet(f"background-color: {config.BG_COLOR};")
+        
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        container = QFrame()
+        container.setFixedWidth(600)
+        c_layout = QVBoxLayout(container)
+        c_layout.setSpacing(20)
+        
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("font-size: 24px; font-weight: bold; color: white; background: transparent;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        c_layout.addWidget(lbl_title)
+        
+        lbl_desc = QLabel(description)
+        lbl_desc.setStyleSheet("font-size: 14px; color: #cccccc; background: transparent; line-height: 1.5;")
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setAlignment(Qt.AlignCenter)
+        c_layout.addWidget(lbl_desc)
+        
+        c_layout.addSpacing(10)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(15)
+        btn_layout.setAlignment(Qt.AlignCenter)
+        
+        if btn_reject_text:
+            btn_reject = QPushButton(btn_reject_text)
+            btn_reject.setCursor(Qt.PointingHandCursor)
+            btn_reject.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #404040;
+                    color: white;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{ background-color: #505050; border-color: #666666; }}
+                QPushButton:pressed {{ background-color: #303030; }}
+            """)
+            btn_reject.clicked.connect(self._on_reject)
+            btn_layout.addWidget(btn_reject)
+            
+        btn_accept = QPushButton(btn_accept_text)
+        btn_accept.setCursor(Qt.PointingHandCursor)
+        btn_accept.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #23a559;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #26b361; }}
+            QPushButton:pressed {{ background-color: #1e8e4c; }}
+        """)
+        btn_accept.clicked.connect(self._on_accept)
+        btn_layout.addWidget(btn_accept)
+        
+        c_layout.addLayout(btn_layout)
+        
+        if btn_cancel_text:
+            btn_cancel = QPushButton(btn_cancel_text)
+            btn_cancel.setCursor(Qt.PointingHandCursor)
+            btn_cancel.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: #a0a0a0;
+                    border: none;
+                    text-decoration: underline;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                }}
+                QPushButton:hover {{ color: white; }}
+                QPushButton:pressed {{ color: #808080; }}
+            """)
+            btn_cancel.clicked.connect(self._on_cancel)
+            c_layout.addWidget(btn_cancel, alignment=Qt.AlignCenter)
+            
+        layout.addWidget(container)
+
+    def _on_accept(self):
+        from PySide6.QtWidgets import QDialog
+        self._result = QDialog.Accepted
+        self._loop.quit()
+
+    def _on_reject(self):
+        from PySide6.QtWidgets import QDialog
+        self._result = QDialog.Rejected
+        self._loop.quit()
+
+    def _on_cancel(self):
+        self._result = -1  # custom code for Cancel
+        self._loop.quit()
+
+    def exec(self):
+        prev_idx = self._stack.currentIndex()
+        idx = self._stack.addWidget(self)
+        self._stack.setCurrentIndex(idx)
+        self._loop.exec()
+        self._stack.setCurrentIndex(prev_idx)
+        self._stack.removeWidget(self)
+        self.deleteLater()
+        return self._result
+
 class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     """
     Stage 3 — QMainWindow implementing the "VS Code" unified workspace:
@@ -11705,8 +11889,36 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             clean_data.append(clean_w)
         return clean_data
 
+    def _build_data_packet(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return None
+        clean_words = self._get_clean_words_data()
+        if getattr(self, '_current_chapter_idx', -1) >= 0 and getattr(self, '_chapters', []):
+            self._chapters[self._current_chapter_idx]['words'] = clean_words
+            
+        analysis_time = ""
+        if hasattr(self, 'lbl_analysis_duration') and self.lbl_analysis_duration.isVisible():
+            analysis_time = getattr(self, '_last_analysis_time_raw', None)
+            if not analysis_time:
+                import re
+                time_match = re.search(r'\d+:\d+', self.lbl_analysis_duration.text())
+                analysis_time = time_match.group(0) if time_match else self.lbl_analysis_duration.text()
+                
+        return {
+            "words_data":     clean_words,
+            "chapters":       [
+                {**ch, "words": [{k: v for k, v in w.items() if not k.startswith('_')} for w in ch.get("words", [])]}
+                for ch in getattr(self, '_chapters', [])
+            ],
+            "current_chapter_idx": getattr(self, '_current_chapter_idx', -1),
+            "script_content": getattr(self, 'text_script', None).toPlainText() if hasattr(self, 'text_script') else "",
+            "transcription_source": getattr(self, '_transcription_source', None),
+            "sbs_cache":      None,
+            "analysis_time":  analysis_time
+        }
+
     def _on_export_project(self):
-        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
+        packet = self._build_data_packet()
+        if not packet: return
         from PySide6.QtWidgets import QFileDialog
         import time, os
         
@@ -11715,51 +11927,66 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         # SMART TIMELINE NAMING
         timeline_name = "Project"
-        try:
-            if hasattr(self, 'resolve_handler') and self.resolve_handler:
-                project = self.resolve_handler.project_manager.GetCurrentProject()
-                if project:
-                    timeline_name = project.GetName()
-                    tl = project.GetCurrentTimeline()
-                    if tl:
-                        timeline_name = tl.GetName()
-        except Exception:
-            pass
+        snap = packet.get("transcription_source") or {}
+        if snap.get("timeline_name"):
+            timeline_name = snap["timeline_name"]
+            
         safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
-        default_filename = f"BadWords_{safe_name}.json"
+        default_filename = f"BadWords_{safe_name}.bws"
         
-        path, _ = QFileDialog.getSaveFileName(self, self.txt("btn_export_project"), os.path.join(saves_dir, default_filename), "JSON Files (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, self.txt("btn_export_project"), os.path.join(saves_dir, default_filename), "BadWords Save (*.bws);;JSON Files (*.json)")
         if not path: return
 
-        clean_words = self._get_clean_words_data()
+        if path.endswith('.json'):
+            self.engine.save_project_state(path, packet)
+        else:
+            # Gather .bws specific data
+            audio_path = None
+            words = packet.get("words_data", [])
+            if words and words[0].get("meta_audio_path"):
+                audio_path = words[0].get("meta_audio_path")
+                
+            drt_path = getattr(self, '_extracted_drt_path', None)
+            if not drt_path and hasattr(self, 'engine') and hasattr(self, 'resolve_handler') and self.resolve_handler:
+                # Try to export DRT from DaVinci Resolve right now if we don't have one
+                drt_path = self.engine.export_source_drt(timeline_name)
+                self._extracted_drt_path = drt_path
 
-        # Update current chapter with latest canvas data before saving
-        if getattr(self, '_current_chapter_idx', -1) >= 0 and self._chapters:
-            self._chapters[self._current_chapter_idx]['words'] = clean_words
+            # Re-compute fingerprint in case it changed since import/transcription
+            timeline_fingerprint = None
+            if hasattr(self, 'resolve_handler') and self.resolve_handler:
+                timeline_fingerprint = self.resolve_handler.compute_timeline_fingerprint(timeline_name)
+                
+            # If we don't have media inventory, build it now
+            media_inventory = getattr(self, '_media_inventory', [])
+            if not media_inventory and hasattr(self, 'resolve_handler') and self.resolve_handler:
+                source_files = snap.get("source_files")
+                if not source_files:
+                    try:
+                        t_name = snap.get("timeline_name", "")
+                        t_indices = snap.get("track_indices", [])
+                        source_files = self.resolve_handler.get_timeline_source_files(t_name, t_indices)
+                        if source_files:
+                            snap["source_files"] = source_files
+                    except Exception as e:
+                        from osdoc import log_error as _le
+                        _le(f"_on_export_project: get_timeline_source_files failed: {e}")
+                if source_files:
+                    media_inventory = self.engine.build_media_inventory(source_files)
+                    self._media_inventory = media_inventory
+
+            recipe = getattr(self, '_assembly_recipe', None)
+
+            self.engine.save_bws(
+                path, packet, 
+                audio_path=audio_path, 
+                drt_path=drt_path, 
+                assembly_recipe=recipe, 
+                timeline_fingerprint=timeline_fingerprint,
+                media_inventory=media_inventory
+            )
             
-        sbs_cache = None
-            
-        analysis_time = ""
-        if hasattr(self, 'lbl_analysis_duration') and self.lbl_analysis_duration.isVisible():
-            analysis_time = getattr(self, '_last_analysis_time_raw', None)
-            if not analysis_time:
-                import re
-                time_match = re.search(r'\d+:\d+', self.lbl_analysis_duration.text())
-                if time_match:
-                    analysis_time = time_match.group(0)
-                else:
-                    analysis_time = self.lbl_analysis_duration.text()
-            
-        data_packet = {
-            "words_data":     clean_words,
-            "chapters":       getattr(self, '_chapters', []),
-            "current_chapter_idx": getattr(self, '_current_chapter_idx', -1),
-            "script_content": getattr(self, 'text_script', None).toPlainText() if hasattr(self, 'text_script') else "",
-            "transcription_source": getattr(self, '_transcription_source', None),
-            "sbs_cache":      sbs_cache,
-            "analysis_time":  analysis_time
-        }
-        self.engine.save_project_state(path, data_packet)
+        self._show_temporary_status(self.txt("msg_transcript_exported"))
 
     def _build_transcript_plaintext(self):
         """Build a plain-text representation of the current transcript.
@@ -11873,18 +12100,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._status_timer.stop()
         self._status_timer = QTimer.singleShot(duration_ms, _restore)
 
-    def _on_import_project(self):
+    def _on_import_project(self, override_path=None):
         try:
-            from PySide6.QtWidgets import QFileDialog, QApplication
-            import os
+            from PySide6.QtWidgets import QFileDialog, QApplication, QDialog
+            import os, time
             
-            saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
-            os.makedirs(saves_dir, exist_ok=True)
-            
-            path, _ = QFileDialog.getOpenFileName(self, self.txt("btn_import_project"), saves_dir, "JSON Files (*.json)")
+            path = override_path
+            if not path:
+                saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+                os.makedirs(saves_dir, exist_ok=True)
+                
+                path, _ = QFileDialog.getOpenFileName(
+                    self, 
+                    self.txt("btn_import_project"), 
+                    saves_dir, 
+                    "BadWords Save (*.bws);;JSON Files (*.json)"
+                )
+                
             if not path: return
             
-            state, _ = self.engine.load_project_state(path)
+            bws_extras = None
+            if path.endswith('.bws'):
+                state, _, bws_extras = self.engine.load_bws(path)
+            else:
+                state, _ = self.engine.load_project_state(path)
 
             from PySide6.QtCore import QTimer
 
@@ -11895,22 +12134,17 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             # --- Restore Source Snapshot ---
             imported_snapshot = state.get('transcription_source')
             if not imported_snapshot and 'settings' in state:
-                # Fallback for older saves
                 imported_snapshot = (state.get('settings') or {}).get('transcription_source')
                 
             if imported_snapshot:
                 self._transcription_source = imported_snapshot
-                
-            # Rebuild title from snapshot using new title bar mode
-            if getattr(self, '_transcription_source', None):
-                snap = self._transcription_source
-                tl_name = snap.get('timeline_name', '')
-                track_names = snap.get('track_names', [])
-                all_tl_tracks = snap.get('all_tracks', True)
+                track_names = imported_snapshot.get('track_names', [])
+                all_tl_tracks = imported_snapshot.get('all_tracks', True)
                 tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
-                if hasattr(self, '_title_bar'):
-                    self._title_bar.activate_transcription_mode()
-                    self._title_bar.set_source_info(tl_name, tracks_str)
+            else:
+                tracks_str = self.txt('txt_all')
+                
+            # (Title bar update moved below popups)
 
             # --- Restore Analysis Time ---
             analysis_time = state.get('analysis_time', "")
@@ -11923,12 +12157,122 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     raw_time = analysis_time
                 self._last_analysis_time_raw = raw_time
                 
-                if raw_time and raw_time[0].isdigit():
+                if len(raw_time) > 0 and raw_time[0].isdigit():
                     self.lbl_analysis_duration.setText(self.txt("txt_analyzed_in").replace("{time}", raw_time))
                 else:
-                    self.lbl_analysis_duration.setText(analysis_time)
+                    self.lbl_analysis_duration.setText(raw_time)
                 self.lbl_analysis_duration.setVisible(True)
+            elif hasattr(self, 'lbl_analysis_duration'):
+                self.lbl_analysis_duration.setVisible(False)
+                
+            # --- BWS EXTRA HANDLING ---
+            if bws_extras:
+                self._assembly_recipe = bws_extras.get("assembly_recipe")
+                self._media_inventory = bws_extras.get("media_inventory")
+                self._extracted_drt_path = bws_extras.get("drt_path")
+                
+                # Check media inventory
+                if self._media_inventory:
+                    missing, _ = self.engine.verify_media_inventory(self._media_inventory)
+                    if missing:
+                        # Convert to markdown bullet list for a scrollable CustomMsgBox (using QLabel properties)
+                        # We just show a summary
+                        files_str = ""
+                        for m in missing[:5]:
+                            files_str += f"• {m.get('basename', 'Unknown')}\n"
+                        if len(missing) > 5:
+                            files_str += f"... [+ {len(missing)-5}]\n"
+                            
+                        msg_text = self.txt("bws_media_missing_desc").replace("{files}", files_str.strip())
+                        
+                        msg_box = WorkspaceWarningOverlay(
+                            self._stack,
+                            self.txt("bws_media_missing_title"),
+                            msg_text,
+                            self.txt("bws_btn_continue"),
+                            btn_cancel_text=self.txt("btn_cancel")
+                        )
+                        res = msg_box.exec()
+                        if res != QDialog.Accepted:
+                            self.go_to_page(0)
+                            if hasattr(self, '_panel_left'): self._panel_left.hide()
+                            if hasattr(self, '_panel_right'): self._panel_right.hide()
+                            return
+                
+                # Check timeline fingerprint
+                if bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.project:
+                    found_tl, is_exact = self.resolve_handler.find_timeline_by_fingerprint(bws_extras["timeline_fingerprint"])
+                    
+                    # Target name from snapshot
+                    target_name = (self._transcription_source or {}).get("timeline_name", "")
+                    
+                    if found_tl and is_exact:
+                        if target_name and target_name != found_tl:
+                            # Automatically update the name to match the new exact fingerprint match
+                            self._transcription_source["timeline_name"] = found_tl
+                            if hasattr(self, '_title_bar'):
+                                self._title_bar.set_source_info(found_tl, tracks_str)
+                    else:
+                        # No exact match. Does it exist by name?
+                        exists_by_name = self.resolve_handler.timeline_exists(target_name)
+                        if exists_by_name:
+                            # It exists but fingerprint differs
+                            msg_box = WorkspaceWarningOverlay(
+                                self._stack,
+                                self.txt("bws_timeline_changed_title"),
+                                self.txt("bws_timeline_changed_desc").format(tl=target_name),
+                                self.txt("bws_btn_continue"),
+                                btn_reject_text=self.txt("bws_btn_import_drt") if self._extracted_drt_path else None,
+                                btn_cancel_text=self.txt("btn_cancel")
+                            )
+                            res = msg_box.exec()
+                            if res == -1:  # Cancel
+                                self.go_to_page(0)
+                                if hasattr(self, '_panel_left'): self._panel_left.hide()
+                                if hasattr(self, '_panel_right'): self._panel_right.hide()
+                                return
+                            if res != QDialog.Accepted:
+                                if self._extracted_drt_path:
+                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(self._extracted_drt_path)
+                                    if new_tl:
+                                        new_name = f"imported '{target_name}'"
+                                        new_tl.SetName(new_name)
+                                        self._transcription_source["timeline_name"] = new_name
+                                        if hasattr(self, '_title_bar'):
+                                            self._title_bar.set_source_info(new_name, tracks_str)
+                                else:
+                                    return
+                        else:
+                            # Doesn't exist at all
+                            if self._extracted_drt_path:
+                                msg_box = WorkspaceWarningOverlay(
+                                    self._stack,
+                                    self.txt("bws_missing_timeline_title"),
+                                    self.txt("bws_missing_timeline_desc").format(tl=target_name),
+                                    self.txt("bws_btn_import_drt"),
+                                    btn_cancel_text=self.txt("btn_cancel")
+                                )
+                                res = msg_box.exec()
+                                if res == -1:
+                                    self.go_to_page(0)
+                                    if hasattr(self, '_panel_left'): self._panel_left.hide()
+                                    if hasattr(self, '_panel_right'): self._panel_right.hide()
+                                    return
+                                if res == QDialog.Accepted:
+                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(self._extracted_drt_path)
+                                    if new_tl:
+                                        new_name = f"imported '{target_name}'"
+                                        new_tl.SetName(new_name)
+                                        self._transcription_source["timeline_name"] = new_name
+                                        if hasattr(self, '_title_bar'):
+                                            self._title_bar.set_source_info(new_name, tracks_str)
 
+                # Recreate assembled audio if needed
+                if self._assembly_recipe and bws_extras.get("audio_path"):
+                    temp_dir = self.engine.os_doc.get_temp_folder()
+                    out_path = os.path.join(temp_dir, f"bws_assembled_{int(time.time())}.flac")
+                    self.engine.execute_assembly_recipe(self._assembly_recipe, bws_extras["audio_path"], out_path)
+                    
             # --- Restore SBS Cache ---
             sbs_cache = state.get('sbs_cache')
             if sbs_cache:
@@ -11974,8 +12318,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'audio_preview'):
                 self.audio_preview.check_audio_availability()
 
+            # Rebuild title from snapshot using new title bar mode
+            if getattr(self, '_transcription_source', None):
+                snap = self._transcription_source
+                tl_name = snap.get('timeline_name', '')
+                track_names = snap.get('track_names', [])
+                all_tl_tracks = snap.get('all_tracks', True)
+                tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
+                if hasattr(self, '_title_bar'):
+                    self._title_bar.activate_transcription_mode()
+                    self._title_bar.set_source_info(tl_name, tracks_str)
+
             # --- SWITCH TO EDITOR CONTEXT AND OPEN PANELS IF NEEDED ---
             if from_main_window:
+                
                 if hasattr(self, 'go_to_page'):
                     self.go_to_page(2)
                 
@@ -11989,7 +12345,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         except Exception as e:
             from osdoc import log_error
-            log_error(f"Failed to load project: {e}")
+            import traceback
+            log_error(f"Failed to load project: {e}\n{traceback.format_exc()}")
             dlg = CustomMsgBox(self, self.txt("lbl_error"), f"{self.txt('msg_load_project_failed')}:\n{e}", self.txt("btn_ok"))
             dlg.exec()
 
@@ -13848,9 +14205,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         source_files = []
         try:
             if self.resolve_handler:
-                d_info = self.resolve_handler.get_direct_audio_info(selected_tl_name, track_indices)
-                if d_info and d_info.get("clips"):
-                    source_files = list(set(c["file_path"] for c in d_info["clips"] if c.get("file_path")))
+                source_files = self.resolve_handler.get_timeline_source_files(selected_tl_name, track_indices)
         except Exception:
             pass
 
@@ -14275,6 +14630,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._mac_menu_transcript.menuAction().setVisible(False)
                     self._mac_menu_source.menuAction().setVisible(False)
                     self._mac_menu_edits.menuAction().setVisible(False)
+        else:
+            if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'activate_transcription_mode'):
+                if getattr(self, '_transcription_source', None):
+                    self._title_bar.activate_transcription_mode()
+            if getattr(self, '_is_mac', False):
+                if hasattr(self, '_mac_menu_project'):
+                    self._mac_menu_project.menuAction().setVisible(True)
+                    self._mac_menu_transcript.menuAction().setVisible(True)
+                    self._mac_menu_source.menuAction().setVisible(True)
+                    self._mac_menu_edits.menuAction().setVisible(True)
 
     # ------------------------------------------------------------------
     # Telemetry

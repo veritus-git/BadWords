@@ -599,6 +599,12 @@ class OSDoctor:
     def get_saves_folder(self):
         os.makedirs(self.saves_dir, exist_ok=True)
         return self.saves_dir
+
+    def get_autosave_dir(self):
+        """Returns (and creates) the autosave directory for crash recovery."""
+        path = os.path.join(self.saves_dir, "autosave")
+        os.makedirs(path, exist_ok=True)
+        return path
         
     def get_icon_path(self):
         """
