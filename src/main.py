@@ -341,8 +341,9 @@ def main():
         else:
             import os
             os.environ["QT_SCALE_FACTOR"] = "0.80"
-            os.environ["QT_MAC_WANTS_LAYER"] = "1"
-            os.environ["QT_MAC_METAL_QBACKINGSTORE"] = "0"
+            # Force Qt 6 to use the OpenGL backend instead of Metal. 
+            # Metal and CoreGraphics both suffer from fractional scaling (0.8) rendering artifacts (dots) in QWidgets.
+            os.environ["QSG_RHI_BACKEND"] = "opengl"
 
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
