@@ -338,6 +338,10 @@ def main():
             import os
             os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+        else:
+            import os
+            # Downscale the entire UI on macOS by 25% to prevent clipping and massive elements
+            os.environ["QT_SCALE_FACTOR"] = "0.75"
 
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
