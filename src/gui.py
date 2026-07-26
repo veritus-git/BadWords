@@ -10935,6 +10935,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         Main container incorporating sidebars, panels, and central stack using QHBoxLayout.
         """
         main_container = QWidget()
+        main_container.setObjectName("MainContainer")
+        main_container.setAttribute(Qt.WA_StyledBackground, True)
+        main_container.setStyleSheet(f"#MainContainer {{ background-color: {config.BG_COLOR}; }}")
         main_layout = QHBoxLayout(main_container)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -10943,7 +10946,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._panel_left = QFrame()
         self._panel_left.setMinimumWidth(150)
         self._panel_left.setObjectName("leftPanel")
-        self._panel_left.setStyleSheet("QFrame#leftPanel { background: transparent; } QFrame#ActivityPanel { background-color: #212121; border-radius: 6px; }")
+        self._panel_left.setStyleSheet(f"QFrame#leftPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: 6px; }}")
         QVBoxLayout(self._panel_left).setContentsMargins(0, 0, 0, 0)
         self._panel_left.hide()
 
@@ -10958,7 +10961,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._panel_right = QFrame()
         self._panel_right.setMinimumWidth(150)
         self._panel_right.setObjectName("rightPanel")
-        self._panel_right.setStyleSheet("QFrame#rightPanel { background: transparent; } QFrame#ActivityPanel { background-color: #212121; border-radius: 6px; }")
+        self._panel_right.setStyleSheet(f"QFrame#rightPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: 6px; }}")
         QVBoxLayout(self._panel_right).setContentsMargins(0, 0, 0, 0)
         self._panel_right.hide()
         
