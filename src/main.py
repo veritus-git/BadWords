@@ -340,8 +340,8 @@ def main():
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
         else:
             import os
-            # Downscale the entire UI on macOS by 25% to prevent clipping and massive elements
-            os.environ["QT_SCALE_FACTOR"] = "0.75"
+            # Downscale the entire UI on macOS by 20% to prevent clipping and massive elements
+            os.environ["QT_SCALE_FACTOR"] = "0.80"
 
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)

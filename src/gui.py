@@ -8024,7 +8024,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
         
-        self.inner_frame = QFrame(self)
+        class SolidFrame(QFrame):
+            def paintEvent(self, e):
+                from PySide6.QtGui import QPainter, QColor
+                p = QPainter(self)
+                p.fillRect(self.rect(), QColor(config.BG_COLOR))
+                super().paintEvent(e)
+                
+        self.inner_frame = SolidFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
         
         from PySide6.QtWidgets import QGraphicsDropShadowEffect
