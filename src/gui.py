@@ -59,16 +59,8 @@ _BaseMainWindow = QMainWindow
 _BaseDialog = QDialog
 
 # ==========================================
-# MACOS UI SCALE MONKEY PATCH
+# CONSTANTS
 # ==========================================
-_orig_set_style_sheet = QWidget.setStyleSheet
-def _scaled_set_style_sheet(self, qss):
-    if platform.system() == "Darwin" and qss and isinstance(qss, str):
-        # Scale all pt and px by +2 globally
-        qss = re.sub(r'font-size:\s*(\d+)pt;', lambda m: f"font-size: {int(m.group(1)) + 2}pt;", qss)
-        qss = re.sub(r'font-size:\s*(\d+)px;', lambda m: f"font-size: {int(m.group(1)) + 2}px;", qss)
-    _orig_set_style_sheet(self, qss)
-QWidget.setStyleSheet = _scaled_set_style_sheet
 
 # ==========================================
 # CONSTANTS
@@ -1961,8 +1953,9 @@ class AudioPreviewWidget(QFrame):
         self.slider_seek.setObjectName("SeekSlider")
         self.slider_seek.setRange(0, 1000)
         self.slider_seek.setValue(0)
-        self.slider_seek.setMinimumWidth(600)
-        self.slider_seek.setMaximumWidth(1200)
+        self.slider_seek.setMinimumWidth(100)
+        from PySide6.QtWidgets import QSizePolicy
+        self.slider_seek.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._seek_dragging = False
         self.slider_seek.sliderPressed.connect(self._on_seek_pressed)
         self.slider_seek.sliderReleased.connect(self._on_seek_released)
@@ -9422,6 +9415,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             try:
                 if self.engine.os_doc.is_win:
                     os.startfile(log_dir)
+                elif getattr(self.engine.os_doc, 'is_mac', False):
+                    import subprocess
+                    subprocess.Popen(['open', log_dir])
                 else:
                     import subprocess
                     subprocess.Popen(['xdg-open', log_dir])
