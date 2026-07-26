@@ -59,8 +59,16 @@ _BaseMainWindow = QMainWindow
 _BaseDialog = QDialog
 
 # ==========================================
-# CONSTANTS
+# MACOS FONT SCALING MONKEY PATCH
 # ==========================================
+_orig_set_style_sheet = QWidget.setStyleSheet
+def _scaled_set_style_sheet(self, qss):
+    import platform, re
+    if platform.system() == "Darwin" and qss and isinstance(qss, str):
+        # Scale pt to px using 1.333 ratio (Windows standard) so proportions match exactly
+        qss = re.sub(r'font-size:\s*([\d\.]+)pt;', lambda m: f"font-size: {int(float(m.group(1)) * 1.333)}px;", qss)
+    _orig_set_style_sheet(self, qss)
+QWidget.setStyleSheet = _scaled_set_style_sheet
 
 # ==========================================
 # CONSTANTS
@@ -1995,7 +2003,7 @@ class AudioPreviewWidget(QFrame):
         right_layout.addWidget(self.slider_vol)
         
         controls_layout.addWidget(left_widget, 1, Qt.AlignLeft | Qt.AlignVCenter)
-        controls_layout.addWidget(center_widget, 3, Qt.AlignCenter)
+        controls_layout.addWidget(center_widget, 3, Qt.AlignVCenter)
         controls_layout.addWidget(right_widget, 1, Qt.AlignRight | Qt.AlignVCenter)
 
         content_layout.addWidget(self.controls_widget)
@@ -11026,7 +11034,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             target_splitter.show()
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
-                target_w = 280
+                target_w = min(280, max(180, self.width() // 4))
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
                     sizes[0] = target_w
