@@ -2644,9 +2644,11 @@ class AutoSaveManager:
     
     def __init__(self, engine, saves_dir):
         from PySide6.QtCore import QTimer
+        import os
         self._engine = engine
-        self._save_path = os.path.join(saves_dir, "autosave", "recovery.bws")
-        self._meta_path = os.path.join(saves_dir, "autosave", "recovery_meta.json")
+        os.makedirs(saves_dir, exist_ok=True)
+        self._save_path = os.path.join(saves_dir, "recovery.bws")
+        self._meta_path = os.path.join(saves_dir, "recovery_meta.json")
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._do_save)
@@ -2663,28 +2665,46 @@ class AutoSaveManager:
         """Execute auto-save in background thread — invisible to user."""
         if not self._pending_packet_fn: return
         try:
-            packet = self._pending_packet_fn()
+            result = self._pending_packet_fn()
+            if isinstance(result, tuple) and len(result) == 2:
+                packet, bws_extras = result
+            else:
+                packet, bws_extras = result, {}
         except Exception:
             return
         import threading
-        threading.Thread(target=self._save_worker, args=(packet,), daemon=True).start()
+        threading.Thread(target=self._save_worker, args=(packet, bws_extras), daemon=True).start()
     
-    def _save_worker(self, packet):
+    def _save_worker(self, packet, bws_extras=None):
         try:
             import json, time, os
             import config
+            
+            bws_extras = bws_extras or {}
             # Try to grab audio path if available
-            audio_path = None
-            words = packet.get("words_data", [])
-            if words and words[0].get("meta_audio_path"):
-                audio_path = words[0].get("meta_audio_path")
+            audio_path = bws_extras.get("audio_path")
+            if not audio_path:
+                words = packet.get("words_data", [])
+                if words and words[0].get("meta_audio_path"):
+                    audio_path = words[0].get("meta_audio_path")
                 
-            self._engine.save_bws(self._save_path, packet, audio_path=audio_path)
+            self._engine.save_bws(
+                self._save_path, 
+                packet, 
+                audio_path=audio_path,
+                drt_path=bws_extras.get("drt_path"),
+                assembly_recipe=bws_extras.get("assembly_recipe"),
+                timeline_fingerprint=bws_extras.get("timeline_fingerprint"),
+                media_inventory=bws_extras.get("media_inventory")
+            )
             # Write metadata alongside for crash recovery
+            t_name = packet.get("transcription_source", {}).get("timeline_name", "")
             meta = {
-                "timeline_name": packet.get("transcription_source", {}).get("timeline_name", ""),
+                "timeline_name": t_name,
+                "project_name": t_name,
                 "resolve_project": self._engine._get_resolve_project_name(),
                 "saved_at": time.time(),
+                "timestamp": time.strftime("%H:%M:%S"),
                 "badwords_version": config.VERSION
             }
             with open(self._meta_path, 'w') as f:
@@ -2707,6 +2727,9 @@ class UndoManager:
             return
         self.undo_stack.append(action)
         self.redo_stack.clear()
+        
+        if hasattr(self.main_window, 'autosave_manager'):
+            self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
 
     def undo(self):
         if not self.undo_stack: return
@@ -2714,6 +2737,9 @@ class UndoManager:
         redo_action = self._apply_action(action)
         self.redo_stack.append(redo_action)
         self.canvas.update()
+        
+        if hasattr(self.main_window, 'autosave_manager'):
+            self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
 
     def redo(self):
         if not self.redo_stack: return
@@ -2721,6 +2747,9 @@ class UndoManager:
         undo_action = self._apply_action(action)
         self.undo_stack.append(undo_action)
         self.canvas.update()
+        
+        if hasattr(self.main_window, 'autosave_manager'):
+            self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
 
     def _apply_action(self, action):
         reverse_changes = {}
@@ -4121,15 +4150,8 @@ class CustomTitleBar(QWidget):
             self._is_dragging = True
             self._click_pos = event.position().toPoint()
             event.accept()
-            # Write clean exit flag
-            try:
-                import os
-                flag_path = os.path.join(self.engine.os_doc.get_autosave_dir(), '.clean_exit')
-                with open(flag_path, 'w') as f:
-                    f.write('ok')
-            except Exception:
-                pass
             return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -10528,10 +10550,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         self.engine              = engine
         self.resolve_handler     = resolve_handler
+        self.autosave_manager    = AutoSaveManager(self.engine, self.engine.os_doc.get_autosave_dir())
+        
         # This callback is injected by AppController in main.py
         self.closeEvent_callback = None
         self._chapters = []
         self._current_chapter_idx = -1
+
         self.shared_tooltip = IDETooltip()
         self.shared_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.shared_tooltip.setWindowFlag(Qt.WindowTransparentForInput, True)
@@ -10830,6 +10855,52 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         self._restore_sidebar_layout()
         
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1000, self._check_crash_recovery)
+
+        
+    def _check_crash_recovery(self):
+        import os, json
+        from PySide6.QtWidgets import QDialog
+        
+        flag_path = os.path.join(self.engine.os_doc.get_autosave_dir(), '.clean_exit')
+        meta_path = os.path.join(self.engine.os_doc.get_autosave_dir(), 'recovery_meta.json')
+        save_path = os.path.join(self.engine.os_doc.get_autosave_dir(), 'recovery.bws')
+        
+        crashed = False
+        if not os.path.exists(flag_path) and os.path.exists(meta_path) and os.path.exists(save_path):
+            crashed = True
+            
+        if crashed:
+            try:
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                
+                proj_name = meta.get('project_name', 'Unknown')
+                timestamp = meta.get('timestamp', 'Unknown time')
+                
+                msg_text = self.txt('msg_crash_desc').format(project=proj_name, time=timestamp)
+                msg_box = WorkspaceWarningOverlay(
+                    self._stack,
+                    self.txt('msg_crash_title'),
+                    msg_text,
+                    self.txt('btn_restore'),
+                    btn_cancel_text=self.txt('btn_discard')
+                )
+                if msg_box.exec() == QDialog.Accepted:
+                    # Restore project
+                    self._on_import_project(override_path=save_path)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"Failed to check crash recovery: {e}")
+                
+        # Now that we've checked, remove the flag if it exists, so next exit must be clean to rewrite it
+        try:
+            if os.path.exists(flag_path):
+                os.remove(flag_path)
+        except Exception:
+            pass
+
     def _build_central_workspace(self):
         """
         Main container incorporating sidebars, panels, and central stack using QHBoxLayout.
@@ -11916,6 +11987,23 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             "analysis_time":  analysis_time
         }
 
+    def _build_autosave_payload(self):
+        packet = self._build_data_packet()
+        bws_extras = {
+            "drt_path": getattr(self, '_extracted_drt_path', None),
+            "media_inventory": getattr(self, '_media_inventory', []),
+            "assembly_recipe": getattr(self, '_assembly_recipe', None),
+            # In autosave we skip exactly re-computing the fingerprint to avoid DaVinci lag, it will rely on timeline name during recovery
+        }
+        
+        # Audio path is already embedded or resolved by save_worker, but we can also set it if known:
+        audio_path = None
+        if hasattr(self, '_current_audio_file'):
+            audio_path = self._current_audio_file
+        bws_extras["audio_path"] = audio_path
+            
+        return packet, bws_extras
+
     def _on_export_project(self):
         packet = self._build_data_packet()
         if not packet: return
@@ -12179,7 +12267,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         # We just show a summary
                         files_str = ""
                         for m in missing[:5]:
-                            files_str += f"• {m.get('basename', 'Unknown')}\n"
+                            files_str += f"- {m.get('basename', 'Unknown')}\n"
                         if len(missing) > 5:
                             files_str += f"... [+ {len(missing)-5}]\n"
                             
@@ -14825,6 +14913,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def closeEvent(self, event):
         msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
         if msg_box.exec() == QDialog.Accepted:
+            # Write clean exit flag
+            try:
+                import os
+                flag_path = os.path.join(self.engine.os_doc.get_autosave_dir(), '.clean_exit')
+                with open(flag_path, 'w') as f:
+                    f.write('ok')
+            except Exception:
+                pass
+                
             event.accept()
             if self.closeEvent_callback:
                 self.closeEvent_callback()
