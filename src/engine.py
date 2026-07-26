@@ -2649,7 +2649,9 @@ except Exception as e:
                         audio_track_filter = track_config.get('audio_custom', [])
                     
                     vmode = track_config.get('video_mode', 'all')
-                    if vmode == 'cust':
+                    if vmode == 'none':
+                        video_track_filter = []
+                    elif vmode == 'cust':
                         video_track_filter = track_config.get('video_custom', [])
 
                 log_info("assemble_timeline: TIER 1 — attempting DRT primary path...")

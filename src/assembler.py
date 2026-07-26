@@ -144,12 +144,13 @@ def _op_color(op):
 
 def _filter_tracks(track_vec, keep_indices, preserve_order=False):
     """Remove track Elements not in keep_indices (1-based), or clear them if preserve_order is True."""
-    if not keep_indices:
+    if keep_indices is None:
         return
     elements = track_vec.findall('Element')
     for i, el in enumerate(elements):
         if (i + 1) not in keep_indices:
-            if preserve_order:
+            # If preserve_order is True, or if we are deleting ALL tracks, keep the first one but empty
+            if preserve_order or (i == 0 and not keep_indices):
                 items_el = el.find('.//Items')
                 if items_el is not None:
                     items_el.clear()
@@ -338,6 +339,143 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# MEDIA POOL DUPLICATE CLEANUP
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _snapshot_media_pool(media_pool):
+    """
+    Walk the entire Media Pool and count occurrences of each (file_path, clip_name).
+    
+    This is used BEFORE .drt import to identify which clips already existed,
+    so we can delete the newly-created duplicates afterwards.
+    
+    We use (file_path, clip_name) as identifiers because Resolve's scripting
+    API creates new proxy objects on each GetClipList() call, making Python
+    id() unreliable for cross-call comparisons.
+    
+    Returns a dict of {(file_path, clip_name): count}.
+    """
+    from collections import Counter
+    existing = Counter()
+    
+    def _walk_folder(folder):
+        try:
+            clips = folder.GetClipList()
+            if clips:
+                for clip in clips:
+                    try:
+                        fp = clip.GetClipProperty("File Path") or ""
+                        name = clip.GetName() or ""
+                        existing[(fp, name)] += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            for sub in folder.GetSubFolderList():
+                _walk_folder(sub)
+        except Exception:
+            pass
+    
+    try:
+        root = media_pool.GetRootFolder()
+        if root:
+            _walk_folder(root)
+    except Exception as e:
+        log_error(f"_snapshot_media_pool error: {e}")
+    
+    return existing
+
+
+def _cleanup_duplicate_media(media_pool, pre_import_counts, resolve_handler):
+    """
+    After .drt import, walk the Media Pool again and compare counts.
+    Any (file_path, clip_name) key whose count increased means Resolve
+    created duplicates during the .drt import.
+    
+    CRITICAL: We do NOT delete these clips! The newly imported timeline
+    references them internally by database ID. Deleting them would cause
+    Media Offline on the assembled timeline.
+    
+    Instead, we MOVE the surplus copies to BadWords/Resources bin so they
+    don't clutter the user's carefully organized Media Pool.
+    
+    We skip Timeline-type clips (the newly imported timeline is handled separately).
+    
+    Identification is done via (file_path, clip_name) tuples with occurrence counting.
+    """
+    from collections import Counter
+    
+    # Build post-import counts and collect clip references
+    post_counts = Counter()
+    clip_registry = {}  # key -> list of (clip, folder)
+    
+    def _walk_folder(folder):
+        try:
+            clips = folder.GetClipList()
+            if clips:
+                for clip in clips:
+                    try:
+                        clip_type = clip.GetClipProperty("Type")
+                        if clip_type == "Timeline":
+                            continue
+                        
+                        fp = clip.GetClipProperty("File Path") or ""
+                        name = clip.GetName() or ""
+                        key = (fp, name)
+                        
+                        post_counts[key] += 1
+                        if key not in clip_registry:
+                            clip_registry[key] = []
+                        clip_registry[key].append((clip, folder))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            for sub in folder.GetSubFolderList():
+                _walk_folder(sub)
+        except Exception:
+            pass
+    
+    try:
+        root = media_pool.GetRootFolder()
+        if root:
+            _walk_folder(root)
+    except Exception as e:
+        log_error(f"_cleanup_duplicate_media walk error: {e}")
+        return
+    
+    # Find keys where count increased (duplicates created by import)
+    to_move = []
+    for key, post_count in post_counts.items():
+        pre_count = pre_import_counts.get(key, 0)
+        surplus = post_count - pre_count
+        if surplus > 0:
+            # Move the LAST 'surplus' clips for this key (most recently added)
+            entries = clip_registry.get(key, [])
+            for clip, folder in entries[-surplus:]:
+                to_move.append(clip)
+    
+    if not to_move:
+        log_info("drt_cleanup: no duplicate media clips found after import.")
+        return
+    
+    # Move duplicates to BadWords/Resources bin instead of deleting
+    resources_bin = resolve_handler.get_badwords_resources_bin()
+    if not resources_bin:
+        log_error("drt_cleanup: could not get BadWords/Resources bin, skipping cleanup.")
+        return
+    
+    log_info(f"drt_cleanup: moving {len(to_move)} imported source clip(s) to BadWords/Resources...")
+    try:
+        media_pool.MoveClips(to_move, resources_bin)
+        log_info(f"drt_cleanup: moved {len(to_move)} clip(s) to BadWords/Resources.")
+    except Exception as move_err:
+        log_error(f"drt_cleanup: MoveClips to Resources failed: {move_err}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HIGH-LEVEL ORCHESTRATOR
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -420,7 +558,15 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
         repack_drt(unpack_dir, cut_drt_path)
         time.sleep(0.05)
 
-        # ── Step 5: Import modified .drt ──────────────────────────────────────
+        # ── Step 5: Snapshot Media Pool BEFORE import ─────────────────────────
+        # .drt import does NOT support importSourceClips:false, so Resolve will
+        # re-import every referenced source file as a new Media Pool clip.
+        # We snapshot existing clips beforehand and delete the duplicates after.
+        log_info("drt_assemble: snapshotting Media Pool before import...")
+        pre_import_clips = _snapshot_media_pool(resolve_handler.media_pool)
+        log_info(f"drt_assemble: pre-import snapshot: {len(pre_import_clips)} clip(s)")
+
+        # ── Step 6: Import modified .drt ──────────────────────────────────────
         log_info(f"drt_assemble: importing modified .drt...")
 
         # Reset to root folder for clean import
@@ -435,7 +581,16 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
             log_error("drt_assemble: ImportTimelineFromFile returned None.")
             return False, {}, None
 
-        # ── Step 6: Rename (importOptions not valid for .drt) ─────────────────
+        # ── Step 7: Move duplicate media clips to BadWords/Resources ─────────
+        # .drt import creates new MediaPoolItems for all referenced source files.
+        # We can't delete them (timeline references them by DB ID → Media Offline).
+        # Instead, move them to BadWords/Resources to keep the user's bins clean.
+        try:
+            _cleanup_duplicate_media(resolve_handler.media_pool, pre_import_clips, resolve_handler)
+        except Exception as cleanup_err:
+            log_error(f"drt_assemble: duplicate cleanup error: {cleanup_err}")
+
+        # ── Step 8: Rename (importOptions not valid for .drt) ─────────────────
         actual_name = new_tl.GetName()
         log_info(f"drt_assemble: imported as '{actual_name}', renaming to '{new_tl_name}'...")
         try:
@@ -446,7 +601,7 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
             log_error(f"drt_assemble: SetName failed: {rename_err}")
             # Continue with original name — not fatal
 
-        # ── Step 7: Move to BadWords bin ──────────────────────────────────────
+        # ── Step 9: Move to BadWords bin ──────────────────────────────────────
         bw_bin = resolve_handler.get_badwords_root_bin()
         if bw_bin:
             try:

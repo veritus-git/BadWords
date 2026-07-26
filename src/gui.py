@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
     QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
     QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup
+    QTabWidget, QSpinBox, QButtonGroup, QLayout
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
@@ -204,6 +204,101 @@ class QPushButton(_QPushButton):
         painter.setPen(color)
         draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
         painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
+
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, margin=-1, hSpacing=-1, vSpacing=-1):
+        super().__init__(parent)
+        if margin != -1: self.setContentsMargins(margin, margin, margin, margin)
+        self.m_hSpace = hSpacing
+        self.m_vSpace = vSpacing
+        self.itemList = []
+    def addItem(self, item): self.itemList.append(item)
+    def horizontalSpacing(self): return self.m_hSpace if self.m_hSpace >= 0 else self.spacing()
+    def verticalSpacing(self): return self.m_vSpace if self.m_vSpace >= 0 else self.spacing()
+    def count(self): return len(self.itemList)
+    def itemAt(self, index): return self.itemList[index] if 0 <= index < len(self.itemList) else None
+    def takeAt(self, index):
+        if 0 <= index < len(self.itemList): return self.itemList.pop(index)
+        return None
+    def expandingDirections(self): return Qt.Orientations(0)
+    def hasHeightForWidth(self): return True
+    def heightForWidth(self, width): return self.doLayout(QRect(0, 0, width, 0), True)
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self.doLayout(rect, False)
+    def sizeHint(self):
+        w = self.parentWidget().width() if self.parentWidget() else 0
+        if w > 0:
+            return QSize(w, self.heightForWidth(w))
+        return self.minimumSize()
+    def minimumSize(self):
+        size = QSize()
+        for item in self.itemList: size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+    def doLayout(self, rect, testOnly):
+        x = rect.x()
+        y = rect.y()
+        lineHeight = 0
+        for item in self.itemList:
+            wid = item.widget()
+            spaceX = self.horizontalSpacing()
+            if spaceX == -1: spaceX = wid.style().layoutSpacing(QSizePolicy.PushButton, QSizePolicy.PushButton, Qt.Horizontal)
+            spaceY = self.verticalSpacing()
+            if spaceY == -1: spaceY = wid.style().layoutSpacing(QSizePolicy.PushButton, QSizePolicy.PushButton, Qt.Vertical)
+            nextX = x + item.sizeHint().width() + spaceX
+            if nextX - spaceX > rect.right() and lineHeight > 0:
+                x = rect.x()
+                y = y + lineHeight + spaceY
+                nextX = x + item.sizeHint().width() + spaceX
+                lineHeight = 0
+            if not testOnly: item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+            x = nextX
+            lineHeight = max(lineHeight, item.sizeHint().height())
+        return y + lineHeight - rect.y()
+
+class MainPanelWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layer1 = QWidget(self)
+        self.layer2 = QWidget(self)
+        self.layer2.setObjectName("Layer2Overlay")
+        self.layer2.setStyleSheet("QWidget#Layer2Overlay { background-color: transparent; border: none; }")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        self._shadow = QGraphicsDropShadowEffect(self.layer2)
+        self._shadow.setBlurRadius(15)
+        self._shadow.setColor(QColor(0, 0, 0, 0))
+        self._shadow.setOffset(0, -2)
+        self.layer2.setGraphicsEffect(self._shadow)
+        self._is_overlapping = False
+        
+    def resizeEvent(self, event):
+        if event is not None:
+            super().resizeEvent(event)
+        self.layer1.setGeometry(0, 0, self.width(), self.height())
+        hint = self.layer2.sizeHint()
+        if self.layer2.layout():
+            hint = self.layer2.layout().sizeHint()
+        self.layer2.setGeometry(0, self.height() - hint.height(), self.width(), hint.height())
+        
+        # Dynamic overlap check
+        l1_hint = self.layer1.layout().sizeHint().height() if self.layer1.layout() else 0
+        overlap = (l1_hint + hint.height() + 20) > self.height()
+        if overlap != getattr(self, '_is_overlapping', False):
+            self._is_overlapping = overlap
+            if overlap:
+                self.layer2.setStyleSheet("QWidget#Layer2Overlay { background-color: #212121; border-top: 1px solid #2e2e2e; }")
+                self._shadow.setColor(QColor(0, 0, 0, 90))
+            else:
+                self.layer2.setStyleSheet("QWidget#Layer2Overlay { background-color: transparent; border: none; }")
+                self._shadow.setColor(QColor(0, 0, 0, 0))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self.resizeEvent(None))
 
 
 _QRadioButton = QRadioButton
@@ -6075,6 +6170,17 @@ class AssembleSplitButton(QFrame):
             """)
 
 
+class _FlowListWidget(QWidget):
+    def resizeEvent(self, event):
+        if event is not None:
+            super().resizeEvent(event)
+        if getattr(self, '_bypass_min_height', False):
+            return
+        if self.layout() and hasattr(self.layout(), 'heightForWidth'):
+            h = self.layout().heightForWidth(self.width())
+            if self.minimumHeight() != h:
+                self.setMinimumHeight(h)
+
 class TrackOptionsDrawer(QWidget):
     def __init__(self, parent_gui, engine, parent=None):
         super().__init__(parent)
@@ -6132,9 +6238,11 @@ class TrackOptionsDrawer(QWidget):
             }
         """)
         self.scroll_area.setWidget(self.inner_frame)
-        self.scroll_area.setAlignment(Qt.AlignTop)
+        self.scroll_area.setAlignment(Qt.AlignBottom)
 
         inner_layout = QVBoxLayout(self.inner_frame)
+        inner_layout.setSizeConstraint(QVBoxLayout.SetMinAndMaxSize)
+        inner_layout.setAlignment(Qt.AlignBottom)
         inner_layout.setContentsMargins(10, 6, 10, 8)
         inner_layout.setSpacing(4)
 
@@ -6184,34 +6292,18 @@ class TrackOptionsDrawer(QWidget):
         # Query project audio & video tracks
         audio_tracks, video_tracks = self._get_project_tracks()
 
-        cols_per_row = 6
-
-        self.w_a_cust_list = QScrollArea()
-        self.w_a_cust_list.setFrameShape(QFrame.NoFrame)
-        self.w_a_cust_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.w_a_cust_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.w_a_cust_list.setWidgetResizable(True)
+        self.w_a_cust_list = _FlowListWidget()
         self.w_a_cust_list.setMaximumHeight(0)
         self.w_a_cust_list.setStyleSheet("background: transparent; border: none;")
         
-        a_inner = QWidget()
-        a_inner.setStyleSheet("background: transparent; border: none;")
-        grid_a = QGridLayout(a_inner)
-        grid_a.setAlignment(Qt.AlignTop)
-        grid_a.setContentsMargins(8, 4, 2, 4)
-        grid_a.setHorizontalSpacing(14)
-        grid_a.setVerticalSpacing(4)
-        self.w_a_cust_list.setWidget(a_inner)
+        grid_a = FlowLayout(self.w_a_cust_list, margin=4, hSpacing=14, vSpacing=4)
         self.a_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(audio_tracks):
-            row = i // cols_per_row
-            col = i % cols_per_row
             cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
             cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
-            grid_a.addWidget(cb, row, col)
+            grid_a.addWidget(cb)
             self.a_track_checkboxes[idx] = cb
-        grid_a.setColumnStretch(cols_per_row, 1)
         inner_layout.addWidget(self.w_a_cust_list)
 
         inner_layout.addSpacing(2)
@@ -6220,37 +6312,25 @@ class TrackOptionsDrawer(QWidget):
         inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_video_tracks')))
 
         self.tgl_v_all = ToggleSwitch()
+        self.tgl_v_none = ToggleSwitch()
         self.tgl_v_cust = ToggleSwitch()
 
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
+        inner_layout.addWidget(make_toggle_row("No tracks", self.tgl_v_none))
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
 
-        self.w_v_cust_list = QScrollArea()
-        self.w_v_cust_list.setFrameShape(QFrame.NoFrame)
-        self.w_v_cust_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.w_v_cust_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.w_v_cust_list.setWidgetResizable(True)
+        self.w_v_cust_list = _FlowListWidget()
         self.w_v_cust_list.setMaximumHeight(0)
         self.w_v_cust_list.setStyleSheet("background: transparent; border: none;")
         
-        v_inner = QWidget()
-        v_inner.setStyleSheet("background: transparent; border: none;")
-        grid_v = QGridLayout(v_inner)
-        grid_v.setAlignment(Qt.AlignTop)
-        grid_v.setContentsMargins(8, 4, 2, 4)
-        grid_v.setHorizontalSpacing(14)
-        grid_v.setVerticalSpacing(4)
-        self.w_v_cust_list.setWidget(v_inner)
+        grid_v = FlowLayout(self.w_v_cust_list, margin=4, hSpacing=14, vSpacing=4)
         self.v_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(video_tracks):
-            row = i // cols_per_row
-            col = i % cols_per_row
             cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
             cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
-            grid_v.addWidget(cb, row, col)
+            grid_v.addWidget(cb)
             self.v_track_checkboxes[idx] = cb
-        grid_v.setColumnStretch(cols_per_row, 1)
         inner_layout.addWidget(self.w_v_cust_list)
 
         self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
@@ -6258,9 +6338,18 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_a_cust.toggled.connect(lambda c: self._update_a_radios('cust', c))
 
         self.tgl_v_all.toggled.connect(lambda c: self._update_v_radios('all', c))
+        self.tgl_v_none.toggled.connect(lambda c: self._update_v_radios('none', c))
         self.tgl_v_cust.toggled.connect(lambda c: self._update_v_radios('cust', c))
 
         self.load_config()
+
+    def sizeHint(self):
+        from PySide6.QtCore import QSize
+        if not self.is_expanded:
+            return QSize(self.width(), 0)
+        if getattr(self, '_is_animating', False):
+            return QSize(self.width(), self.maximumHeight())
+        return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
 
     def toggle_expand(self):
         self.is_expanded = not self.is_expanded
@@ -6277,42 +6366,36 @@ class TrackOptionsDrawer(QWidget):
         a_cust_visible = self.tgl_a_cust.isChecked()
         v_cust_visible = self.tgl_v_cust.isChecked()
 
-        # 1. Save start heights
-        a_cust_start = self.w_a_cust_list.maximumHeight()
-        v_cust_start = self.w_v_cust_list.maximumHeight()
-        drawer_start = self.maximumHeight()
+        a_cust_start = self.w_a_cust_list.height()
+        v_cust_start = self.w_v_cust_list.height()
+        drawer_start = self.height()
 
-        # 2. Get full heights of the inner widgets
-        a_inner = self.w_a_cust_list.widget()
-        v_inner = self.w_v_cust_list.widget()
-        a_inner.layout().activate()
-        v_inner.layout().activate()
-        a_cust_full_h = a_inner.sizeHint().height()
-        v_cust_full_h = v_inner.sizeHint().height()
+        a_cust_target = self.w_a_cust_list.layout().sizeHint().height() if a_cust_visible else 0
+        v_cust_target = self.w_v_cust_list.layout().sizeHint().height() if v_cust_visible else 0
 
-        # 3. Target heights for sublists
-        a_cust_target = a_cust_full_h if a_cust_visible else 0
-        v_cust_target = v_cust_full_h if v_cust_visible else 0
-
-        # 4. Measure drawer target height by temporarily applying targets
+        # Temporarily apply target heights to measure drawer target
+        self.w_a_cust_list._bypass_min_height = True
+        self.w_v_cust_list._bypass_min_height = True
+        self.w_a_cust_list.setMinimumHeight(0)
+        self.w_v_cust_list.setMinimumHeight(0)
+        
         self.w_a_cust_list.setMaximumHeight(a_cust_target)
         self.w_v_cust_list.setMaximumHeight(v_cust_target)
         self.inner_frame.layout().activate()
-        
-        # Add 2px for the QScrollArea border on the outer drawer
         drawer_target = self.inner_frame.sizeHint().height() + 2 if self.is_expanded else 0
-
-        # 5. RESTORE start heights so the animation plays from start to target!
+        
+        # Restore starting heights
         self.w_a_cust_list.setMaximumHeight(a_cust_start)
         self.w_v_cust_list.setMaximumHeight(v_cust_start)
-        self.setMaximumHeight(drawer_start)
-        self.inner_frame.layout().activate()
 
-        # 6. Play Animations
-        if getattr(self, '_anim_group', None) and self._anim_group.state() == QParallelAnimationGroup.Running:
+        if getattr(self, '_anim_group', None) and self._anim_group.state() == QPropertyAnimation.Running:
             self._anim_group.stop()
 
         self._anim_group = QParallelAnimationGroup(self)
+        
+        def _update_overlay():
+            if hasattr(self.parent_gui, 'p_main'):
+                self.parent_gui.p_main.resizeEvent(None)
 
         if drawer_start != drawer_target:
             anim_drawer_max = QPropertyAnimation(self, b"maximumHeight", self)
@@ -6320,8 +6403,9 @@ class TrackOptionsDrawer(QWidget):
             anim_drawer_max.setStartValue(drawer_start)
             anim_drawer_max.setEndValue(drawer_target)
             anim_drawer_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_drawer_max.valueChanged.connect(lambda _: _update_overlay())
             self._anim_group.addAnimation(anim_drawer_max)
-            
+
             anim_drawer_min = QPropertyAnimation(self, b"minimumHeight", self)
             anim_drawer_min.setDuration(350)
             anim_drawer_min.setStartValue(drawer_start)
@@ -6336,13 +6420,6 @@ class TrackOptionsDrawer(QWidget):
             anim_a_max.setEndValue(a_cust_target)
             anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
             self._anim_group.addAnimation(anim_a_max)
-            
-            anim_a_min = QPropertyAnimation(self.w_a_cust_list, b"minimumHeight", self)
-            anim_a_min.setDuration(350)
-            anim_a_min.setStartValue(a_cust_start)
-            anim_a_min.setEndValue(a_cust_target)
-            anim_a_min.setEasingCurve(QEasingCurve.InOutCubic)
-            self._anim_group.addAnimation(anim_a_min)
 
         if v_cust_start != v_cust_target:
             anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
@@ -6351,15 +6428,26 @@ class TrackOptionsDrawer(QWidget):
             anim_v_max.setEndValue(v_cust_target)
             anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
             self._anim_group.addAnimation(anim_v_max)
-            
-            anim_v_min = QPropertyAnimation(self.w_v_cust_list, b"minimumHeight", self)
-            anim_v_min.setDuration(350)
-            anim_v_min.setStartValue(v_cust_start)
-            anim_v_min.setEndValue(v_cust_target)
-            anim_v_min.setEasingCurve(QEasingCurve.InOutCubic)
-            self._anim_group.addAnimation(anim_v_min)
 
+        self._is_animating = True
         self._anim_group.start()
+        
+        def _on_finish():
+            self._is_animating = False
+            if self.is_expanded:
+                self.setMaximumHeight(16777215)
+                self.setMinimumHeight(0)
+            if a_cust_visible:
+                self.w_a_cust_list._bypass_min_height = False
+                self.w_a_cust_list.setMaximumHeight(16777215)
+                self.w_a_cust_list.resizeEvent(None)
+            if v_cust_visible:
+                self.w_v_cust_list._bypass_min_height = False
+                self.w_v_cust_list.setMaximumHeight(16777215)
+                self.w_v_cust_list.resizeEvent(None)
+            _update_overlay()
+            
+        self._anim_group.finished.connect(_on_finish)
 
     def load_config(self):
         self._block_signals = True
@@ -6391,12 +6479,12 @@ class TrackOptionsDrawer(QWidget):
                     cb.setChecked(True)
 
             if amode == 'cust':
-                self.w_a_cust_list.setMaximumHeight(self.w_a_cust_list.widget().sizeHint().height())
+                self.w_a_cust_list.setMaximumHeight(16777215)
             else:
                 self.w_a_cust_list.setMaximumHeight(0)
                 
             if vmode == 'cust':
-                self.w_v_cust_list.setMaximumHeight(self.w_v_cust_list.widget().sizeHint().height())
+                self.w_v_cust_list.setMaximumHeight(16777215)
             else:
                 self.w_v_cust_list.setMaximumHeight(0)
         finally:
@@ -6410,7 +6498,8 @@ class TrackOptionsDrawer(QWidget):
         elif self.tgl_a_cust.isChecked(): amode = 'cust'
 
         vmode = 'all'
-        if self.tgl_v_cust.isChecked(): vmode = 'cust'
+        if self.tgl_v_none.isChecked(): vmode = 'none'
+        elif self.tgl_v_cust.isChecked(): vmode = 'cust'
 
         a_custom = [i for i, cb in getattr(self, 'a_track_checkboxes', {}).items() if cb.isChecked()]
         v_custom = [i for i, cb in getattr(self, 'v_track_checkboxes', {}).items() if cb.isChecked()]
@@ -6510,13 +6599,14 @@ class TrackOptionsDrawer(QWidget):
         if getattr(self, '_block_signals', False):
             return
         if not checked:
-            if not (self.tgl_v_all.isChecked() or self.tgl_v_cust.isChecked()):
+            if not (self.tgl_v_all.isChecked() or self.tgl_v_none.isChecked() or self.tgl_v_cust.isChecked()):
                 self.tgl_v_all.setChecked(True)
                 return
         else:
             self._block_signals = True
             try:
                 if src != 'all': self.tgl_v_all.setChecked(False)
+                if src != 'none': self.tgl_v_none.setChecked(False)
                 if src != 'cust': self.tgl_v_cust.setChecked(False)
             finally:
                 self._block_signals = False
@@ -10784,8 +10874,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.activities["fillers"] = _wrap_activity(p_fillers)
 
         # D. main_panel
-        p_main = QWidget()
-        l_main = QVBoxLayout(p_main)
+        p_main = MainPanelWidget()
+        l_main = QVBoxLayout(p_main.layer1)
         l_main.setContentsMargins(15, 15, 15, 15)
         l_main.setSpacing(10)
         
@@ -10822,25 +10912,27 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Middle
         l_main.addStretch(1)
         
+        l_layer2 = QVBoxLayout(p_main.layer2)
+        l_layer2.setContentsMargins(15, 10, 15, 15)
+        l_layer2.setSpacing(10)
+        l_layer2.setAlignment(Qt.AlignBottom)
         
         # Analysis duration label
         self.lbl_analysis_duration = QLabel("")
         self.lbl_analysis_duration.setStyleSheet("color: #a0a0a0; font-size: 9pt; font-style: italic;")
         self.lbl_analysis_duration.setAlignment(Qt.AlignCenter)
         self.lbl_analysis_duration.setVisible(False)
-        l_main.addWidget(self.lbl_analysis_duration)
+        l_layer2.addWidget(self.lbl_analysis_duration)
         
         # Favorites section
         self.lbl_pinned_favorites = QLabel(self.txt("lbl_pinned_favorites"))
         self.lbl_pinned_favorites.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
         self.lbl_pinned_favorites.setVisible(False)  # Hidden until at least one favorite is pinned
-        l_main.addWidget(self.lbl_pinned_favorites)
+        l_layer2.addWidget(self.lbl_pinned_favorites)
         
         self.layout_favorites = QVBoxLayout()
         self.layout_favorites.setSpacing(10)
-        l_main.addLayout(self.layout_favorites)
-        
-        # Bottom Section removed!
+        l_layer2.addLayout(self.layout_favorites)
         
         row_proj = QHBoxLayout()
         self.btn_import_proj = QPushButton(self.txt("btn_import_project"))
@@ -10849,7 +10941,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_export_proj.setCursor(Qt.CursorShape.PointingHandCursor)
         row_proj.addWidget(self.btn_import_proj)
         row_proj.addWidget(self.btn_export_proj)
-        l_main.addLayout(row_proj)
+        l_layer2.addLayout(row_proj)
+        
         layout_assemble_group = QVBoxLayout()
         layout_assemble_group.setContentsMargins(0, 0, 0, 0)
         layout_assemble_group.setSpacing(0)
@@ -10859,11 +10952,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         self.w_track_options = TrackOptionsDrawer(self, self.engine)
         layout_assemble_group.addWidget(self.w_track_options)
-        self.btn_assemble.toggleDrawerClicked.connect(self.w_track_options.toggle_expand)
+        self.btn_assemble.toggleDrawerClicked.connect(lambda: [self.w_track_options.toggle_expand(), p_main.resizeEvent(None)])
 
-        l_main.addLayout(layout_assemble_group)
+        l_layer2.addLayout(layout_assemble_group)
         
         self._build_marker_radio_buttons()
+        self.p_main = p_main
         self.activities["main_panel"] = _wrap_activity(p_main)
         
         self._favorite_proxies = {}
@@ -11899,6 +11993,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             # Hide label if no favorites left
             if hasattr(self, 'lbl_pinned_favorites'):
                 self.lbl_pinned_favorites.setVisible(len(self._favorite_proxies) > 0)
+            # Update layer2 size
+            if hasattr(self, 'p_main'):
+                self.p_main.resizeEvent(None)
         else:
             # --- ADD favorite ---
             from PySide6.QtWidgets import QWidget as _QWidget
@@ -11942,6 +12039,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             # Show label when first favorite is added
             if hasattr(self, 'lbl_pinned_favorites'):
                 self.lbl_pinned_favorites.setVisible(True)
+            # Update layer2 size
+            if hasattr(self, 'p_main'):
+                self.p_main.resizeEvent(None)
 
     def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
