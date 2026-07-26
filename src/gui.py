@@ -65,7 +65,7 @@ _orig_set_style_sheet = QWidget.setStyleSheet
 def _scaled_set_style_sheet(self, qss):
     import platform, re
     if platform.system() == "Darwin" and qss and isinstance(qss, str):
-        # Scale pt to px using 1.333 ratio (Windows standard) so proportions match exactly
+        # Scale pt to px using 1.333 ratio
         qss = re.sub(r'font-size:\s*([\d\.]+)pt;', lambda m: f"font-size: {int(float(m.group(1)) * 1.333)}px;", qss)
     _orig_set_style_sheet(self, qss)
 QWidget.setStyleSheet = _scaled_set_style_sheet
@@ -11045,8 +11045,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             target_splitter.show()
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
-                # 15% of window width closely matches the visual proportion on 1920x1080 displays
-                target_w = max(180, min(300, int(self.width() * 0.15)))
+                # 14.58% perfectly matches 280px on a 1920px display
+                target_w = max(180, min(300, int(self.width() * (280.0 / 1920.0))))
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
                     sizes[0] = target_w
