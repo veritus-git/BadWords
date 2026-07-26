@@ -4170,7 +4170,11 @@ class CustomTitleBar(QWidget):
         # the window if startSystemMove is called while maximized, providing seamless 
         # cursor proportional attachment and edge-snapping (Aero Snap) out of the box.
         if hasattr(win, 'windowHandle') and win.windowHandle():
-            win.windowHandle().startSystemMove()
+            try:
+                win.windowHandle().startSystemMove()
+            except Exception as e:
+                import osdoc
+                osdoc.log_info(f"startSystemMove error: {e}")
 
         event.accept()
 
@@ -4206,7 +4210,13 @@ class ResizeGrip(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.window().windowHandle().startSystemResize(self.edge)
+            win = self.window()
+            if hasattr(win, 'windowHandle') and win.windowHandle():
+                try:
+                    win.windowHandle().startSystemResize(self.edge)
+                except Exception as e:
+                    import osdoc
+                    osdoc.log_info(f"startSystemResize error: {e}")
             event.accept()
 
 class FramelessWindowMixin:
