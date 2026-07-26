@@ -2037,11 +2037,15 @@ class AudioPreviewWidget(QFrame):
                 self.toggle_tab.hide()
             return
         
-        pw = parent.width()
         tw = self.toggle_tab.width()
         th = self.toggle_tab.height()
         
-        target_x = (pw - tw) // 2
+        if hasattr(self, 'btn_play') and self.btn_play.isVisible():
+            center_pt = self.btn_play.mapTo(parent, self.btn_play.rect().center())
+            target_x = center_pt.x() - (tw // 2)
+        else:
+            target_x = (parent.width() - tw) // 2
+            
         target_y = self.y() - th
         
         self.toggle_tab.move(target_x, target_y)

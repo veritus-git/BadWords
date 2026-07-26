@@ -334,9 +334,10 @@ def main():
         os_doc = osdoc.OSDoctor()
         osdoc.log_info("=== Starting BadWords ===")
 
-        import os
-        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+        if not os_doc.is_mac:
+            import os
+            os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
