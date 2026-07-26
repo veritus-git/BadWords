@@ -982,7 +982,7 @@ TRANS = {
         "msg_transcription_source": "BadWords - Source Timeline: <i>{tl}</i> - Tracks: <i>{tr}</i>",
         "txt_all": "All",
         "lbl_xml_preserve_track_order": "Preserve original tracks order",
-        "tt_xml_preserve_track_order": "Maintains original track numbers for both audio and video tracks (e.g. A3 stays A3, V2 stays V2).\nIf disabled, tracks are placed sequentially starting\nfrom 1.",
+        "tt_xml_preserve_track_order": "Maintains original track numbers for both audio and video tracks (e.g. A3 stays A3, V2 stays V2).\nIf disabled, tracks are placed sequentially starting from 1.",
         "status_assembly_xml_build": "Building XML assembly...",
         "status_assembly_xml_import": "Importing XML timeline...",
         "status_assembly_colors": "Applying clip colors...",

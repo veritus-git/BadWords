@@ -831,20 +831,7 @@ except Exception as e:
             log_error(f"normalize_audio: FFmpeg failed, returning original: {e}")
             return input_path
     
-    def create_slow_motion_audio(self, input_path, speed_factor):
-        # STAGE 9 FIX: Single atempo filter (speed_factor driven by caller).
-        # Multi-chained atempo was compounding distortion; one pass is cleaner.
-        base, ext = os.path.splitext(input_path)
-        slow_path = f"{base}_slow{ext}"
-        filter_chain = f"atempo={speed_factor}"
-        cmd = [self.ffmpeg_cmd, "-y", "-i", input_path, "-filter:a", filter_chain, "-vn", slow_path]
-        try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=True, **self.os_doc.get_subprocess_kwargs())
-            return slow_path
-        except Exception as e:
-            log_error(f"Slow Motion Generation Failed: {e}")
-            return input_path
+
 
     def _extract_audio_direct(self, source_info, output_wav_path, callback_status=None):
         """
@@ -1211,7 +1198,7 @@ except Exception as e:
           2. normalize_audio() — identical filter chain.
           3. detect_silence(min_dur=0.2) — same threshold as transcription path,
              eliminates false positives from sub-100ms micro-pauses.
-          4. Timestamps are scaled back by SLOW_FACTOR so meta_global_silence
+
              is always in real (source) time for calculate_timeline_structure.
         """
         def update_status(msg):
@@ -1220,11 +1207,8 @@ except Exception as e:
             if callback_progress: callback_progress(val)
 
         wav_path      = None
-        slow_wav      = None
-        normalized_wav = None
 
-        # Mirror the same constants used in run_analysis_pipeline
-        SLOW_FACTOR = 0.90
+        normalized_wav = None
 
         try:
             threshold_db = settings.get('threshold_db', -42.0)
@@ -1295,17 +1279,8 @@ except Exception as e:
 
             update_progress(25)
 
-            # STEP 1: Slow motion — identical to run_analysis_pipeline.
-            # Stretches silence windows so FFmpeg can detect them with the same
-            # precision as the transcription path.
-            update_status(self.txt("status_slow"))
-            slow_wav = self.create_slow_motion_audio(wav_path, SLOW_FACTOR)
-            analysis_wav = slow_wav if slow_wav != wav_path else wav_path
-
-            update_progress(40)
-
-            # STEP 2: Normalize — same filter chain as transcription path.
-            normalized_wav = self.normalize_audio(analysis_wav)
+            # STEP 1: Normalize — prepare audio for silence detection
+            normalized_wav = self.normalize_audio(wav_path)
             target_wav = normalized_wav
 
             update_progress(55)
@@ -1315,15 +1290,7 @@ except Exception as e:
             # Both min_dur and threshold_db are now read from settings, so the user
             # can tune them from the GUI without touching engine code.
             min_silence_dur = settings.get('silence_min_dur', 0.2)
-            raw_silences_slow = self.detect_silence(target_wav, threshold_db, min_silence_dur)
-
-            # STEP 4: Scale timestamps back to real (source) time.
-            # slow_wav stretches all timestamps by 1/SLOW_FACTOR; we must invert
-            # this so that meta_global_silence is aligned with the original timeline.
-            raw_silences = [
-                {'s': s['s'] * SLOW_FACTOR, 'e': s['e'] * SLOW_FACTOR}
-                for s in raw_silences_slow
-            ]
+            raw_silences = self.detect_silence(target_wav, threshold_db, min_silence_dur)
 
             update_progress(75)
             update_status(self.txt("status_process"))
@@ -1342,19 +1309,16 @@ except Exception as e:
                         curr = dict(next_s)
                 bridged.append(curr)
 
+            # --- Compute audio duration from the physical WAV file ---
+            duration_s = self._get_audio_duration(wav_path)
+
             # Apply padding to each detected silence
             padded_silences = []
             for s in bridged:
-                new_start = s['s'] + padding_s
-                new_end   = s['e'] - padding_s
+                new_start = s['s'] if s['s'] < 0.01 else s['s'] + padding_s
+                new_end   = s['e'] if s['e'] >= duration_s or abs(s['e'] - duration_s) < 0.01 else s['e'] - padding_s
                 if new_end > new_start:
                     padded_silences.append({'s': new_start, 'e': new_end})
-
-            # --- Compute audio duration from Resolve timeline ---
-            fps = self.resolve_handler.fps
-            tl_start = self.resolve_handler.get_timeline_start_frame()
-            tl_end = self.resolve_handler.timeline.GetEndFrame()
-            duration_s = (tl_end - tl_start) / fps
 
             # Single fake word that spans the entire audio;
             # calculate_timeline_structure will use meta_global_silence for precise cuts.
@@ -1380,8 +1344,8 @@ except Exception as e:
             log_error(f"run_fast_silence_pipeline error: {traceback.format_exc()}")
             return None, None
         finally:
-            # Cleanup temp files safely (slow_wav is an extra file to clean up)
-            for p in [normalized_wav, slow_wav, wav_path]:
+            # Cleanup temp files safely
+            for p in [normalized_wav, wav_path]:
                 if p and p != wav_path and os.path.exists(p):
                     try: os.remove(p)
                     except Exception as e:
@@ -1511,8 +1475,7 @@ except Exception as e:
             fps = self.resolve_handler.fps
             txt_inaudible = "inaudible"
             
-            USE_SLOW_MODE = False 
-            SLOW_FACTOR = 0.90  # STAGE 9 FIX: 10% slowdown only; deep slow destroys phonetic transients
+
             
             unique_id = f"BW_{int(time.time())}"
             update_progress(10)
@@ -1578,16 +1541,8 @@ except Exception as e:
             
             update_progress(50)
 
-            # 1. SLOW DOWN
+            # 1. NO SLOW DOWN (Removed per user request)
             current_wav_path = wav_path
-            time_scale_correction = 1.0
-            
-            if USE_SLOW_MODE:
-                update_status(self.txt("status_slow"))
-                slow_wav = self.create_slow_motion_audio(wav_path, SLOW_FACTOR)
-                if slow_wav != wav_path:
-                    current_wav_path = slow_wav
-                    time_scale_correction = SLOW_FACTOR
             
             update_progress(75)
 
@@ -1672,11 +1627,15 @@ except Exception as e:
             update_status(self.txt("status_process"))
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+                
+            # Compute real timeline duration from the original wav file
+            duration_s = self._get_audio_duration(wav_path)
 
             words_data, segments_data = self._build_data_structure(
                 data, silence_ranges, filler_words, fps, 
-                txt_inaudible, time_scale_correction,
-                expected_script=expected_script
+                txt_inaudible,
+                expected_script=expected_script,
+                audio_duration=duration_s
             )
             
             if final_audio and os.path.exists(final_audio) and words_data:
@@ -1783,13 +1742,12 @@ except Exception as e:
 
 
     def _build_data_structure(self, json_data, silence_ranges, filler_words, fps, 
-                              txt_inaudible="inaudible", time_scale_correction=1.0,
-                              expected_script=None):
+                              txt_inaudible="inaudible",
+                              expected_script=None, audio_duration=None):
         prefs = self.os_doc.get_all_prefs()
         temp_words = []
         dynamic_bad = [w.lower().strip() for w in filler_words]
         
-        def fix_t(t): return t * time_scale_correction
         def clean_word(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
         def clean_for_match(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
 
@@ -1897,8 +1855,8 @@ except Exception as e:
         for chunk in chunks:
             if not chunk: continue
             
-            seg_start = fix_t(chunk[0].get('start', 0))
-            seg_end = fix_t(chunk[-1].get('end', 0))
+            seg_start = chunk[0].get('start', 0)
+            seg_end = chunk[-1].get('end', 0)
             is_first = True
             
             for w in chunk:
@@ -1908,8 +1866,8 @@ except Exception as e:
                 
                 if cleaned or is_hallucination:
                     is_bad = cleaned in dynamic_bad
-                    real_start = fix_t(w['start'])
-                    real_end = fix_t(w['end'])
+                    real_start = w['start']
+                    real_end = w['end']
                     
                     status = "bad" if is_bad else None
                     
@@ -1946,7 +1904,7 @@ except Exception as e:
         scaled_silence = []
         if silence_ranges:
             for s in silence_ranges:
-                scaled_silence.append({'s': fix_t(s['s']), 'e': fix_t(s['e'])})
+                scaled_silence.append({'s': s['s'], 'e': s['e']})
         
         if scaled_silence:
             bridged = []
@@ -1960,11 +1918,18 @@ except Exception as e:
             bridged.append(curr)
             scaled_silence = bridged
 
+        pad_s = prefs.get('ui_spin_pad', 0.05)
         if scaled_silence:
             padded = []
             for s in scaled_silence:
-                new_start = s['s'] + 0.05
-                new_end = s['e'] - 0.05
+                new_start = s['s'] if s['s'] < 0.01 else s['s'] + pad_s
+                
+                new_end = s['e']
+                if audio_duration is not None and (s['e'] >= audio_duration or abs(s['e'] - audio_duration) < 0.01):
+                    pass # Touching absolute end, do not pad
+                else:
+                    new_end -= pad_s
+                    
                 if new_end > new_start:
                     padded.append({'s': new_start, 'e': new_end})
             scaled_silence = padded
@@ -2078,7 +2043,7 @@ except Exception as e:
         if not words_data: return ops
 
         offset_s = settings.get('offset', -0.05)
-        pad_s = settings.get('pad', 0.05)
+        pad_s = settings.get('ui_spin_pad', 0.05)
         snap_max_s = settings.get('snap_max', 0.25)
         
         do_silence_cut = settings.get('silence_cut', False)
@@ -2194,14 +2159,9 @@ except Exception as e:
             else:
                 # FIX #2 (TAIL SILENCE): Last block must extend to the actual end
                 # of the source audio, not just the last word's timestamp.
-                # If a track duration cap is active, clamp to it exactly (no pad_f
-                # beyond the cap) so we don't produce silent tail frames.
+                # We NEVER exceed audio_end_f to avoid creating phantom fragments at the end.
                 raw_block_end = max(audio_end_f, t2f(chunk_end_w)) + pad_f
-                if audio_end_cap_s:
-                    # Never exceed the hard cap — the tail silence IS the cap boundary
-                    block_end_f = min(raw_block_end, audio_end_f)
-                else:
-                    block_end_f = raw_block_end
+                block_end_f = min(raw_block_end, audio_end_f)
 
             
             ops_raw.append({
