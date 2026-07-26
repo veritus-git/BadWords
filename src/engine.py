@@ -251,7 +251,7 @@ class AudioEngine:
         if device != "cuda":
             ram_gb = self._get_system_ram_gb()
             if hasattr(self, 'os_doc') and getattr(self.os_doc, 'is_mac', False):
-                return "float32" if ram_gb >= 14.0 else "float16"
+                return "float32" if ram_gb >= 14.0 else "int8"
             return "int8"
         try:
             result = subprocess.run(
@@ -1455,7 +1455,7 @@ except Exception as e:
                             fw_compute = "float32"
                             log_info(f"[Compute] Auto (CPU/Mac): {fw_compute} (Plenty of RAM detected: {ram_gb:.1f}GB)")
                         else:
-                            fw_compute = "float16"
+                            fw_compute = "int8"
                             log_info(f"[Compute] Auto (CPU/Mac): {fw_compute} (Conserving RAM on {ram_gb:.1f}GB system)")
                     else:
                         fw_compute = "int8"
@@ -1466,7 +1466,7 @@ except Exception as e:
                 ram_gb = self._get_system_ram_gb()
                 if ram_gb < 12.0 and fw_compute == "float32" and "large" in model.lower():
                     log_info(f"[OOM Protection] System has only {ram_gb:.1f}GB RAM. Downgrading {model} from float32 to prevent crash.")
-                    fw_compute = "float16" if (hasattr(self, 'os_doc') and getattr(self.os_doc, 'is_mac', False)) else "int8"
+                    fw_compute = "int8"
             except Exception:
                 pass
 
