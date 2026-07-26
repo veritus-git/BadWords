@@ -2910,6 +2910,8 @@ class TranscriptionCanvas(QWidget):
         prefs = self.main_window.engine.load_preferences() or {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
         pref_size = prefs.get('editor_font_size', 12)
+        import platform
+        if platform.system() == "Darwin": pref_size = int(pref_size * 1.333)
         pref_lh = prefs.get('editor_line_height', 7)
         view_mode = prefs.get('view_mode', 'continuous')
         
@@ -3215,6 +3217,8 @@ class TranscriptionCanvas(QWidget):
         prefs = self.main_window.engine.load_preferences() or {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
         pref_size = prefs.get('editor_font_size', 12)
+        import platform
+        if platform.system() == "Darwin": pref_size = int(pref_size * 1.333)
         active_font = QFont(pref_family, pref_size)
         
         p = QPainter(self)
@@ -11034,7 +11038,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             target_splitter.show()
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
-                target_w = min(280, max(180, self.width() // 4))
+                # 15% of window width closely matches the visual proportion on 1920x1080 displays
+                target_w = max(180, min(300, int(self.width() * 0.15)))
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
                     sizes[0] = target_w
