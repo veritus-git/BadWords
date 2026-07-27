@@ -18,7 +18,7 @@
 
 ---
 
-## 💡 What is it?
+## What is it?
 
 **BadWords** is a plugin-app for DaVinci Resolve built for anyone dealing with dialogue-heavy footage (podcasts, talking heads, gameplays). Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your workflow into an easy text-editing experience.
 
@@ -26,13 +26,22 @@ It uses local AI (Faster-Whisper) to give you a full transcript of your audio. Y
 
 BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the final polishing to you.
 
+## 🌟 Key Features
+
+Here is what makes BadWords stand out from other editing tools:
+
+* **True Verbatim Transcription:** BadWords uses heavily customized prompt engineering, parameters, and chunking with Faster-Whisper to force the AI into true "verbatim" mode. It catches every tiny stutter, 'um', and false start with a precision unmatched in the open-source space. What you hear is exactly what you see in the text, making it incredibly easy to spot deviations visually. And if the audio is completely garbled, it conveniently marks it as `(...)` (Inaudible) for you to check manually.
+* **Smart Script Comparison:** If you record based on a script, this feature is a massive time saver. Paste your original script into BadWords, and the advanced algorithm will instantly compare it against your recorded audio. The magic here is that it visually highlights *only* the noteworthy fragments that differ from your script - like spontaneous deviations or repeated retakes. By instantly seeing what went wrong, you don't have to listen to the entire audio track anymore. You can completely skip the perfect 1:1 matches and focus your attention *only* on the parts that actually need editing! (Plus, it automatically scrapes technical terms from your script to feed to the AI, dramatically improving transcription accuracy on technical terms).
+* **IDE-Like Text-Based Editing:** Say goodbye to endlessly scrubbing through DaVinci Resolve timelines. BadWords shifts the entire editing paradigm by letting you edit your video exactly like a text document in an IDE. You simply read the transcript, visually highlight the mistakes with different colors, and hit "Assemble". The app instantly translates your text-based changes into perfect, frame-accurate cuts directly on your timeline.
+* **Convenient Silence Detection:** Yes, DaVinci Resolve now has its own silence cutter, but BadWords does it differently. Before scanning for silence, BadWords automatically normalizes the audio in the background. This means speech volume is leveled out, making the default silence threshold (-42dB) incredibly precise without you having to tweak it for every single project - just flip a switch. It even features "island absorption": random short noises like a desk bump or a quick cough get swallowed up and cut out as silence anyway.
+
 ## ⚙️ How it works
 
 1. **Select & Transcribe:** Launch BadWords directly from Resolve, pick your audio tracks, and hit Analyze. The AI transcribes everything.
 2. **Edit like a Document:** Your audio opens as text in an IDE-inspired editor. You (or the algorithm) can paint words with different colors:
-   * 🔴 **Red** — Filler words / obvious mistakes to remove
-   * 🔵 **Blue** — Retakes / duplicates
-   * 🟢 **Green** — Typos / close matches
+   * **Red** — Filler words / obvious mistakes to remove
+   * **Blue** — Retakes / duplicates
+   * **Green** — Typos / close matches
 3. **Compare to Script or Analyze Standalone:** If you have an original script, BadWords can automatically compare it against your transcript to highlight deviations. No script? No problem! Use the Standalone Analysis to automatically detect stutters, false starts, and retakes from the raw audio.
 4. **Assemble Timeline:** Once you're done playing with the text, hit Assemble. BadWords automatically generates a **brand new, clean timeline** inside Resolve with all your cuts and color markers applied perfectly.
 
@@ -49,21 +58,17 @@ BadWords does **80% of the tedious work for you** (cutting tight silences, marki
 
 ---
 
-## 🔥 What's New in 3.1?
+## 🔥 What's New in 3.2?
 
-Version 3.1 is a huge step up. I spent a lot of time rewriting how the analysis actually works and adding things that make using the app a lot less annoying. Here is what I managed to build:
+Version 3.2 is another massive update. I dug deep into the core code to fix some of the most annoying bugs and completely rewrote how BadWords builds your final timeline. Here is what I managed to put together:
 
-* **Standalone Analysis:** You no longer need a base script! BadWords can now just scan your raw audio and figure out where you stuttered, had false starts, or corrected yourself.
-* **Smarter Compare Algorithm:** The "Compare to Script" algorithm has been completely rewritten. It now uses a complex Dynamic Programming engine. It takes a bit longer to calculate, but the matching precision is vastly superior.
-* **Side-By-Side View (Stable):** Now fully stable and more readable. Click synchronization and "Jump to Word" in DaVinci work flawlessly without losing focus or dropping marks.
-* **More Accurate Transcription Mode:** BadWords can now scrape technical terms from your original script and feed them to Whisper before transcribing. This drastically reduces hallucinations on technical videos.
-* **Advanced Settings Unlocked:** I opened up the engine. You can now tweak the AI thresholds, change chunking settings, and manage file paths directly in the UI if you want to experiment.
+* **Audio Preview:** You can finally hear how a specific word sounds right inside the transcript! I added a small built-in player so there's no more guessing if a cut is correct. It is not perfect, as it doesnt light up words exactly when they are spoken, but instead it shows where Whisper thinks the words are and what are its boundaries.
+* **Project Saves (.bws) & AutoSave:** BadWords now has its own `.bws` file extension so you can properly save your work. I also built a background AutoSave. If the app randomly crashes, you won't lose everything - it will give you an option to restore your session when you reopen it!
+* **New Timeline Assembly (.drt):** I remade the assembly process from the ground up. BadWords now manipulates DaVinci's native `.drt` file. This means complex timelines finally work without breaking things like adjustment clips or proxies! (Clip linking still sadly breaks during assembly, and for what I can see there is no fix for it because of Davinci Resolve nature but maybe I will find out the way in the feature)
+* **Track Selection Menu:** I added a track selection menu where you can choose exactly which audio and video tracks BadWords should use when putting together the final timeline.
 * **Quality of Life & Fixes:**
-  * **Broom Icon:** Added a quick button to wipe out all color marks from your transcript.
-  * **Mac M4 Fix:** Patched a critical issue with newer Apple Silicon CPUs getting stuck on initialization.
-  * **Project Saves:** Fixed exporting and importing projects to prevent crashes.
-  * **Taskbar Icon Fix:** The app icon no longer vanishes randomly on Windows.
-  * **Contact Tab:** Changed the "Support" tab to "Contact" to make it clearer where to send feedback.
+  * **Silence Detection Fix:** Fixed a bug that left unmarked "islands" of silence at the very start and end of the audio.
+  * **Mac UI Fixes:** Made UI more spacious and switched the rendering engine on macOS as attempt to fix the weird bugs and glitches. Altough it still has some problems. I would really appreciate a pull request if you know how to fix it!
 
 ---
 
