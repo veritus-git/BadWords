@@ -2049,7 +2049,8 @@ except Exception as e:
         do_silence_cut = settings.get('silence_cut', False)
         do_silence_mark = settings.get('silence_mark', False)
         do_show_inaudible = settings.get('show_inaudible', True)
-        do_auto_del = settings.get('auto_del', False)
+        do_show_typos = settings.get('show_typos', True)
+        auto_cut_colors = [c.lower() for c in settings.get('auto_cut_colors', [])]
         do_show_typos = settings.get('show_typos', True)
 
         def t2f(t): return int(round(t * fps))
@@ -2229,9 +2230,24 @@ except Exception as e:
                     curr = next_op
             merged_ops.append(curr)
             
+        def get_color_for_type(op_type):
+            COLOR_MAP = {
+                "bad":          "Violet",
+                "repeat":       "Navy",
+                "typo":         "Olive",
+                "inaudible":    "Chocolate",
+                "silence_mark": "Tan"
+            }
+            c = COLOR_MAP.get(op_type)
+            if not c and str(op_type).startswith("custom_"):
+                c = op_type.split("_")[1]
+            return c.lower() if c else None
+
         final_result = []
         for op in merged_ops:
-            if do_auto_del and op['type'] == 'bad': continue
+            op_c = get_color_for_type(op['type'])
+            if op_c and op_c in auto_cut_colors:
+                continue
             if op['e'] - op['s'] < 2: continue 
             final_result.append(op)
             
@@ -2240,6 +2256,10 @@ except Exception as e:
     # ==========================================
     # 5. PROJECT & DATA MANAGEMENT (Data Controller)
     # ==========================================
+
+    def api_delete_clips_by_color(self, color_name, new_timeline=True):
+        if self.resolve_handler:
+            self.resolve_handler.delete_clips_by_color(color_name, new_timeline)
 
     def save_project_state(self, file_path, data_packet):
         try:

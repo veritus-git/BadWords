@@ -545,15 +545,28 @@ class QLabel(_QLabel):
         cr = self.contentsRect()
         painter.setClipRect(cr)
 
-        color = self.palette().windowText().color()
         if self._mq_alpha < 1.0:
-            color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
-        painter.setPen(color)
-        painter.setFont(self.font())
+            painter.setOpacity(max(0.0, min(1.0, self._mq_alpha)))
 
-        text = self._mq_get_text()
-        draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
-        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, text)
+        raw_text = super().text()
+        if "<" in raw_text and ">" in raw_text:
+            from PySide6.QtGui import QTextDocument
+            doc = QTextDocument()
+            doc.setDefaultFont(self.font())
+            color_name = self.palette().windowText().color().name()
+            doc.setHtml(f"<div style='color: {color_name};'>{raw_text}</div>")
+            doc.setDocumentMargin(0)
+            
+            y_pos = cr.top() + (cr.height() - doc.size().height()) / 2
+            painter.translate(cr.left() - int(self._mq_pos), y_pos)
+            doc.drawContents(painter)
+        else:
+            color = self.palette().windowText().color()
+            painter.setPen(color)
+            painter.setFont(self.font())
+            text = self._mq_get_text()
+            draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
+            painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, text)
 
 
 
@@ -5147,16 +5160,19 @@ class GlobalAppFilter(QObject):
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     obj.clearFocus()
 
-            # 3. Tooltip handling
-            if etype == QEvent.Type.ToolTip:
+            # 3. Tooltip handling via Enter/Leave for better reliability
+            if etype == QEvent.Type.Enter:
                 if isinstance(obj, QWidget):
                     text = obj.toolTip()
                     if text:
                         self.current_text = text
-                        self.current_pos = event.globalPos()
+                        self.current_pos = QCursor.pos()
+                        # Start timer on Enter
                         self.active_widget = obj
-                        self.tooltip_timer.start(500)
-                        return True  # Stop native tooltip
+                        self.tooltip_timer.start(750)  # 750ms hover to show
+            elif etype == QEvent.Type.MouseMove and self.active_widget == obj:
+                # Update position as they move the mouse
+                self.current_pos = QCursor.pos()
             elif etype in (QEvent.Type.Leave, QEvent.Type.Hide,
                            QEvent.Type.MouseButtonPress, QEvent.Type.WindowDeactivate):
                 if obj == self.active_widget or self.active_widget is None:
@@ -5164,6 +5180,10 @@ class GlobalAppFilter(QObject):
                     if hasattr(self, 'shared_tooltip'):
                         self.shared_tooltip.hide()
                     self.active_widget = None
+                    self.current_text = ""
+            elif etype == QEvent.Type.ToolTip and self.active_widget == obj:
+                # Suppress the native ToolTip event
+                return True
         except RuntimeError:
             pass
         return False
@@ -6980,7 +7000,7 @@ class TrackOptionsDrawer(QWidget):
 
 
 class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
-    def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None):
+    def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None, btn_cancel_text: str = None):
         super().__init__(parent)
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
@@ -7052,6 +7072,12 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
+        if btn_cancel_text:
+            btn_cancel = QPushButton(btn_cancel_text)
+            btn_cancel.clicked.connect(lambda: self.done(2))
+            btn_layout.addWidget(btn_cancel)
+            btn_layout.addSpacing(10)
+            
         if btn_no_text:
             btn_no = QPushButton(btn_no_text)
             btn_no.clicked.connect(self.reject)
@@ -7504,6 +7530,8 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             self._lbl_status.setStyleSheet("color: #39ff7a; font-size: 10pt; font-style: normal;")
             self._btn_primary.hide()
             self._btn_dismiss.setText(_txt(self._lang, 'btn_close'))
+            self._btn_dismiss.clicked.disconnect()
+            self._btn_dismiss.clicked.connect(self.accept)
             self._btn_dismiss.setEnabled(True)
         else:
             log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
@@ -7522,14 +7550,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
     # ------------------------------------------------------------------
 
     def _on_dismiss(self):
-        """Disable future auto-checks and close ('Don't check again' button)."""
-        if self._engine:
-            try:
-                prefs = self._engine.load_preferences() or {}
-                prefs['auto_check_updates'] = False
-                self._engine.save_preferences(prefs)
-            except Exception:
-                pass
+        """Close without modifying auto-check setting."""
         self.reject()
 
     def closeEvent(self, event):
@@ -9789,6 +9810,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             btn_edit = QPushButton(self.txt("btn_edit_marker"))
             btn_edit.setCursor(Qt.PointingHandCursor)
             btn_edit.clicked.connect(make_edit(idx))
+            if color.lower() in ["green", "blue"]:
+                btn_edit.setEnabled(False)
+                btn_edit.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
+                lbl_name.setStyleSheet("color: #666666; font-weight: bold; background: transparent;")
+                dot.setStyleSheet("color: #666666; font-size: 14pt; background: transparent;")
             row_layout.addWidget(btn_edit)
 
             # Delete button
@@ -11528,12 +11554,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         row_show_inaudible.addStretch()
         self.tgl_show_inaudible = ToggleSwitch()
         self.tgl_show_inaudible.setChecked(True)
-        self.tgl_show_inaudible.toggled.connect(self._on_inaudible_toggled)
+        self.tgl_show_inaudible.toggled.connect(lambda c: (self._on_inaudible_toggled(c), self._save_top_toggles_prefs()))
         row_show_inaudible.addWidget(self.tgl_show_inaudible)
         pin_show_inaud = _pin_btn('show_inaudible')
         row_show_inaudible.addWidget(pin_show_inaud)
         l_assembly.addLayout(row_show_inaudible)
-        pin_show_inaud.clicked.connect(lambda: self._toggle_favorite('show_inaudible', self.tgl_show_inaudible, self.txt("tool_show_inaudible"), pin_show_inaud))
+        pin_show_inaud.clicked.connect(lambda checked=False, p=pin_show_inaud: self._toggle_favorite('show_inaudible', self.tgl_show_inaudible, self.txt("tool_show_inaudible"), p))
         
         row_mark_inaudible = QHBoxLayout()
         lbl_mark_inaud = QLabel(self.txt("lbl_mark_inaudible_fragments"))
@@ -11541,12 +11567,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         row_mark_inaudible.addWidget(lbl_mark_inaud)
         row_mark_inaudible.addStretch()
         self.tgl_mark_inaudible = ToggleSwitch()
-        self.tgl_mark_inaudible.toggled.connect(self._on_mark_inaudible_toggled)
+        self.tgl_mark_inaudible.toggled.connect(lambda c: (self._on_mark_inaudible_toggled(c), self._save_top_toggles_prefs()))
         row_mark_inaudible.addWidget(self.tgl_mark_inaudible)
         pin_mark_inaud = _pin_btn('mark_inaudible')
         row_mark_inaudible.addWidget(pin_mark_inaud)
         l_assembly.addLayout(row_mark_inaudible)
-        pin_mark_inaud.clicked.connect(lambda: self._toggle_favorite('mark_inaudible', self.tgl_mark_inaudible, self.txt("tool_mark_inaudible"), pin_mark_inaud))
+        pin_mark_inaud.clicked.connect(lambda checked=False, p=pin_mark_inaud: self._toggle_favorite('mark_inaudible', self.tgl_mark_inaudible, self.txt("tool_mark_inaudible"), p))
         
         row_show_typos = QHBoxLayout()
         lbl_show_typos = QLabel(self.txt("lbl_show_detected_typos"))
@@ -11555,24 +11581,102 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         row_show_typos.addStretch()
         self.tgl_show_typos = ToggleSwitch()
         self.tgl_show_typos.setChecked(True)
-        self.tgl_show_typos.toggled.connect(self._on_typos_toggled)
+        self.tgl_show_typos.toggled.connect(lambda c: (self._on_typos_toggled(c), self._save_top_toggles_prefs()))
         row_show_typos.addWidget(self.tgl_show_typos)
         pin_show_typos = _pin_btn('show_typos')
         row_show_typos.addWidget(pin_show_typos)
         l_assembly.addLayout(row_show_typos)
-        pin_show_typos.clicked.connect(lambda: self._toggle_favorite('show_typos', self.tgl_show_typos, self.txt("tool_show_typos"), pin_show_typos))
+        pin_show_typos.clicked.connect(lambda checked=False, p=pin_show_typos: self._toggle_favorite('show_typos', self.tgl_show_typos, self.txt("tool_show_typos"), p))
         
-        row_ripple_delete = QHBoxLayout()
-        lbl_ripple = QLabel(self.txt("lbl_ripple_delete_red_clips"))
-        lbl_ripple.setWordWrap(True)
-        row_ripple_delete.addWidget(lbl_ripple)
-        row_ripple_delete.addStretch()
-        self.tgl_ripple_delete = ToggleSwitch()
-        row_ripple_delete.addWidget(self.tgl_ripple_delete)
-        pin_ripple = _pin_btn('ripple_delete')
-        row_ripple_delete.addWidget(pin_ripple)
-        l_assembly.addLayout(row_ripple_delete)
-        pin_ripple.clicked.connect(lambda: self._toggle_favorite('ripple_delete', self.tgl_ripple_delete, self.txt("tool_ripple_delete"), pin_ripple))
+        # Cut Colors Dynamic List
+        self.color_cut_buttons = {}
+        
+        # We need a layout for the colors
+        l_colors_container = QVBoxLayout()
+        l_colors_container.setSpacing(10)
+        
+        div_top = QFrame()
+        div_top.setFixedHeight(1)
+        div_top.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+        l_colors_container.addWidget(div_top)
+        
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        
+        color_idx = 0
+        for color_name, color_hex in config.RESOLVE_COLORS_HEX.items():
+            row_color = QHBoxLayout()
+            
+            # Left text
+            localized_color_name = self.txt(f"resolve_color_{color_name.lower()}")
+            lbl_color = QLabel(self.txt("lbl_cut_color_fmt").format(hex=color_hex, color=localized_color_name))
+            row_color.addWidget(lbl_color)
+            row_color.addStretch()
+            
+            # Star button
+            pin_c = _pin_btn(f'cut_{color_name.lower()}')
+            
+            # Auto Toggle (auto-unmarked / auto-marked) - Except for Tan, Chocolate, Green, Blue
+            is_unsupported = color_name.lower() in ["tan", "chocolate", "green", "blue"]
+            btn_auto = None
+            
+            if not is_unsupported:
+                btn_auto = QPushButton()
+                btn_auto.setFixedSize(24, 24)
+                btn_auto.setCursor(Qt.PointingHandCursor)
+                btn_auto.setStyleSheet("background: transparent; border: none;")
+                btn_auto.setCheckable(True)
+                btn_auto.setToolTip(self.txt("tooltip_auto_cut"))
+                
+                prefs = self.engine.load_preferences() or {}
+                auto_cut_colors = prefs.get('auto_cut_colors', [])
+                is_checked = color_name in auto_cut_colors
+                btn_auto.setChecked(is_checked)
+                
+                def _update_auto_icon(checked, b=btn_auto, ad=_assets_dir):
+                    icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
+                    b.setIcon(QIcon(os.path.join(ad, icon_name)))
+                    b.setIconSize(QSize(20, 20))
+                    
+                _update_auto_icon(is_checked)
+                btn_auto.toggled.connect(lambda checked, b=btn_auto, fn=_update_auto_icon: (fn(checked, b), self._save_auto_cut_prefs()))
+                self.color_cut_buttons[color_name] = btn_auto
+            
+            # Cut Now Button (cut.png)
+            btn_cut_now = QPushButton()
+            btn_cut_now.setFixedSize(24, 24)
+            btn_cut_now.setCursor(Qt.PointingHandCursor)
+            btn_cut_now.setStyleSheet("background: transparent; border: none;")
+            btn_cut_now.setIcon(QIcon(os.path.join(_assets_dir, "cut.png")))
+            btn_cut_now.setIconSize(QSize(20, 20))
+            
+            btn_cut_now.setToolTip(self.txt("tooltip_cut_now"))
+            btn_cut_now.clicked.connect(lambda _, c=color_name: self._on_cut_now_clicked(c))
+            
+            # Order: Cut, Auto, Star
+            row_color.addWidget(btn_cut_now)
+            if btn_auto:
+                row_color.addWidget(btn_auto)
+            row_color.addWidget(pin_c)
+            
+            l_colors_container.addLayout(row_color)
+            
+            # Pass clean label text for favorites proxy
+            clean_label = self.txt(f"resolve_color_{color_name.lower()}").replace("<br>", " ")
+            pin_c.clicked.connect(lambda _, c=color_name, b=btn_auto, p=pin_c, l=clean_label: self._toggle_favorite(
+                f'cut_{c.lower()}', b, l, p
+            ))
+            
+            color_idx += 1
+            if color_idx == 3:
+                div = QFrame()
+                div.setFixedHeight(1)
+                div.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+                l_colors_container.addWidget(div)
+            
+        l_assembly.addLayout(l_colors_container)
 
         l_assembly.addStretch(1)
         self.activities["assembly"] = _wrap_activity(p_assembly)
@@ -11874,6 +11978,26 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._panel_left.show()
             if hasattr(self, '_sbs_left_sizes'):
                 self._main_h_splitter.setSizes(self._sbs_left_sizes)
+
+    def _on_cut_now_clicked(self, color_name):
+        from gui import CustomMsgBox
+        
+        # Always fetch the currently active timeline from DaVinci before cutting
+        rh = getattr(self.engine, 'resolve_handler', None)
+        if rh and rh.project:
+            current_tl = rh.project.GetCurrentTimeline()
+            if current_tl:
+                rh.timeline = current_tl
+                
+        localized_color_name = self.txt(f"resolve_color_{color_name.lower()}")
+        title = self.txt("msg_cut_color_title").format(color=localized_color_name)
+        desc = self.txt("msg_cut_color_desc")
+        
+        box = CustomMsgBox(self, title, desc, self.txt("btn_cut_new_timeline"), self.txt("btn_cut_current_timeline"), self.txt("btn_cancel"))
+        ret = box.exec()
+        if ret == 2: return
+        new_timeline = (ret == 1)
+        self.engine.api_delete_clips_by_color(color_name, new_timeline)
 
     def _on_analyze_standalone(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
@@ -12814,10 +12938,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if target_id in self._favorite_proxies:
             # --- REMOVE favorite ---
             entry = self._favorite_proxies.pop(target_id)
-            try: source_toggle.toggled.disconnect(entry['src_conn'])
-            except Exception: pass
-            try: entry['proxy'].toggled.disconnect(entry['prx_conn'])
-            except Exception: pass
+            if entry.get('src_conn') and source_toggle:
+                try: source_toggle.toggled.disconnect(entry['src_conn'])
+                except Exception: pass
+            if entry.get('prx_conn') and entry.get('proxy'):
+                try: entry['proxy'].toggled.disconnect(entry['prx_conn'])
+                except Exception: pass
             proxy_row = entry['row_widget']
             self.layout_favorites.removeWidget(proxy_row)
             proxy_row.deleteLater()
@@ -12835,31 +12961,105 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'p_main'):
                 self.p_main.resizeEvent(None)
         else:
+            # --- Enforce max 10 favorites ---
+            if len(self._favorite_proxies) >= 10:
+                oldest_id = list(self._favorite_proxies.keys())[0]
+                if oldest_id in self._pin_buttons:
+                    self._pin_buttons[oldest_id].click()
+                    
             # --- ADD favorite ---
             from PySide6.QtWidgets import QWidget as _QWidget
             row_widget = _QWidget()
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(6)
+            
+            prx_conn, src_conn = None, None
+            proxy_toggle = None
 
-            row_layout.addWidget(QLabel(label_text))
-            row_layout.addStretch()
+            if target_id.startswith('cut_'):
+                import os
+                from PySide6.QtGui import QIcon, QCursor
+                from PySide6.QtCore import QSize, Qt
+                
+                color_name_lower = target_id[4:]
+                color_name_title = color_name_lower.capitalize()
+                color_hex = "#FFFFFF"
+                for c_n, c_h in config.RESOLVE_COLORS_HEX.items():
+                    if c_n.lower() == color_name_lower:
+                        color_hex = c_h
+                        color_name_title = c_n
+                        break
+                        
+                _src_dir = os.path.dirname(os.path.abspath(__file__))
+                _assets_dir = os.path.join(_src_dir, "layout") if os.path.exists(os.path.join(_src_dir, "layout")) else os.path.join(os.path.dirname(_src_dir), "assets", "layout")
 
-            proxy_toggle = ToggleSwitch()
-            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
-            proxy_toggle.setChecked(source_toggle.isChecked(), animated=False)
-            row_layout.addWidget(proxy_toggle)
+                lbl_color = QLabel(self.txt("lbl_cut_color_fmt").format(hex=color_hex, color=label_text))
+                row_layout.addWidget(lbl_color)
+                row_layout.addStretch()
 
+                # Cut Now Button (proxy)
+                btn_cut_now_proxy = QPushButton()
+                btn_cut_now_proxy.setFixedSize(24, 24)
+                btn_cut_now_proxy.setCursor(Qt.PointingHandCursor)
+                btn_cut_now_proxy.setStyleSheet("background: transparent; border: none;")
+                btn_cut_now_proxy.setIcon(QIcon(os.path.join(_assets_dir, "cut.png")))
+                btn_cut_now_proxy.setIconSize(QSize(20, 20))
+                btn_cut_now_proxy.setToolTip(self.txt("tooltip_cut_now"))
+                btn_cut_now_proxy.clicked.connect(lambda _, c=color_name_title: self._on_cut_now_clicked(c))
+                row_layout.addWidget(btn_cut_now_proxy)
+
+                if source_toggle: # Has auto button
+                    proxy_auto = QPushButton()
+                    proxy_auto.setFixedSize(24, 24)
+                    proxy_auto.setCursor(Qt.PointingHandCursor)
+                    proxy_auto.setStyleSheet("background: transparent; border: none;")
+                    proxy_auto.setCheckable(True)
+                    proxy_auto.setToolTip(self.txt("tooltip_auto_cut"))
+                    proxy_auto.setChecked(source_toggle.isChecked())
+                    
+                    def _update_proxy_icon(checked, b=proxy_auto, ad=_assets_dir):
+                        icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
+                        b.setIcon(QIcon(os.path.join(ad, icon_name)))
+                        b.setIconSize(QSize(20, 20))
+                    
+                    _update_proxy_icon(proxy_auto.isChecked())
+                    proxy_auto.toggled.connect(lambda checked, b=proxy_auto, fn=_update_proxy_icon: (fn(checked, b), self._save_auto_cut_prefs()))
+                    
+                    row_layout.addWidget(proxy_auto)
+                    
+                    def prx_to_src(v, src=source_toggle, prx=proxy_auto):
+                        if src.isChecked() != v: src.setChecked(v)
+                    def src_to_prx(v, src=source_toggle, prx=proxy_auto):
+                        if prx.isChecked() != v: prx.setChecked(v)
+
+                    prx_conn = proxy_auto.toggled.connect(prx_to_src)
+                    src_conn = source_toggle.toggled.connect(src_to_prx)
+                    proxy_toggle = proxy_auto
+                
+
+                
+            else:
+                row_layout.addWidget(QLabel(label_text))
+                row_layout.addStretch()
+
+                proxy_toggle = ToggleSwitch()
+                proxy_toggle.setChecked(source_toggle.isChecked(), animated=False)
+                row_layout.addWidget(proxy_toggle)
+                
+
+
+                def prx_to_src(v, src=source_toggle, prx=proxy_toggle):
+                    if src.isChecked() != v: src.setChecked(v)
+                def src_to_prx(v, src=source_toggle, prx=proxy_toggle):
+                    if prx.isChecked() != v: prx.setChecked(v)
+
+                prx_conn = proxy_toggle.toggled.connect(prx_to_src)
+                src_conn = source_toggle.toggled.connect(src_to_prx)
+
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
+            
             self.layout_favorites.addWidget(row_widget)
-
-            # Two-way binding (loop-safe)
-            def prx_to_src(v, src=source_toggle, prx=proxy_toggle):
-                if src.isChecked() != v: src.setChecked(v)
-            def src_to_prx(v, src=source_toggle, prx=proxy_toggle):
-                if prx.isChecked() != v: prx.setChecked(v)
-
-            prx_conn = proxy_toggle.toggled.connect(prx_to_src)
-            src_conn = source_toggle.toggled.connect(src_to_prx)
 
             self._favorite_proxies[target_id] = {
                 'row_widget': row_widget,
@@ -12867,7 +13067,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 'prx_conn': prx_conn,
                 'src_conn': src_conn,
             }
-            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
             # Persist addition
             prefs = self.engine.load_preferences() or {}
             favs = prefs.get('favorites', [])
@@ -12881,6 +13080,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'p_main'):
                 self.p_main.resizeEvent(None)
 
+
+    def _save_auto_cut_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        if hasattr(self, 'color_cut_buttons'):
+            auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
+            prefs['auto_cut_colors'] = auto_cut
+        self.engine.save_preferences(prefs)
+
+    def _save_top_toggles_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
+        if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
+        if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
+        self.engine.save_preferences(prefs)
     def _on_assemble(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
 
@@ -12909,10 +13122,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'tgl_silence_cut'): prefs['silence_cut'] = self.tgl_silence_cut.isChecked()
         if hasattr(self, 'tgl_silence_mark'): prefs['silence_mark'] = self.tgl_silence_mark.isChecked()
         if hasattr(self, 'tgl_reviewer'): prefs['enable_reviewer'] = self.tgl_reviewer.isChecked()
-        if hasattr(self, 'tgl_ripple_delete'): prefs['auto_del'] = self.tgl_ripple_delete.isChecked()
+        if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
         if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
         if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
-        if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
+
+        if hasattr(self, 'color_cut_buttons'):
+            auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
+            prefs['auto_cut_colors'] = auto_cut
 
         checked_btn = getattr(self, 'marker_btn_group', None) and self.marker_btn_group.checkedButton()
         if checked_btn:
@@ -14556,6 +14772,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             rb.setProperty("status_id", f"custom_{color}")
             style_rb(rb, config.RESOLVE_COLORS_HEX.get(color, '#ffffff'))
             rb.setCursor(Qt.CursorShape.PointingHandCursor)
+            if color.lower() in ["green", "blue"]:
+                rb.setEnabled(False)
+                rb.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
+                style_rb(rb, '#666666')
             self.markers_layout.addWidget(rb)
             self.marker_btn_group.addButton(rb)
 
