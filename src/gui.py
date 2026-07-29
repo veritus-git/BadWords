@@ -9136,8 +9136,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             _device_items = ["Auto", "CPU", "GPU"]
             self.dropdown_device = CustomDropdown(_device_items, parent=page_ai)
             self.dropdown_device.setFixedHeight(30)
-            saved_device = prefs.get('device', 'auto').capitalize()
-            if saved_device.upper() == 'AUTO': saved_device = 'Auto'
+            saved_device = prefs.get('device', 'auto').upper()
+            if saved_device == 'AUTO': saved_device = 'Auto'
             self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
             _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setValue)
 
@@ -9258,25 +9258,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', 0)))
             self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, 0, self.spin_no_repeat.setValue))
 
-            self.chk_regroup = ToggleSwitch(parent=page_ai)
-            self.chk_regroup.setChecked(bool(prefs.get('ai_regroup', False)), animated=False)
-            w_reg = QWidget(page_ai); l_reg = QHBoxLayout(w_reg); l_reg.setContentsMargins(0, 0, 0, 0); l_reg.addStretch(); l_reg.addWidget(self.chk_regroup)
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_regroup"), w_reg, False, lambda v: self.chk_regroup.setChecked(v, animated=False)))
 
-            self.chk_suppress_silence = ToggleSwitch(parent=page_ai)
-            self.chk_suppress_silence.setChecked(bool(prefs.get('ai_suppress_silence', False)), animated=False)
-            w_supp = QWidget(page_ai); l_supp = QHBoxLayout(w_supp); l_supp.setContentsMargins(0, 0, 0, 0); l_supp.addStretch(); l_supp.addWidget(self.chk_suppress_silence)
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_suppress_silence"), w_supp, False, lambda v: self.chk_suppress_silence.setChecked(v, animated=False)))
-
-            self.spin_q_levels = QSpinBox(page_ai)
-            self.spin_q_levels.setRange(0, 100)
-            self.spin_q_levels.setValue(int(prefs.get('ai_q_levels', 20)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_q_levels"), self.spin_q_levels, 20, self.spin_q_levels.setValue))
-
-            self.spin_k_size = QSpinBox(page_ai)
-            self.spin_k_size.setRange(0, 100)
-            self.spin_k_size.setValue(int(prefs.get('ai_k_size', 5)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_k_size"), self.spin_k_size, 5, self.spin_k_size.setValue))
 
             
             self.spin_length_penalty = QDoubleSpinBox(page_ai)
@@ -10194,7 +10176,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         if not is_basic:
             state.update({
                 'always_on_top':      self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
-                'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto').capitalize(), 'currentText').lower(),
+                'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto'), 'currentText').lower(),
                 'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
                 'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
                 'chunk_max_words':    self._safe_get('spin_chunk_max', old_prefs.get('chunk_max_words', 30), 'value'),
@@ -10213,15 +10195,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 'ai_patience':              self._safe_get('spin_patience', old_prefs.get('ai_patience', 1.0), 'value'),
                 'ai_compression_ratio_threshold': self._safe_get('spin_compression', old_prefs.get('ai_compression_ratio_threshold', 2.4), 'value'),
                 'ai_no_repeat_ngram_size':  self._safe_get('spin_no_repeat', old_prefs.get('ai_no_repeat_ngram_size', 0), 'value'),
-                'ai_regroup':               self._safe_get('chk_regroup', old_prefs.get('ai_regroup', False), 'isChecked'),
-                'ai_suppress_silence':      self._safe_get('chk_suppress_silence', old_prefs.get('ai_suppress_silence', False), 'isChecked'),
-                'ai_q_levels':              self._safe_get('spin_q_levels', old_prefs.get('ai_q_levels', 20), 'value'),
-                'ai_k_size':                self._safe_get('spin_k_size', old_prefs.get('ai_k_size', 5), 'value'),
                 'ai_length_penalty':        self._safe_get('spin_length_penalty', old_prefs.get('ai_length_penalty', 1.0), 'value'),
                 'ai_repetition_penalty':    self._safe_get('spin_repetition_penalty', old_prefs.get('ai_repetition_penalty', 1.0), 'value'),
             })
         else:
-            advanced_keys = ["always_on_top", "device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_regroup", "ai_suppress_silence", "ai_q_levels", "ai_k_size", "ai_length_penalty", "ai_repetition_penalty"]
+            advanced_keys = ["always_on_top", "device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_length_penalty", "ai_repetition_penalty"]
             for key in advanced_keys:
                 if key in old_prefs:
                     state[key] = old_prefs[key]
@@ -10287,7 +10265,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         if not is_basic:
             self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
             
-            self._safe_set('dropdown_device', state.get('device', 'Auto').capitalize(), 'setText')
+            dev_val = state.get('device', 'Auto').upper()
+            if dev_val == 'AUTO': dev_val = 'Auto'
+            self._safe_set('dropdown_device', dev_val, 'setText')
             self._safe_set('dropdown_compute', state.get('ai_compute_type', 'Auto'), 'setText')
             self._safe_set('textedit_prompt', state.get('ai_initial_prompt', ''), 'setPlainText')
             self._safe_set('spin_chunk_max', state.get('chunk_max_words', 30), 'setValue')
@@ -10302,10 +10282,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._safe_set('spin_patience', state.get('ai_patience', 1.0), 'setValue')
             self._safe_set('spin_compression', state.get('ai_compression_ratio_threshold', 2.4), 'setValue')
             self._safe_set('spin_no_repeat', state.get('ai_no_repeat_ngram_size', 0), 'setValue')
-            self._safe_set('chk_regroup', state.get('ai_regroup', False), 'setChecked')
-            self._safe_set('chk_suppress_silence', state.get('ai_suppress_silence', False), 'setChecked')
-            self._safe_set('spin_q_levels', state.get('ai_q_levels', 20), 'setValue')
-            self._safe_set('spin_k_size', state.get('ai_k_size', 5), 'setValue')
+
             self._safe_set('spin_length_penalty', state.get('ai_length_penalty', 1.0), 'setValue')
             self._safe_set('spin_repetition_penalty', state.get('ai_repetition_penalty', 1.0), 'setValue')
             self._safe_set('spin_fuzzy', state.get('algo_fuzzy_threshold', 80), 'setValue')
@@ -13549,40 +13526,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.settings_layout.addLayout(vbox_model)
         self.settings_layout.addSpacing(15)
 
-        # ── Ultra Precise Mode
-        self.tgl_ultra_precise = ToggleSwitch()
-        self.tgl_ultra_precise.setChecked(prefs.get('ai_ultra_precise', config.DEFAULT_SETTINGS.get('ai_ultra_precise', False)))
-        self.tgl_ultra_precise.toggled.connect(lambda v: self.engine.save_preferences({"ai_ultra_precise": v}))
-        
-        lbl_ultra = QLabel(self.txt("lbl_ultra_precise"))
-        lbl_ultra.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 10pt;")
-        
-        info_ultra = QLabel()
-        if os.path.exists(info_icon_path):
-            info_ultra.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        else:
-            info_ultra.setText("🛈")
-            info_ultra.setStyleSheet("color: #888888; font-size: 11pt;")
-        tt_text = self.txt("tt_ultra_precise")
-        info_ultra.custom_tooltip_text = f"<div style='max-width: 300px; white-space: pre-wrap;'>{tt_text}</div>"
-        info_ultra.setCursor(Qt.WhatsThisCursor)
-        
-        def instant_tooltip(event):
-            if hasattr(self, 'shared_tooltip'):
-                self.shared_tooltip.show_global(info_ultra.custom_tooltip_text, QCursor.pos())
-        info_ultra.enterEvent = instant_tooltip
-        info_ultra.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
-        
-        row_ultra = QHBoxLayout()
-        row_ultra.setSpacing(0)
-        row_ultra.addWidget(lbl_ultra)
-        row_ultra.addStretch()
-        row_ultra.addWidget(info_ultra)
-        row_ultra.addSpacing(6)
-        row_ultra.addWidget(self.tgl_ultra_precise)
-        
-        self.settings_layout.addLayout(row_ultra)
-        self.settings_layout.addSpacing(10)
+
 
         # ── More Accurate Mode
         self.tgl_more_accurate = ToggleSwitch()
@@ -14427,10 +14371,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
         track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
 
+        _current_prefs = self.engine.load_preferences() or {}
+        _device_val = _current_prefs.get('device', 'auto').upper()
+        if _device_val == 'AUTO': _device_val = 'Auto'
+        
         settings = {
             "lang": lang_code,
             "model": model,
-            "device": "Auto",
+            "device": _device_val,
             "filler_words": config.DEFAULT_BAD_WORDS,
             "timeline_name": selected_tl_name or None,
             "track_indices": track_indices or None,

@@ -500,7 +500,7 @@ libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 try:
-    import stable_whisper
+    from faster_whisper import WhisperModel
     from faster_whisper.audio import decode_audio
     
     RAW_ISLANDS = {repr(islands)}
@@ -552,7 +552,7 @@ try:
     target_device  = {repr(fw_device)}
     target_compute = {repr(compute_type)}
     print(f"[Chunked] Loading model {{model_size}} on {{target_device}} ({{target_compute}})...")
-    model = stable_whisper.load_faster_whisper(
+    model = WhisperModel(
         model_size, device=target_device, compute_type=target_compute,
         {'cpu_threads=4,' if self.os_doc.is_mac else ''} num_workers=1,
         download_root={repr(self.models_dir)}
@@ -573,7 +573,7 @@ try:
             continue
         print(f"[Chunked] Island {{chunk_idx+1}}/{{total_chunks}}: {{island_start:.2f}}s—{{island_end:.2f}}s")
         
-        chunk_result = model.transcribe(
+        segments_gen, info = model.transcribe(
             chunk,
             beam_size={repr(prefs.get('ai_beam_size', 1))},
             patience={repr(prefs.get('ai_patience', 1.0))},
@@ -586,30 +586,25 @@ try:
             log_prob_threshold={repr(prefs.get('ai_logprob_threshold', -1.0))},
             compression_ratio_threshold={repr(prefs.get('ai_compression_ratio_threshold', 2.4))},
             no_repeat_ngram_size={repr(prefs.get('ai_no_repeat_ngram_size', 0))},
-            regroup={repr(prefs.get('ai_regroup', False))},
-            suppress_silence={repr(prefs.get('ai_suppress_silence', False))},
-            q_levels={repr(prefs.get('ai_q_levels', 20))},
-            k_size={repr(prefs.get('ai_k_size', 5))},
-            verbose=False{kwargs_str}
+            word_timestamps=True{kwargs_str}
         )
-        if chunk_result.segments:
-            for seg in chunk_result.segments:
-                seg_obj = {{
-                    "start": seg.start + island_start,
-                    "end":   seg.end   + island_start,
-                    "text":  seg.text,
-                    "words": []
-                }}
-                if seg.words:
-                    for w in seg.words:
-                        seg_obj["words"].append({{
-                            "word":        w.word,
-                            "start":       w.start + island_start,
-                            "end":         w.end   + island_start,
-                            "probability": w.probability if hasattr(w, 'probability') else 1.0
-                        }})
-                output_segments.append(seg_obj)
-                print(f"Segment processed: {{seg.start + island_start:.2f}}s")
+        for seg in segments_gen:
+            seg_obj = {{
+                "start": seg.start + island_start,
+                "end":   seg.end   + island_start,
+                "text":  seg.text,
+                "words": []
+            }}
+            if seg.words:
+                for w in seg.words:
+                    seg_obj["words"].append({{
+                        "word":        w.word,
+                        "start":       w.start + island_start,
+                        "end":         w.end   + island_start,
+                        "probability": getattr(w, 'probability', 1.0)
+                    }})
+            output_segments.append(seg_obj)
+            print(f"Segment processed: {{seg.start + island_start:.2f}}s")
                 
         print(f"CHUNK_PROGRESS: {{int((chunk_idx+1)/total_chunks*100)}}")
     final_data = {{"segments": output_segments, "language": {repr(lang)}}}
@@ -647,16 +642,16 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
 try:
-    # --- STABLE-TS INTEGRATION v11.0 ---
-    import stable_whisper
+    # --- FASTER-WHISPER NATIVE INTEGRATION ---
+    from faster_whisper import WhisperModel
     
     model_size = {repr(model)}
     target_device = {repr(fw_device)}
     target_compute = {repr(compute_type)}
     
-    print(f"Loading Stable-Whisper (Faster Backend): {{model_size}} on {{target_device}} ({{target_compute}})...")
+    print(f"Loading Faster-Whisper: {{model_size}} on {{target_device}} ({{target_compute}})...")
     
-    model = stable_whisper.load_faster_whisper(
+    model = WhisperModel(
         model_size, 
         device=target_device, 
         compute_type=target_compute, 
@@ -668,7 +663,7 @@ try:
     print("Model Loaded Successfully. Starting STABLE Transcription...")
     
     # Parameters for strict VERBATIM output (STAGE 9: Unchain for phrasal retakes)
-    result = model.transcribe(
+    segments_gen, info = model.transcribe(
         {repr(audio_path)}, 
         beam_size={repr(prefs.get('ai_beam_size', 1))},
         patience={repr(prefs.get('ai_patience', 1.0))},
@@ -681,42 +676,35 @@ try:
         log_prob_threshold={repr(prefs.get('ai_logprob_threshold', -1.0))},
         compression_ratio_threshold={repr(prefs.get('ai_compression_ratio_threshold', 2.4))},
         no_repeat_ngram_size={repr(prefs.get('ai_no_repeat_ngram_size', 0))},
-        # Stable-TS specific flags for alignment precision:
-        regroup={repr(prefs.get('ai_regroup', False))},
-        suppress_silence={repr(prefs.get('ai_suppress_silence', False))},
-        q_levels={repr(prefs.get('ai_q_levels', 20))},
-        k_size={repr(prefs.get('ai_k_size', 5))}{kwargs_str}
+        word_timestamps=True{kwargs_str}
     )
     
     output_segments = []
     
-    # Iterate over stable-ts segments
-    if result.segments:
-        for segment in result.segments:
-            seg_obj = {{
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text,
-                "words": []
-            }}
-            
-            # Stable-TS provides high quality word timestamps
-            if segment.words:
-                for w in segment.words:
-                    # Stable-ts word object attributes
-                    seg_obj["words"].append({{
-                        "word": w.word,
-                        "start": w.start,
-                        "end": w.end,
-                        "probability": w.probability if hasattr(w, 'probability') else 1.0
-                    }})
-            
-            output_segments.append(seg_obj)
-            print(f"Segment processed: {{segment.start:.2f}}s")
+    # Iterate over faster-whisper segments generator
+    for segment in segments_gen:
+        seg_obj = {{
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text,
+            "words": []
+        }}
+        
+        if segment.words:
+            for w in segment.words:
+                seg_obj["words"].append({{
+                    "word": w.word,
+                    "start": w.start,
+                    "end": w.end,
+                    "probability": getattr(w, 'probability', 1.0)
+                }})
+        
+        output_segments.append(seg_obj)
+        print(f"Segment processed: {{segment.start:.2f}}s")
 
     final_data = {{
         "segments": output_segments,
-        "language": getattr(result, 'language', {repr(lang)})
+        "language": getattr(info, 'language', {repr(lang)})
     }}
     
     with open({repr(json_output_path)}, "w", encoding="utf-8") as f:
@@ -736,7 +724,7 @@ except Exception as e:
         python_exec = self._get_python_executable()
         cmd = [python_exec, runner_script_path]
         
-        log_info(f"Running Whisper Runner (Stable-TS). Script: {runner_script_path}")
+        log_info(f"Running Whisper Runner (Faster-Whisper). Script: {runner_script_path}")
         
         try:
             whisper_start = time.time()
@@ -1593,11 +1581,8 @@ except Exception as e:
             log_info(f"[Chunked] {len(islands)} sound island(s) detected (total_dur={total_dur:.2f}s).")
 
             # Execute Faster-Whisper via Runner with RESOLVED parameters
-            # Chunked mode (Ultra Precise) activates only if requested and len(islands) > 1
-            # FIX DT-09: używamy saved_prefs załadowanego wcześniej — nie wywołujemy get_all_prefs() ponownie
-            ultra_precise_mode = saved_prefs.get('ai_ultra_precise', config.DEFAULT_SETTINGS.get('ai_ultra_precise', False))
-            if not ultra_precise_mode:
-                islands = None
+            # Execute Faster-Whisper via Runner with RESOLVED parameters
+            # Chunking is now always enabled by default if len(islands) > 1
             
             update_status(self.txt("status_whisper_init"))
             
