@@ -13514,7 +13514,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._combo_model = CustomDropdown(model_items)
         self._combo_model.max_visible_items = 6
         self._combo_model.setFixedHeight(30)
-        self._combo_model.setText(prefs["model"] if "model" in prefs and prefs["model"] in model_items else model_items[4])
+        
+        # Load model, or default to Large Turbo if missing/obsolete
+        saved_model = prefs.get("model", "")
+        if saved_model in model_items:
+            self._combo_model.setText(saved_model)
+        else:
+            self._combo_model.setText(model_items[4])
+            # Force save the fallback so the engine sees the correct new string!
+            self.engine.save_preferences({"model": model_items[4]})
+            
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         
         info_model = QLabel()

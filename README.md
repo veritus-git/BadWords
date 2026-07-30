@@ -87,7 +87,7 @@ I know that installing plugins can sometimes be a headache. That's why I made Ba
 </p>
 
 4. **Press `1`** for the standard installation.
-5. Provide a path where you want BadWords (~15GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
+5. Provide a path where you want BadWords (~4GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
 6. Wait for the download to complete (It will take a while because its downloading heavy libraries), and once you see the success message, you can safely **close the terminal**. 
 
 > **Note:** As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to Update your app, Repair broken files, Move the installation to another drive, or completely Uninstall BadWords!
@@ -179,7 +179,7 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 ## 📋 Requirements
 - **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
 - **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
-- **Disk Space:** ~15GB free space for the app, plus 1–10GB depending on your chosen AI models.
+- **Disk Space:** ~4GB free space for the app, plus 1–10GB depending on your chosen AI models.
 
 ---
 

@@ -196,8 +196,14 @@ def main():
         venv_pip = os.path.join(venv_dir, "bin", "pip")
 
     if os.path.isfile(venv_pip):
+        info("Checking for legacy PyTorch installation...")
+        torch_check = subprocess.run([venv_pip, "show", "torch"], capture_output=True)
+        if torch_check.returncode == 0:
+            info("Uninstalling PyTorch to save disk space...")
+            subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True)
+
         info("Upgrading pip packages...")
-        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "stable-ts", "pypdf"], 
+        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "pypdf"], 
                            capture_output=True, text=True)
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:

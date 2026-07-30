@@ -646,7 +646,7 @@ _ANSI_CYAN  = "\033[36m"
 _ANSI_RESET = "\033[0m"
 
 class Spinner:
-    FRAMES = ["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]
+    FRAMES = ["|", "/", "-", "\\"]
 
     def __init__(self, label):
         self.label   = label
@@ -1512,41 +1512,20 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         _pip_run("install", "--upgrade", "pip", "-q", label="Upgrading pip", spinner=False)
 
         torch_ok = subprocess.run([venv_pip, "show", "torch"], capture_output=True).returncode == 0
-        if is_update and torch_ok:
-            log_info("PyTorch already present. Upgrading Whisper only...")
-            _pip_run("install", "--upgrade", "faster-whisper", "stable-ts", "pypdf", "-q",
-                     label="Upgrading Whisper / Stable-TS / PyPDF")
-        elif not has_nvidia:
-            _pip_run("install", "torch", "torchaudio",
-                     "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
-                     label="Installing PyTorch (CPU build)")
-            _pip_run("install", "faster-whisper", "stable-ts", "pypdf", "-q",
-                     label="Installing Faster-Whisper + Stable-TS")
+        if torch_ok:
+            log_info("Legacy PyTorch installation detected. Uninstalling to save disk space...")
+            _pip_run("uninstall", "-y", "torch", "torchaudio", "-q", label="Uninstalling PyTorch")
+
+        if is_update:
+            log_info("Upgrading core dependencies...")
+            _pip_run("install", "--upgrade", "faster-whisper", "pypdf", "-q",
+                     label="Upgrading Whisper / PyPDF")
         else:
-            # Try CUDA indexes newest → oldest, CPU as final fallback
-            cuda_ok = False
-            for cu_tag in ("cu124", "cu121", "cu118"):
-                sp = Spinner(f"Installing PyTorch (CUDA {cu_tag})").start()
-                r = subprocess.run(
-                    [venv_py, "-m", "pip", "--no-cache-dir", "install", "torch", "torchaudio",
-                     "--index-url", f"https://download.pytorch.org/whl/{cu_tag}", "-q"],
-                    capture_output=True, text=True
-                )
-                if r.returncode == 0:
-                    sp.done(ok=True)
-                    cuda_ok = True
-                    break
-                else:
-                    sp.done(ok=False)
-                    log_warn(f"  {cu_tag} unavailable for this Python version — trying next...")
-            if not cuda_ok:
-                log_warn("All CUDA indexes failed. Falling back to CPU PyTorch.")
-                _pip_run("install", "torch", "torchaudio",
-                         "--index-url", "https://download.pytorch.org/whl/cpu", "-q",
-                         label="Installing PyTorch (CPU fallback)")
-            _pip_run("install", "faster-whisper", "stable-ts", "pypdf",
-                     *nvidia_pkgs.split(), "-q",
-                     label="Installing Faster-Whisper + Stable-TS + CUDA libs")
+            pkg_list = ["faster-whisper", "pypdf"]
+            if has_nvidia and nvidia_pkgs:
+                pkg_list.extend(nvidia_pkgs.split())
+            _pip_run("install", *pkg_list, "-q",
+                     label="Installing Faster-Whisper + Dependencies")
 
         pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
         if not pyside_ok:
