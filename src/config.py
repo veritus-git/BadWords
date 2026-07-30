@@ -19,7 +19,7 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-VERSION = "3.2.2"
+VERSION = "3.2.3"
 SUPPORT_WEBHOOK_URL = "http://frog02.mikr.us:41385/"
 POSTHOG_API_KEY = "phc_mNTg2LuyNaVX8AG7vW63JZKCXr2PLVGGHHT7jNv3BdKR"
 POSTHOG_HOST = "https://eu.i.posthog.com"
