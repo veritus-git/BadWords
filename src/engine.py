@@ -2193,9 +2193,9 @@ except Exception as e:
             
             if i < len(chunks) - 1:
                 next_chunk_start = chunks[i+1]['words'][0]['start']
-                # We SUBTRACT offset_f so the cut happens BEFORE the word starts,
-                # providing the necessary audio padding.
-                cut_f = t2f(next_chunk_start) - offset_f
+                # We ADD offset_f because Whisper timestamps are typically early,
+                # and a positive offset_f shifts the cut later to align with real speech.
+                cut_f = t2f(next_chunk_start) + offset_f
                 
                 for s in silence_blocks_for_snap:
                     s_start_f = t2f(s['start'])
@@ -2219,8 +2219,7 @@ except Exception as e:
             ops_raw.append({
                 's': block_start_f,
                 'e': block_end_f,
-                'type': chunk['status'],
-                'chunk_idx': i
+                'type': chunk['status']
             })
             current_time_f = block_end_f
 
@@ -2255,15 +2254,15 @@ except Exception as e:
                                 new_sub.append({'s': sub['s'], 'e': sub['e'], 'type': 'silence_mark'})
                         else:
                             if s_s > sub['s']:
-                                new_sub.append({'s': sub['s'], 'e': s_s, 'type': sub['type'], 'chunk_idx': sub.get('chunk_idx')})
+                                new_sub.append({'s': sub['s'], 'e': s_s, 'type': sub['type']})
                             
                             if do_silence_mark:
                                 overlap_s = max(sub['s'], s_s)
                                 overlap_e = min(sub['e'], s_e)
-                                new_sub.append({'s': overlap_s, 'e': overlap_e, 'type': 'silence_mark', 'chunk_idx': sub.get('chunk_idx')})
+                                new_sub.append({'s': overlap_s, 'e': overlap_e, 'type': 'silence_mark'})
                             
                             if s_e < sub['e']:
-                                new_sub.append({'s': s_e, 'e': sub['e'], 'type': sub['type'], 'chunk_idx': sub.get('chunk_idx')})
+                                new_sub.append({'s': s_e, 'e': sub['e'], 'type': sub['type']})
                                 
                     sub_segments = new_sub
                 final_ops.extend(sub_segments)
@@ -2275,7 +2274,7 @@ except Exception as e:
         if ops_raw:
             curr = ops_raw[0]
             for next_op in ops_raw[1:]:
-                if next_op['type'] == curr['type'] and next_op['s'] <= curr['e'] + 1 and next_op.get('chunk_idx') == curr.get('chunk_idx'):
+                if next_op['type'] == curr['type'] and next_op['s'] <= curr['e'] + 1:
                     curr['e'] = max(curr['e'], next_op['e'])
                 else:
                     merged_ops.append(curr)
@@ -2286,7 +2285,7 @@ except Exception as e:
         # This allows the GUI to flawlessly jump to any word's start, even if it's in the middle of a clip,
         # by predicting exactly where the cut would be if that word was a block start.
         for w in processed_words:
-            w_start_f = t2f(w.get('start', 0.0)) - offset_f
+            w_start_f = t2f(w.get('start', 0.0)) + offset_f
             
             for s in silence_blocks_for_snap:
                 s_start_f = t2f(s['start'])

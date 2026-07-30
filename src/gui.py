@@ -2311,11 +2311,16 @@ class AudioPreviewWidget(QFrame):
             self._clear_highlights()
             self.show()
 
-    def set_position_ms(self, ms):
+    def set_position_ms(self, ms, force_word_idx=None):
         import time
         self.player.setPosition(ms)
         self._start_pos_s = ms / 1000.0
         self._real_start_time = time.time()
+        
+        if force_word_idx is not None and force_word_idx >= 0:
+            self._force_highlight_idx = force_word_idx
+            self._force_highlight_until = time.time() + 0.3
+            
         self.sync_playback()
 
         
@@ -2510,16 +2515,27 @@ class AudioPreviewWidget(QFrame):
             self.slider_seek.setValue(int(audio_t / dur * 1000))
             
         found_idx = -1
-        # Lookahead compensates for audio pipeline output latency (~100-200ms)
-        match_t = orig_t + 0.15
-        for i in range(len(canvas.words_data)):
-            start_t = canvas.words_data[i].get('start', 0)
-            if start_t > match_t:
-                found_idx = i - 1
-                break
+        
+        import time
+        if time.time() < getattr(self, '_force_highlight_until', 0.0):
+            found_idx = getattr(self, '_force_highlight_idx', -1)
         else:
-            if canvas.words_data:
-                found_idx = len(canvas.words_data) - 1
+            offset_s = 0.0
+            if self.clean_ops and hasattr(self.main_window, 'engine'):
+                prefs = self.main_window.engine.load_preferences() or {}
+                offset_s = prefs.get('offset', 0.133)
+                
+            # Lookahead compensates for audio pipeline output latency (~100-200ms)
+            # We subtract offset_s because orig_t has offset_s baked into it (the cut point is offset)
+            match_t = orig_t + 0.15 - offset_s
+            for i in range(len(canvas.words_data)):
+                start_t = canvas.words_data[i].get('start', 0)
+                if start_t > match_t:
+                    found_idx = i - 1
+                    break
+            else:
+                if canvas.words_data:
+                    found_idx = len(canvas.words_data) - 1
                 
         if found_idx >= 0 and canvas.words_data[found_idx].get('type') == 'silence':
             pass
@@ -3664,7 +3680,7 @@ class TranscriptionCanvas(QWidget):
                             
                             def t2f(t): return int(round(t * fps))
                             
-                            w_start_f = t2f(start_time) - offset_f
+                            w_start_f = t2f(start_time) + offset_f
                             
                             if hasattr(self, 'words_data'):
                                 for dw in self.words_data:
@@ -3679,15 +3695,21 @@ class TranscriptionCanvas(QWidget):
                                             break
                                             
                             audio_ts = max(0.0, w_start_f / fps)
+                            
+                        idx = -1
+                        try:
+                            idx = self.words_data.index(w)
+                        except Exception:
+                            pass
 
                         if is_assembled and hasattr(self.main_window, 'audio_preview'):
                             # When on an assembled timeline, map the padded anchor point to the assembled coordinate space.
                             # This ensures we hit the exact frame boundary DaVinci cut at.
                             audio_ts = self.main_window.audio_preview._original_to_audio_time(audio_ts)
-                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000))
+                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000), force_word_idx=idx)
                         elif hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.is_preview_active():
                             # When on marking mode but audio preview is running
-                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000))
+                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000), force_word_idx=idx)
                             
                         if hasattr(self.main_window, '_jump_playhead'):
                             from PySide6.QtCore import QTimer
@@ -13318,17 +13340,33 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         
                         class WavAssemblyThread(QThread):
                             finished = Signal(str, list)
-                            def __init__(self, parent, in_path, out_path, ops, fps):
+                            def __init__(self, parent, in_path, out_path, ops, fps, ffmpeg_cmd, sp_kwargs):
                                 super().__init__(parent)
                                 self.in_path = in_path
                                 self.out_path = out_path
                                 self.ops = ops
                                 self.fps = fps
+                                self.ffmpeg_cmd = ffmpeg_cmd
+                                self.sp_kwargs = sp_kwargs
                             def run(self):
                                 import wave
+                                import subprocess
+                                import os
+                                import tempfile
                                 try:
-                                    with wave.open(self.in_path, 'rb') as w_in:
+                                    temp_wav_src = tempfile.mktemp(suffix=".wav")
+                                    decode_cmd = [
+                                        self.ffmpeg_cmd, "-y", "-i", self.in_path,
+                                        "-acodec", "pcm_s16le", temp_wav_src
+                                    ]
+                                    subprocess.run(decode_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self.sp_kwargs)
+                                    
+                                    if not os.path.exists(temp_wav_src):
+                                        raise Exception("FFmpeg decode failed to produce WAV file.")
+                                        
+                                    with wave.open(temp_wav_src, 'rb') as w_in:
                                         params = w_in.getparams()
+                                        nframes = w_in.getnframes()
                                         with wave.open(self.out_path, 'wb') as w_out:
                                             w_out.setparams(params)
                                             sr = params.framerate
@@ -13339,6 +13377,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                                 
                                                 start_frame = int(start_s * sr)
                                                 end_frame = int(end_s * sr)
+                                                
+                                                # Clamp to available frames to prevent wave.Error
+                                                start_frame = max(0, min(start_frame, nframes))
+                                                end_frame = max(0, min(end_frame, nframes))
+                                                
                                                 frames_to_read = max(0, end_frame - start_frame)
                                                 
                                                 if frames_to_read > 0:
@@ -13346,12 +13389,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                                     data = w_in.readframes(frames_to_read)
                                                     w_out.writeframes(data)
                                                     
+                                    try: os.remove(temp_wav_src)
+                                    except: pass
                                     self.finished.emit(self.out_path, self.ops)
                                 except Exception as e:
                                     from osdoc import log_error
                                     log_error(f"Wav assembly exception: {e}")
                                     
-                        self._ffmpeg_thread = WavAssemblyThread(self, audio_path, assembled_audio_path, clean_ops, fps)
+                        kwargs = self.engine.os_doc.get_subprocess_kwargs()
+                        self._ffmpeg_thread = WavAssemblyThread(self, audio_path, assembled_audio_path, clean_ops, fps, ffmpeg_cmd, kwargs)
                         self._ffmpeg_thread.finished.connect(self.audio_preview.load_assembled_audio)
                         self._ffmpeg_thread.start()
                 else:
