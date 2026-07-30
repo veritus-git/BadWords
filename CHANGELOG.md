@@ -3,6 +3,21 @@
 All notable changes to the **BadWords** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [3.2.2] - 2026-07-30
+### Added
+- **Advanced Color Assembly**: Extended the Assembly page logic, enabling users to dynamically select and cut any specific marker color.
+
+### Changed
+- **Engine Architecture**: Removed the `stable-ts` (and underlying PyTorch) dependency entirely. The engine now relies purely on `faster-whisper` for native word-level timestamps, drastically reducing the installation footprint.
+- **Cutting Precision**: Purged outdated legacy hardcoded values and introduced a global temporal offset. While sub-50ms precision remains elusive, these optimizations push verbatim cutting accuracy to the absolute edge of what is currently possible with open-source models.
+- **CPU Performance**: Optimized the chunking and decoding pipeline, pushing CPU transcription speeds to roughly 1.7x real-time on Large models (up from 1.0x).
+- **Default Precision**: Set `Ultra precise (chunking)` as the default processing mode to ensure maximum verbatim accuracy out of the box.
+- **Installer Cleanup**: Updated the installer and updater scripts to reflect the new lightweight dependency tree and purged legacy installation files.
+
+### Fixed
+- **Temporal Drift**: Fixed an issue causing audio preview drift and synchronization inaccuracies with the DaVinci Resolve "Jump to Word" feature.
+- **UI & Models**: Fixed an initialization bug with the `Turbo Large` model, adjusted the smooth marquee hover animation logic, and squashed various minor GUI bugs.
+
 ## [3.2.0] - 2026-07-27
 ### Added
 - **Audio Preview**: Integrated a built-in audio player with volume and playback controls to preview specific words directly inside the transcript. Features strict source timeline validation.
