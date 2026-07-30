@@ -9215,48 +9215,55 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             self.spin_beam_size = QSpinBox(page_ai)
             self.spin_beam_size.setRange(1, 10)
-            self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', 1)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, 1, self.spin_beam_size.setValue))
+            def_beam = config.DEFAULT_SETTINGS.get('ai_beam_size', 1)
+            self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', def_beam)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, def_beam, self.spin_beam_size.setValue))
 
             self.spin_temperature = QDoubleSpinBox(page_ai)
             self.spin_temperature.setRange(0.0, 1.0)
             self.spin_temperature.setSingleStep(0.1)
             self.spin_temperature.setDecimals(2)
-            self.spin_temperature.setValue(float(prefs.get('ai_temperature', 0.0)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, 0.0, self.spin_temperature.setValue))
+            def_temp = config.DEFAULT_SETTINGS.get('ai_temperature', 0.0)
+            self.spin_temperature.setValue(float(prefs.get('ai_temperature', def_temp)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, def_temp, self.spin_temperature.setValue))
 
             self.spin_logprob = QDoubleSpinBox(page_ai)
             self.spin_logprob.setRange(-3.0, 0.0)
             self.spin_logprob.setSingleStep(0.1)
             self.spin_logprob.setDecimals(2)
-            self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', -1.0)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, -1.0, self.spin_logprob.setValue))
+            def_logprob = config.DEFAULT_SETTINGS.get('ai_logprob_threshold', -0.8)
+            self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', def_logprob)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, def_logprob, self.spin_logprob.setValue))
 
             self.spin_no_speech = QDoubleSpinBox(page_ai)
             self.spin_no_speech.setRange(0.0, 1.0)
             self.spin_no_speech.setSingleStep(0.1)
             self.spin_no_speech.setDecimals(2)
-            self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', 0.6)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, 0.6, self.spin_no_speech.setValue))
+            def_nospeech = config.DEFAULT_SETTINGS.get('ai_no_speech_threshold', 0.7)
+            self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', def_nospeech)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, def_nospeech, self.spin_no_speech.setValue))
 
             self.spin_patience = QDoubleSpinBox(page_ai)
             self.spin_patience.setRange(0.0, 10.0)
             self.spin_patience.setSingleStep(0.1)
             self.spin_patience.setDecimals(2)
-            self.spin_patience.setValue(float(prefs.get('ai_patience', 1.0)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, 1.0, self.spin_patience.setValue))
+            def_patience = config.DEFAULT_SETTINGS.get('ai_patience', 1.0)
+            self.spin_patience.setValue(float(prefs.get('ai_patience', def_patience)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, def_patience, self.spin_patience.setValue))
 
             self.spin_compression = QDoubleSpinBox(page_ai)
             self.spin_compression.setRange(0.0, 100.0)
             self.spin_compression.setSingleStep(0.1)
             self.spin_compression.setDecimals(2)
-            self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', 2.4)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, 2.4, self.spin_compression.setValue))
+            def_comp = config.DEFAULT_SETTINGS.get('ai_compression_ratio_threshold', 2.4)
+            self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', def_comp)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, def_comp, self.spin_compression.setValue))
 
             self.spin_no_repeat = QSpinBox(page_ai)
             self.spin_no_repeat.setRange(0, 100)
-            self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', 0)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, 0, self.spin_no_repeat.setValue))
+            def_no_rep = config.DEFAULT_SETTINGS.get('ai_no_repeat_ngram_size', 0)
+            self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', def_no_rep)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, def_no_rep, self.spin_no_repeat.setValue))
 
 
 
@@ -10336,11 +10343,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
         if aot_changed and main_win:
-            if new_prefs.get('always_on_top'):
-                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+            is_top = bool(new_prefs.get('always_on_top'))
+            if hasattr(main_win, '_apply_always_on_top'):
+                main_win._apply_always_on_top(is_top)
             else:
-                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, False)
-            main_win.show()
+                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
+                main_win.show()
 
         if restart_needed:
             lang = old_prefs.get('gui_lang', 'en')
@@ -10729,12 +10737,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._active_shortcuts = []  # track dynamic QShortcuts for cleanup
         self._apply_dynamic_shortcuts()
 
-        prefs_init = self.engine.load_preferences() or {}
-        if prefs_init.get('always_on_top'):
-            self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-
         # --- Maximize on the monitor the cursor is on ---
         self._maximize_on_active_screen()
+
+        prefs_init = self.engine.load_preferences() or {}
+        if prefs_init.get('always_on_top'):
+            self._apply_always_on_top(True)
 
         # --- Telemetry check fires 500 ms after first paint ---
         QTimer.singleShot(500, self.check_telemetry)
@@ -10826,8 +10834,35 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._pin_buttons[fav_id].setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
                 self._pin_buttons[fav_id].click()
 
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._enforce_native_always_on_top()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._enforce_native_always_on_top()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            self._enforce_native_always_on_top()
+
+    def _enforce_native_always_on_top(self):
+        try:
+            prefs = self.engine.load_preferences() or {}
+            if prefs.get('always_on_top') and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                self.engine.os_doc.set_always_on_top(int(self.winId()), True)
+        except Exception:
+            pass
+
+    def _apply_always_on_top(self, enable: bool):
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+        if self.isMaximized():
+            self.showMaximized()
+        elif self.isFullScreen():
+            self.showFullScreen()
+        else:
+            self.show()
 
     # ------------------------------------------------------------------
     # UI Construction
@@ -13577,10 +13612,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         self.script_content_widget = QWidget()
         self.script_content_widget.setFixedWidth(320)
-        self.script_content_widget.setFixedHeight(297)
         self.script_layout = QVBoxLayout(self.script_content_widget)
         self.script_layout.setContentsMargins(0, 0, 0, 0)
         self.script_layout.setSpacing(0)
+        self.script_layout.setAlignment(Qt.AlignTop)
         
         _lbl_script = QLabel(self.txt("lbl_script"))
         _lbl_script.setFixedHeight(16)
@@ -13592,7 +13627,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.script_layout.addSpacing(3)
         
         self.welcome_script_edit = QTextEdit()
-        self.welcome_script_edit.setFixedHeight(278)
+        self.welcome_script_edit.setFixedHeight(247)
         self.welcome_script_edit.setAcceptRichText(False)
         self.welcome_script_edit.setStyleSheet(f'''
             QTextEdit {{
@@ -13983,15 +14018,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.scroll_area.setStyleSheet(f"QScrollArea {{ background-color: {config.BG_COLOR}; border: none; }}")
         
-        self.lbl_skipped_noise = QLabel()
-        self.lbl_skipped_noise.setStyleSheet("color: #444444; font-size: 9pt; padding: 10px;")
-        lbl_text = self.txt("lbl_hidden_start")
-        btn_text = self.txt("btn_show_anyway")
-        self.lbl_skipped_noise.setText(f'{lbl_text} <a href="show" style="color:#666666; text-decoration: underline;">[{btn_text}]</a>')
-        self.lbl_skipped_noise.linkActivated.connect(self._show_start_noise)
-        self.lbl_skipped_noise.hide()
-        layout.addWidget(self.lbl_skipped_noise)
-        
         self.text_canvas = TranscriptionCanvas(main_window=self)
         self.scroll_area.setWidget(self.text_canvas)
 
@@ -14056,12 +14082,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         info.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
         return info
 
-    def _show_start_noise(self, link):
-        self.show_hidden_start = True
-        self.lbl_skipped_noise.hide()
-        if hasattr(self, 'text_canvas'):
-            self.text_canvas._calculate_layout()
-            self.text_canvas.update()
+
 
     def _populate_editor(self, words_data, segments_data):
         import copy
@@ -14079,12 +14100,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._title_bar.update_dropdown_placement()
         
         if hasattr(self, 'text_canvas'):
-            self.show_hidden_start = False
-            has_hidden_start = any(w.get('is_hidden_start') for w in words_data)
-            if has_hidden_start:
-                self.lbl_skipped_noise.show()
-            else:
-                self.lbl_skipped_noise.hide()
+            self.show_hidden_start = True
             self.text_canvas.load_data(words_data)
             self._show_transcript_view()
 
@@ -14809,19 +14825,19 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._focus_signal_connected = True
 
         def safe_toggle_play():
-            if self._is_input_widget() or not self.isActiveWindow():
+            if self._is_input_widget():
                 return
             if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.toggle_play()
 
         def safe_skip_backward():
-            if self._is_input_widget() or not self.isActiveWindow():
+            if self._is_input_widget():
                 return
             if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.skip_backward()
 
         def safe_skip_forward():
-            if self._is_input_widget() or not self.isActiveWindow():
+            if self._is_input_widget():
                 return
             if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
                 self.audio_preview.skip_forward()
@@ -14834,7 +14850,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         def _check_rb(rb):
             """Click (check) the given radio button if it exists."""
             def _do():
-                if self._is_input_widget() or not self.isActiveWindow():
+                if self._is_input_widget():
                     return
                 try:
                     rb.setChecked(True)

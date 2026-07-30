@@ -571,7 +571,8 @@ class OSDoctor:
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             si.wShowWindow = subprocess.SW_HIDE
-            return {"startupinfo": si}
+            cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            return {"startupinfo": si, "creationflags": cf}
         return {}
 
     def force_dark_titlebar(self, window_id: int):
@@ -587,6 +588,19 @@ class OSDoctor:
                 set_window_attribute(window_id, 19, ctypes.byref(ctypes.c_int(2)), ctypes.sizeof(ctypes.c_int))
         except Exception:
             pass
+
+    def set_always_on_top(self, window_id: int, top: bool):
+        """Sets the window to always on top using native API if possible, avoiding Qt window reconstruction bugs."""
+        if not self.is_win:
+            return False
+        try:
+            # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
+            # SWP_NOMOVE = 0x0002, SWP_NOSIZE = 0x0001
+            hwnd_insert_after = -1 if top else -2
+            ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, 0x0003)
+            return True
+        except Exception:
+            return False
 
     # ==========================
     # FILE MANAGEMENT
@@ -621,10 +635,10 @@ class OSDoctor:
     def cleanup_temp(self):
         try:
             if os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir)
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
                 os.makedirs(self.temp_dir, exist_ok=True)
         except Exception as e:
-            log_error(f"cleanup_temp: nie można wyczyścić katalogu temp {self.temp_dir}: {e}")
+            log_error(f"cleanup_temp: failed to clear temp directory {self.temp_dir}: {e}")
 
     # ==========================
     # VENV & DEPENDENCY CHECKING
