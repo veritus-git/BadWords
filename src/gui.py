@@ -3637,11 +3637,57 @@ class TranscriptionCanvas(QWidget):
                     if '_rect' in w and w['_rect'].adjusted(-10, -5, 10, 5).contains(event.pos()):
                         start_time = w.get('start', 0.0)
                         
-                        if hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.is_preview_active():
-                            audio_ts = self.main_window.audio_preview._original_to_audio_time(start_time)
-                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000))
+                        audio_ts = start_time
+                        
+                        is_assembled = False
+                        if hasattr(self.main_window, '_current_chapter_idx') and self.main_window._current_chapter_idx > 0:
+                            is_assembled = True
+                            
+                        # Use the engine's pre-calculated anchor point if available
+                        audio_ts = start_time
+                        if 'anchor_start' in w:
+                            audio_ts = w['anchor_start']
                         else:
-                            audio_ts = start_time
+                            # Fallback if anchor_start is missing
+                            prefs = {}
+                            fps = 24.0
+                            if hasattr(self.main_window, 'engine') and self.main_window.engine:
+                                prefs = self.main_window.engine.load_preferences() or {}
+                                if getattr(self.main_window.engine, 'resolve_handler', None):
+                                    fps = getattr(self.main_window.engine.resolve_handler, 'fps', 24.0)
+                                    
+                            offset_s = prefs.get('offset', 0.133)
+                            snap_max = prefs.get('snap_max', 0.25)
+                            
+                            offset_f = int(round(offset_s * fps))
+                            snap_f = int(round(snap_max * fps))
+                            
+                            def t2f(t): return int(round(t * fps))
+                            
+                            w_start_f = t2f(start_time) - offset_f
+                            
+                            if hasattr(self, 'words_data'):
+                                for dw in self.words_data:
+                                    if dw.get('type') == 'silence':
+                                        s_start_f = t2f(dw.get('start', 0.0))
+                                        s_end_f = t2f(dw.get('end', 0.0))
+                                        if abs(w_start_f - s_start_f) <= snap_f:
+                                            w_start_f = s_start_f
+                                            break
+                                        if abs(w_start_f - s_end_f) <= snap_f:
+                                            w_start_f = s_end_f
+                                            break
+                                            
+                            audio_ts = max(0.0, w_start_f / fps)
+
+                        if is_assembled and hasattr(self.main_window, 'audio_preview'):
+                            # When on an assembled timeline, map the padded anchor point to the assembled coordinate space.
+                            # This ensures we hit the exact frame boundary DaVinci cut at.
+                            audio_ts = self.main_window.audio_preview._original_to_audio_time(audio_ts)
+                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000))
+                        elif hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.is_preview_active():
+                            # When on marking mode but audio preview is running
+                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000))
                             
                         if hasattr(self.main_window, '_jump_playhead'):
                             from PySide6.QtCore import QTimer
@@ -13270,45 +13316,42 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         from PySide6.QtCore import QThread, Signal
                         import tempfile
                         
-                        class FFmpegCutThread(QThread):
+                        class WavAssemblyThread(QThread):
                             finished = Signal(str, list)
-                            def __init__(self, parent, cmd, out_path, ops, list_file_path=None):
+                            def __init__(self, parent, in_path, out_path, ops, fps):
                                 super().__init__(parent)
-                                self.cmd = cmd
+                                self.in_path = in_path
                                 self.out_path = out_path
                                 self.ops = ops
-                                self.list_file_path = list_file_path
+                                self.fps = fps
                             def run(self):
-                                import subprocess
-                                import os
+                                import wave
                                 try:
-                                    res = subprocess.run(self.cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                    with wave.open(self.in_path, 'rb') as w_in:
+                                        params = w_in.getparams()
+                                        with wave.open(self.out_path, 'wb') as w_out:
+                                            w_out.setparams(params)
+                                            sr = params.framerate
+                                            
+                                            for op in self.ops:
+                                                start_s = op['s'] / self.fps
+                                                end_s = op['e'] / self.fps
+                                                
+                                                start_frame = int(start_s * sr)
+                                                end_frame = int(end_s * sr)
+                                                frames_to_read = max(0, end_frame - start_frame)
+                                                
+                                                if frames_to_read > 0:
+                                                    w_in.setpos(start_frame)
+                                                    data = w_in.readframes(frames_to_read)
+                                                    w_out.writeframes(data)
+                                                    
                                     self.finished.emit(self.out_path, self.ops)
-                                except subprocess.CalledProcessError as e:
-                                    from osdoc import log_error
-                                    log_error(f"FFmpeg assembly failed: {e.stderr}")
                                 except Exception as e:
                                     from osdoc import log_error
-                                    log_error(f"FFmpeg assembly exception: {e}")
-                                finally:
-                                    if self.list_file_path and os.path.exists(self.list_file_path):
-                                        try: os.remove(self.list_file_path)
-                                        except: pass
-
-                        list_fd, list_path = tempfile.mkstemp(suffix=".txt", text=True)
-                        import os
-                        with os.fdopen(list_fd, 'w') as f:
-                            for op in clean_ops:
-                                start_s = op['s'] / fps
-                                end_s = op['e'] / fps
-                                f.write(f"file '{audio_path}'\ninpoint {start_s:.6f}\noutpoint {end_s:.6f}\n")
-                        
-                        cmd = [
-                            ffmpeg_cmd, "-y", "-f", "concat", "-safe", "0",
-                            "-i", list_path, "-c", "copy", assembled_audio_path
-                        ]
-                        
-                        self._ffmpeg_thread = FFmpegCutThread(self, cmd, assembled_audio_path, clean_ops, list_path)
+                                    log_error(f"Wav assembly exception: {e}")
+                                    
+                        self._ffmpeg_thread = WavAssemblyThread(self, audio_path, assembled_audio_path, clean_ops, fps)
                         self._ffmpeg_thread.finished.connect(self.audio_preview.load_assembled_audio)
                         self._ffmpeg_thread.start()
                 else:

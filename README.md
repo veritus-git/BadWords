@@ -179,7 +179,7 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 ## 📋 Requirements
 - **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
 - **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
-- **Disk Space:** ~4GB free space for the app, plus 1–10GB depending on your chosen AI models.
+- **Disk Space:** ~4GB free space for the app, plus 1–5GB depending on your chosen AI models.
 
 ---
 

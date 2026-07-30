@@ -117,7 +117,7 @@ class ResolveHandler:
         self.resolve.OpenPage("edit")
         
         start_tc = self.get_timeline_start_frame()
-        target_frame = start_tc + int(seconds * self.fps)
+        target_frame = start_tc + round(seconds * self.fps)
         
         self.timeline.SetCurrentTimecode(self._frames_to_tc(target_frame))
 

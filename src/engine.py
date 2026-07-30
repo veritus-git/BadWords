@@ -585,10 +585,14 @@ try:
     audio_array  = decode_audio({repr(audio_path)}, sampling_rate=16000)
     total_chunks = len(ISLANDS)
     print(f"[Chunked] {{total_chunks}} islands to process.")
-    print("CHUNK_PROGRESS: 0")
+    print("CHUNK_PROGRESS: 0", flush=True)
     
     results_dict = {{}}
     completed = 0
+    import threading
+    progress_lock = threading.Lock()
+    chunk_progress = {{i: 0.0 for i in range(total_chunks)}}
+    total_audio_duration = sum(e - s for s, e in ISLANDS) if total_chunks > 0 else 1.0
     
     def process_chunk(idx, start_t, end_t):
         s_idx = int(start_t * 16000)
@@ -598,7 +602,7 @@ try:
             return idx, []
             
         print(f"[Chunked] Island {{idx+1}}/{{total_chunks}}: {{start_t:.2f}}s—{{end_t:.2f}}s")
-        segments_gen, _ = model.transcribe(
+        segments_gen, info = model.transcribe(
             chunk_audio,
             beam_size={repr(prefs.get('ai_beam_size', 1))},
             patience={repr(prefs.get('ai_patience', 1.0))},
@@ -616,6 +620,12 @@ try:
         
         segs = []
         for seg in segments_gen:
+            with progress_lock:
+                chunk_progress[idx] = seg.end
+                current_total = sum(chunk_progress.values())
+                percent = int((current_total / total_audio_duration) * 100)
+                print(f"CHUNK_PROGRESS: {{percent}}", flush=True)
+
             seg_obj = {{
                 "start": seg.start + start_t,
                 "end":   seg.end   + start_t,
@@ -631,6 +641,13 @@ try:
                         "probability": getattr(w, 'probability', 1.0)
                     }})
             segs.append(seg_obj)
+        
+        with progress_lock:
+            chunk_progress[idx] = end_t - start_t
+            current_total = sum(chunk_progress.values())
+            percent = int((current_total / total_audio_duration) * 100)
+            print(f"CHUNK_PROGRESS: {{percent}}", flush=True)
+            
         return idx, segs
 
     # GPU processes sequentially (fastest due to zero threading overhead, yields 0:35)
@@ -730,9 +747,14 @@ try:
     )
     
     output_segments = []
+    total_duration = info.duration
     
     # Iterate over faster-whisper segments generator
     for segment in segments_gen:
+        # Calculate percentage based on segment end and total duration
+        progress_percent = int((segment.end / total_duration) * 100) if total_duration > 0 else 0
+        print(f"CHUNK_PROGRESS: {{progress_percent}}", flush=True)
+        
         seg_obj = {{
             "start": segment.start,
             "end": segment.end,
@@ -2171,14 +2193,9 @@ except Exception as e:
             
             if i < len(chunks) - 1:
                 next_chunk_start = chunks[i+1]['words'][0]['start']
-                # FIX #1 (DRIFT): The cut point is the start of the NEXT chunk.
-                # offset_f shifts the cut earlier/later (global timing trim).
-                # pad_f is a safety buffer added to the START of the next block,
-                # NOT subtracted from the END of the current one.
-                # Old code: `cut_f = t2f(raw_cut) + offset_f - pad_f`
-                # This double-subtracted (offset is already negative) causing
-                # ~2 frames of loss per cut boundary = 4-5 seconds over 55 clips.
-                cut_f = t2f(next_chunk_start) + offset_f
+                # We SUBTRACT offset_f so the cut happens BEFORE the word starts,
+                # providing the necessary audio padding.
+                cut_f = t2f(next_chunk_start) - offset_f
                 
                 for s in silence_blocks_for_snap:
                     s_start_f = t2f(s['start'])
@@ -2202,7 +2219,8 @@ except Exception as e:
             ops_raw.append({
                 's': block_start_f,
                 'e': block_end_f,
-                'type': chunk['status']
+                'type': chunk['status'],
+                'chunk_idx': i
             })
             current_time_f = block_end_f
 
@@ -2237,15 +2255,15 @@ except Exception as e:
                                 new_sub.append({'s': sub['s'], 'e': sub['e'], 'type': 'silence_mark'})
                         else:
                             if s_s > sub['s']:
-                                new_sub.append({'s': sub['s'], 'e': s_s, 'type': sub['type']})
+                                new_sub.append({'s': sub['s'], 'e': s_s, 'type': sub['type'], 'chunk_idx': sub.get('chunk_idx')})
                             
                             if do_silence_mark:
                                 overlap_s = max(sub['s'], s_s)
                                 overlap_e = min(sub['e'], s_e)
-                                new_sub.append({'s': overlap_s, 'e': overlap_e, 'type': 'silence_mark'})
+                                new_sub.append({'s': overlap_s, 'e': overlap_e, 'type': 'silence_mark', 'chunk_idx': sub.get('chunk_idx')})
                             
                             if s_e < sub['e']:
-                                new_sub.append({'s': s_e, 'e': sub['e'], 'type': sub['type']})
+                                new_sub.append({'s': s_e, 'e': sub['e'], 'type': sub['type'], 'chunk_idx': sub.get('chunk_idx')})
                                 
                     sub_segments = new_sub
                 final_ops.extend(sub_segments)
@@ -2257,12 +2275,32 @@ except Exception as e:
         if ops_raw:
             curr = ops_raw[0]
             for next_op in ops_raw[1:]:
-                if next_op['type'] == curr['type'] and next_op['s'] <= curr['e'] + 1:
+                if next_op['type'] == curr['type'] and next_op['s'] <= curr['e'] + 1 and next_op.get('chunk_idx') == curr.get('chunk_idx'):
                     curr['e'] = max(curr['e'], next_op['e'])
                 else:
                     merged_ops.append(curr)
                     curr = next_op
             merged_ops.append(curr)
+            
+        # Write exact final anchors back into EVERY source word.
+        # This allows the GUI to flawlessly jump to any word's start, even if it's in the middle of a clip,
+        # by predicting exactly where the cut would be if that word was a block start.
+        for w in processed_words:
+            w_start_f = t2f(w.get('start', 0.0)) - offset_f
+            
+            for s in silence_blocks_for_snap:
+                s_start_f = t2f(s['start'])
+                s_end_f = t2f(s['end'])
+                if abs(w_start_f - s_start_f) <= snap_f:
+                    w_start_f = s_start_f
+                    break
+                if abs(w_start_f - s_end_f) <= snap_f:
+                    w_start_f = s_end_f
+                    break
+                    
+            if w_start_f < 0:
+                w_start_f = 0
+            w['anchor_start'] = w_start_f / fps
             
         def get_color_for_type(op_type):
             COLOR_MAP = {
@@ -2577,11 +2615,11 @@ except Exception as e:
             return False
 
     def build_assembly_recipe(self, clean_ops, fps):
-        """Build an FFmpeg recipe dict from assembly ops for storage in .bws."""
+        """Build an assembly recipe dict from ops for storage in .bws."""
         if not clean_ops:
             return None
         return {
-            "type": "ffmpeg_concat",
+            "type": "wave_concat",
             "fps": fps,
             "source": "audio/source.flac",
             "ops": [{"s": op["s"], "e": op["e"], "type": op["type"]} for op in clean_ops]
@@ -2589,11 +2627,11 @@ except Exception as e:
 
     def execute_assembly_recipe(self, recipe, source_audio_path, output_path):
         """
-        Execute an FFmpeg concat recipe against a source audio file.
+        Execute an assembly recipe against a source audio file (using exact wave slicing).
         Produces the assembled/cut audio at output_path.
         Returns True on success.
         """
-        if not recipe or recipe.get("type") != "ffmpeg_concat":
+        if not recipe or recipe.get("type") not in ("ffmpeg_concat", "wave_concat"):
             return False
 
         ops = recipe.get("ops", [])
@@ -2603,32 +2641,60 @@ except Exception as e:
 
         try:
             import tempfile
-            list_fd, list_path = tempfile.mkstemp(suffix=".txt", text=True)
-            with os.fdopen(list_fd, 'w') as f:
-                for op in ops:
-                    start_s = op['s'] / fps
-                    end_s = op['e'] / fps
-                    f.write(f"file '{source_audio_path}'\ninpoint {start_s:.6f}\noutpoint {end_s:.6f}\n")
+            import wave
+            import subprocess
 
-            cmd = [
-                self.ffmpeg_cmd, "-y", "-f", "concat", "-safe", "0",
-                "-i", list_path, "-c", "copy", output_path
+            temp_wav_src = tempfile.mktemp(suffix=".wav")
+            temp_wav_cut = tempfile.mktemp(suffix=".wav")
+
+            # 1. Decode source (FLAC or other) to WAV
+            decode_cmd = [
+                self.ffmpeg_cmd, "-y", "-i", source_audio_path,
+                "-acodec", "pcm_s16le", temp_wav_src
             ]
-            result = subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, timeout=120,
-                **self.os_doc.get_subprocess_kwargs()
-            )
+            subprocess.run(decode_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self.os_doc.get_subprocess_kwargs())
 
-            try: os.remove(list_path)
-            except Exception: pass
+            if not os.path.exists(temp_wav_src):
+                return False
 
-            if result.returncode == 0 and os.path.exists(output_path):
+            # 2. Slice EXACTLY using wave
+            with wave.open(temp_wav_src, 'rb') as w_in:
+                params = w_in.getparams()
+                with wave.open(temp_wav_cut, 'wb') as w_out:
+                    w_out.setparams(params)
+                    sr = params.framerate
+
+                    for op in ops:
+                        start_s = op['s'] / fps
+                        end_s = op['e'] / fps
+                        
+                        start_frame = int(start_s * sr)
+                        end_frame = int(end_s * sr)
+                        frames_to_read = max(0, end_frame - start_frame)
+                        
+                        if frames_to_read > 0:
+                            w_in.setpos(start_frame)
+                            data = w_in.readframes(frames_to_read)
+                            w_out.writeframes(data)
+
+            # 3. Encode cut WAV to FLAC (output format required by .bws structure)
+            encode_cmd = [
+                self.ffmpeg_cmd, "-y", "-i", temp_wav_cut,
+                "-acodec", "flac", "-compression_level", "5", output_path
+            ]
+            subprocess.run(encode_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self.os_doc.get_subprocess_kwargs())
+
+            # Cleanup
+            try: os.remove(temp_wav_src)
+            except: pass
+            try: os.remove(temp_wav_cut)
+            except: pass
+
+            if os.path.exists(output_path):
                 log_info(f"execute_assembly_recipe: wrote {output_path}")
                 return True
-            else:
-                log_error(f"execute_assembly_recipe failed: {result.stderr[:500]}")
-                return False
+            return False
+            
         except Exception as e:
             log_error(f"execute_assembly_recipe error: {e}")
             return False
