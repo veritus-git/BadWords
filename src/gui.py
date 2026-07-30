@@ -7892,8 +7892,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
     # Fallback defaults (for revert buttons)
     DEFAULTS = {
         'view_mode':          'continuous',
-        'offset':             -0.05,
-        'pad':                0.05,
+        'offset':             0.133,
+        'pad':                0.0,
         'snap_max':           0.25,
         'editor_font_family': config.UI_FONT_NAME,
         'editor_font_size':   12,
