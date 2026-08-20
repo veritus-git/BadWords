@@ -39,18 +39,29 @@ class ResolveStreamProxy:
     def __init__(self, stream, log_func):
         self.stream = stream
         self.log_func = log_func
+        self._buffer = ""
     
     def write(self, data):
         try:
-            txt = data.strip()
-            if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt: 
-                self.log_func(f"[STDOUT/ERR] {txt}")
+            self._buffer += data
+            if "\n" in self._buffer:
+                lines = self._buffer.split("\n")
+                self._buffer = lines.pop()
+                for line in lines:
+                    txt = line.rstrip("\r\n")
+                    if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt:
+                        self.log_func(f"[STDOUT/ERR] {txt}")
             self.stream.write(data)
         except Exception:
             pass  # StreamProxy: celowe wyciszenie błędów logowania (nie możemy logować błędu loggera)
     
     def flush(self):
         try:
+            if self._buffer:
+                txt = self._buffer.rstrip("\r\n")
+                if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt:
+                    self.log_func(f"[STDOUT/ERR] {txt}")
+                self._buffer = ""
             if hasattr(self.stream, 'flush'): self.stream.flush()
         except Exception:
             pass  # StreamProxy: flush może nie być obsługiwany przez wszystkie streamy

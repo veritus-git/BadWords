@@ -810,11 +810,17 @@ def two_way_sync(src_paths, dst, protected_files, protected_dirs):
         if os.path.isdir(dp):
             if item not in protected_dirs and not in_src:
                 debug_log(f"Removing obsolete dir: {item}")
-                shutil.rmtree(dp)
+                try:
+                    shutil.rmtree(dp)
+                except OSError as e:
+                    debug_log(f"Warning: Failed to remove dir {dp}: {e}")
         else:
             if item not in protected_files and not in_src:
                 debug_log(f"Removing obsolete file: {item}")
-                os.remove(dp)
+                try:
+                    os.remove(dp)
+                except OSError as e:
+                    debug_log(f"Warning: Failed to remove file {dp}: {e}")
 
 def _clean_legacy_inno_setup(install_dir):
     """Silently cleans up old Inno Setup uninstaller files and registry keys on Windows."""
