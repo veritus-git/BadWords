@@ -2023,6 +2023,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         prefs = self.engine.load_preferences() or {}
         view_mode = prefs.get('settings_view_mode', 'basic')
         is_basic = (view_mode == 'basic')
+        self._is_basic_mode = is_basic
 
         if is_basic:
             self.category_list.addItem(self.txt("tab_general"))
@@ -2040,48 +2041,92 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.category_list.addItem(self.txt("tab_telemetry"))
             self.category_list.addItem(self.txt("tab_support"))
 
-        self.category_list.setCurrentRow(0)
-
-        # ── Revert helper ─────────────────────────────────────────────────
         self.revert_funcs = []
-
-        def _add_row(form, label_text, widget, default_val, setter_func):
-            container = QWidget()
-            row = QHBoxLayout(container)
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(6)
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            row.addWidget(widget)
-            btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(26, 26)
-            btn_rev.setCursor(Qt.PointingHandCursor)
-            btn_rev.setObjectName("btn_ghost_sm")
-            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
-            def create_reset_handler(s_func, d_val):
-                return lambda checked=False: s_func(d_val)
-            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
-            row.addWidget(btn_rev)
-            lbl = QLabel(label_text)
-            lbl.setWordWrap(True)
-            lbl.setMinimumWidth(200)
-            form.addRow(lbl, container)
-            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
-            return lbl, container
-
-        def _add_page_to_stack(page_widget, index=-1):
+        
+        self._page_built = [False] * self.category_list.count()
+        for _ in range(self.category_list.count()):
             scroll = QScrollArea()
             scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.NoFrame)
             scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-            scroll.setWidget(page_widget)
-            if index == -1:
-                self.stack.addWidget(scroll)
-            else:
-                self.stack.insertWidget(index, scroll)
+            self.stack.addWidget(scroll)
 
-        # ─────────────────────────────────────────────────────────────────
+        def _on_tab_changed(idx):
+            self.stack.setCurrentIndex(idx)
+            item = self.category_list.item(idx)
+            if item and item.text() == self.txt("tab_support"):
+                self.w_footer.hide()
+            else:
+                self.w_footer.show()
+                
+            if not self._page_built[idx]:
+                self._build_page(idx)
+                
+            from PySide6.QtWidgets import QApplication
+            try:
+                from gui.utils import _app_icon
+                QApplication.setWindowIcon(_app_icon())
+                if self.parentWidget():
+                    self.parentWidget().setWindowIcon(_app_icon())
+            except Exception:
+                pass
+                
+        try:
+            self.category_list.currentRowChanged.disconnect()
+        except Exception:
+            pass
+        self.category_list.currentRowChanged.connect(_on_tab_changed)
+        
+        self.category_list.setCurrentRow(0)
+        self._build_page(0)
+
+    def _add_row(self, form, label_text, widget, default_val, setter_func):
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row.addWidget(widget)
+        btn_rev = QPushButton("↺")
+        btn_rev.setFixedSize(26, 26)
+        btn_rev.setCursor(Qt.PointingHandCursor)
+        btn_rev.setObjectName("btn_ghost_sm")
+        btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+        def create_reset_handler(s_func, d_val):
+            return lambda checked=False: s_func(d_val)
+        btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+        row.addWidget(btn_rev)
+        lbl = QLabel(label_text)
+        lbl.setWordWrap(True)
+        lbl.setMinimumWidth(200)
+        form.addRow(lbl, container)
+        self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+        return lbl, container
+
+    def _build_page(self, idx):
+        scroll = self.stack.widget(idx)
+        is_basic = getattr(self, '_is_basic_mode', True)
+        prefs = self.engine.load_preferences() or {}
+        
+        if is_basic:
+            mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'telemetry', 5: 'support'}
+        else:
+            mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'ai_engine', 5: 'telemetry', 6: 'support'}
+            
+        page_name = mapping.get(idx)
+        if not page_name:
+            return
+            
+        method = getattr(self, f"_build_page_{page_name}", None)
+        if method:
+            page_widget = method(prefs)
+            if page_widget:
+                scroll.setWidget(page_widget)
+            self._page_built[idx] = True
+
+    def _build_page_general(self, prefs):
         # PAGE 0 — GENERAL
         # ─────────────────────────────────────────────────────────────────
         page_gen = QWidget()
@@ -2101,7 +2146,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         active_btn_style = "background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold;"
         inactive_btn_style = "background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal;"
         
-        if is_basic:
+        if self._is_basic_mode:
             btn_view_basic.setStyleSheet(active_btn_style)
         else:
             btn_view_basic.setStyleSheet(inactive_btn_style)
@@ -2111,7 +2156,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         btn_view_advanced.setFixedHeight(30)
         btn_view_advanced.setCursor(Qt.PointingHandCursor)
         
-        if view_mode == 'advanced':
+        if prefs.get('settings_view_mode', 'basic') == 'advanced':
             btn_view_advanced.setStyleSheet(active_btn_style)
         else:
             btn_view_advanced.setStyleSheet(inactive_btn_style)
@@ -2396,7 +2441,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         def _reset_lang(val):
             self.dropdown_lang.setText(val)
             _on_lang_changed(val)
-        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
+        self._add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
 
         # App Icon (Visual Selector)
         icon_row = QHBoxLayout()
@@ -2439,7 +2484,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         icon_container.setLayout(icon_row)
         icon_container.layout().setContentsMargins(0, 0, 0, 0)
         
-        lbl_icon, container_icon = _add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
+        lbl_icon, container_icon = self._add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
         btn_rev_icon = container_icon.findChild(QPushButton, "btn_ghost_sm")
         if btn_rev_icon:
             btn_rev_icon.clicked.disconnect()
@@ -2475,9 +2520,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         io_row.addWidget(btn_export_s)
         io_row.addStretch()
         l_gen.addLayout(io_row)
-        _add_page_to_stack(page_gen)
 
         # ─────────────────────────────────────────────────────────────────
+
+        return page_gen
+
+    def _build_page_shortcuts(self, prefs):
         # PAGE 1 — SHORTCUTS
 
 
@@ -2593,7 +2641,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if key not in MARKER_KEYS or key not in current_shortcuts:
                 continue
             is_disp = key in DISPLAY_ONLY
-            if is_basic and is_disp:
+            if self._is_basic_mode and is_disp:
                 continue
             value      = current_shortcuts[key]
             i18n_key   = f'shortcut_{key}'
@@ -2629,7 +2677,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if key not in NAV_KEYS or key not in current_shortcuts:
                 continue
             is_disp = key in DISPLAY_ONLY
-            if is_basic and is_disp:
+            if self._is_basic_mode and is_disp:
                 continue
             value      = current_shortcuts[key]
             i18n_key   = f'shortcut_{key}'
@@ -2656,10 +2704,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_shorts.addStretch()
 
         _check_shortcut_conflicts()
-        _add_page_to_stack(page_shorts)
 
 
         # ─────────────────────────────────────────────────────────────────
+
+        return page_shorts
+
+    def _build_page_custom_markers(self, prefs):
         # PAGE 2 — CUSTOM MARKERS
         # ─────────────────────────────────────────────────────────────────
         page_markers = QWidget()
@@ -2727,9 +2778,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_markers.addLayout(marker_btn_row)
 
 
-        _add_page_to_stack(page_markers)
 
         # ─────────────────────────────────────────────────────────────────
+
+        return page_markers
+
+    def _build_page_transcript(self, prefs):
         # PAGE 3 — TRANSCRIPT
         # ─────────────────────────────────────────────────────────────────
         page_transcript = QWidget()
@@ -2738,7 +2792,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_transcript.setContentsMargins(24, 20, 24, 16)
         l_transcript.setSpacing(0)
 
-        if not is_basic:
+        if not self._is_basic_mode:
             form_ontop = QFormLayout()
             form_ontop.setSpacing(14)
             form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -2753,7 +2807,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             l_ontop.addSpacing(6)
             l_ontop.addWidget(self.chk_ontop)
             
-            _add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
+            self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
                      False, lambda v: self.chk_ontop.setChecked(v, animated=False))
             l_transcript.addLayout(form_ontop)
             
@@ -2768,11 +2822,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.combo_view = CustomDropdown(view_items)
         is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
         self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
-        _add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
+        self._add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
                  self.txt("opt_segmented_blocks"), self.combo_view.setValue)
 
         self._chunk_widgets = []
-        if not is_basic:
+        if not self._is_basic_mode:
             def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
                 container = QWidget()
                 row = QHBoxLayout(container)
@@ -2847,11 +2901,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.spin_lheight.setRange(0, 40)
         self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
 
-        _add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
+        self._add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
                  self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
-        _add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
+        self._add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
                  self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
-        _add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
+        self._add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
                  self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
         l_transcript.addLayout(form_transcript)
 
@@ -2903,7 +2957,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_sync.addWidget(self.parent()._create_info_icon("tt_sync_davinci_chapter"))
         l_sync.addSpacing(6)
         l_sync.addWidget(self.chk_sync_davinci)
-        _add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
+        self._add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
                  True, lambda v: self.chk_sync_davinci.setChecked(v, animated=False))
 
         # Track order toggle — directly below sync davinci
@@ -2925,7 +2979,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_xml_track.addWidget(self.parent()._create_info_icon("tt_xml_preserve_track_order"))
         l_xml_track.addSpacing(6)
         l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
-        _add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
+        self._add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
                  False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=False))
 
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
@@ -2941,7 +2995,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ts_precise.addWidget(self.parent()._create_info_icon("tt_timestamp_precise"))
         l_ts_precise.addSpacing(6)
         l_ts_precise.addWidget(self.tgl_timestamp_precise)
-        _add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
+        self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
                  False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=False))
 
         l_transcript.addLayout(form_bottom)
@@ -2952,182 +3006,187 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.spin_lheight.valueChanged.connect(self._update_preview)
         self._update_preview()
         l_transcript.addStretch()
-        _add_page_to_stack(page_transcript, 1)
 
         # ─────────────────────────────────────────────────────────────────
-        if not is_basic:
-            # PAGE 5 — AI ENGINE
+
+        return page_transcript
+
+    def _build_page_ai_engine(self, prefs):
+        # PAGE 5 — AI ENGINE
         # ─────────────────────────────────────────────────────────────────
-            page_ai = QWidget()
-            page_ai.setStyleSheet("background: transparent;")
-            l_ai = QVBoxLayout(page_ai)
-            l_ai.setContentsMargins(24, 20, 24, 16)
-            l_ai.setSpacing(0)
-            form_ai = QFormLayout()
-            form_ai.setSpacing(14)
-            form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            l_ai.addLayout(form_ai)
+        page_ai = QWidget()
+        page_ai.setStyleSheet("background: transparent;")
+        l_ai = QVBoxLayout(page_ai)
+        l_ai.setContentsMargins(24, 20, 24, 16)
+        l_ai.setSpacing(0)
+        form_ai = QFormLayout()
+        form_ai.setSpacing(14)
+        form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        l_ai.addLayout(form_ai)
 
-            # Device
-            _device_items = ["Auto", "CPU", "GPU"]
-            self.dropdown_device = CustomDropdown(_device_items, parent=page_ai)
-            self.dropdown_device.setFixedHeight(30)
-            saved_device = prefs.get('device', 'auto').upper()
-            if saved_device == 'AUTO': saved_device = 'Auto'
-            self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
-            _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setValue)
+        # Device
+        _device_items = ["Auto", "CPU", "GPU"]
+        self.dropdown_device = CustomDropdown(_device_items, parent=page_ai)
+        self.dropdown_device.setFixedHeight(30)
+        saved_device = prefs.get('device', 'auto').upper()
+        if saved_device == 'AUTO': saved_device = 'Auto'
+        self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
+        self._add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setValue)
 
-            # Compute type
-            _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
-            self.dropdown_compute = CustomDropdown(_compute_items, parent=page_ai)
-            self.dropdown_compute.setFixedHeight(30)
-            saved_compute = prefs.get('ai_compute_type', 'Auto')
-            self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
-            _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
+        # Compute type
+        _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
+        self.dropdown_compute = CustomDropdown(_compute_items, parent=page_ai)
+        self.dropdown_compute.setFixedHeight(30)
+        saved_compute = prefs.get('ai_compute_type', 'Auto')
+        self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
+        self._add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
 
-            l_ai.addSpacing(14)
+        l_ai.addSpacing(14)
 
-            # Initial prompt label + QTextEdit
-            lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
-            lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
-            l_ai.addWidget(lbl_prompt)
-            l_ai.addSpacing(4)
+        # Initial prompt label + QTextEdit
+        lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
+        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+        l_ai.addWidget(lbl_prompt)
+        l_ai.addSpacing(4)
 
-            self.textedit_prompt = WrappingPlaceholderTextEdit()
-            self.textedit_prompt.setMaximumHeight(80)
-            saved_prompt = prefs.get('ai_initial_prompt', '').strip()
-            
-            # Resolve ISO code from display name in prefs
-            current_lang_display = prefs.get('lang', 'Auto')
-            current_lang_iso = "Auto"
-            for iso, display in config.SUPPORTED_LANGUAGES.items():
-                if display == current_lang_display:
-                    current_lang_iso = iso
-                    break
-            
-            auto_prompt = config.get_whisper_prompt_for_lang(current_lang_iso)
-            self.textedit_prompt.setPlaceholderText(auto_prompt)
-            
-            if saved_prompt:
-                self.textedit_prompt.setPlainText(saved_prompt)
-            else:
-                self.textedit_prompt.setPlainText("")
-            self.textedit_prompt.setStyleSheet(f"""
-                QTextEdit {{
-                    background-color: #1e1e1e;
-                    color: #d4d4d4;
-                    border: 1px solid #3a3a3a;
-                    border-radius: 3px;
-                    padding: 6px 8px;
-                    font-family: {config.UI_FONT_NAME};
-                    font-size: 10pt;
-                }}
-            """)
-            l_ai.addWidget(self.textedit_prompt)
+        self.textedit_prompt = WrappingPlaceholderTextEdit()
+        self.textedit_prompt.setMaximumHeight(80)
+        saved_prompt = prefs.get('ai_initial_prompt', '').strip()
+        
+        # Resolve ISO code from display name in prefs
+        current_lang_display = prefs.get('lang', 'Auto')
+        current_lang_iso = "Auto"
+        for iso, display in config.SUPPORTED_LANGUAGES.items():
+            if display == current_lang_display:
+                current_lang_iso = iso
+                break
+        
+        auto_prompt = config.get_whisper_prompt_for_lang(current_lang_iso)
+        self.textedit_prompt.setPlaceholderText(auto_prompt)
+        
+        if saved_prompt:
+            self.textedit_prompt.setPlainText(saved_prompt)
+        else:
+            self.textedit_prompt.setPlainText("")
+        self.textedit_prompt.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 6px 8px;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+            }}
+        """)
+        l_ai.addWidget(self.textedit_prompt)
 
-            # ── Advanced Whisper Parameters ─────────────────────────
-            sep_whisper = QFrame()
-            sep_whisper.setFrameShape(QFrame.Shape.HLine)
-            sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
-            l_ai.addSpacing(14)
-            l_ai.addWidget(sep_whisper)
-            l_ai.addSpacing(10)
-            self._advanced_widgets.append(sep_whisper)
+        # ── Advanced Whisper Parameters ─────────────────────────
+        sep_whisper = QFrame()
+        sep_whisper.setFrameShape(QFrame.Shape.HLine)
+        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_ai.addSpacing(14)
+        l_ai.addWidget(sep_whisper)
+        l_ai.addSpacing(10)
+        self._advanced_widgets.append(sep_whisper)
 
-            form_whisper = QFormLayout()
-            form_whisper.setSpacing(14)
-            form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            l_ai.addLayout(form_whisper)
+        form_whisper = QFormLayout()
+        form_whisper.setSpacing(14)
+        form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        l_ai.addLayout(form_whisper)
 
-            self.chk_vad_filter = ToggleSwitch(parent=page_ai)
-            self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
-            w_vad = QWidget(page_ai); l_vad = QHBoxLayout(w_vad); l_vad.setContentsMargins(0, 0, 0, 0); l_vad.addStretch(); l_vad.addWidget(self.chk_vad_filter)
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_vad_filter"), w_vad, False, lambda v: self.chk_vad_filter.setChecked(v, animated=False)))
+        self.chk_vad_filter = ToggleSwitch(parent=page_ai)
+        self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
+        w_vad = QWidget(page_ai); l_vad = QHBoxLayout(w_vad); l_vad.setContentsMargins(0, 0, 0, 0); l_vad.addStretch(); l_vad.addWidget(self.chk_vad_filter)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_vad_filter"), w_vad, False, lambda v: self.chk_vad_filter.setChecked(v, animated=False)))
 
-            self.chk_condition_prev = ToggleSwitch(parent=page_ai)
-            self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
-            w_cond = QWidget(page_ai); l_cond = QHBoxLayout(w_cond); l_cond.setContentsMargins(0, 0, 0, 0); l_cond.addStretch(); l_cond.addWidget(self.chk_condition_prev)
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_condition_prev"), w_cond, False, lambda v: self.chk_condition_prev.setChecked(v, animated=False)))
+        self.chk_condition_prev = ToggleSwitch(parent=page_ai)
+        self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
+        w_cond = QWidget(page_ai); l_cond = QHBoxLayout(w_cond); l_cond.setContentsMargins(0, 0, 0, 0); l_cond.addStretch(); l_cond.addWidget(self.chk_condition_prev)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_condition_prev"), w_cond, False, lambda v: self.chk_condition_prev.setChecked(v, animated=False)))
 
-            self.spin_beam_size = QSpinBox(page_ai)
-            self.spin_beam_size.setRange(1, 10)
-            def_beam = config.DEFAULT_SETTINGS.get('ai_beam_size', 1)
-            self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', def_beam)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, def_beam, self.spin_beam_size.setValue))
+        self.spin_beam_size = QSpinBox(page_ai)
+        self.spin_beam_size.setRange(1, 10)
+        def_beam = config.DEFAULT_SETTINGS.get('ai_beam_size', 1)
+        self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', def_beam)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, def_beam, self.spin_beam_size.setValue))
 
-            self.spin_temperature = QDoubleSpinBox(page_ai)
-            self.spin_temperature.setRange(0.0, 1.0)
-            self.spin_temperature.setSingleStep(0.1)
-            self.spin_temperature.setDecimals(2)
-            def_temp = config.DEFAULT_SETTINGS.get('ai_temperature', 0.0)
-            self.spin_temperature.setValue(float(prefs.get('ai_temperature', def_temp)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, def_temp, self.spin_temperature.setValue))
+        self.spin_temperature = QDoubleSpinBox(page_ai)
+        self.spin_temperature.setRange(0.0, 1.0)
+        self.spin_temperature.setSingleStep(0.1)
+        self.spin_temperature.setDecimals(2)
+        def_temp = config.DEFAULT_SETTINGS.get('ai_temperature', 0.0)
+        self.spin_temperature.setValue(float(prefs.get('ai_temperature', def_temp)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, def_temp, self.spin_temperature.setValue))
 
-            self.spin_logprob = QDoubleSpinBox(page_ai)
-            self.spin_logprob.setRange(-3.0, 0.0)
-            self.spin_logprob.setSingleStep(0.1)
-            self.spin_logprob.setDecimals(2)
-            def_logprob = config.DEFAULT_SETTINGS.get('ai_logprob_threshold', -0.8)
-            self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', def_logprob)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, def_logprob, self.spin_logprob.setValue))
+        self.spin_logprob = QDoubleSpinBox(page_ai)
+        self.spin_logprob.setRange(-3.0, 0.0)
+        self.spin_logprob.setSingleStep(0.1)
+        self.spin_logprob.setDecimals(2)
+        def_logprob = config.DEFAULT_SETTINGS.get('ai_logprob_threshold', -0.8)
+        self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', def_logprob)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, def_logprob, self.spin_logprob.setValue))
 
-            self.spin_no_speech = QDoubleSpinBox(page_ai)
-            self.spin_no_speech.setRange(0.0, 1.0)
-            self.spin_no_speech.setSingleStep(0.1)
-            self.spin_no_speech.setDecimals(2)
-            def_nospeech = config.DEFAULT_SETTINGS.get('ai_no_speech_threshold', 0.7)
-            self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', def_nospeech)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, def_nospeech, self.spin_no_speech.setValue))
+        self.spin_no_speech = QDoubleSpinBox(page_ai)
+        self.spin_no_speech.setRange(0.0, 1.0)
+        self.spin_no_speech.setSingleStep(0.1)
+        self.spin_no_speech.setDecimals(2)
+        def_nospeech = config.DEFAULT_SETTINGS.get('ai_no_speech_threshold', 0.7)
+        self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', def_nospeech)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, def_nospeech, self.spin_no_speech.setValue))
 
-            self.spin_patience = QDoubleSpinBox(page_ai)
-            self.spin_patience.setRange(0.0, 10.0)
-            self.spin_patience.setSingleStep(0.1)
-            self.spin_patience.setDecimals(2)
-            def_patience = config.DEFAULT_SETTINGS.get('ai_patience', 1.0)
-            self.spin_patience.setValue(float(prefs.get('ai_patience', def_patience)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, def_patience, self.spin_patience.setValue))
+        self.spin_patience = QDoubleSpinBox(page_ai)
+        self.spin_patience.setRange(0.0, 10.0)
+        self.spin_patience.setSingleStep(0.1)
+        self.spin_patience.setDecimals(2)
+        def_patience = config.DEFAULT_SETTINGS.get('ai_patience', 1.0)
+        self.spin_patience.setValue(float(prefs.get('ai_patience', def_patience)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, def_patience, self.spin_patience.setValue))
 
-            self.spin_compression = QDoubleSpinBox(page_ai)
-            self.spin_compression.setRange(0.0, 100.0)
-            self.spin_compression.setSingleStep(0.1)
-            self.spin_compression.setDecimals(2)
-            def_comp = config.DEFAULT_SETTINGS.get('ai_compression_ratio_threshold', 2.4)
-            self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', def_comp)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, def_comp, self.spin_compression.setValue))
+        self.spin_compression = QDoubleSpinBox(page_ai)
+        self.spin_compression.setRange(0.0, 100.0)
+        self.spin_compression.setSingleStep(0.1)
+        self.spin_compression.setDecimals(2)
+        def_comp = config.DEFAULT_SETTINGS.get('ai_compression_ratio_threshold', 2.4)
+        self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', def_comp)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, def_comp, self.spin_compression.setValue))
 
-            self.spin_no_repeat = QSpinBox(page_ai)
-            self.spin_no_repeat.setRange(0, 100)
-            def_no_rep = config.DEFAULT_SETTINGS.get('ai_no_repeat_ngram_size', 0)
-            self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', def_no_rep)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, def_no_rep, self.spin_no_repeat.setValue))
-
-
-
-            
-            self.spin_length_penalty = QDoubleSpinBox(page_ai)
-            self.spin_length_penalty.setRange(0.0, 10.0)
-            self.spin_length_penalty.setSingleStep(0.1)
-            self.spin_length_penalty.setDecimals(2)
-            self.spin_length_penalty.setValue(float(prefs.get('ai_length_penalty', 1.0)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_length_penalty") if self.txt("lbl_length_penalty") != "lbl_length_penalty" else "Length Penalty", self.spin_length_penalty, 1.0, self.spin_length_penalty.setValue))
-
-            self.spin_repetition_penalty = QDoubleSpinBox(page_ai)
-            self.spin_repetition_penalty.setRange(1.0, 10.0)
-            self.spin_repetition_penalty.setSingleStep(0.1)
-            self.spin_repetition_penalty.setDecimals(2)
-            self.spin_repetition_penalty.setValue(float(prefs.get('ai_repetition_penalty', 1.0)))
-            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_repetition_penalty") if self.txt("lbl_repetition_penalty") != "lbl_repetition_penalty" else "Repetition Penalty", self.spin_repetition_penalty, 1.0, self.spin_repetition_penalty.setValue))
-            
-            l_ai.addStretch()
-            _add_page_to_stack(page_ai)
+        self.spin_no_repeat = QSpinBox(page_ai)
+        self.spin_no_repeat.setRange(0, 100)
+        def_no_rep = config.DEFAULT_SETTINGS.get('ai_no_repeat_ngram_size', 0)
+        self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', def_no_rep)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, def_no_rep, self.spin_no_repeat.setValue))
 
 
 
+        
+        self.spin_length_penalty = QDoubleSpinBox(page_ai)
+        self.spin_length_penalty.setRange(0.0, 10.0)
+        self.spin_length_penalty.setSingleStep(0.1)
+        self.spin_length_penalty.setDecimals(2)
+        self.spin_length_penalty.setValue(float(prefs.get('ai_length_penalty', 1.0)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_length_penalty") if self.txt("lbl_length_penalty") != "lbl_length_penalty" else "Length Penalty", self.spin_length_penalty, 1.0, self.spin_length_penalty.setValue))
 
-        # ─────────────────────────────────────────────────────────────────
-        # ─────────────────────────────────────────────────────────────────
+        self.spin_repetition_penalty = QDoubleSpinBox(page_ai)
+        self.spin_repetition_penalty.setRange(1.0, 10.0)
+        self.spin_repetition_penalty.setSingleStep(0.1)
+        self.spin_repetition_penalty.setDecimals(2)
+        self.spin_repetition_penalty.setValue(float(prefs.get('ai_repetition_penalty', 1.0)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_repetition_penalty") if self.txt("lbl_repetition_penalty") != "lbl_repetition_penalty" else "Repetition Penalty", self.spin_repetition_penalty, 1.0, self.spin_repetition_penalty.setValue))
+        
+        l_ai.addStretch()
+
+
+
 
         # ─────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_ai
+
+    def _build_page_telemetry(self, prefs):
         # PAGE 8 — TELEMETRY
         # ─────────────────────────────────────────────────────────────────
         page_telem = QWidget()
@@ -3155,7 +3214,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l1.setContentsMargins(0, 0, 0, 0)
         l1.addStretch()
         l1.addWidget(self.chk_telemetry_opt_in)
-        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
+        self._add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
                  False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
 
         self.chk_telemetry_geo = ToggleSwitch()
@@ -3165,7 +3224,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l2.setContentsMargins(0, 0, 0, 0)
         l2.addStretch()
         l2.addWidget(self.chk_telemetry_geo)
-        _add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
+        self._add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
                  True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
 
         l_telem.addLayout(form_telem)
@@ -3219,9 +3278,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_telem.addSpacing(12)
 
 
-        _add_page_to_stack(page_telem)
 
         # ─────────────────────────────────────────────────────────────────
+
+        return page_telem
+
+    def _build_page_support(self, prefs):
         # PAGE 9 — SUPPORT
         # ─────────────────────────────────────────────────────────────────
         page_support = QWidget()
@@ -3521,12 +3583,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_support.addWidget(w_send)
 
         l_support.addStretch()
-        _add_page_to_stack(page_support)
 
         # FIX: Capture the exact UI state right after full construction
         # This prevents false-positive unsaved changes warnings when disk JSON
         # lacks keys that are correctly populated with defaults by the UI.
         self._initial_state = self._get_current_state_dict()
+
+
+        return page_support
 
     def _restore_all_defaults(self):
         msg_box = CustomMsgBox(
