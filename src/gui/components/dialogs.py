@@ -2003,6 +2003,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         if self._is_basic_mode and self.category_list.currentRow() == 4:
             self.category_list.setCurrentRow(0)
             
+        if hasattr(self, 'btn_view_basic') and hasattr(self, 'btn_view_advanced'):
+            if self._is_basic_mode:
+                self.btn_view_basic.setStyleSheet(self.active_btn_style)
+                self.btn_view_advanced.setStyleSheet(self.inactive_btn_style)
+            else:
+                self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
+                self.btn_view_advanced.setStyleSheet(self.active_btn_style)
+    def showEvent(self, event):
+        super().showEvent(event)
+        # WORKAROUND: Force OS to refresh the main application icon
+        from PySide6.QtWidgets import QApplication
+        try:
+            from gui.utils import _app_icon
+            QApplication.setWindowIcon(_app_icon())
+            parent_window = self.parentWidget()
+            if parent_window:
+                parent_window.setWindowIcon(_app_icon())
+        except Exception:
+            pass
+
     def _build_ui(self):
         self._advanced_widgets = []
         self.category_list.clear()
@@ -2109,31 +2129,31 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         view_btn_row.setContentsMargins(0, 0, 0, 16)
         view_btn_row.setSpacing(10)
         
-        btn_view_basic = QPushButton(self.txt("btn_view_basic"))
-        btn_view_basic.setFixedHeight(30)
-        btn_view_basic.setCursor(Qt.PointingHandCursor)
-        active_btn_style = "background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold;"
-        inactive_btn_style = "background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal;"
+        self.btn_view_basic = QPushButton(self.txt("btn_view_basic"))
+        self.btn_view_basic.setFixedHeight(30)
+        self.btn_view_basic.setCursor(Qt.PointingHandCursor)
+        self.active_btn_style = "background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold;"
+        self.inactive_btn_style = "background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal;"
         
         if self._is_basic_mode:
-            btn_view_basic.setStyleSheet(active_btn_style)
+            self.btn_view_basic.setStyleSheet(self.active_btn_style)
         else:
-            btn_view_basic.setStyleSheet(inactive_btn_style)
-        btn_view_basic.clicked.connect(lambda: self._set_view_mode('basic'))
+            self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
+        self.btn_view_basic.clicked.connect(lambda: self._set_view_mode('basic'))
         
-        btn_view_advanced = QPushButton(self.txt("btn_view_advanced"))
-        btn_view_advanced.setFixedHeight(30)
-        btn_view_advanced.setCursor(Qt.PointingHandCursor)
+        self.btn_view_advanced = QPushButton(self.txt("btn_view_advanced"))
+        self.btn_view_advanced.setFixedHeight(30)
+        self.btn_view_advanced.setCursor(Qt.PointingHandCursor)
         
-        if prefs.get('settings_view_mode', 'basic') == 'advanced':
-            btn_view_advanced.setStyleSheet(active_btn_style)
+        if not self._is_basic_mode:
+            self.btn_view_advanced.setStyleSheet(self.active_btn_style)
         else:
-            btn_view_advanced.setStyleSheet(inactive_btn_style)
+            self.btn_view_advanced.setStyleSheet(self.inactive_btn_style)
             
-        btn_view_advanced.clicked.connect(lambda: self._set_view_mode('advanced'))
+        self.btn_view_advanced.clicked.connect(lambda: self._set_view_mode('advanced'))
 
-        view_btn_row.addWidget(btn_view_basic)
-        view_btn_row.addWidget(btn_view_advanced)
+        view_btn_row.addWidget(self.btn_view_basic)
+        view_btn_row.addWidget(self.btn_view_advanced)
         l_gen.addLayout(view_btn_row)
 
         # ── Version / Update card (at the top) ────────────────────────────
@@ -4091,13 +4111,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             pass
 
     def _restore_state_dict(self, state):
-        is_basic = state.get('settings_view_mode', 'basic') == 'basic'
-        self._safe_set('chk_telemetry_opt_in', state.get('telemetry_opt_in', False), 'setChecked')
-        self._safe_set('chk_telemetry_geo', state.get('telemetry_geo', False), 'setChecked')
+        def _g(k, d): v = state.get(k); return v if v is not None else d
+        is_basic = _g('settings_view_mode', 'basic') == 'basic'
+        self._safe_set('chk_telemetry_opt_in', _g('telemetry_opt_in', False), 'setChecked')
+        self._safe_set('chk_telemetry_geo', _g('telemetry_geo', False), 'setChecked')
         
         try:
             if hasattr(self, 'icon_group'):
-                icon_name = state.get('app_icon', 'default')
+                icon_name = _g('app_icon', 'default')
                 for btn in self.icon_group.buttons():
                     if btn.property("icon_name") == icon_name:
                         btn.setChecked(True)
@@ -4106,18 +4127,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             pass
                 
         try:
-            lang_code = state.get('gui_lang', 'en')
+            lang_code = _g('gui_lang', 'en')
             self._safe_set('dropdown_lang', config.SUPPORTED_LANGS.get(lang_code, 'English'), 'setText')
         except Exception:
             pass
         
-        view_mode = state.get('view_mode', 'segmented')
+        view_mode = _g('view_mode', 'segmented')
         self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
-        self._safe_set('combo_font', state.get('editor_font_family', 'Segoe UI'), 'setText')
-        self._safe_set('spin_fsize', state.get('editor_font_size', 12), 'setValue')
-        self._safe_set('spin_lheight', state.get('editor_line_height', 7), 'setValue')
+        self._safe_set('combo_font', _g('editor_font_family', 'Segoe UI'), 'setText')
+        self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
+        self._safe_set('spin_lheight', _g('editor_line_height', 7), 'setValue')
         
-        self.current_custom_markers = state.get('custom_markers', [])
+        self.current_custom_markers = _g('custom_markers', [])
         try:
             if hasattr(self, '_refresh_markers_list'):
                 self._refresh_markers_list()
@@ -4127,44 +4148,44 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         try:
             from PySide6.QtGui import QKeySequence
             if hasattr(self, 'shortcut_inputs'):
-                for k, v in state.get('shortcuts', {}).items():
+                for k, v in _g('shortcuts', {}).items():
                     if k in self.shortcut_inputs:
                         self.shortcut_inputs[k].set_sequence(v)
         except RuntimeError:
             pass
                 
-        self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
-        self._safe_set('tgl_timestamp_precise', state.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
-        self._safe_set('tgl_auto_check_updates', state.get('auto_check_updates', True), 'setChecked')
-        self._safe_set('tgl_auto_update_on_start', state.get('auto_update_on_start', False), 'setChecked')
+        self._safe_set('chk_sync_davinci', _g('sync_davinci_chapter', True), 'setChecked')
+        self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
+        self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')
+        self._safe_set('tgl_auto_update_on_start', _g('auto_update_on_start', False), 'setChecked')
         
         if not is_basic:
-            self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
+            self._safe_set('chk_ontop', _g('always_on_top', False), 'setChecked')
             
-            dev_val = state.get('device', 'Auto').upper()
+            dev_val = _g('device', 'Auto').upper()
             if dev_val == 'AUTO': dev_val = 'Auto'
             self._safe_set('dropdown_device', dev_val, 'setText')
-            self._safe_set('dropdown_compute', state.get('ai_compute_type', 'Auto'), 'setText')
-            self._safe_set('textedit_prompt', state.get('ai_initial_prompt', ''), 'setPlainText')
-            self._safe_set('spin_chunk_max', state.get('chunk_max_words', 30), 'setValue')
-            self._safe_set('spin_chunk_look', state.get('chunk_lookahead', 3), 'setValue')
-            self._safe_set('spin_chunk_min', state.get('chunk_min_chars', 7), 'setValue')
-            self._safe_set('chk_vad_filter', state.get('ai_vad_filter', False), 'setChecked')
-            self._safe_set('spin_beam_size', state.get('ai_beam_size', 1), 'setValue')
-            self._safe_set('spin_temperature', state.get('ai_temperature', 0.0), 'setValue')
-            self._safe_set('chk_condition_prev', state.get('ai_condition_on_prev', False), 'setChecked')
-            self._safe_set('spin_logprob', state.get('ai_logprob_threshold', -1.0), 'setValue')
-            self._safe_set('spin_no_speech', state.get('ai_no_speech_threshold', 0.6), 'setValue')
-            self._safe_set('spin_patience', state.get('ai_patience', 1.0), 'setValue')
-            self._safe_set('spin_compression', state.get('ai_compression_ratio_threshold', 2.4), 'setValue')
-            self._safe_set('spin_no_repeat', state.get('ai_no_repeat_ngram_size', 0), 'setValue')
+            self._safe_set('dropdown_compute', _g('ai_compute_type', 'Auto'), 'setText')
+            self._safe_set('textedit_prompt', _g('ai_initial_prompt', ''), 'setPlainText')
+            self._safe_set('spin_chunk_max', _g('chunk_max_words', 30), 'setValue')
+            self._safe_set('spin_chunk_look', _g('chunk_lookahead', 3), 'setValue')
+            self._safe_set('spin_chunk_min', _g('chunk_min_chars', 7), 'setValue')
+            self._safe_set('chk_vad_filter', _g('ai_vad_filter', False), 'setChecked')
+            self._safe_set('spin_beam_size', _g('ai_beam_size', 1), 'setValue')
+            self._safe_set('spin_temperature', _g('ai_temperature', 0.0), 'setValue')
+            self._safe_set('chk_condition_prev', _g('ai_condition_on_prev', False), 'setChecked')
+            self._safe_set('spin_logprob', _g('ai_logprob_threshold', -1.0), 'setValue')
+            self._safe_set('spin_no_speech', _g('ai_no_speech_threshold', 0.6), 'setValue')
+            self._safe_set('spin_patience', _g('ai_patience', 1.0), 'setValue')
+            self._safe_set('spin_compression', _g('ai_compression_ratio_threshold', 2.4), 'setValue')
+            self._safe_set('spin_no_repeat', _g('ai_no_repeat_ngram_size', 0), 'setValue')
 
-            self._safe_set('spin_length_penalty', state.get('ai_length_penalty', 1.0), 'setValue')
-            self._safe_set('spin_repetition_penalty', state.get('ai_repetition_penalty', 1.0), 'setValue')
-            self._safe_set('spin_fuzzy', state.get('algo_fuzzy_threshold', 80), 'setValue')
-            self._safe_set('spin_lookahead', state.get('algo_retake_lookahead', 80), 'setValue')
-            self._safe_set('spin_penalty', state.get('algo_distance_penalty', 2.0), 'setValue')
-            self._safe_set('spin_anchor', state.get('algo_anchor_depth', 3), 'setValue')
+            self._safe_set('spin_length_penalty', _g('ai_length_penalty', 1.0), 'setValue')
+            self._safe_set('spin_repetition_penalty', _g('ai_repetition_penalty', 1.0), 'setValue')
+            self._safe_set('spin_fuzzy', _g('algo_fuzzy_threshold', 80), 'setValue')
+            self._safe_set('spin_lookahead', _g('algo_retake_lookahead', 80), 'setValue')
+            self._safe_set('spin_penalty', _g('algo_distance_penalty', 2.0), 'setValue')
+            self._safe_set('spin_anchor', _g('algo_anchor_depth', 3), 'setValue')
 
     def _apply_settings(self):
         old_prefs = self.engine.load_preferences() or {}
