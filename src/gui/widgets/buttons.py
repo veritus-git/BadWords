@@ -557,7 +557,7 @@ class AnimatedPlayerButton(QPushButton):
     def update_icon(self, icon_name):
         from PySide6.QtGui import QIcon
         import os
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
@@ -694,7 +694,7 @@ class SidebarButton(QPushButton):
         elif activity_id == "settings":
             image_name = "settings.png"
             
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir

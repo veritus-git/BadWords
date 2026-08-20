@@ -301,7 +301,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
 def _app_icon() -> QIcon:
     try:
         import json
-        install_dir = os.path.dirname(os.path.abspath(__file__))
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         is_win = platform.system() == "Windows"
         ext = ".ico" if is_win else ".png"
 
@@ -426,7 +426,7 @@ class SearchOverlayWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _icon_path = os.path.join(_src_dir, "layout", "search.png")
         
         self.btn_open_search = QPushButton()
@@ -1430,7 +1430,7 @@ class AudioPreviewWidget(QFrame):
         self._force_system_volume(v)
         import os
         from PySide6.QtGui import QPixmap
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
@@ -2895,7 +2895,7 @@ class CustomTitleBar(QWidget):
         self.chapter_dropdown.hide()  # Always hidden — Edit menu now owns this
         
         # Resolve icon directory (assets/layout/ sibling to src/)
-        _src_dir    = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _assets_dir = os.path.join(_src_dir, "layout")
 
         self.btn_min = AnimatedTitleButton(
@@ -7349,7 +7349,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         btn_copy_logs = QPushButton("")
         import PySide6.QtGui as qg
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         btn_copy_logs.setIcon(qg.QIcon(os.path.join(_src_dir, "layout", "copy.png")))
         btn_copy_logs.setToolTip(self.txt("btn_copy_path"))
         btn_copy_logs.setStyleSheet("background: transparent; border: none; padding: 4px;")
@@ -9401,7 +9401,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_clear_transcript.setFixedSize(26, 26)
         self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
         self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
@@ -9535,7 +9535,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         div_top.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
         l_colors_container.addWidget(div_top)
         
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
@@ -10926,7 +10926,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         color_name_title = c_n
                         break
                         
-                _src_dir = os.path.dirname(os.path.abspath(__file__))
+                _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
                 _assets_dir = os.path.join(_src_dir, "layout") if os.path.exists(os.path.join(_src_dir, "layout")) else os.path.join(os.path.dirname(_src_dir), "assets", "layout")
 
                 lbl_color = QLabel(self.txt("lbl_cut_color_fmt").format(hex=color_hex, color=label_text))
@@ -11471,7 +11471,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
         
         info_model = QLabel()
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
@@ -12013,7 +12013,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _create_info_icon(self, tooltip_key: str) -> QLabel:
         info = QLabel()
-        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _prod_assets_dir = os.path.join(_src_dir, "layout")
         _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
         _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
