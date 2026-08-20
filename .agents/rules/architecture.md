@@ -45,3 +45,6 @@ This layer handles background threads, complex state management, and file saving
 3. **Event Loop Safety**: Never block the Qt Event Loop. Use QTimer or QThread (`handlers/analysis_worker.py`) for I/O operations or algorithmic computations.
 4. **Localization (i18n)**: Do not hardcode user-facing strings. Always use `get_trans(key)` from `i18n.__init__`.
 5. **English Only Descriptions**: All python module docstrings MUST be written in English. Do NOT inject Polish instructions in codebase comments or docstrings.
+6. **Self-Updating Documentation**: You MUST update this `architecture.md` file whenever you introduce new files, refactor architecture, or create major functions. Ensure this map is always up-to-date with reality.
+7. **Commit & Push Protocol**: You MUST commit your changes and always push them to all remotes (e.g., `git push all <branch>`) when completing a task or milestone.
+8. **Testing Etiquette (No Trash)**: Do not run `main.py` directly in the repository unless absolutely necessary. Running Python generates `__pycache__` and other temporary trash. If you must run it, you MUST clean up `__pycache__` afterwards (`find src -type d -name "__pycache__" -exec rm -rf {} +`) and ensure these files are NEVER committed to the repository.
