@@ -1,0 +1,13099 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+"""
+MODULE: gui.py
+ROLE: Presentation Layer
+DESCRIPTION:
+Responsible solely for displaying the interface (PySide6).
+Includes dark-theme styling via QSS based on config.py color palette.
+Receives user actions and delegates them to Engine or ResolveHandler.
+[PySide6 migration: Stage 2 — Main Window Shell & Dynamic Panels]
+"""
+
+from PySide6 import QtCore
+import re
+import math
+import platform
+import subprocess
+import os
+import time
+import traceback
+import ctypes
+import threading
+
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
+    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
+    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
+    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
+    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
+    QTabWidget, QSpinBox, QButtonGroup, QLayout
+)
+from PySide6.QtCore import (
+    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
+    QVariantAnimation, QEasingCurve, QAbstractAnimation,
+    QPropertyAnimation, Property, QThread
+)
+from PySide6.QtGui import (
+    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
+    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
+)
+from PySide6.QtCore import QMimeData
+
+import config
+
+# --- INJECTED WIDGET IMPORTS ---
+from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
+from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
+from gui.widgets.layouts import FlowLayout, MainPanelWidget
+from gui.widgets.progress_bar import LiquidProgressBar
+from gui.widgets.language_selector import _LangPickerDialog
+from gui.widgets.splitters import GripHandle, GripSplitter
+from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
+from gui.widgets.sliders import JumpSlider
+# -------------------------------
+
+import osdoc
+
+# ==========================================
+# QFRAMELESSWINDOW — NATIVE CSD LIBRARY
+# ==========================================
+# On Windows, use the battle-tested qframelesswindow library for proper
+# Aero Snap, DWM shadows, resize, drag-detach, and snap layouts.
+# Linux/macOS keep the existing manual code (it works fine there).
+_HAS_QFRAMELESS = False
+_BaseMainWindow = QMainWindow
+_BaseDialog = QDialog
+
+# ==========================================
+# MACOS FONT SCALING MONKEY PATCH
+# ==========================================
+_orig_set_style_sheet = QWidget.setStyleSheet
+def _scaled_set_style_sheet(self, qss):
+    import platform, re
+    if platform.system() == "Darwin" and qss and isinstance(qss, str):
+        # Scale pt to px using 1.333 ratio
+        qss = re.sub(r'font-size:\s*([\d\.]+)pt;', lambda m: f"font-size: {int(float(m.group(1)) * 1.333)}px;", qss)
+    _orig_set_style_sheet(self, qss)
+QWidget.setStyleSheet = _scaled_set_style_sheet
+
+# ==========================================
+# CONSTANTS
+# ==========================================
+RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Languages
+
+
+# ==========================================
+# HELPERS
+# ==========================================
+
+_QPushButton = QPushButton
+
+
+
+
+_QRadioButton = QRadioButton
+
+
+_QLabel = QLabel
+
+
+
+
+
+
+
+from PySide6.QtWidgets import QStyledItemDelegate, QStyle
+from PySide6.QtCore import QModelIndex
+
+class MarqueeItemDelegate(QStyledItemDelegate):
+    """Delegate for QListWidget that draws item text with a smooth marquee
+    animation on hover when the text is wider than the available column width.
+    Completely replaces the default item renderer — no horizontal scrollbar needed.
+    """
+    _PADDING = 16  # must match QSS padding: 10px 16px
+
+    def __init__(self, list_widget):
+        super().__init__(list_widget)
+        self._lw = list_widget
+        # State per row index
+        self._mq_pos   = {}   # float offset
+        self._mq_alpha = {}   # 0.0–1.0 fade
+        self._mq_state = {}   # str state machine
+        self._mq_ticks = {}   # int tick counter
+        self._hovered_row = -1
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)  # ~60fps
+        self._timer.timeout.connect(self._tick)
+
+        # Install event filter on the viewport to catch mouse moves
+        self._lw.viewport().installEventFilter(self)
+        self._lw.viewport().setMouseTracking(True)
+
+    def _row_state(self, row):
+        if row not in self._mq_state:
+            self._mq_pos[row]   = 0.0
+            self._mq_alpha[row] = 1.0
+            self._mq_state[row] = "START_DELAY"
+            self._mq_ticks[row] = 0
+        return self._mq_state[row]
+
+    def _reset_row(self, row):
+        self._mq_pos[row]   = 0.0
+        self._mq_alpha[row] = 1.0
+        self._mq_state[row] = "START_DELAY"
+        self._mq_ticks[row] = 0
+
+    def _available_width(self):
+        """Pixel width available for text inside the list (minus padding)."""
+        return self._lw.viewport().width() - self._PADDING * 2
+
+    def _text_overflows(self, row):
+        item = self._lw.item(row)
+        if item is None:
+            return False
+        fm = self._lw.fontMetrics()
+        return fm.horizontalAdvance(item.text()) > self._available_width()
+
+    def eventFilter(self, obj, event):
+        try:
+            lw_vp = self._lw.viewport()
+        except RuntimeError:
+            return False
+        if obj is lw_vp:
+            if event.type() == QEvent.Type.MouseMove:
+                pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
+                idx = self._lw.indexAt(pos)
+                new_row = idx.row() if idx.isValid() else -1
+                if new_row != self._hovered_row:
+                    old = self._hovered_row
+                    self._hovered_row = new_row
+                    # Reset old row animation
+                    if old >= 0:
+                        self._reset_row(old)
+                        self._lw.update(self._lw.model().index(old, 0))
+                    # Start new row animation if text overflows
+                    if new_row >= 0 and self._text_overflows(new_row):
+                        self._row_state(new_row)  # ensure initialised
+                        if not self._timer.isActive():
+                            self._timer.start()
+                    elif not self._timer.isActive():
+                        pass  # nothing to animate
+            elif event.type() == QEvent.Type.Leave:
+                old = self._hovered_row
+                self._hovered_row = -1
+                if old >= 0:
+                    self._reset_row(old)
+                    self._lw.update(self._lw.model().index(old, 0))
+                self._timer.stop()
+        return super().eventFilter(obj, event)
+
+    def _tick(self):
+        row = self._hovered_row
+        if row < 0 or not self._text_overflows(row):
+            self._timer.stop()
+            return
+
+        item = self._lw.item(row)
+        fm = self._lw.fontMetrics()
+        avail = self._available_width()
+        max_scroll = float(max(0, fm.horizontalAdvance(item.text()) - avail))
+
+        state = self._row_state(row)
+
+        if state == "START_DELAY":
+            self._mq_ticks[row] += 1
+            if self._mq_ticks[row] > 40:
+                self._mq_state[row] = "SCROLL"
+                self._mq_ticks[row] = 0
+        elif state == "SCROLL":
+            self._mq_pos[row] += 0.5
+            if self._mq_pos[row] >= max_scroll:
+                self._mq_pos[row] = max_scroll
+                self._mq_state[row] = "END_DELAY"
+                self._mq_ticks[row] = 0
+        elif state == "END_DELAY":
+            self._mq_ticks[row] += 1
+            if self._mq_ticks[row] > 40:
+                self._mq_state[row] = "FADEOUT"
+                self._mq_ticks[row] = 0
+        elif state == "FADEOUT":
+            self._mq_alpha[row] -= 0.05
+            if self._mq_alpha[row] <= 0.0:
+                self._mq_alpha[row] = 0.0
+                self._mq_pos[row] = 0.0
+                self._mq_state[row] = "FADEIN"
+        elif state == "FADEIN":
+            self._mq_alpha[row] += 0.05
+            if self._mq_alpha[row] >= 1.0:
+                self._mq_alpha[row] = 1.0
+                self._mq_state[row] = "START_DELAY"
+                self._mq_ticks[row] = 0
+
+        self._lw.update(self._lw.model().index(row, 0))
+
+    def paint(self, painter, option, index):
+        # Draw selection/hover background using the standard style
+        from PySide6.QtWidgets import QStyleOptionViewItem
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""  # suppress native text drawing
+        self._lw.style().drawControl(QStyle.CE_ItemViewItem, opt, painter, self._lw)
+
+        row = index.row()
+        item = self._lw.item(row)
+        if item is None:
+            return
+
+        text = item.text()
+        fm = painter.fontMetrics()
+        avail = self._available_width()
+        overflows = fm.horizontalAdvance(text) > avail
+
+        # Determine text colour based on selection state
+        is_selected = bool(option.state & QStyle.State_Selected)
+        palette = option.palette
+        color = palette.highlightedText().color() if is_selected else palette.windowText().color()
+
+        is_animating = overflows and row == self._hovered_row
+        if is_animating:
+            alpha = self._mq_alpha.get(row, 1.0)
+            if alpha < 1.0:
+                color.setAlphaF(max(0.0, min(1.0, alpha)))
+
+        painter.save()
+        painter.setPen(color)
+        painter.setFont(option.font)
+
+        # Clip to the content rect to hide overflow
+        text_rect = option.rect.adjusted(self._PADDING, 0, -self._PADDING, 0)
+        painter.setClipRect(text_rect)
+
+        offset = int(self._mq_pos.get(row, 0.0)) if is_animating else 0
+
+        # Show elided text with "…" when overflowing but not yet scrolling,
+        # and draw full text once the marquee animation has started moving.
+        scrolling = is_animating and offset > 0
+        if overflows and not scrolling:
+            # Use Qt's built-in elider to clip+append "…"
+            display_text = fm.elidedText(text, Qt.ElideRight, avail)
+        else:
+            display_text = text
+
+        draw_rect = QRect(text_rect.left() - offset, text_rect.top(), 9999, text_rect.height())
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, display_text)
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        return hint
+
+
+
+
+
+def _app_icon() -> QIcon:
+    try:
+        import json
+        install_dir = os.path.dirname(os.path.abspath(__file__))
+        is_win = platform.system() == "Windows"
+        ext = ".ico" if is_win else ".png"
+
+        icon_name = "default"
+        settings_file = os.path.join(install_dir, "settings.json")
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                icon_name = data.get('app_icon', 'default')
+
+        icon_path = os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(install_dir, f"icon{ext}")
+
+        if os.path.exists(icon_path):
+            return QIcon(icon_path)
+    except Exception:
+        pass
+    return QIcon()
+
+
+def apply_dark_title_bar(window: QWidget):
+    """Forces the native Windows title bar to dark mode."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            # 20 is DWMWA_USE_IMMERSIVE_DARK_MODE in Windows 10/11
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(window.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4)
+        except Exception:
+            pass
+
+def _center_on_screen(widget: QWidget, w: int, h: int):
+    """Center *widget* on the primary screen (or active monitor if detectable)."""
+    screen = QApplication.primaryScreen()
+    if screen:
+        geo = screen.availableGeometry()
+        x = geo.x() + (geo.width()  - w) // 2
+        y = geo.y() + (geo.height() - h) // 2
+        widget.setGeometry(x, y, w, h)
+
+
+def _txt(lang: str, key: str, **kwargs) -> str:
+    """Return translation string for *key* in *lang*, falling back to 'en'."""
+    text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
+    if kwargs:
+        return text.format(**kwargs)
+    return text
+
+
+def _qwidget_txt(self, key: str, **kwargs) -> str:
+    w = self.window()
+    if hasattr(w, 'txt') and w != self:
+        return w.txt(key, **kwargs)
+    return _txt("en", key, **kwargs)
+
+QWidget.txt = _qwidget_txt
+
+
+# ==========================================
+# PHASE 7 CLASSES: WORKER, PROGRESS BAR, CANVAS
+# ==========================================
+
+
+
+class SearchOverlayWidget(QFrame):
+    def __init__(self, parent_widget, main_window):
+        super().__init__(parent_widget)
+        self.main_window = main_window
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame, QGraphicsOpacityEffect
+        from PySide6.QtCore import Qt, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect, QSize
+        from PySide6.QtGui import QColor, QAction, QIcon, QPixmap
+        import os
+        
+        self.setObjectName("SearchOverlay")
+        self.setProperty("expanded", False)
+        self.setFixedHeight(36)
+        
+        self.setStyleSheet("""
+            QFrame#SearchOverlay {
+                background-color: transparent;
+                border: none;
+            }
+            QFrame#SearchContainer {
+                background-color: #252525;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+            }
+            QLineEdit, QLabel, QPushButton {
+                background: transparent;
+                border: none;
+                color: #dddddd;
+            }
+            QLineEdit {
+                padding: 4px;
+            }
+            QLabel {
+                padding-right: 8px;
+            }
+            QPushButton {
+                font-weight: bold;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                color: #ffffff;
+                background-color: #333333;
+                border-radius: 4px;
+            }
+            QPushButton#BtnOpenSearch {
+                border-radius: 6px;
+                background-color: transparent;
+            }
+            QPushButton#BtnOpenSearch:hover {
+                background-color: #333333;
+            }
+        """)
+        
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _icon_path = os.path.join(_src_dir, "layout", "search.png")
+        
+        self.btn_open_search = QPushButton()
+        self.btn_open_search.setObjectName("BtnOpenSearch")
+        self.btn_open_search.setFixedSize(36, 36)
+        
+        pix = QPixmap(_icon_path)
+        if not pix.isNull():
+            self.btn_open_search.setIcon(QIcon(pix))
+            self.btn_open_search.setIconSize(QSize(18, 18))
+        else:
+            self.btn_open_search.setText("🔍")
+            
+        self.btn_open_search.setToolTip(self.main_window.txt("search_placeholder"))
+        self.btn_open_search.clicked.connect(self.toggle_search)
+        
+        self.search_container = QFrame()
+        self.search_container.setObjectName("SearchContainer")
+        self.search_container.setFixedSize(300, 36)
+        search_layout = QHBoxLayout(self.search_container)
+        search_layout.setContentsMargins(8, 6, 8, 6)
+        search_layout.setSpacing(4)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(self.main_window.txt("search_placeholder"))
+        
+        self.counter_label = QLabel(self.main_window.txt("search_results_counter_empty"))
+        
+        self.btn_prev = QPushButton("▲")
+        self.btn_prev.setToolTip(self.main_window.txt("search_tooltip_prev"))
+        self.btn_prev.setFixedSize(24, 24)
+        
+        self.btn_next = QPushButton("▼")
+        self.btn_next.setToolTip(self.main_window.txt("search_tooltip_next"))
+        self.btn_next.setFixedSize(24, 24)
+        
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setToolTip(self.main_window.txt("search_tooltip_close"))
+        self.btn_close.setFixedSize(24, 24)
+        
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.counter_label)
+        search_layout.addWidget(self.btn_prev)
+        search_layout.addWidget(self.btn_next)
+        search_layout.addWidget(self.btn_close)
+        
+        from PySide6.QtWidgets import QScrollArea
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidget(self.search_container)
+        self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.scroll_area.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
+        layout.addWidget(self.scroll_area)
+        layout.addWidget(self.btn_open_search)
+        
+        self.scroll_area.hide()
+        
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(300)
+        self.search_timer.timeout.connect(self._perform_search)
+        
+        self.search_input.textChanged.connect(self._on_text_changed)
+        self.search_input.returnPressed.connect(self._on_enter_pressed)
+        self.search_input.installEventFilter(self)
+        
+        self.btn_prev.clicked.connect(self.prev_match)
+        self.btn_next.clicked.connect(self.next_match)
+        self.btn_close.clicked.connect(self.close_search)
+        
+        self.matches = []
+        self.current_index = -1
+        self._anim = None
+        
+        if parent_widget:
+            parent_widget.installEventFilter(self)
+            
+        self.show()
+        QTimer.singleShot(0, self._reposition)
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent, Qt
+        if obj == self.parentWidget() and event.type() == QEvent.Resize:
+            self._reposition()
+        elif obj == self.search_input and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Up:
+                self.prev_match()
+                return True
+            elif event.key() == Qt.Key_Down:
+                self.next_match()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _on_text_changed(self, text):
+        self.search_timer.start()
+
+    def _on_enter_pressed(self):
+        from PySide6.QtGui import QGuiApplication
+        mods = QGuiApplication.keyboardModifiers()
+        from PySide6.QtCore import Qt
+        if mods & Qt.ShiftModifier:
+            self.prev_match()
+        else:
+            self.next_match()
+
+    def _perform_search(self):
+        query = self.search_input.text().strip()
+        self.matches.clear()
+        self.current_index = -1
+        
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or getattr(canvas, 'words_data', None) is None:
+            self._update_counter()
+            return
+            
+        # Clean flags
+        for w in canvas.words_data:
+            w.pop('_search_match', None)
+            w.pop('_search_active', None)
+            
+        if not query:
+            canvas.update()
+            self._update_counter()
+            return
+            
+        import re
+        q_lower = query.lower()
+        # Break query into words removing special chars for matching
+        q_words = [re.sub(r'[^\w\s]', '', q) for q in q_lower.split() if q]
+        if not q_words:
+            # If all were special chars, just use the raw query tokens
+            q_words = [q for q in q_lower.split() if q]
+            if not q_words:
+                canvas.update()
+                self._update_counter()
+                return
+        
+        # Build searchable list
+        searchable = []
+        for idx, w in enumerate(canvas.words_data):
+            if w.get('type') == 'silence' or w.get('_hidden'):
+                continue
+            d_text = w.get('_display_text', w.get('text', ''))
+            if not d_text.strip():
+                continue
+            clean_text = re.sub(r'[^\w\s]', '', d_text).lower()
+            raw_text = d_text.lower()
+            searchable.append((idx, clean_text, raw_text))
+            
+        # Sliding window
+        q_len = len(q_words)
+        for i in range(len(searchable) - q_len + 1):
+            match = True
+            matched_indices = []
+            
+            for j in range(q_len):
+                idx, clean_text, raw_text = searchable[i + j]
+                q_word = q_words[j]
+                
+                # Full match required for all except the last word
+                if j < q_len - 1:
+                    # check exact match on clean text or raw text
+                    if q_word != clean_text and q_word != raw_text:
+                        match = False
+                        break
+                else:
+                    # Last word can be a partial (contains) match
+                    if q_word not in clean_text and q_word not in raw_text:
+                        match = False
+                        break
+                        
+                matched_indices.append(idx)
+                
+            if match:
+                self.matches.append(matched_indices)
+                for idx in matched_indices:
+                    canvas.words_data[idx]['_search_match'] = True
+
+        if self.matches:
+            self.current_index = 0
+            self._apply_active_highlight()
+            
+        self._update_counter()
+        canvas.update()
+
+    def _apply_active_highlight(self):
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or not getattr(canvas, 'words_data', None): return
+        
+        for matched_indices in self.matches:
+            for idx in matched_indices:
+                canvas.words_data[idx].pop('_search_active', None)
+            
+        if 0 <= self.current_index < len(self.matches):
+            active_indices = self.matches[self.current_index]
+            for idx in active_indices:
+                canvas.words_data[idx]['_search_active'] = True
+            
+            w = canvas.words_data[active_indices[0]]
+            if '_rect' in w:
+                rect = w['_rect']
+                if hasattr(self.main_window, 'scroll_area'):
+                    scroll_area = self.main_window.scroll_area
+                    # Podstawowe przesunięcie X jeśli schowane
+                    scroll_area.ensureVisible(rect.x(), rect.y(), 50, 50)
+                    
+                    # Wymuszenie idealnego wyśrodkowania w pionie
+                    vp_h = scroll_area.viewport().height()
+                    vbar = scroll_area.verticalScrollBar()
+                    target_y = rect.center().y()
+                    new_val = int(target_y - vp_h / 2)
+                    vbar.setValue(max(vbar.minimum(), min(new_val, vbar.maximum())))
+                
+        canvas.update()
+
+    def _update_counter(self):
+        if not self.matches:
+            self.counter_label.setText(self.main_window.txt("search_results_counter_empty"))
+        else:
+            self.counter_label.setText(f"{self.current_index + 1}/{len(self.matches)}")
+
+    def next_match(self):
+        if not self.matches: return
+        self.current_index = (self.current_index + 1) % len(self.matches)
+        self._apply_active_highlight()
+        self._update_counter()
+
+    def prev_match(self):
+        if not self.matches: return
+        self.current_index = (self.current_index - 1) % len(self.matches)
+        self._apply_active_highlight()
+        self._update_counter()
+
+    def toggle_search(self):
+        if self.property("expanded"):
+            self.close_search()
+        else:
+            self.open_search()
+
+    def close_search(self):
+        if not self.property("expanded"): return
+        self.search_input.clear()
+        
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if canvas and canvas.words_data:
+            for w in canvas.words_data:
+                w.pop('_search_match', None)
+                w.pop('_search_active', None)
+            canvas.update()
+            
+        self.setProperty("expanded", False)
+        
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
+        self._anim = QPropertyAnimation(self, b"geometry")
+        self._anim.setDuration(250)
+        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+        start_geom = self.geometry()
+        self._anim.setStartValue(start_geom)
+        
+        parent_w = self.parentWidget().width()
+        target_w = 36
+        target_x = parent_w - target_w - 8
+        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
+        
+        def on_finished():
+            self.scroll_area.hide()
+            self.btn_open_search.show()
+            self._reposition()
+            
+        self._anim.finished.connect(on_finished)
+        self._anim.start()
+
+    def open_search(self):
+        if self.property("expanded"):
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+            return
+            
+        self.show()
+        self.raise_()
+            
+        self.btn_open_search.hide()
+        self.scroll_area.show()
+        
+        self.setProperty("expanded", True)
+        
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
+        self._anim = QPropertyAnimation(self, b"geometry")
+        self._anim.setDuration(300)
+        self._anim.setEasingCurve(QEasingCurve.OutBack)
+        
+        start_geom = self.geometry()
+        self._anim.setStartValue(start_geom)
+        
+        parent_w = self.parentWidget().width()
+        target_w = 300
+        target_x = parent_w - target_w - 8
+        
+        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
+        
+        def on_finished():
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+            
+        self._anim.finished.connect(on_finished)
+        self._anim.start()
+
+    def _reposition(self):
+        try:
+            if not self.parentWidget(): return
+            parent_w = self.parentWidget().width()
+            if self.property("expanded"):
+                target_w = self.sizeHint().width()
+                if target_w < 300: target_w = 300
+                self.setGeometry(parent_w - target_w - 8, 8, target_w, 36)
+            else:
+                self.setGeometry(parent_w - 36 - 8, 8, 36, 36)
+        except Exception as e:
+            import osdoc
+            osdoc.log_error(f"Search positioning error: {str(e)}")
+
+
+from PySide6.QtWidgets import QPushButton, QSlider
+
+
+
+
+
+
+class AudioPreviewWidget(QFrame):
+    def __init__(self, parent_widget, main_window):
+        super().__init__(parent_widget)
+        self.main_window = main_window
+        self.is_collapsed = False
+        self._anim = None
+        
+        import os
+        if os.name == 'posix':
+            # Changing application.name forces PulseAudio/PipeWire to create a NEW volume profile
+            # at 100%, completely bypassing the user's previously stuck 30% volume bug.
+            os.environ["PULSE_PROP_application.name"] = "BadWordsApp"
+            os.environ["PULSE_PROP_media.role"] = "production"
+            os.environ["QT_MEDIA_BACKEND"] = "gstreamer"
+        
+        if self.main_window and hasattr(self.main_window, 'scroll_area'):
+            vbar = self.main_window.scroll_area.verticalScrollBar()
+            vbar.actionTriggered.connect(self._on_user_scroll)
+            
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QComboBox, QSlider, QLabel, QWidget, QVBoxLayout
+        from PySide6.QtCore import Qt, QUrl, QTimer, QEvent
+        from PySide6.QtGui import QColor, QFont
+        from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+        import os
+
+        self.setObjectName("AudioPreview")
+        self.setStyleSheet(f"""
+            QFrame#AudioPreview {{
+                background: transparent;
+                border: none;
+            }}
+            QWidget#AudioContent {{
+                background-color: #191919;
+                border-top: 1px solid #2a2a2a;
+            }}
+            QWidget#TabContainer {{
+                background: transparent;
+                border: none;
+            }}
+            QWidget#AudioControls {{
+                background: transparent;
+            }}
+            QWidget {{
+                background: transparent;
+            }}
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: #b0b0b0;
+                font-weight: 600;
+                font-size: 14px;
+                padding: 6px 10px;
+                border-radius: 8px;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+            }}
+            QPushButton:pressed {{
+                background: rgba(255, 255, 255, 0.06);
+            }}
+            QPushButton#PlayBtn {{
+                background-color: {config.BTN_BG};
+                color: #ffffff;
+                border-radius: 20px;
+                font-size: 16px;
+            }}
+            QPushButton#PlayBtn:hover {{
+                background-color: {config.BTN_ACTIVE};
+            }}
+            QLabel {{
+                background: transparent;
+                border: none;
+                color: #b0b0b0;
+                font-size: 13px;
+            }}
+            QComboBox {{
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 6px;
+                color: #d0d0d0;
+                padding: 4px 10px;
+                font-size: 12px;
+            }}
+            QComboBox:hover {{
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 0px;
+            }}
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: rgba(255, 255, 255, 0.10);
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: #d0d0d0;
+                width: 10px;
+                margin: -3px 0;
+                border-radius: 5px;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: #ffffff;
+            }}
+            QSlider#SeekSlider::groove:horizontal {{
+                height: 4px;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 2px;
+            }}
+            QSlider#SeekSlider::sub-page:horizontal {{
+                background: #1ed760;
+                border-radius: 2px;
+            }}
+            QSlider#SeekSlider::handle:horizontal {{
+                background: #ffffff;
+                width: 8px;
+                margin: -3px 0;
+                border-radius: 4px;
+            }}
+            QLabel#TimeLabel {{
+                font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+                font-size: 11px;
+                color: #707070;
+                letter-spacing: 0.5px;
+            }}
+            QLabel#StatusLabel {{
+                color: #666666;
+                font-style: italic;
+                font-size: 12px;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Content container (collapsible)
+        self.content_widget = QWidget()
+        self.content_widget.setObjectName("AudioContent")
+        content_layout = QVBoxLayout(self.content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        
+        layout.addWidget(self.content_widget)
+
+        # Floating toggle tab (wysepka parented to parent page for true zero-margin overlay)
+        self.toggle_tab = AudioToggleTab(parent_widget)
+        self.toggle_tab.setToolTip(self.main_window.txt("tooltip_toggle_audio_preview"))
+        self.toggle_tab.clicked.connect(self.toggle_collapse)
+        
+        if parent_widget:
+            parent_widget.installEventFilter(self)
+
+        self.lbl_status = QLabel("")
+        self.lbl_status.setObjectName("StatusLabel")
+        self.lbl_status.setFixedHeight(70)
+        self.lbl_status.setAlignment(Qt.AlignCenter)
+        self.lbl_status.setOpenExternalLinks(False)
+        self.lbl_status.setTextFormat(Qt.RichText)
+        self.lbl_status.setStyleSheet("""
+            QLabel#StatusLabel {
+                background-color: #1a1a1a;
+                color: #d0d0d0;
+                font-size: 13px;
+                padding: 12px;
+                border-top: 1px solid #2a2a2a;
+                border-left: none;
+                border-right: none;
+                border-bottom: none;
+            }
+            QLabel#StatusLabel a {
+                color: #1a7a45;
+                font-weight: 600;
+                text-decoration: underline;
+                text-underline-offset: 3px;
+            }
+            QLabel#StatusLabel a:hover {
+                color: #23a559;
+            }
+        """)
+        self.lbl_status.linkActivated.connect(self._on_fetch_missing_audio)
+        self.lbl_status.hide()
+        content_layout.addWidget(self.lbl_status)
+
+        self.controls_widget = QWidget()
+        self.controls_widget.setObjectName("AudioControls")
+        controls_layout = QHBoxLayout(self.controls_widget)
+        controls_layout.setContentsMargins(16, 12, 16, 12)
+        controls_layout.setSpacing(16)
+        
+        # Left controls (Keep centered)
+        left_widget = QWidget()
+        left_layout = QHBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+        
+        self.tgl_centered = ToggleSwitch(parent=self)
+        self.tgl_centered.toggled.connect(self._on_tgl_centered_changed)
+        
+        self.lbl_centered = QLabel(self.main_window.txt("msg_keep_centered"))
+        self.lbl_centered.setStyleSheet("color: #b0b0b0; font-size: 13px;")
+        
+        left_layout.addWidget(self.tgl_centered)
+        left_layout.addSpacing(12)
+        left_layout.addWidget(self.lbl_centered)
+        left_layout.addStretch()
+        
+        self.lbl_vol_icon = QLabel()
+        self.lbl_vol_icon.setFixedSize(20, 20)
+        self.lbl_vol_icon.setAlignment(Qt.AlignCenter)
+        
+        self.slider_vol = JumpSlider(Qt.Horizontal)
+        self.slider_vol.setRange(0, 100)
+        self.slider_vol.setValue(100)
+        self.slider_vol.setFixedWidth(60)
+        
+        self.cb_speed = SpeedDropdown()
+        self.cb_speed.addItems(["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x", "3.0x"])
+        self.cb_speed.setCurrentText("1.0x")
+        self.cb_speed.setFixedWidth(60)
+        
+        # Center controls (Playback + Seek slider)
+        center_widget = QWidget()
+        center_layout = QVBoxLayout(center_widget)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(8)
+        
+        play_layout = QHBoxLayout()
+        play_layout.setAlignment(Qt.AlignCenter)
+        
+        self.btn_prev = AnimatedPlayerButton("player-backward.png", button_size=32, icon_size=16)
+        self.btn_play = AnimatedPlayerButton("player-play.png", button_size=32, icon_size=16)
+        self.btn_play.setObjectName("PlayBtn")
+        self.btn_play.setStyleSheet(f"""
+            QPushButton#PlayBtn {{
+                background-color: #ffffff;
+                border-radius: 16px;
+            }}
+            QPushButton#PlayBtn:hover {{
+                background-color: #e0e0e0;
+            }}
+        """)
+        self.btn_next = AnimatedPlayerButton("player-forward.png", button_size=32, icon_size=16)
+        
+        play_layout.addWidget(self.btn_prev)
+        play_layout.addSpacing(8)
+        play_layout.addWidget(self.btn_play)
+        play_layout.addSpacing(8)
+        play_layout.addWidget(self.btn_next)
+        
+        self.slider_seek = JumpSlider(Qt.Horizontal)
+        self.slider_seek.setObjectName("SeekSlider")
+        self.slider_seek.setRange(0, 1000)
+        self.slider_seek.setValue(0)
+        self.slider_seek.setMinimumWidth(100)
+        from PySide6.QtWidgets import QSizePolicy
+        self.slider_seek.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._seek_dragging = False
+        self.slider_seek.sliderPressed.connect(self._on_seek_pressed)
+        self.slider_seek.sliderReleased.connect(self._on_seek_released)
+        self.slider_seek.sliderMoved.connect(self._on_seek_moved)
+        self.slider_seek.sliderMoved.connect(self._on_seek_moved)
+        
+        self.lbl_time_curr = QLabel("0:00")
+        self.lbl_time_curr.setObjectName("TimeLabel")
+        self.lbl_time_curr.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_time_curr.setFixedWidth(40)
+        
+        self.lbl_time_total = QLabel("0:00")
+        self.lbl_time_total.setObjectName("TimeLabel")
+        self.lbl_time_total.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.lbl_time_total.setFixedWidth(40)
+        
+        seek_layout = QHBoxLayout()
+        seek_layout.setAlignment(Qt.AlignCenter)
+        seek_layout.addWidget(self.lbl_time_curr)
+        seek_layout.addSpacing(8)
+        seek_layout.addWidget(self.slider_seek, 1)
+        seek_layout.addSpacing(8)
+        seek_layout.addWidget(self.lbl_time_total)
+        
+        center_layout.addLayout(play_layout)
+        center_layout.addLayout(seek_layout)
+        
+        # Right controls (Volume & Speed)
+        right_widget = QWidget()
+        right_layout = QHBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+        
+        right_layout.addWidget(self.cb_speed)
+        right_layout.addSpacing(4)
+        right_layout.addWidget(self.lbl_vol_icon)
+        right_layout.addWidget(self.slider_vol)
+        
+        controls_layout.addWidget(left_widget, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        controls_layout.addWidget(center_widget, 3, Qt.AlignVCenter)
+        controls_layout.addWidget(right_widget, 1, Qt.AlignRight | Qt.AlignVCenter)
+
+        content_layout.addWidget(self.controls_widget)
+        layout.addWidget(self.content_widget)
+
+        self.player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.player.setAudioOutput(self.audio_output)
+        self.audio_output.setVolume(1.0)
+
+        self.btn_play.clicked.connect(self.toggle_play)
+        self.btn_prev.clicked.connect(self.skip_backward)
+        self.btn_next.clicked.connect(self.skip_forward)
+        self.slider_vol.valueChanged.connect(self._on_volume_changed)
+        self.cb_speed.currentTextChanged.connect(self.change_speed)
+        
+        self._on_volume_changed(100)
+
+        self.update_timer = QTimer(self)
+        self.update_timer.setInterval(16)
+        self.update_timer.timeout.connect(self.sync_playback)
+
+        self.player.playbackStateChanged.connect(self.on_state_changed)
+        
+        self.current_word_idx = -1
+        self.last_jumped_ts = -1.0
+        self.original_audio_path = None
+        self._source_audio_path = None
+        self.clean_ops = None
+        
+        self.hide()
+
+    def update_tab_position(self):
+        if not hasattr(self, 'toggle_tab') or not self.toggle_tab:
+            return
+        parent = self.parentWidget()
+        if not parent or not self.isVisible():
+            if hasattr(self, 'toggle_tab') and self.toggle_tab:
+                self.toggle_tab.hide()
+            return
+        
+        tw = self.toggle_tab.width()
+        th = self.toggle_tab.height()
+        
+        if hasattr(self, 'btn_play') and self.btn_play.isVisible():
+            center_pt = self.btn_play.mapTo(parent, self.btn_play.rect().center())
+            target_x = center_pt.x() - (tw // 2)
+        else:
+            target_x = (parent.width() - tw) // 2
+            
+        target_y = self.y() - th
+        
+        self.toggle_tab.move(target_x, target_y)
+        self.toggle_tab.raise_()
+        self.toggle_tab.show()
+
+    def eventFilter(self, watched, event):
+        from PySide6.QtCore import QEvent
+        if watched == self.parentWidget() and event.type() == QEvent.Resize:
+            self.update_tab_position()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_tab_position()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_tab_position()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if hasattr(self, 'toggle_tab') and self.toggle_tab:
+            self.toggle_tab.hide()
+
+    def is_preview_active(self):
+        return self.isVisible() and not getattr(self, 'is_collapsed', False)
+
+    def toggle_collapse(self):
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve
+        from PySide6.QtMultimedia import QMediaPlayer
+        
+        if getattr(self, '_anim', None) and self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+            
+        target_collapsed = not self.is_collapsed
+        self.is_collapsed = target_collapsed
+        self.toggle_tab.set_collapsed(target_collapsed)
+        
+        target_h = self.controls_widget.sizeHint().height()
+        if target_h < 50:
+            target_h = 70
+        self.controls_widget.setFixedHeight(target_h)
+
+        if target_collapsed:
+            if self.player.playbackState() == QMediaPlayer.PlayingState:
+                self.player.pause()
+            self.update_timer.stop()
+            self._clear_highlights()
+            
+            start_h = self.content_widget.height()
+            if start_h <= 0:
+                start_h = target_h
+            self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
+            self._anim.setDuration(320)
+            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim.setStartValue(start_h)
+            self._anim.setEndValue(0)
+            self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
+            
+            def on_collapse_finished():
+                if self.is_collapsed:
+                    self.content_widget.hide()
+                    self.controls_widget.setMaximumHeight(16777215)
+                    self.controls_widget.setMinimumHeight(0)
+                self.update_tab_position()
+                    
+            self._anim.finished.connect(on_collapse_finished)
+            self._anim.start()
+        else:
+            self.content_widget.show()
+            self.content_widget.setMaximumHeight(0)
+            
+            # Immediately restore highlight state for the currently active word
+            self.current_word_idx = -1
+            self.sync_playback()
+            
+            self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
+            self._anim.setDuration(320)
+            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim.setStartValue(0)
+            self._anim.setEndValue(target_h)
+            self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
+            
+            def on_expand_finished():
+                if not self.is_collapsed:
+                    self.content_widget.setMaximumHeight(16777215)
+                    self.controls_widget.setMaximumHeight(16777215)
+                    self.controls_widget.setMinimumHeight(0)
+                self.update_tab_position()
+                    
+            self._anim.finished.connect(on_expand_finished)
+            self._anim.start()
+
+    def _show_missing_audio_ui(self, is_loading=False, failed=False):
+        if is_loading:
+            loading_txt = self.main_window.txt("msg_audio_preview_preparing")
+            self.lbl_status.setText(f"<span style='color: #b0b0b0;'>{loading_txt}</span>")
+        elif failed:
+            failed_txt = self.main_window.txt("msg_audio_preview_failed")
+            html = f"<a href='fetch_audio' style='color: #e74c3c; text-decoration: none;'>{failed_txt}</a>"
+            self.lbl_status.setText(html)
+        else:
+            prefix = self.main_window.txt("msg_audio_preview_missing")
+            link_txt = self.main_window.txt("msg_audio_preview_get_now")
+            html = f"{prefix} <a href='fetch_audio' style='color: #1a7a45; text-decoration: underline;'>{link_txt}</a>"
+            self.lbl_status.setText(html)
+
+        self.lbl_status.show()
+        self.controls_widget.hide()
+        if getattr(self, 'is_collapsed', False):
+            self.content_widget.hide()
+        else:
+            self.content_widget.show()
+        self.show()
+
+    def _on_fetch_missing_audio(self, url=None):
+        if getattr(self, '_fetching_audio', False):
+            return
+        self._fetching_audio = True
+        self._show_missing_audio_ui(is_loading=True)
+
+        from PySide6.QtCore import QThread, Signal
+        import os
+
+        class FetchAudioWorker(QThread):
+            finished = Signal(str)
+
+            def __init__(self, main_window):
+                super().__init__()
+                self.main_window = main_window
+
+            def run(self):
+                try:
+                    settings = {}
+                    snap = getattr(self.main_window, '_transcription_source', None) or {}
+                    tl_name = snap.get('timeline_name')
+                    if not tl_name and hasattr(self.main_window, 'combo_tl_0') and self.main_window.combo_tl_0:
+                        tl_name = self.main_window.combo_tl_0.text()
+                    if tl_name:
+                        settings['timeline_name'] = tl_name
+
+                    track_indices = snap.get('track_indices')
+                    if not track_indices and hasattr(self.main_window, 'get_selected_track_indices'):
+                        track_indices = self.main_window.get_selected_track_indices()
+                    if track_indices:
+                        settings['track_indices'] = track_indices
+
+                    source_files = snap.get('source_files') or []
+                    if not source_files:
+                        canvas = getattr(self.main_window, 'text_canvas', None)
+                        if canvas and getattr(canvas, 'words_data', None):
+                            audio_p = canvas.words_data[0].get('meta_audio_path')
+                            if audio_p:
+                                source_files = [audio_p]
+                    if source_files:
+                        settings['source_files'] = source_files
+
+                    wav_path = self.main_window.engine.prepare_preview_audio(settings)
+                    self.finished.emit(wav_path or "")
+                except Exception as e:
+                    from osdoc import log_error
+                    log_error(f"FetchAudioWorker error: {e}")
+                    self.finished.emit("")
+
+        self._fetch_thread = FetchAudioWorker(self.main_window)
+
+        def _on_fetch_done(wav_path):
+            self._fetching_audio = False
+            if wav_path and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                canvas = getattr(self.main_window, 'text_canvas', None)
+                if canvas and getattr(canvas, 'words_data', None):
+                    for w in canvas.words_data:
+                        w['meta_audio_path'] = wav_path
+                self.check_audio_availability()
+            else:
+                self._show_missing_audio_ui(is_loading=False, failed=True)
+
+        self._fetch_thread.finished.connect(_on_fetch_done)
+        self._fetch_thread.start()
+
+    def check_audio_availability(self):
+        import os
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or not getattr(canvas, 'words_data', None):
+            self.hide()
+            return
+            
+        words = canvas.words_data
+        audio_path = words[0].get('meta_audio_path') if words else None
+        
+        if not audio_path or not os.path.exists(audio_path):
+            self._show_missing_audio_ui(is_loading=getattr(self, '_fetching_audio', False))
+            return
+        
+        # If assembled audio is loaded for this same source, don't revert
+        if audio_path == self._source_audio_path and self.clean_ops is not None:
+            if self.original_audio_path and os.path.exists(self.original_audio_path):
+                self.lbl_status.hide()
+                self.controls_widget.show()
+                if getattr(self, 'is_collapsed', False):
+                    self.content_widget.hide()
+                else:
+                    self.content_widget.show()
+                self.show()
+                return
+            
+        self.lbl_status.hide()
+        self.controls_widget.show()
+        if getattr(self, 'is_collapsed', False):
+            self.content_widget.hide()
+        else:
+            self.content_widget.show()
+        self.show()
+        
+        if self._source_audio_path != audio_path:
+            self._source_audio_path = audio_path
+            self.original_audio_path = audio_path
+            from PySide6.QtCore import QUrl
+            self.player.setSource(QUrl.fromLocalFile(audio_path))
+            self.clean_ops = None
+            self.current_word_idx = -1
+            self.last_jumped_ts = -1.0
+            self.slider_seek.setValue(0)
+            
+    def load_assembled_audio(self, assembled_audio_path, clean_ops):
+        import os
+        from PySide6.QtCore import QUrl
+        if os.path.exists(assembled_audio_path):
+            self.original_audio_path = assembled_audio_path
+            self.clean_ops = clean_ops
+            self.player.setSource(QUrl.fromLocalFile(assembled_audio_path))
+            self.lbl_status.hide()
+            self.controls_widget.show()
+            if getattr(self, 'is_collapsed', False):
+                self.content_widget.hide()
+            else:
+                self.content_widget.show()
+            self.slider_seek.setValue(0)
+            self.current_word_idx = -1
+            self.last_jumped_ts = -1.0
+            self._clear_highlights()
+            self.show()
+
+    def set_position_ms(self, ms, force_word_idx=None):
+        import time
+        self.player.setPosition(ms)
+        self._start_pos_s = ms / 1000.0
+        self._real_start_time = time.time()
+        
+        if force_word_idx is not None and force_word_idx >= 0:
+            self._force_highlight_idx = force_word_idx
+            self._force_highlight_until = time.time() + 0.3
+            
+        self.sync_playback()
+
+        
+    def _get_audio_t(self):
+        from PySide6.QtMultimedia import QMediaPlayer
+        import time
+        if self.player.playbackState() != QMediaPlayer.PlayingState:
+            return self.player.position() / 1000.0
+        return getattr(self, '_start_pos_s', 0.0) + (time.time() - getattr(self, '_real_start_time', 0.0)) * self.player.playbackRate()
+
+    def toggle_play(self):
+        from PySide6.QtMultimedia import QMediaPlayer
+        import time
+        if self.player.playbackState() == QMediaPlayer.PlayingState:
+            self.player.pause()
+        else:
+            self._start_pos_s = self.player.position() / 1000.0
+            self._real_start_time = time.time()
+            self.player.play()
+            self.update_timer.start()
+    def _force_system_volume(self, v):
+        import os
+        if os.name != 'posix': return
+        import subprocess, sys, re, threading
+        def _task():
+            try:
+                import time
+                time.sleep(0.1) # Wait for QMediaPlayer to establish the sink-input
+                script_name = os.path.basename(sys.argv[0])
+                out = subprocess.check_output(['pactl', 'list', 'sink-inputs'], text=True)
+                current_id = None
+                for line in out.splitlines():
+                    if 'Sink Input' in line or 'odpływ wejścia' in line:
+                        m = re.search(r'(?:#|^)(\d+)\.?', line)
+                        if m: current_id = m.group(1)
+                    if script_name in line and current_id:
+                        subprocess.call(['pactl', 'set-sink-input-volume', current_id, f"{v}%"])
+            except Exception:
+                pass
+        threading.Thread(target=_task, daemon=True).start()
+
+    def on_state_changed(self, state):
+        from PySide6.QtMultimedia import QMediaPlayer
+        if state == QMediaPlayer.PlayingState:
+            self.btn_play.update_icon("player-stop.png")
+            self.update_timer.start()
+            vol = self.slider_vol.value()
+            self.audio_output.setVolume(vol / 100.0)
+            self._force_system_volume(vol)
+        else:
+            self.btn_play.update_icon("player-play.png")
+            self.update_timer.stop()
+            if state == QMediaPlayer.StoppedState:
+                self._clear_highlights()
+
+    def skip_forward(self):
+        curr_t = self._get_audio_t()
+        self.set_position_ms(int((curr_t + 3.0) * 1000))
+
+    def skip_backward(self):
+        curr_t = self._get_audio_t()
+        self.set_position_ms(int(max(0.0, curr_t - 3.0) * 1000))
+
+    def _on_volume_changed(self, v):
+        self.audio_output.setVolume(v / 100.0)
+        self._force_system_volume(v)
+        import os
+        from PySide6.QtGui import QPixmap
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        
+        if v > 70:
+            path = os.path.join(_assets_dir, "volume-max.png")
+        elif v >= 40:
+            path = os.path.join(_assets_dir, "volume-mid.png")
+        else:
+            path = os.path.join(_assets_dir, "volume-min.png")
+            
+        from PySide6.QtCore import Qt
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.lbl_vol_icon.setPixmap(pixmap)
+
+    def change_speed(self, text):
+        from PySide6.QtMultimedia import QMediaPlayer
+        import time
+        if not text.endswith("x"):
+            return
+        try:
+            new_rate = float(text[:-1])
+        except ValueError:
+            return
+        if self.player.playbackState() == QMediaPlayer.PlayingState:
+            self._start_pos_s = self._get_audio_t()
+            self._real_start_time = time.time()
+        self.player.setPlaybackRate(new_rate)
+
+    def _on_user_scroll(self, action):
+        if not getattr(self, "tgl_centered", None): return
+        if self.tgl_centered.isChecked():
+            self.tgl_centered.setChecked(False)
+
+    def _on_tgl_centered_changed(self, state):
+        if state:
+            self._center_current_word()
+
+    def _center_current_word(self):
+        if getattr(self, 'current_word_idx', -1) == -1: return
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or not getattr(canvas, 'words_data', None): return
+        
+        words = canvas.words_data
+        if 0 <= self.current_word_idx < len(words):
+            w = words[self.current_word_idx]
+            if '_rect' in w:
+                rect = w['_rect']
+                scroll_area = getattr(self.main_window, 'scroll_area', None)
+                if scroll_area:
+                    scroll_area.ensureVisible(rect.x(), rect.y(), 50, 50)
+                    vp_h = scroll_area.viewport().height()
+                    vbar = scroll_area.verticalScrollBar()
+                    target_y = rect.center().y()
+                    new_val = int(target_y - vp_h / 2)
+                    vbar.setValue(max(vbar.minimum(), min(new_val, vbar.maximum())))
+
+    def _on_seek_pressed(self):
+        self._seek_dragging = True
+
+    def _on_seek_released(self):
+        self._seek_dragging = False
+        dur = self.player.duration()
+        if dur > 0:
+            ms = int(self.slider_seek.value() / 1000.0 * dur)
+            self.set_position_ms(ms)
+
+    def _on_seek_moved(self, value):
+        dur = self.player.duration()
+        if dur > 0:
+            t = value / 1000.0 * dur / 1000.0
+            cur_m, cur_s = divmod(int(t), 60)
+            dur_m, dur_s = divmod(int(dur / 1000.0), 60)
+            self.lbl_time_curr.setText(f"{cur_m}:{cur_s:02d}")
+            self.lbl_time_total.setText(f"{dur_m}:{dur_s:02d}")
+
+    def _audio_to_original_time(self, audio_t):
+        if not self.clean_ops: return audio_t
+        fps = getattr(self.main_window.resolve_handler, 'fps', 24.0)
+        audio_frames = audio_t * fps
+        current_audio_f = 0
+        for op in self.clean_ops:
+            dur = op['e'] - op['s']
+            if current_audio_f <= audio_frames < current_audio_f + dur:
+                return (op['s'] + (audio_frames - current_audio_f)) / fps
+            current_audio_f += dur
+        if self.clean_ops: return self.clean_ops[-1]['e'] / fps
+        return audio_t
+
+    def _original_to_audio_time(self, orig_t):
+        if not self.clean_ops: return orig_t
+        fps = getattr(self.main_window.resolve_handler, 'fps', 24.0)
+        orig_frames = orig_t * fps
+        current_audio_f = 0
+        for op in self.clean_ops:
+            if orig_frames < op['s']:
+                break
+            if op['s'] <= orig_frames <= op['e']:
+                return (current_audio_f + (orig_frames - op['s'])) / fps
+            current_audio_f += (op['e'] - op['s'])
+        return current_audio_f / fps
+
+    def sync_playback(self):
+        if getattr(self, 'is_collapsed', False):
+            self._clear_highlights()
+            return
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if not canvas or not getattr(canvas, 'words_data', None): return
+        
+        audio_t = max(0.0, self._get_audio_t())
+        orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t
+        
+        dur = self.player.duration() / 1000.0
+        cur_m, cur_s = divmod(int(audio_t), 60)
+        dur_m, dur_s = divmod(int(dur), 60)
+        self.lbl_time_curr.setText(f"{cur_m}:{cur_s:02d}")
+        self.lbl_time_total.setText(f"{dur_m}:{dur_s:02d}")
+        
+        # Update seek slider position (skip if user is dragging)
+        if not self._seek_dragging and dur > 0:
+            self.slider_seek.setValue(int(audio_t / dur * 1000))
+            
+        found_idx = -1
+        
+        import time
+        if time.time() < getattr(self, '_force_highlight_until', 0.0):
+            found_idx = getattr(self, '_force_highlight_idx', -1)
+        else:
+            offset_s = 0.0
+            if self.clean_ops and hasattr(self.main_window, 'engine'):
+                prefs = self.main_window.engine.load_preferences() or {}
+                offset_s = prefs.get('offset', 0.133)
+                
+            # Lookahead compensates for audio pipeline output latency (~100-200ms)
+            # We subtract offset_s because orig_t has offset_s baked into it (the cut point is offset)
+            match_t = orig_t + 0.15 - offset_s
+            for i in range(len(canvas.words_data)):
+                start_t = canvas.words_data[i].get('start', 0)
+                if start_t > match_t:
+                    found_idx = i - 1
+                    break
+            else:
+                if canvas.words_data:
+                    found_idx = len(canvas.words_data) - 1
+                
+        if found_idx >= 0 and canvas.words_data[found_idx].get('type') == 'silence':
+            pass
+        elif found_idx != getattr(self, 'current_word_idx', -1):
+            self._clear_highlights()
+            self.current_word_idx = found_idx
+            if found_idx >= 0:
+                w = canvas.words_data[found_idx]
+                w['_audio_active'] = True
+                canvas.update()
+                
+                start_ts = w.get('start', 0)
+                if abs(start_ts - getattr(self, 'last_jumped_ts', 0)) > 0.05:
+                    self.last_jumped_ts = start_ts
+                    # Playhead jump is purely manual via CTRL+LPM now.
+                    
+        if getattr(self, "tgl_centered", None) and self.tgl_centered.isChecked():
+            self._center_current_word()
+                        
+    def _clear_highlights(self):
+        canvas = getattr(self.main_window, 'text_canvas', None)
+        if canvas and canvas.words_data:
+            for w in canvas.words_data:
+                w.pop('_audio_active', None)
+            canvas.update()
+
+# FIX KR-03: Zastąpiono WorkerSignals bezpieczną klasą dziedziczącą po QThread
+class AnalysisWorker(QThread):
+    progress = Signal(int)
+    status = Signal(str)
+    finished_ok = Signal(object, object)
+    error = Signal(str)
+
+    def __init__(self, engine, pipeline_func_name, settings):
+        super().__init__()
+        self.engine = engine
+        self.pipeline_func_name = pipeline_func_name
+        self.settings = settings
+
+    def run(self):
+        try:
+            func = getattr(self.engine, self.pipeline_func_name)
+            words_data, segments_data = func(
+                self.settings,
+                callback_status=self.status.emit,
+                callback_progress=self.progress.emit
+            )
+            self.finished_ok.emit(words_data, segments_data)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+
+
+class AutoSaveManager:
+    """Transparent background auto-save with debouncing."""
+    
+    def __init__(self, engine, saves_dir):
+        from PySide6.QtCore import QTimer
+        import os
+        self._engine = engine
+        os.makedirs(saves_dir, exist_ok=True)
+        self._save_path = os.path.join(saves_dir, "recovery.bws")
+        self._meta_path = os.path.join(saves_dir, "recovery_meta.json")
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._do_save)
+        self._pending_packet_fn = None
+        self._DEBOUNCE_MS = 3000
+    
+    def schedule(self, data_packet_fn):
+        """Schedule an auto-save. data_packet_fn is called only when save fires."""
+        self._pending_packet_fn = data_packet_fn
+        if not self._timer.isActive():
+            self._timer.start(self._DEBOUNCE_MS)
+    
+    def _do_save(self):
+        """Execute auto-save in background thread — invisible to user."""
+        if not self._pending_packet_fn: return
+        try:
+            result = self._pending_packet_fn()
+            if isinstance(result, tuple) and len(result) == 2:
+                packet, bws_extras = result
+            else:
+                packet, bws_extras = result, {}
+        except Exception:
+            return
+        import threading
+        threading.Thread(target=self._save_worker, args=(packet, bws_extras), daemon=True).start()
+    
+    def _save_worker(self, packet, bws_extras=None):
+        try:
+            import json, time, os
+            import config
+            
+            bws_extras = bws_extras or {}
+            # Try to grab audio path if available
+            audio_path = bws_extras.get("audio_path")
+            if not audio_path:
+                words = packet.get("words_data", [])
+                if words and words[0].get("meta_audio_path"):
+                    audio_path = words[0].get("meta_audio_path")
+                
+            self._engine.save_bws(
+                self._save_path, 
+                packet, 
+                audio_path=audio_path,
+                drt_path=bws_extras.get("drt_path"),
+                assembly_recipe=bws_extras.get("assembly_recipe"),
+                timeline_fingerprint=bws_extras.get("timeline_fingerprint"),
+                media_inventory=bws_extras.get("media_inventory")
+            )
+            # Write metadata alongside for crash recovery
+            t_name = packet.get("transcription_source", {}).get("timeline_name", "")
+            meta = {
+                "timeline_name": t_name,
+                "project_name": t_name,
+                "resolve_project": self._engine._get_resolve_project_name(),
+                "saved_at": time.time(),
+                "timestamp": time.strftime("%H:%M:%S"),
+                "badwords_version": config.VERSION
+            }
+            with open(self._meta_path, 'w') as f:
+                json.dump(meta, f)
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"AutoSave failed: {e}")
+
+class UndoManager:
+    def __init__(self, main_window, canvas):
+        from collections import deque
+        self.main_window = main_window
+        self.canvas = canvas
+        self.max_size = 50
+        self.undo_stack = deque(maxlen=self.max_size)
+        self.redo_stack = deque(maxlen=self.max_size)
+
+    def push(self, action):
+        if not action or not action.get('changes'):
+            return
+        self.undo_stack.append(action)
+        self.redo_stack.clear()
+        
+        if hasattr(self.main_window, 'autosave_manager'):
+            self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
+
+    def undo(self):
+        if not self.undo_stack: return
+        action = self.undo_stack.pop()
+        redo_action = self._apply_action(action)
+        self.redo_stack.append(redo_action)
+        self.canvas.update()
+        
+        if hasattr(self.main_window, 'autosave_manager'):
+            self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
+
+    def redo(self):
+        if not self.redo_stack: return
+        action = self.redo_stack.pop()
+        undo_action = self._apply_action(action)
+        self.undo_stack.append(undo_action)
+        self.canvas.update()
+        
+        if hasattr(self.main_window, 'autosave_manager'):
+            self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
+
+    def _apply_action(self, action):
+        reverse_changes = {}
+        id_map = {wo['id']: wo for wo in self.canvas.words_data}
+        layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
+
+        for wid, state in action['changes'].items():
+            word_obj = id_map.get(wid)
+            if not word_obj: continue
+
+            # Save current state for reverse action
+            reverse_changes[wid] = {
+                'status': word_obj.get('status'),
+                'manual_status': word_obj.get('manual_status'),
+                'algo_status': word_obj.get('algo_status'),
+                'is_auto': word_obj.get('is_auto'),
+                'selected': word_obj.get('selected')
+            }
+
+            # Apply restored state
+            word_obj['status'] = state.get('status')
+            word_obj['manual_status'] = state.get('manual_status')
+            if 'algo_status' in state:
+                word_obj['algo_status'] = state.get('algo_status')
+            word_obj['is_auto'] = state.get('is_auto')
+            word_obj['selected'] = state.get('selected')
+            word_obj['overlay_suppressed'] = True
+
+            if layer_engine:
+                layer_engine(word_obj)
+
+        return {"type": "paint", "changes": reverse_changes}
+
+
+class TranscriptionCanvas(QWidget):
+    def __init__(self, main_window, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.words_data = []
+        self.setCursor(Qt.ArrowCursor)
+        self.setMouseTracking(True)
+        self._last_dragged_id = -1
+        # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
+        self._cached_visible_words = []
+
+    def load_data(self, words_data):
+        self.words_data = words_data
+        self._calculate_layout()
+        self.update()
+
+    def _get_visible_words(self):
+        """Returns a filtered list of only the words that should physically render.
+        STAGE 9: Consecutive inaudible tokens are deduplicated in the view layer —
+        only the first (...) of a run is shown; data remains intact in memory.
+        Result is cached in self._cached_visible_words — do NOT call this inside paintEvent.
+        """
+        if not self.words_data: return []
+        
+        vis = []
+        previous_was_inaudible = False
+        force_segment_start = False
+
+        for w in self.words_data:
+            if w.get('type') == 'silence':
+                continue
+                
+            if w.get('is_hidden_start') and not getattr(self.main_window, 'show_hidden_start', False):
+                if w.get('is_segment_start'):
+                    force_segment_start = True
+                continue
+                
+            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+
+            if is_inaudible:
+                # Hide if the user toggled inaudible off
+                if hasattr(self.main_window, 'tgl_show_inaudible') and not self.main_window.tgl_show_inaudible.isChecked():
+                    if w.get('is_segment_start'):
+                        force_segment_start = True
+                    previous_was_inaudible = True
+                    continue
+                # STAGE 9: Skip consecutive (...) clutter — show only the first of a run
+                if previous_was_inaudible:
+                    continue
+                previous_was_inaudible = True
+            else:
+                previous_was_inaudible = False
+
+            if force_segment_start:
+                w_copy = w.copy()
+                w_copy['is_segment_start'] = True
+                vis.append(w_copy)
+                force_segment_start = False
+            else:
+                vis.append(w)
+        return vis
+
+    def _get_clip_rect(self):
+        """Returns the QRect of the currently visible viewport area in canvas coordinates,
+        expanded by a generous vertical buffer so words near the edge are never clipped.
+        Falls back to the full canvas rect when no parent scroll area is found."""
+        try:
+            scroll = getattr(self.main_window, 'scroll_area', None)
+            if scroll is not None:
+                vbar = scroll.verticalScrollBar()
+                hbar = scroll.horizontalScrollBar()
+                y_off = vbar.value()
+                x_off = hbar.value()
+                vp = scroll.viewport()
+                vp_h = vp.height()
+                vp_w = vp.width()
+                # 400px vertical buffer — ensures words on partially-visible lines render correctly
+                BUFFER = 400
+                return QRect(x_off, max(0, y_off - BUFFER), vp_w, vp_h + BUFFER * 2)
+        except Exception:
+            pass
+        return self.rect()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Prevent infinite layout loops: only recalculate when width changes
+        if not event.oldSize().isValid() or event.oldSize().width() != event.size().width():
+            self._calculate_layout()
+
+    def _calculate_layout(self):
+        if not hasattr(self, 'words_data') or not self.words_data:
+            self._cached_visible_words = []
+            return
+            
+        # Clean up leftover artifacts from previous layout passes
+        words_to_clean = []
+        if hasattr(self, 'words_data') and self.words_data:
+            words_to_clean.extend(self.words_data)
+        if hasattr(self, '_cached_visible_words') and self._cached_visible_words:
+            # We don't use set() since dicts are unhashable, just iterate all.
+            words_to_clean.extend(self._cached_visible_words)
+            
+        for w in words_to_clean:
+            w.pop('_ts_rect', None)
+            w.pop('_ts_text', None)
+            w.pop('_separator_y', None)
+
+        from PySide6.QtGui import QFontMetrics, QFont, QTextOption, QTextBlockFormat, QTextCursor
+        from PySide6.QtCore import Qt, QRect
+        from PySide6.QtWidgets import QFrame, QTextEdit
+        
+        prefs = self.main_window.engine.load_preferences() or {}
+        pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
+        pref_size = prefs.get('editor_font_size', 12)
+        import platform
+        if platform.system() == "Darwin": pref_size = int(pref_size * 1.333)
+        pref_lh = prefs.get('editor_line_height', 7)
+        view_mode = prefs.get('view_mode', 'continuous')
+        
+        is_rtl = False
+        lang_pref = prefs.get('lang', 'Auto')
+        
+        rtl_codes = getattr(config, 'RTL_LANGUAGES', {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'})
+        rtl_english_names = {'arabic', 'hebrew', 'persian', 'urdu', 'yiddish', 'pashto', 'sindhi'}
+        rtl_native_names = {config.SUPPORTED_LANGUAGES.get(code, code) for code in rtl_codes}
+        
+        if isinstance(lang_pref, str) and lang_pref.lower() != 'auto':
+            if lang_pref in rtl_native_names or lang_pref.lower() in rtl_codes or lang_pref.lower() in rtl_english_names:
+                is_rtl = True
+        elif self.words_data:
+            meta_lang = self.words_data[0].get('meta_language')
+            if isinstance(meta_lang, str) and (meta_lang.lower() in rtl_codes or meta_lang.lower() in rtl_english_names):
+                is_rtl = True
+                
+        active_font = QFont(pref_family, pref_size)
+        metrics = QFontMetrics(active_font)
+        ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
+        ts_metrics = QFontMetrics(ts_font)
+        
+        space_w = metrics.horizontalAdvance(" ") + 2
+        line_height = metrics.height() + pref_lh
+        
+        max_w = self.width() - 40
+        x = max_w if is_rtl else 20
+        y = 20
+        
+        is_sbs = getattr(self, 'is_sbs_mode', False)
+        
+        if is_sbs and hasattr(self, 'sbs_rows'):
+            # 0. CLEANUP (usuwamy śmieci z normalnego widoku, które powodowały problemy z separatorami)
+            for w in self.words_data:
+                for key in ['_rect', '_ts_rect', '_display_text', '_ts_text', '_separator_y']:
+                    w.pop(key, None)
+                    
+            visible_words = []
+            right_start_x = self.width() // 2 + 10
+            max_w = self.width() - 20
+            
+            # Estimate timestamp width for consistent left-column alignment
+            sample_ts = "[00:00]"
+            ts_base_w = ts_metrics.horizontalAdvance(sample_ts)
+            default_script_start_x = 20 + ts_base_w + 10
+            default_script_w = (self.width() // 2 - 20) - default_script_start_x
+            
+            show_inaudible = True
+            if hasattr(self.main_window, 'tgl_show_inaudible'):
+                show_inaudible = self.main_window.tgl_show_inaudible.isChecked()
+
+            for idx, row in enumerate(self.sbs_rows):
+                script_text = row.get("script_text", "")
+                
+                trans_toks = row.get("transcript_tokens", [])
+                
+                if not show_inaudible:
+                    filtered_toks = []
+                    for tok in trans_toks:
+                        w = tok.get("original_word", {})
+                        if not (w.get('is_inaudible') or w.get('type') == 'inaudible'):
+                            filtered_toks.append(tok)
+                    trans_toks = filtered_toks
+                    row["transcript_tokens"] = trans_toks # Update the row itself for rendering
+                    
+                if not script_text.strip() and not trans_toks:
+                    continue
+                
+                is_interruption = row.get("_is_interruption", False)
+                
+                # Separator line between rows
+                if y > 20:
+                    if is_interruption:
+                        y += 10
+                    else:
+                        y += 20
+                        # Store separator on a virtual dictionary to avoid tainting real words
+                        sep_marker = {'_separator_y': y - 10}
+                        visible_words.append(sep_marker)
+                            
+                row_start_y = y
+                x = max_w if is_rtl else right_start_x
+                
+                # Script editor position defaults
+                script_start_x = default_script_start_x
+                script_w = default_script_w
+                
+                if trans_toks:
+                    secs = trans_toks[0].get('start', 0)
+                    if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']):
+                        m = int(secs // 60)
+                        s = int(secs % 60)
+                        ms = int((secs - int(secs)) * 1000)
+                        ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
+                    else:
+                        total_s = int(round(secs))
+                        m = total_s // 60
+                        s = total_s % 60
+                        ts_text = f"[{m:02d}:{s:02d}]"
+                        
+                    w_ts = trans_toks[0].get("original_word")
+                    if w_ts:
+                        w_ts['_ts_text'] = f"\u202A\u2068{ts_text}\u2069\u202C" if is_rtl else ts_text
+                        ts_w = ts_metrics.horizontalAdvance(w_ts['_ts_text'])
+                        
+                        # Timestamp on the far left
+                        w_ts['_ts_rect'] = QRect(20, y, ts_w, metrics.height() + 4)
+                        script_start_x = 20 + ts_w + 10
+                        script_w = (self.width() // 2 - 20) - script_start_x
+
+                prev_status = None
+                force_newline = False
+                
+                for tok in trans_toks:
+                    w = tok.get("original_word")
+                    if not w: continue
+                    
+                    curr_status = w.get("status")
+                    
+                    # Smart line break for repeat runs
+                    is_line_started = (x < max_w) if is_rtl else (x > right_start_x)
+                    if curr_status == "repeat" and prev_status != "repeat" and is_line_started:
+                        x = max_w if is_rtl else right_start_x
+                        y += line_height
+                    elif prev_status == "repeat" and curr_status != "repeat" and is_line_started:
+                        x = max_w if is_rtl else right_start_x
+                        y += line_height
+                    elif prev_status == "repeat" and curr_status == "repeat" and force_newline and is_line_started:
+                        x = max_w if is_rtl else right_start_x
+                        y += line_height
+                    
+                    is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+                    raw_text = "(...)" if is_inaudible else w.get('text', '')
+                    display_text = f"\u202B\u2068{raw_text}\u2069\u202C" if is_rtl else raw_text
+                    w['_display_text'] = display_text
+                    word_w = metrics.horizontalAdvance(display_text)
+                    
+                    if is_rtl:
+                        if x - word_w < right_start_x and x < max_w:
+                            x = max_w
+                            y += line_height
+                        x -= word_w
+                        w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                        x -= space_w
+                    else:
+                        if x + word_w > max_w and x > right_start_x:
+                            x = right_start_x
+                            y += line_height
+                        w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                        x += word_w + space_w
+                        
+                    visible_words.append(w)
+                    
+                    if curr_status == "repeat" and raw_text.endswith((".", "?", "!", "...")):
+                        force_newline = True
+                    else:
+                        force_newline = False
+                        
+                    prev_status = curr_status
+                    
+                # Transcript content height
+                transcript_h = (y + line_height) - row_start_y
+                
+                script_kind = row.get("script_kind")
+                script_y = row_start_y
+                sx = script_start_x
+                
+                script_words = script_text.split()
+                for w_text in script_words:
+                    w_w = metrics.horizontalAdvance(w_text)
+                    if sx + w_w > script_start_x + default_script_w and sx > script_start_x:
+                        sx = script_start_x
+                        script_y += line_height
+                        
+                    visible_words.append({
+                        'text': w_text,
+                        '_display_text': w_text,
+                        '_rect': QRect(sx, script_y, w_w, metrics.height() + 4),
+                        'is_script_word': True,
+                        'script_kind': script_kind
+                    })
+                    sx += w_w + space_w
+                    
+                if script_words:
+                    script_y += line_height
+                
+                script_h = script_y - row_start_y
+                row_h = max(transcript_h, script_h, line_height)
+                
+                if script_kind in ("missing", "improv_gap"):
+                    bg_rect = QRect(script_start_x - 10, row_start_y, default_script_w + 20, row_h)
+                    visible_words.insert(0, {
+                        'is_script_bg': True,
+                        'script_kind': script_kind,
+                        '_rect': bg_rect
+                    })
+                    
+                    if script_kind == "missing":
+                        placeholder = self.main_window.txt("sbs_skipped")
+                        pw = metrics.horizontalAdvance(placeholder)
+                        rx = right_start_x
+                        if is_rtl: rx = max_w - pw
+                        visible_words.append({
+                            'text': placeholder,
+                            '_display_text': placeholder,
+                            '_rect': QRect(rx, row_start_y + (row_h - metrics.height()) // 2, pw, metrics.height() + 4),
+                            'is_script_placeholder': True,
+                            'script_kind': "improv_gap"  # use same styling as improv gap (italic, gray)
+                        })
+                
+                y = row_start_y + row_h # No extra padding here, handled by next row's y += 20
+
+            self._cached_visible_words = visible_words
+            self.setMinimumHeight(y + line_height + 40)
+            return
+            
+        # Hide editors if returning to normal view
+        if hasattr(self, 'sbs_editors'):
+            for ed in self.sbs_editors:
+                ed.hide()
+        
+        # Rebuild the cached list once — paintEvent reads it directly, never recomputes
+        visible_words = self._get_visible_words()
+        self._cached_visible_words = visible_words
+        
+        for w in visible_words:
+            # Clean previous iteration markers
+            w.pop('_ts_rect', None)
+            w.pop('_ts_text', None)
+            w.pop('_separator_y', None)
+            
+            # Paragraph formatting based on Engine's Chunking
+            if view_mode == 'segmented' and w.get('is_segment_start'):
+                has_advanced = (x < max_w) if is_rtl else (x > 20)
+                if has_advanced: 
+                    y += line_height
+                if y > 20: 
+                    w['_separator_y'] = y + 10 # Store Y coordinate for the line
+                    y += 20 # Gap between paragraphs
+                x = max_w if is_rtl else 20
+                
+                # Generate Timestamp — format depends on 'timestamp_precise' setting
+                secs = w.get('start', 0)
+                if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']):
+                    m = int(secs // 60)
+                    s = int(secs % 60)
+                    ms = int((secs - int(secs)) * 1000)
+                    ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
+                else:
+                    total_s = int(round(secs))
+                    m = total_s // 60
+                    s = total_s % 60
+                    ts_text = f"[{m:02d}:{s:02d}]"
+                
+                # Ensure timestamps stay isolated as LTR natively, using LTR Embedding, if in RTL mode.
+                w['_ts_text'] = f"\u202A\u2068{ts_text}\u2069\u202C" if is_rtl else ts_text
+                ts_w = ts_metrics.horizontalAdvance(w['_ts_text'])
+                
+                if is_rtl:
+                    x -= ts_w
+                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
+                    x -= (space_w + 5)
+                else:
+                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
+                    x += ts_w + space_w + 5
+            
+            # Standard word layout
+            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+            raw_text = "(...)" if is_inaudible else w.get('text', '')
+            
+            # Use BiDirectional formatting to perfectly resolve neutral chars (e.g. dots, numbers) in RTL.
+            # \u202B (RLE) sets the base direction to RTL.
+            # \u2068 (FSI) isolates the word so LTR chunks like "[x34]" keep their brackets unmirrored.
+            display_text = f"\u202B\u2068{raw_text}\u2069\u202C" if is_rtl else raw_text
+            
+            w['_display_text'] = display_text  # Store visual text
+            
+            word_w = metrics.horizontalAdvance(display_text)
+            
+            if is_rtl:
+                if x - word_w < 20 and x < max_w:
+                    x = max_w
+                    y += line_height
+                x -= word_w
+                w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                x -= space_w
+            else:
+                if x + word_w > max_w and x > 20:
+                    x = 20
+                    y += line_height
+                w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                x += word_w + space_w
+            
+        self.setMinimumHeight(y + line_height + 40)
+
+
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QFont, QPen, QLinearGradient
+        from PySide6.QtCore import QRectF, Qt
+        
+        prefs = self.main_window.engine.load_preferences() or {}
+        pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
+        pref_size = prefs.get('editor_font_size', 12)
+        import platform
+        if platform.system() == "Darwin": pref_size = int(pref_size * 1.333)
+        active_font = QFont(pref_family, pref_size)
+        
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        
+        color_map = {
+            'bad': (QColor(config.WORD_BAD_BG), QColor(config.WORD_BAD_FG)),
+            'repeat': (QColor(config.WORD_REPEAT_BG), QColor(config.WORD_REPEAT_FG)),
+            'typo': (QColor(config.WORD_TYPO_BG), QColor(config.WORD_TYPO_FG)),
+            'inaudible': (QColor(config.WORD_INAUDIBLE_BG), QColor(config.WORD_INAUDIBLE_FG))
+        }
+        
+        def get_status(w):
+            s = w.get('status')
+            if s == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
+                if w.get('manual_status') != 'inaudible' or w.get('is_auto', False):
+                    return None
+            if s == 'typo' and hasattr(self.main_window, 'tgl_show_typos') and not self.main_window.tgl_show_typos.isChecked():
+                if w.get('manual_status') != 'typo' or w.get('is_auto', False):
+                    return None
+            return s
+
+        def get_color_tuple(status_val):
+            if status_val in color_map: return color_map[status_val]
+            if status_val and str(status_val).startswith("custom_"):
+                c_name = status_val.split("_")[1]
+                return (QColor(config.RESOLVE_COLORS_HEX.get(c_name, "#ffffff")), QColor("#ffffff"))
+            return None
+            
+        def get_base_bg_fg(w):
+            status = get_status(w)
+            c_res = get_color_tuple(status)
+            if c_res:
+                bg, fg = c_res[0], c_res[1]
+                if w.get('is_assembled_cut'):
+                    # Interpolate sharply towards dark gray background to dim seamlessly
+                    r = int(bg.red() * 0.2 + 30 * 0.8)
+                    g = int(bg.green() * 0.2 + 30 * 0.8)
+                    b = int(bg.blue() * 0.2 + 30 * 0.8)
+                    bg = QColor(r, g, b, 255)
+                return bg, fg, False
+            return None, QColor(config.WORD_NORMAL_FG), True
+
+        p.setPen(Qt.NoPen)
+
+        # ── VIEWPORT CULLING ─────────────────────────────────────────────────────
+        # Use the pre-computed cached list — never call _get_visible_words() here.
+        # Build a smaller list of only those words whose _rect overlaps the visible
+        # viewport region. All rendering passes below use this culled list.
+        # The full cached list is kept so bridge-detection can peek at neighbours.
+        all_visible = self._cached_visible_words
+        clip = self._get_clip_rect()
+        visible_words = [w for w in all_visible if '_rect' not in w or clip.intersects(w['_rect'])]
+        # ────────────────────────────────────────────────────────────────────────
+
+        # Oś Y separatorów (only in visible range)
+        p.setPen(QPen(QColor("#333333"), 1))
+        is_sbs = getattr(self, 'is_sbs_mode', False)
+        for w in visible_words:
+            if '_separator_y' in w:
+                sep_y = w['_separator_y']
+                if is_sbs:
+                    mid = self.width() // 2
+                    p.drawLine(20, sep_y, mid - 20, sep_y)
+                    p.drawLine(mid + 20, sep_y, self.width() - 20, sep_y)
+                else:
+                    p.drawLine(20, sep_y, self.width() - 20, sep_y)
+            
+        p.setPen(Qt.NoPen)
+        
+        # 1. CZYSZCZENIE ŚMIECI PO POPRZEDNICH ITERACJACH
+        # Only clear per-frame keys on the culled (visible) set — no reason to touch off-screen words
+        for w in visible_words:
+            for key in ['_search_brush', '_search_fg', '_is_bold']:
+                w.pop(key, None)
+            
+        groups = []
+        curr_group = []
+        curr_state = None # Teraz będzie przechowywać tuple: (search_state, bg_color)
+        
+        for w in visible_words:
+            if '_rect' not in w: continue
+            if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'): continue
+            
+            # Pobieramy stan wyszukiwania i kolor tła dla danego słowa
+            search_state = 'active' if w.get('_search_active') else ('match' if w.get('_search_match') else None)
+            bg_color, _, _ = get_base_bg_fg(w)
+            
+            # Nasz nowy klucz grupowania to kombinacja stanu i koloru
+            state = (search_state, bg_color) if search_state else None
+            
+            if state:
+                # Grupujemy tylko jeśli: ten sam stan, ten sam kolor i ta sama linia Y
+                if curr_state == state and curr_group and w['_rect'].y() == curr_group[-1]['_rect'].y():
+                    curr_group.append(w)
+                else:
+                    if curr_group: groups.append((curr_group, curr_state[0])) # Zapisujemy tylko search_state do grup
+                    curr_group = [w]
+                    curr_state = state
+            else:
+                if curr_group: groups.append((curr_group, curr_state[0]))
+                curr_group = []
+                curr_state = None
+        if curr_group: groups.append((curr_group, curr_state[0]))
+
+        # Uproszczone wygaszanie kolorów
+        def get_dimmed_center(color):
+            h, s, v, a = color.getHsv()
+            if h == -1: h = 0
+            return QColor.fromHsv(h, s, max(0, int(v * 0.90)), a)
+
+        def get_dimmed_edge(color):
+            h, s, v, a = color.getHsv()
+            if h == -1: h = 0
+            return QColor.fromHsv(h, s, max(0, int(v * 0.70)), a) 
+
+        from PySide6.QtGui import QRadialGradient, QBrush, QTransform
+        
+        active_underlines = []
+        active_line_rect = None
+        active_line_color = None
+
+        for grp_words, state in groups:
+            is_active = (state == 'active')
+            bg, fg, is_neutral = get_base_bg_fg(grp_words[0])
+            
+            min_x = min(w['_rect'].left() for w in grp_words)
+            max_x = max(w['_rect'].right() for w in grp_words)
+            r0 = grp_words[0]['_rect']
+            
+            if is_active:
+                # Obliczamy prostokąt obejmujący płótno (teraz zawsze na pełną szerokość, również w SBS)
+                active_line_rect = QRectF(0, r0.top() - 4, self.width(), r0.height() + 8)
+                    
+                # Dynamiczny kolor linii
+                if is_neutral:
+                    active_line_color = QColor(255, 200, 50, 15) # Domyślny, delikatny żółty
+                else:
+                    active_line_color = QColor(bg.red(), bg.green(), bg.blue(), 18) # 7% przezroczystości natywnego koloru markera
+            
+            if is_neutral:
+                # KLON VS CODE: Jeden zbiorczy prostokąt dla całej frazy (Brak Alpha Stacking!)
+                p.setBrush(QColor(255, 140, 0, 120) if is_active else QColor(255, 200, 50, 60))
+                p.drawRoundedRect(QRectF(min_x - 2, r0.top() - 1, (max_x - min_x) + 4, r0.height() + 2), 3, 3)
+                for w in grp_words:
+                    w['_search_fg'] = fg 
+                    w['_is_bold'] = False
+            else:
+                # KOLOROWE TAGI: Wygaszony gradient
+                center_x = (min_x + max_x) / 2.0
+                center_y = r0.center().y()
+                half_w = max(1.0, (max_x - min_x) / 2.0 + 6)
+                half_h = max(1.0, r0.height() / 2.0 + 1)
+                
+                grad = QRadialGradient(0, 0, 1.0)
+                h, s, v, a = bg.getHsv()
+                if h == -1: h = 0
+                grad.setColorAt(0.0, get_dimmed_center(bg))
+                grad.setColorAt(1.0, get_dimmed_edge(bg))
+                    
+                brush = QBrush(grad)
+                brush.setTransform(QTransform().translate(center_x, center_y).scale(half_w, half_h))
+                
+                for w in grp_words:
+                    w['_search_brush'] = brush
+                    w['_search_fg'] = QColor("#ffffff") if is_active else fg
+                    w['_is_bold'] = is_active
+                    
+                if is_active:
+                    active_underlines.append(QRectF(min_x, r0.bottom() - 3, max_x - min_x, 2))
+
+        # PASS 0: Podświetlenie aktywnej linii
+        if active_line_rect and active_line_color:
+            p.setPen(Qt.NoPen)
+            p.setBrush(active_line_color)
+            p.drawRect(active_line_rect)
+
+        # PASS -1: Script Backgrounds
+        for w in visible_words:
+            if w.get('is_script_bg'):
+                script_kind = w.get('script_kind')
+                rect = w.get('_rect')
+                if rect:
+                    if script_kind == "improv_gap":
+                        bg = QColor(config.RESOLVE_COLORS_HEX.get('Red', "#ff0000"))
+                        p.setBrush(QColor(bg.red(), bg.green(), bg.blue(), 25))
+                    elif script_kind == "missing":
+                        p.setBrush(QColor(255, 200, 50, 20))
+                    else:
+                        continue
+                    p.drawRect(QRectF(0, rect.top() - 5, self.width(), rect.height() + 10))
+
+        p.setPen(Qt.NoPen)
+        # PASS 1: Base Backgrounds
+        for w in visible_words:
+            if '_rect' not in w or w.get('is_script_word') or w.get('is_script_bg'): continue
+            bg, _, _ = get_base_bg_fg(w)
+            brush = w.get('_search_brush', bg)
+            if brush:
+                p.setBrush(brush)
+                expand = 6 if '_search_brush' in w else 3
+                p.drawRoundedRect(w['_rect'].adjusted(-expand, -1, expand, 1), 5, 5)
+
+        # PASS 2: Sharp Bridges
+        # Iterate over the FULL cached list so bridges between an off-screen word and
+        # an on-screen word are never orphaned. We skip pairs where neither is in the
+        # visible set (fast path via a set of ids).
+        p.setPen(Qt.NoPen)
+        visible_ids = {id(w) for w in visible_words}
+        for i in range(len(all_visible) - 1):
+            w1 = all_visible[i]
+            w2 = all_visible[i+1]
+            # Skip pairs where neither word is on screen
+            if id(w1) not in visible_ids and id(w2) not in visible_ids:
+                continue
+            
+            if '_rect' not in w1 or '_rect' not in w2: continue
+            if w1['_rect'].y() != w2['_rect'].y(): continue 
+            
+            bg1, _, _ = get_base_bg_fg(w1)
+            bg2, _, _ = get_base_bg_fg(w2)
+            
+            brush1 = w1.get('_search_brush', bg1)
+            brush2 = w2.get('_search_brush', bg2)
+            
+            if brush1 and brush2:
+                expand1 = 6 if '_search_brush' in w1 else 3
+                expand2 = 6 if '_search_brush' in w2 else 3
+                
+                r1 = w1['_rect'].adjusted(-expand1, -1, expand1, 1)
+                r2 = w2['_rect'].adjusted(-expand2, -1, expand2, 1)
+                
+                left_rect = r1 if r1.left() <= r2.left() else r2
+                right_rect = r2 if r1.left() <= r2.left() else r1
+                brush_left = brush1 if r1.left() <= r2.left() else brush2
+                brush_right = brush2 if r1.left() <= r2.left() else brush1
+                
+                if brush1 == brush2:
+                    p.setBrush(brush1)
+                    bridge_rect = QRectF(left_rect.right() - 5, left_rect.y(), right_rect.left() - left_rect.right() + 10, left_rect.height())
+                    if bridge_rect.width() > 0:
+                        p.drawRect(bridge_rect)
+                else:
+                    p.setRenderHint(QPainter.Antialiasing, False)
+                    gap_mid = int(left_rect.right() + (right_rect.left() - left_rect.right()) / 2.0)
+                    
+                    if right_rect.left() - left_rect.right() > 0:
+                        p.setBrush(brush_left)
+                        p.drawRect(QRectF(left_rect.right() - 5, left_rect.y(), gap_mid - left_rect.right() + 6, left_rect.height()))
+                        p.setBrush(brush_right)
+                        p.drawRect(QRectF(gap_mid, right_rect.y(), right_rect.left() - gap_mid + 5, right_rect.height()))
+                        
+                    p.setRenderHint(QPainter.Antialiasing, True)
+                    
+        # PASS 3: Timestamps & Text
+        ts_font = QFont(config.UI_FONT_NAME, 10)
+        ts_color = QColor("#666666")
+        
+        for w in visible_words:
+            if w.get('is_script_bg'): continue
+            
+            if '_ts_rect' in w:
+                p.setFont(ts_font)
+                p.setPen(ts_color)
+                p.drawText(w['_ts_rect'], Qt.AlignLeft | Qt.AlignVCenter, w.get('_ts_text', ''))
+                
+            if '_rect' not in w: continue
+            
+            if w.get('is_script_word') or w.get('is_script_placeholder'):
+                font = QFont(active_font)
+                p.setFont(font)
+                
+                script_kind = w.get('script_kind')
+                if script_kind == "improv_gap":
+                    p.setPen(QColor("#9a9a9a"))
+                    font.setItalic(True)
+                    p.setFont(font)
+                elif script_kind == "missing":
+                    p.setPen(QColor(config.FG_COLOR))
+                else:
+                    p.setPen(QColor(config.FG_COLOR))
+                    
+                p.drawText(w['_rect'], Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
+                continue
+            
+            _, fg, _ = get_base_bg_fg(w)
+            final_fg = w.get('_search_fg', fg)
+            
+            font = QFont(active_font)
+            if w.get('_is_bold') or w.get('_audio_active'):
+                font.setBold(True)
+                
+            if w.get('_audio_active'):
+                p.setBrush(QColor("#ffffff"))
+                p.setPen(Qt.NoPen)
+                active_rect = w['_rect'].adjusted(-8, -2, 8, 2)
+                p.drawRoundedRect(active_rect, 6, 6)
+                final_fg = QColor("#222222")
+                
+            if w.get('is_assembled_cut'):
+                final_fg = QColor("#5a5a5a")
+                
+            p.setFont(font)
+            p.setPen(final_fg)
+            draw_rect = w['_rect'].adjusted(-20, 0, 20, 0) if w.get('_audio_active') else w['_rect']
+            p.drawText(draw_rect, Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
+            
+            if w.get('is_assembled_cut'):
+                p.setPen(QPen(final_fg, 1.5))
+                mid_y = int(w['_rect'].center().y()) + 1
+                p.drawLine(int(w['_rect'].left()) + 4, mid_y, int(w['_rect'].right()) - 4, mid_y)
+            
+        # PASS 4: Active Underlines
+        if active_underlines:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#ffffff"))
+            for rect in active_underlines:
+                p.drawRoundedRect(rect, 1, 1)
+
+    def _handle_mouse(self, pos):
+        visible_words = self._cached_visible_words
+        for w in visible_words:
+            if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'):
+                continue
+                
+            if '_rect' in w and w['_rect'].adjusted(-3, -1, 3, 1).contains(pos):
+                if w['id'] != self._last_dragged_id:
+                    self._last_dragged_id = w['id']
+                    checked_btn = self.main_window.marker_btn_group.checkedButton()
+                    status = checked_btn.property('status_id') if checked_btn else None
+                    if status == 'eraser': status = None
+                    # rb_eraser → status stays None → propagate_status_change clears
+
+                    # UNDO SUPPORT: Save old state before algorithms modifies words_data
+                    if getattr(self, '_current_undo_action', None) is not None:
+                        ids_to_save = [w['id']]
+                        if w.get('is_inaudible'):
+                            start = w['id']
+                            while start > 0 and (self.words_data[start-1].get('is_inaudible') or self.words_data[start-1].get('type') == 'silence'): start -= 1
+                            end = w['id']
+                            while end < len(self.words_data)-1 and (self.words_data[end+1].get('is_inaudible') or self.words_data[end+1].get('type') == 'silence'): end += 1
+                            ids_to_save = range(start, end + 1)
+                        
+                        changes = self._current_undo_action['changes']
+                        for wid in ids_to_save:
+                            if wid not in changes: # Save only the first state observed during this drag session
+                                old_w = self.words_data[wid]
+                                changes[wid] = {
+                                    'status': old_w.get('status'),
+                                    'manual_status': old_w.get('manual_status'),
+                                    'algo_status': old_w.get('algo_status'),
+                                    'is_auto': old_w.get('is_auto'),
+                                    'selected': old_w.get('selected')
+                                }
+
+                    import algorithms
+                    updates = algorithms.propagate_status_change(self.words_data, w['id'], status)
+
+                    if updates:
+                        # Build a fast O(1) lookup: id → word_obj
+                        id_map = {wo['id']: wo for wo in self.words_data}
+
+                        layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
+                        for wid, _raw in updates:
+                            word_obj = id_map.get(wid)
+                            if word_obj is None:
+                                continue
+                            # Stamp overlay_suppressed so the algo overlay sinks
+                            # below the user's manual paint until the next reload.
+                            word_obj['overlay_suppressed'] = True
+                            word_obj.pop('is_assembled_cut', None)
+                            # Route through the Layer Engine — this is what actually
+                            # writes word_obj['status'] to the correct final value.
+                            if layer_engine:
+                                layer_engine(word_obj)
+
+                        self.update()
+                break
+
+
+    def mousePressEvent(self, event):
+        from PySide6.QtGui import QGuiApplication
+        prefs = getattr(self.main_window.engine, 'load_preferences', lambda: {})() or {}
+        shortcuts = prefs.get('shortcuts', getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {}))
+        jump_opt = shortcuts.get('jump_to_word', 'opt_ctrl_rmb')
+        
+        expected_btn = Qt.RightButton if 'rmb' in jump_opt else Qt.LeftButton
+        
+        if 'ctrl' in jump_opt: expected_mod = Qt.KeyboardModifier.ControlModifier
+        elif 'alt' in jump_opt: expected_mod = Qt.KeyboardModifier.AltModifier
+        elif 'shift' in jump_opt: expected_mod = Qt.KeyboardModifier.ShiftModifier
+        else: expected_mod = Qt.KeyboardModifier.ControlModifier
+        
+        # Querying global keyboard state prevents Qt's stuck modifier bug (especially after Alt-Tab)
+        global_mods = QGuiApplication.queryKeyboardModifiers()
+        active_mods = global_mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.ShiftModifier)
+        
+        if event.button() == expected_btn:
+            if active_mods == expected_mod:
+                for w in self._cached_visible_words:
+                    if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'):
+                        continue
+                    if '_rect' in w and w['_rect'].adjusted(-10, -5, 10, 5).contains(event.pos()):
+                        start_time = w.get('start', 0.0)
+                        
+                        audio_ts = start_time
+                        
+                        is_assembled = False
+                        if hasattr(self.main_window, '_current_chapter_idx') and self.main_window._current_chapter_idx > 0:
+                            is_assembled = True
+                            
+                        # Use the engine's pre-calculated anchor point if available
+                        audio_ts = start_time
+                        if 'anchor_start' in w:
+                            audio_ts = w['anchor_start']
+                        else:
+                            # Fallback if anchor_start is missing
+                            prefs = {}
+                            fps = 24.0
+                            if hasattr(self.main_window, 'engine') and self.main_window.engine:
+                                prefs = self.main_window.engine.load_preferences() or {}
+                                if getattr(self.main_window.engine, 'resolve_handler', None):
+                                    fps = getattr(self.main_window.engine.resolve_handler, 'fps', 24.0)
+                                    
+                            offset_s = prefs.get('offset', 0.133)
+                            snap_max = prefs.get('snap_max', 0.25)
+                            
+                            offset_f = int(round(offset_s * fps))
+                            snap_f = int(round(snap_max * fps))
+                            
+                            def t2f(t): return int(round(t * fps))
+                            
+                            w_start_f = t2f(start_time) + offset_f
+                            
+                            if hasattr(self, 'words_data'):
+                                for dw in self.words_data:
+                                    if dw.get('type') == 'silence':
+                                        s_start_f = t2f(dw.get('start', 0.0))
+                                        s_end_f = t2f(dw.get('end', 0.0))
+                                        if abs(w_start_f - s_start_f) <= snap_f:
+                                            w_start_f = s_start_f
+                                            break
+                                        if abs(w_start_f - s_end_f) <= snap_f:
+                                            w_start_f = s_end_f
+                                            break
+                                            
+                            audio_ts = max(0.0, w_start_f / fps)
+                            
+                        idx = -1
+                        try:
+                            idx = self.words_data.index(w)
+                        except Exception:
+                            pass
+
+                        if is_assembled and hasattr(self.main_window, 'audio_preview'):
+                            # When on an assembled timeline, map the padded anchor point to the assembled coordinate space.
+                            # This ensures we hit the exact frame boundary DaVinci cut at.
+                            audio_ts = self.main_window.audio_preview._original_to_audio_time(audio_ts)
+                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000), force_word_idx=idx)
+                        elif hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.is_preview_active():
+                            # When on marking mode but audio preview is running
+                            self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000), force_word_idx=idx)
+                            
+                        if hasattr(self.main_window, '_jump_playhead'):
+                            from PySide6.QtCore import QTimer
+                            QTimer.singleShot(0, lambda t=audio_ts: self.main_window._jump_playhead(t))
+                        break
+                return  # Block painting if jump shortcut was used
+
+        if event.button() == Qt.LeftButton:
+            self._is_painting = True
+            self._last_dragged_id = -1
+            self._current_undo_action = {"type": "paint", "changes": {}}
+            self._handle_mouse(event.pos())
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and getattr(self, '_is_painting', False):
+            self._handle_mouse(event.pos())
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._is_painting = False
+            action = getattr(self, '_current_undo_action', None)
+            if action and action.get('changes'):
+                if hasattr(self.main_window, 'undo_manager'):
+                    self.main_window.undo_manager.push(action)
+            self._current_undo_action = None
+
+# ==========================================
+# CSD — CLIENT-SIDE DECORATION CLASSES
+# ==========================================
+
+class AnimatedTitleButton(QPushButton):
+    """
+    Title-bar control button with a 150ms QVariantAnimation colour transition
+    on hover. The close button uses a red hover (#c42b1c) to match Discord/
+    Spotify conventions; all other buttons use HOVER from config.
+    """
+
+    def __init__(self, icon_path: str, tooltip_key: str, lang: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("TitleBarBtn")
+        self._bg    = config.COLOR_TITLEBAR_BG
+        self._hover = config.COLOR_TITLEBAR_HOVER
+        self._press = "#3a3a3d"
+        self._cur   = self._bg
+
+        self.setFixedSize(32, 32)
+        self.setToolTip(_txt(lang, tooltip_key))
+        self.setCursor(Qt.ArrowCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+        self.setAutoFillBackground(False)
+        self.setFlat(True)
+
+        pix = QPixmap(icon_path)
+        if not pix.isNull():
+            self.setIcon(QIcon(pix))
+            self.setIconSize(QSize(12, 12))
+
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(150)
+        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._anim.valueChanged.connect(self._on_color_changed)
+        self._icon_path = icon_path
+
+        self._update_style()
+
+    def change_base_icon(self, new_icon_path):
+        self._icon_path = new_icon_path
+        self.setIcon(QIcon(new_icon_path))
+        self.update()
+
+    # ── internal ─────────────────────────────────────────────────────────────
+    def _on_color_changed(self, color):
+        self._cur = color.name() if hasattr(color, 'name') else str(color)
+        self._update_style()
+
+    def _update_style(self):
+        self.setStyleSheet(f"""
+            QPushButton#TitleBarBtn {{
+                background-color: {self._cur}; border: none; border-radius: 0px;
+                min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px;
+                margin: 0px; padding: 0px;
+            }}
+            QPushButton#TitleBarBtn:pressed {{ background-color: {self._press}; }}
+        """)
+
+    # ── events ────────────────────────────────────────────────────────────────
+    def enterEvent(self, event):
+        self._anim.stop()
+        self._anim.setStartValue(QColor(self._cur))
+        self._anim.setEndValue(QColor(self._hover))
+        self._anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._anim.stop()
+        self._anim.setStartValue(QColor(self._cur))
+        self._anim.setEndValue(QColor(self._bg))
+        self._anim.start()
+        super().leaveEvent(event)
+
+
+class CustomTitleBar(QWidget):
+    """
+    Cross-platform custom title bar.
+
+    macOS / Linux
+    -------------
+    • Dragging  → QWindow.startSystemMove()  (native OS behaviour)
+    • Dbl-click → toggle maximized             (native OS behaviour)
+
+    Windows (with qframelesswindow library)
+    ----------------------------------------
+    • Dragging  → win32gui.ReleaseCapture + WM_SYSCOMMAND SC_MOVE|HTCAPTION
+                  (full Aero Snap, drag-detach from maximized, snap layouts)
+    • Dbl-click → toggle maximized via WM_SYSCOMMAND SC_MAXIMIZE/SC_RESTORE
+    • Resize    → handled by library's nativeEvent (WM_NCHITTEST border edges)
+    """
+
+    # ── Shared titlebar menu button style ────────────────────────────────────
+    _MENU_BTN_QSS = """
+        QPushButton {{
+            background: transparent;
+            color: {fg};
+            font-family: "{font}";
+            font-size: 9pt;
+            border: none;
+            padding: 2px 8px;
+            border-radius: 3px;
+        }}
+        QPushButton:hover {{ background: #2b2b2b; color: #ffffff; }}
+        QPushButton:pressed {{ background: #333333; color: #ffffff; }}
+    """
+
+    # Signal emitted when the user picks an action from a menu dropdown
+    projectExportRequested = Signal()
+    projectImportRequested = Signal()
+    transcriptExportTxtRequested = Signal()
+    transcriptCopyRequested = Signal()
+
+    def __init__(self, window: QWidget, lang: str, parent=None):
+        super().__init__(parent)
+        self._win  = window
+        self._lang = lang
+        self._transcription_active = False  # True after first transcription
+        self.setObjectName("CustomTitleBar")
+        self.setFixedHeight(32)
+        self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"QWidget#CustomTitleBar {{ background-color: {config.COLOR_TITLEBAR_BG}; }}"
+        )
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(12, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # Small app-icon
+        icon_lbl = QLabel()
+        icon_pix = _app_icon().pixmap(QSize(14, 14))
+        if not icon_pix.isNull():
+            icon_lbl.setPixmap(icon_pix)
+        icon_lbl.setFixedSize(18, 32)
+        icon_lbl.setStyleSheet("background: transparent;")
+        lay.addWidget(icon_lbl)
+        lay.addSpacing(6)
+
+        # ── DEFAULT title label (shown before transcription) ──
+        self._lbl_title = QLabel(config.APP_NAME)
+        self._full_title = config.APP_NAME
+        self._lbl_title.setTextFormat(Qt.RichText)
+        self._lbl_title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._lbl_title.setStyleSheet(
+            f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
+            f"font-size: 9pt; background: transparent;"
+        )
+        lay.addWidget(self._lbl_title)
+
+        # ── POST-TRANSCRIPTION menu buttons container ──
+        self._menu_container = QWidget(self)
+        self._menu_container.setStyleSheet("background: transparent;")
+        menu_lay = QHBoxLayout(self._menu_container)
+        menu_lay.setContentsMargins(0, 0, 0, 0)
+        menu_lay.setSpacing(2)
+
+        _btn_qss = self._MENU_BTN_QSS.format(fg="#888888", font=config.UI_FONT_NAME)
+
+        def _t(key):
+            return config.get_trans(key, lang)
+
+        self.btn_menu_project = QPushButton(_t("titlebar_project"))
+        self.btn_menu_project.setStyleSheet(_btn_qss)
+        self.btn_menu_project.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_project.clicked.connect(self._show_project_menu)
+        menu_lay.addWidget(self.btn_menu_project)
+
+        self.btn_menu_transcript = QPushButton(_t("titlebar_transcript"))
+        self.btn_menu_transcript.setStyleSheet(_btn_qss)
+        self.btn_menu_transcript.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_transcript.clicked.connect(self._show_transcript_menu)
+        menu_lay.addWidget(self.btn_menu_transcript)
+
+        # Edit dropdown — always visible after transcription with at least "Original"
+        self.btn_menu_edit = QPushButton(_t("titlebar_edit"))
+        self.btn_menu_edit.setStyleSheet(_btn_qss)
+        self.btn_menu_edit.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_edit.clicked.connect(self._show_edit_menu)
+        menu_lay.addWidget(self.btn_menu_edit)
+
+        self._menu_container.hide()  # hidden until transcription
+
+        lay.addWidget(self._menu_container)
+
+        lay.addStretch()
+
+        # ── CENTERED source info label (replaces old left-aligned title after transcription) ──
+        self._lbl_source_info = QLabel(self)
+        self._lbl_source_info.setTextFormat(Qt.RichText)
+        self._lbl_source_info.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._lbl_source_info.setStyleSheet(
+            f"color: #777777; font-family: \"{config.UI_FONT_NAME}\"; "
+            f"font-size: 9pt; background: transparent;"
+        )
+        self._lbl_source_info.hide()
+        self._full_source_info = ""
+        # Absolutely positioned — updated in resizeEvent
+
+        # Chapter Dropdown — kept for backwards compat but now internal to Edit menu
+        _orig_label = config.get_trans("titlebar_original", lang)
+        self.chapter_dropdown = TitleDropdown([_orig_label], parent=self)
+        self.chapter_dropdown.setFixedHeight(24)
+        self.chapter_dropdown.setMinimumWidth(100)
+        self.chapter_dropdown.hide()  # Always hidden — Edit menu now owns this
+        
+        # Resolve icon directory (assets/layout/ sibling to src/)
+        _src_dir    = os.path.dirname(os.path.abspath(__file__))
+        _assets_dir = os.path.join(_src_dir, "layout")
+
+        self.btn_min = AnimatedTitleButton(
+            os.path.join(_assets_dir, "minimize.png"),
+            "btn_minimize", lang, parent=self)
+        self.btn_max = AnimatedTitleButton(
+            os.path.join(_assets_dir, "maximize.png"),
+            "btn_maximize", lang, parent=self)
+        self.btn_close    = AnimatedTitleButton(
+            os.path.join(_assets_dir, "exit.png"),
+            "btn_close",    lang, parent=self)
+
+        self.btn_min.clicked.connect(self._minimize_window)
+        self.btn_max.clicked.connect(self._toggle_maximize)
+        self.btn_close.clicked.connect(self._close_window)
+
+        for btn in (self.btn_min, self.btn_max, self.btn_close):
+            lay.addWidget(btn)
+
+    # ── Titlebar menu dropdowns ───────────────────────────────────────────────
+    def _show_titlebar_popup(self, anchor_btn, items):
+        """Generic popup for titlebar menus. items = [(label, callback), ...]"""
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 4px 0;
+            }
+        """)
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(0)
+
+        for label, callback in items:
+            btn = QPushButton(label)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: #b0b0b0;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: 9pt;
+                    text-align: left;
+                    padding: 5px 14px;
+                    border: none;
+                    border-radius: 0px;
+                }}
+                QPushButton:hover {{ background: #222222; color: #ffffff; }}
+            """)
+            btn.clicked.connect(lambda checked, cb=callback, p=popup: (p.close(), cb()))
+            layout.addWidget(btn)
+
+        global_pos = anchor_btn.mapToGlobal(QPoint(0, anchor_btn.height() + 2))
+        popup.adjustSize()
+        popup.setMinimumWidth(max(anchor_btn.width(), popup.sizeHint().width()))
+        popup.move(global_pos)
+        popup.show()
+
+    def _show_project_menu(self):
+        def _t(key):
+            return config.get_trans(key, self._lang)
+        self._show_titlebar_popup(self.btn_menu_project, [
+            (_t("titlebar_export_project"), lambda: self.projectExportRequested.emit()),
+            (_t("titlebar_import_project"), lambda: self.projectImportRequested.emit()),
+        ])
+
+    def _show_transcript_menu(self):
+        def _t(key):
+            return config.get_trans(key, self._lang)
+        self._show_titlebar_popup(self.btn_menu_transcript, [
+            (_t("titlebar_export_txt"), lambda: self.transcriptExportTxtRequested.emit()),
+            (_t("titlebar_copy_clipboard"), lambda: self.transcriptCopyRequested.emit()),
+        ])
+
+    def _show_edit_menu(self):
+        """Shows the edit/chapter selection popup (same as old chapter_dropdown)."""
+        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        list_widget = QListWidget()
+        list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        list_widget.addItems(self.chapter_dropdown.options_list)
+        list_widget.setStyleSheet("""
+            QListWidget {
+                border: none; padding: 0px; margin: 0px; outline: none;
+                background: transparent; color: #b0b0b0; font-size: 9pt;
+            }
+            QListWidget::item { height: 26px; padding: 0px 8px; border: none; }
+            QListWidget::item:selected { background-color: #171717; color: #1ed760; font-weight: bold; }
+            QListWidget::item:focus { border: none; outline: none; }
+            QListWidget::item:hover { background-color: #222222; color: #ffffff; }
+            QListWidget::item:selected:hover { background-color: #171717; color: #1ed760; }
+        """)
+
+        cur = self.chapter_dropdown.currentText()
+        for row in range(list_widget.count()):
+            if list_widget.item(row).text() == cur:
+                list_widget.setCurrentRow(row)
+                break
+
+        def _on_item(item):
+            self.chapter_dropdown._on_item_clicked(item, popup)
+
+        list_widget.itemClicked.connect(_on_item)
+        layout.addWidget(list_widget)
+
+        row_h = 26
+        display_count = list_widget.count()
+        list_height = display_count * row_h
+        list_widget.setFixedHeight(list_height)
+        popup.setFixedHeight(list_height + 2)
+
+        global_pos = self.btn_menu_edit.mapToGlobal(QPoint(0, self.btn_menu_edit.height() + 2))
+        popup.move(global_pos)
+        popup.setFixedWidth(max(self.btn_menu_edit.width(), 140))
+        popup.show()
+
+    # ── Activate post-transcription mode ──────────────────────────────────────
+    def activate_transcription_mode(self):
+        """Switch from simple 'BadWords' title to [Project] [Transcript] [Edit] menus."""
+        self._transcription_active = True
+        self._lbl_title.hide()
+        self._menu_container.show()
+        self._lbl_source_info.show()
+
+    def deactivate_transcription_mode(self):
+        """Switch back to simple 'BadWords' title."""
+        self._transcription_active = False
+        self._lbl_title.show()
+        self._lbl_title.setText(config.APP_NAME)
+        self._full_title = config.APP_NAME
+        self._menu_container.hide()
+        self._lbl_source_info.hide()
+
+    def set_source_info(self, tl_name, tracks_str):
+        """Update the centered source info label."""
+        def _t(key):
+            return config.get_trans(key, self._lang)
+        msg = _t("titlebar_source_info")
+        if "{tl}" in msg:
+            text = msg.replace("{tl}", tl_name).replace("{tr}", tracks_str)
+        else:
+            text = f"Source: <i>{tl_name}</i> — Tracks: <i>{tracks_str}</i>"
+        self._full_source_info = text
+        self._lbl_source_info.setText(text)
+        self._update_source_info_placement()
+
+    def set_title(self, text):
+        """Legacy title setter — for backward compat. Now also updates source info if in transcription mode."""
+        self._full_title = text
+        if not self._transcription_active:
+            self._lbl_title.setText(text)
+            self.update_elision()
+
+    def update_elision(self):
+        from PySide6.QtGui import QFontMetrics, QTextDocument
+        if self._transcription_active:
+            self._update_source_info_placement()
+            return
+
+        btn_area = self.btn_min.width() * 3 + 4
+        max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 4)
+
+        # Measure using plain text (HTML tags would inflate the pixel width)
+        doc = QTextDocument()
+        doc.setHtml(self._full_title)
+        plain = doc.toPlainText()
+
+        fm = QFontMetrics(self._lbl_title.font())
+        if fm.horizontalAdvance(plain) <= max_w:
+            self._lbl_title.setText(self._full_title)
+        else:
+            elided = fm.elidedText(plain, Qt.ElideRight, max_w)
+            self._lbl_title.setText(elided)
+
+    def _update_source_info_placement(self):
+        """Centers the source info label between menu buttons and window controls."""
+        if not self._lbl_source_info.isVisible():
+            return
+        from PySide6.QtGui import QFontMetrics, QTextDocument
+        doc = QTextDocument()
+        doc.setHtml(self._full_source_info)
+        plain = doc.toPlainText()
+        fm = QFontMetrics(self._lbl_source_info.font())
+        text_w = min(fm.horizontalAdvance(plain) + 10, self.width() // 2)
+
+        # Center in the title bar
+        lbl_x = (self.width() - text_w) // 2
+        self._lbl_source_info.setGeometry(lbl_x, 0, text_w, self.height())
+
+        # Elide if needed
+        avail = text_w - 4
+        if fm.horizontalAdvance(plain) > avail:
+            self._lbl_source_info.setText(fm.elidedText(plain, Qt.ElideRight, avail))
+        else:
+            self._lbl_source_info.setText(self._full_source_info)
+
+    def update_dropdown_placement(self):
+        # Chapter dropdown is now hidden — Edit menu owns this
+        self._update_source_info_placement()
+        if not self._transcription_active:
+            self.update_elision()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_dropdown_placement()
+
+    def update_maximize_icon(self, is_maximized):
+        icon_name = 'windowed.png' if is_maximized else 'maximize.png'
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'layout', icon_name)
+
+        # Używamy nowej metody, która zabezpiecza ikonę przed resetem przez animację hover!
+        self.btn_max.change_base_icon(icon_path)
+        self.btn_max.setIconSize(QSize(14, 14))
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def _minimize_window(self):
+        win = self.window()
+        if getattr(win, '_is_win', False):
+            try:
+                import ctypes
+                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF020, 0) # SC_MINIMIZE
+                return
+            except Exception:
+                pass
+        win.showMinimized()
+
+    def _close_window(self):
+        win = self.window()
+        if getattr(win, '_is_win', False):
+            try:
+                import ctypes
+                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF060, 0) # SC_CLOSE
+                return
+            except Exception:
+                pass
+        win.close()
+
+    def _toggle_maximize(self):
+        # Zapis/odczyt stanu przed maksymalizacją, aby przycisk "windowed"
+        # przywracał dokładny poprzedni rozmiar i położenie.
+        win = self.window()
+        if not getattr(win, '_is_root', False):
+            return
+
+        if getattr(win, '_is_win', False):
+            try:
+                import ctypes
+                hwnd = int(win.winId())
+                if win.isMaximized():
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0) # SC_RESTORE
+                else:
+                    win._pre_max_geometry = win.geometry()
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0) # SC_MAXIMIZE
+                return
+            except Exception:
+                pass
+
+        if win.isMaximized():
+            win.showNormal()
+            saved_geo = getattr(win, '_pre_max_geometry', None)
+            if saved_geo and saved_geo.isValid():
+                win.setGeometry(saved_geo)
+        else:
+            win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
+            if getattr(win, '_is_mac', False):
+                win.showFullScreen()
+            else:
+                win.showMaximized()
+
+    def mousePressEvent(self, event):
+        if not getattr(self, 'movable', True):
+            event.ignore()
+            return
+        if event.button() == Qt.LeftButton:
+            self._is_dragging = True
+            self._click_pos = event.position().toPoint()
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not getattr(self, 'movable', True):
+            event.ignore()
+            return
+        if not getattr(self, '_is_dragging', False):
+            super().mouseMoveEvent(event)
+            return
+
+        win = self.window()
+        self._is_dragging = False
+        
+        # Native window dragging
+        # Modern Window Managers (DWM, Mutter, KWin, Wayland) natively un-maximize 
+        # the window if startSystemMove is called while maximized, providing seamless 
+        # cursor proportional attachment and edge-snapping (Aero Snap) out of the box.
+        if hasattr(win, 'windowHandle') and win.windowHandle():
+            try:
+                win.windowHandle().startSystemMove()
+            except Exception as e:
+                import osdoc
+                osdoc.log_info(f"startSystemMove error: {e}")
+
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._is_dragging = False
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if not getattr(self, 'movable', True):
+            event.ignore()
+            return
+        if event.button() == Qt.LeftButton:
+            self._toggle_maximize()
+        super().mouseDoubleClickEvent(event)
+
+
+
+
+class ResizeGrip(QWidget):
+    def __init__(self, parent, edge):
+        super().__init__(parent)
+        self.edge = edge
+        self.setStyleSheet("background: transparent;")
+        
+        if self.edge == Qt.TopEdge or self.edge == Qt.BottomEdge: 
+            self.setCursor(Qt.SizeVerCursor)
+        elif self.edge == Qt.LeftEdge or self.edge == Qt.RightEdge: 
+            self.setCursor(Qt.SizeHorCursor)
+        elif self.edge == (Qt.TopEdge | Qt.LeftEdge) or self.edge == (Qt.BottomEdge | Qt.RightEdge): 
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif self.edge == (Qt.TopEdge | Qt.RightEdge) or self.edge == (Qt.BottomEdge | Qt.LeftEdge): 
+            self.setCursor(Qt.SizeBDiagCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            win = self.window()
+            if hasattr(win, 'windowHandle') and win.windowHandle():
+                try:
+                    win.windowHandle().startSystemResize(self.edge)
+                except Exception as e:
+                    import osdoc
+                    osdoc.log_info(f"startSystemResize error: {e}")
+            event.accept()
+
+class FramelessWindowMixin:
+    """
+    Mixin that turns any QMainWindow / QDialog into a frameless, CSD window.
+
+    Usage
+    -----
+        class MyWindow(FramelessWindowMixin, _BaseMainWindow):
+            def __init__(self):
+                super().__init__()
+                self.frameless_init(is_popup=False)
+
+    Provides
+    --------
+    • frameless_init()      — sets flags, creates shadow for popups
+    • moveEvent / resizeEvent — Smart Corners (per-corner border-radius)
+    • nativeEvent           — WM_NCHITTEST map (Windows only):
+          resize borders → HT* constants
+          title bar area → HTCAPTION  (enables Aero Snap, system animations)
+          close/min/max buttons → HTCLIENT
+          rest of window → HTCLIENT
+    """
+
+    _RESIZE_BORDER = 5   # px — hit-test sensitivity at window edges
+
+    # ── public API ────────────────────────────────────────────────────────────
+    def frameless_init(self, is_popup: bool = False):
+        """Call once, right after super().__init__()."""
+        import platform
+        from PySide6.QtGui import QGuiApplication
+        self._is_win = platform.system() == "Windows"
+        self._is_mac = platform.system() == "Darwin"
+        self._is_wayland = QGuiApplication.platformName() == 'wayland'
+        # Sprawdzamy, czy to jest główne okno (root)
+        self._is_root = self.__class__.__name__ == "BadWordsGUI"
+
+        if self._is_win:
+            if self._is_root:
+                # Root window: FramelessWindowHint eliminuje CAŁĄ NC area — DWM nie
+                # rysuje żadnych system buttonów (koniec z "Win98 button" artefaktem).
+                # Shadow i animacje odzyskujemy przez SetWindowLong(WS_THICKFRAME|WS_CAPTION)
+                # w showEvent + DwmExtendFrameIntoClientArea.
+                self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+            else:
+                # Popups are genuinely frameless — translucency is safe here.
+                self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.Dialog | Qt.NoDropShadowWindowHint)
+                self.setAttribute(Qt.WA_TranslucentBackground, True)
+        elif self._is_mac and self._is_root:
+            # macOS root window: use native title bar with traffic lights.
+            # This gives us the green fullscreen button which hides Dock + Menu Bar.
+            # The custom CSD title bar widget is hidden in BadWordsGUI.__init__.
+            self.setWindowFlags(
+                Qt.Window
+                | Qt.WindowMinMaxButtonsHint
+                | Qt.WindowCloseButtonHint
+                | Qt.WindowFullscreenButtonHint
+            )
+        else:
+            # Linux and macOS popups: fully frameless + translucent (rounded corners via QSS).
+            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+            self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        self._is_popup = is_popup
+
+        if not self._is_win and not (self._is_mac and self._is_root):
+            self._setup_grips()
+
+    def _get_root_frame(self):
+        """Return the topmost styled QFrame to apply border-radius to."""
+        return getattr(self, 'inner_frame', getattr(self, '_root_frame', None))
+
+    def changeEvent(self, event):
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange:
+            was_max = getattr(self, '_was_maximized', False)
+            now_max = self.isMaximized()
+
+            if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
+                try:
+                    import ctypes
+                    hwnd = int(self.winId())
+                    if hwnd:
+                        # Reaplikacja stylów! Qt czasem resetuje natywne style podczas
+                        # zmian stanu (szczególnie max -> drag restore -> max na Win10).
+                        user32 = ctypes.windll.user32
+                        GWL_STYLE = -16
+                        style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+                        style |= 0x00040000  # WS_THICKFRAME
+                        style |= 0x00C00000  # WS_CAPTION
+                        style |= 0x00020000  # WS_MINIMIZEBOX
+                        style |= 0x00010000  # WS_MAXIMIZEBOX
+                        user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+
+                        if was_max and not now_max:
+                            # max→normal: DWM ma stary bufor (full-size) i renderuje go
+                            # w mniejszym oknie → biały flash. DWMWA_CLOAK(13) ukrywa
+                            # okno w DWM na czas przejścia.
+                            val = ctypes.c_int(1)
+                            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+                        
+                        ctypes.windll.user32.SetWindowPos(
+                            hwnd, None, 0, 0, 0, 0, 
+                            0x0001 | 0x0002 | 0x0004 | 0x0020  # NOSIZE|NOMOVE|NOZORDER|FRAMECHANGED
+                        )
+                        
+                        if was_max and not now_max:
+                            from PySide6.QtCore import QTimer
+                            QTimer.singleShot(30, self._dwm_uncloak)
+                except Exception:
+                    pass
+
+            self._was_maximized = now_max
+            self._refresh_max_state()
+        elif event.type() == QEvent.Type.ActivationChange:
+            if hasattr(self, '_update_shortcut_enabled_states'):
+                self._update_shortcut_enabled_states()
+        super().changeEvent(event)
+
+    def _dwm_uncloak(self):
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            if hwnd:
+                val = ctypes.c_int(0)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                if hwnd and getattr(self, '_is_root', False):
+                    user32 = ctypes.windll.user32
+                    dwmapi = ctypes.windll.dwmapi
+
+                    # 1. Przywróć style okna które FramelessWindowHint usunął:
+                    #    WS_THICKFRAME → DWM shadow + resize
+                    #    WS_CAPTION    → DWM animacje (minimize/restore)
+                    #    WS_MIN/MAXIMIZEBOX → systemowe min/max zachowanie
+                    #    WM_NCCALCSIZE=0 gwarantuje że NC area ma 0px —
+                    #    style mówią DWM "to okno MA frame" ale NCCALCSIZE
+                    #    mówi "frame ma 0 pikseli" → shadow bez artefaktów.
+                    GWL_STYLE = -16
+                    style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    style |= 0x00040000  # WS_THICKFRAME
+                    style |= 0x00C00000  # WS_CAPTION
+                    style |= 0x00020000  # WS_MINIMIZEBOX
+                    style |= 0x00010000  # WS_MAXIMIZEBOX
+                # 2. Wymuszenie renderowania NC przez DWM (shadow)
+                    # DWMWA_NCRENDERING_POLICY=2, DWMNCRP_ENABLED=2
+                    nc_policy = ctypes.c_int(2)
+                    dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
+
+                    # 3. DwmExtendFrameIntoClientArea: 1px top — DWM frame strip
+                    #    dla Aero Snap preview i systemowego shadow anchoring.
+                    class MARGINS(ctypes.Structure):
+                        _fields_ = [('left', ctypes.c_int), ('right', ctypes.c_int),
+                                     ('top',  ctypes.c_int), ('bottom', ctypes.c_int)]
+                    margins = MARGINS(0, 0, 1, 0)
+                    dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+
+                    # 4. Flush — DWM musi przetworzyć nowe style
+                    user32.SetWindowPos(
+                        hwnd, None, 0, 0, 0, 0,
+                        0x0001 | 0x0002 | 0x0004 | 0x0020  # NOSIZE|NOMOVE|NOZORDER|FRAMECHANGED
+                    )
+                if hwnd:
+                    # ALL windows (root & popups): DWMWCP_DONOTROUND
+                    # Removes Windows 11 rounded corners
+                    corner_pref = ctypes.c_int(1)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), 4)
+
+                    # Remove Windows 11 1px accent border completely (DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE)
+                    border_color = ctypes.c_uint(0xFFFFFFFE)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
+            except Exception:
+                pass
+        if hasattr(self, '_grips'):
+            for grip in self._grips:
+                grip.raise_()
+
+    def _refresh_max_state(self):
+        is_max = self.isMaximized()
+
+        # Szukamy paska pod obiema nazwami (główne okno: _title_bar, dialogi: _tb)
+        title_bar = getattr(self, '_title_bar', getattr(self, '_tb', None))
+        if title_bar and hasattr(title_bar, 'update_maximize_icon'):
+            title_bar.update_maximize_icon(is_max)
+
+
+
+    def _setup_grips(self):
+        self._grips = []
+        edges = [
+            Qt.BottomEdge, Qt.LeftEdge, Qt.RightEdge, 
+            Qt.BottomEdge | Qt.LeftEdge, 
+            Qt.BottomEdge | Qt.RightEdge
+        ]
+        for edge in edges:
+            grip = ResizeGrip(self, edge)
+            self._grips.append(grip)
+            grip.raise_() # <-- ZMIANA: Podnosimy Z-index tylko raz przy tworzeniu
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_grips()
+
+    def _update_grips(self):
+        if not hasattr(self, '_grips'): return
+
+        is_max = self.isMaximized()
+
+        b = 6 
+        w, h = self.width(), self.height()
+
+        for grip in self._grips:
+            if is_max:
+                if not grip.isHidden(): grip.hide()
+                continue
+            else:
+                if grip.isHidden(): grip.show()
+
+            if grip.edge == Qt.BottomEdge: grip.setGeometry(b, h - b, w - 2*b, b)
+            elif grip.edge == Qt.LeftEdge: grip.setGeometry(0, 0, b, h - b)
+            elif grip.edge == Qt.RightEdge: grip.setGeometry(w - b, 0, b, h - b)
+            elif grip.edge == (Qt.BottomEdge | Qt.LeftEdge): grip.setGeometry(0, h - b, b, b)
+            elif grip.edge == (Qt.BottomEdge | Qt.RightEdge): grip.setGeometry(w - b, h - b, b, b)
+
+    # ── Windows WM_NCHITTEST ──────────────────────────────────────────────────
+    def nativeEvent(self, eventType, message):
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False):
+            return super().nativeEvent(eventType, message)
+
+        if not getattr(self, '_is_win', False) or not getattr(self, '_is_root', False) or eventType != b"windows_generic_MSG":
+            return super().nativeEvent(eventType, message)
+
+        import ctypes
+        from ctypes import wintypes
+        msg = wintypes.MSG.from_address(int(message))
+
+        # ── WM_NCCALCSIZE (0x0083) ────────────────────────────────────────────
+        # Returning 0 with wParam=True removes the entire native NC area so
+        # Windows draws nothing there — our custom title bar owns that space.
+        # When maximized, Windows adds a hidden "maximized border" (SM_CXFRAME +
+        # SM_CXPADDEDBORDER) that would otherwise push the client area inward.
+        # We compensate by shrinking the rect on all four sides. Left/right/bottom
+        # corrections prevent edge clipping on multi-monitor setups.
+        if msg.message == 0x0083:  # WM_NCCALCSIZE
+            if msg.wParam and self.isMaximized():
+                hwnd = int(self.winId())
+                user32 = ctypes.windll.user32
+                try:
+                    dpi = user32.GetDpiForWindow(hwnd) or 96
+                    border = (user32.GetSystemMetricsForDpi(32, dpi) +
+                              user32.GetSystemMetricsForDpi(92, dpi))
+                except Exception:
+                    border = user32.GetSystemMetrics(32) + user32.GetSystemMetrics(92)
+                params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
+                params[0].left   += border
+                params[0].top    += border
+                params[0].right  -= border
+                params[0].bottom -= border
+            return True, (0x0300 if msg.wParam else 0)  # WVR_REDRAW
+
+        # ── WM_ENTERSIZEMOVE (0x0231) ─────────────────────────────────────────
+        # Fires at the start of every drag or resize. Forces DWM to flush our
+        # WM_NCCALCSIZE=0 result before NC repaint — eliminates white flash.
+        if msg.message == 0x0231:  # WM_ENTERSIZEMOVE
+            hwnd = int(self.winId())
+            if hwnd:
+                # SWP_FRAMECHANGED(0x20)|SWP_NOZORDER(0x04)|SWP_NOMOVE(0x02)|SWP_NOSIZE(0x01)
+                ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
+            return super().nativeEvent(eventType, message)  # don't consume
+
+        # ── WM_NCACTIVATE (0x0086) ────────────────────────────────────────────
+        # The default handler repaints the NC area on activate/deactivate,
+        # which produces a white flash at the top of the window.
+        # Passing wParam=True and lParam=-1 tells Windows to suppress NC
+        # repainting entirely and keeps our custom title bar pixel-perfect.
+        if msg.message == 0x0086:  # WM_NCACTIVATE
+            hwnd = int(self.winId())
+            ctypes.windll.user32.DefWindowProcW(
+                hwnd,
+                0x0086,          # WM_NCACTIVATE
+                msg.wParam,      # keep active/inactive state
+                ctypes.c_long(-1)  # lParam = -1 → skip NC repaint
+            )
+            return True, 1
+
+        # ── WM_MOUSEACTIVATE (0x0021) ─────────────────────────────────────────
+        # When the window is clicked to regain focus, Windows sends WM_MOUSEACTIVATE
+        # before WM_NCHITTEST. Returning MA_ACTIVATE (1) lets Windows correctly
+        # re-register the HTCAPTION tracking state, fixing drag loss after focus-out.
+        if msg.message == 0x0021:  # WM_MOUSEACTIVATE
+            return True, 1  # MA_ACTIVATE — activate and pass click through normally
+
+        # ── WM_NCHITTEST (0x0084) ─────────────────────────────────────────────
+        if msg.message == 0x0084:  # WM_NCHITTEST
+            x = msg.lParam & 0xFFFF
+            if x & 0x8000: x -= 0x10000
+            y = (msg.lParam >> 16) & 0xFFFF
+            if y & 0x8000: y -= 0x10000
+
+            # HighDPI FIX: x and y from WM_NCHITTEST are physical pixels!
+            # mapFromGlobal expects logical pixels in PySide6.
+            ratio = self.devicePixelRatioF()
+            logical_x = x / ratio
+            logical_y = y / ratio
+
+            from PySide6.QtCore import QPointF
+            pos = self.mapFromGlobal(QPointF(logical_x, logical_y).toPoint())
+            w, h = self.width(), self.height()
+            b = self._RESIZE_BORDER
+
+            if not self.isMaximized():
+                lx, rx = pos.x() < b, pos.x() > w - b
+                by = pos.y() > h - b
+                if by and lx: return True, 16  # HTBOTTOMLEFT
+                if by and rx: return True, 17  # HTBOTTOMRIGHT
+                if lx:        return True, 10  # HTLEFT
+                if rx:        return True, 11  # HTRIGHT
+                if by:        return True, 15  # HTBOTTOM
+
+            _tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
+            tb_height = (_tb.height() if _tb else 32)
+            if 0 <= pos.y() < tb_height:
+                child = self.childAt(pos)
+
+                if not child or not child.inherits("QPushButton"):
+                    return True, 1  # HTCLIENT
+
+            return True, 1  # HTCLIENT
+
+        # ── WM_NCLBUTTONDBLCLK (0x00A3) ───────────────────────────────────────
+        # Double-click na HTCAPTION: delegujemy do _toggle_maximize().
+        if msg.message == 0x00A3:  # WM_NCLBUTTONDBLCLK
+            _tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
+            if _tb and hasattr(_tb, '_toggle_maximize'):
+                _tb._toggle_maximize()
+            return True, 0
+
+        return super().nativeEvent(eventType, message)
+
+
+# ==========================================
+# CLASS 1: SPLASH SCREEN
+# ==========================================
+
+class SplashScreen(FramelessWindowMixin, _BaseDialog):
+    """
+    Frameless, dark loading window displayed while engine/api are initializing.
+    Shows an animated "loading…" label (0-3 cycling dots at 400 ms).
+    Closed by main.py once InitThread emits `loaded`.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+
+        W, H = 300, 150
+        self.setFixedSize(W + 30, H + 30)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        self.inner_frame = QFrame()
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        layout = QVBoxLayout(self.inner_frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        content_layout = QVBoxLayout()
+        layout.addLayout(content_layout)
+
+        # --- QSS styling ---
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{
+                background-color: {config.BG_COLOR};
+                border: 1px solid #000000;
+            }}
+            QLabel#title {{
+                color: #ffffff;
+                font-size: 18pt;
+                font-weight: bold;
+                font-family: {config.UI_FONT_NAME};
+                background: transparent;
+            }}
+            QLabel#loading {{
+                color: {config.NOTE_COL};
+                font-size: 12pt;
+                font-family: {config.UI_FONT_NAME};
+                background: transparent;
+            }}
+        """)
+
+        # --- Layout ---
+        content_layout.setContentsMargins(20, 30, 20, 20)
+        content_layout.setSpacing(8)
+        content_layout.setAlignment(Qt.AlignCenter)
+
+        lbl_title = QLabel("BadWords", self.inner_frame)
+        lbl_title.setObjectName("title")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(lbl_title)
+
+        self._lbl_loading = QLabel(self.txt("lbl_loading"), self.inner_frame)
+        self._lbl_loading.setObjectName("loading")
+        self._lbl_loading.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(self._lbl_loading)
+
+        # --- Icon ---
+        self.setWindowIcon(_app_icon())
+
+        # --- Center on screen ---
+        _center_on_screen(self, W, H)
+
+        # --- Dot animation ---
+        self._dot_count = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._animate)
+        self._timer.start(400)
+
+    def _animate(self):
+        """Cycle the trailing dots: loading → loading. → loading.. → loading..."""
+        dots = "." * (self._dot_count % 4)
+        self._lbl_loading.setText(f"loading{dots}")
+        self._dot_count += 1
+
+    def set_status(self, text: str):
+        """Display a custom status text (stops the dot animation)."""
+        self._timer.stop()
+        self._lbl_loading.setText(text)
+        QApplication.processEvents()
+
+    def closeEvent(self, event):
+        self._timer.stop()
+        super().closeEvent(event)
+
+
+# ==========================================
+# CLASS 2: TELEMETRY POPUP
+# ==========================================
+
+
+
+class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
+    """
+    Modal dialog asking the user for analytics consent.
+
+    Skip condition: if engine.os_doc.get_telemetry_pref("telemetry_opt_in")
+    is not None, caller should not show this dialog.
+
+    On "I Agree":
+        - Saves telemetry_opt_in = True
+        - Saves telemetry_allow_geo = <checkbox state>
+        - Calls engine.send_telemetry_ping("app_started")
+
+    On "No thanks" (or Escape / close):
+        - Saves telemetry_opt_in = False
+
+    Language changes are persisted to pref.json in real time via
+    engine.save_preferences({"gui_lang": code}).
+    """
+
+    def __init__(self, engine, parent=None):
+        super().__init__(parent)
+        self._engine = engine
+        self._lang_picker = None
+
+        # Load current language from preferences
+        prefs = engine.load_preferences() or {}
+        self._lang = prefs.get("gui_lang", "en")
+        if self._lang not in config.TRANS:
+            self._lang = "en"
+
+        # --- Window setup ---
+        self.frameless_init(is_popup=True)
+        # WindowModal blocks only the parent — avoids ApplicationModal event-queue
+        # pileup where pending main-window signals fire all at once after exec() returns.
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setWindowModality(Qt.WindowModal)
+        self.setWindowIcon(_app_icon())
+
+        # --- Root QSS (window is transparent; styling lives on inner_frame) ---
+        self.setStyleSheet(f"""
+            QDialog, TelemetryPopup {{ background-color: transparent; }}
+            QFrame#MainInnerFrame {{
+                background-color: {config.BG_COLOR};
+                border: 1px solid #000000;
+                border-radius: 8px;
+            }}
+            QLabel#lbl_title {{
+                color: #ffffff;
+                font-size: 14pt;
+                font-weight: bold;
+                font-family: {config.UI_FONT_NAME};
+                background: transparent;
+            }}
+            QLabel#lbl_msg {{
+                color: {config.FG_COLOR};
+                font-size: 11pt;
+                font-family: {config.UI_FONT_NAME};
+                background: transparent;
+            }}
+            QPushButton#btn_lang {{
+                color: {config.GEAR_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 11pt;
+                font-weight: bold;
+                background: transparent;
+                border: none;
+                padding: 2px 4px;
+            }}
+            QPushButton#btn_lang:hover {{
+                color: #ffffff;
+            }}
+            QPushButton#btn_yes {{
+                background-color: {config.BTN_BG};
+                color: #ffffff;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                font-weight: bold;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 3px;
+            }}
+            QPushButton#btn_yes:hover {{
+                background-color: {config.BTN_ACTIVE};
+            }}
+            QPushButton#btn_no {{
+                background-color: {config.CANCEL_BG};
+                color: #ffffff;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                font-weight: bold;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 3px;
+            }}
+            QPushButton#btn_no:hover {{
+                background-color: {config.CANCEL_ACTIVE};
+            }}
+            QCheckBox {{
+                color: #aaaaaa;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                background: transparent;
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+        """)
+
+        # --- Outer wrapper ---
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(1, 1, 1, 1)
+
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+
+        main_layout.addWidget(self.inner_frame)
+
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # --- Custom title bar ---
+        self._tb = CustomTitleBar(self, self._lang, parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        if hasattr(self._tb, '_lbl_title'):
+            self._tb._lbl_title.setText(self._t("title_telemetry"))
+        root_layout.addWidget(self._tb)
+
+        # --- Content area ---
+        container = QWidget(self.inner_frame)
+        container.setObjectName("container")
+        content_layout = QVBoxLayout(container)
+        content_layout.setContentsMargins(20, 15, 20, 20)
+        content_layout.setSpacing(0)
+        root_layout.addWidget(container)
+
+        # Header row (title + language button)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+
+        self._lbl_title = QLabel("", container)
+        self._lbl_title.setObjectName("lbl_title")
+        header.addWidget(self._lbl_title, 1)
+
+        self._btn_lang = QPushButton("", container)
+        self._btn_lang.setObjectName("btn_lang")
+        self._btn_lang.setCursor(Qt.PointingHandCursor)
+        self._btn_lang.setFocusPolicy(Qt.NoFocus)
+        self._btn_lang.clicked.connect(self._show_lang_picker)
+        header.addWidget(self._btn_lang)
+
+        content_layout.addLayout(header)
+        content_layout.addSpacing(15)
+
+        # Message label
+        self._lbl_msg = QLabel("", container)
+        self._lbl_msg.setObjectName("lbl_msg")
+        self._lbl_msg.setWordWrap(True)
+        self._lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        content_layout.addWidget(self._lbl_msg)
+        content_layout.addSpacing(10)
+
+        # Geo Toggle
+        geo_layout = QHBoxLayout()
+        geo_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self._chk_geo = ToggleSwitch(container)
+        self._chk_geo.setChecked(True, animated=False)
+        
+        self._lbl_geo = QLabel("", container)
+        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 11pt; background: transparent;")
+        
+        geo_layout.addWidget(self._chk_geo)
+        geo_layout.addSpacing(10)
+        geo_layout.addWidget(self._lbl_geo)
+        geo_layout.addStretch()
+        content_layout.addLayout(geo_layout)
+        content_layout.addSpacing(20)
+
+        # Buttons row (No | Yes)
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.addStretch()
+
+        self._btn_no  = QPushButton("", container)
+        self._btn_no.setObjectName("btn_no")
+        self._btn_no.setCursor(Qt.PointingHandCursor)
+        self._btn_no.clicked.connect(self._on_no)
+        btn_row.addWidget(self._btn_no)
+        btn_row.addSpacing(10)
+
+        self._btn_yes = QPushButton("", container)
+        self._btn_yes.setObjectName("btn_yes")
+        self._btn_yes.setCursor(Qt.PointingHandCursor)
+        self._btn_yes.clicked.connect(self._on_yes)
+        btn_row.addWidget(self._btn_yes)
+        btn_row.addStretch()
+
+        content_layout.addLayout(btn_row)
+
+        # --- Populate text and size ---
+        self._refresh_texts()
+
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _t(self, key: str, **kwargs) -> str:
+        return _txt(self._lang, key, **kwargs)
+
+    def _refresh_texts(self):
+        """Update all translatable labels and re-size the dialog."""
+        self.setWindowTitle(self._t("title_telemetry"))
+        self._lbl_title.setText(self._t("title_telemetry"))
+        self._lbl_msg.setText(self._t("msg_telemetry"))
+        self._btn_yes.setText(self._t("btn_telemetry_yes"))
+        self._btn_no.setText(self._t("btn_telemetry_no"))
+        self._btn_lang.setText(self._lang.upper())
+        self._lbl_geo.setText(self._t("chk_telemetry_geo"))
+        # Keep title bar in sync when language changes
+        if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
+            self._tb._lbl_title.setText(self._t("title_telemetry"))
+
+        # ── Size calculation ──────────────────────────────────────────────
+        # The dialog uses a shadow outer wrapper (15px each side) and a content
+        # area with 20px horizontal padding each side. Total horizontal overhead:
+        # 15 + 15 + 20 + 20 = 70px.  We must tell the word-wrapped label its
+        # exact available width BEFORE calling adjustSize(), otherwise Qt
+        # computes height without accounting for wrapping and the bottom text
+        # gets clipped.
+        DIALOG_W      = 580
+        HORIZ_MARGINS = 15 + 15 + 20 + 20   # shadow margins + content margins
+        self._lbl_msg.setMaximumWidth(DIALOG_W - HORIZ_MARGINS)
+
+        # Now constrain the dialog width and let height grow freely
+        self.setFixedWidth(DIALOG_W)
+        self.adjustSize()    # height is now computed correctly with wrapped text
+        h = max(self.sizeHint().height(), self.height())
+        _center_on_screen(self, DIALOG_W, h)
+
+
+    def _show_lang_picker(self):
+        """Open a floating language picker anchored below the lang button."""
+        try:
+            if self._lang_picker and self._lang_picker.isVisible():
+                self._lang_picker.close()
+                return
+        except RuntimeError:
+            self._lang_picker = None # Object was deleted by Qt
+
+        self._lang_picker = _LangPickerDialog(self)
+        self._lang_picker.lang_selected.connect(self._on_lang_selected)
+
+        # Position: bottom-right of the language button
+        btn_global = self._btn_lang.mapToGlobal(
+            self._btn_lang.rect().bottomRight()
+        )
+        picker_w = self._lang_picker.width()
+        self._lang_picker.move(btn_global.x() - picker_w, btn_global.y())
+        self._lang_picker.show()
+
+    def _on_lang_selected(self, code: str):
+        """Handle language selection: persist and refresh UI."""
+        if code == self._lang:
+            return
+        self._lang = code
+        # Persist immediately so the main window picks it up
+        self._engine.save_preferences({"gui_lang": code})
+        self._refresh_texts()
+
+    # ------------------------------------------------------------------
+    # Button handlers
+    # ------------------------------------------------------------------
+
+    def _on_yes(self):
+        self._engine.os_doc.set_telemetry_pref("telemetry_opt_in",   True)
+        self._engine.os_doc.set_telemetry_pref("telemetry_allow_geo", self._chk_geo.isChecked())
+        self._engine.send_telemetry_ping("app_started")
+        self.accept()
+
+    def _on_no(self):
+        self._engine.os_doc.set_telemetry_pref("telemetry_opt_in", False)
+        self._engine.os_doc.set_telemetry_pref("telemetry_allow_geo", False)
+        self.accept()
+
+    def keyPressEvent(self, event):
+        """Escape → same as 'No thanks'."""
+        if event.key() == Qt.Key_Escape:
+            self._on_no()
+        else:
+            super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        """Window closed without pressing a button → treat as 'No'."""
+        self._on_no()
+        super().closeEvent(event)
+
+
+# ==========================================
+# CLASS 3a: TOOLTIPS & SIDEBAR WIDGETS
+# ==========================================
+
+
+class GlobalAppFilter(QObject):
+    """Intercepts native QEvent.ToolTip globally and handles global input focus management."""
+    def __init__(self, shared_tooltip):
+        super().__init__()
+        self.shared_tooltip = shared_tooltip
+        self.tooltip_timer = QTimer(self)
+        self.tooltip_timer.setSingleShot(True)
+        self.tooltip_timer.timeout.connect(self._do_show)
+        self.current_text = ""
+        self.current_pos = None
+        self.active_widget = None
+
+    def eventFilter(self, obj, event):
+        try:
+            etype = event.type()
+            # 1. Global Focus Management: clear focus from QLineEdit on click anywhere outside
+            if etype == QEvent.Type.MouseButtonPress:
+                focused = QApplication.focusWidget()
+                if isinstance(focused, QLineEdit):
+                    global_pos = QCursor.pos()
+                    focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
+                    if not focused_global_rect.contains(global_pos):
+                        focused.clearFocus()
+
+            # 2. Enter/Return removes focus from QLineEdit
+            if etype == QEvent.Type.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
+                if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                    obj.clearFocus()
+
+            # 3. Tooltip handling via Enter/Leave for better reliability
+            if etype == QEvent.Type.Enter:
+                if isinstance(obj, QWidget):
+                    text = obj.toolTip()
+                    if text:
+                        self.current_text = text
+                        self.current_pos = QCursor.pos()
+                        # Start timer on Enter
+                        self.active_widget = obj
+                        self.tooltip_timer.start(750)  # 750ms hover to show
+            elif etype == QEvent.Type.MouseMove and self.active_widget == obj:
+                # Update position as they move the mouse
+                self.current_pos = QCursor.pos()
+            elif etype in (QEvent.Type.Leave, QEvent.Type.Hide,
+                           QEvent.Type.MouseButtonPress, QEvent.Type.WindowDeactivate):
+                if obj == self.active_widget or self.active_widget is None:
+                    self.tooltip_timer.stop()
+                    if hasattr(self, 'shared_tooltip'):
+                        self.shared_tooltip.hide()
+                    self.active_widget = None
+                    self.current_text = ""
+            elif etype == QEvent.Type.ToolTip and self.active_widget == obj:
+                # Suppress the native ToolTip event
+                return True
+        except RuntimeError:
+            pass
+        return False
+
+
+
+    def _do_show(self):
+        if self.current_text and self.active_widget:
+            self.shared_tooltip.show_global(self.current_text, self.current_pos)
+
+
+
+class SidebarDragZone(QFrame):
+    """
+    A drop-zone container for SidebarButtons
+    """
+    def __init__(self, parent=None):
+        super().__init__()
+        if parent:
+            self.setParent(parent)
+        self.setAcceptDrops(True)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self._drop_line_y = -1
+        self.setLayout(QVBoxLayout())
+        self.layout().setAlignment(Qt.AlignTop)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(6)
+        
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._drop_line_y >= 0:
+            p = QPainter(self)
+            p.setPen(QPen(QColor("#11703c"), 3))
+            p.drawLine(0, self._drop_line_y, self.width(), self._drop_line_y)
+            
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            
+    def dragMoveEvent(self, event):
+        if not event.mimeData().hasText():
+            return
+            
+        layout = self.layout()
+        source_btn = event.source()
+        
+        target_idx = layout.count()
+        last_vis_widget = None
+        drop_y = 0
+        
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if not w or w.isHidden() or w == source_btn:
+                continue
+            
+            last_vis_widget = w
+            
+            # Hit-test: if mouse is above the vertical center of this widget, insert BEFORE it.
+            if event.position().y() < w.geometry().center().y():
+                target_idx = i
+                drop_y = w.geometry().top()
+                break
+        else:
+            # If the loop completes without breaking, we are dropping at the VERY BOTTOM.
+            if last_vis_widget:
+                drop_y = last_vis_widget.geometry().bottom()
+            else:
+                layout_margins = self.layout().contentsMargins()
+                drop_y = layout_margins.top() if layout_margins else 0
+                
+        self._drop_line_y = drop_y
+        self.update()
+            
+        event.accept()
+
+    def dragLeaveEvent(self, event):
+        self._drop_line_y = -1
+        self.update()
+
+    def dropEvent(self, event):
+        
+        activity_id = event.mimeData().text()
+        source_btn = event.source()
+        if isinstance(source_btn, SidebarButton) and source_btn.activity_id == activity_id:
+            layout = self.layout()
+            
+            target_idx = layout.count()
+            last_vis_widget = None
+            drop_y = 0
+            
+            for i in range(layout.count()):
+                w = layout.itemAt(i).widget()
+                if not w or w.isHidden() or w == source_btn:
+                    continue
+                
+                last_vis_widget = w
+                
+                # Hit-test: if mouse is above the vertical center of this widget, insert BEFORE it.
+                if event.position().y() < w.geometry().center().y():
+                    target_idx = i
+                    drop_y = w.geometry().top()
+                    break
+            else:
+                # If the loop completes without breaking, we are dropping at the VERY BOTTOM.
+                if last_vis_widget:
+                    drop_y = last_vis_widget.geometry().bottom()
+                else:
+                    layout_margins = self.layout().contentsMargins()
+                    drop_y = layout_margins.top() if layout_margins else 0
+                        
+            layout.insertWidget(target_idx, source_btn)
+            event.acceptProposedAction()
+            
+            main_window = self.window()
+            is_right = (hasattr(main_window, "_sidebar_right") and self == main_window._drag_zone_right)
+            source_btn.is_right_side = is_right
+            source_btn.set_active(False)
+            
+            self._drop_line_y = -1
+            self.update()
+
+            main_window = self.window()
+            if hasattr(main_window, '_save_sidebar_layout'):
+                main_window._save_sidebar_layout()
+
+            if getattr(source_btn, '_drag_was_active', False):
+                source_btn.window()._toggle_activity(source_btn.activity_id)
+                source_btn._drag_was_active = False
+
+
+class MarkerDragZone(QFrame):
+    """
+    A drop-zone container for Custom Markers in the settings panel.
+    """
+    def __init__(self, parent=None):
+        super().__init__()
+        if parent:
+            self.setParent(parent)
+        self.setAcceptDrops(True)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self._drop_line_y = -1
+        self.setLayout(QVBoxLayout())
+        self.layout().setAlignment(Qt.AlignTop)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+        
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._drop_line_y >= 0:
+            p = QPainter(self)
+            p.setPen(QPen(QColor("#11703c"), 3))
+            p.drawLine(0, self._drop_line_y, self.width(), self._drop_line_y)
+            
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText() and event.mimeData().text() == "m_drag":
+            event.acceptProposedAction()
+            
+    def dragMoveEvent(self, event):
+        if not event.mimeData().hasText() or event.mimeData().text() != "m_drag":
+            return
+            
+        layout = self.layout()
+        source_widget = event.source()
+        
+        target_idx = layout.count() - 1 
+        drop_y = 0
+        last_vis_widget = None
+        
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if not w or w.isHidden() or w == source_widget:
+                continue
+            
+            if w.objectName() == "stretch_placeholder":
+                continue
+                
+            last_vis_widget = w
+            
+            if event.position().y() < w.geometry().center().y():
+                target_idx = i
+                drop_y = w.geometry().top()
+                break
+        else:
+            if last_vis_widget:
+                drop_y = last_vis_widget.geometry().bottom()
+                
+        if drop_y != self._drop_line_y:
+            self._drop_line_y = drop_y
+            self.update()
+            
+        event.acceptProposedAction()
+        
+    def dragLeaveEvent(self, event):
+        self._drop_line_y = -1
+        self.update()
+
+    def dropEvent(self, event):
+        self._drop_line_y = -1
+        self.update()
+        
+        if not event.mimeData().hasText() or event.mimeData().text() != "m_drag":
+            return
+            
+        source_widget = event.source()
+        layout = self.layout()
+        
+        target_idx = layout.count() - 1
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if not w or w.isHidden() or w == source_widget:
+                continue
+            if w.objectName() == "stretch_placeholder":
+                continue
+            if event.position().y() < w.geometry().center().y():
+                target_idx = i
+                break
+                
+        if hasattr(self.window(), "_on_markers_reordered"):
+            self.window()._on_markers_reordered(source_widget.original_idx, target_idx)
+            
+        event.acceptProposedAction()
+
+
+class MarkerRowWidget(QWidget):
+    """
+    Draggable marker row.
+    """
+    def __init__(self, marker_data, original_idx, parent=None):
+        super().__init__(parent)
+        self.marker_data = marker_data
+        self.original_idx = original_idx
+        self.drag_start_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_pos = event.pos()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        if not self.drag_start_pos:
+            return
+        if (event.pos() - self.drag_start_pos).manhattanLength() < QApplication.startDragDistance():
+            return
+            
+        from PySide6.QtGui import QDrag
+        from PySide6.QtCore import QMimeData
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setText("m_drag")
+        drag.setMimeData(mime)
+        
+        pixmap = self.grab()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.pos())
+        
+        drag.exec(Qt.MoveAction)
+
+
+
+
+
+
+
+class AnimatedDimOverlay(QWidget):
+    def __init__(self, parent_gui, opacity_target=0.55, duration=200):
+        parent = getattr(parent_gui, 'centralWidget', lambda: None)() or parent_gui
+        super().__init__(parent)
+        self.opacity_target = opacity_target
+        self.current_alpha = 0
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
+        self.anim_in = QVariantAnimation(self)
+        self.anim_in.setDuration(duration)
+        self.anim_in.setStartValue(0)
+        self.anim_in.setEndValue(int(255 * opacity_target))
+        self.anim_in.setEasingCurve(QEasingCurve.OutCubic)
+        self.anim_in.valueChanged.connect(self._on_alpha_changed)
+
+    def _on_alpha_changed(self, val):
+        self.current_alpha = val
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, self.current_alpha))
+
+    def fade_in(self):
+        p = self.parentWidget()
+        if p:
+            self.setGeometry(0, 0, p.width(), p.height())
+        self.show()
+        self.raise_()
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        self.anim_in.start()
+
+    def fade_out(self):
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
+        self.anim_out = QVariantAnimation(self)
+        self.anim_out.setDuration(160)
+        self.anim_out.setStartValue(self.current_alpha)
+        self.anim_out.setEndValue(0)
+        self.anim_out.setEasingCurve(QEasingCurve.InCubic)
+        self.anim_out.valueChanged.connect(self._on_alpha_changed)
+        self.anim_out.finished.connect(self.deleteLater)
+        self.anim_out.start()
+
+
+class TrackSquareCheckbox(QWidget):
+    toggled = Signal(bool)
+
+    def __init__(self, text, is_checked=True, parent=None):
+        super().__init__(parent)
+        self.is_checked = is_checked
+        self.text_label = text
+        self.setCursor(Qt.PointingHandCursor)
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 2, 4, 2)
+        lay.setSpacing(8)
+
+        self.box = QLabel()
+        self.box.setFixedSize(15, 15)
+        self.box.setAlignment(Qt.AlignCenter)
+
+        self.lbl = QLabel(text)
+        self.lbl.setStyleSheet("color: #d4d4d4; font-size: 9.5pt; font-family: Inter, sans-serif; background: transparent; border: none;")
+
+        lay.addWidget(self.box)
+        lay.addWidget(self.lbl)
+        lay.addStretch()
+
+        self.update_ui()
+
+    def update_ui(self):
+        if self.is_checked:
+            self.box.setText("✔")
+            self.box.setStyleSheet("""
+                background-color: #111111;
+                border: 1px solid #1a7a3e;
+                color: #1a7a3e;
+                font-weight: bold;
+                font-size: 11px;
+                border-radius: 2px;
+            """)
+        else:
+            self.box.setText("")
+            self.box.setStyleSheet("""
+                background-color: #111111;
+                border: 1px solid #3a3a3a;
+                border-radius: 2px;
+            """)
+
+    def setChecked(self, checked):
+        self.is_checked = bool(checked)
+        self.update_ui()
+
+    def isChecked(self):
+        return self.is_checked
+
+    def mousePressEvent(self, event):
+        self.is_checked = not self.is_checked
+        self.update_ui()
+        self.toggled.emit(self.is_checked)
+        super().mousePressEvent(event)
+
+
+
+
+
+
+
+
+class _FlowListWidget(QWidget):
+    def resizeEvent(self, event):
+        if event is not None:
+            super().resizeEvent(event)
+        if getattr(self, '_bypass_min_height', False):
+            return
+        if self.layout() and hasattr(self.layout(), 'heightForWidth'):
+            h = self.layout().heightForWidth(self.width())
+            if self.minimumHeight() != h:
+                self.setMinimumHeight(h)
+
+class TrackOptionsDrawer(QWidget):
+    def __init__(self, parent_gui, engine, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QWidget, QFrame, QGridLayout
+        from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+
+        self.parent_gui = parent_gui
+        self.engine = engine
+        self.is_expanded = False
+        self._anim = None
+        self._block_signals = False
+
+        self.setMaximumHeight(0)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setObjectName("TrackOptionsScroll")
+        self.scroll_area.setStyleSheet("""
+            QScrollArea#TrackOptionsScroll {
+                background-color: #0f2d1e;
+                border: 1px solid #11703c;
+                border-top: none;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 0px;
+                border-bottom-left-radius: 6px;
+                border-bottom-right-radius: 6px;
+            }
+            QScrollArea#TrackOptionsScroll > QWidget > QWidget {
+                background: transparent;
+            }
+        """)
+        main_layout.addWidget(self.scroll_area, 1)
+
+        self.inner_frame = QFrame()
+        self.inner_frame.setObjectName("TrackOptionsInnerFrame")
+        self.inner_frame.setStyleSheet("""
+            QFrame#TrackOptionsInnerFrame {
+                background: transparent;
+                border: none;
+            }
+            QFrame#TrackOptionsInnerFrame QWidget {
+                border: none;
+                background: transparent;
+            }
+            QFrame#TrackOptionsInnerFrame QLabel {
+                border: none;
+                background: transparent;
+            }
+        """)
+        self.scroll_area.setWidget(self.inner_frame)
+        self.scroll_area.setAlignment(Qt.AlignBottom)
+
+        inner_layout = QVBoxLayout(self.inner_frame)
+        inner_layout.setSizeConstraint(QVBoxLayout.SetMinAndMaxSize)
+        inner_layout.setAlignment(Qt.AlignBottom)
+        inner_layout.setContentsMargins(10, 6, 10, 8)
+        inner_layout.setSpacing(4)
+
+        def make_section_header(title_text):
+            w = QWidget()
+            lay = QHBoxLayout(w)
+            lay.setContentsMargins(0, 4, 0, 2)
+            lay.setSpacing(6)
+            lbl = QLabel(title_text)
+            lbl.setStyleSheet("font-size: 8.5pt; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setStyleSheet("background-color: #1a5433; max-height: 1px; border: none;")
+            lay.addWidget(lbl)
+            lay.addWidget(line, 1)
+            return w
+
+        # Audio section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_audio_tracks')))
+
+        self.tgl_a_all = ToggleSwitch()
+        self.tgl_a_tr = ToggleSwitch()
+        self.tgl_a_cust = ToggleSwitch()
+
+        def make_toggle_row(lbl_text, tgl):
+            w = QWidget()
+            w.setFixedHeight(26)
+            l = QHBoxLayout(w)
+            l.setContentsMargins(2, 0, 2, 0)
+            lbl = MarqueeLabel(lbl_text)
+            l.addWidget(lbl, 1)
+            l.addWidget(tgl)
+            return w
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
+
+        src = getattr(self.parent_gui, '_transcription_source', None) or {}
+        tr_indices = src.get('track_indices', [])
+        tr_label_text = self.parent_gui.txt("dlg_transcription_tracks")
+        if tr_indices:
+            tr_label_text += f" (A{', A'.join(str(i) for i in tr_indices)})"
+        self.w_a_tr = make_toggle_row(tr_label_text, self.tgl_a_tr)
+        inner_layout.addWidget(self.w_a_tr)
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_a_cust))
+
+        # Query project audio & video tracks
+        audio_tracks, video_tracks = self._get_project_tracks()
+
+        self.w_a_cust_list = _FlowListWidget()
+        self.w_a_cust_list.setMaximumHeight(0)
+        self.w_a_cust_list.setStyleSheet("background: transparent; border: none;")
+        
+        grid_a = FlowLayout(self.w_a_cust_list, margin=4, hSpacing=14, vSpacing=4)
+        self.a_track_checkboxes = {}
+
+        for i, (idx, tname) in enumerate(audio_tracks):
+            cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
+            cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
+            grid_a.addWidget(cb)
+            self.a_track_checkboxes[idx] = cb
+        inner_layout.addWidget(self.w_a_cust_list)
+
+        inner_layout.addSpacing(2)
+
+        # Video section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_video_tracks')))
+
+        self.tgl_v_all = ToggleSwitch()
+        self.tgl_v_none = ToggleSwitch()
+        self.tgl_v_cust = ToggleSwitch()
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
+        inner_layout.addWidget(make_toggle_row("No tracks", self.tgl_v_none))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
+
+        self.w_v_cust_list = _FlowListWidget()
+        self.w_v_cust_list.setMaximumHeight(0)
+        self.w_v_cust_list.setStyleSheet("background: transparent; border: none;")
+        
+        grid_v = FlowLayout(self.w_v_cust_list, margin=4, hSpacing=14, vSpacing=4)
+        self.v_track_checkboxes = {}
+
+        for i, (idx, tname) in enumerate(video_tracks):
+            cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
+            cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
+            grid_v.addWidget(cb)
+            self.v_track_checkboxes[idx] = cb
+        inner_layout.addWidget(self.w_v_cust_list)
+
+        self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
+        self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
+        self.tgl_a_cust.toggled.connect(lambda c: self._update_a_radios('cust', c))
+
+        self.tgl_v_all.toggled.connect(lambda c: self._update_v_radios('all', c))
+        self.tgl_v_none.toggled.connect(lambda c: self._update_v_radios('none', c))
+        self.tgl_v_cust.toggled.connect(lambda c: self._update_v_radios('cust', c))
+
+        self.load_config()
+
+    def sizeHint(self):
+        from PySide6.QtCore import QSize
+        if not self.is_expanded:
+            return QSize(self.width(), 0)
+        if getattr(self, '_is_animating', False):
+            return QSize(self.width(), self.maximumHeight())
+        return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
+
+    def toggle_expand(self):
+        self.is_expanded = not self.is_expanded
+        if self.is_expanded:
+            self.load_config()
+        self._animate_to_size()
+
+    def _animate_to_size(self):
+        if getattr(self, '_block_signals', False):
+            return
+            
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
+
+        a_cust_visible = self.tgl_a_cust.isChecked()
+        v_cust_visible = self.tgl_v_cust.isChecked()
+
+        a_cust_start = self.w_a_cust_list.height()
+        v_cust_start = self.w_v_cust_list.height()
+        drawer_start = self.height()
+
+        a_cust_target = self.w_a_cust_list.layout().sizeHint().height() if a_cust_visible else 0
+        v_cust_target = self.w_v_cust_list.layout().sizeHint().height() if v_cust_visible else 0
+
+        # Temporarily apply target heights to measure drawer target
+        self.w_a_cust_list._bypass_min_height = True
+        self.w_v_cust_list._bypass_min_height = True
+        self.w_a_cust_list.setMinimumHeight(0)
+        self.w_v_cust_list.setMinimumHeight(0)
+        
+        self.w_a_cust_list.setMaximumHeight(a_cust_target)
+        self.w_v_cust_list.setMaximumHeight(v_cust_target)
+        self.inner_frame.layout().activate()
+        drawer_target = self.inner_frame.sizeHint().height() + 2 if self.is_expanded else 0
+        
+        # Restore starting heights
+        self.w_a_cust_list.setMaximumHeight(a_cust_start)
+        self.w_v_cust_list.setMaximumHeight(v_cust_start)
+
+        if getattr(self, '_anim_group', None) and self._anim_group.state() == QPropertyAnimation.Running:
+            self._anim_group.stop()
+
+        self._anim_group = QParallelAnimationGroup(self)
+        
+        def _update_overlay():
+            if hasattr(self.parent_gui, 'p_main'):
+                self.parent_gui.p_main.resizeEvent(None)
+
+        if drawer_start != drawer_target:
+            anim_drawer_max = QPropertyAnimation(self, b"maximumHeight", self)
+            anim_drawer_max.setDuration(350)
+            anim_drawer_max.setStartValue(drawer_start)
+            anim_drawer_max.setEndValue(drawer_target)
+            anim_drawer_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_drawer_max.valueChanged.connect(lambda _: _update_overlay())
+            self._anim_group.addAnimation(anim_drawer_max)
+
+            anim_drawer_min = QPropertyAnimation(self, b"minimumHeight", self)
+            anim_drawer_min.setDuration(350)
+            anim_drawer_min.setStartValue(drawer_start)
+            anim_drawer_min.setEndValue(drawer_target)
+            anim_drawer_min.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_drawer_min)
+
+        if a_cust_start != a_cust_target:
+            anim_a_max = QPropertyAnimation(self.w_a_cust_list, b"maximumHeight", self)
+            anim_a_max.setDuration(350)
+            anim_a_max.setStartValue(a_cust_start)
+            anim_a_max.setEndValue(a_cust_target)
+            anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_a_max)
+
+        if v_cust_start != v_cust_target:
+            anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
+            anim_v_max.setDuration(350)
+            anim_v_max.setStartValue(v_cust_start)
+            anim_v_max.setEndValue(v_cust_target)
+            anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_v_max)
+
+        self._is_animating = True
+        self._anim_group.start()
+        
+        def _on_finish():
+            self._is_animating = False
+            if self.is_expanded:
+                self.setMaximumHeight(16777215)
+                self.setMinimumHeight(0)
+            if a_cust_visible:
+                self.w_a_cust_list._bypass_min_height = False
+                self.w_a_cust_list.setMaximumHeight(16777215)
+                self.w_a_cust_list.resizeEvent(None)
+            if v_cust_visible:
+                self.w_v_cust_list._bypass_min_height = False
+                self.w_v_cust_list.setMaximumHeight(16777215)
+                self.w_v_cust_list.resizeEvent(None)
+            _update_overlay()
+            
+        self._anim_group.finished.connect(_on_finish)
+
+    def load_config(self):
+        self._block_signals = True
+        try:
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            conf = src.get('assembly_track_config') or {}
+            amode = conf.get('audio_mode', 'all')
+            vmode = conf.get('video_mode', 'all')
+
+            self.tgl_a_all.setChecked(amode == 'all', animated=False)
+            self.tgl_a_tr.setChecked(amode == 'tr', animated=False)
+            self.tgl_a_cust.setChecked(amode == 'cust', animated=False)
+
+            self.tgl_v_all.setChecked(vmode == 'all', animated=False)
+            self.tgl_v_cust.setChecked(vmode == 'cust', animated=False)
+
+            saved_a_custom = conf.get('audio_custom', [])
+            for i, cb in self.a_track_checkboxes.items():
+                if saved_a_custom:
+                    cb.setChecked(i in saved_a_custom)
+                else:
+                    cb.setChecked(True)
+
+            saved_v_custom = conf.get('video_custom', [])
+            for i, cb in self.v_track_checkboxes.items():
+                if saved_v_custom:
+                    cb.setChecked(i in saved_v_custom)
+                else:
+                    cb.setChecked(True)
+
+            if amode == 'cust':
+                self.w_a_cust_list.setMaximumHeight(16777215)
+            else:
+                self.w_a_cust_list.setMaximumHeight(0)
+                
+            if vmode == 'cust':
+                self.w_v_cust_list.setMaximumHeight(16777215)
+            else:
+                self.w_v_cust_list.setMaximumHeight(0)
+        finally:
+            self._block_signals = False
+
+    def save_config(self):
+        if getattr(self, '_block_signals', False):
+            return
+        amode = 'all'
+        if self.tgl_a_tr.isChecked(): amode = 'tr'
+        elif self.tgl_a_cust.isChecked(): amode = 'cust'
+
+        vmode = 'all'
+        if self.tgl_v_none.isChecked(): vmode = 'none'
+        elif self.tgl_v_cust.isChecked(): vmode = 'cust'
+
+        a_custom = [i for i, cb in getattr(self, 'a_track_checkboxes', {}).items() if cb.isChecked()]
+        v_custom = [i for i, cb in getattr(self, 'v_track_checkboxes', {}).items() if cb.isChecked()]
+
+        res = {
+            'audio_mode': amode,
+            'audio_custom': a_custom,
+            'video_mode': vmode,
+            'video_custom': v_custom
+        }
+        src = getattr(self.parent_gui, '_transcription_source', None)
+        if isinstance(src, dict):
+            src['assembly_track_config'] = res
+
+    def _get_project_tracks(self):
+        audio_tracks = []
+        video_tracks = []
+
+        rh = getattr(self.engine, 'resolve_handler', None)
+        target_tl = None
+        if rh and rh.project:
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            tl_name = src.get('timeline_name')
+            if tl_name:
+                try:
+                    cnt = rh.project.GetTimelineCount()
+                    for i in range(1, cnt + 1):
+                        tl = rh.project.GetTimelineByIndex(i)
+                        if tl and tl.GetName() == tl_name:
+                            target_tl = tl
+                            break
+                except Exception:
+                    pass
+            if not target_tl and rh.timeline:
+                target_tl = rh.timeline
+
+        if target_tl:
+            try:
+                ac = target_tl.GetTrackCount("audio")
+                _get_a_name = getattr(target_tl, "GetTrackName", None)
+                for i in range(1, ac + 1):
+                    tname = ""
+                    if callable(_get_a_name):
+                        try: tname = _get_a_name("audio", i)
+                        except Exception: pass
+                    if not tname: tname = f"Audio {i}"
+                    audio_tracks.append((i, tname))
+            except Exception: pass
+
+            try:
+                vc = target_tl.GetTrackCount("video")
+                _get_v_name = getattr(target_tl, "GetTrackName", None)
+                for i in range(1, vc + 1):
+                    tname = ""
+                    if callable(_get_v_name):
+                        try: tname = _get_v_name("video", i)
+                        except Exception: pass
+                    if not tname: tname = f"Video {i}"
+                    video_tracks.append((i, tname))
+            except Exception: pass
+
+        if not audio_tracks:
+            max_a = 4
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            tr_indices = src.get('track_indices', [])
+            if tr_indices:
+                max_a = max(max_a, max(tr_indices))
+            for i in range(1, max_a + 1):
+                audio_tracks.append((i, f"Audio {i}"))
+
+        if not video_tracks:
+            for i in range(1, 5):
+                video_tracks.append((i, f"Video {i}"))
+
+        return audio_tracks, video_tracks
+
+    def _update_a_radios(self, src, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            if not (self.tgl_a_all.isChecked() or self.tgl_a_tr.isChecked() or self.tgl_a_cust.isChecked()):
+                self.tgl_a_all.setChecked(True)
+                return
+        else:
+            self._block_signals = True
+            try:
+                if src != 'all': self.tgl_a_all.setChecked(False)
+                if src != 'tr': self.tgl_a_tr.setChecked(False)
+                if src != 'cust': self.tgl_a_cust.setChecked(False)
+            finally:
+                self._block_signals = False
+
+        self._animate_to_size()
+        self.save_config()
+
+    def _update_v_radios(self, src, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            if not (self.tgl_v_all.isChecked() or self.tgl_v_none.isChecked() or self.tgl_v_cust.isChecked()):
+                self.tgl_v_all.setChecked(True)
+                return
+        else:
+            self._block_signals = True
+            try:
+                if src != 'all': self.tgl_v_all.setChecked(False)
+                if src != 'none': self.tgl_v_none.setChecked(False)
+                if src != 'cust': self.tgl_v_cust.setChecked(False)
+            finally:
+                self._block_signals = False
+
+        self._animate_to_size()
+        self.save_config()
+
+    def _on_a_cb_toggled(self, idx, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            any_checked = any(cb.isChecked() for cb in self.a_track_checkboxes.values())
+            if not any_checked:
+                self.a_track_checkboxes[idx].setChecked(True)
+                return
+        self.save_config()
+
+    def _on_v_cb_toggled(self, idx, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            any_checked = any(cb.isChecked() for cb in self.v_track_checkboxes.values())
+            if not any_checked:
+                self.v_track_checkboxes[idx].setChecked(True)
+                return
+        self.save_config()
+
+
+class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
+    def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None, btn_cancel_text: str = None):
+        super().__init__(parent)
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
+            QLabel {{ color: {config.FG_COLOR}; }}
+            QLabel#lbl_title {{ font-size: 14pt; font-weight: bold; }}
+            QLabel#lbl_msg {{ font-size: 11pt; }}
+            QPushButton {{
+                background-color: {config.BTN_GHOST_BG};
+                color: {config.BTN_FG};
+                padding: 6px 16px;
+                border-radius: 4px;
+                min-width: 80px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton#btn_yes {{ background-color: {config.BTN_BG}; }}
+            QPushButton#btn_yes:hover {{ background-color: {config.BTN_ACTIVE}; }}
+        """)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        root_layout.addWidget(self._tb)
+        
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 25, 20, 20)
+        content_layout.setSpacing(15)
+        root_layout.addLayout(content_layout)
+        
+        lbl_title = QLabel(title)
+        lbl_title.setObjectName("lbl_title")
+        content_layout.addWidget(lbl_title)
+        
+        lbl_msg = QLabel(message)
+        lbl_msg.setObjectName("lbl_msg")
+        lbl_msg.setWordWrap(True)
+        lbl_msg.setFixedWidth(380)
+        lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        content_layout.addWidget(lbl_msg)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        if btn_cancel_text:
+            btn_cancel = QPushButton(btn_cancel_text)
+            btn_cancel.clicked.connect(lambda: self.done(2))
+            btn_layout.addWidget(btn_cancel)
+            btn_layout.addSpacing(10)
+            
+        if btn_no_text:
+            btn_no = QPushButton(btn_no_text)
+            btn_no.clicked.connect(self.reject)
+            btn_layout.addWidget(btn_no)
+            btn_layout.addSpacing(10)
+            
+        btn_yes = QPushButton(btn_yes_text)
+        btn_yes.setObjectName("btn_yes")
+        btn_yes.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_yes)
+        
+        content_layout.addLayout(btn_layout)
+        
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height())
+
+
+# ---------------------------------------------------------------------------
+# AUTO-UPDATE: background thread + notification dialog
+# ---------------------------------------------------------------------------
+
+class UpdateCheckThread(QThread):
+    """
+    Stdlib-only background worker that checks GitHub (with GitLab fallback)
+    for a newer release of BadWords.
+
+    Signals
+    -------
+    update_available(str, str, str)
+        Emitted when a newer version is detected.
+        Args: (latest_version, github_release_url, gitlab_release_url)
+
+    Class-level cache
+    -----------------
+    _cached_result is set after the first successful check so that subsequent
+    thread starts (e.g. every time the settings dialog opens) do NOT fire new
+    HTTP requests and cannot hit the GitHub rate limit.
+    """
+    update_available = Signal(str, str, str)
+
+    # GitHub unauthenticated limit = 60 req/h — cache result for the session
+    _cached_result: tuple | None = None   # (latest_display, gh_page, gl_page) | None
+    _checked: bool = False                # True once a check completed (even if up-to-date)
+    _lock = None                          # threading.Lock — lazy init (import at use time)
+
+
+    # ── API endpoints ─────────────────────────────────────────────────────
+    _GH_API  = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
+    # GitLab project: badwords/BadWords (ID 78101072)
+    # /releases returns a JSON list sorted newest-first; we take [0].tag_name
+    _GL_API  = "https://gitlab.com/api/v4/projects/78101072/releases"
+    _GH_PAGE = "https://github.com/veritus-git/BadWords/releases/latest"
+    _GL_PAGE = "https://gitlab.com/badwords/BadWords/-/releases"
+
+    # ── Update script URLs ────────────────────────────────────────────────
+    _UPDATE_SCRIPT_LINUX    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-linux.sh'
+    _UPDATE_SCRIPT_MAC      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-mac.sh'
+    _UPDATE_SCRIPT_WIN      = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/update-windows.bat'
+    _UPDATE_SCRIPT_LINUX_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-linux.sh'
+    _UPDATE_SCRIPT_MAC_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/updaters/update-mac.sh'
+    _UPDATE_SCRIPT_WIN_GL   = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/legacy/update-windows.bat'
+
+    def __init__(self, current_version: str, parent=None):
+        super().__init__(parent)
+        self._current = current_version
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_version(tag: str):
+        """Convert '3.0', 'v2.0.3', '2.0.3' → tuple of ints for comparison."""
+        tag = tag.strip().lstrip('v').lstrip('V')
+        try:
+            return tuple(int(x) for x in tag.split('.'))
+        except ValueError:
+            return (0,)
+
+    @staticmethod
+    def _fetch_json(url: str, timeout: int = 8):
+        import urllib.request, json, ssl
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        req = urllib.request.Request(url, headers={"User-Agent": "BadWords-UpdateCheck/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+
+    # ------------------------------------------------------------------
+    # main
+    # ------------------------------------------------------------------
+
+    def run(self):
+        import threading
+        from osdoc import log_info, log_error
+
+        # Lazy init of class-level lock (safe: done under GIL before threads diverge)
+        if UpdateCheckThread._lock is None:
+            UpdateCheckThread._lock = threading.Lock()
+
+        current_tuple = self._parse_version(self._current)
+
+        # ── Replay cached result if already checked this session ──────────
+        # Quick path without the lock — avoids blocking when _checked is set
+        if UpdateCheckThread._checked:
+            cached = UpdateCheckThread._cached_result
+            if cached:
+                latest_display, gh_page, gl_page = cached
+                if self._parse_version(latest_display) > current_tuple:
+                    log_info(f"[UpdateCheck] (cached) New version available: {latest_display}")
+                    self.update_available.emit(latest_display, gh_page, gl_page)
+                else:
+                    log_info(f"[UpdateCheck] (cached) Already up-to-date ({self._current}).")
+            else:
+                log_info("[UpdateCheck] (cached) No version info available.")
+            return
+
+        # ── First check — hold lock so only ONE thread does the HTTP work ─
+        with UpdateCheckThread._lock:
+            # Re-check inside lock (another thread may have finished while we waited)
+            if UpdateCheckThread._checked:
+                cached = UpdateCheckThread._cached_result
+                if cached:
+                    latest_display, gh_page, gl_page = cached
+                    if self._parse_version(latest_display) > current_tuple:
+                        log_info(f"[UpdateCheck] (cached/lock) New version available: {latest_display}")
+                        self.update_available.emit(latest_display, gh_page, gl_page)
+                    else:
+                        log_info(f"[UpdateCheck] (cached/lock) Already up-to-date ({self._current}).")
+                return
+
+            latest_tag = None
+
+            # 1. Try GitHub
+            try:
+                data = self._fetch_json(self._GH_API)
+                latest_tag = data.get("tag_name", "").strip()
+                log_info(f"[UpdateCheck] GitHub latest tag: {latest_tag!r}")
+            except Exception as e:
+                log_error(f"[UpdateCheck] GitHub API failed: {e}")
+
+            # 2. Fallback: GitLab — /releases returns a JSON list; take first entry
+            if not latest_tag:
+                try:
+                    data = self._fetch_json(self._GL_API)
+                    if isinstance(data, list) and data:
+                        latest_tag = data[0].get("tag_name", "").strip()
+                    elif isinstance(data, dict):
+                        latest_tag = data.get("tag_name", "").strip()
+                    if latest_tag:
+                        log_info(f"[UpdateCheck] GitLab latest tag: {latest_tag!r}")
+                except Exception as e:
+                    log_error(f"[UpdateCheck] GitLab API failed: {e}")
+
+            # Mark as checked (even on failure) — prevents hammering APIs
+            UpdateCheckThread._checked = True
+
+            if not latest_tag:
+                log_error("[UpdateCheck] Could not retrieve latest version from any source.")
+                UpdateCheckThread._cached_result = None
+                return
+
+            latest_tuple   = self._parse_version(latest_tag)
+            latest_display = latest_tag.lstrip('vV')
+
+            if latest_tuple > current_tuple:
+                log_info(f"[UpdateCheck] New version available: {latest_display} (current: {self._current})")
+                UpdateCheckThread._cached_result = (latest_display, self._GH_PAGE, self._GL_PAGE)
+                self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE)
+            else:
+                log_info(f"[UpdateCheck] Already up-to-date ({self._current}).")
+                UpdateCheckThread._cached_result = None
+
+
+
+
+class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
+    """
+    Custom frameless update-notification dialog.
+
+    Windows  → 'Download from GitHub' button (opens browser).
+    macOS    → 'Update Now' runs the macOS setup script silently in background.
+    Linux    → 'Update Now' runs the Linux setup script silently in background.
+
+    Layout: clean version badge (current → latest), no terminal command shown.
+    """
+
+    # URLs for the dedicated cross-platform python update script
+    _UPDATE_SCRIPT    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/updater.py'
+    _UPDATE_SCRIPT_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/updater.py'
+
+    # Class-level signal so Qt registers it properly
+    _update_done = Signal(bool, str)   # (success, error_message)
+
+    def __init__(self, parent, lang: str, current_ver: str, latest_ver: str,
+                 gh_url: str, gl_url: str, is_win: bool, is_mac: bool,
+                 install_dir: str):
+        super().__init__(parent)
+        self._lang    = lang
+        self._engine  = getattr(parent, 'engine', None)
+        self._is_mac  = is_mac
+        self._is_win  = is_win
+        self._gh_url  = gh_url
+        self._install_dir = install_dir
+
+        # Wire update result back to GUI thread
+        self._update_done.connect(self._on_update_done)
+
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{
+                background-color: {config.BG_COLOR};
+                border: 1px solid #111;
+                border-radius: 8px;
+            }}
+            QLabel {{ color: {config.FG_COLOR}; background: transparent; }}
+            QLabel#lbl_title  {{ font-size: 15pt; font-weight: bold; }}
+            QLabel#lbl_sub    {{ font-size: 10pt; color: #999; }}
+            QLabel#lbl_status {{ font-size: 10pt; color: #888; font-style: italic; }}
+            #ver_frame {{
+                background-color: #101010;
+                border: 1px solid #1e1e1e;
+                border-radius: 8px;
+            }}
+            QPushButton {{
+                background-color: {config.BTN_GHOST_BG};
+                color: {config.BTN_FG};
+                padding: 7px 20px;
+                border-radius: 5px;
+                min-width: 90px;
+                font-weight: bold;
+                font-size: 10pt;
+            }}
+            QPushButton:hover    {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton:disabled {{ color: #444; background-color: #181818; }}
+            QPushButton#btn_primary           {{ background-color: {config.BTN_BG}; }}
+            QPushButton#btn_primary:hover     {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_primary:disabled  {{ background-color: #1a2e1a; color: #3a5a3a; }}
+        """)
+
+        # ── Outer layout with drop shadow ──────────────────────────────────
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 14, 14, 14)
+
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(32)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        outer.addWidget(self.inner_frame)
+
+        # ── Inner structure ────────────────────────────────────────────────
+        root = QVBoxLayout(self.inner_frame)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._tb = CustomTitleBar(self, lang, parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        root.addWidget(self._tb)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(28, 20, 28, 24)
+        body.setSpacing(12)
+        root.addLayout(body)
+
+        # ── Headline ───────────────────────────────────────────────────────
+        lbl_title = QLabel(_txt(lang, 'update_notify_title'))
+        lbl_title.setObjectName("lbl_title")
+        body.addWidget(lbl_title)
+
+        lbl_sub = QLabel(_txt(lang, 'update_notify_sub'))
+        lbl_sub.setObjectName("lbl_sub")
+        body.addWidget(lbl_sub)
+
+        body.addSpacing(6)
+
+        # ── Version comparison card ────────────────────────────────────────
+        ver_frame = QFrame()
+        ver_frame.setObjectName("ver_frame")
+        ver_layout = QHBoxLayout(ver_frame)
+        ver_layout.setContentsMargins(24, 16, 24, 16)
+        ver_layout.setSpacing(0)
+
+        def _ver_col(label_txt, ver_txt, ver_color):
+            col = QVBoxLayout()
+            col.setSpacing(3)
+            lbl = QLabel(label_txt)
+            lbl.setStyleSheet("color: #555; font-size: 9pt; letter-spacing: 1px;")
+            val = QLabel(ver_txt)
+            val.setStyleSheet(f"color: {ver_color}; font-size: 20pt; font-weight: bold;")
+            col.addWidget(lbl)
+            col.addWidget(val)
+            return col
+
+        body.addWidget(ver_frame)
+        ver_layout.addLayout(_ver_col(
+            _txt(lang, 'update_notify_lbl_current'), current_ver, "#555"
+        ))
+
+        lbl_arrow = QLabel("→")
+        lbl_arrow.setStyleSheet("color: #333; font-size: 24pt; padding: 0 24px 0 20px;")
+        lbl_arrow.setAlignment(Qt.AlignCenter)
+        ver_layout.addWidget(lbl_arrow)
+
+        ver_layout.addLayout(_ver_col(
+            _txt(lang, 'update_notify_lbl_latest'), latest_ver, "#39ff7a"
+        ))
+        ver_layout.addStretch()
+
+        # ── Status label (shown during / after update) ─────────────────────
+        self._lbl_status = QLabel("")
+        self._lbl_status.setObjectName("lbl_status")
+        self._lbl_status.setWordWrap(True)
+        self._lbl_status.hide()
+        body.addWidget(self._lbl_status)
+
+        body.addSpacing(4)
+
+        # ── Button row ─────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        self._btn_dismiss = QPushButton(_txt(lang, 'update_notify_btn_dismiss'))
+        self._btn_dismiss.setCursor(Qt.PointingHandCursor)
+        self._btn_dismiss.clicked.connect(self._on_dismiss)
+        btn_row.addWidget(self._btn_dismiss)
+
+        btn_row.addSpacing(8)
+
+        self._btn_primary = QPushButton(_txt(lang, 'update_notify_btn_update'))
+        self._btn_primary.setObjectName("btn_primary")
+        self._btn_primary.setCursor(Qt.PointingHandCursor)
+        self._btn_primary.clicked.connect(self._on_update_now)
+
+        btn_row.addWidget(self._btn_primary)
+        body.addLayout(btn_row)
+
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height())
+
+    # ------------------------------------------------------------------
+    # Update logic
+    # ------------------------------------------------------------------
+
+    def _on_update_now(self):
+        """
+        Download the dedicated non-interactive update script from the repo and
+        run it with bash in a daemon thread.  The script (update-linux.sh /
+        update-mac.sh) handles GitHub→GitLab fallback, file sync, and pip
+        upgrades entirely on its own — no interactive prompts.
+        """
+        import threading, subprocess, tempfile, os
+
+        self._btn_primary.setEnabled(False)
+        self._btn_primary.setText(_txt(self._lang, 'update_notify_updating'))
+        self._btn_dismiss.setEnabled(False)
+        self._lbl_status.setText(_txt(self._lang, 'update_notify_wait'))
+        self._lbl_status.setStyleSheet("color: #888; font-style: italic; font-size: 10pt;")
+        self._lbl_status.show()
+        self.adjustSize()
+
+        url_primary  = self._UPDATE_SCRIPT
+        url_fallback = self._UPDATE_SCRIPT_GL
+
+        def _worker():
+            tmp_script = None
+            try:
+                import urllib.request, ssl, sys, os
+                import certifi
+                ctx = ssl.create_default_context(cafile=certifi.where())
+
+                # Try primary (GitHub raw), then GitLab fallback
+                script_content = None
+                for url in (url_primary, url_fallback):
+                    try:
+                        with urllib.request.urlopen(url, timeout=20, context=ctx) as resp:
+                            script_content = resp.read()
+                        break
+                    except Exception:
+                        continue
+
+                if not script_content:
+                    self._update_done.emit(False, "Could not download update script from GitHub or GitLab.")
+                    return
+
+                # Write to a temp file and execute
+                fd, tmp_script = tempfile.mkstemp(suffix='.py', prefix='bw_update_')
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(script_content)
+
+                cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+
+                if self._is_win:
+                    venv_py = os.path.join(self._install_dir, 'venv', 'Scripts', 'python.exe')
+                else:
+                    venv_py = os.path.join(self._install_dir, 'venv', 'bin', 'python3')
+
+                # Fallback just in case
+                if not os.path.isfile(venv_py):
+                    venv_py = sys.executable
+
+                result = subprocess.run(
+                    [venv_py, tmp_script, '--install-dir', self._install_dir],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    encoding='utf-8', errors='replace',
+                    timeout=600,
+                    creationflags=cf,
+                )
+
+                # Log full output for diagnostics
+                from osdoc import log_info, log_error
+                for line in (result.stdout or '').splitlines():
+                    log_info(f'[Updater] {line}')
+
+                if result.returncode == 0:
+                    self._update_done.emit(True, "")
+                else:
+                    self._update_done.emit(False, f"Exit code {result.returncode}")
+
+            except subprocess.TimeoutExpired:
+                self._update_done.emit(False, "Timeout (>10 min) — update may still be running.")
+            except Exception as e:
+                self._update_done.emit(False, str(e))
+            finally:
+                if tmp_script and os.path.exists(tmp_script):
+                    try: os.remove(tmp_script)
+                    except Exception: pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_update_done(self, success: bool, error_msg: str):
+        """Called on the main thread when the background update finishes."""
+        from osdoc import log_info, log_error
+        if success:
+            log_info("[UpdateCheck] Auto-update completed successfully.")
+            self._lbl_status.setText(_txt(self._lang, 'update_notify_success'))
+            self._lbl_status.setStyleSheet("color: #39ff7a; font-size: 10pt; font-style: normal;")
+            self._btn_primary.hide()
+            self._btn_dismiss.setText(_txt(self._lang, 'btn_close'))
+            self._btn_dismiss.clicked.disconnect()
+            self._btn_dismiss.clicked.connect(self.accept)
+            self._btn_dismiss.setEnabled(True)
+        else:
+            log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
+            self._lbl_status.setText(_txt(self._lang, 'update_notify_failed'))
+            self._lbl_status.setStyleSheet("color: #ed4245; font-size: 10pt; font-style: normal;")
+            # Change primary button to open GitHub releases page
+            self._btn_primary.setText(_txt(self._lang, 'update_notify_win_btn'))
+            self._btn_primary.clicked.disconnect()
+            self._btn_primary.clicked.connect(lambda: self._open_url(self._gh_url))
+            self._btn_primary.setEnabled(True)
+            self._btn_dismiss.setEnabled(True)
+        self.adjustSize()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _on_dismiss(self):
+        """Close without modifying auto-check setting."""
+        self.reject()
+
+    def closeEvent(self, event):
+        """X button = 'Remind me later': just close, keep auto_check_updates enabled."""
+        event.accept()  # do NOT touch auto_check_updates
+
+    @staticmethod
+    def _open_url(url: str):
+        import webbrowser
+        webbrowser.open(url)
+
+
+
+class MarkerDialog(FramelessWindowMixin, _BaseDialog):
+
+    """
+    Custom frameless dialog for adding or editing a custom marker.
+    Usage:
+        dlg = MarkerDialog(parent, lang, title_key, prefill_name='', prefill_color='Blue')
+        if dlg.exec() == QDialog.Accepted:
+            name, color = dlg.result_name, dlg.result_color
+    """
+    def __init__(self, parent, lang: str, title_key: str,
+                 prefill_name: str = '', prefill_color: str = ''):
+        super().__init__(parent)
+        self._lang = lang
+        self.result_name = ''
+        self.result_color = ''
+
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setWindowModality(Qt.ApplicationModal)
+
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: 6px; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; }}
+            QLabel#lbl_title {{ font-size: 13pt; font-weight: bold; color: #ffffff; }}
+            QLineEdit {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 5px 8px;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+            }}
+            QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
+            QPushButton {{
+                background-color: {config.BTN_GHOST_BG};
+                color: {config.BTN_FG};
+                padding: 6px 16px;
+                border-radius: 4px;
+                min-width: 80px;
+                font-weight: bold;
+                font-family: {config.UI_FONT_NAME};
+            }}
+            QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton#btn_ok {{ background-color: {config.BTN_BG}; }}
+            QPushButton#btn_ok:hover {{ background-color: {config.BTN_ACTIVE}; }}
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 4)
+        self.inner_frame.setGraphicsEffect(shadow)
+        main_layout.addWidget(self.inner_frame)
+
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self._tb = CustomTitleBar(self, lang, parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        title_text = _txt(lang, title_key)
+        if hasattr(self._tb, '_lbl_title'):
+            self._tb._lbl_title.setText(title_text)
+        root_layout.addWidget(self._tb)
+
+        content = QWidget(self.inner_frame)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(14)
+        root_layout.addWidget(content)
+
+        lbl_title = QLabel(title_text, content)
+        lbl_title.setObjectName("lbl_title")
+        content_layout.addWidget(lbl_title)
+
+        # Name row
+        name_row = QHBoxLayout()
+        name_lbl = QLabel(_txt(lang, "lbl_marker_name"), content)
+        name_lbl.setFixedWidth(100)
+        self._name_edit = QLineEdit(content)
+        self._name_edit.setText(prefill_name)
+        self._name_edit.setPlaceholderText(_txt(lang, "placeholder_marker_name"))
+        name_row.addWidget(name_lbl)
+        name_row.addWidget(self._name_edit)
+        content_layout.addLayout(name_row)
+
+        # Color row — translated display names with a reverse map to English keys
+        color_row = QHBoxLayout()
+        color_lbl = QLabel(_txt(lang, "lbl_marker_color"), content)
+        color_lbl.setFixedWidth(100)
+        _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
+        # Build [(translated_label, english_key), ...]
+        self._color_key_map: dict[str, str] = {}  # translated → english
+        translated_options: list[str] = []
+        for c in config.RESOLVE_COLORS:
+            if c in _blocked:
+                continue
+            t = _txt(lang, f"resolve_color_{c.lower()}")
+            self._color_key_map[t] = c
+            translated_options.append(t)
+        self._color_combo = CustomDropdown(translated_options)
+        # CustomDropdown defaults to self.txt("txt_select") which resolves to English
+        # at creation time (no parent window yet). Override with the correct lang immediately.
+        if not (prefill_color and prefill_color in config.RESOLVE_COLORS):
+            self._color_combo.setText(_txt(lang, "txt_select"))
+        # Set prefill value — find its translated equivalent
+        if prefill_color and prefill_color in config.RESOLVE_COLORS:
+            prefill_t = _txt(lang, f"resolve_color_{prefill_color.lower()}")
+            self._color_combo.setText(prefill_t)
+        color_row.addWidget(color_lbl)
+        color_row.addWidget(self._color_combo)
+        content_layout.addLayout(color_row)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_cancel = QPushButton(_txt(lang, "btn_close"), content)
+        btn_cancel.clicked.connect(self.reject)
+        btn_ok = QPushButton(_txt(lang, "btn_apply"), content)
+        btn_ok.setObjectName("btn_ok")
+        btn_ok.clicked.connect(self._on_ok)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addSpacing(8)
+        btn_row.addWidget(btn_ok)
+        content_layout.addLayout(btn_row)
+
+        self.adjustSize()
+        self.setFixedWidth(380)
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height())
+
+    def _on_ok(self):
+        name = self._name_edit.text().strip()
+        translated = self._color_combo.currentText()
+        color_key = self._color_key_map.get(translated, "")
+        # Both name and a valid color must be provided
+        if name and color_key:
+            self.result_name = name
+            self.result_color = color_key
+            self.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            self._on_ok()
+        elif event.key() == Qt.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
+
+
+
+class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
+
+    def __init__(self, parent, diff_dict, key_name_map):
+        super().__init__(parent)
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        
+        self.setStyleSheet(parent.styleSheet() + f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; }}
+            QScrollArea {{ border: 1px solid #333; background-color: #1c1c1c; border-radius: 4px; }}
+            QFrame#item_row {{ border-bottom: 1px solid #333; padding-bottom: 5px; }}
+        """)
+        
+        self.decisions = {}
+        self.diff_dict = diff_dict
+        self.rows = {}
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        self.inner_frame = QFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        root_layout = QVBoxLayout(self.inner_frame)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        root_layout.addWidget(self._tb)
+        
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 25, 20, 20)
+        content_layout.setSpacing(15)
+        root_layout.addLayout(content_layout)
+        
+        lbl_title = QLabel(parent.txt('msg_unsaved_title'))
+        lbl_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        content_layout.addWidget(lbl_title)
+        content_layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        self.vbox = QVBoxLayout(scroll_content)
+        self.vbox.setContentsMargins(10, 10, 10, 10)
+        self.vbox.setSpacing(10)
+        
+        for k, (old_v, new_v) in diff_dict.items():
+            row = QFrame()
+            row.setObjectName("item_row")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            
+            fname = key_name_map.get(k, k.replace('_', ' ').title())
+            lbl_name = QLabel(f"{fname}:")
+            
+            if isinstance(new_v, bool):
+                display_val = parent.txt('btn_yes') if new_v else parent.txt('btn_no')
+            elif isinstance(new_v, list):
+                t_list = []
+                for item in new_v:
+                    t = parent.txt(str(item))
+                    t_list.append(t if t != str(item) else str(item).replace('_', ' ').title())
+                display_val = ", ".join(t_list) if t_list else "—"
+            elif isinstance(new_v, str):
+                t = parent.txt(new_v)
+                display_val = t if t != new_v else new_v
+            else:
+                display_val = str(new_v)
+                
+            lbl_val = QLabel(f"<b>{display_val}</b>")
+            lbl_val.setStyleSheet("color: #aaa;")
+            
+            btn_save = QPushButton(parent.txt('btn_save'))
+            btn_save.setObjectName("btn_apply")
+            btn_save.setCursor(Qt.PointingHandCursor)
+            btn_save.clicked.connect(lambda checked=False, key=k: self._make_decision(key, 'save'))
+            
+            btn_discard = QPushButton(parent.txt('btn_discard'))
+            btn_discard.setObjectName("btn_secondary")
+            btn_discard.setCursor(Qt.PointingHandCursor)
+            btn_discard.clicked.connect(lambda checked=False, key=k: self._make_decision(key, 'discard'))
+            
+            rl.addWidget(lbl_name)
+            rl.addWidget(lbl_val)
+            rl.addStretch()
+            rl.addWidget(btn_discard)
+            rl.addWidget(btn_save)
+            
+            self.vbox.addWidget(row)
+            self.rows[k] = row
+        
+        self.vbox.addStretch()
+        scroll.setWidget(scroll_content)
+        content_layout.addWidget(scroll)
+        
+        bot_layout = QHBoxLayout()
+        btn_cancel = QPushButton(parent.txt('btn_cancel'))
+        btn_cancel.setObjectName("btn_secondary")
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.clicked.connect(self.reject)
+        
+        btn_discard_all = QPushButton(parent.txt('btn_discard_all'))
+        btn_discard_all.setObjectName("btn_secondary")
+        btn_discard_all.setCursor(Qt.PointingHandCursor)
+        btn_discard_all.clicked.connect(self._discard_all)
+        
+        btn_save_all = QPushButton(parent.txt('btn_save_all'))
+        btn_save_all.setObjectName("btn_apply")
+        btn_save_all.setCursor(Qt.PointingHandCursor)
+        btn_save_all.clicked.connect(self._save_all)
+        
+        bot_layout.addWidget(btn_cancel)
+        bot_layout.addStretch()
+        bot_layout.addWidget(btn_discard_all)
+        bot_layout.addWidget(btn_save_all)
+        content_layout.addLayout(bot_layout)
+        
+        self.resize(630, 480)
+        _center_on_screen(self, 630, 480)
+        
+    def _make_decision(self, key, decision):
+        self.decisions[key] = decision
+        self.rows[key].hide()
+        if len(self.decisions) == len(self.diff_dict):
+            self.accept()
+            
+    def _save_all(self):
+        for k in self.diff_dict:
+            if k not in self.decisions:
+                self.decisions[k] = 'save'
+        self.accept()
+        
+    def _discard_all(self):
+        for k in self.diff_dict:
+            if k not in self.decisions:
+                self.decisions[k] = 'discard'
+        self.accept()
+
+
+class SettingsDialog(FramelessWindowMixin, _BaseDialog):
+    """Settings Dialog — left category menu + right stacked pages.
+    All I/O goes through engine.load_preferences / engine.save_preferences
+    which delegate to osdoc's smart router.
+    """
+
+    # Fallback defaults (for revert buttons)
+    DEFAULTS = {
+        'view_mode':          'continuous',
+        'offset':             0.133,
+        'pad':                0.0,
+        'snap_max':           0.25,
+        'editor_font_family': config.UI_FONT_NAME,
+        'editor_font_size':   12,
+        'editor_line_height': 7,
+        'theme':              'dark',
+        'always_on_top':      False,
+        'hidden_panels':      [],
+    }
+
+    def txt(self, key: str, **kwargs) -> str:
+        prefs = self.engine.load_preferences() or {}
+        lang = prefs.get("gui_lang", "en")
+        text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
+        if kwargs: return text.format(**kwargs)
+        return text
+
+    def __init__(self, engine, parent=None):
+        super().__init__(parent)
+        self.engine = engine
+        self.setWindowTitle(self.txt("tool_settings"))
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
+        self.setFixedSize(750, 580)
+
+        prefs = self.engine.load_preferences() or {}
+
+        # ── Global stylesheet ─────────────────────────────────────────────
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: transparent; }}
+            #MainInnerFrame {{
+                background-color: {config.BG_COLOR};
+                border: 1px solid #1a1a1a;
+            }}
+            QPushButton {{
+                padding: 6px 16px;
+                outline: none;
+            }}
+            QLabel {{
+                color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                background: transparent;
+            }}
+            QListWidget {{
+                background-color: {config.SIDEBAR_BG};
+                border: none;
+                border-right: 1px solid {config.SEPARATOR_COL};
+                outline: none;
+                padding: 6px 0;
+            }}
+            QListWidget::item {{
+                color: {config.NOTE_COL};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                padding: 10px 16px;
+                border-radius: 0px;
+            }}
+            QListWidget::item:selected,
+            QListWidget::item:selected:active,
+            QListWidget::item:selected:!active {{
+                background-color: #2a2d2e;
+                color: #ffffff;
+                border-left: 2px solid {config.BTN_BG};
+            }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
+            QListWidget::item:hover:!selected {{
+                background-color: #222222;
+                color: {config.FG_COLOR};
+            }}
+            QStackedWidget {{
+                background-color: {config.BG_COLOR};
+            }}
+            QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
+                background-color: {config.INPUT_BG};
+                color: {config.INPUT_FG};
+                border: 1px solid #3a3a3a;
+                padding: 4px 8px;
+                border-radius: 3px;
+                outline: none;
+            }}
+            QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{
+                border: 1px solid {config.BTN_BG};
+                outline: none;
+            }}
+            QCheckBox {{
+                color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                background: #1e1e1e;
+                border: 1px solid #555;
+                border-radius: 3px;
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {config.BTN_BG};
+                border-color: {config.BTN_BG};
+            }}
+            QPushButton#btn_apply {{
+                background-color: {config.BTN_BG};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                padding: 0 18px;
+            }}
+            QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_apply:pressed {{ background-color: #125c2f; }}
+            QPushButton#btn_secondary {{
+                background-color: transparent;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                padding: 0 12px;
+            }}
+            QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
+            QPushButton#btn_ghost_sm {{
+                background-color: transparent;
+                color: #888;
+                border: 1px solid #444;
+                border-radius: 4px;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 9pt;
+                padding: 0px;
+                text-align: center;
+            }}
+            QPushButton#btn_ghost_sm:hover {{ background-color: #222; color: #bbb; border-color: #666; }}
+            QPushButton[class="revert-btn"] {{
+                padding: 0px;
+                text-align: center;
+                background: transparent;
+                border: 1px solid #444;
+                border-radius: 3px;
+                color: #888;
+                font-size: 12pt;
+                font-weight: bold;
+            }}
+        """)
+
+        # ─────────────────────────────────────────────────────────────────
+        # Root layout: [LEFT menu | RIGHT content]
+        # ─────────────────────────────────────────────────────────────────
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        class SolidFrame(QFrame):
+            def paintEvent(self, e):
+                from PySide6.QtGui import QPainter, QColor
+                p = QPainter(self)
+                p.fillRect(self.rect(), QColor(config.BG_COLOR))
+                super().paintEvent(e)
+                
+        self.inner_frame = SolidFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        outer_layout = QVBoxLayout(self.inner_frame)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+        
+        self._tb = CustomTitleBar(self, prefs.get("gui_lang", "en"), parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        # Manually force the title into toolbars that normally get theirs from windowTitle()
+        if hasattr(self._tb, "_lbl_title"):
+            self._tb._lbl_title.setText(self.txt("tool_settings"))
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        outer_layout.addWidget(self._tb)
+        
+        root = QHBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        outer_layout.addLayout(root)
+
+        # ── LEFT: Category list ───────────────────────────────────────────
+        self.category_list = QListWidget()
+        self.category_list.setFixedWidth(155)
+        self.category_list.setFocusPolicy(Qt.NoFocus)
+        # Disable horizontal scrollbar — marquee handles overflow instead
+        self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._marquee_delegate = MarqueeItemDelegate(self.category_list)
+        self.category_list.setItemDelegate(self._marquee_delegate)
+        root.addWidget(self.category_list)
+
+        # ── RIGHT: stacked pages + bottom bar ────────────────────────────
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        root.addLayout(right_layout)
+
+
+        self.stack = QStackedWidget()
+        right_layout.addWidget(self.stack)
+
+        self._build_ui()
+        self.w_footer = QWidget()
+        l_footer = QVBoxLayout(self.w_footer)
+        l_footer.setContentsMargins(0, 0, 0, 0)
+        l_footer.setSpacing(0)
+        
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"background: {config.SEPARATOR_COL}; max-height: 1px; border: none;")
+        l_footer.addWidget(sep)
+
+        btn_bar = QHBoxLayout()
+        btn_bar.setContentsMargins(16, 10, 16, 12)
+        btn_bar.setSpacing(8)
+
+        btn_bar.addStretch()
+
+        # Right: Restore / Close / Apply
+        self.btn_restore = QPushButton(self.txt("btn_restore_defaults"))
+        self.btn_restore.setObjectName("btn_secondary")
+        self.btn_restore.setMinimumWidth(120)
+        self.btn_restore.setFixedHeight(30)
+        self.btn_restore.setCursor(Qt.PointingHandCursor)
+        self.btn_restore.clicked.connect(self._restore_all_defaults)
+        btn_bar.addWidget(self.btn_restore)
+
+        self.btn_close = QPushButton(self.txt("btn_close"))
+        self.btn_close.setObjectName("btn_secondary")
+        self.btn_close.setMinimumWidth(120)
+        self.btn_close.setFixedHeight(30)
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.clicked.connect(self.reject)
+        btn_bar.addWidget(self.btn_close)
+
+        self.btn_apply = QPushButton(self.txt("btn_apply"))
+        self.btn_apply.setObjectName("btn_apply")
+        self.btn_apply.setMinimumWidth(120)
+        self.btn_apply.setFixedHeight(30)
+        self.btn_apply.setCursor(Qt.PointingHandCursor)
+        self.btn_apply.clicked.connect(self._apply_settings)
+        btn_bar.addWidget(self.btn_apply)
+
+        l_footer.addLayout(btn_bar)
+        right_layout.addWidget(self.w_footer)
+
+        # Connect list → stack
+        def _on_tab_changed(idx):
+            self.stack.setCurrentIndex(idx)
+            item = self.category_list.item(idx)
+            if item and item.text() == self.txt("tab_support"):
+                self.w_footer.hide()
+            else:
+                self.w_footer.show()
+                
+            # WORKAROUND: Force OS to refresh the main application icon
+            from PySide6.QtWidgets import QApplication
+            QApplication.setWindowIcon(_app_icon())
+            parent_window = self.parentWidget()
+            if parent_window:
+                parent_window.setWindowIcon(_app_icon())
+                
+        self.category_list.currentRowChanged.connect(_on_tab_changed)
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+
+    def _set_view_mode(self, mode):
+        self.engine.save_preferences({'settings_view_mode': mode})
+        if hasattr(self, '_initial_state'):
+            self._initial_state['settings_view_mode'] = mode
+        self._build_ui()
+
+    def _build_ui(self):
+        self._advanced_widgets = []
+        self.category_list.clear()
+        while self.stack.count() > 0:
+            w = self.stack.widget(0)
+            self.stack.removeWidget(w)
+            w.deleteLater()
+
+        prefs = self.engine.load_preferences() or {}
+        view_mode = prefs.get('settings_view_mode', 'basic')
+        is_basic = (view_mode == 'basic')
+
+        if is_basic:
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+            self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_telemetry"))
+            self.category_list.addItem(self.txt("tab_support"))
+        else:
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+            self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_ai_engine"))
+            self.category_list.addItem(self.txt("tab_telemetry"))
+            self.category_list.addItem(self.txt("tab_support"))
+
+        self.category_list.setCurrentRow(0)
+
+        # ── Revert helper ─────────────────────────────────────────────────
+        self.revert_funcs = []
+
+        def _add_row(form, label_text, widget, default_val, setter_func):
+            container = QWidget()
+            row = QHBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row.addWidget(widget)
+            btn_rev = QPushButton("↺")
+            btn_rev.setFixedSize(26, 26)
+            btn_rev.setCursor(Qt.PointingHandCursor)
+            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addWidget(btn_rev)
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            lbl.setMinimumWidth(200)
+            form.addRow(lbl, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl, container
+
+        def _add_page_to_stack(page_widget, index=-1):
+            scroll = QScrollArea()
+            scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+            scroll.setWidget(page_widget)
+            if index == -1:
+                self.stack.addWidget(scroll)
+            else:
+                self.stack.insertWidget(index, scroll)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 0 — GENERAL
+        # ─────────────────────────────────────────────────────────────────
+        page_gen = QWidget()
+        page_gen.setStyleSheet("background: transparent;")
+        l_gen = QVBoxLayout(page_gen)
+        l_gen.setContentsMargins(24, 20, 24, 16)
+
+        # Basic/Advanced view switch
+
+        view_btn_row = QHBoxLayout()
+        view_btn_row.setContentsMargins(0, 0, 0, 16)
+        view_btn_row.setSpacing(10)
+        
+        btn_view_basic = QPushButton(self.txt("btn_view_basic"))
+        btn_view_basic.setFixedHeight(30)
+        btn_view_basic.setCursor(Qt.PointingHandCursor)
+        active_btn_style = "background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold;"
+        inactive_btn_style = "background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal;"
+        
+        if is_basic:
+            btn_view_basic.setStyleSheet(active_btn_style)
+        else:
+            btn_view_basic.setStyleSheet(inactive_btn_style)
+        btn_view_basic.clicked.connect(lambda: self._set_view_mode('basic'))
+        
+        btn_view_advanced = QPushButton(self.txt("btn_view_advanced"))
+        btn_view_advanced.setFixedHeight(30)
+        btn_view_advanced.setCursor(Qt.PointingHandCursor)
+        
+        if view_mode == 'advanced':
+            btn_view_advanced.setStyleSheet(active_btn_style)
+        else:
+            btn_view_advanced.setStyleSheet(inactive_btn_style)
+            
+        btn_view_advanced.clicked.connect(lambda: self._set_view_mode('advanced'))
+
+        view_btn_row.addWidget(btn_view_basic)
+        view_btn_row.addWidget(btn_view_advanced)
+        l_gen.addLayout(view_btn_row)
+
+        # ── Version / Update card (at the top) ────────────────────────────
+        ver_card = QFrame()
+        ver_card.setStyleSheet(
+            "QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }"
+        )
+        ver_card_lay = QVBoxLayout(ver_card)
+        ver_card_lay.setContentsMargins(16, 12, 16, 12)
+        ver_card_lay.setSpacing(10)
+
+        # Row 1: version + status + Update Now
+        ver_row = QHBoxLayout()
+        ver_row.setSpacing(6)
+        lbl_ver_key = QLabel(self.txt("lbl_ver_installed") + ":")
+        lbl_ver_key.setStyleSheet("color: #666; font-size: 9pt; background: transparent; border: none;")
+        lbl_ver_val = QLabel(config.VERSION)
+        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 11pt; font-weight: bold; background: transparent; border: none;")
+        self._lbl_ver_status = QLabel("…")
+        self._lbl_ver_status.setStyleSheet("color: #555; font-size: 9pt; background: transparent; border: none;")
+        self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"))
+        self._btn_ver_update.setObjectName("btn_ghost_sm")
+        self._btn_ver_update.setStyleSheet("padding: 3px 10px; font-size: 9pt;")
+        self._btn_ver_update.setCursor(Qt.PointingHandCursor)
+        self._btn_ver_update.hide()
+        ver_row.addWidget(lbl_ver_key)
+        ver_row.addWidget(lbl_ver_val)
+        ver_row.addSpacing(12)
+        ver_row.addWidget(self._lbl_ver_status)
+        ver_row.addStretch()
+        ver_row.addWidget(self._btn_ver_update)
+        ver_card_lay.addLayout(ver_row)
+
+        # Thin divider inside card
+        card_sep = QFrame()
+        card_sep.setFrameShape(QFrame.Shape.HLine)
+        card_sep.setStyleSheet("background-color: #222; max-height: 1px; border: none;")
+        ver_card_lay.addWidget(card_sep)
+
+        # Row 2: Notify toggle
+        tgl_notify_row = QHBoxLayout()
+        tgl_notify_row.setSpacing(10)
+        self.tgl_auto_check_updates = ToggleSwitch()
+        self.tgl_auto_check_updates.setChecked(
+            bool(prefs.get('auto_check_updates', True)), animated=False
+        )
+        self.tgl_auto_check_updates.setToolTip(self.txt("tt_auto_check_updates"))
+        lbl_notify = QLabel(self.txt("lbl_auto_check_updates"))
+        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_notify.setToolTip(self.txt("tt_auto_check_updates"))
+        tgl_notify_row.addWidget(self.tgl_auto_check_updates)
+        tgl_notify_row.addWidget(lbl_notify)
+        tgl_notify_row.addStretch()
+        ver_card_lay.addLayout(tgl_notify_row)
+
+        # Row 3: Auto-update toggle
+        tgl_autoupd_row = QHBoxLayout()
+        tgl_autoupd_row.setSpacing(10)
+        self.tgl_auto_update_on_start = ToggleSwitch()
+        self.tgl_auto_update_on_start.setChecked(
+            bool(prefs.get('auto_update_on_start', False)), animated=False
+        )
+        self.tgl_auto_update_on_start.setToolTip(self.txt("tt_auto_update_on_start"))
+        lbl_autoupd = QLabel(self.txt("lbl_auto_update_on_start"))
+        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_autoupd.setToolTip(self.txt("tt_auto_update_on_start"))
+        tgl_autoupd_row.addWidget(self.tgl_auto_update_on_start)
+        tgl_autoupd_row.addWidget(lbl_autoupd)
+        tgl_autoupd_row.addStretch()
+        ver_card_lay.addLayout(tgl_autoupd_row)
+
+        l_gen.addWidget(ver_card)
+        l_gen.addSpacing(12)
+
+        # ── Async: populate version status + wire Update Now button ───────
+        # Use engine reference captured now; derive lang at call time from prefs
+        _card_engine = self.engine
+
+        def _card_lang():
+            p = _card_engine.load_preferences() or {}
+            return p.get('gui_lang', 'en')
+
+        def _on_update_known_for_card(latest_ver, gh_url, gl_url):
+            # If auto-update already ran silently this session, just show restart notice
+            main_win = self.parent()
+            pending = getattr(main_win, '_pending_update_ver', None)
+            if pending and pending == latest_ver:
+                self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
+                self._lbl_ver_status.setStyleSheet(
+                    "color: #f4a641; font-size: 9pt; font-weight: bold; background: transparent; border: none;"
+                )
+                self._btn_ver_update.hide()
+                return
+
+            # Normal: update available, show Update Now button
+            self._lbl_ver_status.setText(
+                f"{self.txt('lbl_ver_update_avail')} {latest_ver}"
+            )
+            self._lbl_ver_status.setStyleSheet(
+                "color: #f4a641; font-size: 9pt; background: transparent; border: none;"
+            )
+            self._btn_ver_update.show()
+
+            def _do_inline_update():
+                import threading, subprocess, tempfile, os, urllib.request, ssl
+                from osdoc import log_info, log_error
+
+                is_win  = _card_engine.os_doc.is_win
+                from gui import UpdateNotifyDialog as _UND
+                urls = [_UND._UPDATE_SCRIPT, _UND._UPDATE_SCRIPT_GL]
+
+                # Disable button + show "Updating…"
+                self._btn_ver_update.setEnabled(False)
+                self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_updating'))
+                self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_wait'))
+                self._lbl_ver_status.setStyleSheet(
+                    "color: #888; font-size: 9pt; font-style: italic; background: transparent; border: none;"
+                )
+
+                # Signal bridge: safe cross-thread UI update
+                class _Bridge(QObject):
+                    done = Signal(bool, str)
+                _bridge = _Bridge(self)
+
+                def _on_done(success, err):
+                    if success:
+                        log_info("[Updater] Card update succeeded.")
+                        self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_success'))
+                        self._lbl_ver_status.setStyleSheet(
+                            "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
+                        )
+                        self._btn_ver_update.hide()
+                    else:
+                        log_error(f"[Updater] Card update failed: {err}")
+                        self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_failed'))
+                        self._lbl_ver_status.setStyleSheet(
+                            "color: #ed4245; font-size: 9pt; background: transparent; border: none;"
+                        )
+                        self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_win_btn'))
+                        self._btn_ver_update.setEnabled(True)
+                        try:
+                            self._btn_ver_update.clicked.disconnect()
+                        except Exception:
+                            pass
+                        from gui import UpdateNotifyDialog as _UND2
+                        self._btn_ver_update.clicked.connect(
+                            lambda: _UND2._open_url(gh_url)
+                        )
+                        self._btn_ver_update.show()
+
+                _bridge.done.connect(_on_done)
+
+                def _worker():
+                    tmp = None
+                    try:
+                        import sys, os
+                        import certifi
+                        ctx = ssl.create_default_context(cafile=certifi.where())
+                        content = None
+                        for url in urls:
+                            try:
+                                with urllib.request.urlopen(url, timeout=20, context=ctx) as r:
+                                    content = r.read()
+                                break
+                            except Exception:
+                                continue
+                        if not content:
+                            _bridge.done.emit(False, "Could not download update script.")
+                            return
+                        import sys
+                        fd, tmp = tempfile.mkstemp(suffix='.py', prefix='bw_upd_')
+                        with os.fdopen(fd, 'wb') as fh:
+                            fh.write(content)
+                        cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                        
+                        install_dir = getattr(_card_engine.os_doc, 'install_dir', '')
+                        
+                        if is_win:
+                            venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
+                        else:
+                            venv_py = os.path.join(install_dir, 'venv', 'bin', 'python3')
+                        
+                        if not os.path.isfile(venv_py):
+                            venv_py = sys.executable
+
+                        cmd = [venv_py, tmp]
+                        if install_dir:
+                            cmd.extend(['--install-dir', install_dir])
+
+                        result = subprocess.run(
+                            cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            encoding='utf-8', errors='replace', timeout=600, creationflags=cf
+                        )
+                        for line in (result.stdout or '').splitlines():
+                            log_info(f'[Updater] {line}')
+                        if result.returncode == 0:
+                            _bridge.done.emit(True, "")
+                        else:
+                            _bridge.done.emit(False, f"Exit code {result.returncode}")
+                    except subprocess.TimeoutExpired:
+                        _bridge.done.emit(False, "Timeout (>10 min)")
+                    except Exception as e:
+                        _bridge.done.emit(False, str(e))
+                    finally:
+                        if tmp:
+                            try: os.remove(tmp)
+                            except Exception: pass
+
+                threading.Thread(target=_worker, daemon=True).start()
+
+            # Disconnect any previous connections, then wire up.
+            # PySide6 emits RuntimeWarning (not RuntimeError) when no connections
+            # exist — catch_warnings suppresses it cleanly without hiding real bugs.
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    self._btn_ver_update.clicked.disconnect()
+                except Exception:
+                    pass
+            self._btn_ver_update.clicked.connect(_do_inline_update)
+
+        def _on_check_done_for_card():
+            if self._lbl_ver_status.text() == "…":
+                self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
+                self._lbl_ver_status.setStyleSheet(
+                    "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
+                )
+
+        _thr = UpdateCheckThread(config.VERSION, parent=self)
+        _thr.update_available.connect(_on_update_known_for_card)
+        _thr.finished.connect(_on_check_done_for_card)
+        _thr.start()
+        self._settings_ver_thread = _thr
+
+        # ── Language + App Icon ────────────────────────────────────────────
+        form_gen = QFormLayout()
+        form_gen.setSpacing(14)
+        form_gen.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Language dropdown
+        self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
+        current_lang_code = prefs.get('gui_lang', 'en')
+        self.dropdown_lang.setText(config.SUPPORTED_LANGS.get(current_lang_code, 'English'))
+
+        def _on_lang_changed(val):
+            code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), 'en')
+            prefs = self.engine.load_preferences() or {}
+            if code == prefs.get('gui_lang'):
+                return
+
+            current_state = self._get_current_state_dict()
+            current_state['gui_lang'] = code
+            
+            prefs['gui_lang'] = code
+            self.engine.save_preferences(prefs)
+
+            self._build_ui()
+            self._restore_state_dict(current_state)
+
+            target = config.TRANS.get(code, config.TRANS['en'])
+            title   = target.get('msg_title_language_changed', 'Language Changed')
+            message = target.get('msg_restart_lang_pending', 'Language changed. Full changes will apply on restart.')
+            ok_text = target.get('btn_ok', 'OK')
+            
+            CustomMsgBox(self, title, message, ok_text).exec()
+            
+            self.btn_apply.setText(self.txt("btn_apply"))
+            self.btn_close.setText(self.txt("btn_close"))
+            self.btn_restore.setText(self.txt("btn_restore_defaults"))
+
+        self.dropdown_lang.valueChanged.connect(_on_lang_changed)
+        def _reset_lang(val):
+            self.dropdown_lang.setText(val)
+            _on_lang_changed(val)
+        _add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
+
+        # App Icon (Visual Selector)
+        icon_row = QHBoxLayout()
+        icon_row.setSpacing(10)
+        self.icon_group = QButtonGroup(self)
+        self.icon_group.setExclusive(True)
+        
+        icon_names = ["default", "monochrome", "whiteb", "white"]
+        saved_icon = prefs.get('app_icon', 'default')
+        
+        from PySide6.QtGui import QIcon
+        from PySide6.QtCore import QSize
+        import os
+        
+        for i, name in enumerate(icon_names):
+            btn = QPushButton()
+            ext = ".ico" if self.engine.os_doc.is_win else ".png"
+            icon_path = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}{ext}")
+            
+            if os.path.exists(icon_path):
+                btn.setIcon(QIcon(icon_path))
+                btn.setIconSize(QSize(48, 48))
+            btn.setCheckable(True)
+            if name == saved_icon:
+                btn.setChecked(True)
+                
+            btn.setProperty("icon_name", name)
+            
+            btn.setStyleSheet("""
+                QPushButton { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px; }
+                QPushButton:checked { background: #262626; border: 1px solid #404040; }
+                QPushButton:hover { background: #333333; }
+            """)
+            self.icon_group.addButton(btn, i)
+            icon_row.addWidget(btn)
+            
+        icon_row.addStretch()
+        
+        icon_container = QWidget()
+        icon_container.setLayout(icon_row)
+        icon_container.layout().setContentsMargins(0, 0, 0, 0)
+        
+        lbl_icon, container_icon = _add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
+        btn_rev_icon = container_icon.findChild(QPushButton, "btn_ghost_sm")
+        if btn_rev_icon:
+            btn_rev_icon.clicked.disconnect()
+            def set_icon_default(val="default"):
+                for btn in self.icon_group.buttons():
+                    if btn.property("icon_name") == val:
+                        btn.setChecked(True)
+                        break
+            btn_rev_icon.clicked.connect(lambda *args: set_icon_default("default"))
+
+        l_gen.addLayout(form_gen)
+        l_gen.addSpacing(8)
+        l_gen.addStretch()
+
+
+        # ── Import / Export settings (bottom) ─────────────────────────────
+        io_row = QHBoxLayout()
+        io_row.setContentsMargins(0, 0, 0, 8)
+        io_row.setSpacing(8)
+
+        btn_import_s = QPushButton(self.txt("btn_import_settings"))
+        btn_import_s.setObjectName("btn_ghost_sm")
+        btn_import_s.setStyleSheet("padding: 4px 12px;")
+        btn_import_s.setCursor(Qt.PointingHandCursor)
+        btn_import_s.clicked.connect(self._on_import_settings)
+        io_row.addWidget(btn_import_s)
+
+        btn_export_s = QPushButton(self.txt("btn_export_settings"))
+        btn_export_s.setObjectName("btn_ghost_sm")
+        btn_export_s.setStyleSheet("padding: 4px 12px;")
+        btn_export_s.setCursor(Qt.PointingHandCursor)
+        btn_export_s.clicked.connect(self._on_export_settings)
+        io_row.addWidget(btn_export_s)
+        io_row.addStretch()
+        l_gen.addLayout(io_row)
+        _add_page_to_stack(page_gen)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 1 — SHORTCUTS
+
+
+        # ─────────────────────────────────────────────────────────────────
+        page_shorts = QWidget()
+        page_shorts.setStyleSheet("background: transparent;")
+        l_shorts = QVBoxLayout(page_shorts)
+        l_shorts.setContentsMargins(24, 20, 24, 16)
+        l_shorts.setSpacing(0)
+
+
+        default_shortcuts = getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {})
+        # Merge defaults with saved prefs, keeping only keys present in DEFAULT_SETTINGS
+        saved_shortcuts = prefs.get('shortcuts', {})
+        current_shortcuts = {k: saved_shortcuts.get(k, v) for k, v in default_shortcuts.items()}
+
+        self.shortcut_inputs = {}
+
+        def _check_shortcut_conflicts():
+            """Scan all capturable inputs; set red border on any with a duplicate sequence."""
+            # Gather sequences from capturable inputs only (built-in + custom marker)
+            all_inputs = dict(self.shortcut_inputs)
+            all_inputs.update(getattr(self, 'custom_marker_shortcut_inputs', {}))
+            seq_to_keys = {}
+            for k, w in all_inputs.items():
+                if w.display_only:
+                    continue
+                seq = w.get_sequence()
+                if seq:
+                    seq_to_keys.setdefault(seq, []).append(k)
+            # Apply conflict styling
+            for k, w in all_inputs.items():
+                if w.display_only:
+                    continue
+                seq = w.get_sequence()
+                is_conflict = seq and len(seq_to_keys.get(seq, [])) > 1
+                w.set_conflict(bool(is_conflict))
+
+
+        # Builds label + field container for one shortcut row (used for addRow and insertRow)
+        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None):
+            container = QWidget()
+            row = QHBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row.addWidget(widget)
+
+            if not is_display:
+                btn_clear = QPushButton("✕")
+                btn_clear.setFixedSize(26, 26)
+                btn_clear.setCursor(Qt.PointingHandCursor)
+                btn_clear.setObjectName("btn_ghost_sm")
+                btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
+                btn_clear.clicked.connect(lambda: setter_func(""))
+                row.addWidget(btn_clear)
+
+            btn_rev = QPushButton("↺")
+            btn_rev.setFixedSize(26, 26)
+            btn_rev.setCursor(Qt.PointingHandCursor)
+            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addWidget(btn_rev)
+
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            
+            if info_key:
+                lbl_container = QWidget()
+                lbl_container.setMinimumWidth(200)
+                lbl_layout = QHBoxLayout(lbl_container)
+                lbl_layout.setContentsMargins(0, 0, 0, 0)
+                lbl_layout.setSpacing(6)
+                info_icon = self.parent()._create_info_icon(info_key)
+                lbl_layout.addWidget(lbl)
+                lbl_layout.addWidget(info_icon)
+                lbl_layout.addStretch()
+                return lbl_container, container
+
+            lbl.setMinimumWidth(200)
+            return lbl, container
+
+        def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
+            lbl, container = _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display)
+            form.addRow(lbl, container)
+
+        # Keys and their ordering in the final form
+        MARKER_KEYS  = {'mark_red', 'mark_blue', 'mark_green', 'mark_eraser'}
+        NAV_KEYS     = {'search', 'open_settings', 'jump_to_word', 'play_stop', 'skip_backward', 'skip_forward'}
+        DISPLAY_ONLY = set()
+        KEY_ORDER    = ['mark_red', 'mark_blue', 'mark_green', 'mark_eraser',
+                        'search', 'open_settings', 'jump_to_word', 'play_stop', 'skip_backward', 'skip_forward']
+
+        def make_setter(w, check_fn):
+            def _setter(v):
+                w.set_sequence(str(v))
+                check_fn()
+            return _setter
+
+        # ── ONE unified QFormLayout ───────────────────────────────────────────
+        # Custom markers inserted via insertRow() at _custom_sc_insert_pos so
+        # spacing is always identical (14px) between EVERY row.
+        form = QFormLayout()
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Marker shortcuts (red … eraser)
+        for key in KEY_ORDER:
+            if key not in MARKER_KEYS or key not in current_shortcuts:
+                continue
+            is_disp = key in DISPLAY_ONLY
+            if is_basic and is_disp:
+                continue
+            value      = current_shortcuts[key]
+            i18n_key   = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            
+            if key == 'jump_to_word':
+                opts_keys = ['opt_ctrl_lmb', 'opt_ctrl_rmb', 'opt_alt_lmb', 'opt_alt_rmb', 'opt_shift_lmb', 'opt_shift_rmb']
+                key_map = {k: self.txt(k) for k in opts_keys}
+                widget = MouseShortcutCaptureButton(str(value), key_map, display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, 'opt_ctrl_lmb'),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp, info_key='tt_jump_to_word_info')
+            else:
+                widget = ShortcutCaptureButton(str(value), display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, ''),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp)
+            form.addRow(lbl, container)
+            self.shortcut_inputs[key] = widget
+
+        # Position where custom marker rows will be inserted (after last marker row)
+        self._custom_sc_insert_pos       = form.rowCount()
+        self._custom_sc_unified          = form
+        self._make_shortcut_widgets_fn   = _make_shortcut_widgets
+        self._check_shortcut_conflicts_fn = _check_shortcut_conflicts
+        self._add_shortcut_row_fn         = _add_shortcut_row
+        self.custom_marker_shortcut_inputs = {}
+
+        # Nav shortcuts (search, open_settings, jump_to_word)
+        for key in KEY_ORDER:
+            if key not in NAV_KEYS or key not in current_shortcuts:
+                continue
+            is_disp = key in DISPLAY_ONLY
+            if is_basic and is_disp:
+                continue
+            value      = current_shortcuts[key]
+            i18n_key   = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            
+            if key == 'jump_to_word':
+                opts_keys = ['opt_ctrl_lmb', 'opt_ctrl_rmb', 'opt_alt_lmb', 'opt_alt_rmb', 'opt_shift_lmb', 'opt_shift_rmb']
+                key_map = {k: self.txt(k) for k in opts_keys}
+                widget = MouseShortcutCaptureButton(str(value), key_map, display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, 'opt_ctrl_lmb'),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp, info_key='tt_jump_to_word_info')
+            else:
+                widget = ShortcutCaptureButton(str(value), display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, ''),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp)
+            form.addRow(lbl, container)
+            self.shortcut_inputs[key] = widget
+
+        l_shorts.addLayout(form)
+        l_shorts.addStretch()
+
+        _check_shortcut_conflicts()
+        _add_page_to_stack(page_shorts)
+
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 2 — CUSTOM MARKERS
+        # ─────────────────────────────────────────────────────────────────
+        page_markers = QWidget()
+        page_markers.setStyleSheet("background: transparent;")
+        l_markers = QVBoxLayout(page_markers)
+        l_markers.setContentsMargins(24, 20, 24, 16)
+        l_markers.setSpacing(10)
+
+        self.current_custom_markers = list(prefs.get('custom_markers', []))
+
+        # Scroll area to hold the dynamic marker rows
+        markers_scroll = QScrollArea()
+        markers_scroll.setWidgetResizable(True)
+        markers_scroll.setFrameShape(QFrame.NoFrame)
+        markers_scroll.setMinimumHeight(120)
+        markers_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+            }}
+            QWidget#markers_inner {{
+                background-color: #1e1e1e;
+            }}
+        """)
+        self._markers_inner = MarkerDragZone()
+        self._markers_inner.setObjectName("markers_inner")
+        self._markers_layout = self._markers_inner.layout()
+        self._markers_layout.setContentsMargins(4, 4, 4, 4)
+        self._markers_layout.setSpacing(2)
+        self._markers_layout.addStretch()
+        markers_scroll.setWidget(self._markers_inner)
+        self._refresh_markers_list()
+        # Also refresh Shortcuts tab now that current_custom_markers is populated
+        self._refresh_custom_marker_shortcuts()
+        l_markers.addWidget(markers_scroll)
+
+
+        marker_btn_row = QHBoxLayout()
+        marker_btn_row.setSpacing(8)
+        btn_add_m = QPushButton(self.txt("btn_add_marker"))
+        btn_add_m.setObjectName("btn_secondary")
+        btn_add_m.setFixedHeight(30)
+        btn_add_m.setCursor(Qt.PointingHandCursor)
+        btn_add_m.clicked.connect(self._on_add_marker)
+        marker_btn_row.addWidget(btn_add_m)
+
+        btn_export_m = QPushButton(self.txt("btn_export_markers"))
+        btn_export_m.setObjectName("btn_ghost_sm")
+        btn_export_m.setStyleSheet("padding: 0 14px;")
+        btn_export_m.setFixedHeight(30)
+        btn_export_m.setCursor(Qt.PointingHandCursor)
+        btn_export_m.clicked.connect(self._on_export_markers)
+        marker_btn_row.addWidget(btn_export_m)
+
+        btn_import_m = QPushButton(self.txt("btn_import_markers"))
+        btn_import_m.setObjectName("btn_ghost_sm")
+        btn_import_m.setStyleSheet("padding: 0 14px;")
+        btn_import_m.setFixedHeight(30)
+        btn_import_m.setCursor(Qt.PointingHandCursor)
+        btn_import_m.clicked.connect(self._on_import_markers)
+        marker_btn_row.addWidget(btn_import_m)
+
+        marker_btn_row.addStretch()
+        l_markers.addLayout(marker_btn_row)
+
+
+        _add_page_to_stack(page_markers)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 3 — TRANSCRIPT
+        # ─────────────────────────────────────────────────────────────────
+        page_transcript = QWidget()
+        page_transcript.setStyleSheet("background: transparent;")
+        l_transcript = QVBoxLayout(page_transcript)
+        l_transcript.setContentsMargins(24, 20, 24, 16)
+        l_transcript.setSpacing(0)
+
+        if not is_basic:
+            form_ontop = QFormLayout()
+            form_ontop.setSpacing(14)
+            form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            
+            self.chk_ontop = ToggleSwitch()
+            self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
+            w_ontop = QWidget()
+            l_ontop = QHBoxLayout(w_ontop)
+            l_ontop.setContentsMargins(0, 0, 0, 0)
+            l_ontop.addStretch()
+            l_ontop.addWidget(self.parent()._create_info_icon("tt_always_on_top"))
+            l_ontop.addSpacing(6)
+            l_ontop.addWidget(self.chk_ontop)
+            
+            _add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
+                     False, lambda v: self.chk_ontop.setChecked(v, animated=False))
+            l_transcript.addLayout(form_ontop)
+            
+            l_transcript.addSpacing(14)
+
+        form_transcript = QFormLayout()
+        form_transcript.setSpacing(14)
+        form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Display Mode (moved from General)
+        view_items = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+        self.combo_view = CustomDropdown(view_items)
+        is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
+        self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
+        _add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
+                 self.txt("opt_segmented_blocks"), self.combo_view.setValue)
+
+        self._chunk_widgets = []
+        if not is_basic:
+            def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
+                container = QWidget()
+                row = QHBoxLayout(container)
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(6)
+                widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                row.addWidget(widget)
+                
+                btn_rev = QPushButton("↺")
+                btn_rev.setFixedSize(26, 26)
+                btn_rev.setCursor(Qt.PointingHandCursor)
+                btn_rev.setObjectName("btn_ghost_sm")
+                btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+                def create_reset_handler(s_func, d_val):
+                    return lambda checked=False: s_func(d_val)
+                btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+                row.addWidget(btn_rev)
+                
+                lbl_container = QWidget()
+                lbl_container.setMinimumWidth(200)
+                lbl_layout = QHBoxLayout(lbl_container)
+                lbl_layout.setContentsMargins(0, 0, 0, 0)
+                lbl_layout.setSpacing(6)
+                lbl = QLabel(label_text)
+                lbl.setWordWrap(True)
+                lbl_layout.addWidget(lbl)
+                lbl_layout.addWidget(self.parent()._create_info_icon(info_key))
+                lbl_layout.addStretch()
+                
+                form.addRow(lbl_container, container)
+                self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+                return lbl_container, container
+
+            self.spin_chunk_max = QSpinBox()
+            self.spin_chunk_max.setRange(5, 200)
+            self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
+            lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue, "tt_chunk_max_words")
+            self._chunk_widgets.extend([lbl_max, cnt_max])
+
+            self.spin_chunk_look = QSpinBox()
+            self.spin_chunk_look.setRange(0, 20)
+            self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
+            lbl_look, cnt_look = _add_chunk_row(form_transcript, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, "tt_chunk_lookahead")
+            self._chunk_widgets.extend([lbl_look, cnt_look])
+
+            self.spin_chunk_min = QSpinBox()
+            self.spin_chunk_min.setRange(1, 50)
+            self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
+            lbl_min, cnt_min = _add_chunk_row(form_transcript, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, "tt_chunk_min_chars")
+            self._chunk_widgets.extend([lbl_min, cnt_min])
+
+
+
+            def _update_chunk_state(idx):
+                visible = (idx == 1)
+                for w in self._chunk_widgets:
+                    w.setVisible(visible)
+            
+            self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
+            _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
+
+        # Font family, size, line height
+        from PySide6.QtGui import QFontDatabase
+        self.combo_font = SearchableDropdown(QFontDatabase.families())
+        self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
+
+        self.spin_fsize = QSpinBox()
+        self.spin_fsize.setRange(8, 48)
+        self.spin_fsize.setValue(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])))
+
+        self.spin_lheight = QSpinBox()
+        self.spin_lheight.setRange(0, 40)
+        self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
+
+        _add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
+                 self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
+        _add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
+                 self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
+        _add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
+                 self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
+        l_transcript.addLayout(form_transcript)
+
+        # Font preview
+        from PySide6.QtWidgets import QTextEdit
+        self.lbl_preview = QTextEdit()
+        self.lbl_preview.setReadOnly(True)
+        self.lbl_preview.setFocusPolicy(Qt.NoFocus)
+        self.lbl_preview.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lbl_preview.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lbl_preview.setFrameShape(QFrame.NoFrame)
+        self.lbl_preview.document().setDocumentMargin(0)
+        self.lbl_preview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        def _update_preview_height(_=None):
+            try:
+                lh = self.spin_lheight.value()
+                # Document size includes lh added to the bottom of the last line.
+                # We subtract lh to get the actual visual height, then add 24px padding.
+                new_h = int(self.lbl_preview.document().size().height()) - lh + 24
+                # Ensure height doesn't become too small due to calculation artifacts
+                new_h = max(30, new_h)
+                if self.lbl_preview.height() != new_h:
+                    self.lbl_preview.setFixedHeight(new_h)
+            except: pass
+            
+        self.lbl_preview.document().documentLayout().documentSizeChanged.connect(_update_preview_height)
+        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
+        l_transcript.addSpacing(10)
+        l_transcript.addWidget(self.lbl_preview)
+
+
+        # Removed sep_chunk
+        # ── Sync DaVinci timeline on chapter switch ─ BOTTOM of Transcript tab
+        # (below font preview and chunking settings, applies to both basic/advanced)
+        l_transcript.addSpacing(14)
+
+        form_bottom = QFormLayout()
+        form_bottom.setSpacing(14)
+        form_bottom.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.chk_sync_davinci = ToggleSwitch()
+        self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
+        w_sync = QWidget()
+        l_sync = QHBoxLayout(w_sync)
+        l_sync.setContentsMargins(0, 0, 0, 0)
+        l_sync.addStretch()
+        l_sync.addWidget(self.parent()._create_info_icon("tt_sync_davinci_chapter"))
+        l_sync.addSpacing(6)
+        l_sync.addWidget(self.chk_sync_davinci)
+        _add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
+                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=False))
+
+        # Track order toggle — directly below sync davinci
+        import config as _cfg_bot
+        _bot_prefs = self.engine.load_preferences() or {}
+        self.tgl_xml_preserve_track_order = ToggleSwitch()
+        self.tgl_xml_preserve_track_order.setChecked(
+            bool(_bot_prefs.get("xml_preserve_track_order",
+                                _cfg_bot.DEFAULT_SETTINGS["xml_preserve_track_order"])),
+            animated=False
+        )
+        self.tgl_xml_preserve_track_order.toggled.connect(
+            lambda checked: self.engine.save_preferences({"xml_preserve_track_order": checked})
+        )
+        w_xml_track = QWidget()
+        l_xml_track = QHBoxLayout(w_xml_track)
+        l_xml_track.setContentsMargins(0, 0, 0, 0)
+        l_xml_track.addStretch()
+        l_xml_track.addWidget(self.parent()._create_info_icon("tt_xml_preserve_track_order"))
+        l_xml_track.addSpacing(6)
+        l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
+        _add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
+                 False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=False))
+
+        # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
+        self.tgl_timestamp_precise = ToggleSwitch()
+        self.tgl_timestamp_precise.setChecked(
+            bool(prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])),
+            animated=False
+        )
+        w_ts_precise = QWidget()
+        l_ts_precise = QHBoxLayout(w_ts_precise)
+        l_ts_precise.setContentsMargins(0, 0, 0, 0)
+        l_ts_precise.addStretch()
+        l_ts_precise.addWidget(self.parent()._create_info_icon("tt_timestamp_precise"))
+        l_ts_precise.addSpacing(6)
+        l_ts_precise.addWidget(self.tgl_timestamp_precise)
+        _add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
+                 False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=False))
+
+        l_transcript.addLayout(form_bottom)
+        l_transcript.addSpacing(14)
+
+        self.combo_font.valueChanged.connect(self._update_preview)
+        self.spin_fsize.valueChanged.connect(self._update_preview)
+        self.spin_lheight.valueChanged.connect(self._update_preview)
+        self._update_preview()
+        l_transcript.addStretch()
+        _add_page_to_stack(page_transcript, 1)
+
+        # ─────────────────────────────────────────────────────────────────
+        if not is_basic:
+            # PAGE 5 — AI ENGINE
+        # ─────────────────────────────────────────────────────────────────
+            page_ai = QWidget()
+            page_ai.setStyleSheet("background: transparent;")
+            l_ai = QVBoxLayout(page_ai)
+            l_ai.setContentsMargins(24, 20, 24, 16)
+            l_ai.setSpacing(0)
+            form_ai = QFormLayout()
+            form_ai.setSpacing(14)
+            form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            l_ai.addLayout(form_ai)
+
+            # Device
+            _device_items = ["Auto", "CPU", "GPU"]
+            self.dropdown_device = CustomDropdown(_device_items, parent=page_ai)
+            self.dropdown_device.setFixedHeight(30)
+            saved_device = prefs.get('device', 'auto').upper()
+            if saved_device == 'AUTO': saved_device = 'Auto'
+            self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
+            _add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setValue)
+
+            # Compute type
+            _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
+            self.dropdown_compute = CustomDropdown(_compute_items, parent=page_ai)
+            self.dropdown_compute.setFixedHeight(30)
+            saved_compute = prefs.get('ai_compute_type', 'Auto')
+            self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
+            _add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
+
+            l_ai.addSpacing(14)
+
+            # Initial prompt label + QTextEdit
+            lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
+            lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+            l_ai.addWidget(lbl_prompt)
+            l_ai.addSpacing(4)
+
+            self.textedit_prompt = WrappingPlaceholderTextEdit()
+            self.textedit_prompt.setMaximumHeight(80)
+            saved_prompt = prefs.get('ai_initial_prompt', '').strip()
+            
+            # Resolve ISO code from display name in prefs
+            current_lang_display = prefs.get('lang', 'Auto')
+            current_lang_iso = "Auto"
+            for iso, display in config.SUPPORTED_LANGUAGES.items():
+                if display == current_lang_display:
+                    current_lang_iso = iso
+                    break
+            
+            auto_prompt = config.get_whisper_prompt_for_lang(current_lang_iso)
+            self.textedit_prompt.setPlaceholderText(auto_prompt)
+            
+            if saved_prompt:
+                self.textedit_prompt.setPlainText(saved_prompt)
+            else:
+                self.textedit_prompt.setPlainText("")
+            self.textedit_prompt.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: #1e1e1e;
+                    color: #d4d4d4;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 3px;
+                    padding: 6px 8px;
+                    font-family: {config.UI_FONT_NAME};
+                    font-size: 10pt;
+                }}
+            """)
+            l_ai.addWidget(self.textedit_prompt)
+
+            # ── Advanced Whisper Parameters ─────────────────────────
+            sep_whisper = QFrame()
+            sep_whisper.setFrameShape(QFrame.Shape.HLine)
+            sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+            l_ai.addSpacing(14)
+            l_ai.addWidget(sep_whisper)
+            l_ai.addSpacing(10)
+            self._advanced_widgets.append(sep_whisper)
+
+            form_whisper = QFormLayout()
+            form_whisper.setSpacing(14)
+            form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            l_ai.addLayout(form_whisper)
+
+            self.chk_vad_filter = ToggleSwitch(parent=page_ai)
+            self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
+            w_vad = QWidget(page_ai); l_vad = QHBoxLayout(w_vad); l_vad.setContentsMargins(0, 0, 0, 0); l_vad.addStretch(); l_vad.addWidget(self.chk_vad_filter)
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_vad_filter"), w_vad, False, lambda v: self.chk_vad_filter.setChecked(v, animated=False)))
+
+            self.chk_condition_prev = ToggleSwitch(parent=page_ai)
+            self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
+            w_cond = QWidget(page_ai); l_cond = QHBoxLayout(w_cond); l_cond.setContentsMargins(0, 0, 0, 0); l_cond.addStretch(); l_cond.addWidget(self.chk_condition_prev)
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_condition_prev"), w_cond, False, lambda v: self.chk_condition_prev.setChecked(v, animated=False)))
+
+            self.spin_beam_size = QSpinBox(page_ai)
+            self.spin_beam_size.setRange(1, 10)
+            def_beam = config.DEFAULT_SETTINGS.get('ai_beam_size', 1)
+            self.spin_beam_size.setValue(int(prefs.get('ai_beam_size', def_beam)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, def_beam, self.spin_beam_size.setValue))
+
+            self.spin_temperature = QDoubleSpinBox(page_ai)
+            self.spin_temperature.setRange(0.0, 1.0)
+            self.spin_temperature.setSingleStep(0.1)
+            self.spin_temperature.setDecimals(2)
+            def_temp = config.DEFAULT_SETTINGS.get('ai_temperature', 0.0)
+            self.spin_temperature.setValue(float(prefs.get('ai_temperature', def_temp)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, def_temp, self.spin_temperature.setValue))
+
+            self.spin_logprob = QDoubleSpinBox(page_ai)
+            self.spin_logprob.setRange(-3.0, 0.0)
+            self.spin_logprob.setSingleStep(0.1)
+            self.spin_logprob.setDecimals(2)
+            def_logprob = config.DEFAULT_SETTINGS.get('ai_logprob_threshold', -0.8)
+            self.spin_logprob.setValue(float(prefs.get('ai_logprob_threshold', def_logprob)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, def_logprob, self.spin_logprob.setValue))
+
+            self.spin_no_speech = QDoubleSpinBox(page_ai)
+            self.spin_no_speech.setRange(0.0, 1.0)
+            self.spin_no_speech.setSingleStep(0.1)
+            self.spin_no_speech.setDecimals(2)
+            def_nospeech = config.DEFAULT_SETTINGS.get('ai_no_speech_threshold', 0.7)
+            self.spin_no_speech.setValue(float(prefs.get('ai_no_speech_threshold', def_nospeech)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, def_nospeech, self.spin_no_speech.setValue))
+
+            self.spin_patience = QDoubleSpinBox(page_ai)
+            self.spin_patience.setRange(0.0, 10.0)
+            self.spin_patience.setSingleStep(0.1)
+            self.spin_patience.setDecimals(2)
+            def_patience = config.DEFAULT_SETTINGS.get('ai_patience', 1.0)
+            self.spin_patience.setValue(float(prefs.get('ai_patience', def_patience)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, def_patience, self.spin_patience.setValue))
+
+            self.spin_compression = QDoubleSpinBox(page_ai)
+            self.spin_compression.setRange(0.0, 100.0)
+            self.spin_compression.setSingleStep(0.1)
+            self.spin_compression.setDecimals(2)
+            def_comp = config.DEFAULT_SETTINGS.get('ai_compression_ratio_threshold', 2.4)
+            self.spin_compression.setValue(float(prefs.get('ai_compression_ratio_threshold', def_comp)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, def_comp, self.spin_compression.setValue))
+
+            self.spin_no_repeat = QSpinBox(page_ai)
+            self.spin_no_repeat.setRange(0, 100)
+            def_no_rep = config.DEFAULT_SETTINGS.get('ai_no_repeat_ngram_size', 0)
+            self.spin_no_repeat.setValue(int(prefs.get('ai_no_repeat_ngram_size', def_no_rep)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, def_no_rep, self.spin_no_repeat.setValue))
+
+
+
+            
+            self.spin_length_penalty = QDoubleSpinBox(page_ai)
+            self.spin_length_penalty.setRange(0.0, 10.0)
+            self.spin_length_penalty.setSingleStep(0.1)
+            self.spin_length_penalty.setDecimals(2)
+            self.spin_length_penalty.setValue(float(prefs.get('ai_length_penalty', 1.0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_length_penalty") if self.txt("lbl_length_penalty") != "lbl_length_penalty" else "Length Penalty", self.spin_length_penalty, 1.0, self.spin_length_penalty.setValue))
+
+            self.spin_repetition_penalty = QDoubleSpinBox(page_ai)
+            self.spin_repetition_penalty.setRange(1.0, 10.0)
+            self.spin_repetition_penalty.setSingleStep(0.1)
+            self.spin_repetition_penalty.setDecimals(2)
+            self.spin_repetition_penalty.setValue(float(prefs.get('ai_repetition_penalty', 1.0)))
+            self._advanced_widgets.extend(_add_row(form_whisper, self.txt("lbl_repetition_penalty") if self.txt("lbl_repetition_penalty") != "lbl_repetition_penalty" else "Repetition Penalty", self.spin_repetition_penalty, 1.0, self.spin_repetition_penalty.setValue))
+            
+            l_ai.addStretch()
+            _add_page_to_stack(page_ai)
+
+
+
+
+        # ─────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 8 — TELEMETRY
+        # ─────────────────────────────────────────────────────────────────
+        page_telem = QWidget()
+        page_telem.setStyleSheet("background: transparent;")
+        l_telem = QVBoxLayout(page_telem)
+        l_telem.setContentsMargins(24, 20, 24, 16)
+        l_telem.setSpacing(12)
+
+        # Info label
+        lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
+        lbl_telem_info.setWordWrap(True)
+        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        l_telem.addWidget(lbl_telem_info)
+
+        form_telem = QFormLayout()
+        form_telem.setSpacing(14)
+        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        user_data = getattr(self.engine.os_doc, 'user_data', {})
+
+        self.chk_telemetry_opt_in = ToggleSwitch()
+        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+        w1 = QWidget()
+        l1 = QHBoxLayout(w1)
+        l1.setContentsMargins(0, 0, 0, 0)
+        l1.addStretch()
+        l1.addWidget(self.chk_telemetry_opt_in)
+        _add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
+                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
+
+        self.chk_telemetry_geo = ToggleSwitch()
+        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
+        w2 = QWidget()
+        l2 = QHBoxLayout(w2)
+        l2.setContentsMargins(0, 0, 0, 0)
+        l2.addStretch()
+        l2.addWidget(self.chk_telemetry_geo)
+        _add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
+                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
+
+        l_telem.addLayout(form_telem)
+        l_telem.addStretch()
+
+        # ── Project links — pinned at the bottom ───────────────────────────
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        _BTN_LINK_SS = """
+            QPushButton {
+                color: #1a7a45;
+                background: transparent;
+                border: none;
+                text-align: left;
+                padding: 0px;
+                font-size: 9pt;
+                text-decoration: underline;
+            }
+            QPushButton:hover {
+                color: #2dcc70;
+            }
+        """
+
+        # Buy Me a Coffee link — description above, URL as button
+        lbl_coffee_desc = QLabel(self.txt("link_coffee_desc"))
+        lbl_coffee_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
+        l_telem.addWidget(lbl_coffee_desc)
+
+        btn_coffee = QPushButton("buymeacoffee.com/badwords")
+        btn_coffee.setFlat(True)
+        btn_coffee.setCursor(Qt.PointingHandCursor)
+        btn_coffee.setStyleSheet(_BTN_LINK_SS)
+        btn_coffee.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/badwords")))
+        l_telem.addWidget(btn_coffee)
+
+        l_telem.addSpacing(10)
+
+        # GitHub repo link — description above, URL as button
+        lbl_repo_desc = QLabel(self.txt("link_repo_desc"))
+        lbl_repo_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
+        l_telem.addWidget(lbl_repo_desc)
+
+        btn_repo = QPushButton("github.com/veritus-git/BadWords")
+        btn_repo.setFlat(True)
+        btn_repo.setCursor(Qt.PointingHandCursor)
+        btn_repo.setStyleSheet(_BTN_LINK_SS)
+        btn_repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/veritus-git/BadWords")))
+        l_telem.addWidget(btn_repo)
+
+        l_telem.addSpacing(12)
+
+
+        _add_page_to_stack(page_telem)
+
+        # ─────────────────────────────────────────────────────────────────
+        # PAGE 9 — SUPPORT
+        # ─────────────────────────────────────────────────────────────────
+        page_support = QWidget()
+        page_support.setStyleSheet("background: transparent;")
+        l_support = QVBoxLayout(page_support)
+        l_support.setContentsMargins(24, 20, 24, 16)
+        l_support.setSpacing(12)
+
+        lbl_support_info = QLabel(self.txt("msg_support_info"))
+        lbl_support_info.setWordWrap(True)
+        lbl_support_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        l_support.addWidget(lbl_support_info)
+
+        # Logs location
+        import os
+        log_file_path = getattr(self.engine.os_doc, 'log_file', '')
+        if not log_file_path:
+            log_file_path = os.path.join(getattr(self.engine.os_doc, 'install_dir', ''), 'badwords_debug.log')
+        log_dir = os.path.dirname(log_file_path) if log_file_path else ''
+            
+        w_logs = QWidget()
+        l_logs = QHBoxLayout(w_logs)
+        l_logs.setContentsMargins(0, 0, 0, 0)
+        l_logs.setSpacing(8)
+        lbl_logs = QLabel(self.txt("lbl_logs_path"))
+        lbl_logs.setStyleSheet("color: #CCCCCC; font-size: 10pt;")
+        
+        w_path = QWidget()
+        w_path.setStyleSheet("background-color: #1e1e1e; border: 1px solid #333; border-radius: 3px;")
+        l_path = QHBoxLayout(w_path)
+        l_path.setContentsMargins(4, 0, 0, 0)
+        l_path.setSpacing(2)
+        
+        val_logs = QLineEdit(str(log_file_path))
+        val_logs.setReadOnly(True)
+        val_logs.setStyleSheet("color: #AAAAAA; font-family: monospace; background: transparent; border: none;")
+        val_logs.setCursorPosition(0)
+        
+        btn_copy_logs = QPushButton("")
+        import PySide6.QtGui as qg
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        btn_copy_logs.setIcon(qg.QIcon(os.path.join(_src_dir, "layout", "copy.png")))
+        btn_copy_logs.setToolTip(self.txt("btn_copy_path"))
+        btn_copy_logs.setStyleSheet("background: transparent; border: none; padding: 4px;")
+        btn_copy_logs.setCursor(Qt.PointingHandCursor)
+        def _copy_path():
+            import PySide6.QtGui as qg
+            qg.QGuiApplication.clipboard().setText(str(log_file_path))
+        btn_copy_logs.clicked.connect(_copy_path)
+        
+        l_path.addWidget(val_logs, stretch=1)
+        l_path.addWidget(btn_copy_logs)
+        
+        btn_logs = QPushButton(self.txt("btn_open_logs_dir"))
+        btn_logs.setObjectName("btn_ghost_sm")
+        btn_logs.setStyleSheet("padding: 4px 12px;")
+        btn_logs.setCursor(Qt.PointingHandCursor)
+        def _open_logs():
+            import os
+            try:
+                if self.engine.os_doc.is_win:
+                    os.startfile(log_dir)
+                elif getattr(self.engine.os_doc, 'is_mac', False):
+                    import subprocess
+                    subprocess.Popen(['open', log_dir])
+                else:
+                    import subprocess
+                    subprocess.Popen(['xdg-open', log_dir])
+            except: pass
+        btn_logs.clicked.connect(_open_logs)
+        l_logs.addWidget(lbl_logs)
+        l_logs.addWidget(w_path, stretch=1)
+        l_logs.addWidget(btn_logs)
+        l_support.addWidget(w_logs)
+
+        # Separator
+        sep_supp = QFrame()
+        sep_supp.setFrameShape(QFrame.HLine)
+        sep_supp.setStyleSheet("background-color: #222; max-height: 1px; border: none;")
+        l_support.addWidget(sep_supp)
+        l_support.addSpacing(6)
+
+        l_inputs = QVBoxLayout()
+        l_inputs.setSpacing(14)
+        
+        self.input_support_email = QLineEdit()
+        self.input_support_email.setPlaceholderText(self.txt("ph_support_email"))
+        l_inputs.addWidget(self.input_support_email)
+        
+        self.input_support_title = QLineEdit()
+        self.input_support_title.setPlaceholderText(self.txt("lbl_support_title"))
+        l_inputs.addWidget(self.input_support_title)
+
+        from PySide6.QtWidgets import QTextEdit
+        self.input_support_body = QTextEdit()
+        self.input_support_body.setPlaceholderText(self.txt("lbl_support_body"))
+        self.input_support_body.setMinimumHeight(150)
+        l_inputs.addWidget(self.input_support_body)
+
+        # Attachments list (above the bottom buttons)
+        self.w_attachments_list = QWidget()
+        self.l_attachments_list = QVBoxLayout(self.w_attachments_list)
+        self.l_attachments_list.setContentsMargins(0, 0, 0, 0)
+        self.l_attachments_list.setSpacing(4)
+        l_inputs.addWidget(self.w_attachments_list)
+
+        self.w_attachments_list.hide()
+
+        self.support_attachments = []
+        def _render_attachments():
+            while self.l_attachments_list.count():
+                child = self.l_attachments_list.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+                    
+            if not self.support_attachments:
+                self.w_attachments_list.hide()
+            else:
+                self.w_attachments_list.show()
+                for p in self.support_attachments:
+                    w_row = QWidget()
+                    w_row.setStyleSheet("background: #1a1a1a; border: 1px solid #333; border-radius: 3px;")
+                    l_row = QHBoxLayout(w_row)
+                    l_row.setContentsMargins(6, 2, 2, 2)
+                    
+                    lbl_name = QLabel(p)
+                    lbl_name.setStyleSheet("color: #aaa; border: none; font-size: 9pt;")
+                    
+                    btn_del = QPushButton("✕")
+                    btn_del.setObjectName("btn_ghost_sm")
+                    btn_del.setStyleSheet("color: #e74c3c; border: none; font-weight: bold; font-size: 11pt; padding: 2px;")
+                    btn_del.setCursor(Qt.PointingHandCursor)
+                    btn_del.setFixedSize(24, 24)
+                    
+                    def _del(checked=False, path=p):
+                        if path in self.support_attachments:
+                            self.support_attachments.remove(path)
+                            _render_attachments()
+                    btn_del.clicked.connect(_del)
+                    
+                    l_row.addWidget(lbl_name, stretch=1)
+                    l_row.addWidget(btn_del)
+                    self.l_attachments_list.addWidget(w_row)
+
+        l_support.addLayout(l_inputs)
+
+        # Bottom row: Attach | Stretch | Send
+        w_send = QWidget()
+        l_send = QHBoxLayout(w_send)
+        l_send.setContentsMargins(0, 0, 0, 0)
+        
+        btn_attach = QPushButton(self.txt("btn_attach_screenshots"))
+        btn_attach.setCursor(Qt.PointingHandCursor)
+        btn_attach.setStyleSheet(f"background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;")
+        
+        def _attach():
+            from PySide6.QtWidgets import QFileDialog
+            files, _ = QFileDialog.getOpenFileNames(self, self.txt("btn_attach_screenshots"), "", "Images (*.png *.jpg *.jpeg)")
+            if files:
+                btn_attach.setText("Attached!")
+                btn_attach.setStyleSheet("background-color: #3b3b3b; color: #fff; padding: 6px 14px; border: 1px solid #555; border-radius: 4px;")
+                import PySide6.QtCore as qc
+                qc.QTimer.singleShot(1500, lambda: btn_attach.setText(self.txt("btn_attach_screenshots")))
+                qc.QTimer.singleShot(1500, lambda: btn_attach.setStyleSheet("background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;"))
+                
+                for f in files:
+                    if f not in self.support_attachments:
+                        self.support_attachments.append(f)
+                _render_attachments()
+        btn_attach.clicked.connect(_attach)
+        l_send.addWidget(btn_attach)
+        
+        l_send.addStretch()
+        
+        btn_send = QPushButton(self.txt("btn_send_report"))
+        btn_send.setCursor(Qt.PointingHandCursor)
+        btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
+        
+        def _send_report():
+            title = self.input_support_title.text().strip()
+            body = self.input_support_body.toPlainText().strip()
+            email = self.input_support_email.text().strip()
+            if not title or not body:
+                return
+
+            btn_send.setEnabled(False)
+            btn_send.setText("...")
+
+            attachments = list(self.support_attachments)
+
+            class SendSignals(QObject):
+                finished = Signal(bool, str)
+            signals = SendSignals(self)
+
+            def _worker():
+                import os, zipfile, tempfile, requests
+                from osdoc import log_info, log_error
+                tmp_logs = ""
+                opened_files = []
+                try:
+                    fd, tmp_logs = tempfile.mkstemp(suffix='.zip', prefix='bw_logs_')
+                    os.close(fd)
+                    with zipfile.ZipFile(tmp_logs, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        l_file = getattr(self.engine.os_doc, 'log_file', '')
+                        if l_file and os.path.exists(l_file):
+                            zf.write(l_file, os.path.basename(l_file))
+                        inst_dir = getattr(self.engine.os_doc, 'install_dir', '')
+                        if inst_dir:
+                            for cfile in ['user.json', 'settings.json', 'pref.json']:
+                                p = os.path.join(inst_dir, cfile)
+                                if os.path.exists(p):
+                                    zf.write(p, cfile)
+                        from PySide6.QtGui import QImage
+                        for i, p in enumerate(attachments):
+                            if os.path.exists(p):
+                                img = QImage(p)
+                                if not img.isNull():
+                                    if img.width() > 1920 or img.height() > 1080:
+                                        img = img.scaled(1920, 1080, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                    fd_img, tmp_img = tempfile.mkstemp(suffix='.jpg')
+                                    os.close(fd_img)
+                                    img.save(tmp_img, "JPG", 70)
+                                    zf.write(tmp_img, f"screenshot_{i+1}.jpg")
+                                    try:
+                                        os.remove(tmp_img)
+                                    except:
+                                        pass
+                                else:
+                                    zf.write(p, f"screenshot_{i+1}{os.path.splitext(p)[1]}")
+                    
+                    files_payload = []
+                    import builtins
+                    f_logs = builtins.open(tmp_logs, 'rb')
+                    opened_files.append(f_logs)
+                    files_payload.append(('file', ('logs.zip', f_logs, 'application/zip')))
+
+                    data_payload = {
+                        'title': title,
+                        'body': body,
+                        'email': email,
+                        'version': getattr(config, 'VERSION', 'Unknown'),
+                        'content': f"@here\n>>> **Wersja:** {getattr(config, 'VERSION', 'Unknown')}\n**Email:** {email if email else 'Brak'}\n**Tytuł:** {title}\n\n**Treść:**\n{body}"
+                    }
+
+                    webhook_url = getattr(config, 'SUPPORT_WEBHOOK_URL', '')
+                    if not webhook_url:
+                        import time
+                        time.sleep(1)
+                        log_info("Webhook URL not defined in config.py, skipping actual HTTP POST.")
+                        return True, ""
+
+                    resp = requests.post(webhook_url, data=data_payload, files=files_payload, timeout=30)
+                    success = resp.status_code in (200, 201, 202, 204)
+                    if not success:
+                        log_error(f"Support report send failed: {resp.status_code} {resp.text}")
+                    return success, resp.text
+                except Exception as e:
+                    from osdoc import log_error
+                    log_error(f"Support report exception: {e}")
+                    return False, str(e)
+                finally:
+                    for f in opened_files:
+                        try: f.close()
+                        except: pass
+                    if tmp_logs and os.path.exists(tmp_logs):
+                        try: os.remove(tmp_logs)
+                        except: pass
+
+            def _thread_target():
+                success, msg = _worker()
+                signals.finished.emit(success, msg)
+
+            def _on_finished(success, msg):
+                btn_send.setEnabled(True)
+                if success:
+                    btn_send.setText(self.txt("msg_success"))
+                    btn_send.setStyleSheet(f"background-color: #1a7a3e; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
+                    import PySide6.QtCore as qc
+                    qc.QTimer.singleShot(2000, lambda: btn_send.setText(self.txt("btn_send_report")))
+                    qc.QTimer.singleShot(2000, lambda: btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;"))
+                    
+                    self.input_support_title.clear()
+                    self.input_support_body.clear()
+                    self.input_support_email.clear()
+                    self.support_attachments.clear()
+                    _render_attachments()
+                else:
+                    btn_send.setText(self.txt("btn_send_report"))
+                    CustomMsgBox(self, self.txt("tab_support"), f"Error sending report: {msg[:100]}", self.txt("btn_ok")).exec()
+
+            signals.finished.connect(_on_finished)
+            import threading
+            threading.Thread(target=_thread_target, daemon=True).start()
+
+        btn_send.clicked.connect(_send_report)
+        l_send.addWidget(btn_send)
+        l_support.addWidget(w_send)
+
+        l_support.addStretch()
+        _add_page_to_stack(page_support)
+
+        # FIX: Capture the exact UI state right after full construction
+        # This prevents false-positive unsaved changes warnings when disk JSON
+        # lacks keys that are correctly populated with defaults by the UI.
+        self._initial_state = self._get_current_state_dict()
+
+    def _restore_all_defaults(self):
+        msg_box = CustomMsgBox(
+            self, 
+            self.txt('msg_restore_title'), 
+            self.txt('msg_restore_desc'), 
+            self.txt('btn_yes'), 
+            self.txt('btn_no')
+        )
+        if msg_box.exec() == QDialog.Accepted:
+            import config
+            old_prefs = self.engine.load_preferences() or {}
+            # Build a full default state — start with DEFAULT_SETTINGS then keep
+            # lang and settings_view_mode so the UI doesn't switch language/mode.
+            default_state = config.DEFAULT_SETTINGS.copy()
+            default_state['gui_lang'] = old_prefs.get('gui_lang', 'en')
+            default_state['settings_view_mode'] = old_prefs.get('settings_view_mode', 'basic')
+            # Save to disk first so subsequent load_preferences() returns defaults
+            self.engine.save_preferences(default_state)
+            self.initial_prefs = self.engine.load_preferences() or {}
+            # Reset all visible widgets to their default values
+            self._restore_state_dict(default_state)
+            # Clear custom markers
+            self.current_custom_markers = []
+            CustomMsgBox(self, self.txt('msg_title_settings'), self.txt('msg_restart_required'), self.txt('btn_ok')).exec()
+            try:
+                self._refresh_markers_list()
+            except Exception:
+                pass
+
+    # ── Custom Markers helpers ─────────────────────────────────────────────
+
+    def _refresh_markers_list(self):
+        """Rebuild the custom marker list widget with inline Edit/Delete buttons."""
+        # Clear existing rows (keep the trailing stretch)
+        layout = self._markers_layout
+        while layout.count() > 1:  # keep the stretch at the end
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        row_ss = f"""
+            QWidget#marker_row {{
+                background-color: #1e1e1e;
+                border-bottom: 1px solid #2a2a2a;
+            }}
+            QWidget#marker_row:hover {{
+                background-color: #252525;
+            }}
+            QLabel {{
+                color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                background: transparent;
+            }}
+            QPushButton {{
+                background-color: #2d2d2d;
+                color: #aaaaaa;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 2px 8px;
+                font-size: 9pt;
+                min-height: 22px;
+            }}
+            QPushButton:hover {{
+                background-color: #383838;
+                color: #ffffff;
+            }}
+            QPushButton#btn_del:hover {{
+                background-color: #7a2020;
+                border-color: #ed4245;
+                color: #ed4245;
+            }}
+        """
+
+        for idx, m in enumerate(self.current_custom_markers):
+            name  = m.get('name', '?')
+            color = m.get('color', '')
+            hex_col = config.RESOLVE_COLORS_HEX.get(color, '#FFFFFF')
+
+            row_widget = MarkerRowWidget(m, idx)
+            row_widget.setObjectName("marker_row")
+            row_widget.setStyleSheet(row_ss)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(8, 4, 8, 4)
+            row_layout.setSpacing(8)
+
+            # Color dot indicator
+            dot = QLabel("●")
+            dot.setStyleSheet(f"color: {hex_col}; font-size: 14pt; background: transparent;")
+            dot.setFixedWidth(20)
+            row_layout.addWidget(dot)
+
+            # Name + color label
+            lbl_name = QLabel(f"{name}")
+            lbl_name.setStyleSheet(f"color: {hex_col}; font-weight: bold; background: transparent;")
+            row_layout.addWidget(lbl_name, 1)
+
+            lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
+            lbl_color.setStyleSheet(f"color: #666666; font-size: 9pt; background: transparent;")
+            row_layout.addWidget(lbl_color)
+
+            # Edit button
+            def make_edit(i):
+                return lambda checked=False: self._on_edit_marker(i)
+            btn_edit = QPushButton(self.txt("btn_edit_marker"))
+            btn_edit.setCursor(Qt.PointingHandCursor)
+            btn_edit.clicked.connect(make_edit(idx))
+            if color.lower() in ["green", "blue"]:
+                btn_edit.setEnabled(False)
+                btn_edit.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
+                lbl_name.setStyleSheet("color: #666666; font-weight: bold; background: transparent;")
+                dot.setStyleSheet("color: #666666; font-size: 14pt; background: transparent;")
+            row_layout.addWidget(btn_edit)
+
+            # Delete button
+            def make_del(i):
+                return lambda checked=False: self._on_remove_marker_inline(i)
+            btn_del = QPushButton("✕")
+            btn_del.setObjectName("btn_del")
+            btn_del.setCursor(Qt.PointingHandCursor)
+            btn_del.setFixedWidth(28)
+            btn_del.clicked.connect(make_del(idx))
+            row_layout.addWidget(btn_del)
+
+            # Insert before stretch
+            layout.insertWidget(layout.count() - 1, row_widget)
+
+    def _on_markers_reordered(self, source_idx, target_idx):
+        if source_idx == target_idx:
+            return
+        m = self.current_custom_markers.pop(source_idx)
+        # if source_idx < target_idx, target_idx shifted down by 1 due to pop
+        if source_idx < target_idx:
+            target_idx -= 1
+        self.current_custom_markers.insert(target_idx, m)
+        self._refresh_markers_list()
+        self._save_markers_and_refresh_main()
+
+    def _save_markers_and_refresh_main(self):
+        """
+        Persist custom_markers immediately (bypassing the Apply button),
+        then rebuild the main window's marker sidebar and dynamic shortcuts.
+        Markers work like a live database, not a pending settings value.
+        """
+        prefs = self.engine.load_preferences() or {}
+        prefs['custom_markers'] = list(self.current_custom_markers)
+        self.engine.save_preferences(prefs)
+
+        # Walk the widget parent hierarchy to find BadWordsGUI
+        # (self.parent() alone is not reliable when SettingsDialog is modal)
+        w = self
+        main_win = None
+        while w is not None:
+            try:
+                if hasattr(w, '_build_marker_radio_buttons') \
+                        and hasattr(w, '_apply_dynamic_shortcuts'):
+                    main_win = w
+                    break
+                w = w.parent()
+            except RuntimeError:
+                break
+
+        if main_win is not None:
+            try:
+                main_win._build_marker_radio_buttons()
+            except Exception:
+                pass
+            try:
+                main_win._apply_dynamic_shortcuts()
+            except Exception:
+                pass
+
+
+    def _on_add_marker(self):
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        dlg = MarkerDialog(self, lang, "btn_add_marker")
+        if dlg.exec() == QDialog.Accepted and dlg.result_name:
+            self.current_custom_markers.append({
+                "name":  dlg.result_name,
+                "color": dlg.result_color,
+            })
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
+
+    def _on_edit_marker(self, idx: int):
+        if not (0 <= idx < len(self.current_custom_markers)):
+            return
+        m = self.current_custom_markers[idx]
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        dlg = MarkerDialog(self, lang, "btn_edit_marker",
+                           prefill_name=m.get('name', ''),
+                           prefill_color=m.get('color', ''))
+        if dlg.exec() == QDialog.Accepted and dlg.result_name:
+            self.current_custom_markers[idx] = {
+                "name":  dlg.result_name,
+                "color": dlg.result_color,
+            }
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
+
+    def _on_remove_marker_inline(self, idx: int):
+        if 0 <= idx < len(self.current_custom_markers):
+            self.current_custom_markers.pop(idx)
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
+
+
+    def _on_remove_marker(self):
+        """Legacy method — kept for safety but no longer wired to any button."""
+        pass
+
+    def _on_export_markers(self):
+        """Export custom markers to a JSON file."""
+        from PySide6.QtWidgets import QFileDialog
+        import json, os
+
+        if not self.current_custom_markers:
+            lang = self.engine.load_preferences().get('gui_lang', 'en')
+            CustomMsgBox(
+                self,
+                _txt(lang, 'btn_export_markers'),
+                _txt(lang, 'msg_no_markers_to_export'),
+                _txt(lang, 'btn_ok'),
+            ).exec()
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.txt('btn_export_markers'),
+            os.path.expanduser('~/badwords_markers.json'),
+            'JSON Files (*.json)',
+        )
+        if not path:
+            return
+
+        data = {
+            'version': 1,
+            'app': 'BadWords',
+            'custom_markers': list(self.current_custom_markers),
+        }
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                import json
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            lang = self.engine.load_preferences().get('gui_lang', 'en')
+            CustomMsgBox(self, 'Error', str(e), _txt(lang, 'btn_ok')).exec()
+
+    def _on_import_markers(self):
+        """Import custom markers from a JSON file (replaces current list)."""
+        from PySide6.QtWidgets import QFileDialog
+        import json
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.txt('btn_import_markers'),
+            '',
+            'JSON Files (*.json)',
+        )
+        if not path:
+            return
+
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            CustomMsgBox(self, 'Error', str(e), _txt(lang, 'btn_ok')).exec()
+            return
+
+        # Accept both {"custom_markers": [...]} and plain lists
+        if isinstance(data, list):
+            imported = data
+        elif isinstance(data, dict):
+            imported = data.get('custom_markers', [])
+        else:
+            CustomMsgBox(
+                self, 'Error', _txt(lang, 'msg_import_invalid_format'), _txt(lang, 'btn_ok')
+            ).exec()
+            return
+
+        # Validate: each entry must have at least a non-empty 'name'
+        valid = []
+        for entry in imported:
+            if isinstance(entry, dict) and entry.get('name', '').strip():
+                valid.append({
+                    'name':  entry['name'].strip(),
+                    'color': entry.get('color', 'Blue'),
+                })
+
+        if not valid:
+            CustomMsgBox(
+                self, 'Error', _txt(lang, 'msg_import_no_valid_markers'), _txt(lang, 'btn_ok')
+            ).exec()
+            return
+
+        self.current_custom_markers = valid
+        self._refresh_markers_list()
+        self._refresh_custom_marker_shortcuts()
+        self._save_markers_and_refresh_main()
+
+
+    def _refresh_custom_marker_shortcuts(self):
+        """
+        Rebuilds the custom-marker shortcut rows in the unified Shortcuts form.
+        Uses insertRow(pos) / removeRow(pos) on the single QFormLayout so all
+        rows always have identical 14px spacing — no separate widget needed.
+        """
+        form       = getattr(self, '_custom_sc_unified', None)
+        make_fn    = getattr(self, '_make_shortcut_widgets_fn', None)
+        check_fn   = getattr(self, '_check_shortcut_conflicts_fn', None)
+        insert_pos = getattr(self, '_custom_sc_insert_pos', None)
+
+        if form is None or make_fn is None or check_fn is None or insert_pos is None:
+            return
+
+        # ── Remove previous custom rows ─────────────────────────────────────
+        old_count = len(getattr(self, 'custom_marker_shortcut_inputs', {}))
+        for _ in range(old_count):
+            # Always remove at the same index; rows shift up after each removal
+            try:
+                form.removeRow(insert_pos)
+            except Exception:
+                break
+
+        self.custom_marker_shortcut_inputs = {}
+
+        # ── Insert new custom rows at insert_pos ────────────────────────────
+        prefs = self.engine.load_preferences() or {}
+        saved_shortcuts = prefs.get('shortcuts', {})
+        markers = getattr(self, 'current_custom_markers', [])
+
+        for i, m in enumerate(markers):
+            name = m.get('name', '')
+            if not name:
+                continue
+            s_key = f'custom_marker_{name}'
+
+            fmt = self.txt('shortcut_custom_marker_fmt')
+            label_text = fmt.format(name=name) if fmt != 'shortcut_custom_marker_fmt' \
+                         else f'Switch to "{name}" Marker'
+
+            current_seq = saved_shortcuts.get(s_key, '')
+            widget = ShortcutCaptureButton(str(current_seq), display_only=False)
+            widget.sequence_changed.connect(lambda _seq, _w=widget: check_fn())
+
+            def make_setter(w, check):
+                def _setter(v):
+                    w.set_sequence(str(v))
+                    check()
+                return _setter
+
+            lbl, container = make_fn(label_text, widget, '',
+                                     make_setter(widget, check_fn),
+                                     is_display=False)
+            form.insertRow(insert_pos + i, lbl, container)
+            self.custom_marker_shortcut_inputs[s_key] = widget
+
+        check_fn()
+
+
+    def _update_preview(self):
+
+        ff = self.combo_font.currentText()
+        fs = self.spin_fsize.value()
+        lh = self.spin_lheight.value()
+        self.lbl_preview.setStyleSheet(f"""
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: {config.FG_COLOR};
+            font-family: "{ff}";
+            font-size: {fs}pt;
+            padding: 12px 14px;
+        """)
+        preview_text = self.txt("lbl_font_preview")
+        self.lbl_preview.setPlainText(preview_text)
+        from PySide6.QtGui import QTextCursor, QTextBlockFormat
+        cursor = self.lbl_preview.textCursor()
+        cursor.select(QTextCursor.Document)
+        fmt = QTextBlockFormat()
+        fmt.setLineHeight(float(lh), 4)
+        cursor.setBlockFormat(fmt)
+        cursor.setPosition(0)
+        self.lbl_preview.setTextCursor(cursor)
+        self.lbl_preview.verticalScrollBar().setValue(0)
+
+    # ── Export / Import ───────────────────────────────────────────────────
+
+    def _on_export_settings(self):
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        dest, _ = QFileDialog.getSaveFileName(
+            self, self.txt("btn_export_settings"), "badwords_settings.json",
+            "JSON files (*.json)"
+        )
+        if dest:
+            try:
+                shutil.copy2(self.engine.os_doc.settings_file, dest)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"Export settings failed: {e}")
+
+    def _on_import_settings(self):
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        src, _ = QFileDialog.getOpenFileName(
+            self, self.txt("btn_import_settings"), "",
+            "JSON files (*.json)"
+        )
+        if not src:
+            return
+        try:
+            shutil.copy2(src, self.engine.os_doc.settings_file)
+            self.engine.os_doc.settings = self.engine.os_doc.load_settings()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"Import settings failed: {e}")
+            return
+
+        target = config.TRANS.get('en', config.TRANS['en'])
+        CustomMsgBox(
+            self,
+            target.get('msg_title_language_changed', 'Restart Required'),
+            target.get('msg_restart_lang', 'Settings imported. Please restart BadWords to apply all changes.'),
+            target.get('btn_ok', 'OK')
+        ).exec()
+        self.reject()
+
+
+    # ── Smart Apply ───────────────────────────────────────────────────────
+
+    def _safe_get(self, attr_name, default_val, method_name="value"):
+        """Safely extracts a value from a widget, avoiding PySide6 dead C++ object errors."""
+        try:
+            widget = getattr(self, attr_name)
+            return getattr(widget, method_name)()
+        except (RuntimeError, AttributeError):
+            return default_val
+
+    def _get_current_state_dict(self):
+        old_prefs = self.engine.load_preferences() or {}
+        is_basic = old_prefs.get('settings_view_mode', 'basic') == 'basic'
+        
+        try:
+            checked_btn = self.icon_group.checkedButton()
+            icon_val = checked_btn.property("icon_name") if checked_btn else "default"
+        except (RuntimeError, AttributeError):
+            icon_val = old_prefs.get('app_icon', 'default')
+
+        try:
+            val = self.dropdown_lang.text()
+            lang_code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), old_prefs.get('gui_lang', 'en'))
+        except (RuntimeError, AttributeError):
+            lang_code = old_prefs.get('gui_lang', 'en')
+            
+        view_mode_val = self._safe_get('combo_view', '', 'currentText')
+        view_mode = 'segmented' if view_mode_val == self.txt("opt_segmented_blocks") else ('continuous' if view_mode_val else old_prefs.get('view_mode', 'segmented'))
+
+        try:
+            shortcuts_dict = {k: v.get_sequence() for k, v in self.shortcut_inputs.items()}
+            # Merge in custom marker shortcuts
+            for k, v in getattr(self, 'custom_marker_shortcut_inputs', {}).items():
+                shortcuts_dict[k] = v.get_sequence()
+        except (RuntimeError, AttributeError):
+            shortcuts_dict = old_prefs.get('shortcuts', {})
+
+        state = {
+            'gui_lang':           lang_code,
+            'settings_view_mode': old_prefs.get('settings_view_mode', 'basic'),
+            'app_icon':           icon_val,
+            'shortcuts':          shortcuts_dict,
+            'custom_markers':     getattr(self, 'current_custom_markers', old_prefs.get('custom_markers', [])),
+            'telemetry_opt_in':   (self._safe_get('chk_telemetry_opt_in', old_prefs.get('telemetry_opt_in'), 'isChecked') if old_prefs.get('telemetry_opt_in') is not None or self._safe_get('chk_telemetry_opt_in', False, 'isChecked') else None),
+            'telemetry_geo':      self._safe_get('chk_telemetry_geo', old_prefs.get('telemetry_geo', True), 'isChecked'),
+            'view_mode':          view_mode,
+            'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', 'Segoe UI'), 'currentText'),
+            'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
+            'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
+            'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
+            'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
+            'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
+            'auto_update_on_start':   self._safe_get('tgl_auto_update_on_start', old_prefs.get('auto_update_on_start', False), 'isChecked'),
+        }
+        
+        if not is_basic:
+            state.update({
+                'always_on_top':      self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
+                'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto'), 'currentText').lower(),
+                'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
+                'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
+                'chunk_max_words':    self._safe_get('spin_chunk_max', old_prefs.get('chunk_max_words', 30), 'value'),
+                'chunk_lookahead':    self._safe_get('spin_chunk_look', old_prefs.get('chunk_lookahead', 3), 'value'),
+                'chunk_min_chars':    self._safe_get('spin_chunk_min', old_prefs.get('chunk_min_chars', 7), 'value'),
+                'algo_fuzzy_threshold':  self._safe_get('spin_fuzzy', old_prefs.get('algo_fuzzy_threshold', 80), 'value'),
+                'algo_retake_lookahead': self._safe_get('spin_lookahead', old_prefs.get('algo_retake_lookahead', 80), 'value'),
+                'algo_distance_penalty': self._safe_get('spin_penalty', old_prefs.get('algo_distance_penalty', 2.0), 'value'),
+                'algo_anchor_depth':     self._safe_get('spin_anchor', old_prefs.get('algo_anchor_depth', 3), 'value'),
+                'ai_vad_filter':            self._safe_get('chk_vad_filter', old_prefs.get('ai_vad_filter', False), 'isChecked'),
+                'ai_beam_size':             self._safe_get('spin_beam_size', old_prefs.get('ai_beam_size', 1), 'value'),
+                'ai_temperature':           self._safe_get('spin_temperature', old_prefs.get('ai_temperature', 0.0), 'value'),
+                'ai_condition_on_prev':     self._safe_get('chk_condition_prev', old_prefs.get('ai_condition_on_prev', False), 'isChecked'),
+                'ai_logprob_threshold':     self._safe_get('spin_logprob', old_prefs.get('ai_logprob_threshold', -1.0), 'value'),
+                'ai_no_speech_threshold':   self._safe_get('spin_no_speech', old_prefs.get('ai_no_speech_threshold', 0.6), 'value'),
+                'ai_patience':              self._safe_get('spin_patience', old_prefs.get('ai_patience', 1.0), 'value'),
+                'ai_compression_ratio_threshold': self._safe_get('spin_compression', old_prefs.get('ai_compression_ratio_threshold', 2.4), 'value'),
+                'ai_no_repeat_ngram_size':  self._safe_get('spin_no_repeat', old_prefs.get('ai_no_repeat_ngram_size', 0), 'value'),
+                'ai_length_penalty':        self._safe_get('spin_length_penalty', old_prefs.get('ai_length_penalty', 1.0), 'value'),
+                'ai_repetition_penalty':    self._safe_get('spin_repetition_penalty', old_prefs.get('ai_repetition_penalty', 1.0), 'value'),
+            })
+        else:
+            advanced_keys = ["always_on_top", "device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_length_penalty", "ai_repetition_penalty"]
+            for key in advanced_keys:
+                if key in old_prefs:
+                    state[key] = old_prefs[key]
+        return state
+
+    def _safe_set(self, attr_name, value, method_name="setValue"):
+        """Safely sets a value on a widget, avoiding dead objects or missing attributes."""
+        try:
+            if hasattr(self, attr_name):
+                widget = getattr(self, attr_name)
+                getattr(widget, method_name)(value)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _restore_state_dict(self, state):
+        is_basic = state.get('settings_view_mode', 'basic') == 'basic'
+        self._safe_set('chk_telemetry_opt_in', state.get('telemetry_opt_in', False), 'setChecked')
+        self._safe_set('chk_telemetry_geo', state.get('telemetry_geo', False), 'setChecked')
+        
+        try:
+            if hasattr(self, 'icon_group'):
+                icon_name = state.get('app_icon', 'default')
+                for btn in self.icon_group.buttons():
+                    if btn.property("icon_name") == icon_name:
+                        btn.setChecked(True)
+                        break
+        except RuntimeError:
+            pass
+                
+        try:
+            lang_code = state.get('gui_lang', 'en')
+            self._safe_set('dropdown_lang', config.SUPPORTED_LANGS.get(lang_code, 'English'), 'setText')
+        except Exception:
+            pass
+        
+        view_mode = state.get('view_mode', 'segmented')
+        self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
+        self._safe_set('combo_font', state.get('editor_font_family', 'Segoe UI'), 'setText')
+        self._safe_set('spin_fsize', state.get('editor_font_size', 12), 'setValue')
+        self._safe_set('spin_lheight', state.get('editor_line_height', 7), 'setValue')
+        
+        self.current_custom_markers = state.get('custom_markers', [])
+        try:
+            if hasattr(self, '_refresh_markers_list'):
+                self._refresh_markers_list()
+        except RuntimeError:
+            pass
+        
+        try:
+            from PySide6.QtGui import QKeySequence
+            if hasattr(self, 'shortcut_inputs'):
+                for k, v in state.get('shortcuts', {}).items():
+                    if k in self.shortcut_inputs:
+                        self.shortcut_inputs[k].set_sequence(v)
+        except RuntimeError:
+            pass
+                
+        self._safe_set('chk_sync_davinci', state.get('sync_davinci_chapter', True), 'setChecked')
+        self._safe_set('tgl_timestamp_precise', state.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
+        self._safe_set('tgl_auto_check_updates', state.get('auto_check_updates', True), 'setChecked')
+        self._safe_set('tgl_auto_update_on_start', state.get('auto_update_on_start', False), 'setChecked')
+        
+        if not is_basic:
+            self._safe_set('chk_ontop', state.get('always_on_top', False), 'setChecked')
+            
+            dev_val = state.get('device', 'Auto').upper()
+            if dev_val == 'AUTO': dev_val = 'Auto'
+            self._safe_set('dropdown_device', dev_val, 'setText')
+            self._safe_set('dropdown_compute', state.get('ai_compute_type', 'Auto'), 'setText')
+            self._safe_set('textedit_prompt', state.get('ai_initial_prompt', ''), 'setPlainText')
+            self._safe_set('spin_chunk_max', state.get('chunk_max_words', 30), 'setValue')
+            self._safe_set('spin_chunk_look', state.get('chunk_lookahead', 3), 'setValue')
+            self._safe_set('spin_chunk_min', state.get('chunk_min_chars', 7), 'setValue')
+            self._safe_set('chk_vad_filter', state.get('ai_vad_filter', False), 'setChecked')
+            self._safe_set('spin_beam_size', state.get('ai_beam_size', 1), 'setValue')
+            self._safe_set('spin_temperature', state.get('ai_temperature', 0.0), 'setValue')
+            self._safe_set('chk_condition_prev', state.get('ai_condition_on_prev', False), 'setChecked')
+            self._safe_set('spin_logprob', state.get('ai_logprob_threshold', -1.0), 'setValue')
+            self._safe_set('spin_no_speech', state.get('ai_no_speech_threshold', 0.6), 'setValue')
+            self._safe_set('spin_patience', state.get('ai_patience', 1.0), 'setValue')
+            self._safe_set('spin_compression', state.get('ai_compression_ratio_threshold', 2.4), 'setValue')
+            self._safe_set('spin_no_repeat', state.get('ai_no_repeat_ngram_size', 0), 'setValue')
+
+            self._safe_set('spin_length_penalty', state.get('ai_length_penalty', 1.0), 'setValue')
+            self._safe_set('spin_repetition_penalty', state.get('ai_repetition_penalty', 1.0), 'setValue')
+            self._safe_set('spin_fuzzy', state.get('algo_fuzzy_threshold', 80), 'setValue')
+            self._safe_set('spin_lookahead', state.get('algo_retake_lookahead', 80), 'setValue')
+            self._safe_set('spin_penalty', state.get('algo_distance_penalty', 2.0), 'setValue')
+            self._safe_set('spin_anchor', state.get('algo_anchor_depth', 3), 'setValue')
+
+    def _apply_settings(self):
+        old_prefs = self.engine.load_preferences() or {}
+        new_prefs = self._get_current_state_dict()
+        
+        selected_device  = new_prefs.get('device', 'auto')
+        selected_compute = new_prefs.get('ai_compute_type', 'Auto')
+        old_compute      = old_prefs.get('ai_compute_type', 'Auto')
+        old_device       = old_prefs.get('device', 'auto')
+
+        compute_changed = (selected_compute != old_compute) or (selected_device != old_device)
+        if selected_compute.lower() != 'auto' and compute_changed:
+            from PySide6.QtWidgets import QApplication
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                is_supported = self.engine.verify_hardware_compute(selected_device, selected_compute)
+            finally:
+                QApplication.restoreOverrideCursor()
+
+            if not is_supported:
+                CustomMsgBox(self, self.txt('msg_compute_fail_title'), self.txt('msg_compute_fail_desc'), self.txt('btn_close')).exec()
+                return
+
+        restart_needed = any(
+            new_prefs.get(k) != old_prefs.get(k)
+            for k in config.RESTART_REQUIRED_KEYS
+            if k in new_prefs
+        )
+
+        self.engine.save_preferences(new_prefs)
+        self.initial_prefs = self.engine.load_preferences() or {}
+        self._initial_state = self._get_current_state_dict()
+        self.btn_apply.setText(self.txt("txt_saved"))
+        self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
+        from PySide6.QtCore import QTimer
+        def restore_btn():
+            self.btn_apply.setText(self.txt("btn_apply"))
+            self.btn_apply.setStyleSheet("") # Przywraca domyślny arkusz CSS
+        QTimer.singleShot(1500, restore_btn)
+
+        main_win = self.parent()
+        if hasattr(main_win, 'text_canvas'):
+            main_win.text_canvas._calculate_layout()
+            main_win.text_canvas.update()
+
+        aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
+        if aot_changed and main_win:
+            is_top = bool(new_prefs.get('always_on_top'))
+            if hasattr(main_win, '_apply_always_on_top'):
+                main_win._apply_always_on_top(is_top)
+            else:
+                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
+                main_win.show()
+
+        if restart_needed:
+            lang = old_prefs.get('gui_lang', 'en')
+            target = config.TRANS.get(lang, config.TRANS['en'])
+            CustomMsgBox(
+                self,
+                target.get('tool_settings', 'Settings'),
+                target.get('msg_restart_required', 'Changes applied. Full effect will be visible on next launch.'),
+                target.get('btn_ok', 'OK')
+            ).exec()
+
+    def reject(self):
+        # FIX: Validate against the exact snapshot of how the UI was built
+        # rather than the raw preferences file which may be missing keys.
+        old_prefs = getattr(self, '_initial_state', self.engine.load_preferences() or {})
+        new_prefs = self._get_current_state_dict()
+        diff = {}
+        for k, new_val in new_prefs.items():
+            old_val = old_prefs.get(k)
+            if old_val is None:
+                if k == 'app_icon': old_val = 'default'
+                elif k == 'gui_lang': old_val = 'en'
+                elif k == 'hidden_panels': old_val = []
+                elif k == 'custom_markers': old_val = []
+            
+            if k == 'shortcuts':
+                old_dict = old_val if old_val is not None else {}
+                for sub_k, sub_new in new_val.items():
+                    sub_old = old_dict.get(sub_k, '')
+                    if sub_old != sub_new:
+                        diff[f"shortcuts.{sub_k}"] = (sub_old, sub_new)
+            else:
+                if str(new_val) != str(old_val) and new_val != old_val:
+                    diff[k] = (old_val, new_val)
+                
+        if diff:
+            key_name_map = {
+                'shortcuts': f"{self.txt('tab_shortcuts')}",
+                'gui_lang': f"{self.txt('tab_general')}: {self.txt('lbl_language')}",
+                'app_icon': f"{self.txt('tab_general')}: {self.txt('lbl_app_icon')}",
+                'view_mode': f"{self.txt('tab_transcript')}: {self.txt('lbl_display_mode')}",
+                'editor_font_family': f"{self.txt('tab_transcript')}: {self.txt('lbl_transcript_font')}",
+                'editor_font_size': f"{self.txt('tab_transcript')}: {self.txt('lbl_font_size_pt')}",
+                'editor_line_height': f"{self.txt('tab_transcript')}: {self.txt('lbl_line_spacing_px')}",
+                'chunk_max_words': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_max_words')}",
+                'chunk_lookahead': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_lookahead')}",
+                'chunk_min_chars': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_min_chars')}",
+                'always_on_top': f"{self.txt('tab_transcript')}: {self.txt('lbl_always_on_top')}",
+                'sync_davinci_chapter': f"{self.txt('tab_transcript')}: {self.txt('chk_sync_davinci')}",
+                'timestamp_precise':    f"{self.txt('tab_transcript')}: {self.txt('lbl_timestamp_precise')}",
+                'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
+                'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
+                'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",
+                'ai_length_penalty': f"{self.txt('tab_ai_engine')}: Length Penalty",
+                'ai_repetition_penalty': f"{self.txt('tab_ai_engine')}: Repetition Penalty",
+
+                'telemetry_opt_in': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_opt_in')}",
+                'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}",
+                'auto_check_updates': f"{self.txt('tab_general')}: {self.txt('lbl_auto_check_updates')}",
+                'custom_markers': self.txt('tab_custom_markers')
+            }
+            
+            # Map dynamic shortcut composite keys
+            for diff_k in diff.keys():
+                if diff_k.startswith('shortcuts.'):
+                    sub_k = diff_k.split('.', 1)[1]
+                    sub_name = self.txt(f"shortcut_{sub_k}")
+                    if sub_name == f"shortcut_{sub_k}": # Fallback if not translated
+                        sub_name = sub_k.replace('_', ' ').title()
+                    key_name_map[diff_k] = f"{self.txt('tab_shortcuts')}: {sub_name}"
+            
+            dlg = UnsavedChangesDialog(self, diff, key_name_map)
+            if dlg.exec() == QDialog.Accepted:
+                save_needed = False
+                for k, action in dlg.decisions.items():
+                    if action == 'discard':
+                        if k.startswith('shortcuts.'):
+                            sub_k = k.split('.', 1)[1]
+                            new_prefs['shortcuts'][sub_k] = diff[k][0]
+                        else:
+                            new_prefs[k] = diff[k][0] 
+                    else:
+                        save_needed = True
+                
+                self._restore_state_dict(new_prefs)
+                
+                if save_needed:
+                    self._apply_settings()
+                super().reject()
+            else:
+                return 
+        else:
+            super().reject()
+
+
+# ==========================================
+# CLASS 3: MAIN APPLICATION WINDOW
+# ==========================================
+
+
+class WorkspaceWarningOverlay(QFrame):
+    def __init__(self, parent_stack, title, description, btn_accept_text, btn_reject_text=None, btn_cancel_text=None):
+        super().__init__()
+        self._stack = parent_stack
+        from PySide6.QtCore import QEventLoop, Qt
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+        self._loop = QEventLoop()
+        self._result = QDialog.Rejected
+        
+        import config
+        self.setStyleSheet(f"background-color: {config.BG_COLOR};")
+        
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        container = QFrame()
+        container.setFixedWidth(600)
+        c_layout = QVBoxLayout(container)
+        c_layout.setSpacing(20)
+        
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("font-size: 24px; font-weight: bold; color: white; background: transparent;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        c_layout.addWidget(lbl_title)
+        
+        lbl_desc = QLabel(description)
+        lbl_desc.setStyleSheet("font-size: 14px; color: #cccccc; background: transparent; line-height: 1.5;")
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setAlignment(Qt.AlignCenter)
+        c_layout.addWidget(lbl_desc)
+        
+        c_layout.addSpacing(10)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(15)
+        btn_layout.setAlignment(Qt.AlignCenter)
+        
+        if btn_reject_text:
+            btn_reject = QPushButton(btn_reject_text)
+            btn_reject.setCursor(Qt.PointingHandCursor)
+            btn_reject.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #404040;
+                    color: white;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{ background-color: #505050; border-color: #666666; }}
+                QPushButton:pressed {{ background-color: #303030; }}
+            """)
+            btn_reject.clicked.connect(self._on_reject)
+            btn_layout.addWidget(btn_reject)
+            
+        btn_accept = QPushButton(btn_accept_text)
+        btn_accept.setCursor(Qt.PointingHandCursor)
+        btn_accept.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #23a559;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #26b361; }}
+            QPushButton:pressed {{ background-color: #1e8e4c; }}
+        """)
+        btn_accept.clicked.connect(self._on_accept)
+        btn_layout.addWidget(btn_accept)
+        
+        c_layout.addLayout(btn_layout)
+        
+        if btn_cancel_text:
+            btn_cancel = QPushButton(btn_cancel_text)
+            btn_cancel.setCursor(Qt.PointingHandCursor)
+            btn_cancel.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: #a0a0a0;
+                    border: none;
+                    text-decoration: underline;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                }}
+                QPushButton:hover {{ color: white; }}
+                QPushButton:pressed {{ color: #808080; }}
+            """)
+            btn_cancel.clicked.connect(self._on_cancel)
+            c_layout.addWidget(btn_cancel, alignment=Qt.AlignCenter)
+            
+        layout.addWidget(container)
+
+    def _on_accept(self):
+        from PySide6.QtWidgets import QDialog
+        self._result = QDialog.Accepted
+        self._loop.quit()
+
+    def _on_reject(self):
+        from PySide6.QtWidgets import QDialog
+        self._result = QDialog.Rejected
+        self._loop.quit()
+
+    def _on_cancel(self):
+        self._result = -1  # custom code for Cancel
+        self._loop.quit()
+
+    def exec(self):
+        prev_idx = self._stack.currentIndex()
+        idx = self._stack.addWidget(self)
+        self._stack.setCurrentIndex(idx)
+        self._loop.exec()
+        self._stack.setCurrentIndex(prev_idx)
+        self._stack.removeWidget(self)
+        self.deleteLater()
+        return self._result
+
+class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
+    """
+    Stage 3 — QMainWindow implementing the "VS Code" unified workspace:
+      - Opens maximized on the monitor under the cursor
+      - NO top toolbar; left and right vertical activity bars instead
+      - QStackedWidget as the central widget (3 pages)
+        Page 0: Welcome / Config   (flat, borderless — default view)
+        Page 1: Processing         (progress placeholder)
+        Page 2: Editor             (editor placeholder)
+      - Right dock starts hidden; revealed when analysis begins
+      - CSD: frameless window with CustomTitleBar and native-feeling behaviour
+    """
+
+    def __init__(self, engine, resolve_handler, parent=None):
+        super().__init__(parent)
+
+        # ── CSD: remove native frame, enable translucency ──────────────────
+        self.frameless_init(is_popup=False)
+
+        self.engine              = engine
+        self.resolve_handler     = resolve_handler
+        self.autosave_manager    = AutoSaveManager(self.engine, self.engine.os_doc.get_autosave_dir())
+        
+        # This callback is injected by AppController in main.py
+        self.closeEvent_callback = None
+        self._chapters = []
+        self._current_chapter_idx = -1
+
+        self.shared_tooltip = IDETooltip()
+        self.shared_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.shared_tooltip.setWindowFlag(Qt.WindowTransparentForInput, True)
+        
+        # Install global app filter to route all tooltips through IDETooltip and handle globals
+        self._global_app_filter = GlobalAppFilter(self.shared_tooltip)
+        QApplication.instance().installEventFilter(self._global_app_filter)
+        
+        # Declare panel containers early for Pyre inference
+        self._sidebar_left: QFrame = None
+        self._sidebar_right: QFrame = None
+        self._panel_left: QFrame = None
+        self._panel_right: QFrame = None
+
+        # --- Language preference ---
+        prefs     = engine.load_preferences() or {}
+        self.lang = prefs.get("gui_lang", "en")
+        if self.lang not in config.TRANS:
+            self.lang = "en"
+
+        # --- Window basics ---
+        self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
+        self.setWindowIcon(_app_icon())
+        self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
+        self.setMinimumSize(config.CFG_WINDOW_W_BASE, 400)
+        # NOTE: force_dark_titlebar removed — CSD owns the title bar.
+
+        # --- Global QSS ---
+        self.setStyleSheet(f"""
+            * {{ outline: none; }}
+            QMainWindow {{
+                background-color: transparent;
+            }}
+            QWidget {{
+                background-color: {config.BG_COLOR};
+                color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+            }}
+            /* ---- Scrollbars (global) ---- */
+            QScrollBar:vertical {{
+                background: {config.SCROLL_BG};
+                width: 8px;
+                border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {config.SCROLL_FG};
+                border-radius: 4px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {config.SCROLL_ACTIVE};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+        """)
+
+        # ── CSD: root frame (wraps title bar + content, owns border-radius) ──
+        self._root_frame = QFrame()
+        self._root_frame.setObjectName("RootFrame")
+        _is_mac_root = platform.system() == "Darwin"
+        self._root_frame.setStyleSheet(f"""
+            QFrame#RootFrame {{
+                background-color: {config.BG_COLOR};
+                border-radius: 0px;
+            }}
+        """)
+        self._root_layout = QVBoxLayout(self._root_frame)
+        self._root_layout.setContentsMargins(0, 0, 0, 0)
+        self._root_layout.setSpacing(0)
+
+        # ── CSD: custom title bar ───────────────────────────────────────
+        self._title_bar = CustomTitleBar(self, self.lang, parent=self._root_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._title_bar)
+        self._title_bar.chapter_dropdown.valueChanged.connect(self._switch_chapter)
+        self._title_bar.projectExportRequested.connect(self._on_export_project)
+        self._title_bar.projectImportRequested.connect(self._on_import_project)
+        self._title_bar.transcriptExportTxtRequested.connect(self._on_export_transcript_txt)
+        self._title_bar.transcriptCopyRequested.connect(self._on_copy_transcript_clipboard)
+        self._root_layout.addWidget(self._title_bar)
+
+        # On macOS: hide custom CSD title bar — native title bar handles close/min/max/fullscreen.
+        # The native window title is set to show source timeline info (updated dynamically).
+        if _is_mac_root:
+            self._title_bar.setVisible(False)
+            self._title_bar.setFixedHeight(0)
+            from PySide6.QtWidgets import QMenuBar
+            self._mac_menu_bar = QMenuBar(self)
+            
+            # Project Menu
+            self._mac_menu_project = self._mac_menu_bar.addMenu(self.txt("titlebar_project"))
+            self._mac_action_export_proj = self._mac_menu_project.addAction(self.txt("titlebar_export_project"))
+            self._mac_action_export_proj.triggered.connect(self._on_export_project)
+            self._mac_action_import_proj = self._mac_menu_project.addAction(self.txt("titlebar_import_project"))
+            self._mac_action_import_proj.triggered.connect(self._on_import_project)
+            self._mac_menu_project.menuAction().setVisible(False)
+
+            # Transcript Menu
+            self._mac_menu_transcript = self._mac_menu_bar.addMenu(self.txt("titlebar_transcript"))
+            self._mac_action_export_txt = self._mac_menu_transcript.addAction(self.txt("titlebar_export_txt"))
+            self._mac_action_export_txt.triggered.connect(self._on_export_transcript_txt)
+            self._mac_action_copy = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_clipboard"))
+            self._mac_action_copy.triggered.connect(self._on_copy_transcript_clipboard)
+            self._mac_menu_transcript.menuAction().setVisible(False)
+
+            # Source Info Menu
+            self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
+            self._mac_action_timeline = self._mac_menu_source.addAction("Timeline: None")
+            self._mac_action_timeline.setEnabled(False)
+            self._mac_action_track = self._mac_menu_source.addAction("Track: None")
+            self._mac_action_track.setEnabled(False)
+            self._mac_menu_source.menuAction().setVisible(False)
+            
+            # Edit Menu
+            self._mac_menu_edits = self._mac_menu_bar.addMenu(self.txt("titlebar_edit"))
+            self._mac_menu_edits.menuAction().setVisible(False)
+            
+            self._mac_menu_bar.setNativeMenuBar(True)
+
+        # --- Build UI --- (sidebars + central workspace sit below title bar)
+        self._build_sidebars()         # left + right activity frames
+        self._build_central_workspace() # QStackedWidget central area + panels
+
+
+        self.search_overlay = SearchOverlayWidget(self.scroll_area, self)
+
+        self.undo_manager = UndoManager(self, self.text_canvas)
+        self._setup_hardcoded_shortcuts()
+        
+        # Install global app event filter for robust media shortcuts
+        QApplication.instance().installEventFilter(self)
+
+        self._active_shortcuts = []  # track dynamic QShortcuts for cleanup
+        self._apply_dynamic_shortcuts()
+
+        # --- Maximize on the monitor the cursor is on ---
+        self._maximize_on_active_screen()
+
+        prefs_init = self.engine.load_preferences() or {}
+        if prefs_init.get('always_on_top'):
+            self._apply_always_on_top(True)
+
+        # --- Telemetry check fires 500 ms after first paint ---
+        QTimer.singleShot(500, self.check_telemetry)
+
+        # --- Auto-update check fires 1500 ms after first paint (after telemetry) ---
+        QTimer.singleShot(1500, self._start_update_check)
+
+        # --- Populate timeline/track dropdowns synchronously since Resolve API is fast ---
+        self._populate_timeline_track_combos()
+        
+        self._bind_prefs()
+
+    def _update_mac_chapter_menu(self):
+        if not getattr(self, '_is_mac', False) or not hasattr(self, '_mac_menu_edits'):
+            return
+            
+        from PySide6.QtGui import QActionGroup
+        if not hasattr(self, '_mac_menu_edits_group'):
+            self._mac_menu_edits_group = QActionGroup(self)
+            self._mac_menu_edits_group.setExclusive(True)
+            
+        for act in self._mac_menu_edits_group.actions():
+            self._mac_menu_edits_group.removeAction(act)
+        self._mac_menu_edits.clear()
+        
+        if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'chapter_dropdown'):
+            for chap in self._title_bar.chapter_dropdown.options_list:
+                action = self._mac_menu_edits.addAction(chap)
+                action.setCheckable(True)
+                self._mac_menu_edits_group.addAction(action)
+                if chap == self._title_bar.chapter_dropdown.currentText():
+                    action.setChecked(True)
+                action.triggered.connect(lambda checked, c=chap: self._switch_chapter(c))
+
+    def _save_single_pref(self, key: str, value):
+        prefs = self.engine.load_preferences() or {}
+        prefs[key] = value
+        self.engine.save_preferences(prefs)
+
+    def _bind_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        
+        toggles = [
+            ('ui_tgl_silence_cut', 'tgl_silence_cut'),
+            ('ui_tgl_silence_mark', 'tgl_silence_mark'),
+            ('ui_tgl_show_inaudible', 'tgl_show_inaudible'),
+            ('ui_tgl_mark_inaudible', 'tgl_mark_inaudible'),
+            ('ui_tgl_show_typos', 'tgl_show_typos'),
+            ('ui_tgl_ripple_delete', 'tgl_ripple_delete')
+        ]
+        
+        for key, attr_name in toggles:
+            if hasattr(self, attr_name):
+                toggle = getattr(self, attr_name)
+                if key in prefs:
+                    toggle.setChecked(prefs[key], animated=False)
+                toggle.toggled.connect(lambda v, k=key: self._save_single_pref(k, v))
+                
+        if hasattr(self, 'spin_thresh'):
+            if 'silence_threshold_db' in prefs:
+                self.spin_thresh.setText(str(prefs['silence_threshold_db']))
+            elif 'ui_spin_thresh' in prefs:
+                self.spin_thresh.setText(str(prefs['ui_spin_thresh']))
+            self.spin_thresh.editingFinished.connect(
+                lambda: self._save_single_pref('silence_threshold_db',
+                    float(self.spin_thresh.text().replace(',', '.') or -42.0))
+            )
+
+        if hasattr(self, 'spin_pad'):
+            if 'ui_spin_pad' in prefs:
+                self.spin_pad.setText(str(prefs['ui_spin_pad']))
+            self.spin_pad.editingFinished.connect(
+                lambda: self._save_single_pref('ui_spin_pad',
+                    float(self.spin_pad.text().replace(',', '.') or 0.05))
+            )
+
+        if hasattr(self, 'spin_silence_min_dur'):
+            if 'silence_min_dur' in prefs:
+                self.spin_silence_min_dur.setText(str(prefs['silence_min_dur']))
+            self.spin_silence_min_dur.editingFinished.connect(
+                lambda: self._save_single_pref('silence_min_dur',
+                    float(self.spin_silence_min_dur.text().replace(',', '.') or 0.2))
+            )
+
+        
+        # Restore pinned favorites
+        for fav_id in prefs.get('favorites', []):
+            if fav_id in self._pin_buttons:
+                self._pin_buttons[fav_id].setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
+                self._pin_buttons[fav_id].click()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._enforce_native_always_on_top()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._enforce_native_always_on_top()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            self._enforce_native_always_on_top()
+
+    def _enforce_native_always_on_top(self):
+        try:
+            prefs = self.engine.load_preferences() or {}
+            if prefs.get('always_on_top') and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                self.engine.os_doc.set_always_on_top(int(self.winId()), True)
+        except Exception:
+            pass
+
+    def _apply_always_on_top(self, enable: bool):
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+        if self.isMaximized():
+            self.showMaximized()
+        elif self.isFullScreen():
+            self.showFullScreen()
+        else:
+            self.show()
+
+    # ------------------------------------------------------------------
+    # UI Construction
+    # ------------------------------------------------------------------
+
+    def _build_sidebars(self):
+        """
+        Left and right vertical activity frames overlaying the main window.
+        """
+        self._sidebar_left = QFrame(self)
+        self._sidebar_left.setFixedWidth(50)
+        self._sidebar_left.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
+        left_layout = QVBoxLayout(self._sidebar_left)
+        left_layout.setContentsMargins(5, 6, 5, 6)
+        left_layout.setSpacing(6)
+        
+        self._drag_zone_left = SidebarDragZone(self._sidebar_left)
+        drag_layout_left = self._drag_zone_left.layout()
+        left_layout.addWidget(self._drag_zone_left)
+        
+        self.btn_nav_script = SidebarButton("\U0001f4dd", self.txt("tool_script_analysis"), "script_analysis", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
+        drag_layout_left.addWidget(self.btn_nav_script)
+        
+        self.btn_nav_silence = SidebarButton("\U0001f507", self.txt("tool_silence"), "silence", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_silence.clicked.connect(lambda: self._toggle_activity("silence"))
+        drag_layout_left.addWidget(self.btn_nav_silence)
+
+        self.btn_nav_fillers = SidebarButton("\U0001f4ac", self.txt("tool_filler_words"), "fillers", tooltip_widget=self.shared_tooltip)
+        self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
+        drag_layout_left.addWidget(self.btn_nav_fillers)
+        
+        self.btn_nav_settings = SidebarButton("\u2699", self.txt("tool_settings"), "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
+        self.btn_nav_settings.clicked.connect(lambda: self._on_settings())
+        left_layout.addWidget(self.btn_nav_settings)
+        
+        self._sidebar_left.show()
+
+        self._sidebar_right = QFrame(self)
+        self._sidebar_right.setFixedWidth(50)
+        self._sidebar_right.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
+        right_layout = QVBoxLayout(self._sidebar_right)
+        right_layout.setContentsMargins(5, 6, 5, 6)
+        right_layout.setSpacing(6)
+        
+        self._drag_zone_right = SidebarDragZone(self._sidebar_right)
+        drag_layout_right = self._drag_zone_right.layout()
+        right_layout.addWidget(self._drag_zone_right)
+        
+        self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", self.txt("tool_main_panel"), "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
+        drag_layout_right.addWidget(self.btn_nav_main)
+        
+        self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", self.txt("tool_assembly"), "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
+        drag_layout_right.addWidget(self.btn_nav_assembly)
+
+        self._restore_sidebar_layout()
+        
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1000, self._check_crash_recovery)
+
+        
+    def _check_crash_recovery(self):
+        import os, json
+        from PySide6.QtWidgets import QDialog
+        
+        flag_path = os.path.join(self.engine.os_doc.get_autosave_dir(), '.clean_exit')
+        meta_path = os.path.join(self.engine.os_doc.get_autosave_dir(), 'recovery_meta.json')
+        save_path = os.path.join(self.engine.os_doc.get_autosave_dir(), 'recovery.bws')
+        
+        crashed = False
+        if not os.path.exists(flag_path) and os.path.exists(meta_path) and os.path.exists(save_path):
+            crashed = True
+            
+        if crashed:
+            try:
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                
+                proj_name = meta.get('project_name', 'Unknown')
+                timestamp = meta.get('timestamp', 'Unknown time')
+                
+                msg_text = self.txt('msg_crash_desc').format(project=proj_name, time=timestamp)
+                msg_box = WorkspaceWarningOverlay(
+                    self._stack,
+                    self.txt('msg_crash_title'),
+                    msg_text,
+                    self.txt('btn_restore'),
+                    btn_cancel_text=self.txt('btn_discard')
+                )
+                if msg_box.exec() == QDialog.Accepted:
+                    # Restore project
+                    self._on_import_project(override_path=save_path)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"Failed to check crash recovery: {e}")
+                
+        # Now that we've checked, remove the flag if it exists, so next exit must be clean to rewrite it
+        try:
+            if os.path.exists(flag_path):
+                os.remove(flag_path)
+        except Exception:
+            pass
+
+    def _build_central_workspace(self):
+        """
+        Main container incorporating sidebars, panels, and central stack using QHBoxLayout.
+        """
+        main_container = QWidget()
+        main_container.setObjectName("MainContainer")
+        main_container.setAttribute(Qt.WA_StyledBackground, True)
+        main_container.setStyleSheet(f"#MainContainer {{ background-color: {config.BG_COLOR}; }}")
+        main_layout = QHBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Build Panels
+        self._panel_left = QFrame()
+        self._panel_left.setMinimumWidth(150)
+        self._panel_left.setObjectName("leftPanel")
+        self._panel_left.setStyleSheet(f"QFrame#leftPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: 6px; }}")
+        QVBoxLayout(self._panel_left).setContentsMargins(0, 0, 0, 0)
+        self._panel_left.hide()
+
+        self._stack = QStackedWidget()
+        self._stack.setObjectName("stack")
+        self._stack.setStyleSheet(f"QStackedWidget#stack {{ background-color: {config.BG_COLOR}; }}")
+        self._stack.addWidget(self._build_welcome_screen())   # index 0
+        self._stack.addWidget(self._build_page_processing())  # index 1
+        self._stack.addWidget(self._build_page_editor())      # index 2
+        self._stack.setCurrentIndex(0)
+
+        self._panel_right = QFrame()
+        self._panel_right.setMinimumWidth(150)
+        self._panel_right.setObjectName("rightPanel")
+        self._panel_right.setStyleSheet(f"QFrame#rightPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: 6px; }}")
+        QVBoxLayout(self._panel_right).setContentsMargins(0, 0, 0, 0)
+        self._panel_right.hide()
+        
+        self.activities = {}
+        self.active_activity = None
+        self._build_activities()
+        
+        if hasattr(self, 'welcome_script_edit') and hasattr(self, 'text_script'):
+            def sync_scripts(source, target):
+                if source.toPlainText() != target.toPlainText():
+                    target.setText(source.toPlainText())
+            
+            self.welcome_script_edit.textChanged.connect(lambda: sync_scripts(self.welcome_script_edit, self.text_script))
+            self.text_script.textChanged.connect(lambda: sync_scripts(self.text_script, self.welcome_script_edit))
+            if self.text_script.toPlainText():
+                self.welcome_script_edit.setText(self.text_script.toPlainText())
+
+
+        # Splitter layout for panels and stack
+        self._main_h_splitter = GripSplitter(Qt.Horizontal)
+        self._main_h_splitter.setChildrenCollapsible(False)
+        self._main_h_splitter.addWidget(self._panel_left)
+        self._main_h_splitter.addWidget(self._stack)
+        self._main_h_splitter.addWidget(self._panel_right)
+        self._main_h_splitter.setStretchFactor(0, 0)
+        self._main_h_splitter.setStretchFactor(1, 1)
+        self._main_h_splitter.setStretchFactor(2, 0)
+
+        self._main_h_splitter.setHandleWidth(6)
+        self._main_h_splitter.setStyleSheet("QSplitter { border: none; background: transparent; }")
+
+        # Add everything to main layout in exact order
+        main_layout.addWidget(self._sidebar_left)
+        main_layout.addWidget(self._main_h_splitter)
+        main_layout.addWidget(self._sidebar_right)
+
+        # ── CSD: add content area under the title bar in the root frame ───────
+        self._root_layout.addWidget(main_container)
+        self.setCentralWidget(self._root_frame)
+
+
+    def _toggle_activity(self, activity_id: str):
+        target_btn = None
+        target_splitter = None
+        
+        for widget in self.findChildren(SidebarButton):
+            if widget.activity_id == activity_id:
+                target_btn = widget
+                target_splitter = self._panel_right if widget.is_right_side else self._panel_left
+                break
+                    
+        if not target_btn or not target_splitter:
+            return  # Activity button not found in sidebars
+
+        assert target_btn is not None
+        assert target_splitter is not None
+
+        activity_widget = self.activities[activity_id]
+        sidebar = self._sidebar_left if not target_btn.is_right_side else self._sidebar_right
+        
+        is_already_active = target_btn.is_active
+        
+        if is_already_active:
+            target_splitter.hide()
+            target_btn.set_active(False)
+        else:
+            for widget in self.findChildren(SidebarButton):
+                if widget.is_right_side == target_btn.is_right_side:
+                    widget.set_active(False)
+                    
+            target_btn.set_active(True)
+            layout = target_splitter.layout()
+            
+            # Clear existing items safely
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
+                    
+            layout.addWidget(activity_widget)
+            activity_widget.show()
+            
+            was_hidden = not target_splitter.isVisible()
+            target_splitter.show()
+            if was_hidden:
+                sizes = self._main_h_splitter.sizes()
+                # 14.58% perfectly matches 280px on a 1920px display
+                target_w = max(180, min(300, int(self.width() * (280.0 / 1920.0))))
+                if target_splitter == self._panel_left:
+                    diff = target_w - sizes[0]
+                    sizes[0] = target_w
+                    sizes[1] = max(0, sizes[1] - diff)
+                elif target_splitter == self._panel_right:
+                    diff = target_w - sizes[2]
+                    sizes[2] = target_w
+                    sizes[1] = max(0, sizes[1] - diff)
+                self._main_h_splitter.setSizes(sizes)
+
+    def _save_sidebar_layout(self):
+        prefs = self.engine.load_preferences() or {}
+
+        left_order = []
+        for i in range(self._drag_zone_left.layout().count()):
+            w = self._drag_zone_left.layout().itemAt(i).widget()
+            if isinstance(w, SidebarButton): left_order.append(w.activity_id)
+
+        right_order = []
+        for i in range(self._drag_zone_right.layout().count()):
+            w = self._drag_zone_right.layout().itemAt(i).widget()
+            if isinstance(w, SidebarButton): right_order.append(w.activity_id)
+
+        prefs['sidebar_left'] = left_order
+        prefs['sidebar_right'] = right_order
+        self.engine.save_preferences(prefs)
+
+    def _restore_sidebar_layout(self):
+        prefs = self.engine.load_preferences() or {}
+        left_saved = prefs.get('sidebar_left', [])
+        right_saved = prefs.get('sidebar_right', [])
+
+        if not left_saved and not right_saved: return
+
+        # Zmapuj i wyczyść obecne przyciski
+        btns_map = {}
+        for dz in [self._drag_zone_left, self._drag_zone_right]:
+            layout = dz.layout()
+            for i in reversed(range(layout.count())):
+                w = layout.itemAt(i).widget()
+                if isinstance(w, SidebarButton):
+                    btns_map[w.activity_id] = w
+                    layout.removeWidget(w)
+
+        # Odtwórz poprawną kolejność dla lewej strony
+        for act_id in left_saved:
+            if act_id in btns_map:
+                btn = btns_map.pop(act_id)
+                btn.is_right_side = False
+                self._drag_zone_left.layout().addWidget(btn)
+
+        # Odtwórz poprawną kolejność dla prawej strony
+        for act_id in right_saved:
+            if act_id in btns_map:
+                btn = btns_map.pop(act_id)
+                btn.is_right_side = True
+                self._drag_zone_right.layout().addWidget(btn)
+
+        # Resztki (nowe funkcje) lądują domyślnie na lewo
+        for btn in btns_map.values():
+            btn.is_right_side = False
+            self._drag_zone_left.layout().addWidget(btn)
+
+    def _build_activities(self):
+        def _wrap_activity(widget: QWidget) -> QFrame:
+            container = QFrame()
+            container.setObjectName("ActivityPanel")
+            container.setAttribute(Qt.WA_StyledBackground, True)
+
+            container.setStyleSheet("""
+                QFrame#ActivityPanel {
+                    background-color: #212121;
+                    border-radius: 0px;
+                    margin: 0px;
+                    border: none;
+                }
+                /* Force all generic children to be transparent so the grey shows through */
+                QFrame#ActivityPanel QWidget {
+                    background-color: transparent;
+                }
+                /* Restore specific background for input fields so they don't blend in */
+                QFrame#ActivityPanel QTextEdit,
+                QFrame#ActivityPanel QDoubleSpinBox,
+                QFrame#ActivityPanel QLineEdit {
+                    background-color: #1e1e1e;
+                    border: 1px solid #3a3a3a;
+                    color: #ffffff;
+                }
+                QFrame#ActivityPanel QPushButton {
+                    background-color: #333333;
+                    border: 1px solid #454545;
+                    border-radius: 4px;
+                    padding: 5px;
+                    color: #d9d9d9;
+                }
+                QFrame#ActivityPanel QPushButton:hover { background-color: #404040; border-color: #555555; }
+                QFrame#ActivityPanel QPushButton:disabled { background-color: #2a2a2a; border-color: #222; color: #555555; }
+            """)
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(widget)
+            return container
+
+        def style_rb(rb, color):
+            rb.setStyleSheet(f"""
+                QRadioButton {{ color: {color}; font-weight: bold; }}
+                QRadioButton::indicator {{
+                    width: 12px; height: 12px;
+                    border-radius: 7px;
+                    border: 2px solid #555555;
+                    background: transparent;
+                }}
+                QRadioButton::indicator:checked {{
+                    border: 2px solid #555555;
+                    background: qradialgradient(cx:0.5, cy:0.5, radius:0.45, fx:0.5, fy:0.5, stop:0 {color}, stop:0.8 {color}, stop:1 transparent);
+                }}
+            """)
+
+        # A. script_analysis
+        p_script_analysis = QWidget()
+        l_script_analysis = QVBoxLayout(p_script_analysis)
+        l_script_analysis.setContentsMargins(15, 15, 15, 15)
+        l_script_analysis.setSpacing(10)
+        
+        self.text_script = QTextEdit()
+        self.text_script.setAcceptRichText(False)
+        self.text_script.setPlaceholderText(self.txt("ph_paste_script_here"))
+        l_script_analysis.addWidget(self.text_script)
+        
+        btn_row_script = QHBoxLayout()
+        self.btn_import_script = QPushButton(self.txt("btn_import_script"))
+        self.btn_import_script.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear_script = QPushButton(self.txt("btn_clear"))
+        self.btn_clear_script.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_row_script.addWidget(self.btn_import_script)
+        btn_row_script.addWidget(self.btn_clear_script)
+        l_script_analysis.addLayout(btn_row_script)
+        
+        self.btn_analyze_standalone = QPushButton(self.txt("btn_analyze_standalone"))
+        self.btn_analyze_standalone.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_analyze_standalone.setFixedHeight(35)
+        self.btn_analyze_standalone.setStyleSheet(
+            f"QPushButton {{ background-color: {config.BTN_BG}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }} "
+            f"QPushButton:hover {{ background-color: #1ed760; }}"
+        )
+        l_script_analysis.addWidget(self.btn_analyze_standalone)
+
+        self.btn_analyze_compare = QPushButton(self.txt("btn_analyze_compare"))
+        self.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_analyze_compare.setFixedHeight(35)
+        self.btn_analyze_compare.setStyleSheet(
+            f"QPushButton {{ background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 12pt; border: none; border-radius: 4px; padding: 10px; }} "
+            f"QPushButton:hover {{ background-color: #1ed760; }}"
+        )
+        l_script_analysis.addWidget(self.btn_analyze_compare)
+
+        self.btn_side_by_side_compare = QPushButton(self.txt("btn_side_by_side_compare"))
+        self.btn_side_by_side_compare.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_side_by_side_compare.setFixedHeight(32)
+        self.btn_side_by_side_compare.setEnabled(False)
+        self.btn_side_by_side_compare.setStyleSheet(
+            "QPushButton { background-color: #2d3f35; color: #d9d9d9; "
+            "font-weight: bold; border: 1px solid #3d5f4b; border-radius: 4px; padding: 7px; } "
+            "QPushButton:hover { background-color: #36513f; } "
+            "QPushButton:disabled { background-color: #2a2a2a; border-color: #222; color: #555555; }"
+        )
+        l_script_analysis.addWidget(self.btn_side_by_side_compare)
+        
+        self.btn_exit_sbs_text = QPushButton(self.txt("btn_return_normal"))
+        self.btn_exit_sbs_text.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_exit_sbs_text.setStyleSheet("QPushButton { background: transparent; color: #888888; border: none; padding: 10px; font-size: 11pt; } QPushButton:hover { color: #ffffff; }")
+        self.btn_exit_sbs_text.clicked.connect(self._exit_side_by_side)
+        self.btn_exit_sbs_text.hide()
+        l_script_analysis.addWidget(self.btn_exit_sbs_text)
+        
+        self._analyze_color_anim = QVariantAnimation(self)
+        self._analyze_color_anim.setDuration(250)
+
+        def update_btn_style(color):
+            style = f"QPushButton {{ background-color: {color.name()}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }}"
+            self.btn_analyze_compare.setStyleSheet(style)
+            
+        self._analyze_color_anim.valueChanged.connect(update_btn_style)
+        
+        self.activities["script_analysis"] = _wrap_activity(p_script_analysis)
+        
+        # Connect text change logic
+        def update_compare_btn():
+            has_text = bool(self.text_script.toPlainText().strip())
+            
+            # Check if state actually changed to prevent animation loop on every keystroke
+            if getattr(self, '_analyze_last_state', None) == has_text:
+                return 
+            self._analyze_last_state = has_text
+            
+            self.btn_analyze_compare.setEnabled(has_text)
+            self.btn_side_by_side_compare.setEnabled(has_text)
+            
+            start_color = QColor("#2a2a2a") if has_text else QColor(config.BTN_BG)
+            end_color = QColor(config.BTN_BG) if has_text else QColor("#2a2a2a")
+
+            self._analyze_color_anim.stop()
+            self._analyze_color_anim.setStartValue(start_color)
+            self._analyze_color_anim.setEndValue(end_color)
+            self._analyze_color_anim.start()
+            
+        self._update_compare_btn = update_compare_btn
+        self.text_script.textChanged.connect(self._update_compare_btn)
+        self._update_compare_btn()
+
+        # B. silence
+        p_silence = QWidget()
+        l_silence = QVBoxLayout(p_silence)
+        l_silence.setContentsMargins(15, 15, 15, 15)
+        l_silence.setSpacing(10)
+        
+        # Reusable style for compact silence param inputs
+        _sil_input_style = (
+            "QLineEdit { background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; "
+            "border-radius: 3px; padding: 2px 6px; outline: none; } "
+            "QLineEdit:focus { border: 1px solid #1a7a3e; outline: none; }"
+        )
+        _sil_rst_style = (
+            "QPushButton { background: transparent; border: 1px solid #444; "
+            "border-radius: 3px; color: #777; font-size: 10pt; } "
+            "QPushButton:hover { color: #ccc; border-color: #666; }"
+        )
+
+        def _sil_row(label_text, widget, rst_btn):
+            row = QHBoxLayout()
+            lbl = QLabel(label_text)
+            row.addWidget(lbl, 1)
+            row.addWidget(widget)
+            row.addSpacing(4)
+            row.addWidget(rst_btn)
+            return row
+
+        _sil_prefs = self.engine.load_preferences() or {}
+
+        self.spin_thresh = QLineEdit()
+        self.spin_thresh.setText(str(_sil_prefs.get('silence_threshold_db', _sil_prefs.get('ui_spin_thresh', -42.0))))
+        self.spin_thresh.setFixedWidth(68)
+        self.spin_thresh.setStyleSheet(_sil_input_style)
+        _rst_thresh = QPushButton("↺")
+        _rst_thresh.setFixedSize(22, 22)
+        _rst_thresh.setCursor(Qt.PointingHandCursor)
+        _rst_thresh.setStyleSheet(_sil_rst_style)
+        _rst_thresh.clicked.connect(lambda: (
+            self.spin_thresh.setText("-42.0"),
+            self._save_single_pref('silence_threshold_db', -42.0)
+        ))
+
+        self.spin_pad = QLineEdit()
+        self.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.05)))
+        self.spin_pad.setFixedWidth(68)
+        self.spin_pad.setStyleSheet(_sil_input_style)
+        _rst_pad = QPushButton("↺")
+        _rst_pad.setFixedSize(22, 22)
+        _rst_pad.setCursor(Qt.PointingHandCursor)
+        _rst_pad.setStyleSheet(_sil_rst_style)
+        _rst_pad.clicked.connect(lambda: (
+            self.spin_pad.setText("0.05"),
+            self._save_single_pref('ui_spin_pad', 0.05)
+        ))
+
+        self.spin_silence_min_dur = QLineEdit()
+        self.spin_silence_min_dur.setText(str(_sil_prefs.get('silence_min_dur', 0.2)))
+        self.spin_silence_min_dur.setFixedWidth(68)
+        self.spin_silence_min_dur.setStyleSheet(_sil_input_style)
+        self.spin_silence_min_dur.setToolTip(
+            "Minimum duration (in seconds) for a gap to be classified as silence. "
+            "Lower = more sensitive. Applies to both standalone and post-transcript modes."
+        )
+        _rst_min = QPushButton("↺")
+        _rst_min.setFixedSize(22, 22)
+        _rst_min.setCursor(Qt.PointingHandCursor)
+        _rst_min.setStyleSheet(_sil_rst_style)
+        _rst_min.clicked.connect(lambda: (
+            self.spin_silence_min_dur.setText("0.2"),
+            self._save_single_pref('silence_min_dur', 0.2)
+        ))
+
+        l_silence.addLayout(_sil_row(self.txt("lbl_threshold_db"), self.spin_thresh, _rst_thresh))
+        l_silence.addLayout(_sil_row(self.txt("lbl_padding_s"), self.spin_pad, _rst_pad))
+        l_silence.addLayout(_sil_row(self.txt("lbl_min_silence_dur"), self.spin_silence_min_dur, _rst_min))
+
+        
+        row_silence_cut = QHBoxLayout()
+        lbl_cut = QLabel(self.txt("lbl_detect_and_cut_silence"))
+        lbl_cut.setWordWrap(True)
+        row_silence_cut.addWidget(lbl_cut)
+        row_silence_cut.addStretch()
+        info_silence_cut = self._create_info_icon("tt_detect_and_cut_silence")
+        row_silence_cut.addWidget(info_silence_cut)
+        row_silence_cut.addSpacing(6)
+        self.tgl_silence_cut = ToggleSwitch()
+        row_silence_cut.addWidget(self.tgl_silence_cut)
+        l_silence.addLayout(row_silence_cut)
+        
+        row_silence_mark = QHBoxLayout()
+        lbl_mark = QLabel(self.txt("lbl_detect_and_mark_silence"))
+        lbl_mark.setWordWrap(True)
+        row_silence_mark.addWidget(lbl_mark)
+        row_silence_mark.addStretch()
+        info_silence_mark = self._create_info_icon("tt_detect_and_mark_silence")
+        row_silence_mark.addWidget(info_silence_mark)
+        row_silence_mark.addSpacing(6)
+        self.tgl_silence_mark = ToggleSwitch()
+        row_silence_mark.addWidget(self.tgl_silence_mark)
+        l_silence.addLayout(row_silence_mark)
+        
+        l_silence.addStretch(1)
+        self.activities["silence"] = _wrap_activity(p_silence)
+        
+        self.tgl_silence_cut.toggled.connect(lambda checked: self.tgl_silence_mark.setChecked(False) if checked else None)
+        self.tgl_silence_mark.toggled.connect(lambda checked: self.tgl_silence_cut.setChecked(False) if checked else None)
+
+        # C. fillers
+        p_fillers = QWidget()
+        l_fillers = QVBoxLayout(p_fillers)
+        l_fillers.setContentsMargins(15, 15, 15, 15)
+        l_fillers.setSpacing(10)
+        # Inline Filler Words Editor
+        prefs = self.engine.load_preferences() or {}
+        fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
+        
+        self.txt_fillers = QTextEdit()
+        self.txt_fillers.setAcceptRichText(False)
+        self.txt_fillers.setStyleSheet(f"background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; border-radius: 4px; padding: 4px;")
+        self.txt_fillers.setText(", ".join(fillers))
+        l_fillers.addWidget(self.txt_fillers)
+        
+        # Bottom tools for fillers (Counter, Reset, Save)
+        filler_tools_layout = QHBoxLayout()
+        filler_tools_layout.setContentsMargins(0, 2, 0, 0)
+        
+        self.lbl_filler_count = QLabel(self.txt("lbl_words"))
+        self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
+        filler_tools_layout.addWidget(self.lbl_filler_count)
+        
+        filler_tools_layout.addStretch()
+        
+        self.btn_reset_fillers = QPushButton("↺")
+        self.btn_reset_fillers.setFixedSize(24, 24)
+        self.btn_reset_fillers.setCursor(Qt.PointingHandCursor)
+        self.btn_reset_fillers.setStyleSheet("background: transparent; border: 1px solid #444; border-radius: 3px; color: #888;")
+        self.btn_reset_fillers.clicked.connect(self._on_reset_inline_fillers)
+        filler_tools_layout.addWidget(self.btn_reset_fillers)
+        
+        self.btn_save_fillers = QPushButton(self.txt("btn_save"))
+        self.btn_save_fillers.setCursor(Qt.PointingHandCursor)
+        self.btn_save_fillers.setStyleSheet(f"background-color: {config.BTN_GHOST_BG}; color: {config.FG_COLOR}; border-radius: 4px; font-weight: bold; padding: 4px 10px;")
+        self.btn_save_fillers.clicked.connect(self._on_save_inline_fillers)
+        filler_tools_layout.addWidget(self.btn_save_fillers)
+        l_fillers.addLayout(filler_tools_layout)
+        
+        # Connect text changed signal for auto-resize and counting
+        self.txt_fillers.textChanged.connect(self._on_fillers_text_changed)
+        
+        # Force initial calculation
+        self._on_fillers_text_changed()
+        
+        row_auto_filler = QHBoxLayout()
+        row_auto_filler.addWidget(QLabel(self.txt("lbl_mark_filler_words_automat")))
+        row_auto_filler.addStretch()
+        info_auto_filler = self._create_info_icon("tt_mark_filler_words")
+        row_auto_filler.addWidget(info_auto_filler)
+        row_auto_filler.addSpacing(6)
+        self.tgl_auto_filler = ToggleSwitch()
+        self.tgl_auto_filler.setChecked(True)
+        row_auto_filler.addWidget(self.tgl_auto_filler)
+        l_fillers.addLayout(row_auto_filler)
+        
+        l_fillers.addStretch(1)
+        self.activities["fillers"] = _wrap_activity(p_fillers)
+
+        # D. main_panel
+        p_main = MainPanelWidget()
+        l_main = QVBoxLayout(p_main.layer1)
+        l_main.setContentsMargins(15, 15, 15, 15)
+        l_main.setSpacing(10)
+        
+        # Top Section (Markers)
+        row_marking_title = QHBoxLayout()
+        row_marking_title.addWidget(QLabel(self.txt("lbl_marking_mode")))
+        row_marking_title.addStretch()
+        self.btn_clear_transcript = QPushButton()
+        self.btn_clear_transcript.setFixedSize(26, 26)
+        self.btn_clear_transcript.setToolTip("") # Force remove native tooltip
+        self.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        
+        self.btn_clear_transcript.setIcon(QIcon(os.path.join(_assets_dir, "clean.png")))
+        self.btn_clear_transcript.setIconSize(QSize(18, 18))
+        self.btn_clear_transcript.setStyleSheet("QPushButton { background: transparent; border: none; padding: 2px; } QPushButton:hover { background-color: rgba(255, 255, 255, 10%); border-radius: 4px; }")
+        self.btn_clear_transcript.clicked.connect(self._on_clear_transcript)
+        row_marking_title.addWidget(self.btn_clear_transcript)
+        l_main.addLayout(row_marking_title)
+        
+        self.markers_layout = QVBoxLayout()
+        self.markers_layout.setSpacing(4)
+        l_main.addLayout(self.markers_layout)
+        
+        self.btn_add_custom_marker = QPushButton(self.txt("lbl_add_custom_marker"))
+        self.btn_add_custom_marker.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add_custom_marker.setStyleSheet("QPushButton { background: transparent; color: #808080; text-decoration: underline; border: none; text-align: left; padding: 5px; } QPushButton:hover { color: #ffffff; }")
+        self.btn_add_custom_marker.clicked.connect(self._on_add_custom_marker)
+        l_main.addWidget(self.btn_add_custom_marker)
+        
+        # Middle
+        l_main.addStretch(1)
+        
+        l_layer2 = QVBoxLayout(p_main.layer2)
+        l_layer2.setContentsMargins(15, 10, 15, 15)
+        l_layer2.setSpacing(10)
+        l_layer2.setAlignment(Qt.AlignBottom)
+        
+        # Analysis duration label
+        self.lbl_analysis_duration = QLabel("")
+        self.lbl_analysis_duration.setStyleSheet("color: #a0a0a0; font-size: 9pt; font-style: italic;")
+        self.lbl_analysis_duration.setAlignment(Qt.AlignCenter)
+        self.lbl_analysis_duration.setVisible(False)
+        l_layer2.addWidget(self.lbl_analysis_duration)
+        
+        # Favorites section
+        self.lbl_pinned_favorites = QLabel(self.txt("lbl_pinned_favorites"))
+        self.lbl_pinned_favorites.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
+        self.lbl_pinned_favorites.setVisible(False)  # Hidden until at least one favorite is pinned
+        l_layer2.addWidget(self.lbl_pinned_favorites)
+        
+        self.layout_favorites = QVBoxLayout()
+        self.layout_favorites.setSpacing(10)
+        l_layer2.addLayout(self.layout_favorites)
+        
+        layout_assemble_group = QVBoxLayout()
+        layout_assemble_group.setContentsMargins(0, 0, 0, 0)
+        layout_assemble_group.setSpacing(0)
+
+        self.btn_assemble = AssembleSplitButton(self.txt("btn_assemble"), self)
+        layout_assemble_group.addWidget(self.btn_assemble)
+
+        self.w_track_options = TrackOptionsDrawer(self, self.engine)
+        layout_assemble_group.addWidget(self.w_track_options)
+        self.btn_assemble.toggleDrawerClicked.connect(lambda: [self.w_track_options.toggle_expand(), p_main.resizeEvent(None)])
+
+        l_layer2.addLayout(layout_assemble_group)
+        
+        self._build_marker_radio_buttons()
+        self.p_main = p_main
+        self.activities["main_panel"] = _wrap_activity(p_main)
+        
+        self._favorite_proxies = {}
+        self._pin_buttons = {}
+        
+        # E. assembly
+        p_assembly = QWidget()
+        l_assembly = QVBoxLayout(p_assembly)
+        l_assembly.setContentsMargins(15, 15, 15, 15)
+        l_assembly.setSpacing(15)
+        
+        def _pin_btn(fav_id: str):
+            btn = QPushButton("★")
+            btn.setFixedSize(20, 20)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            self._pin_buttons[fav_id] = btn
+            return btn
+        
+        row_show_inaudible = QHBoxLayout()
+        lbl_show_inaud = QLabel(self.txt("lbl_show_inaudible_fragments"))
+        lbl_show_inaud.setWordWrap(True)
+        row_show_inaudible.addWidget(lbl_show_inaud)
+        row_show_inaudible.addStretch()
+        self.tgl_show_inaudible = ToggleSwitch()
+        self.tgl_show_inaudible.setChecked(True)
+        self.tgl_show_inaudible.toggled.connect(lambda c: (self._on_inaudible_toggled(c), self._save_top_toggles_prefs()))
+        row_show_inaudible.addWidget(self.tgl_show_inaudible)
+        pin_show_inaud = _pin_btn('show_inaudible')
+        row_show_inaudible.addWidget(pin_show_inaud)
+        l_assembly.addLayout(row_show_inaudible)
+        pin_show_inaud.clicked.connect(lambda checked=False, p=pin_show_inaud: self._toggle_favorite('show_inaudible', self.tgl_show_inaudible, self.txt("tool_show_inaudible"), p))
+        
+        row_mark_inaudible = QHBoxLayout()
+        lbl_mark_inaud = QLabel(self.txt("lbl_mark_inaudible_fragments"))
+        lbl_mark_inaud.setWordWrap(True)
+        row_mark_inaudible.addWidget(lbl_mark_inaud)
+        row_mark_inaudible.addStretch()
+        self.tgl_mark_inaudible = ToggleSwitch()
+        self.tgl_mark_inaudible.toggled.connect(lambda c: (self._on_mark_inaudible_toggled(c), self._save_top_toggles_prefs()))
+        row_mark_inaudible.addWidget(self.tgl_mark_inaudible)
+        pin_mark_inaud = _pin_btn('mark_inaudible')
+        row_mark_inaudible.addWidget(pin_mark_inaud)
+        l_assembly.addLayout(row_mark_inaudible)
+        pin_mark_inaud.clicked.connect(lambda checked=False, p=pin_mark_inaud: self._toggle_favorite('mark_inaudible', self.tgl_mark_inaudible, self.txt("tool_mark_inaudible"), p))
+        
+        row_show_typos = QHBoxLayout()
+        lbl_show_typos = QLabel(self.txt("lbl_show_detected_typos"))
+        lbl_show_typos.setWordWrap(True)
+        row_show_typos.addWidget(lbl_show_typos)
+        row_show_typos.addStretch()
+        self.tgl_show_typos = ToggleSwitch()
+        self.tgl_show_typos.setChecked(True)
+        self.tgl_show_typos.toggled.connect(lambda c: (self._on_typos_toggled(c), self._save_top_toggles_prefs()))
+        row_show_typos.addWidget(self.tgl_show_typos)
+        pin_show_typos = _pin_btn('show_typos')
+        row_show_typos.addWidget(pin_show_typos)
+        l_assembly.addLayout(row_show_typos)
+        pin_show_typos.clicked.connect(lambda checked=False, p=pin_show_typos: self._toggle_favorite('show_typos', self.tgl_show_typos, self.txt("tool_show_typos"), p))
+        
+        # Cut Colors Dynamic List
+        self.color_cut_buttons = {}
+        
+        # We need a layout for the colors
+        l_colors_container = QVBoxLayout()
+        l_colors_container.setSpacing(10)
+        
+        div_top = QFrame()
+        div_top.setFixedHeight(1)
+        div_top.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+        l_colors_container.addWidget(div_top)
+        
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        
+        color_idx = 0
+        for color_name, color_hex in config.RESOLVE_COLORS_HEX.items():
+            row_color = QHBoxLayout()
+            
+            # Left text
+            localized_color_name = self.txt(f"resolve_color_{color_name.lower()}")
+            lbl_color = QLabel(self.txt("lbl_cut_color_fmt").format(hex=color_hex, color=localized_color_name))
+            row_color.addWidget(lbl_color)
+            row_color.addStretch()
+            
+            # Star button
+            pin_c = _pin_btn(f'cut_{color_name.lower()}')
+            
+            # Auto Toggle (auto-unmarked / auto-marked) - Except for Tan, Chocolate, Green, Blue
+            is_unsupported = color_name.lower() in ["tan", "chocolate", "green", "blue"]
+            btn_auto = None
+            
+            if not is_unsupported:
+                btn_auto = QPushButton()
+                btn_auto.setFixedSize(24, 24)
+                btn_auto.setCursor(Qt.PointingHandCursor)
+                btn_auto.setStyleSheet("background: transparent; border: none;")
+                btn_auto.setCheckable(True)
+                btn_auto.setToolTip(self.txt("tooltip_auto_cut"))
+                
+                prefs = self.engine.load_preferences() or {}
+                auto_cut_colors = prefs.get('auto_cut_colors', [])
+                is_checked = color_name in auto_cut_colors
+                btn_auto.setChecked(is_checked)
+                
+                def _update_auto_icon(checked, b=btn_auto, ad=_assets_dir):
+                    icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
+                    b.setIcon(QIcon(os.path.join(ad, icon_name)))
+                    b.setIconSize(QSize(20, 20))
+                    
+                _update_auto_icon(is_checked)
+                btn_auto.toggled.connect(lambda checked, b=btn_auto, fn=_update_auto_icon: (fn(checked, b), self._save_auto_cut_prefs()))
+                self.color_cut_buttons[color_name] = btn_auto
+            
+            # Cut Now Button (cut.png)
+            btn_cut_now = QPushButton()
+            btn_cut_now.setFixedSize(24, 24)
+            btn_cut_now.setCursor(Qt.PointingHandCursor)
+            btn_cut_now.setStyleSheet("background: transparent; border: none;")
+            btn_cut_now.setIcon(QIcon(os.path.join(_assets_dir, "cut.png")))
+            btn_cut_now.setIconSize(QSize(20, 20))
+            
+            btn_cut_now.setToolTip(self.txt("tooltip_cut_now"))
+            btn_cut_now.clicked.connect(lambda _, c=color_name: self._on_cut_now_clicked(c))
+            
+            # Order: Cut, Auto, Star
+            row_color.addWidget(btn_cut_now)
+            if btn_auto:
+                row_color.addWidget(btn_auto)
+            row_color.addWidget(pin_c)
+            
+            l_colors_container.addLayout(row_color)
+            
+            # Pass clean label text for favorites proxy
+            clean_label = self.txt(f"resolve_color_{color_name.lower()}").replace("<br>", " ")
+            pin_c.clicked.connect(lambda _, c=color_name, b=btn_auto, p=pin_c, l=clean_label: self._toggle_favorite(
+                f'cut_{c.lower()}', b, l, p
+            ))
+            
+            color_idx += 1
+            if color_idx == 3:
+                div = QFrame()
+                div.setFixedHeight(1)
+                div.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+                l_colors_container.addWidget(div)
+            
+        l_assembly.addLayout(l_colors_container)
+
+        l_assembly.addStretch(1)
+        self.activities["assembly"] = _wrap_activity(p_assembly)
+
+        
+        self.btn_analyze_standalone.installEventFilter(self)
+        self.btn_clear_transcript.installEventFilter(self)
+
+        # Signal Connections
+        self.btn_import_script.clicked.connect(self._on_import_script)
+        self.btn_clear_script.clicked.connect(self._on_clear_script)
+        self.btn_analyze_compare.clicked.connect(self._on_analyze_compare)
+        self.btn_side_by_side_compare.clicked.connect(self._on_side_by_side_compare)
+        self.btn_analyze_standalone.clicked.connect(self._on_analyze_standalone)
+        self.tgl_auto_filler.toggled.connect(self._on_auto_filler_toggled)
+        
+        # Right Panel Signals
+        self.btn_assemble.assembleClicked.connect(self._on_assemble)
+        
+    def _is_input_widget(self, w=None):
+        if w is None:
+            from PySide6.QtWidgets import QApplication
+            w = QApplication.focusWidget()
+        if w is None:
+            return False
+        from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox
+        if isinstance(w, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox)):
+            return True
+        meta = w.metaObject()
+        while meta:
+            cname = meta.className()
+            if any(k in cname for k in ('Edit', 'Input', 'Spin', 'Text', 'Search')):
+                return True
+            meta = meta.superClass()
+        return False
+
+    def _update_shortcut_enabled_states(self):
+        from PySide6.QtWidgets import QApplication
+        active = self.isActiveWindow() and QApplication.activeWindow() is not None
+        in_input = self._is_input_widget()
+        enable_shortcuts = active and not in_input
+
+        for sc in getattr(self, '_active_shortcuts', []):
+            try:
+                sc.setEnabled(enable_shortcuts)
+            except RuntimeError:
+                pass
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtWidgets import QApplication
+        
+        if event.type() == QEvent.Type.KeyPress:
+            if not self.isActiveWindow() or QApplication.activeWindow() is None:
+                return super().eventFilter(watched, event)
+            if self._is_input_widget():
+                return super().eventFilter(watched, event)
+            if hasattr(self, 'audio_preview') and getattr(self.audio_preview, 'is_preview_active', lambda: False)():
+                try:
+                    from PySide6.QtGui import QKeySequence
+                    prefs = self.engine.load_preferences() or {}
+                    scs = prefs.get('shortcuts', {}) if isinstance(prefs, dict) else {}
+                    play_key = scs.get('play_stop', 'Space')
+                    back_key = scs.get('skip_backward', 'Left')
+                    fwd_key  = scs.get('skip_forward', 'Right')
+                    
+                    key_val = event.key()
+                    mods = event.modifiers()
+                    mod_val = mods.value if hasattr(mods, 'value') else int(mods)
+                    combo = key_val | mod_val
+                    seq_str = QKeySequence(combo).toString()
+                    
+                    if play_key and seq_str == play_key:
+                        self.audio_preview.toggle_play()
+                        return True
+                    elif back_key and seq_str == back_key:
+                        self.audio_preview.skip_backward()
+                        return True
+                    elif fwd_key and seq_str == fwd_key:
+                        self.audio_preview.skip_forward()
+                        return True
+                except Exception:
+                    pass
+                        
+        if event.type() == QEvent.Type.Enter:
+            if watched == getattr(self, 'btn_analyze_standalone', None):
+                self.shared_tooltip.show_at(watched, self.txt("tooltip_standalone"), is_right_side=False)
+            elif watched == getattr(self, 'btn_clear_transcript', None):
+                self.shared_tooltip.show_at(watched, self.txt("tooltip_clear_all_markings"), is_right_side=True)
+        elif event.type() == QEvent.Type.Leave:
+            if watched in (getattr(self, 'btn_analyze_standalone', None), getattr(self, 'btn_clear_transcript', None)):
+                self.shared_tooltip.hide()
+                
+        return super().eventFilter(watched, event)
+
+
+    # Removed deprecated _on_nav_script and _on_nav_analysis
+
+    # ------------------------------------------------------------------
+    # UI Logic Methods
+    # ------------------------------------------------------------------
+
+    def _jump_playhead(self, timestamp_s):
+        if not self.engine.resolve_handler or not getattr(self.engine.resolve_handler, 'project', None): return
+        
+        tl_name = None
+        if getattr(self, '_current_chapter_idx', -1) >= 0 and self._chapters:
+            tl_name = self._chapters[self._current_chapter_idx].get("tl_name")
+        elif getattr(self, '_transcription_source', None):
+            tl_name = self._transcription_source.get("timeline_name")
+            
+        if tl_name:
+            curr_tl = self.engine.resolve_handler.project.GetCurrentTimeline()
+            if curr_tl and curr_tl.GetName() == tl_name:
+                self.engine.resolve_handler.timeline = curr_tl
+            else:
+                count = self.engine.resolve_handler.project.GetTimelineCount()
+                for i in range(1, count + 1):
+                    tl = self.engine.resolve_handler.project.GetTimelineByIndex(i)
+                    if tl and tl.GetName() == tl_name:
+                        self.engine.resolve_handler.project.SetCurrentTimeline(tl)
+                        self.engine.resolve_handler.timeline = tl
+                        break
+        
+        self.engine.resolve_handler.jump_to_seconds(timestamp_s)
+
+    def _on_import_script(self):
+        from PySide6.QtWidgets import QFileDialog
+        import algorithms
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Script", "", 
+            "Text/Word/PDF Files (*.txt *.docx *.pdf);;All Files (*)"
+        )
+        if not file_path: return
+        
+        ext = file_path.split('.')[-1].lower()
+        content = ""
+        
+        if ext == 'txt':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        elif ext == 'docx':
+            if hasattr(algorithms, 'read_docx_text'):
+                content = algorithms.read_docx_text(file_path)
+        elif ext == 'pdf':
+            if hasattr(algorithms, 'read_pdf_text'):
+                content = algorithms.read_pdf_text(file_path)
+            
+        self.text_script.setText(content)
+
+    def _on_clear_script(self):
+        self.text_script.clear()
+
+    def _on_analyze_compare(self):
+        script_text = self.text_script.toPlainText().strip()
+        if not script_text:
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_please_import_or_paste_a"), self.txt("btn_ok"))
+            dlg.exec()
+            return
+            
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"), self.txt("btn_ok"))
+            dlg.exec()
+            return
+            
+        self.editor_view_stack.setCurrentIndex(1)
+        if hasattr(self, 'sbs_loading_bar'):
+            self.sbs_loading_bar.set_value(-1)
+            
+        def _finish_analyze(updated_words):
+            self.text_canvas.load_data(updated_words)
+            self._show_transcript_view()
+            self._analyze_thread = None
+            QTimer.singleShot(150, lambda: self.editor_view_stack.setCurrentIndex(0))
+            
+        from PySide6.QtCore import QThread, Signal as _Signal
+        
+        class _AnalyzeThread(QThread):
+            finished_ok = _Signal(list)
+            
+            def __init__(self, engine, script_text, current_words):
+                super().__init__()
+                self.engine = engine
+                self.script_text = script_text
+                self.current_words = current_words
+                
+            def run(self):
+                updated_words = self.engine.run_comparison_analysis(self.script_text, self.current_words)
+                self.finished_ok.emit(updated_words)
+                
+        self._analyze_thread = _AnalyzeThread(self.engine, script_text, self.text_canvas.words_data)
+        self._analyze_thread.finished_ok.connect(_finish_analyze)
+        self._analyze_thread.start()
+
+    def _on_side_by_side_compare(self):
+        if getattr(self, '_is_sbs_active', False):
+            self._exit_side_by_side()
+            return
+
+        script_text = self.text_script.toPlainText().strip()
+        if not script_text:
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_please_import_or_paste_a"), self.txt("btn_ok"))
+            dlg.exec()
+            return
+
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"), self.txt("btn_ok"))
+            dlg.exec()
+            return
+
+        self._is_sbs_active = True
+
+        self.text_script.hide()
+        self.btn_import_script.hide()
+        self.btn_clear_script.hide()
+        self.btn_analyze_compare.hide()
+        self.btn_analyze_standalone.hide()
+        self.btn_side_by_side_compare.hide()
+
+        self.btn_exit_sbs_text.show()
+
+        for widget in self.findChildren(SidebarButton):
+            if not widget.is_right_side and widget.is_active:
+                widget.set_active(False)
+        self._sbs_left_was_visible = self._panel_left.isVisible()
+        self._sbs_left_sizes = self._main_h_splitter.sizes()
+        self._panel_left.hide()
+
+        self.editor_view_stack.setCurrentIndex(1)
+        if hasattr(self, 'sbs_loading_bar'):
+            self.sbs_loading_bar.set_value(-1)
+
+        import algorithms
+        curr_script_hash = " ".join(algorithms.super_clean(w) for w in script_text.split() if algorithms.super_clean(w))
+
+        def _finish_sbs(rows, updated_words):
+            self.text_canvas.words_data = updated_words
+            self._sbs_last_script_hash = curr_script_hash
+            
+            self.text_canvas.is_sbs_mode = True
+            self.text_canvas.sbs_rows = rows
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
+            
+            self._sbs_thread = None
+            if hasattr(self, 'sbs_loading_bar'):
+                self.sbs_loading_bar.set_value(100)
+            QTimer.singleShot(150, lambda: self.editor_view_stack.setCurrentIndex(0))
+
+        if getattr(self, '_sbs_last_script_hash', None) == curr_script_hash:
+            # Core script words haven't changed! Skip the heavy comparison analysis.
+            self.text_canvas.is_sbs_mode = True
+            self.text_canvas.sbs_rows = algorithms.build_side_by_side_alignment(script_text, self.text_canvas.words_data)
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
+            if hasattr(self, 'sbs_loading_bar'):
+                self.sbs_loading_bar.set_value(100)
+            QTimer.singleShot(150, lambda: self.editor_view_stack.setCurrentIndex(0))
+        else:
+            from PySide6.QtCore import QThread, Signal as _Signal
+            
+            class _SBSThread(QThread):
+                finished_ok = _Signal(object, object)
+                
+                def __init__(self, engine, script_text, current_words):
+                    super().__init__()
+                    self.engine = engine
+                    self.script_text = script_text
+                    self.current_words = current_words
+                    
+                def run(self):
+                    import algorithms
+                    updated_words = self.engine.run_comparison_analysis(self.script_text, self.current_words)
+                    rows = algorithms.build_side_by_side_alignment(self.script_text, updated_words)
+                    self.finished_ok.emit(rows, updated_words)
+
+            self._sbs_thread = _SBSThread(self.engine, script_text, self.text_canvas.words_data)
+            self._sbs_thread.finished_ok.connect(_finish_sbs)
+            self._sbs_thread.start()
+
+    def _exit_side_by_side(self):
+        self._is_sbs_active = False
+        self.text_canvas.is_sbs_mode = False
+        self.text_canvas._calculate_layout()
+        self.text_canvas.update()
+        
+        self.btn_exit_sbs_text.hide()
+
+        self.text_script.show()
+        self.btn_import_script.show()
+        self.btn_clear_script.show()
+        self.btn_analyze_compare.show()
+        self.btn_analyze_standalone.show()
+        self.btn_side_by_side_compare.show()
+
+        # Restore left panel
+        if getattr(self, '_sbs_left_was_visible', False):
+            self._panel_left.show()
+            if hasattr(self, '_sbs_left_sizes'):
+                self._main_h_splitter.setSizes(self._sbs_left_sizes)
+
+    def _on_cut_now_clicked(self, color_name):
+        from gui import CustomMsgBox
+        
+        # Always fetch the currently active timeline from DaVinci before cutting
+        rh = getattr(self.engine, 'resolve_handler', None)
+        if rh and rh.project:
+            current_tl = rh.project.GetCurrentTimeline()
+            if current_tl:
+                rh.timeline = current_tl
+                
+        localized_color_name = self.txt(f"resolve_color_{color_name.lower()}")
+        title = self.txt("msg_cut_color_title").format(color=localized_color_name)
+        desc = self.txt("msg_cut_color_desc")
+        
+        box = CustomMsgBox(self, title, desc, self.txt("btn_cut_new_timeline"), self.txt("btn_cut_current_timeline"), self.txt("btn_cancel"))
+        ret = box.exec()
+        if ret == 2: return
+        new_timeline = (ret == 1)
+        self.engine.api_delete_clips_by_color(color_name, new_timeline)
+
+    def _on_analyze_standalone(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            dlg = CustomMsgBox(self, self.txt("msg_warning"), self.txt("msg_no_active_transcription_t"), self.txt("btn_ok"))
+            dlg.exec()
+            return
+            
+        prefs = self.engine.load_preferences() or {}
+        show_inaudible = prefs.get('show_inaudible', True)
+        
+        # Standalone analysis returns a tuple: (processed_words, count)
+        updated_words, _ = self.engine.run_standalone_analysis(self.text_canvas.words_data, show_inaudible)
+        self.text_canvas.load_data(updated_words)
+
+    def _switch_chapter(self, chapter_name):
+        if not self._chapters: return
+        
+        target_idx = -1
+        for i, ch in enumerate(self._chapters):
+            if ch.get("name") == chapter_name:
+                target_idx = i
+                break
+                
+        if target_idx == -1: return
+        self._current_chapter_idx = target_idx
+        
+        import copy
+        ch = self._chapters[target_idx]
+        self.text_canvas.load_data(copy.deepcopy(ch.get("words", [])))
+        
+        # Sync DaVinci
+        prefs = self.engine.load_preferences() or {}
+        if prefs.get("sync_davinci_chapter", True):
+            tl_name = ch.get("tl_name")
+            if tl_name and self.resolve_handler and getattr(self.resolve_handler, 'project', None):
+                try:
+                    count = self.resolve_handler.project.GetTimelineCount()
+                    for i in range(1, count + 1):
+                        tl = self.resolve_handler.project.GetTimelineByIndex(i)
+                        if tl and tl.GetName() == tl_name:
+                            self.resolve_handler.project.SetCurrentTimeline(tl)
+                            break
+                except Exception:
+                    pass
+
+    def _on_auto_filler_toggled(self, is_checked):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
+        import algorithms
+        prefs = self.engine.load_preferences() or {}
+        fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
+        
+        # Apply filler logic directly to the current state
+        if hasattr(algorithms, 'apply_auto_filler_logic'):
+            updated_words = algorithms.apply_auto_filler_logic(self.text_canvas.words_data, fillers, is_checked)
+            self.text_canvas.words_data = updated_words
+            self.text_canvas.update()
+
+    def _on_save_inline_fillers(self):
+        raw_text = self.txt_fillers.toPlainText()
+        new_fillers = [w.strip() for w in raw_text.split(',') if w.strip()]
+        
+        prefs = self.engine.load_preferences() or {}
+        prefs['filler_words'] = new_fillers
+        self.engine.save_preferences(prefs)
+        
+        # Provide visual feedback on the button
+        self.btn_save_fillers.setText(self.txt("txt_saved"))
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1500, lambda: self.btn_save_fillers.setText(self.txt("txt_save")))
+        
+        # Trigger real-time update if auto filler is currently active
+        if hasattr(self, 'tgl_auto_filler') and self.tgl_auto_filler.isChecked() and hasattr(self, 'text_canvas') and self.text_canvas.words_data:
+            import algorithms
+            if hasattr(algorithms, 'apply_auto_filler_logic'):
+                updated_words = algorithms.apply_auto_filler_logic(self.text_canvas.words_data, new_fillers, True)
+                self.text_canvas.words_data = updated_words
+                self.text_canvas.update()
+
+    def _on_reset_inline_fillers(self):
+        self.txt_fillers.setText(", ".join(config.DEFAULT_BAD_WORDS))
+        self._on_save_inline_fillers()
+
+    def _on_fillers_text_changed(self):
+        # Auto-Resize: Document height + 1 line height
+        doc_height = self.txt_fillers.document().size().height()
+        from PySide6.QtGui import QFontMetrics
+        line_height = QFontMetrics(self.txt_fillers.font()).lineSpacing()
+        
+        new_height = int(doc_height + line_height + 10) # 10px padding margin
+        # Cap max height to avoid breaking the UI
+        new_height = min(new_height, 250)
+        self.txt_fillers.setFixedHeight(new_height)
+        
+        # Word count calculation
+        raw_text = self.txt_fillers.toPlainText()
+        words = [w.strip() for w in raw_text.split(',') if w.strip()]
+        count = len(words)
+        
+        self.lbl_filler_count.setText(f"{count} / 150 {self.txt('lbl_words')}")
+        
+        if count > 150:
+            self.lbl_filler_count.setStyleSheet("color: #ed4245; font-size: 9pt; font-weight: bold;")
+            self.btn_save_fillers.setEnabled(False)
+        else:
+            self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
+            self.btn_save_fillers.setEnabled(True)
+
+    def _get_clean_words_data(self):
+        """Returns a deep-copy of words_data stripped of all PySide6 UI objects (keys starting with '_')."""
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            return []
+            
+        clean_data = []
+        for w in self.text_canvas.words_data:
+            # Only keep native Python types, strip UI markers like _rect, _ts_rect, _display_text
+            clean_w = {k: v for k, v in w.items() if not k.startswith('_')}
+            clean_data.append(clean_w)
+        return clean_data
+
+    def _build_data_packet(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return None
+        clean_words = self._get_clean_words_data()
+        if getattr(self, '_current_chapter_idx', -1) >= 0 and getattr(self, '_chapters', []):
+            self._chapters[self._current_chapter_idx]['words'] = clean_words
+            
+        analysis_time = ""
+        if hasattr(self, 'lbl_analysis_duration') and self.lbl_analysis_duration.isVisible():
+            analysis_time = getattr(self, '_last_analysis_time_raw', None)
+            if not analysis_time:
+                import re
+                time_match = re.search(r'\d+:\d+', self.lbl_analysis_duration.text())
+                analysis_time = time_match.group(0) if time_match else self.lbl_analysis_duration.text()
+                
+        return {
+            "words_data":     clean_words,
+            "chapters":       [
+                {**ch, "words": [{k: v for k, v in w.items() if not k.startswith('_')} for w in ch.get("words", [])]}
+                for ch in getattr(self, '_chapters', [])
+            ],
+            "current_chapter_idx": getattr(self, '_current_chapter_idx', -1),
+            "script_content": getattr(self, 'text_script', None).toPlainText() if hasattr(self, 'text_script') else "",
+            "transcription_source": getattr(self, '_transcription_source', None),
+            "sbs_cache":      None,
+            "analysis_time":  analysis_time
+        }
+
+    def _build_autosave_payload(self):
+        packet = self._build_data_packet()
+        bws_extras = {
+            "drt_path": getattr(self, '_extracted_drt_path', None),
+            "media_inventory": getattr(self, '_media_inventory', []),
+            "assembly_recipe": getattr(self, '_assembly_recipe', None),
+            # In autosave we skip exactly re-computing the fingerprint to avoid DaVinci lag, it will rely on timeline name during recovery
+        }
+        
+        # Audio path is already embedded or resolved by save_worker, but we can also set it if known:
+        audio_path = None
+        if hasattr(self, '_current_audio_file'):
+            audio_path = self._current_audio_file
+        bws_extras["audio_path"] = audio_path
+            
+        return packet, bws_extras
+
+    def _on_export_project(self):
+        packet = self._build_data_packet()
+        if not packet: return
+        from PySide6.QtWidgets import QFileDialog
+        import time, os
+        
+        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        os.makedirs(saves_dir, exist_ok=True)
+        
+        # SMART TIMELINE NAMING
+        timeline_name = "Project"
+        snap = packet.get("transcription_source") or {}
+        if snap.get("timeline_name"):
+            timeline_name = snap["timeline_name"]
+            
+        safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        default_filename = f"BadWords_{safe_name}.bws"
+        
+        path, _ = QFileDialog.getSaveFileName(self, self.txt("btn_export_project"), os.path.join(saves_dir, default_filename), "BadWords Save (*.bws);;JSON Files (*.json)")
+        if not path: return
+
+        if path.endswith('.json'):
+            self.engine.save_project_state(path, packet)
+        else:
+            # Gather .bws specific data
+            audio_path = None
+            words = packet.get("words_data", [])
+            if words and words[0].get("meta_audio_path"):
+                audio_path = words[0].get("meta_audio_path")
+                
+            drt_path = getattr(self, '_extracted_drt_path', None)
+            if not drt_path and hasattr(self, 'engine') and hasattr(self, 'resolve_handler') and self.resolve_handler:
+                # Try to export DRT from DaVinci Resolve right now if we don't have one
+                drt_path = self.engine.export_source_drt(timeline_name)
+                self._extracted_drt_path = drt_path
+
+            # Re-compute fingerprint in case it changed since import/transcription
+            timeline_fingerprint = None
+            if hasattr(self, 'resolve_handler') and self.resolve_handler:
+                timeline_fingerprint = self.resolve_handler.compute_timeline_fingerprint(timeline_name)
+                
+            # If we don't have media inventory, build it now
+            media_inventory = getattr(self, '_media_inventory', [])
+            if not media_inventory and hasattr(self, 'resolve_handler') and self.resolve_handler:
+                source_files = snap.get("source_files")
+                if not source_files:
+                    try:
+                        t_name = snap.get("timeline_name", "")
+                        t_indices = snap.get("track_indices", [])
+                        source_files = self.resolve_handler.get_timeline_source_files(t_name, t_indices)
+                        if source_files:
+                            snap["source_files"] = source_files
+                    except Exception as e:
+                        from osdoc import log_error as _le
+                        _le(f"_on_export_project: get_timeline_source_files failed: {e}")
+                if source_files:
+                    media_inventory = self.engine.build_media_inventory(source_files)
+                    self._media_inventory = media_inventory
+
+            recipe = getattr(self, '_assembly_recipe', None)
+
+            self.engine.save_bws(
+                path, packet, 
+                audio_path=audio_path, 
+                drt_path=drt_path, 
+                assembly_recipe=recipe, 
+                timeline_fingerprint=timeline_fingerprint,
+                media_inventory=media_inventory
+            )
+            
+        self._show_temporary_status(self.txt("msg_transcript_exported"))
+
+    def _build_transcript_plaintext(self):
+        """Build a plain-text representation of the current transcript.
+        Segmented view → one line per segment.
+        Continuous view → one long paragraph.
+        Returns str or None if no data."""
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            return None
+
+        prefs = self.engine.load_preferences() or {}
+        view_mode = prefs.get('view_mode', 'segmented')
+        is_segmented = (view_mode == 'segmented')
+
+        lines = []
+        current_line_words = []
+
+        for w in self.text_canvas.words_data:
+            # Skip silence tokens and inaudible markers
+            if w.get('type') in ('silence', 'inaudible'):
+                continue
+            if w.get('is_inaudible'):
+                continue
+            # Skip hidden start words
+            if w.get('is_hidden_start') and not getattr(self, 'show_hidden_start', False):
+                continue
+
+            if is_segmented and w.get('is_segment_start') and current_line_words:
+                lines.append(' '.join(current_line_words))
+                current_line_words = []
+
+            text = w.get('text', '').strip()
+            if text:
+                current_line_words.append(text)
+
+        if current_line_words:
+            lines.append(' '.join(current_line_words))
+
+        if is_segmented:
+            return '\n'.join(lines)
+        else:
+            return ' '.join(lines)
+
+    def _on_export_transcript_txt(self):
+        """Export the transcript as a plain .txt file."""
+        text = self._build_transcript_plaintext()
+        if not text:
+            return
+
+        from PySide6.QtWidgets import QFileDialog
+        import os
+
+        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        os.makedirs(saves_dir, exist_ok=True)
+
+        # Build default filename from source info
+        timeline_name = "Transcript"
+        snap = getattr(self, '_transcription_source', None)
+        if snap and snap.get('timeline_name'):
+            timeline_name = snap['timeline_name']
+        safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        default_filename = f"BadWords_{safe_name}_transcript.txt"
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.txt("titlebar_export_txt"),
+            os.path.join(saves_dir, default_filename),
+            "Text Files (*.txt)"
+        )
+        if not path:
+            return
+
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+
+        # Brief notification
+        self._show_temporary_status(self.txt("msg_transcript_exported"))
+
+    def _on_copy_transcript_clipboard(self):
+        """Copy the transcript as plain text to the system clipboard."""
+        text = self._build_transcript_plaintext()
+        if not text:
+            return
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text)
+
+        # Brief notification
+        self._show_temporary_status(self.txt("msg_transcript_copied"))
+
+    def _show_temporary_status(self, msg, duration_ms=5000):
+        """Shows a temporary message on lbl_analysis_duration, restoring previous text after timeout."""
+        if not hasattr(self, 'lbl_analysis_duration'):
+            return
+            
+        self.lbl_analysis_duration.setText(msg)
+        self.lbl_analysis_duration.setVisible(True)
+        
+        def _restore():
+            if not hasattr(self, 'lbl_analysis_duration'): return
+            raw_time = getattr(self, '_last_analysis_time_raw', None)
+            if raw_time:
+                if len(raw_time) > 0 and raw_time[0].isdigit():
+                    self.lbl_analysis_duration.setText(self.txt("txt_analyzed_in").replace("{time}", raw_time))
+                else:
+                    self.lbl_analysis_duration.setText(raw_time)
+                self.lbl_analysis_duration.setVisible(True)
+            else:
+                self.lbl_analysis_duration.setVisible(False)
+                
+        from PySide6.QtCore import QTimer
+        if hasattr(self, '_status_timer') and self._status_timer.isActive():
+            self._status_timer.stop()
+        self._status_timer = QTimer.singleShot(duration_ms, _restore)
+
+    def _on_import_project(self, override_path=None):
+        try:
+            from PySide6.QtWidgets import QFileDialog, QApplication, QDialog
+            import os, time
+            
+            path = override_path
+            if not path:
+                saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+                os.makedirs(saves_dir, exist_ok=True)
+                
+                path, _ = QFileDialog.getOpenFileName(
+                    self, 
+                    self.txt("btn_import_project"), 
+                    saves_dir, 
+                    "BadWords Save (*.bws);;JSON Files (*.json)"
+                )
+                
+            if not path: return
+            
+            bws_extras = None
+            if path.endswith('.bws'):
+                state, _, bws_extras = self.engine.load_bws(path)
+            else:
+                state, _ = self.engine.load_project_state(path)
+
+            from PySide6.QtCore import QTimer
+
+            from_main_window = False
+            if hasattr(self, '_stack') and self._stack.currentIndex() != 2:
+                from_main_window = True
+
+            # --- Restore Source Snapshot ---
+            imported_snapshot = state.get('transcription_source')
+            if not imported_snapshot and 'settings' in state:
+                imported_snapshot = (state.get('settings') or {}).get('transcription_source')
+                
+            if imported_snapshot:
+                self._transcription_source = imported_snapshot
+                track_names = imported_snapshot.get('track_names', [])
+                all_tl_tracks = imported_snapshot.get('all_tracks', True)
+                tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
+            else:
+                tracks_str = self.txt('txt_all')
+                
+            # (Title bar update moved below popups)
+
+            # --- Restore Analysis Time ---
+            analysis_time = state.get('analysis_time', "")
+            if analysis_time and hasattr(self, 'lbl_analysis_duration'):
+                import re
+                time_match = re.search(r'\d+:\d+', analysis_time)
+                if time_match:
+                    raw_time = time_match.group(0)
+                else:
+                    raw_time = analysis_time
+                self._last_analysis_time_raw = raw_time
+                
+                if len(raw_time) > 0 and raw_time[0].isdigit():
+                    self.lbl_analysis_duration.setText(self.txt("txt_analyzed_in").replace("{time}", raw_time))
+                else:
+                    self.lbl_analysis_duration.setText(raw_time)
+                self.lbl_analysis_duration.setVisible(True)
+            elif hasattr(self, 'lbl_analysis_duration'):
+                self.lbl_analysis_duration.setVisible(False)
+                
+            # --- BWS EXTRA HANDLING ---
+            if bws_extras:
+                self._assembly_recipe = bws_extras.get("assembly_recipe")
+                self._media_inventory = bws_extras.get("media_inventory")
+                self._extracted_drt_path = bws_extras.get("drt_path")
+                
+                # Check media inventory
+                if self._media_inventory:
+                    missing, _ = self.engine.verify_media_inventory(self._media_inventory)
+                    if missing:
+                        # Convert to markdown bullet list for a scrollable CustomMsgBox (using QLabel properties)
+                        # We just show a summary
+                        files_str = ""
+                        for m in missing[:5]:
+                            files_str += f"- {m.get('basename', 'Unknown')}\n"
+                        if len(missing) > 5:
+                            files_str += f"... [+ {len(missing)-5}]\n"
+                            
+                        msg_text = self.txt("bws_media_missing_desc").replace("{files}", files_str.strip())
+                        
+                        msg_box = WorkspaceWarningOverlay(
+                            self._stack,
+                            self.txt("bws_media_missing_title"),
+                            msg_text,
+                            self.txt("bws_btn_continue"),
+                            btn_cancel_text=self.txt("btn_cancel")
+                        )
+                        res = msg_box.exec()
+                        if res != QDialog.Accepted:
+                            self.go_to_page(0)
+                            if hasattr(self, '_panel_left'): self._panel_left.hide()
+                            if hasattr(self, '_panel_right'): self._panel_right.hide()
+                            return
+                
+                # Check timeline fingerprint
+                if bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.project:
+                    found_tl, is_exact = self.resolve_handler.find_timeline_by_fingerprint(bws_extras["timeline_fingerprint"])
+                    
+                    # Target name from snapshot
+                    target_name = (self._transcription_source or {}).get("timeline_name", "")
+                    
+                    if found_tl and is_exact:
+                        if target_name and target_name != found_tl:
+                            # Automatically update the name to match the new exact fingerprint match
+                            self._transcription_source["timeline_name"] = found_tl
+                            if hasattr(self, '_title_bar'):
+                                self._title_bar.set_source_info(found_tl, tracks_str)
+                    else:
+                        # No exact match. Does it exist by name?
+                        exists_by_name = self.resolve_handler.timeline_exists(target_name)
+                        if exists_by_name:
+                            # It exists but fingerprint differs
+                            msg_box = WorkspaceWarningOverlay(
+                                self._stack,
+                                self.txt("bws_timeline_changed_title"),
+                                self.txt("bws_timeline_changed_desc").format(tl=target_name),
+                                self.txt("bws_btn_continue"),
+                                btn_reject_text=self.txt("bws_btn_import_drt") if self._extracted_drt_path else None,
+                                btn_cancel_text=self.txt("btn_cancel")
+                            )
+                            res = msg_box.exec()
+                            if res == -1:  # Cancel
+                                self.go_to_page(0)
+                                if hasattr(self, '_panel_left'): self._panel_left.hide()
+                                if hasattr(self, '_panel_right'): self._panel_right.hide()
+                                return
+                            if res != QDialog.Accepted:
+                                if self._extracted_drt_path:
+                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(self._extracted_drt_path)
+                                    if new_tl:
+                                        new_name = f"imported '{target_name}'"
+                                        new_tl.SetName(new_name)
+                                        self._transcription_source["timeline_name"] = new_name
+                                        if hasattr(self, '_title_bar'):
+                                            self._title_bar.set_source_info(new_name, tracks_str)
+                                else:
+                                    return
+                        else:
+                            # Doesn't exist at all
+                            if self._extracted_drt_path:
+                                msg_box = WorkspaceWarningOverlay(
+                                    self._stack,
+                                    self.txt("bws_missing_timeline_title"),
+                                    self.txt("bws_missing_timeline_desc").format(tl=target_name),
+                                    self.txt("bws_btn_import_drt"),
+                                    btn_cancel_text=self.txt("btn_cancel")
+                                )
+                                res = msg_box.exec()
+                                if res == -1:
+                                    self.go_to_page(0)
+                                    if hasattr(self, '_panel_left'): self._panel_left.hide()
+                                    if hasattr(self, '_panel_right'): self._panel_right.hide()
+                                    return
+                                if res == QDialog.Accepted:
+                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(self._extracted_drt_path)
+                                    if new_tl:
+                                        new_name = f"imported '{target_name}'"
+                                        new_tl.SetName(new_name)
+                                        self._transcription_source["timeline_name"] = new_name
+                                        if hasattr(self, '_title_bar'):
+                                            self._title_bar.set_source_info(new_name, tracks_str)
+
+                # Recreate assembled audio if needed
+                if self._assembly_recipe and bws_extras.get("audio_path"):
+                    temp_dir = self.engine.os_doc.get_temp_folder()
+                    out_path = os.path.join(temp_dir, f"bws_assembled_{int(time.time())}.flac")
+                    self.engine.execute_assembly_recipe(self._assembly_recipe, bws_extras["audio_path"], out_path)
+                    
+            # --- Restore SBS Cache ---
+            sbs_cache = state.get('sbs_cache')
+            if sbs_cache:
+                self._sbs_last_script_hash = sbs_cache.get('hash')
+                if hasattr(self, 'text_canvas'):
+                    self.text_canvas.sbs_rows = sbs_cache.get('rows', [])
+            else:
+                self._sbs_last_script_hash = None
+                if hasattr(self, 'text_canvas'):
+                    self.text_canvas.sbs_rows = []
+
+            # Restore Script
+            if hasattr(self, 'text_script') and 'script_content' in state:
+                self.text_script.setText(state['script_content'])
+
+            # Load Words Data
+            if hasattr(self, 'text_canvas'):
+                self.text_canvas.load_data(state.get('words_data', []))
+                self._show_transcript_view()
+                
+            # Restore Chapters
+            saved_chapters = state.get('chapters', [])
+            saved_current_idx = state.get('current_chapter_idx', -1)
+            if saved_chapters:
+                self._chapters = saved_chapters
+                self._current_chapter_idx = saved_current_idx
+            else:
+                import copy
+                self._chapters = [{
+                    "name": self.txt("titlebar_original"),
+                    "tl_name": self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else "",
+                    "words": copy.deepcopy(state.get('words_data', []))
+                }]
+                self._current_chapter_idx = 0
+                
+            # Update Dropdown UI
+            if self._chapters and hasattr(self, '_title_bar') and hasattr(self._title_bar, 'chapter_dropdown'):
+                self._title_bar.chapter_dropdown.options_list = [ch['name'] for ch in self._chapters]
+                if 0 <= self._current_chapter_idx < len(self._chapters):
+                    self._title_bar.chapter_dropdown.setText(self._chapters[self._current_chapter_idx]['name'])
+                self._title_bar.update_dropdown_placement()
+                
+            if hasattr(self, 'audio_preview'):
+                self.audio_preview.check_audio_availability()
+
+            # Rebuild title from snapshot using new title bar mode
+            if getattr(self, '_transcription_source', None):
+                snap = self._transcription_source
+                tl_name = snap.get('timeline_name', '')
+                track_names = snap.get('track_names', [])
+                all_tl_tracks = snap.get('all_tracks', True)
+                tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
+                if hasattr(self, '_title_bar'):
+                    self._title_bar.activate_transcription_mode()
+                    self._title_bar.set_source_info(tl_name, tracks_str)
+
+            # --- SWITCH TO EDITOR CONTEXT AND OPEN PANELS IF NEEDED ---
+            if from_main_window:
+                
+                if hasattr(self, 'go_to_page'):
+                    self.go_to_page(2)
+                
+                # Open script panel and main panel
+                if hasattr(self, 'btn_nav_script'):
+                    if not getattr(self.btn_nav_script, 'is_active', False):
+                        self._toggle_activity('script_analysis')
+                if hasattr(self, 'btn_nav_main'):
+                    if not getattr(self.btn_nav_main, 'is_active', False):
+                        self._toggle_activity('main_panel')
+
+        except Exception as e:
+            from osdoc import log_error
+            import traceback
+            log_error(f"Failed to load project: {e}\n{traceback.format_exc()}")
+            dlg = CustomMsgBox(self, self.txt("lbl_error"), f"{self.txt('msg_load_project_failed')}:\n{e}", self.txt("btn_ok"))
+            dlg.exec()
+
+    def _refresh_canvas_view(self):
+        if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
+
+    def _calculate_visual_layer(self, word_obj: dict) -> str:
+        """
+        Non-Destructive Two-Layer Engine.
+
+        BASE LAYER  — what the word 'is' permanently:
+            manual_status (if set by user) > hard auto (hallucination/is_bad) >
+            algo repeat > normal
+
+        OVERLAY LAYER — a transient algo highlight that floats on top:
+            active only when the matching toggle is ON and the user hasn't
+            manually painted over it (overlay_suppressed == False).
+
+        Manual painting sets overlay_suppressed=True so the user color shows.
+        Toggle reload sets overlay_suppressed=False so the overlay resurfaces
+        WITHOUT touching manual_status.
+        """
+        # --- BASE LAYER ---
+        base = word_obj.get('manual_status')  # None means 'not set by user'
+        if base is None:
+            if word_obj.get('_is_hallucination') or word_obj.get('is_bad'):
+                base = 'bad'
+            elif word_obj.get('algo_status') == 'repeat':
+                base = 'repeat'
+            else:
+                base = 'normal'
+
+        # --- OVERLAY LAYER (toggle-gated, suppressed after manual paint) ---
+        overlay = None
+        if not word_obj.get('overlay_suppressed', False):
+            show_typos = hasattr(self, 'tgl_show_typos') and self.tgl_show_typos.isChecked()
+            mark_inaud = hasattr(self, 'tgl_mark_inaudible') and self.tgl_mark_inaudible.isChecked()
+            if show_typos and word_obj.get('algo_status') == 'typo':
+                overlay = 'typo'
+            elif mark_inaud and (word_obj.get('is_inaudible') or word_obj.get('type') == 'inaudible'):
+                overlay = 'inaudible'
+
+        final = overlay if overlay is not None else base
+        word_obj['status'] = final
+        word_obj['selected'] = final in ('bad', 'inaudible', 'typo', 'repeat')
+        return final
+
+    def _on_inaudible_toggled(self, is_checked: bool):
+        if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
+            self.text_canvas._calculate_layout()
+            self.text_canvas.update()
+
+    def _on_mark_inaudible_toggled(self, is_checked: bool):
+        """
+        Reload for 'Mark inaudible fragments with brown'.
+        Turning ON: clears overlay_suppressed so the brown overlay resurfaces on top.
+        manual_status is NEVER touched — base layer stays intact.
+        """
+        if not hasattr(self, 'text_canvas') or not getattr(self.text_canvas, 'words_data', None):
+            return
+
+        for word_obj in self.text_canvas.words_data:
+            if not (word_obj.get('is_inaudible') or word_obj.get('type') == 'inaudible'):
+                continue
+
+            if is_checked:
+                # Reload: allow the brown overlay to float back to the top
+                word_obj['overlay_suppressed'] = False
+
+            self._calculate_visual_layer(word_obj)
+
+        self.text_canvas._calculate_layout()
+        self.text_canvas.update()
+
+    def _on_typos_toggled(self, is_checked: bool):
+        """
+        Reload for 'Show detected typos'.
+        Turning ON: clears overlay_suppressed so the green overlay resurfaces on top.
+        manual_status is NEVER touched — base layer stays intact.
+        """
+        if not hasattr(self, 'text_canvas') or not getattr(self.text_canvas, 'words_data', None):
+            return
+
+        for word_obj in self.text_canvas.words_data:
+            if word_obj.get('algo_status') != 'typo':
+                continue
+
+            if is_checked:
+                # Reload: allow the green overlay to float back to the top
+                word_obj['overlay_suppressed'] = False
+
+            self._calculate_visual_layer(word_obj)
+
+        self.text_canvas._calculate_layout()
+        self.text_canvas.update()
+    # ------------------------------------------------------------------
+    # Timeline / Track combo population & synchronisation
+    # ------------------------------------------------------------------
+
+    def _populate_timeline_track_combos(self):
+        """
+        Queries the Resolve API for all timelines in the current project and
+        populates both timeline dropdowns (combo_tl_0 / combo_tl_1).
+        Called via QTimer.singleShot(800, ...) after __init__.
+        """
+        try:
+            rh = self.engine.resolve_handler
+            timelines = rh.get_all_timelines()
+
+            current_tl_name = ""
+            if rh.timeline:
+                try:
+                    current_tl_name = rh.timeline.GetName()
+                except Exception:
+                    pass
+
+            no_tl_label = self.txt("msg_no_timelines_detected")
+
+            if not timelines:
+                for combo in (self.combo_tl_0, self.combo_tl_1):
+                    combo.options_list = [no_tl_label]
+                    combo.setText(no_tl_label)
+                for track_combo in (self.combo_tr_0, self.combo_tr_1):
+                    track_combo.options_list = []
+                    track_combo.selected_items = set()
+                    track_combo.setText(self.txt("msg_no_audio_tracks_detected"))
+                return
+
+            # Populate timeline dropdowns
+            for combo in (self.combo_tl_0, self.combo_tl_1):
+                combo.options_list = list(timelines)
+                display = current_tl_name if current_tl_name in timelines else timelines[0]
+                combo.setText(display)
+
+            # Populate track dropdowns for the default timeline
+            init_tl = current_tl_name if current_tl_name in timelines else timelines[0]
+            self._on_timeline_selected(init_tl, self.combo_tr_0)
+            self._on_timeline_selected(init_tl, self.combo_tr_1)
+
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_populate_timeline_track_combos error: {e}")
+
+    def _on_timeline_selected(self, tl_name, track_combo, mirror_tl_combo=None):
+        """
+        Updates *track_combo* with audio tracks for *tl_name*, and optionally
+        mirrors the selection to *mirror_tl_combo*.
+        """
+        try:
+            if tl_name == self.txt("msg_no_timelines_detected"):
+                return
+
+            rh = self.engine.resolve_handler
+            tracks = rh.get_audio_tracks(tl_name)
+
+            no_track_label = self.txt("msg_no_audio_tracks_detected")
+
+            if not tracks:
+                track_combo.options_list = []
+                track_combo.selected_items = set()
+                track_combo.setText(no_track_label)
+            else:
+                track_combo.options_list = list(tracks)
+                track_combo.selected_items = set()
+                track_combo.setText(self.txt("txt_all_tracks"))
+
+            # Mirror the timeline selection to the other page's dropdown
+            if mirror_tl_combo is not None:
+                if tl_name in mirror_tl_combo.options_list and mirror_tl_combo.text() != tl_name:
+                    try:
+                        mirror_tl_combo.valueChanged.disconnect()
+                    except Exception:
+                        pass
+                    mirror_tl_combo.setText(tl_name)
+                    if mirror_tl_combo is self.combo_tl_1:
+                        mirror_tl_combo.valueChanged.connect(
+                            lambda t: self._on_timeline_selected(t, self.combo_tr_1, self.combo_tl_0)
+                        )
+                    else:
+                        mirror_tl_combo.valueChanged.connect(
+                            lambda t: self._on_timeline_selected(t, self.combo_tr_0, self.combo_tl_1)
+                        )
+
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_on_timeline_selected error: {e}")
+
+    def _track_names_to_indices(self, tl_name, track_names):
+        """Converts track name labels (e.g. {'A1', 'A3'}) to 1-based integer indices."""
+        if not track_names:
+            return []
+        try:
+            all_tracks = self.engine.resolve_handler.get_audio_tracks(tl_name)
+            indices = []
+            for name in track_names:
+                if name in all_tracks:
+                    indices.append(all_tracks.index(name) + 1)
+            return sorted(indices)
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_track_names_to_indices error: {e}")
+            return []
+
+    def _on_fast_silence(self):
+        """Fast Silence Cut: runs FFmpeg pipeline then directly assembles the timeline."""
+        if hasattr(self, '_panel_left'): self._panel_left.hide()
+        if hasattr(self, '_panel_right'): self._panel_right.hide()
+
+        self.go_to_page(1)
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(self.txt("txt_initializing_fast_silence"))
+
+        # Read from line edits
+        try:
+            thresh_val = float(self.input_fs_thresh.text().replace(',', '.'))
+        except (ValueError, AttributeError):
+            thresh_val = -42.0  # fallback
+            
+        try:
+            pad_val = float(self.input_fs_pad.text().replace(',', '.'))
+        except (ValueError, AttributeError):
+            pad_val = 0.05  # fallback
+
+        try:
+            min_dur_val = float(self.input_fs_min_dur.text().replace(',', '.'))
+            min_dur_val = max(0.05, min_dur_val)  # safety clamp
+        except (ValueError, AttributeError):
+            min_dur_val = 0.2  # fallback
+
+        # Persist updated silence params so post-transcript path uses same values
+        _p = self.engine.load_preferences() or {}
+        _p['silence_threshold_db'] = thresh_val
+        _p['silence_min_dur']      = min_dur_val
+        self.engine.save_preferences(_p)
+
+        # Read selected timeline and tracks
+        selected_tl = getattr(self, 'combo_tl_1', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        no_tl = self.txt("msg_no_timelines_detected")
+        if selected_tl_name == no_tl:
+            selected_tl_name = ""
+
+        selected_tracks_combo = getattr(self, 'combo_tr_1', None)
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
+        # Update settings for the core
+        settings = {
+            'threshold_db':    thresh_val,
+            'padding_s':       pad_val,
+            'silence_min_dur': min_dur_val,
+            'timeline_name':   selected_tl_name or None,
+            'track_indices':   track_indices or None,
+        }
+        self._fs_settings = settings
+
+        self._analysis_worker = AnalysisWorker(self.engine, 'run_fast_silence_pipeline', settings)
+        self._analysis_worker.progress.connect(self._on_analysis_progress)
+        self._analysis_worker.status.connect(self._on_analysis_status)
+        self._analysis_worker.finished_ok.connect(self._on_fs_finished)
+        self._analysis_worker.error.connect(self._on_analysis_error)
+        self._analysis_worker.start()
+
+
+    def _on_fs_finished(self, words_data, segments_data):
+        """Called when run_fast_silence_pipeline completes. Directly assembles the timeline."""
+        from PySide6.QtWidgets import QApplication
+
+        if not words_data:
+            dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_no_silence_segments_detec"), self.txt("btn_ok"))
+            dlg.exec()
+            self.go_to_page(0)
+            if hasattr(self, 'welcome_stack'): self.welcome_stack.setCurrentIndex(0)
+            return
+
+        self.lbl_processing_status.setText(self.txt("txt_assembling_timeline"))
+
+        fs_prefs = self.engine.load_preferences() or {}
+        fs_prefs['silence_cut']  = getattr(self, 'tgl_fs_cut',  None) and self.tgl_fs_cut.isChecked()
+        fs_prefs['silence_mark'] = getattr(self, 'tgl_fs_mark', None) and self.tgl_fs_mark.isChecked()
+        if hasattr(self, '_fs_settings'):
+            fs_prefs['source_snapshot'] = self._fs_settings
+
+        # FIX KR-03: Asynchroniczny montaż osi czasu (Fast Silence) aby uniknąć GUI freeze
+        from PySide6.QtCore import QThread, Signal as _Signal, QObject
+
+        class _FSAssemblySignals(QObject):
+            status = _Signal(str)
+            progress = _Signal(int)
+            finished = _Signal(object)
+
+        class _FSAssemblyThread(QThread):
+            def __init__(self, engine, words_data, prefs, sigs):
+                super().__init__()
+                self._engine = engine
+                self._data = words_data
+                self._prefs = prefs
+                self._sigs = sigs
+
+            def run(self):
+                try:
+                    result = self._engine.assemble_timeline(
+                        self._data,
+                        self._prefs,
+                        callback_status=self._sigs.status.emit,
+                        callback_progress=self._sigs.progress.emit
+                    )
+                except Exception as e:
+                    import osdoc
+                    osdoc.log_error(f"_FSAssemblyThread Error: {e}")
+                    result = (False, str(e), None, None)
+                self._sigs.finished.emit(result)
+
+        self._fs_sigs = _FSAssemblySignals()
+        self._fs_sigs.status.connect(self.lbl_processing_status.setText)
+        self._fs_sigs.progress.connect(self.bar_processing.set_value)
+
+        def on_fs_assembly_done(result):
+            success, warning, new_tl_name, clean_ops = result
+            if success:
+                dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_standalone_silence_processing_c"), self.txt("btn_ok"))
+                dlg.exec()
+            else:
+                dlg = CustomMsgBox(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}:\n{warning}", self.txt("btn_ok"))
+                dlg.exec()
+
+        self._fs_sigs.finished.connect(on_fs_assembly_done)
+        self._fs_assembly_thread = _FSAssemblyThread(self.engine, words_data, fs_prefs, self._fs_sigs)
+        self._fs_assembly_thread.start()
+
+        self.go_to_page(0)
+        if hasattr(self, 'welcome_stack'):
+            self.welcome_stack.setCurrentIndex(1)
+
+    def _toggle_favorite(self, target_id: str, source_toggle, label_text: str, pin_btn):
+        """Proxy Favorites system — creates or destroys a mirrored ToggleSwitch in layout_favorites."""
+        if not hasattr(self, 'layout_favorites') or not hasattr(self, '_favorite_proxies'):
+            return
+
+        if target_id in self._favorite_proxies:
+            # --- REMOVE favorite ---
+            entry = self._favorite_proxies.pop(target_id)
+            if entry.get('src_conn') and source_toggle:
+                try: source_toggle.toggled.disconnect(entry['src_conn'])
+                except Exception: pass
+            if entry.get('prx_conn') and entry.get('proxy'):
+                try: entry['proxy'].toggled.disconnect(entry['prx_conn'])
+                except Exception: pass
+            proxy_row = entry['row_widget']
+            self.layout_favorites.removeWidget(proxy_row)
+            proxy_row.deleteLater()
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            # Persist removal
+            prefs = self.engine.load_preferences() or {}
+            favs = prefs.get('favorites', [])
+            if target_id in favs: favs.remove(target_id)
+            prefs['favorites'] = favs
+            self.engine.save_preferences(prefs)
+            # Hide label if no favorites left
+            if hasattr(self, 'lbl_pinned_favorites'):
+                self.lbl_pinned_favorites.setVisible(len(self._favorite_proxies) > 0)
+            # Update layer2 size
+            if hasattr(self, 'p_main'):
+                self.p_main.resizeEvent(None)
+        else:
+            # --- Enforce max 10 favorites ---
+            if len(self._favorite_proxies) >= 10:
+                oldest_id = list(self._favorite_proxies.keys())[0]
+                if oldest_id in self._pin_buttons:
+                    self._pin_buttons[oldest_id].click()
+                    
+            # --- ADD favorite ---
+            from PySide6.QtWidgets import QWidget as _QWidget
+            row_widget = _QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+            
+            prx_conn, src_conn = None, None
+            proxy_toggle = None
+
+            if target_id.startswith('cut_'):
+                import os
+                from PySide6.QtGui import QIcon, QCursor
+                from PySide6.QtCore import QSize, Qt
+                
+                color_name_lower = target_id[4:]
+                color_name_title = color_name_lower.capitalize()
+                color_hex = "#FFFFFF"
+                for c_n, c_h in config.RESOLVE_COLORS_HEX.items():
+                    if c_n.lower() == color_name_lower:
+                        color_hex = c_h
+                        color_name_title = c_n
+                        break
+                        
+                _src_dir = os.path.dirname(os.path.abspath(__file__))
+                _assets_dir = os.path.join(_src_dir, "layout") if os.path.exists(os.path.join(_src_dir, "layout")) else os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+
+                lbl_color = QLabel(self.txt("lbl_cut_color_fmt").format(hex=color_hex, color=label_text))
+                row_layout.addWidget(lbl_color)
+                row_layout.addStretch()
+
+                # Cut Now Button (proxy)
+                btn_cut_now_proxy = QPushButton()
+                btn_cut_now_proxy.setFixedSize(24, 24)
+                btn_cut_now_proxy.setCursor(Qt.PointingHandCursor)
+                btn_cut_now_proxy.setStyleSheet("background: transparent; border: none;")
+                btn_cut_now_proxy.setIcon(QIcon(os.path.join(_assets_dir, "cut.png")))
+                btn_cut_now_proxy.setIconSize(QSize(20, 20))
+                btn_cut_now_proxy.setToolTip(self.txt("tooltip_cut_now"))
+                btn_cut_now_proxy.clicked.connect(lambda _, c=color_name_title: self._on_cut_now_clicked(c))
+                row_layout.addWidget(btn_cut_now_proxy)
+
+                if source_toggle: # Has auto button
+                    proxy_auto = QPushButton()
+                    proxy_auto.setFixedSize(24, 24)
+                    proxy_auto.setCursor(Qt.PointingHandCursor)
+                    proxy_auto.setStyleSheet("background: transparent; border: none;")
+                    proxy_auto.setCheckable(True)
+                    proxy_auto.setToolTip(self.txt("tooltip_auto_cut"))
+                    proxy_auto.setChecked(source_toggle.isChecked())
+                    
+                    def _update_proxy_icon(checked, b=proxy_auto, ad=_assets_dir):
+                        icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
+                        b.setIcon(QIcon(os.path.join(ad, icon_name)))
+                        b.setIconSize(QSize(20, 20))
+                    
+                    _update_proxy_icon(proxy_auto.isChecked())
+                    proxy_auto.toggled.connect(lambda checked, b=proxy_auto, fn=_update_proxy_icon: (fn(checked, b), self._save_auto_cut_prefs()))
+                    
+                    row_layout.addWidget(proxy_auto)
+                    
+                    def prx_to_src(v, src=source_toggle, prx=proxy_auto):
+                        if src.isChecked() != v: src.setChecked(v)
+                    def src_to_prx(v, src=source_toggle, prx=proxy_auto):
+                        if prx.isChecked() != v: prx.setChecked(v)
+
+                    prx_conn = proxy_auto.toggled.connect(prx_to_src)
+                    src_conn = source_toggle.toggled.connect(src_to_prx)
+                    proxy_toggle = proxy_auto
+                
+
+                
+            else:
+                row_layout.addWidget(QLabel(label_text))
+                row_layout.addStretch()
+
+                proxy_toggle = ToggleSwitch()
+                proxy_toggle.setChecked(source_toggle.isChecked(), animated=False)
+                row_layout.addWidget(proxy_toggle)
+                
+
+
+                def prx_to_src(v, src=source_toggle, prx=proxy_toggle):
+                    if src.isChecked() != v: src.setChecked(v)
+                def src_to_prx(v, src=source_toggle, prx=proxy_toggle):
+                    if prx.isChecked() != v: prx.setChecked(v)
+
+                prx_conn = proxy_toggle.toggled.connect(prx_to_src)
+                src_conn = source_toggle.toggled.connect(src_to_prx)
+
+            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
+            
+            self.layout_favorites.addWidget(row_widget)
+
+            self._favorite_proxies[target_id] = {
+                'row_widget': row_widget,
+                'proxy': proxy_toggle,
+                'prx_conn': prx_conn,
+                'src_conn': src_conn,
+            }
+            # Persist addition
+            prefs = self.engine.load_preferences() or {}
+            favs = prefs.get('favorites', [])
+            if target_id not in favs: favs.append(target_id)
+            prefs['favorites'] = favs
+            self.engine.save_preferences(prefs)
+            # Show label when first favorite is added
+            if hasattr(self, 'lbl_pinned_favorites'):
+                self.lbl_pinned_favorites.setVisible(True)
+            # Update layer2 size
+            if hasattr(self, 'p_main'):
+                self.p_main.resizeEvent(None)
+
+
+    def _save_auto_cut_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        if hasattr(self, 'color_cut_buttons'):
+            auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
+            prefs['auto_cut_colors'] = auto_cut
+        self.engine.save_preferences(prefs)
+
+    def _save_top_toggles_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
+        if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
+        if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
+        self.engine.save_preferences(prefs)
+    def _on_assemble(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
+
+        from PySide6.QtWidgets import QApplication
+
+        prefs = self.engine.load_preferences() or {}
+        
+        # INJECT SOURCE SNAPSHOT & TRACK SELECTION
+        src = getattr(self, '_transcription_source', None)
+        if not src:
+            saved_src = (prefs or {}).get('transcription_source')
+            if saved_src:
+                src = saved_src
+                self._transcription_source = src
+                
+        if src:
+            track_config = src.get('assembly_track_config')
+            if not track_config:
+                track_config = {'audio_mode': 'all', 'video_mode': 'all'}
+                src['assembly_track_config'] = track_config
+                prefs['transcription_source'] = src
+                self.engine.save_preferences(prefs)
+            prefs["source_snapshot"] = src
+
+        # GATHER UI STATES
+        if hasattr(self, 'tgl_silence_cut'): prefs['silence_cut'] = self.tgl_silence_cut.isChecked()
+        if hasattr(self, 'tgl_silence_mark'): prefs['silence_mark'] = self.tgl_silence_mark.isChecked()
+        if hasattr(self, 'tgl_reviewer'): prefs['enable_reviewer'] = self.tgl_reviewer.isChecked()
+        if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
+        if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
+        if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
+
+        if hasattr(self, 'color_cut_buttons'):
+            auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
+            prefs['auto_cut_colors'] = auto_cut
+
+        checked_btn = getattr(self, 'marker_btn_group', None) and self.marker_btn_group.checkedButton()
+        if checked_btn:
+            prefs['mark_tool'] = checked_btn.property("status_id")
+
+        self.engine.save_preferences(prefs)
+
+        # SANITIZE EXPORT DATA (prevents C++ QRect deepcopy memory leaks)
+        export_data    = self._get_clean_words_data()
+        show_typos     = prefs.get('show_typos', True)
+        mark_inaudible = prefs.get('mark_inaudible', True)
+        for w in export_data:
+            if w.get('status') == 'typo' and not show_typos:
+                if w.get('manual_status') != 'typo' or w.get('is_auto', False):
+                    w['status'] = None
+            if w.get('status') == 'inaudible' and not mark_inaudible:
+                w['status'] = None
+
+        # UI PREP — infinite bar starts immediately so it animates during assembly
+        self._panel_left.hide()
+        self._panel_right.hide()
+        self.go_to_page(1)
+        self.lbl_processing_status.setText(self.txt("txt_initializing_assembly"))
+        self.bar_processing.set_value(-1)   # infinite sweep animation
+        QApplication.processEvents()
+
+        # ── WORKER SIGNALS ────────────────────────────────────────────────────
+        from PySide6.QtCore import QThread, Signal as _Signal, QObject as _QObject
+
+        class _AssemblySignals(_QObject):
+            status   = _Signal(str)
+            finished = _Signal(object)   # carries result tuple
+
+        _sigs = _AssemblySignals()
+        _sigs.status.connect(self.lbl_processing_status.setText)
+        _sigs.finished.connect(self._on_assemble_done)
+
+        # ── WORKER THREAD ─────────────────────────────────────────────────────
+        class _AssemblyThread(QThread):
+            def __init__(self, engine, export_data, prefs, sigs):
+                super().__init__()
+                self._engine = engine
+                self._data   = export_data
+                self._prefs  = prefs
+                self._sigs   = sigs
+
+            def run(self):
+                try:
+                    result = self._engine.assemble_timeline(
+                        self._data,
+                        self._prefs,
+                        callback_status   = self._sigs.status.emit,
+                        callback_progress = lambda v: None,  # bar stays infinite
+                    )
+                except Exception as _e:
+                    import traceback as _tb
+                    from osdoc import log_error as _le
+                    _le(f"_AssemblyThread: {_e}\n{_tb.format_exc()}")
+                    result = (False, None, None, None)
+                self._sigs.finished.emit(result)
+
+        self._assembly_thread = _AssemblyThread(self.engine, export_data, prefs, _sigs)
+        self._assembly_sigs   = _sigs   # keep alive until finished signal fires
+        self._assembly_prefs  = prefs
+        
+        # Delay thread start to ensure loading UI transition finishes before GIL is locked
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(150, lambda: self._assembly_thread.start())
+
+    def _on_assemble_done(self, result):
+        """Called on main thread when assembly QThread finishes."""
+        from PySide6.QtWidgets import QApplication
+
+        self.bar_processing.set_value(100)
+
+        success, warning, new_tl_name, clean_ops = (
+            result if (isinstance(result, tuple) and len(result) == 4)
+            else (False, None, None, None)
+        )
+
+        # Sync snapshot back (engine mutates prefs["source_snapshot"] in-place)
+        prefs = getattr(self, '_assembly_prefs', {}) or {}
+        updated_snapshot = prefs.get("source_snapshot")
+        if updated_snapshot and hasattr(self, '_transcription_source'):
+            new_filtered = updated_snapshot.get("filtered_tl_name")
+            if new_filtered and self._transcription_source.get("filtered_tl_name") != new_filtered:
+                self._transcription_source["filtered_tl_name"] = new_filtered
+                try:
+                    _p = self.engine.load_preferences() or {}
+                    _p["transcription_source"] = self._transcription_source
+                    self.engine.save_preferences(_p)
+                except Exception:
+                    pass
+
+        if success:
+            self.lbl_processing_status.setText(self.txt("txt_finishing"))
+            QApplication.processEvents()
+            self._on_assembly_success(new_tl_name, clean_ops)
+        else:
+            self._on_assembly_error(self.txt("msg_assembly_failed"))
+
+        # RAM cleanup — MUST happen AFTER success/error handler so _assembly_prefs is available
+        try:
+            import gc
+            self._assembly_thread = None
+            self._assembly_sigs   = None
+            self._assembly_prefs  = None
+            gc.collect()
+        except Exception:
+            pass
+
+
+    def _on_assembly_success(self, new_tl_name, clean_ops):
+        if hasattr(self, 'go_to_page'): self.go_to_page(2)
+        
+        # Audio preview mapping
+        if hasattr(self, 'audio_preview') and getattr(self, '_assembly_prefs', None):
+            words = self._get_clean_words_data()
+            if words and words[0].get('meta_audio_path'):
+                audio_path = words[0].get('meta_audio_path')
+                import os
+                if clean_ops:
+                    fps = getattr(self.resolve_handler, 'fps', 24.0)
+                    ffmpeg_cmd = self.engine.os_doc.get_ffmpeg_cmd()
+                    if ffmpeg_cmd and os.path.exists(audio_path):
+                        assembled_audio_path = audio_path.replace(".wav", "_assembled.wav")
+                        from PySide6.QtCore import QThread, Signal
+                        import tempfile
+                        
+                        class WavAssemblyThread(QThread):
+                            finished = Signal(str, list)
+                            def __init__(self, parent, in_path, out_path, ops, fps, ffmpeg_cmd, sp_kwargs):
+                                super().__init__(parent)
+                                self.in_path = in_path
+                                self.out_path = out_path
+                                self.ops = ops
+                                self.fps = fps
+                                self.ffmpeg_cmd = ffmpeg_cmd
+                                self.sp_kwargs = sp_kwargs
+                            def run(self):
+                                import wave
+                                import subprocess
+                                import os
+                                import tempfile
+                                try:
+                                    temp_wav_src = tempfile.mktemp(suffix=".wav")
+                                    decode_cmd = [
+                                        self.ffmpeg_cmd, "-y", "-i", self.in_path,
+                                        "-acodec", "pcm_s16le", temp_wav_src
+                                    ]
+                                    subprocess.run(decode_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self.sp_kwargs)
+                                    
+                                    if not os.path.exists(temp_wav_src):
+                                        raise Exception("FFmpeg decode failed to produce WAV file.")
+                                        
+                                    with wave.open(temp_wav_src, 'rb') as w_in:
+                                        params = w_in.getparams()
+                                        nframes = w_in.getnframes()
+                                        with wave.open(self.out_path, 'wb') as w_out:
+                                            w_out.setparams(params)
+                                            sr = params.framerate
+                                            
+                                            for op in self.ops:
+                                                start_s = op['s'] / self.fps
+                                                end_s = op['e'] / self.fps
+                                                
+                                                start_frame = int(start_s * sr)
+                                                end_frame = int(end_s * sr)
+                                                
+                                                # Clamp to available frames to prevent wave.Error
+                                                start_frame = max(0, min(start_frame, nframes))
+                                                end_frame = max(0, min(end_frame, nframes))
+                                                
+                                                frames_to_read = max(0, end_frame - start_frame)
+                                                
+                                                if frames_to_read > 0:
+                                                    w_in.setpos(start_frame)
+                                                    data = w_in.readframes(frames_to_read)
+                                                    w_out.writeframes(data)
+                                                    
+                                    try: os.remove(temp_wav_src)
+                                    except: pass
+                                    self.finished.emit(self.out_path, self.ops)
+                                except Exception as e:
+                                    from osdoc import log_error
+                                    log_error(f"Wav assembly exception: {e}")
+                                    
+                        kwargs = self.engine.os_doc.get_subprocess_kwargs()
+                        self._ffmpeg_thread = WavAssemblyThread(self, audio_path, assembled_audio_path, clean_ops, fps, ffmpeg_cmd, kwargs)
+                        self._ffmpeg_thread.finished.connect(self.audio_preview.load_assembled_audio)
+                        self._ffmpeg_thread.start()
+                else:
+                    self.audio_preview.check_audio_availability()
+        
+        is_sbs = getattr(self.text_canvas, 'is_sbs_mode', False)
+        if hasattr(self, '_panel_left') and not is_sbs: self._panel_left.show()
+        if hasattr(self, '_panel_right'): self._panel_right.show()
+        
+        # --- CHAPTER REGISTRATION ---
+        new_words = self._get_clean_words_data()
+                
+        chapter_name = f"Edit {len(self._chapters)}"
+        new_chapter = {
+            "name": chapter_name,
+            "tl_name": new_tl_name or "",
+            "words": new_words
+        }
+        self._chapters.append(new_chapter)
+        self._current_chapter_idx = len(self._chapters) - 1
+        
+        # Update dropdown
+        self._title_bar.chapter_dropdown.options_list = [ch['name'] for ch in self._chapters]
+        self._title_bar.chapter_dropdown.setText(chapter_name)
+        self._title_bar.update_dropdown_placement()
+        
+        # Load the new state
+        self.text_canvas.load_data(new_words)
+        self._show_transcript_view()
+        
+        dlg = CustomMsgBox(self, self.txt("msg_success"), self.txt("msg_timeline_assembled_succes"), self.txt("btn_ok"))
+        dlg.exec()
+
+    def _on_assembly_error(self, err_msg):
+        if hasattr(self, 'go_to_page'): self.go_to_page(2)
+        
+        is_sbs = getattr(self.text_canvas, 'is_sbs_mode', False)
+        if hasattr(self, '_panel_left') and not is_sbs: self._panel_left.show()
+        if hasattr(self, '_panel_right'): self._panel_right.show()
+        dlg = CustomMsgBox(self, self.txt("lbl_error"), err_msg, self.txt("btn_ok"))
+        dlg.exec()
+
+    def _build_welcome_screen(self) -> QWidget:
+        """
+        Page 0 of the main stack: Welcome / Config screen.
+        Contains a local QStackedWidget (self.welcome_stack):
+          - sub-page 0: Transcription workflow (existing dropdowns + Analyze button)
+          - sub-page 1: Fast Silence settings + Run button
+        """
+        prefs = self.engine.load_preferences() or {}
+        page = QWidget()
+        page.setObjectName("page_welcome")
+        page.setStyleSheet(f"QWidget#page_welcome {{ background-color: {config.BG_COLOR}; }}")
+
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
+        inner = QWidget()
+        inner.setObjectName("welcome_inner")
+        # Removing fixed width to allow the entire mass to be centered
+        inner.setStyleSheet("QWidget#welcome_inner { background: transparent; }")
+
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(0)
+        inner_layout.setAlignment(Qt.AlignTop)
+
+        # ── Shared Title ─────────────────────────────────────────────────
+        lbl_title = QLabel("BadWords", inner)
+        lbl_title.setObjectName("welcome_title")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        lbl_title.setStyleSheet(f"""
+            QLabel#welcome_title {{
+                color: #ffffff;
+                font-size: 34pt;
+                font-weight: 900;
+                font-family: {config.UI_FONT_NAME};
+                background: transparent;
+                letter-spacing: -2px;
+            }}
+        """)
+        inner_layout.addWidget(lbl_title)
+        inner_layout.addSpacing(10)
+
+        # ── Local stacked widget ──────────────────────────────────────────
+        self.welcome_stack = QStackedWidget()
+        self.welcome_stack.setStyleSheet("background: transparent;")
+        inner_layout.addWidget(self.welcome_stack)
+
+        prefs = self.engine.load_preferences() or {}
+
+        def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
+            """Label directly above the input."""
+            row = QVBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(3)
+            lbl = QLabel(label_text)
+            lbl.setFixedHeight(16)
+            lbl.setStyleSheet(
+                f"color: {config.NOTE_COL}; font-size: 9pt;"
+                f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
+            )
+            row.addWidget(lbl)
+            row.addWidget(widget)
+            return row
+
+        p_transcription = QWidget()
+        p_transcription.setStyleSheet("background: transparent;")
+        l_trans = QVBoxLayout(p_transcription)
+        l_trans.setContentsMargins(0, 0, 0, 0)
+        l_trans.setSpacing(0)
+        l_trans.setAlignment(Qt.AlignTop)
+
+        lbl_sub = QLabel(self.txt("lbl_transcription_workspace"))
+        lbl_sub.setAlignment(Qt.AlignCenter)
+        lbl_sub.setFixedHeight(20)
+        lbl_sub.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 10pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+        )
+        l_trans.addWidget(lbl_sub)
+        l_trans.addSpacing(20)
+
+        self.slider_widget = QWidget()
+        self.slider_widget.setStyleSheet("background: transparent;")
+        self.slider_layout = QHBoxLayout(self.slider_widget)
+        self.slider_layout.setContentsMargins(0, 0, 0, 0)
+        self.slider_layout.setSpacing(0)
+        self.slider_layout.setAlignment(Qt.AlignTop)
+        
+        self.settings_container = QWidget()
+        self.settings_container.setFixedWidth(310)
+        self.settings_container.setStyleSheet("background: transparent;")
+        self.settings_layout = QVBoxLayout(self.settings_container)
+        self.settings_layout.setContentsMargins(0, 0, 0, 0)
+        self.settings_layout.setSpacing(0)
+        self.settings_layout.setAlignment(Qt.AlignTop)
+        self.slider_layout.addWidget(self.settings_container)
+
+
+        self.combo_tl_0 = CustomDropdown([])
+        self.combo_tl_0.setFixedHeight(30)
+        self.combo_tl_0.valueChanged.connect(
+            lambda tl: self._on_timeline_selected(tl, self.combo_tr_0, self.combo_tl_1)
+        )
+        _vbox_tl0 = QVBoxLayout()
+        _vbox_tl0.setContentsMargins(0, 0, 0, 0)
+        _vbox_tl0.setSpacing(3)
+        _lbl_tl0 = QLabel(self.txt("lbl_timeline_selection"))
+        _lbl_tl0.setFixedHeight(16)
+        _lbl_tl0.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
+        )
+        _hbox_tl0 = QHBoxLayout()
+        _hbox_tl0.setContentsMargins(0, 0, 0, 0)
+        _hbox_tl0.setSpacing(4)
+        _hbox_tl0.addWidget(self.combo_tl_0, 1)
+        _btn_ref_tl0 = QPushButton("↺")
+        _btn_ref_tl0.setFixedSize(30, 30)
+        _btn_ref_tl0.setCursor(Qt.PointingHandCursor)
+        _btn_ref_tl0.setToolTip(self.txt("tt_refresh_timelines"))
+        _btn_ref_tl0.setStyleSheet(
+            "QPushButton { background: transparent; border: 1px solid #444; "
+            "border-radius: 3px; color: #777; font-size: 11pt; } "
+            "QPushButton:hover { color: #ccc; border-color: #666; }"
+        )
+        _btn_ref_tl0.clicked.connect(self._populate_timeline_track_combos)
+        _hbox_tl0.addWidget(_btn_ref_tl0)
+        _vbox_tl0.addWidget(_lbl_tl0)
+        _vbox_tl0.addLayout(_hbox_tl0)
+        self.settings_layout.addLayout(_vbox_tl0)
+        self.settings_layout.addSpacing(10)
+
+        self.combo_tr_0 = MultiSelectDropdown([])
+        self.combo_tr_0.setFixedHeight(30)
+        self.settings_layout.addLayout(_row(self.txt("lbl_tracks_selection"), self.combo_tr_0))
+        self.settings_layout.addSpacing(10)
+
+        # ── Language
+        lang_items = list(config.SUPPORTED_LANGUAGES.values())
+        self._combo_lang = SearchableDropdown(lang_items)
+        self._combo_lang.setFixedHeight(30)
+        saved_lang = prefs.get('lang', '')
+        display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
+        placeholder = self.txt("lbl_choose_recording_language") if hasattr(self, 'txt') else "Choose recording language"
+        self._combo_lang.setText(display_name if display_name in lang_items else placeholder)
+        self._combo_lang.valueChanged.connect(lambda v: self.engine.save_preferences({"lang": v}))
+        self.settings_layout.addLayout(_row(self.txt("lbl_lang"), self._combo_lang))
+        self.settings_layout.addSpacing(10)
+
+        # ── Model
+        model_items = [
+            "Tiny (I wouldn't, ~0.3GB)",
+            "Base (Dogsh!t, ~0.5GB)",
+            "Small (Bearable, ~1.0GB)",
+            "Medium (Okayish, ~2.5GB)",
+            "Large Turbo (Best Balance, ~2.5GB)",
+            "Large (Recommended, ~3.5GB)",
+        ]
+        self._combo_model = CustomDropdown(model_items)
+        self._combo_model.max_visible_items = 6
+        self._combo_model.setFixedHeight(30)
+        
+        # Load model, or default to Large Turbo if missing/obsolete
+        saved_model = prefs.get("model", "")
+        if saved_model in model_items:
+            self._combo_model.setText(saved_model)
+        else:
+            self._combo_model.setText(model_items[4])
+            # Force save the fallback so the engine sees the correct new string!
+            self.engine.save_preferences({"model": model_items[4]})
+            
+        self._combo_model.valueChanged.connect(lambda v: self.engine.save_preferences({"model": v}))
+        
+        info_model = QLabel()
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        info_icon_path = os.path.join(_assets_dir, "information.png")
+        if os.path.exists(info_icon_path):
+            info_model.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            info_model.setText("🛈")
+            info_model.setStyleSheet("color: #888888; font-size: 11pt;")
+            
+        info_model.custom_tooltip_text = f"<div style='max-width: 320px; white-space: pre-wrap;'>{self.txt('tt_model_size_info')}</div>"
+        info_model.setCursor(Qt.WhatsThisCursor)
+        
+        def instant_tooltip_model(event):
+            if hasattr(self, 'shared_tooltip'):
+                self.shared_tooltip.show_global(info_model.custom_tooltip_text, QCursor.pos())
+        info_model.enterEvent = instant_tooltip_model
+        info_model.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
+        info_model.installEventFilter(self)
+        
+        row_model_lbl = QHBoxLayout()
+        row_model_lbl.setContentsMargins(0, 0, 0, 0)
+        row_model_lbl.setSpacing(5)
+        lbl_model = QLabel(self.txt("lbl_model"))
+        lbl_model.setFixedHeight(16)
+        lbl_model.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
+        )
+        row_model_lbl.addWidget(lbl_model)
+        row_model_lbl.addWidget(info_model)
+        row_model_lbl.addStretch()
+        
+        vbox_model = QVBoxLayout()
+        vbox_model.setContentsMargins(0, 0, 0, 0)
+        vbox_model.setSpacing(3)
+        vbox_model.addLayout(row_model_lbl)
+        vbox_model.addWidget(self._combo_model)
+        
+        self.settings_layout.addLayout(vbox_model)
+        self.settings_layout.addSpacing(15)
+
+
+
+        # ── More Accurate Mode
+        self.tgl_more_accurate = ToggleSwitch()
+        is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
+        self.tgl_more_accurate.setChecked(is_more_accurate)
+        self.tgl_more_accurate.toggled.connect(self._on_more_accurate_toggled)
+        
+        lbl_acc = QLabel(self.txt("lbl_more_accurate"))
+        lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 10pt;")
+        
+        info_acc = QLabel()
+        if os.path.exists(info_icon_path):
+            info_acc.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            info_acc.setText("🛈")
+            info_acc.setStyleSheet("color: #888888; font-size: 11pt;")
+        tt_acc_text = self.txt("tt_more_accurate")
+        info_acc.custom_tooltip_text = f"<div style='max-width: 350px; white-space: pre-wrap;'>{tt_acc_text}</div>"
+        info_acc.setCursor(Qt.WhatsThisCursor)
+        
+        def instant_tooltip_acc(event):
+            if hasattr(self, 'shared_tooltip'):
+                self.shared_tooltip.show_global(info_acc.custom_tooltip_text, QCursor.pos())
+        info_acc.enterEvent = instant_tooltip_acc
+        info_acc.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
+        
+        row_acc = QHBoxLayout()
+        row_acc.setSpacing(0)
+        row_acc.addWidget(lbl_acc)
+        row_acc.addStretch()
+        row_acc.addWidget(info_acc)
+        row_acc.addSpacing(6)
+        row_acc.addWidget(self.tgl_more_accurate)
+        
+        self.settings_layout.addLayout(row_acc)
+        self.settings_layout.addSpacing(24)
+
+        # ── Script Container
+        self.script_container = QWidget()
+        # 350 includes 15px left and 15px right margins to prevent shake animation from being clipped on edges
+        self.script_container.setFixedWidth(350 if is_more_accurate else 0)
+        self.script_container.setStyleSheet("background: transparent;")
+        
+        self.script_container_layout = QHBoxLayout(self.script_container)
+        self.script_container_layout.setContentsMargins(15, 0, 15, 0)
+        # AlignRight ensures the text box moves properly to create the "slide out" effect
+        self.script_container_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        
+        self.script_content_widget = QWidget()
+        self.script_content_widget.setFixedWidth(320)
+        self.script_layout = QVBoxLayout(self.script_content_widget)
+        self.script_layout.setContentsMargins(0, 0, 0, 0)
+        self.script_layout.setSpacing(0)
+        self.script_layout.setAlignment(Qt.AlignTop)
+        
+        _lbl_script = QLabel(self.txt("lbl_script"))
+        _lbl_script.setFixedHeight(16)
+        _lbl_script.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
+        )
+        self.script_layout.addWidget(_lbl_script)
+        self.script_layout.addSpacing(3)
+        
+        self.welcome_script_edit = QTextEdit()
+        self.welcome_script_edit.setFixedHeight(247)
+        self.welcome_script_edit.setAcceptRichText(False)
+        self.welcome_script_edit.setStyleSheet(f'''
+            QTextEdit {{
+                background-color: #1e1e1e; color: #d4d4d4; 
+                border: 1px solid #3a3a3a; border-radius: 3px; 
+                padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+            }}
+            QTextEdit:focus {{ border: 1px solid #1a7a3e; }}
+        ''')
+        self.script_layout.addWidget(self.welcome_script_edit)
+        
+        self.btn_import_welcome_script = QPushButton(self.txt("btn_import_script"))
+        self.btn_import_welcome_script.setObjectName("btn_ghost")
+        self.btn_import_welcome_script.setCursor(Qt.PointingHandCursor)
+        self.btn_import_welcome_script.setFixedHeight(30)
+        self.btn_import_welcome_script.setStyleSheet(f"""
+            QPushButton#btn_ghost {{
+                background-color: #1e1e1e; color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt;
+                border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
+            }}
+            QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
+            QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
+        """)
+        self.btn_import_welcome_script.clicked.connect(self._on_import_script)
+        self.script_container_layout.addWidget(self.script_content_widget)
+        
+        self.slider_layout.addWidget(self.script_container)
+        
+        h_slider = QHBoxLayout()
+        h_slider.setContentsMargins(0, 0, 0, 0)
+        h_slider.addStretch()
+        h_slider.addWidget(self.slider_widget)
+        h_slider.addStretch()
+        l_trans.addLayout(h_slider)
+        
+        # Raise settings to ensure it overlaps during slide animation
+        self.settings_container.raise_()
+
+
+        # ── Action buttons
+        btn_row_t = QHBoxLayout()
+        btn_row_t.setContentsMargins(0, 0, 0, 0)
+        btn_row_t.setSpacing(0)
+
+        btn_import = QPushButton(self.txt("btn_import_project"))
+        btn_import.setObjectName("btn_ghost")
+        btn_import.setCursor(Qt.PointingHandCursor)
+        btn_import.setFixedHeight(30)
+        btn_import.setStyleSheet(f"""
+            QPushButton#btn_ghost {{
+                background-color: #1e1e1e; color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt;
+                border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
+            }}
+            QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
+            QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
+        """)
+        btn_import.clicked.connect(self._on_import_project)
+        btn_row_t.addWidget(btn_import)
+
+        btn_analyze = QPushButton("▶ " + self.txt("btn_analyze"))
+        btn_analyze.setObjectName("btn_primary")
+        btn_analyze.setCursor(Qt.PointingHandCursor)
+        btn_analyze.setFixedHeight(30)
+        btn_analyze.setStyleSheet(f"""
+            QPushButton#btn_primary {{
+                background-color: {config.BTN_BG}; color: #ffffff;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
+                border: none; border-radius: 3px; padding: 0 18px;
+            }}
+            QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_primary:pressed {{ background-color: #176e38; }}
+        """)
+        btn_analyze.clicked.connect(self._on_start_analysis)
+        btn_row_t.addSpacing(8)
+        btn_row_t.addWidget(btn_analyze)
+        
+        self.btn_import_wrapper = QWidget()
+        wrapper_l = QHBoxLayout(self.btn_import_wrapper)
+        wrapper_l.setContentsMargins(8, 0, 0, 0)
+        wrapper_l.setSpacing(0)
+        wrapper_l.addWidget(self.btn_import_welcome_script)
+        btn_row_t.addWidget(self.btn_import_wrapper)
+        
+        self.btn_import_wrapper.setVisible(prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False)))
+        
+        btn_row_t_centered = QHBoxLayout()
+        btn_row_t_centered.setContentsMargins(0, 0, 0, 0)
+        btn_row_t_centered.addStretch()
+        btn_row_t_centered.addLayout(btn_row_t)
+        btn_row_t_centered.addStretch()
+        
+        l_trans.addLayout(btn_row_t_centered)
+        l_trans.addSpacing(14)
+
+        # ── Link to fast silence sub-page
+        btn_switch_fast = QPushButton(self.txt("btn_standalone_silence_detection"))
+        btn_switch_fast.setCursor(Qt.PointingHandCursor)
+        btn_switch_fast.setStyleSheet(
+            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0;"
+        )
+        btn_switch_fast.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(1))
+        l_trans.addWidget(btn_switch_fast, 0, Qt.AlignCenter)
+        l_trans.addStretch()
+        
+        self.welcome_stack.addWidget(p_transcription)  # index 0
+
+        # ═══════════════════════════════════════════════════════════════
+        # SUB-PAGE 1: FAST SILENCE (clean layout, mirrors main page)
+        # ═══════════════════════════════════════════════════════════════
+        p_fast_outer = QWidget()
+        p_fast_outer.setStyleSheet("background: transparent;")
+        p_fast_layout = QHBoxLayout(p_fast_outer)
+        p_fast_layout.setContentsMargins(0, 0, 0, 0)
+        p_fast_layout.setSpacing(0)
+        
+        p_fast = QWidget()
+        p_fast.setFixedWidth(310)
+        p_fast.setStyleSheet("background: transparent;")
+        l_fast = QVBoxLayout(p_fast)
+        l_fast.setContentsMargins(0, 0, 0, 0)
+        l_fast.setSpacing(0)
+        l_fast.setAlignment(Qt.AlignTop)
+        
+        p_fast_layout.addStretch()
+        p_fast_layout.addWidget(p_fast)
+        p_fast_layout.addStretch()
+
+        # TITLE
+        lbl_fs_title = QLabel(self.txt("lbl_standalone_silence_workspace"))
+        lbl_fs_title.setAlignment(Qt.AlignCenter)
+        lbl_fs_title.setFixedHeight(20)
+        lbl_fs_title.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 10pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+        )
+        l_fast.addWidget(lbl_fs_title)
+        l_fast.addSpacing(20)
+
+        self.combo_tl_1 = CustomDropdown([])
+        self.combo_tl_1.setFixedHeight(30)
+        self.combo_tl_1.valueChanged.connect(
+            lambda tl: self._on_timeline_selected(tl, self.combo_tr_1, self.combo_tl_0)
+        )
+        _vbox_tl1 = QVBoxLayout()
+        _vbox_tl1.setContentsMargins(0, 0, 0, 0)
+        _vbox_tl1.setSpacing(3)
+        _lbl_tl1 = QLabel(self.txt("lbl_timeline_selection"))
+        _lbl_tl1.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+        )
+        _hbox_tl1 = QHBoxLayout()
+        _hbox_tl1.setContentsMargins(0, 0, 0, 0)
+        _hbox_tl1.setSpacing(4)
+        _hbox_tl1.addWidget(self.combo_tl_1, 1)
+        _btn_ref_tl1 = QPushButton("↺")
+        _btn_ref_tl1.setFixedSize(30, 30)
+        _btn_ref_tl1.setCursor(Qt.PointingHandCursor)
+        _btn_ref_tl1.setToolTip(self.txt("tt_refresh_timelines"))
+        _btn_ref_tl1.setStyleSheet(
+            "QPushButton { background: transparent; border: 1px solid #444; "
+            "border-radius: 3px; color: #777; font-size: 11pt; } "
+            "QPushButton:hover { color: #ccc; border-color: #666; }"
+        )
+        _btn_ref_tl1.clicked.connect(self._populate_timeline_track_combos)
+        _hbox_tl1.addWidget(_btn_ref_tl1)
+        _vbox_tl1.addWidget(_lbl_tl1)
+        _vbox_tl1.addLayout(_hbox_tl1)
+        l_fast.addLayout(_vbox_tl1)
+        l_fast.addSpacing(10)
+
+        self.combo_tr_1 = MultiSelectDropdown([])
+        self.combo_tr_1.setFixedHeight(30)
+        l_fast.addLayout(_row(self.txt("lbl_tracks_selection"), self.combo_tr_1))
+        l_fast.addSpacing(10)
+
+        # SETTINGS ROWS
+        input_style = '''
+            QLineEdit {
+                background-color: #1e1e1e; color: #d4d4d4; 
+                border: 1px solid #3a3a3a; border-radius: 3px; 
+                padding: 4px 8px;
+                outline: none;
+            }
+            QLineEdit:focus { border: 1px solid #1a7a3e; outline: none; }
+        '''
+
+        # Helper: label above input + reset button on the right in one combined layout
+        def _row_rst(label_text, widget, reset_val_str):
+            """Label above, then a horizontal row: [input, stretch-none, reset_btn]."""
+            vbox = QVBoxLayout()
+            vbox.setContentsMargins(0, 0, 0, 0)
+            vbox.setSpacing(3)
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(
+                f"color: {config.NOTE_COL}; font-size: 9pt;"
+                f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+            )
+            vbox.addWidget(lbl)
+
+            hbox = QHBoxLayout()
+            hbox.setContentsMargins(0, 0, 0, 0)
+            hbox.setSpacing(4)
+            hbox.addWidget(widget, 1)
+
+            rst = QPushButton("↺")
+            rst.setFixedSize(22, 22)
+            rst.setCursor(Qt.PointingHandCursor)
+            rst.setStyleSheet(
+                "QPushButton { background: transparent; border: 1px solid #444; "
+                "border-radius: 3px; color: #777; font-size: 10pt; } "
+                "QPushButton:hover { color: #ccc; border-color: #666; }"
+            )
+            rst.clicked.connect(lambda: widget.setText(reset_val_str))
+            # Optional: Add tooltip to generic reset button
+            rst.setToolTip(self.txt("tt_reset_to_default"))
+            hbox.addWidget(rst)
+            vbox.addLayout(hbox)
+            return vbox
+
+        self.input_fs_thresh = QLineEdit()
+        self.input_fs_thresh.setText(str(prefs.get('silence_threshold_db', prefs.get('ui_spin_thresh', -42.0))))
+        self.input_fs_thresh.setStyleSheet(input_style)
+        self.input_fs_thresh.setFixedHeight(30)
+        l_fast.addLayout(_row_rst(self.txt("lbl_silence_threshold_db"), self.input_fs_thresh, "-42.0"))
+        l_fast.addSpacing(10)
+
+        self.input_fs_pad = QLineEdit()
+        self.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.05)))
+        self.input_fs_pad.setStyleSheet(input_style)
+        self.input_fs_pad.setFixedHeight(30)
+        l_fast.addLayout(_row_rst(self.txt("lbl_padding_s"), self.input_fs_pad, "0.05"))
+        l_fast.addSpacing(10)
+
+        self.input_fs_min_dur = QLineEdit()
+        self.input_fs_min_dur.setText(str(prefs.get('silence_min_dur', 0.2)))
+        self.input_fs_min_dur.setStyleSheet(input_style)
+        self.input_fs_min_dur.setFixedHeight(30)
+        self.input_fs_min_dur.setToolTip(
+            "Minimum gap duration (s) to classify as silence. "
+            "Lower = more gaps detected. Shared with post-transcript mode."
+        )
+        l_fast.addLayout(_row_rst(self.txt("lbl_min_silence_dur"), self.input_fs_min_dur, "0.2"))
+        l_fast.addSpacing(16)
+
+
+        # MODE TOGGLES (Mutually Exclusive)
+        row_fs_cut = QHBoxLayout()
+        lbl_fs_cut = QLabel(self.txt("lbl_cut_silence_directly"))
+        lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
+        row_fs_cut.addWidget(lbl_fs_cut)
+        row_fs_cut.addStretch()
+        info_fs_cut = self._create_info_icon("tt_cut_silence_directly")
+        row_fs_cut.addWidget(info_fs_cut)
+        row_fs_cut.addSpacing(6)
+        self.tgl_fs_cut = ToggleSwitch()
+        self.tgl_fs_cut.setChecked(prefs.get('fs_cut_mode', True), animated=False)
+        row_fs_cut.addWidget(self.tgl_fs_cut)
+        l_fast.addLayout(row_fs_cut)
+        l_fast.addSpacing(10)
+
+        row_fs_mark = QHBoxLayout()
+        lbl_fs_mark = QLabel(self.txt("lbl_mark_silence_with_color"))
+        lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
+        row_fs_mark.addWidget(lbl_fs_mark)
+        row_fs_mark.addStretch()
+        info_fs_mark = self._create_info_icon("tt_mark_silence_with_color")
+        row_fs_mark.addWidget(info_fs_mark)
+        row_fs_mark.addSpacing(6)
+        self.tgl_fs_mark = ToggleSwitch()
+        self.tgl_fs_mark.setChecked(prefs.get('fs_mark_mode', False), animated=False)
+        row_fs_mark.addWidget(self.tgl_fs_mark)
+        l_fast.addLayout(row_fs_mark)
+        l_fast.addSpacing(24)
+
+        # Connect mutual exclusion & auto-saving
+        self.tgl_fs_cut.toggled.connect(lambda c: self.tgl_fs_mark.setChecked(False) if c else None)
+        self.tgl_fs_mark.toggled.connect(lambda c: self.tgl_fs_cut.setChecked(False) if c else None)
+        self.tgl_fs_cut.toggled.connect(lambda v: self._save_single_pref('fs_cut_mode', v))
+        self.tgl_fs_mark.toggled.connect(lambda v: self._save_single_pref('fs_mark_mode', v))
+
+        # RUN & BACK BUTTONS
+        btn_row_fs = QHBoxLayout()
+        btn_row_fs.setContentsMargins(0, 0, 0, 0)
+
+        # BACK BUTTON
+        btn_back = QPushButton(f"← {self.txt('btn_back_to_transcription')}")
+        btn_back.setCursor(Qt.PointingHandCursor)
+        btn_back.setStyleSheet(
+            f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
+            " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
+        )
+        btn_back.clicked.connect(lambda: self.welcome_stack.setCurrentIndex(0))
+        btn_row_fs.addWidget(btn_back)
+
+        btn_row_fs.addStretch()
+
+        self.btn_run_fs = QPushButton(self.txt("btn_run_standalone_silence"))
+        self.btn_run_fs.setCursor(Qt.PointingHandCursor)
+        self.btn_run_fs.setFixedHeight(30)
+        self.btn_run_fs.setStyleSheet(f'''
+            QPushButton {{
+                background-color: {config.BTN_BG}; color: #ffffff;
+                font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
+                border: none; border-radius: 3px; padding: 0 18px;
+            }}
+            QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton:pressed {{ background-color: #176e38; }}
+        ''')
+        self.btn_run_fs.clicked.connect(self._on_fast_silence)
+        btn_row_fs.addWidget(self.btn_run_fs)
+        
+        l_fast.addLayout(btn_row_fs)
+        l_fast.addStretch()
+
+        self.welcome_stack.addWidget(p_fast_outer)   # index 1
+
+        # ── Centre horizontally ──────────────────────────────────────────
+        h = QHBoxLayout()
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addStretch()
+        h.addWidget(inner)
+        h.addStretch()
+        outer.addLayout(h)
+
+        outer.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        return page
+
+    def _build_page_processing(self) -> QWidget:
+        page = QWidget()
+        page.setObjectName("page_processing")
+        page.setStyleSheet(f"QWidget#page_processing {{ background-color: {config.BG_COLOR}; }}")
+        
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        self.lbl_processing_status = QLabel(self.txt("lbl_initializing"), page)
+        self.lbl_processing_status.setAlignment(Qt.AlignCenter)
+        self.lbl_processing_status.setStyleSheet(
+            f"color: {config.NOTE_COL}; font-size: 13pt;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
+        )
+        layout.addWidget(self.lbl_processing_status)
+        layout.addSpacing(15)
+        
+        self.bar_processing = LiquidProgressBar(page)
+        self.bar_processing.setFixedWidth(400)
+        layout.addWidget(self.bar_processing, 0, Qt.AlignCenter)
+
+        # ── First-run hint label (shown only when model is being used for the first time) ──
+        layout.addSpacing(20)
+        self.lbl_first_run_hint = QLabel("", page)
+        self.lbl_first_run_hint.setAlignment(Qt.AlignCenter)
+        self.lbl_first_run_hint.setWordWrap(False)
+        self.lbl_first_run_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.lbl_first_run_hint.setStyleSheet(
+            f"color: #666666; font-size: 10pt; font-style: italic;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0 20px;"
+        )
+        # Opacity effect for smooth fade-in / fade-out
+        from PySide6.QtWidgets import QGraphicsOpacityEffect as _OFX
+        self._hint_opacity = _OFX(self.lbl_first_run_hint)
+        self._hint_opacity.setOpacity(0.0)
+        self.lbl_first_run_hint.setGraphicsEffect(self._hint_opacity)
+        self.lbl_first_run_hint.hide()
+        layout.addWidget(self.lbl_first_run_hint, 0, Qt.AlignCenter)
+
+        return page
+
+    def _update_processing_progress(self, val: int):
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(val)
+
+    def _build_page_editor(self) -> QWidget:
+        page = QWidget()
+        page.setObjectName("page_editor")
+        page.setStyleSheet(f"QWidget#page_editor {{ background-color: {config.BG_COLOR}; }}")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        self.scroll_area = QScrollArea(page)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.scroll_area.setStyleSheet(f"QScrollArea {{ background-color: {config.BG_COLOR}; border: none; }}")
+        
+        self.text_canvas = TranscriptionCanvas(main_window=self)
+        self.scroll_area.setWidget(self.text_canvas)
+
+        normal_editor_page = QWidget()
+        normal_editor_layout = QVBoxLayout(normal_editor_page)
+        normal_editor_layout.setContentsMargins(0, 0, 0, 0)
+        normal_editor_layout.setSpacing(0)
+        normal_editor_layout.addWidget(self.scroll_area)
+
+        self.sbs_loading_page = QWidget()
+        self.sbs_loading_page.setStyleSheet(f"background-color: {config.BG_COLOR};")
+        ol_layout = QVBoxLayout(self.sbs_loading_page)
+        ol_layout.setAlignment(Qt.AlignCenter)
+        
+        lbl = QLabel(self.txt("lbl_just_a_second"))
+        lbl.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 13pt; font-family: '{config.UI_FONT_NAME}'; background: transparent;")
+        lbl.setAlignment(Qt.AlignCenter)
+        ol_layout.addWidget(lbl)
+        
+        ol_layout.addSpacing(15)
+        
+        self.sbs_loading_bar = LiquidProgressBar(self.sbs_loading_page)
+        self.sbs_loading_bar.setFixedWidth(400)
+        ol_layout.addWidget(self.sbs_loading_bar, 0, Qt.AlignCenter)
+
+        self.editor_view_stack = QStackedWidget(page)
+        self.editor_view_stack.setStyleSheet("background: transparent;")
+        self.editor_view_stack.addWidget(normal_editor_page)
+        self.editor_view_stack.addWidget(self.sbs_loading_page)
+        layout.addWidget(self.editor_view_stack)
+        
+        self.audio_preview = AudioPreviewWidget(page, self)
+        layout.addWidget(self.audio_preview)
+        
+        return page
+
+    def _show_transcript_view(self):
+        if hasattr(self, 'editor_view_stack'):
+            self.editor_view_stack.setCurrentIndex(0)
+
+    def _create_info_icon(self, tooltip_key: str) -> QLabel:
+        info = QLabel()
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        info_icon_path = os.path.join(_assets_dir, "information.png")
+        if os.path.exists(info_icon_path):
+            info.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            info.setText("🛈")
+            info.setStyleSheet("color: #888888; font-size: 11pt;")
+            
+        tt_text = self.txt(tooltip_key) if hasattr(self, 'txt') else tooltip_key
+        info.custom_tooltip_text = f"<div style='max-width: 300px; white-space: pre-wrap;'>{tt_text}</div>"
+        info.setCursor(Qt.WhatsThisCursor)
+        
+        def instant_tooltip(event):
+            if hasattr(self, 'shared_tooltip'):
+                self.shared_tooltip.show_global(info.custom_tooltip_text, QCursor.pos())
+        info.enterEvent = instant_tooltip
+        info.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
+        return info
+
+
+
+    def _populate_editor(self, words_data, segments_data):
+        import copy
+        _orig_label = self.txt("titlebar_original")
+        self._chapters = [{
+            "name": _orig_label,
+            "tl_name": self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else "",
+            "words": copy.deepcopy(words_data)
+        }]
+        self._current_chapter_idx = 0
+        
+        # Reset UI Dropdown
+        self._title_bar.chapter_dropdown.options_list = [_orig_label]
+        self._title_bar.chapter_dropdown.setText(_orig_label)
+        self._title_bar.update_dropdown_placement()
+        
+        if hasattr(self, 'text_canvas'):
+            self.show_hidden_start = True
+            self.text_canvas.load_data(words_data)
+            self._show_transcript_view()
+
+    # ------------------------------------------------------------------
+    # Sidebar navigation stubs
+    # ------------------------------------------------------------------
+
+    def _on_nav_script(self):
+        """Navigate to the Script / Welcome page."""
+        self.go_to_page(0)
+
+    def _on_nav_analysis(self):
+        """Navigate to the Analysis / Processing page."""
+        self.go_to_page(1)
+
+    def _on_more_accurate_toggled(self, checked):
+        self.engine.save_preferences({"ai_more_accurate": checked})
+        if not hasattr(self, 'script_container'): return
+        
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
+        
+        has_btn = hasattr(self, 'btn_import_wrapper')
+        if has_btn:
+            # Temporarily un-restrict to measure natural width
+            self.btn_import_wrapper.setMaximumWidth(16777215)
+            btn_full_w = self.btn_import_wrapper.sizeHint().width()
+            start_btn_w = self.btn_import_wrapper.width() if self.btn_import_wrapper.isVisible() else 0
+            end_btn_w = btn_full_w if checked else 0
+            
+            if checked:
+                self.btn_import_wrapper.setMaximumWidth(start_btn_w)
+                self.btn_import_wrapper.setVisible(True)
+
+        self._script_anim = QVariantAnimation(self)
+        self._script_anim.setDuration(500)
+        self._script_anim.setStartValue(0.0)
+        self._script_anim.setEndValue(1.0)
+        self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        
+        start_w = self.script_container.width()
+        end_w = 350 if checked else 0
+        
+        def _on_step(v):
+            self.script_container.setFixedWidth(int(start_w + (end_w - start_w) * v))
+            if has_btn:
+                self.btn_import_wrapper.setMaximumWidth(int(start_btn_w + (end_btn_w - start_btn_w) * v))
+                
+        def _on_finish():
+            if has_btn:
+                if not checked:
+                    self.btn_import_wrapper.setVisible(False)
+                self.btn_import_wrapper.setMaximumWidth(16777215)
+                
+        self._script_anim.valueChanged.connect(_on_step)
+        self._script_anim.finished.connect(_on_finish)
+        self._script_anim.start()
+
+    def _on_start_analysis(self):
+        # ── Language validation ─────────────────────────────────────────────────
+        raw_lang_txt = self._combo_lang.text() if hasattr(self, '_combo_lang') else ''
+        _lang_is_valid = raw_lang_txt.strip() and raw_lang_txt in set(config.SUPPORTED_LANGUAGES.values())
+
+        if not _lang_is_valid:
+            # Flash red border on the language dropdown
+            if hasattr(self, '_combo_lang'):
+                _orig_ss = (
+                    f"QPushButton {{"
+                    f" background-color: #1e1e1e;"
+                    f" color: #d4d4d4;"
+                    f" text-align: left;"
+                    f" padding: 4px 8px;"
+                    f" border: 1px solid #3a3a3a;"
+                    f" border-radius: 3px;"
+                    f" min-height: 20px;"
+                    f"}}"
+                    f"QPushButton:hover {{ border-color: {config.BTN_BG}; }}"
+                )
+                _err_ss = (
+                    "QPushButton {"
+                    " background-color: #1e1e1e;"
+                    " color: #d4d4d4;"
+                    " text-align: left;"
+                    " padding: 4px 8px;"
+                    " border: 1px solid #ed4245;"
+                    " border-radius: 3px;"
+                    " min-height: 20px;"
+                    "}"
+                    "QPushButton:hover { border-color: #ed4245; }"
+                )
+                self._combo_lang.setStyleSheet(_err_ss)
+                
+                # Add a little shake animation
+                from PySide6.QtCore import QPropertyAnimation as _QPA, QPoint as _QP
+                anim = _QPA(self._combo_lang, b"pos", self)
+                anim.setDuration(300)
+                pos = self._combo_lang.pos()
+                anim.setKeyValueAt(0, pos)
+                anim.setKeyValueAt(0.2, pos + _QP(5, 0))
+                anim.setKeyValueAt(0.4, pos - _QP(5, 0))
+                anim.setKeyValueAt(0.6, pos + _QP(5, 0))
+                anim.setKeyValueAt(0.8, pos - _QP(5, 0))
+                anim.setKeyValueAt(1, pos)
+                anim.start()
+                self._lang_shake_anim = anim # keep ref
+                
+                from PySide6.QtCore import QTimer as _QT
+                _QT.singleShot(1250, lambda: self._combo_lang.setStyleSheet(_orig_ss))
+            return  # Do NOT start analysis
+
+        # ── Script / Scenario validation ────────────────────────────────────────
+        _script_is_required = hasattr(self, 'tgl_more_accurate') and self.tgl_more_accurate.isChecked()
+        _script_text = self.welcome_script_edit.toPlainText().strip() if hasattr(self, 'welcome_script_edit') else ''
+        if _script_is_required and not _script_text:
+            if hasattr(self, 'welcome_script_edit'):
+                _orig_script_ss = f'''
+                    QTextEdit {{
+                        background-color: #1e1e1e; color: #d4d4d4; 
+                        border: 1px solid #3a3a3a; border-radius: 3px; 
+                        padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+                    }}
+                    QTextEdit:focus {{ border: 1px solid #1a7a3e; }}
+                '''
+                _err_script_ss = f'''
+                    QTextEdit {{
+                        background-color: #1e1e1e; color: #d4d4d4; 
+                        border: 1px solid #ed4245; border-radius: 3px; 
+                        padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+                    }}
+                    QTextEdit:focus {{ border: 1px solid #ed4245; }}
+                '''
+                self.welcome_script_edit.setStyleSheet(_err_script_ss)
+                
+                target_widget = self.script_content_widget if hasattr(self, 'script_content_widget') else self.welcome_script_edit
+                parent_widget = self.script_container if hasattr(self, 'script_container') else self
+                
+                from PySide6.QtCore import QPropertyAnimation as _QPA, QPoint as _QP
+                anim = _QPA(target_widget, b"pos", parent_widget)
+                anim.setDuration(300)
+                pos = target_widget.pos()
+                anim.setKeyValueAt(0, pos)
+                anim.setKeyValueAt(0.2, pos + _QP(5, 0))
+                anim.setKeyValueAt(0.4, pos - _QP(5, 0))
+                anim.setKeyValueAt(0.6, pos + _QP(5, 0))
+                anim.setKeyValueAt(0.8, pos - _QP(5, 0))
+                anim.setKeyValueAt(1, pos)
+                anim.start()
+                self._script_shake_anim = anim # keep ref
+                
+                from PySide6.QtCore import QTimer as _QT
+                _QT.singleShot(1250, lambda: self.welcome_script_edit.setStyleSheet(_orig_script_ss))
+            return  # Do NOT start analysis
+
+        # 1. Hide side panels
+        if hasattr(self, '_panel_left'): self._panel_left.hide()
+        if hasattr(self, '_panel_right'): self._panel_right.hide()
+        
+        # Un-toggle the sidebar buttons so they don't look active
+        if hasattr(self, 'btn_nav_script'): self.btn_nav_script.set_active(False)
+        if hasattr(self, 'btn_nav_main'): self.btn_nav_main.set_active(False)
+
+        # 2. Switch stack to index 1 (Processing page)
+        self.go_to_page(1)
+        
+        # Reset progress bar UI
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(self.txt("txt_initializing_analysis"))
+
+        # ── First-run hint: check if chosen model has been run before ────────────
+        raw_model_for_check = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
+        model_key = raw_model_for_check.split()[0].lower()
+        if model_key == 'large': model_key = 'large-v3'
+        
+        # Check for marker file instead of settings.json
+        model_folder_name = f"models--Systran--faster-whisper-{model_key}"
+        import os
+        marker_path = os.path.join(self.engine.models_dir, model_folder_name, ".badwords_initialized")
+        _is_first_model_run = not os.path.exists(marker_path)
+
+        # Stop any existing hint timer / animations
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except: pass
+            setattr(self, _aref, None)
+
+        if hasattr(self, 'lbl_first_run_hint'):
+            import random as _random
+            if _is_first_model_run:
+                _hint_keys = [
+                    'first_run_hint_1', 'first_run_hint_2', 'first_run_hint_3',
+                    'first_run_hint_4', 'first_run_hint_5', 'first_run_hint_6',
+                    'first_run_hint_7', 'first_run_hint_8', 'first_run_hint_9',
+                    'first_run_hint_10',
+                ]
+            else:
+                _hint_keys = [
+                    'analysis_hint_1', 'analysis_hint_2', 'analysis_hint_3',
+                    'analysis_hint_4', 'analysis_hint_5', 'analysis_hint_6',
+                    'analysis_hint_7', 'analysis_hint_8', 'analysis_hint_9',
+                    'analysis_hint_10',
+                ]
+
+            _shuffled = _hint_keys[:]
+            _random.shuffle(_shuffled)
+            self._hint_cycle_idx = 0
+            self._hint_cycle_keys = _shuffled
+
+            def _fade_to_next_hint():
+                """Fade out current hint, swap text, fade back in."""
+                if not hasattr(self, 'lbl_first_run_hint'): return
+                if not hasattr(self, '_hint_opacity'): return
+
+                def _do_swap():
+                    try:
+                        key = self._hint_cycle_keys[
+                            self._hint_cycle_idx % len(self._hint_cycle_keys)
+                        ]
+                        self.lbl_first_run_hint.setText(self.txt(key))
+                        self._hint_cycle_idx += 1
+                    except Exception: pass
+                    # Fade in
+                    anim_in = QPropertyAnimation(self._hint_opacity, b"opacity")
+                    anim_in.setDuration(600)
+                    anim_in.setStartValue(0.0)
+                    anim_in.setEndValue(1.0)
+                    anim_in.setEasingCurve(QEasingCurve.OutQuad)
+                    anim_in.start()
+                    self._hint_anim_in = anim_in
+
+                anim_out = QPropertyAnimation(self._hint_opacity, b"opacity")
+                anim_out.setDuration(500)
+                anim_out.setStartValue(1.0)
+                anim_out.setEndValue(0.0)
+                anim_out.setEasingCurve(QEasingCurve.InQuad)
+                anim_out.finished.connect(_do_swap)
+                anim_out.start()
+                self._hint_anim_out = anim_out
+
+            # Show first hint immediately (fade in from scratch)
+            first_key = _shuffled[0]
+            self.lbl_first_run_hint.setText(self.txt(first_key))
+            self._hint_cycle_idx = 1
+            self.lbl_first_run_hint.show()
+            anim_first_in = QPropertyAnimation(self._hint_opacity, b"opacity")
+            anim_first_in.setDuration(700)
+            anim_first_in.setStartValue(0.0)
+            anim_first_in.setEndValue(1.0)
+            anim_first_in.setEasingCurve(QEasingCurve.OutQuad)
+            anim_first_in.start()
+            self._hint_anim_in = anim_first_in
+
+            self._hint_timer = QTimer(self)
+            self._hint_timer.timeout.connect(_fade_to_next_hint)
+            self._hint_timer.start(10500)  # rotate hint every 10.5 seconds
+
+
+        # 3. Gather settings
+        raw_lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
+        lang_code = "auto"
+        
+        if raw_lang != "Auto":
+            for code, name in config.SUPPORTED_LANGUAGES.items():
+                if name.lower() == raw_lang.lower():
+                    lang_code = code
+                    break
+                    
+        raw_model = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
+        model = raw_model.split()[0].lower() # Fixes capital letter issue for Whisper
+
+        # Read selected timeline and audio tracks
+        selected_tl = getattr(self, 'combo_tl_0', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        no_tl = self.txt("msg_no_timelines_detected")
+        if selected_tl_name == no_tl:
+            selected_tl_name = ""
+
+        selected_tracks_combo = getattr(self, 'combo_tr_0', None)
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
+        _current_prefs = self.engine.load_preferences() or {}
+        _device_val = _current_prefs.get('device', 'auto').upper()
+        if _device_val == 'AUTO': _device_val = 'Auto'
+        
+        settings = {
+            "lang": lang_code,
+            "model": model,
+            "device": _device_val,
+            "filler_words": config.DEFAULT_BAD_WORDS,
+            "timeline_name": selected_tl_name or None,
+            "track_indices": track_indices or None,
+            "expected_script": self.text_script.toPlainText(),
+        }
+
+        
+        # 4. Start QThread targeting self.engine.run_analysis_pipeline()
+        import time
+        self._transcription_start_time = time.time()
+        self._analysis_worker = AnalysisWorker(self.engine, 'run_analysis_pipeline', settings)
+        self._analysis_worker.progress.connect(self._on_analysis_progress)
+        self._analysis_worker.status.connect(self._on_analysis_status)
+        self._analysis_worker.finished_ok.connect(self._on_analysis_finished)
+        self._analysis_worker.error.connect(self._on_analysis_error)
+        self._analysis_worker.start()
+
+    def _on_analysis_progress(self, val):
+        self._update_processing_progress(val)
+
+    def _on_analysis_status(self, msg):
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(msg)
+
+    def _on_analysis_error(self, err):
+        # Stop hint rotation and animations
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except Exception: pass
+            setattr(self, _aref, None)
+        if hasattr(self, 'lbl_first_run_hint'):
+            self.lbl_first_run_hint.hide()
+            if hasattr(self, '_hint_opacity'):
+                self._hint_opacity.setOpacity(0.0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(f"Error: {err}")
+
+    def _on_analysis_finished(self, words_data, segments_data):
+        # Stop hint rotation and animations on finish
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except Exception: pass
+            setattr(self, _aref, None)
+        if hasattr(self, 'lbl_first_run_hint'):
+            self.lbl_first_run_hint.hide()
+            if hasattr(self, '_hint_opacity'):
+                self._hint_opacity.setOpacity(0.0)
+
+
+        if not words_data:
+            dlg = CustomMsgBox(self, self.txt("msg_analysis_failed"), self.txt("msg_the_transcription_process"), self.txt("btn_ok"))
+            dlg.exec()
+            # Reset UI to Page 0 and show panels again
+            self.go_to_page(0)
+            self._panel_left.show()
+            self._panel_right.show()
+            return
+            
+        self.go_to_page(2)
+        
+        self._toggle_activity("script_analysis")
+        self._toggle_activity("main_panel")
+        
+        # Read selected timeline/tracks to format the new title
+        selected_tl = getattr(self, 'combo_tl_0', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        selected_tracks_combo = getattr(self, 'combo_tr_0', None)
+        
+        if not selected_tracks_combo:
+            tracks_str = self.txt("txt_all")
+        else:
+            tracks = list(selected_tracks_combo.selected_items)
+            if not tracks or (len(tracks) == len(selected_tracks_combo.options_list)):
+                tracks_str = self.txt("txt_all")
+            else:
+                tracks_str = ", ".join(sorted(tracks))
+
+        # Activate the new title bar mode: [Project▾] [Transcript▾] [Edit▾] + centered source info
+        self._title_bar.activate_transcription_mode()
+        self._title_bar.set_source_info(selected_tl_name, tracks_str)
+        
+        # On macOS native title bar: update the OS window title too
+        if platform.system() == "Darwin":
+            self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
+            if hasattr(self, '_mac_action_timeline'):
+                self._mac_menu_project.menuAction().setVisible(True)
+                self._mac_menu_transcript.menuAction().setVisible(True)
+                self._mac_menu_source.menuAction().setVisible(True)
+                self._mac_menu_edits.menuAction().setVisible(True)
+                self._mac_action_timeline.setText(f"Timeline: {selected_tl_name}")
+                self._mac_action_track.setText(f"Track: {tracks_str}")
+
+        # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
+        # Compute track indices from names (needed for engine assembly)
+        all_tracks_available = list(selected_tracks_combo.options_list) if selected_tracks_combo else []
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
+        source_files = []
+        try:
+            if self.resolve_handler:
+                source_files = self.resolve_handler.get_timeline_source_files(selected_tl_name, track_indices)
+        except Exception:
+            pass
+
+        self._transcription_source = {
+            "timeline_name":  selected_tl_name,
+            "track_names":    selected_track_names,
+            "track_indices":  track_indices,
+            "all_tracks":     (not selected_track_names) or (len(selected_track_names) >= len(all_tracks_available)),
+            "source_files":   source_files,
+        }
+        # Persist snapshot so it survives project export/import
+        try:
+            prefs = self.engine.load_preferences() or {}
+            prefs["transcription_source"] = self._transcription_source
+            self.engine.save_preferences(prefs)
+        except Exception as _e:
+            from osdoc import log_error as _log_error
+            _log_error(f"Could not persist transcription_source: {_e}")
+
+        self._populate_editor(words_data, segments_data)
+        
+        if hasattr(self, 'audio_preview'):
+            self.audio_preview.check_audio_availability()
+        
+        # Load pre-calculated SBS cache if it exists (from initial transcript auto-compare)
+        if getattr(self.engine, 'sbs_cache', None):
+            self._sbs_last_script_hash = self.engine.sbs_cache.get('hash')
+            if hasattr(self, 'text_canvas'):
+                self.text_canvas.sbs_rows = self.engine.sbs_cache.get('rows', [])
+            self.engine.sbs_cache = None
+        
+        if hasattr(self, '_transcription_start_time'):
+            import time
+            elapsed = int(time.time() - self._transcription_start_time)
+            mins = elapsed // 60
+            secs = elapsed % 60
+            self._last_analysis_time_raw = f"{mins}:{secs:02d}"
+            self.lbl_analysis_duration.setText(self.txt("txt_analyzed_in").replace("{time}", self._last_analysis_time_raw))
+            self.lbl_analysis_duration.setVisible(True)
+
+
+    def _on_nav_markers(self):
+        """Toggle the right panel (placeholder)."""
+        print("[BadWordsGUI] Tools toggled (Stage 4 TODO)")
+
+    # ------------------------------------------------------------------
+    # Positioning
+    # ------------------------------------------------------------------
+
+    def _maximize_on_active_screen(self):
+        """
+        Move the window to the monitor that currently has the cursor and maximize.
+        DWM / the WM remembers the geometry that was set IMMEDIATELY before
+        showMaximized() as the "restore" size used when drag-to-unmaximizing.
+        We position 580x670 centered on the target screen first, THEN maximize,
+        so the restore size is always 580x670 regardless of previous session state.
+        """
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(580, 670)
+            if getattr(self, '_is_mac', False):
+                self.showFullScreen()
+            else:
+                self.showMaximized()
+            return
+        sg = screen.availableGeometry()
+        # Center 580x670 on the target screen — this becomes the restore geometry
+        self.setGeometry(
+            sg.x() + (sg.width()  - 580) // 2,
+            sg.y() + (sg.height() - 670) // 2,
+            580, 670
+        )
+        if getattr(self, '_is_mac', False):
+            self.showFullScreen()
+        else:
+            self.showMaximized()
+
+    # ------------------------------------------------------------------
+    # Action handlers (stubs — logic added in later stages)
+    # ------------------------------------------------------------------
+
+    def _on_clear_transcript(self):
+        if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
+            return
+            
+        msg_box = CustomMsgBox(self, self.txt("msg_clear_title"), self.txt("msg_clear_desc"), self.txt("btn_yes"), self.txt("btn_no"))
+        if msg_box.exec() == QDialog.Accepted:
+            undo_action = {"type": "paint", "changes": {}}
+            for w in self.text_canvas.words_data:
+                has_inaud = (w.get('is_inaudible') or w.get('type') == 'inaudible')
+                needs_suppress = has_inaud and not w.get('overlay_suppressed', False)
+                
+                if (w.get('status') or w.get('manual_status') or w.get('algo_status') or 
+                    w.get('is_auto') or w.get('selected') or needs_suppress):
+                    
+                    undo_action["changes"][w['id']] = {
+                        'status': w.get('status'),
+                        'manual_status': w.get('manual_status'),
+                        'algo_status': w.get('algo_status'),
+                        'is_auto': w.get('is_auto'),
+                        'selected': w.get('selected'),
+                        'overlay_suppressed': w.get('overlay_suppressed', False)
+                    }
+                    w['status'] = None
+                    w['manual_status'] = None
+                    w['algo_status'] = None
+                    w['is_auto'] = False
+                    w['selected'] = False
+                    if has_inaud:
+                        w['overlay_suppressed'] = True
+                        
+                    self._calculate_visual_layer(w)
+
+            if hasattr(self, 'undo_manager') and undo_action["changes"]:
+                self.undo_manager.push(undo_action)
+                
+            self.text_canvas.update()
+
+    def _on_add_custom_marker(self):
+        from PySide6.QtWidgets import QApplication
+        dlg = SettingsDialog(self.engine, self)
+        # Navigate to Custom Markers tab dynamically by matching the translated tab name
+        custom_markers_label = dlg.txt("tab_custom_markers")
+        for i in range(dlg.category_list.count()):
+            if dlg.category_list.item(i).text() == custom_markers_label:
+                dlg.stack.setCurrentIndex(i)
+                dlg.category_list.setCurrentRow(i)
+                break
+        dlg.exec()
+        
+        # WORKAROUND: Restore main window icon after dialog closes
+        from PySide6.QtWidgets import QApplication
+        QApplication.setWindowIcon(_app_icon())
+        self.setWindowIcon(_app_icon())
+        self._build_marker_radio_buttons()
+        self.text_canvas.update()
+
+    def _build_marker_radio_buttons(self):
+        # Clear layout
+        while self.markers_layout.count():
+            item = self.markers_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        def style_rb(rb, color):
+            rb.setStyleSheet(f"""
+                QRadioButton {{
+                    color: {color};
+                    font-size: 11pt;
+                    font-weight: bold;
+                    background: transparent;
+                    padding: 2px 5px;
+                }}
+                QRadioButton::indicator {{
+                    width: 15px; height: 15px;
+                    border-radius: 8px;
+                    border: 2px solid #555;
+                    background: #1a1a1a;
+                }}
+                QRadioButton::indicator:checked {{
+                    border: 2px solid #555;
+                    background: qradialgradient(
+                        cx:0.5, cy:0.5, radius:0.5,
+                        fx:0.5, fy:0.5,
+                        stop:0 {color},
+                        stop:0.4 {color},
+                        stop:0.5 #1a1a1a,
+                        stop:1 #1a1a1a
+                    );
+                }}
+            """)
+
+        self.marker_btn_group = QButtonGroup(self)
+        
+        rb_red = MarqueeRadioButton(self.txt("rad_red_cut_filler"))
+        rb_red.setProperty("status_id", "bad")
+        style_rb(rb_red, config.WORD_BAD_BG)
+        
+        rb_blue = MarqueeRadioButton(self.txt("rad_blue_retake"))
+        rb_blue.setProperty("status_id", "repeat")
+        style_rb(rb_blue, config.WORD_REPEAT_BG)
+        
+        rb_green = MarqueeRadioButton(self.txt("rad_green_typo"))
+        rb_green.setProperty("status_id", "typo")
+        style_rb(rb_green, config.WORD_TYPO_BG)
+        
+        rb_eraser = MarqueeRadioButton(self.txt("rad_eraser_clear"))
+        rb_eraser.setProperty("status_id", "eraser")
+        rb_eraser.setStyleSheet("""
+            QRadioButton {
+                color: #aaaaaa; font-size: 11pt; font-weight: bold;
+                background: transparent;
+                padding: 2px 5px;
+            }
+            QRadioButton::indicator {
+                width: 15px; height: 15px;
+                border-radius: 8px;
+                border: 2px solid #555;
+                background: #1a1a1a;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #555;
+                background: qradialgradient(
+                    cx:0.5, cy:0.5, radius:0.5,
+                    fx:0.5, fy:0.5,
+                    stop:0 #aaaaaa,
+                    stop:0.4 #aaaaaa,
+                    stop:0.5 #1a1a1a,
+                    stop:1 #1a1a1a
+                );
+            }
+        """)
+        
+        for rb in (rb_red, rb_blue, rb_green):
+            rb.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.markers_layout.addWidget(rb)
+            self.marker_btn_group.addButton(rb)
+            
+        custom_markers = self.engine.load_preferences().get('custom_markers', [])
+        for cm in custom_markers:
+            name, color = cm.get("name", ""), cm.get("color", "")
+            if not name: continue
+            # Translate the color name for display; keep English key in status_id
+            translated_color = self.txt(f"resolve_color_{color.lower()}")
+            # Format: TranslatedColor (Name)
+            rb = MarqueeRadioButton(f"{translated_color} ({name})")
+            rb.setProperty("status_id", f"custom_{color}")
+            style_rb(rb, config.RESOLVE_COLORS_HEX.get(color, '#ffffff'))
+            rb.setCursor(Qt.CursorShape.PointingHandCursor)
+            if color.lower() in ["green", "blue"]:
+                rb.setEnabled(False)
+                rb.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
+                style_rb(rb, '#666666')
+            self.markers_layout.addWidget(rb)
+            self.marker_btn_group.addButton(rb)
+
+        rb_eraser.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.markers_layout.addWidget(rb_eraser)
+        self.marker_btn_group.addButton(rb_eraser)
+            
+        self.rb_mark_bad       = rb_red
+        self.rb_mark_repeat    = rb_blue
+        self.rb_mark_typo      = rb_green
+        self.rb_mark_inaudible = rb_eraser  # closest available; no dedicated inaudible radio
+        rb_red.setChecked(True)
+
+    def _setup_hardcoded_shortcuts(self):
+        from PySide6.QtGui import QShortcut, QKeySequence
+        
+        # Export
+        self.sc_export = QShortcut(QKeySequence.Save, self, context=Qt.ApplicationShortcut)
+        self.sc_export.activated.connect(self._on_export_project)
+        
+        # Undo
+        self.sc_undo = QShortcut(QKeySequence.Undo, self, context=Qt.ApplicationShortcut)
+        self.sc_undo.activated.connect(self.undo_manager.undo)
+        
+        # Redo (OS Default)
+        self.sc_redo = QShortcut(QKeySequence.Redo, self, context=Qt.ApplicationShortcut)
+        self.sc_redo.activated.connect(self.undo_manager.redo)
+        
+        # Redo Explicit Overrides (ensures Ctrl+Y natively works on Linux even if OS wants Ctrl+Shift+Z)
+        self.sc_redo_y = QShortcut(QKeySequence("Ctrl+Y"), self, context=Qt.ApplicationShortcut)
+        self.sc_redo_y.activated.connect(self.undo_manager.redo)
+        
+        self.sc_redo_shift_z = QShortcut(QKeySequence("Ctrl+Shift+Z"), self, context=Qt.ApplicationShortcut)
+        self.sc_redo_shift_z.activated.connect(self.undo_manager.redo)
+
+    def _apply_dynamic_shortcuts(self):
+        """
+        Build (or rebuilds) all dynamic QShortcuts from the saved preferences.
+        Clears previously registered shortcuts first to avoid duplicates.
+        'jump_to_word' and 'play_stop' are display-only and not registered.
+        """
+        from PySide6.QtGui import QShortcut, QKeySequence
+
+        # Remove previously registered dynamic shortcuts
+        for sc in getattr(self, '_active_shortcuts', []):
+            try:
+                sc.setEnabled(False)
+                sc.setKey(QKeySequence())
+                sc.setParent(None)
+                sc.deleteLater()
+            except RuntimeError:
+                pass
+        self._active_shortcuts = []
+
+        prefs = self.engine.load_preferences() or {}
+        shortcuts = {**config.DEFAULT_SETTINGS.get('shortcuts', {}), **prefs.get('shortcuts', {})}
+
+        # Keys that are informational only — never register as QShortcut
+        DISPLAY_ONLY_KEYS = {'jump_to_word'}
+
+        def _make(seq, slot):
+            """Helper: register one QShortcut with ApplicationShortcut context."""
+            if not seq or seq in ('', 'Ctrl+RMB'):
+                return
+            try:
+                sc = QShortcut(QKeySequence(seq), self, context=Qt.ApplicationShortcut)
+                sc.activated.connect(slot)
+                self._active_shortcuts.append(sc)
+            except Exception:
+                pass
+
+        # search — open search overlay
+        _make(shortcuts.get('search', 'Ctrl+F'), self.search_overlay.toggle_search)
+
+        # open_settings — open settings dialog (default: Escape)
+        # Note: Escape also closes search; handled by priority in event chain
+        _make(shortcuts.get('open_settings', 'Escape'), self._on_settings)
+        
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app and not getattr(self, '_focus_signal_connected', False):
+            app.focusChanged.connect(lambda old_w, new_w: self._update_shortcut_enabled_states())
+            self._focus_signal_connected = True
+
+        def safe_toggle_play():
+            if self._is_input_widget():
+                return
+            if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
+                self.audio_preview.toggle_play()
+
+        def safe_skip_backward():
+            if self._is_input_widget():
+                return
+            if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
+                self.audio_preview.skip_backward()
+
+        def safe_skip_forward():
+            if self._is_input_widget():
+                return
+            if hasattr(self, 'audio_preview') and self.audio_preview.is_preview_active():
+                self.audio_preview.skip_forward()
+
+        _make(shortcuts.get('play_stop', 'Space'), safe_toggle_play)
+        _make(shortcuts.get('skip_backward', 'Left'), safe_skip_backward)
+        _make(shortcuts.get('skip_forward', 'Right'), safe_skip_forward)
+
+        # Marker shortcuts — click the corresponding radio button
+        def _check_rb(rb):
+            """Click (check) the given radio button if it exists."""
+            def _do():
+                if self._is_input_widget():
+                    return
+                try:
+                    rb.setChecked(True)
+                except RuntimeError:
+                    pass
+            return _do
+
+        if hasattr(self, 'rb_mark_bad'):
+            _make(shortcuts.get('mark_red', '1'),    _check_rb(self.rb_mark_bad))
+        if hasattr(self, 'rb_mark_repeat'):
+            _make(shortcuts.get('mark_blue', '2'),   _check_rb(self.rb_mark_repeat))
+        if hasattr(self, 'rb_mark_typo'):
+            _make(shortcuts.get('mark_green', '3'),  _check_rb(self.rb_mark_typo))
+        if hasattr(self, 'rb_mark_inaudible'):
+            _make(shortcuts.get('mark_eraser', '4'), _check_rb(self.rb_mark_inaudible))
+
+        # Custom marker shortcuts — each registered key selects the matching radio button
+        custom_markers = prefs.get('custom_markers', [])
+        for cm in custom_markers:
+            name  = cm.get('name', '')
+            color = cm.get('color', '')
+            if not name:
+                continue
+            s_key = f'custom_marker_{name}'
+            seq   = shortcuts.get(s_key, '')
+            if not seq:
+                continue
+            # Find the radio button with matching status_id
+            target_status_id = f'custom_{color}'
+            rb_target = None
+            if hasattr(self, 'marker_btn_group'):
+                for rb in self.marker_btn_group.buttons():
+                    try:
+                        if rb.property('status_id') == target_status_id \
+                                and rb.text().endswith(f'({name})'):
+                            rb_target = rb
+                            break
+                    except RuntimeError:
+                        pass
+            if rb_target is not None:
+                _make(seq, _check_rb(rb_target))
+
+        self._update_shortcut_enabled_states()
+
+
+    def _on_settings(self):
+        """Open settings panel."""
+        dlg = SettingsDialog(self.engine, self)
+        dlg.exec()
+        
+        # WORKAROUND: Restore main window icon after dialog closes
+        from PySide6.QtWidgets import QApplication
+        QApplication.setWindowIcon(_app_icon())
+        self.setWindowIcon(_app_icon())
+        
+        self._build_marker_radio_buttons()
+        self._apply_dynamic_shortcuts()
+        self.text_canvas.update()
+        
+        # Explicitly reactivate the main window to ensure ApplicationShortcut context binds properly
+        self.activateWindow()
+        self.setFocus()
+
+
+
+
+    # ------------------------------------------------------------------
+    # Page navigation
+    # ------------------------------------------------------------------
+
+    def go_to_page(self, index: int):
+        """
+        Switch the central QStackedWidget to *index*.
+        """
+        self._stack.setCurrentIndex(index)
+        if index != 2:
+            if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'deactivate_transcription_mode'):
+                self._title_bar.deactivate_transcription_mode()
+            if getattr(self, '_is_mac', False):
+                if hasattr(self, '_mac_menu_project'):
+                    self._mac_menu_project.menuAction().setVisible(False)
+                    self._mac_menu_transcript.menuAction().setVisible(False)
+                    self._mac_menu_source.menuAction().setVisible(False)
+                    self._mac_menu_edits.menuAction().setVisible(False)
+        else:
+            if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'activate_transcription_mode'):
+                if getattr(self, '_transcription_source', None):
+                    self._title_bar.activate_transcription_mode()
+            if getattr(self, '_is_mac', False):
+                if hasattr(self, '_mac_menu_project'):
+                    self._mac_menu_project.menuAction().setVisible(True)
+                    self._mac_menu_transcript.menuAction().setVisible(True)
+                    self._mac_menu_source.menuAction().setVisible(True)
+                    self._mac_menu_edits.menuAction().setVisible(True)
+
+    # ------------------------------------------------------------------
+    # Telemetry
+    # ------------------------------------------------------------------
+
+    def check_telemetry(self):
+        """Show TelemetryPopup if consent has never been recorded."""
+        opt_in = self.engine.os_doc.get_telemetry_pref("telemetry_opt_in")
+        if opt_in is None:
+            popup = TelemetryPopup(self.engine, parent=self)
+            self.engine.os_doc.force_dark_titlebar(int(popup.winId()))
+            popup.exec()  # ApplicationModal — blocks until user responds
+        elif opt_in is True:
+            self.engine.send_telemetry_ping("app_started")
+
+    def _open_update_dialog(self, latest_ver: str, gh_url: str, gl_url: str):
+        """Open UpdateNotifyDialog manually (e.g. from settings version card)."""
+        self._show_update_dialog(latest_ver, gh_url, gl_url)
+
+    def _start_update_check(self):
+        """Start background update-check thread.
+
+        Always runs so the settings version card can display status.
+
+        Behaviour based on prefs:
+          auto_update_on_start=True  → silently download+apply update in background,
+                                       then show a one-line restart notice.
+                                       (NO os.execv, NO blocking, Resolve API intact)
+          auto_check_updates=True    → show UpdateNotifyDialog popup.
+          Both can be enabled simultaneously; auto-update fires first, popup is skipped.
+        """
+        try:
+            prefs  = self.engine.load_preferences() or {}
+            notify = prefs.get('auto_check_updates', True)
+            auto   = prefs.get('auto_update_on_start', False)
+
+            self._update_thread = UpdateCheckThread(config.VERSION, parent=self)
+
+            if auto:
+                # Silent auto-update: no popup, no blocking, no os.execv
+                self._update_thread.update_available.connect(self._do_silent_auto_update)
+            elif notify:
+                self._update_thread.update_available.connect(self._show_update_dialog)
+
+            self._update_thread.start()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"[UpdateCheck] Failed to start check thread: {e}")
+
+    def _do_silent_auto_update(self, latest_ver: str, gh_url: str, gl_url: str):
+        """
+        Run update script in a background daemon thread.
+        No blocking on main thread → Resolve API connection stays alive.
+        No os.execv → process is never replaced.
+        On success: show a small non-modal notice asking user to restart.
+        On failure: log only (no popup spam).
+        """
+        import threading, subprocess, tempfile, os, urllib.request, ssl
+        from osdoc import log_info, log_error
+
+        log_info(f"[AutoUpdate] Silent auto-update to {latest_ver} starting in background...")
+
+        is_win = self.engine.os_doc.is_win
+        urls   = [UpdateNotifyDialog._UPDATE_SCRIPT, UpdateNotifyDialog._UPDATE_SCRIPT_GL]
+
+        # Signal bridge — safe cross-thread UI callback
+        class _Bridge(QObject):
+            done = Signal(bool, str)
+        _bridge = _Bridge(self)
+
+        def _on_done(success, err):
+            if success:
+                log_info(f"[AutoUpdate] Update to {latest_ver} applied silently. Restart to load new version.")
+                # Store flag — settings card will show "restart to apply" when opened
+                self._pending_update_ver = latest_ver
+            else:
+                log_error(f"[AutoUpdate] Silent update failed: {err}")
+
+        _bridge.done.connect(_on_done)
+
+        def _worker():
+            tmp = None
+            try:
+                import sys, os
+                import certifi
+                ctx = ssl.create_default_context(cafile=certifi.where())
+                content = None
+                for url in urls:
+                    try:
+                        with urllib.request.urlopen(url, timeout=20, context=ctx) as r:
+                            content = r.read()
+                        break
+                    except Exception:
+                        continue
+                if not content:
+                    _bridge.done.emit(False, "Could not download update script.")
+                    return
+                import sys
+                fd, tmp = tempfile.mkstemp(suffix='.py', prefix='bw_autoupd_')
+                with os.fdopen(fd, 'wb') as fh:
+                    fh.write(content)
+                cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                
+                install_dir = getattr(self.engine.os_doc, 'install_dir', '')
+                if is_win:
+                    venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
+                else:
+                    venv_py = os.path.join(install_dir, 'venv', 'bin', 'python3')
+                    
+                if not os.path.isfile(venv_py):
+                    venv_py = sys.executable
+
+                cmd = [venv_py, tmp]
+                if install_dir:
+                    cmd.extend(['--install-dir', install_dir])
+
+                result = subprocess.run(
+                    cmd, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    encoding='utf-8', errors='replace', timeout=600, creationflags=cf
+                )
+                for line in (result.stdout or '').splitlines():
+                    log_info(f'[AutoUpdate] {line}')
+                _bridge.done.emit(result.returncode == 0,
+                                  f"Exit code {result.returncode}" if result.returncode != 0 else "")
+            except subprocess.TimeoutExpired:
+                _bridge.done.emit(False, "Timeout (>10 min)")
+            except Exception as e:
+                _bridge.done.emit(False, str(e))
+            finally:
+                if tmp:
+                    try: os.remove(tmp)
+                    except Exception: pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _show_auto_update_done(self, latest_ver: str):
+        """Show a simple non-blocking message: update applied, please restart."""
+        try:
+            title = self.txt('update_notify_title')
+            msg   = self.txt('update_notify_success')
+            ok    = self.txt('btn_ok')
+            CustomMsgBox(self, title, msg, ok).exec()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"[AutoUpdate] Could not show restart notice: {e}")
+
+    def _show_update_dialog(self, latest_ver: str, gh_url: str, gl_url: str):
+
+        """Show the UpdateNotifyDialog on the main (GUI) thread."""
+        try:
+            is_win = self.engine.os_doc.is_win
+            is_mac = getattr(self.engine.os_doc, 'is_mac', False)
+            install_dir = self.engine.os_doc.install_dir
+            dlg = UpdateNotifyDialog(
+                parent=self,
+                lang=self.lang,
+                current_ver=config.VERSION,
+                latest_ver=latest_ver,
+                gh_url=gh_url,
+                gl_url=gl_url,
+                is_win=is_win,
+                is_mac=is_mac,
+                install_dir=install_dir,
+            )
+            self.engine.os_doc.force_dark_titlebar(int(dlg.winId()))
+            dlg.exec()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"[UpdateCheck] Failed to show update dialog: {e}")
+
+    # ------------------------------------------------------------------
+    # Translation helper
+    # ------------------------------------------------------------------
+
+    def txt(self, key: str, **kwargs) -> str:
+        return _txt(self.lang, key, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def closeEvent(self, event):
+        msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
+        if msg_box.exec() == QDialog.Accepted:
+            # Write clean exit flag
+            try:
+                import os
+                flag_path = os.path.join(self.engine.os_doc.get_autosave_dir(), '.clean_exit')
+                with open(flag_path, 'w') as f:
+                    f.write('ok')
+            except Exception:
+                pass
+                
+            event.accept()
+            if self.closeEvent_callback:
+                self.closeEvent_callback()
+        else:
+            event.ignore()
