@@ -738,8 +738,17 @@ class OSDoctor:
         # 2. Weryfikacja bibliotek (Linux)
         libs_path = os.path.join(self.install_dir, "libs")
         cublas_path = os.path.join(libs_path, "nvidia", "cublas")
-        
-        return os.path.exists(cublas_path)
+        if os.path.exists(cublas_path):
+            return True
+
+        try:
+            import importlib.util
+            if importlib.util.find_spec("nvidia.cublas") is not None:
+                return True
+        except Exception:
+            pass
+
+        return os.path.exists("/usr/local/cuda") or shutil.which("nvcc") is not None
 
     def needs_manual_model_install(self):
         """

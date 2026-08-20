@@ -20,7 +20,7 @@ import config
 def _app_icon() -> QIcon:
     try:
         import json
-        # install_dir should be the project root. gui/utils.py -> root
+        # install_dir points to src/ (dev) or install root (prod)
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         is_win = platform.system() == "Windows"
         ext = ".ico" if is_win else ".png"
@@ -32,14 +32,23 @@ def _app_icon() -> QIcon:
                 data = json.load(f)
                 icon_name = data.get('app_icon', 'default')
 
-        # Prod layout (icons/ folder directly in install_dir), Dev layout (assets/icons/)
+        # Check prod layout (icons/ in install_dir) and dev layout (assets/icons/ next to src/)
         prod_icon_path = os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}")
-        dev_icon_path = os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}{ext}")
-        
+        dev_icon_path = os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}{ext}")
+
         icon_path = prod_icon_path if os.path.exists(prod_icon_path) else dev_icon_path
-        
+
+        # Windows fallback: if ICO is missing, fallback to PNG
+        if not os.path.exists(icon_path) and is_win:
+            prod_png = os.path.join(install_dir, "icons", f"icon_{icon_name}.png")
+            dev_png = os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.png")
+            icon_path = prod_png if os.path.exists(prod_png) else dev_png
+
+        # Fallback to default icon if chosen custom icon is missing
         if not os.path.exists(icon_path):
-            icon_path = os.path.join(install_dir, "icon" + ext)
+            prod_def = os.path.join(install_dir, "icons", f"icon_default{ext}")
+            dev_def = os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_default{ext}")
+            icon_path = prod_def if os.path.exists(prod_def) else dev_def
 
         if os.path.exists(icon_path):
             return QIcon(icon_path)

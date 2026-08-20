@@ -2023,6 +2023,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             else:
                 self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
                 self.btn_view_advanced.setStyleSheet(self.active_btn_style)
+
+        # Invalidate cached pages so they rebuild dynamically with the updated view mode
+        cur_row = self.category_list.currentRow()
+        if hasattr(self, '_page_built') and hasattr(self, 'stack'):
+            for idx in range(self.stack.count()):
+                self._page_built[idx] = False
+                scroll = self.stack.widget(idx)
+                if scroll and hasattr(scroll, 'takeWidget'):
+                    w = scroll.takeWidget()
+                    if w:
+                        w.deleteLater()
+            self._build_page(cur_row)
     def showEvent(self, event):
         super().showEvent(event)
         # WORKAROUND: Force OS to refresh the main application icon
@@ -2461,7 +2473,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         for i, name in enumerate(icon_names):
             btn = QPushButton()
             ext = ".ico" if self.engine.os_doc.is_win else ".png"
-            icon_path = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}{ext}")
+            prod_icon = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}{ext}")
+            dev_icon = os.path.join(os.path.dirname(self.engine.os_doc.install_dir), "assets", "icons", f"icon_{name}{ext}")
+            icon_path = prod_icon if os.path.exists(prod_icon) else dev_icon
+            if not os.path.exists(icon_path) and self.engine.os_doc.is_win:
+                prod_png = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}.png")
+                dev_png = os.path.join(os.path.dirname(self.engine.os_doc.install_dir), "assets", "icons", f"icon_{name}.png")
+                icon_path = prod_png if os.path.exists(prod_png) else dev_png
             
             if os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
@@ -3326,8 +3344,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         btn_copy_logs = QPushButton("")
         import PySide6.QtGui as qg
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        btn_copy_logs.setIcon(qg.QIcon(os.path.join(_src_dir, "layout", "copy.png")))
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        btn_copy_logs.setIcon(qg.QIcon(os.path.join(_assets_dir, "copy.png")))
         btn_copy_logs.setToolTip(self.txt("btn_copy_path"))
         btn_copy_logs.setStyleSheet("background: transparent; border: none; padding: 4px;")
         btn_copy_logs.setCursor(Qt.PointingHandCursor)
@@ -3627,6 +3648,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     def _refresh_markers_list(self):
         """Rebuild the custom marker list widget with inline Edit/Delete buttons."""
+        if not hasattr(self, '_markers_layout') or self._markers_layout is None:
+            return
         # Clear existing rows (keep the trailing stretch)
         layout = self._markers_layout
         while layout.count() > 1:  # keep the stretch at the end
@@ -4153,9 +4176,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         self.current_custom_markers = _g('custom_markers', [])
         try:
-            if hasattr(self, '_refresh_markers_list'):
+            if hasattr(self, '_markers_layout') and self._markers_layout is not None:
                 self._refresh_markers_list()
-        except RuntimeError:
+        except Exception:
             pass
         
         try:

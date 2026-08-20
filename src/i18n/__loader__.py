@@ -44,5 +44,6 @@ def get_trans(key, lang_code="en"):
         
     return TRANS.get("en", {}).get(key, key)
 
-# Pre-load english as fallback
-load_translations("en")
+# Pre-load all supported languages for full GUI compatibility and language selection
+for _lang in SUPPORTED_LANGS:
+    load_translations(_lang)

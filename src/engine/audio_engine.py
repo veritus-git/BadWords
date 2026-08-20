@@ -40,7 +40,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         self.ffmpeg_cmd = self.os_doc.get_ffmpeg_cmd() or "ffmpeg"
         
         # Determine path to local libs for subprocess injection
-        self.libs_dir = os.path.join(os.path.dirname(__file__), "libs")
+        self.libs_dir = os.path.abspath(os.path.join(self.os_doc.install_dir, "libs"))
         
         # Define local models directory (in install folder)
         self.models_dir = os.path.join(self.os_doc.install_dir, "models")
@@ -285,7 +285,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # --- AUTO DEVICE LOGIC & COMPUTE TYPE ---
             raw_device = settings.get('device', 'Auto')
             
-            if raw_device == "Auto":
+            if isinstance(raw_device, str) and raw_device.lower() == "auto":
                 # Check for physical existence of NVIDIA libs in venv
                 if self.os_doc.has_nvidia_support():
                     device_mode = "GPU"
@@ -294,7 +294,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     device_mode = "CPU"
                     log_info("Auto Mode: No NVIDIA libs found. Using CPU.")
             else:
-                device_mode = raw_device
+                device_mode = raw_device.upper() if isinstance(raw_device, str) else str(raw_device)
 
             # Determine Compute Type based on detected device
             # Stage 6A: Prefer user-saved ai_compute_type from settings; auto-detect as fallback
@@ -344,7 +344,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             self._last_algo_settings = algo_settings
 
             fw_compute = "int8"  # universal CPU fallback
-            if "GPU" in device_mode:
+            if "GPU" in device_mode.upper():
                 fw_device_str = "cuda"
                 if saved_compute and saved_compute.lower() not in ("auto", ""):
                     # User explicitly chose float16 or float32 — respect it unconditionally
