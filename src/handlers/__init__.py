@@ -6,9 +6,9 @@
 
 """
 MODULE: __init__.py
-ROLE: Module
+ROLE: Background Handler
 DESCRIPTION:
-Provides core functionality for this component.
+Python package initialization file.
 """
 
 from .analysis_worker import AnalysisWorker

@@ -6,9 +6,9 @@
 
 """
 MODULE: delegates.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+MVC delegates responsible for custom drawing of list items.
 """
 
 from PySide6 import QtCore

@@ -6,9 +6,9 @@
 
 """
 MODULE: language_selector.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Widget for selecting application and transcription language.
 """
 
 from PySide6.QtCore import *

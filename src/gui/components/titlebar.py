@@ -6,9 +6,9 @@
 
 """
 MODULE: titlebar.py
-ROLE: Module
+ROLE: GUI Component
 DESCRIPTION:
-Provides core functionality for this component.
+Custom window titlebar with window control buttons.
 """
 
 import os

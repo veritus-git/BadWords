@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: api/__init__.py
-ROLE: Module
+MODULE: __init__.py
+ROLE: API Client
 DESCRIPTION:
-Package initializer for the api module.
+Python package initialization file.
 """
 
 from .resolve_handler import ResolveHandler

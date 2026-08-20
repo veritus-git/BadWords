@@ -6,9 +6,9 @@
 
 """
 MODULE: api.py
-ROLE: Logic Layer / DaVinci Resolve Communication
+ROLE: Core Module
 DESCRIPTION:
-Translates internal script commands into specific DaVinci Resolve API calls.
+Main interface for external API integrations.
 """
 
 import sys

@@ -1,0 +1,19 @@
+2026-08-20 17:12:18 [INFO] ==============================
+2026-08-20 17:12:18 [INFO] BadWords Session Started
+2026-08-20 17:12:18 [INFO] OS: Linux 6.8.0-137-generic
+2026-08-20 17:12:18 [INFO] Install Dir: /mnt/dump/BadWords/src
+2026-08-20 17:12:18 [INFO] Bin Dir (FFmpeg): /mnt/dump/BadWords/src/bin
+2026-08-20 17:12:18 [INFO] VENV Python: /usr/bin/python3
+2026-08-20 17:12:18 [INFO] NVIDIA Support Detected: False
+2026-08-20 17:12:18 [INFO] ==============================
+2026-08-20 17:12:18 [INFO] load_user_data: self-healed missing keys in user.json
+2026-08-20 17:12:18 [INFO] load_settings: self-healed missing keys in settings.json
+2026-08-20 17:12:18 [INFO] === Starting BadWords ===
+2026-08-20 17:12:18 [INFO] Event loop started.
+2026-08-20 17:12:18 [ERROR] Could not connect to Resolve API object.
+2026-08-20 17:12:18 [INFO] [FFMPEG] Using System Binary: /usr/bin/ffmpeg
+2026-08-20 17:12:18 [INFO] Loading complete. Building main window.
+2026-08-20 17:12:18 [INFO] save_all_prefs: settings.json updated
+2026-08-20 17:12:18 [INFO] Main window displayed.
+2026-08-20 17:12:20 [INFO] [UpdateCheck] GitHub latest tag: '3.2.4'
+2026-08-20 17:12:20 [INFO] [UpdateCheck] Already up-to-date (3.2.4).

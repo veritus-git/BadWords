@@ -6,9 +6,9 @@
 
 """
 MODULE: text_edits.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Custom text edit fields with keyboard shortcut support.
 """
 
 from PySide6.QtCore import *

@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: i18n/__loader__.py
-ROLE: Module
+MODULE: __loader__.py
+ROLE: Core Module
 DESCRIPTION:
-Lazy loads JSON translations and provides get_trans() backward compatibility.
+Main functional module for this component.
 """
 
 import os

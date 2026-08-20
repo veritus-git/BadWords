@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: config.py
-ROLE: Data Layer / Configuration
+MODULE: analysis_params.py
+ROLE: Configuration
 DESCRIPTION:
-Stores constants, default settings, color palette,
+Configuration parameters and weights for analysis algorithms.
 """
 
 import platform

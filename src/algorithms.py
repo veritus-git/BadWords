@@ -6,9 +6,9 @@
 
 """
 MODULE: algorithms.py
-ROLE: Tool Layer
+ROLE: Core Module
 DESCRIPTION:
-CORE LOGIC v6.7 (COVERAGE VALIDATION) - Script vs Transcript Alignment.
+Implements core alignment algorithms (Script vs Transcript Alignment).
 """
 
 import re

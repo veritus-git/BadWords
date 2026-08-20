@@ -6,9 +6,9 @@
 
 """
 MODULE: utils.py
-ROLE: Module
+ROLE: Core Module
 DESCRIPTION:
-Provides core functionality for this component.
+Helper utilities for GUI (e.g., time formatting, icon loading).
 """
 
 import os

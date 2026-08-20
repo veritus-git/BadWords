@@ -6,9 +6,9 @@
 
 """
 MODULE: __init__.py
-ROLE: Module
+ROLE: GUI Component
 DESCRIPTION:
-Provides core functionality for this component.
+Python package initialization file.
 """
 
 # gui/components

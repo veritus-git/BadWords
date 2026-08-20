@@ -6,9 +6,9 @@
 
 """
 MODULE: mixins.py
-ROLE: Module
+ROLE: GUI Component
 DESCRIPTION:
-Provides core functionality for this component.
+Helper mixin classes providing additional behaviors to GUI widgets.
 """
 
 from PySide6.QtWidgets import QWidget, QMainWindow, QDialog

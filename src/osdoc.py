@@ -6,9 +6,9 @@
 
 """
 MODULE: osdoc.py
-ROLE: Tool Layer / System Abstraction
+ROLE: Core Module
 DESCRIPTION:
-Modified to force SELF-CONTAINED mode (v9.0).
+File management and project document structure system.
 """
 
 import os

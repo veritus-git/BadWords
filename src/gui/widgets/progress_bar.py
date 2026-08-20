@@ -6,9 +6,9 @@
 
 """
 MODULE: progress_bar.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Custom progress bars with animation support.
 """
 
 from PySide6.QtCore import *

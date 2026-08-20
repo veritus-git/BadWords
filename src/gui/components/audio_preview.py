@@ -6,9 +6,9 @@
 
 """
 MODULE: audio_preview.py
-ROLE: Module
+ROLE: GUI Component
 DESCRIPTION:
-Provides core functionality for this component.
+GUI component for audio track preview and waveform visualization.
 """
 
 from PySide6 import QtCore

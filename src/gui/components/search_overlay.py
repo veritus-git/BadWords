@@ -6,9 +6,9 @@
 
 """
 MODULE: search_overlay.py
-ROLE: Module
+ROLE: GUI Component
 DESCRIPTION:
-Provides core functionality for this component.
+GUI component for transcription search and filtering.
 """
 
 from PySide6 import QtCore

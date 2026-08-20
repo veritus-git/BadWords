@@ -6,9 +6,9 @@
 
 """
 MODULE: engine.py
-ROLE: Logic Layer / Processing Engine
+ROLE: Core Module
 DESCRIPTION:
-Coordinates heavy processes: running Whisper, FFmpeg operations (via subprocess),
+Main entry point for AI and audio engine logic.
 """
 
 import os

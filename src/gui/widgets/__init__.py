@@ -6,9 +6,9 @@
 
 """
 MODULE: __init__.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Python package initialization file.
 """
 
 from .buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton

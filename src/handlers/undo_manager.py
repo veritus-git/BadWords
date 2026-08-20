@@ -6,9 +6,9 @@
 
 """
 MODULE: undo_manager.py
-ROLE: Module
+ROLE: Background Handler
 DESCRIPTION:
-Provides core functionality for this component.
+Implements the change stack for Undo/Redo operations.
 """
 
 class UndoManager:

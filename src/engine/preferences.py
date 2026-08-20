@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: engine.py
-ROLE: Logic Layer / Processing Engine
+MODULE: preferences.py
+ROLE: Core Engine
 DESCRIPTION:
-Coordinates heavy processes: running Whisper, FFmpeg operations (via subprocess),
+Management of persistent user preferences.
 """
 
 import os

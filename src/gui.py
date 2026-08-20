@@ -6,9 +6,9 @@
 
 """
 MODULE: gui.py
-ROLE: Presentation Layer
+ROLE: Core Module
 DESCRIPTION:
-Responsible solely for displaying the interface (PySide6).
+Legacy GUI module (kept for backward compatibility).
 """
 
 from PySide6 import QtCore

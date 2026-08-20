@@ -6,9 +6,9 @@
 
 """
 MODULE: analysis_worker.py
-ROLE: Module
+ROLE: Background Handler
 DESCRIPTION:
-Provides core functionality for this component.
+Background thread processing analysis jobs without freezing the GUI.
 """
 
 from PySide6.QtCore import QThread, Signal

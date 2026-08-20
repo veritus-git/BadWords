@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: api/resolve_handler.py
-ROLE: Logic Layer / DaVinci Resolve Communication
+MODULE: resolve_handler.py
+ROLE: API Client
 DESCRIPTION:
-Translates internal script commands into specific DaVinci Resolve API calls.
+API integration handler for DaVinci Resolve.
 """
 
 import sys

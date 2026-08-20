@@ -6,9 +6,9 @@
 
 """
 MODULE: sliders.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Custom slider widgets for configuration settings.
 """
 
 from PySide6.QtCore import *

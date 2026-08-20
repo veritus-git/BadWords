@@ -6,9 +6,9 @@
 
 """
 MODULE: __init__.py
-ROLE: Module
+ROLE: Core Module
 DESCRIPTION:
-Provides core functionality for this component.
+Python package initialization file.
 """
 
 from .main_window import BadWordsGUI

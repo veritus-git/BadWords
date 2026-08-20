@@ -6,9 +6,9 @@
 
 """
 MODULE: __init__.py
-ROLE: Module
+ROLE: Configuration
 DESCRIPTION:
-Provides core functionality for this component.
+Python package initialization file.
 """
 
 from .app_constants import *

@@ -6,9 +6,9 @@
 
 """
 MODULE: splitters.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Custom splitters for resizable GUI panels.
 """
 
 from PySide6.QtCore import *

@@ -6,9 +6,9 @@
 
 """
 MODULE: buttons.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Custom button widgets tailored for the application interface.
 """
 
 from PySide6.QtCore import *

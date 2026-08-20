@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: config.py
-ROLE: Data Layer / Configuration
+MODULE: app_constants.py
+ROLE: Configuration
 DESCRIPTION:
-Stores constants, default settings, color palette,
+Global constants used throughout the application.
 """
 
 import platform

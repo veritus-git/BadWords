@@ -6,9 +6,9 @@
 
 """
 MODULE: autosave_manager.py
-ROLE: Module
+ROLE: Background Handler
 DESCRIPTION:
-Provides core functionality for this component.
+Manages asynchronous, safe background saving of workspace history.
 """
 
 class AutoSaveManager:

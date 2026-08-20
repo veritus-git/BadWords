@@ -6,9 +6,9 @@
 
 """
 MODULE: assembler.py
-ROLE: Module
+ROLE: Core Module
 DESCRIPTION:
-Provides core functionality for this component.
+Handles the final assembly and composition of video/audio files.
 """
 
 import os

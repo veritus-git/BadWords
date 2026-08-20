@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: engine/__init__.py
-ROLE: Module
+MODULE: __init__.py
+ROLE: Core Engine
 DESCRIPTION:
-Package initializer for the engine module.
+Python package initialization file.
 """
 
 from .audio_engine import AudioEngine

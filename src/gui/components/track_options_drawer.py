@@ -6,9 +6,9 @@
 
 """
 MODULE: track_options_drawer.py
-ROLE: Module
+ROLE: GUI Component
 DESCRIPTION:
-Provides core functionality for this component.
+Slide-out side panel for individual track options.
 """
 
 from PySide6 import QtCore

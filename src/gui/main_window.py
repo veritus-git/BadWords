@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: gui.py
-ROLE: Presentation Layer
+MODULE: main_window.py
+ROLE: Core Module
 DESCRIPTION:
-Responsible solely for displaying the interface (PySide6).
+Main application window managing the entire GUI composition.
 """
 
 from PySide6 import QtCore

@@ -5,10 +5,10 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
-MODULE: engine.py
-ROLE: Logic Layer / Processing Engine
+MODULE: transcription.py
+ROLE: Core Engine
 DESCRIPTION:
-Coordinates heavy processes: running Whisper, FFmpeg operations (via subprocess),
+Interface for external transcription models (e.g., Whisper).
 """
 
 import os

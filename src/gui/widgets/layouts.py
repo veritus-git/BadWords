@@ -6,9 +6,9 @@
 
 """
 MODULE: layouts.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Helper layout managers for the GUI.
 """
 
 from PySide6.QtCore import *

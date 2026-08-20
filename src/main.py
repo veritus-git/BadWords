@@ -6,9 +6,9 @@
 
 """
 MODULE: main.py
-ROLE: Manager / Entry Point
+ROLE: Core Module
 DESCRIPTION:
-Main execution file. Checks dependencies, imports configuration,
+Main entry point for the BadWords application.
 """
 
 import sys

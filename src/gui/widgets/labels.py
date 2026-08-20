@@ -6,9 +6,9 @@
 
 """
 MODULE: labels.py
-ROLE: Module
+ROLE: GUI Widget
 DESCRIPTION:
-Provides core functionality for this component.
+Custom text label widgets.
 """
 
 from PySide6.QtCore import *
