@@ -3122,7 +3122,11 @@ class CustomTitleBar(QWidget):
 
     def update_maximize_icon(self, is_maximized):
         icon_name = 'windowed.png' if is_maximized else 'maximize.png'
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'layout', icon_name)
+        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        _prod_assets_dir = os.path.join(_src_dir, "layout")
+        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
+        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        icon_path = os.path.join(_assets_dir, icon_name)
 
         # Używamy nowej metody, która zabezpiecza ikonę przed resetem przez animację hover!
         self.btn_max.change_base_icon(icon_path)

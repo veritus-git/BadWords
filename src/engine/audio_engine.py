@@ -1474,7 +1474,7 @@ import sys
 import json
 import os
 
-src_dir = {repr(os.path.dirname(os.path.abspath(__file__)))}
+src_dir = {repr(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))}
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
