@@ -1940,7 +1940,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.stack = QStackedWidget()
         right_layout.addWidget(self.stack)
 
-        self._build_ui()
         self.w_footer = QWidget()
         l_footer = QVBoxLayout(self.w_footer)
         l_footer.setContentsMargins(0, 0, 0, 0)
@@ -1985,23 +1984,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_footer.addLayout(btn_bar)
         right_layout.addWidget(self.w_footer)
 
-        # Connect list → stack
-        def _on_tab_changed(idx):
-            self.stack.setCurrentIndex(idx)
-            item = self.category_list.item(idx)
-            if item and item.text() == self.txt("tab_support"):
-                self.w_footer.hide()
-            else:
-                self.w_footer.show()
-                
-            # WORKAROUND: Force OS to refresh the main application icon
-            from PySide6.QtWidgets import QApplication
-            QApplication.setWindowIcon(_app_icon())
-            parent_window = self.parentWidget()
-            if parent_window:
-                parent_window.setWindowIcon(_app_icon())
-                
-        self.category_list.currentRowChanged.connect(_on_tab_changed)
+        self._build_ui()
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -2010,8 +1993,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.engine.save_preferences({'settings_view_mode': mode})
         if hasattr(self, '_initial_state'):
             self._initial_state['settings_view_mode'] = mode
-        self._build_ui()
-
+            
+        self._is_basic_mode = (mode == 'basic')
+        
+        item = self.category_list.item(4) # AI Engine
+        if item:
+            item.setHidden(self._is_basic_mode)
+            
+        if self._is_basic_mode and self.category_list.currentRow() == 4:
+            self.category_list.setCurrentRow(0)
+            
     def _build_ui(self):
         self._advanced_widgets = []
         self.category_list.clear()
@@ -2022,24 +2013,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         prefs = self.engine.load_preferences() or {}
         view_mode = prefs.get('settings_view_mode', 'basic')
-        is_basic = (view_mode == 'basic')
-        self._is_basic_mode = is_basic
+        self._is_basic_mode = (view_mode == 'basic')
 
-        if is_basic:
-            self.category_list.addItem(self.txt("tab_general"))
-            self.category_list.addItem(self.txt("tab_transcript"))
-            self.category_list.addItem(self.txt("tab_shortcuts"))
-            self.category_list.addItem(self.txt("tab_custom_markers"))
-            self.category_list.addItem(self.txt("tab_telemetry"))
-            self.category_list.addItem(self.txt("tab_support"))
-        else:
-            self.category_list.addItem(self.txt("tab_general"))
-            self.category_list.addItem(self.txt("tab_transcript"))
-            self.category_list.addItem(self.txt("tab_shortcuts"))
-            self.category_list.addItem(self.txt("tab_custom_markers"))
-            self.category_list.addItem(self.txt("tab_ai_engine"))
-            self.category_list.addItem(self.txt("tab_telemetry"))
-            self.category_list.addItem(self.txt("tab_support"))
+        self.category_list.addItem(self.txt("tab_general"))
+        self.category_list.addItem(self.txt("tab_transcript"))
+        self.category_list.addItem(self.txt("tab_shortcuts"))
+        self.category_list.addItem(self.txt("tab_custom_markers"))
+        self.category_list.addItem(self.txt("tab_ai_engine"))
+        self.category_list.addItem(self.txt("tab_telemetry"))
+        self.category_list.addItem(self.txt("tab_support"))
+
+        if self._is_basic_mode:
+            item = self.category_list.item(4)
+            if item:
+                item.setHidden(True)
 
         self.revert_funcs = []
         
@@ -2064,21 +2051,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if not self._page_built[idx]:
                 self._build_page(idx)
                 
-            from PySide6.QtWidgets import QApplication
-            try:
-                from gui.utils import _app_icon
-                QApplication.setWindowIcon(_app_icon())
-                if self.parentWidget():
-                    self.parentWidget().setWindowIcon(_app_icon())
-            except Exception:
-                pass
-                
-        try:
-            self.category_list.currentRowChanged.disconnect()
-        except Exception:
-            pass
         self.category_list.currentRowChanged.connect(_on_tab_changed)
-        
         self.category_list.setCurrentRow(0)
         self._build_page(0)
 
@@ -2107,13 +2080,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     def _build_page(self, idx):
         scroll = self.stack.widget(idx)
-        is_basic = getattr(self, '_is_basic_mode', True)
         prefs = self.engine.load_preferences() or {}
         
-        if is_basic:
-            mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'telemetry', 5: 'support'}
-        else:
-            mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'ai_engine', 5: 'telemetry', 6: 'support'}
+        mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'ai_engine', 5: 'telemetry', 6: 'support'}
             
         page_name = mapping.get(idx)
         if not page_name:
