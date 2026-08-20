@@ -1490,9 +1490,17 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.lbl_analysis_duration.setVisible(False)
                 
         from PySide6.QtCore import QTimer
-        if hasattr(self, '_status_timer') and self._status_timer.isActive():
+        if not hasattr(self, '_status_timer') or self._status_timer is None:
+            self._status_timer = QTimer(self)
+            self._status_timer.setSingleShot(True)
+        else:
             self._status_timer.stop()
-        self._status_timer = QTimer.singleShot(duration_ms, _restore)
+            try:
+                self._status_timer.timeout.disconnect()
+            except Exception:
+                pass
+        self._status_timer.timeout.connect(_restore)
+        self._status_timer.start(duration_ms)
 
     def _on_import_project(self, override_path=None):
         try:

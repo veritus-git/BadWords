@@ -75,6 +75,8 @@ DEFAULT_SETTINGS = {
     "ai_patience":              1.0,
     "ai_compression_ratio_threshold": 2.4,
     "ai_no_repeat_ngram_size":  0,
+    "ai_length_penalty":        1.0,
+    "ai_repetition_penalty":    1.0,
     # ── App / UI ────────────────────────────────────────────────────────────
     "gui_lang":             "en",
     "always_on_top":        False,

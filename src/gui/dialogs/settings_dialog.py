@@ -327,6 +327,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.engine.save_preferences({'settings_view_mode': mode})
         if hasattr(self, '_initial_state'):
             self._initial_state['settings_view_mode'] = mode
+            for k, def_v in config.DEFAULT_SETTINGS.items():
+                if k not in self._initial_state:
+                    self._initial_state[k] = def_v
             
         self._is_basic_mode = (mode == 'basic')
         
@@ -2383,7 +2386,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     def _get_current_state_dict(self):
         old_prefs = self.engine.load_preferences() or {}
-        is_basic = old_prefs.get('settings_view_mode', 'basic') == 'basic'
+        is_basic = getattr(self, '_is_basic_mode', old_prefs.get('settings_view_mode', 'basic') == 'basic')
         
         try:
             checked_btn = self.icon_group.checkedButton()
@@ -2410,7 +2413,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         state = {
             'gui_lang':           lang_code,
-            'settings_view_mode': old_prefs.get('settings_view_mode', 'basic'),
+            'settings_view_mode': 'basic' if is_basic else 'advanced',
             'app_icon':           icon_val,
             'shortcuts':          shortcuts_dict,
             'custom_markers':     getattr(self, 'current_custom_markers', old_prefs.get('custom_markers', [])),
@@ -2448,14 +2451,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 'ai_patience':              self._safe_get('spin_patience', old_prefs.get('ai_patience', 1.0), 'value'),
                 'ai_compression_ratio_threshold': self._safe_get('spin_compression', old_prefs.get('ai_compression_ratio_threshold', 2.4), 'value'),
                 'ai_no_repeat_ngram_size':  self._safe_get('spin_no_repeat', old_prefs.get('ai_no_repeat_ngram_size', 0), 'value'),
-                'ai_length_penalty':        self._safe_get('spin_length_penalty', old_prefs.get('ai_length_penalty', 1.0), 'value'),
-                'ai_repetition_penalty':    self._safe_get('spin_repetition_penalty', old_prefs.get('ai_repetition_penalty', 1.0), 'value'),
+                'ai_length_penalty':        self._safe_get('spin_length_penalty', old_prefs.get('ai_length_penalty', config.DEFAULT_SETTINGS.get('ai_length_penalty', 1.0)), 'value'),
+                'ai_repetition_penalty':    self._safe_get('spin_repetition_penalty', old_prefs.get('ai_repetition_penalty', config.DEFAULT_SETTINGS.get('ai_repetition_penalty', 1.0)), 'value'),
             })
         else:
             advanced_keys = ["always_on_top", "device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_length_penalty", "ai_repetition_penalty"]
             for key in advanced_keys:
-                if key in old_prefs:
-                    state[key] = old_prefs[key]
+                state[key] = old_prefs.get(key, config.DEFAULT_SETTINGS.get(key))
         return state
 
     def _safe_set(self, attr_name, value, method_name="setValue"):
@@ -2616,19 +2618,27 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         for k, new_val in new_prefs.items():
             old_val = old_prefs.get(k)
             if old_val is None:
-                if k == 'app_icon': old_val = 'default'
-                elif k == 'gui_lang': old_val = 'en'
-                elif k == 'hidden_panels': old_val = []
-                elif k == 'custom_markers': old_val = []
+                old_val = config.DEFAULT_SETTINGS.get(k)
+                if old_val is None:
+                    if k == 'app_icon': old_val = 'default'
+                    elif k == 'gui_lang': old_val = 'en'
+                    elif k == 'hidden_panels': old_val = []
+                    elif k == 'custom_markers': old_val = []
             
             if k == 'shortcuts':
-                old_dict = old_val if old_val is not None else {}
+                old_dict = old_val if isinstance(old_val, dict) else {}
                 for sub_k, sub_new in new_val.items():
                     sub_old = old_dict.get(sub_k, '')
                     if sub_old != sub_new:
                         diff[f"shortcuts.{sub_k}"] = (sub_old, sub_new)
             else:
-                if str(new_val) != str(old_val) and new_val != old_val:
+                is_different = False
+                if isinstance(old_val, (int, float)) and isinstance(new_val, (int, float)):
+                    if abs(float(old_val) - float(new_val)) > 1e-5:
+                        is_different = True
+                elif str(new_val) != str(old_val) and new_val != old_val:
+                    is_different = True
+                if is_different:
                     diff[k] = (old_val, new_val)
                 
         if diff:

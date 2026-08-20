@@ -32,8 +32,11 @@ BadWords/
     ├── assembler.py                 # Timeline DRT assembler, sub-frame XML manipulation & ripple-cuts
     ├── config/                      # Configuration constants, color palettes, default keys
     │   ├── __init__.py              # Central config export
-    │   ├── constants.py             # App version, supported languages, default paths
-    │   └── ui_config.py             # UI dimensions, color codes, fonts, default hotkeys
+    │   ├── app_constants.py         # App version, window base dimensions, system fonts
+    │   ├── settings_defaults.py     # Default preferences dictionary (DEFAULT_SETTINGS) & restart keys
+    │   ├── theme.py                 # Color constants, button styling, palette
+    │   ├── languages.py             # Supported Whisper languages dictionary
+    │   └── algo_constants.py        # Default bad words, timeline colors hex mapping
     ├── i18n/                        # Multi-language localization system (10 languages)
     │   ├── __init__.py              # Translation lookup helpers (_txt, get_trans)
     │   ├── __loader__.py            # Pre-loads and caches all 10 language JSONs into config.TRANS
@@ -53,8 +56,20 @@ BadWords/
     │   └── undo_manager.py          # 50-state history stack for non-destructive editing
     └── gui/                         # Presentation Layer (PySide6 UI)
         ├── __init__.py              # GUI package exports
-        ├── main_window.py           # BadWordsGUI main window, workspace coordinator, signal wiring
+        ├── main_window.py           # BadWordsGUI main window orchestrator, state coordinator, signal wiring
         ├── utils.py                 # Visual helpers: _app_icon, _txt, apply_dark_title_bar, screen center
+        ├── panels/                  # Sidebar Activity Panels (Decoupled, 1 panel per file)
+        │   ├── __init__.py          # Re-exports all activity panel builders
+        │   ├── script_panel.py      # Script import & comparative analysis sidebar panel
+        │   ├── silence_panel.py     # Silence detection parameters (threshold, padding, min duration)
+        │   ├── fillers_panel.py     # Inline filler words editor & word counter
+        │   ├── main_workspace_panel.py # Marker modes, analysis duration, pinned favorites
+        │   └── assembly_panel.py    # Auto-cut color dynamic list & timeline assembly options
+        ├── views/                   # Primary Stacked Views (Decoupled, 1 view per page)
+        │   ├── __init__.py          # Re-exports all stacked view builders
+        │   ├── welcome_view.py      # Page 0: Timeline selection, language, Whisper model & fast silence
+        │   ├── processing_view.py   # Page 1: LiquidProgressBar & model download hint
+        │   └── editor_view.py       # Page 2: Transcription canvas, loading overlay, audio preview bar
         ├── dialogs/                 # Modular Dialog Windows (Decoupled, 1 class per file)
         │   ├── __init__.py          # Re-exports all dialog classes
         │   ├── settings_dialog.py   # Settings dialog (7 tabs, real-time lazy loading, dynamic mode)
@@ -73,7 +88,7 @@ BadWords/
         │   ├── audio_preview.py     # Audio waveform player & scrub slider
         │   ├── transcription_canvas.py # Rich text editor / transcript view container
         │   ├── search_overlay.py    # In-editor Ctrl+F search overlay
-        │   └── drawer.py            # Collapsible side drawer
+        │   └── track_options_drawer.py # Collapsible track options drawer & presets
         └── widgets/                 # Atomic Reusable UI Primitives
             ├── __init__.py          # Widgets package exports
             ├── buttons.py           # Custom buttons, toggle switches, shortcut capture inputs
@@ -94,22 +109,25 @@ BadWords/
 ```mermaid
 graph TD
     A[main.py] --> B[gui.main_window]
-    B --> C[gui.dialogs]
-    B --> D[gui.components]
-    B --> E[gui.widgets]
-    B --> F[handlers]
-    F --> G[engine]
-    F --> H[algorithms]
-    G --> I[api]
-    G --> J[osdoc]
-    F --> J
-    B --> K[i18n]
-    B --> L[config]
+    B --> C[gui.views]
+    B --> D[gui.panels]
+    B --> E[gui.dialogs]
+    B --> F[gui.components]
+    B --> G[gui.widgets]
+    B --> H[handlers]
+    H --> I[engine]
+    H --> J[algorithms]
+    I --> K[api]
+    I --> L[osdoc]
+    H --> L
+    B --> M[i18n]
+    B --> N[config]
 ```
 
 ### Dependency Rules:
 1. **Presentation (`src/gui/`)**:
    - Strictly handles drawing, widget creation, user events, animations, and signals.
+   - Divided cleanly into `views/` (pages), `panels/` (sidebars), `dialogs/` (popups), `components/` (complex widgets), and `widgets/` (primitives).
    - **NEVER** run heavy algorithms, file I/O, or blocking network/process calls directly on the GUI thread.
 2. **Handlers (`src/handlers/`)**:
    - Coordinates background asynchronous tasks (`QThread`), maintains state histories, and communicates with the GUI solely via Qt Signals (`pyqtSignal` / `Signal`).
@@ -145,7 +163,7 @@ The codebase contains essential, battle-tested workarounds for cross-platform an
 
 When working on this repository, you MUST follow these commandments:
 
-1. **No Monoliths**: Never dump new functionality into `main_window.py` or create massive single-file classes. Create focused, single-responsibility files in the appropriate sub-package (`dialogs/`, `components/`, `widgets/`, `handlers/`, `engine/`).
+1. **No Monoliths**: Never dump new functionality into `main_window.py` or create massive single-file classes. Create focused, single-responsibility files in the appropriate sub-package (`panels/`, `views/`, `dialogs/`, `components/`, `widgets/`, `handlers/`, `engine/`).
 2. **Preserve Backward Compatibility**: When reorganizing files, always leave a forwarding facade or update all import call sites cleanly.
 3. **Never Block the Event Loop**: All computations > 15ms MUST run in a `QThread` or worker handler.
 4. **English Only in Code**: All comments, variable names, docstrings, and commit messages MUST be in English. (Translations belong solely in `src/i18n/*.json`).
