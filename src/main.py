@@ -9,9 +9,6 @@ MODULE: main.py
 ROLE: Manager / Entry Point
 DESCRIPTION:
 Main execution file. Checks dependencies, imports configuration,
-initializes the OS layer (osdoc), Resolve API, Engine, and starts the GUI.
-Connects all components into a working application.
-[PySide6 migration: Stage 1 — fixed GC & thread-affinity issues via AppController]
 """
 
 import sys

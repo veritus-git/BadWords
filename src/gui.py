@@ -9,9 +9,6 @@ MODULE: gui.py
 ROLE: Presentation Layer
 DESCRIPTION:
 Responsible solely for displaying the interface (PySide6).
-Includes dark-theme styling via QSS based on config.py color palette.
-Receives user actions and delegates them to Engine or ResolveHandler.
-[PySide6 migration: Stage 2 — Main Window Shell & Dynamic Panels]
 """
 
 from PySide6 import QtCore

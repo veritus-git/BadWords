@@ -6,10 +6,9 @@
 
 """
 MODULE: engine/__init__.py
+ROLE: Module
 DESCRIPTION:
-    Package initializer for the engine module.
-    Re-exports AudioEngine and FakeTTY for backward compatibility
-    so that ``import engine; engine.AudioEngine(...)`` keeps working.
+Package initializer for the engine module.
 """
 
 from .audio_engine import AudioEngine

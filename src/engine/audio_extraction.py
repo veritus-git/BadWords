@@ -9,29 +9,6 @@ MODULE: engine.py
 ROLE: Logic Layer / Processing Engine
 DESCRIPTION:
 Coordinates heavy processes: running Whisper, FFmpeg operations (via subprocess),
-detecting silence, and building data structures.
-Acts as an orchestrator, delegating tasks to API and Algorithms.
-Now also acts as a Data Controller for Project State and Model Management.
-Refactored to use Faster-Whisper via Runner Script Isolation (VENV Aware).
-FIXED v9.3: 
-- Implemented smart Compute Type detection (NVIDIA Compute Capability check).
-- Tuned Whisper parameters for VERBATIM transcription.
-FIXED v9.5:
-- Removed 'window_size_samples' from VadOptions.
-- TUNED v9.6: Optimized VAD & Decoding parameters.
-UPDATED v10.3:
-- OPERATION "LOBOTOMY": Switched to GREEDY DECODING (beam_size=1).
-- Disables linguistic smoothing to force raw acoustic capture.
-- Removes temperature fallback strategies to prevent grammar correction.
-- Raw Retake Logic retained.
-UPDATED v11.0:
-- INTEGRATED STABLE-TS: Now uses stable-ts wrapper for robust timestamp alignment.
-FIXED v11.2:
-- Added dynamic PATH injection for portable FFmpeg in runner script to fix FileNotFoundError.
-NEW v12.0:
-- SMART CHUNKING: Re-chunks stable-ts output into blocks respecting punctuation with lookahead (up to 33 words).
-- ANTI-HALLUCINATION: Automatically squashes 10+ identical repetitive words into one red clip.
-- RAW TEXT ENGINE: Pass 3 logic bleed removed (No more auto loop-detection on initial load).
 """
 
 import os

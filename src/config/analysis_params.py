@@ -9,8 +9,6 @@ MODULE: config.py
 ROLE: Data Layer / Configuration
 DESCRIPTION:
 Stores constants, default settings, color palette,
-translations (i18n), algorithm parameters, and supported languages data.
-This is a pure data store, independent of GUI libraries.
 """
 
 import platform

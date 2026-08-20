@@ -9,10 +9,6 @@ MODULE: osdoc.py
 ROLE: Tool Layer / System Abstraction
 DESCRIPTION:
 Modified to force SELF-CONTAINED mode (v9.0).
-- Logs/Configs/Models in install dir.
-- FFmpeg detection prioritizes local 'bin' folder (Portable mode).
-- VENV detection for Python isolation.
-- NEW: Nvidia library detection for Auto-GPU config.
 """
 
 import os

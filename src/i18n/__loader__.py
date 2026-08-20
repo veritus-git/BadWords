@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 #Copyright (c) 2026 Szymon Wolarz
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
 MODULE: i18n/__loader__.py
-DESCRIPTION: Lazy loads JSON translations and provides get_trans() backward compatibility.
+ROLE: Module
+DESCRIPTION:
+Lazy loads JSON translations and provides get_trans() backward compatibility.
 """
+
 import os
 import json
 

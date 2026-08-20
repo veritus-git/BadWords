@@ -1,25 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 """
-DRT Assembler — Native DaVinci Resolve Timeline Assembly Engine
-================================================================
-Implements the hybrid .drt assembly pipeline for BadWords:
-
-  1. Export source timeline as .drt (ZIP) via Resolve API
-  2. Unpack → parse SeqContainer XML
-  3. Apply ops cuts: modify ONLY Start/Duration/In on clips
-  4. Repack as .drt → import via Resolve API
-  5. Post-import: SetName() + reapply_clip_colors()
-
-WHY .drt OVER FCP7 XML:
-  • Preserves 100% of DaVinci-specific data (adjustment clips,
-    generators, Fusion comps, color grading, all binary metadata)
-  • No format-specific hacks (generatoritem conversion, sourcetrack
-    stripping, compound clip skipping)
-  • Media relinking is automatic (absolute paths in the .drt)
-
-SAFETY GUARANTEE:
-  We NEVER touch binary blobs (FieldsBlob, EffectFiltersBA,
-  MediaFrameRate, MediaTimemapBA, etc.).  Only Start, Duration, In,
-  and DbId are modified — the minimum needed to reposition clips.
+MODULE: assembler.py
+ROLE: Module
+DESCRIPTION:
+Provides core functionality for this component.
 """
 
 import os

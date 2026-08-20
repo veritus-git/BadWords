@@ -6,10 +6,9 @@
 
 """
 MODULE: api/__init__.py
+ROLE: Module
 DESCRIPTION:
-    Package initializer for the api module.
-    Re-exports ResolveHandler for backward compatibility
-    so that ``import api; api.ResolveHandler(...)`` keeps working.
+Package initializer for the api module.
 """
 
 from .resolve_handler import ResolveHandler
