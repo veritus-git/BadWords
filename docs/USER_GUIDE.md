@@ -1,55 +1,48 @@
-# 📖 BadWords — Complete User Guide & Manual
-### *The Definitive Handbook for Video Editors using DaVinci Resolve*
-
----
-
-<p align="center">
-  <img src="images/01_hero_overview.png" alt="BadWords Interface Overview" width="100%">
-</p>
+# BadWords - Complete User Guide & Manual
 
 > [!NOTE]  
-> **Target Audience:** Video editors, YouTubers, podcasters, and content creators working with dialogue-heavy footage in **DaVinci Resolve** (Free & Studio).  
-> **Supported Platforms:** Windows 10/11, macOS (Intel & Apple Silicon), Linux (All major distributions).
+> **Documentation Disclaimer:**  
+> This user guide was created with AI assistance to provide a detailed, comprehensive manual for BadWords. While every effort was made to verify technical accuracy against the source code, some phrasing inaccuracies, oversights, or errors may still be present. If you find anything unclear, confusing, or incorrect, please open an Issue on GitHub or submit a Pull Request — community feedback and contributions are warmly appreciated.
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
-- [1. 🚀 Quickstart Guide (3-Minute Setup)](#1--quickstart-guide-3-minute-setup)
+- [1. Quickstart Guide (3-Minute Setup)](#1-quickstart-guide-3-minute-setup)
   - [1.1 Launching from DaVinci Resolve](#11-launching-from-davinci-resolve)
   - [1.2 Choosing Source Audio & Model](#12-choosing-source-audio--model)
   - [1.3 Reviewing & Color-Coding Mistakes](#13-reviewing--color-coding-mistakes)
   - [1.4 Assembling the Cut Timeline](#14-assembling-the-cut-timeline)
-- [2. 🎛️ UI Reference: Welcome Screen & Source Selection](#2-️-ui-reference-welcome-screen--source-selection)
+- [2. UI Reference: Welcome Screen & Source Selection](#2-ui-reference-welcome-screen--source-selection)
   - [2.1 Transcription Workspace](#21-transcription-workspace)
   - [2.2 Fast Silence Workspace (Standalone Silence Removal)](#22-fast-silence-workspace-standalone-silence-removal)
   - [2.3 First-Run Hardware Optimization & Model Downloads](#23-first-run-hardware-optimization--model-downloads)
-- [3. 🖥️ UI Reference: Top Titlebar & Project Management](#3-️-ui-reference-top-titlebar--project-management)
+- [3. UI Reference: Top Titlebar & Project Management](#3-ui-reference-top-titlebar--project-management)
   - [3.1 Project Menu (`.bws` Saves & Crash Recovery)](#31-project-menu-bws-saves--crash-recovery)
   - [3.2 Transcript Menu (Export `.txt` & Clipboard)](#32-transcript-menu-export-txt--clipboard)
   - [3.3 Versions & Chapter Switching (DaVinci Playhead Sync)](#33-versions--chapter-switching-davinci-playhead-sync)
   - [3.4 Window Controls & Always on Top](#34-window-controls--always-on-top)
-- [4. ✍️ UI Reference: Transcript Editor & Word Painting](#4-️-ui-reference-transcript-editor--word-painting)
+- [4. UI Reference: Transcript Editor & Word Painting](#4-ui-reference-transcript-editor--word-painting)
   - [4.1 Transcript Layout (Continuous Flow vs Segmented Blocks)](#41-transcript-layout-continuous-flow-vs-segmented-blocks)
   - [4.2 Word Painting & Color-Coded Markers](#42-word-painting--color-coded-markers)
   - [4.3 Inaudible Fragments `(...)` & Start Absorption](#43-inaudible-fragments--and-start-absorption)
   - [4.4 Transcript Search Overlay (`Ctrl + F`)](#44-transcript-search-overlay-ctrl--f)
-- [5. 🎧 UI Reference: Audio Preview & Navigation Bar](#5-️-ui-reference-audio-preview--navigation-bar)
+- [5. UI Reference: Audio Preview & Navigation Bar](#5-ui-reference-audio-preview--navigation-bar)
   - [5.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#51-jump-to-word-instant-resolve-timeline-scrubbing)
   - [5.2 Integrated Audio Player Controls](#52-integrated-audio-player-controls)
   - [5.3 Speed Adjustment & Playhead Synchronization](#53-speed-adjustment--playhead-synchronization)
-- [6. 📑 UI Reference: Collapsible Sidebar Activities](#6-️-ui-reference-collapsible-sidebar-activities)
+- [6. UI Reference: Collapsible Sidebar Activities](#6-ui-reference-collapsible-sidebar-activities)
   - [6.1 Main Panel (Marking Palette & Pinned Favorites)](#61-main-panel-marking-palette--pinned-favorites)
   - [6.2 Script Analysis (Compare vs Standalone & Side-by-Side View)](#62-script-analysis-compare-vs-standalone--side-by-side-view)
   - [6.3 Silence Detection (Post-Transcript Trimming)](#63-silence-detection-post-transcript-trimming)
   - [6.4 Filler Words Manager (Inline List & Auto-Marking)](#64-filler-words-manager-inline-list--auto-marking)
   - [6.5 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)](#65-assembly--color-cutting-matrix-auto-cut-vs-cut-now)
   - [6.6 Sidebar Drag & Drop Customization](#66-sidebar-drag--drop-customization)
-- [7. 🎬 UI Reference: Timeline Assembly & DaVinci Integration](#7-️-ui-reference-timeline-assembly--davinci-integration)
+- [7. UI Reference: Timeline Assembly & DaVinci Integration](#7-ui-reference-timeline-assembly--davinci-integration)
   - [7.1 The Assembly Split Button & Track Options Drawer](#71-the-assembly-split-button--track-options-drawer)
   - [7.2 Native `.drt` Pipeline (Non-Destructive Protection)](#72-native-drt-pipeline-non-destructive-protection)
   - [7.3 Timeline Heatmap Overview](#73-timeline-heatmap-overview)
-- [8. ⚙️ UI Reference: Settings & Preferences](#8-️-ui-reference-settings--preferences)
+- [8. UI Reference: Settings & Preferences](#8-ui-reference-settings--preferences)
   - [8.1 General Settings](#81-general-settings)
   - [8.2 Interface & Transcript Formatting](#82-interface--transcript-formatting)
   - [8.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#83-audio-sync-calibration-offset-padding-snap-max)
@@ -57,17 +50,17 @@
   - [8.5 Custom Markers Configuration](#85-custom-markers-configuration)
   - [8.6 AI Engine Configuration (Advanced Mode)](#86-ai-engine-configuration-advanced-mode)
   - [8.7 Telemetry, Contact & Issue Reporting](#87-telemetry-contact--issue-reporting)
-- [9. 💡 Step-by-Step Practical Recipes ("How do I...?")](#9--step-by-step-practical-recipes-how-do-i)
+- [9. Step-by-Step Practical Recipes ("How do I...?")](#9-step-by-step-practical-recipes-how-do-i)
   - [Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)
   - [Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes--false-starts-without-a-script)
   - [Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)
   - [Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)](#recipe-d-one-click-filler-word-purge-yyy-umm-uh)
   - [Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names--jargon)
-- [10. ⌨️ Shortcuts Cheat Sheet & FAQ](#10-️-shortcuts-cheat-sheet--faq)
+- [10. Shortcuts Cheat Sheet & FAQ](#10-shortcuts-cheat-sheet--faq)
 
 ---
 
-## 1. 🚀 Quickstart Guide (3-Minute Setup)
+## 1. Quickstart Guide (3-Minute Setup)
 
 Follow this rapid workflow to convert raw dialogue footage into an edited timeline with ripple cuts and color-coded markers in under three minutes.
 
@@ -77,7 +70,7 @@ flowchart LR
     B --> C["3. Click Analyze"]
     C --> D["4. Paint Mistakes"]
     D --> E["5. Click Assemble"]
-    E --> F["🎉 New Cut Timeline!"]
+    E --> F["New Cut Timeline"]
 ```
 
 ### 1.1 Launching from DaVinci Resolve
@@ -87,11 +80,11 @@ flowchart LR
 3. The BadWords window will appear on top of DaVinci Resolve.
 
 ### 1.2 Choosing Source Audio & Model
-1. **Timeline Selection:** Confirm your active timeline is selected in the dropdown. (Click `↺` if you just created a new timeline).
+1. **Timeline Selection:** Confirm your active timeline is selected in the dropdown. (Click `Refresh` if you just created a new timeline).
 2. **Track/s Selection:** Select the audio track(s) where dialogue is recorded (e.g., `A1` for your primary microphone).
 3. **Language:** Select the spoken language of the recording.
 4. **Model:** Choose **Large Turbo** (recommended) or **Large** (or **Medium** on lower-spec hardware).
-5. Click the green **`▶ Analyze`** button.
+5. Click the green **`Analyze`** button.
 
 > [!IMPORTANT]  
 > **Model Quality Warning:** While smaller models (*Tiny*, *Base*, *Small*) are available in the dropdown, their transcription precision is significantly degraded. Because BadWords relies entirely on verbatim word accuracy to calculate frame-exact cuts, using models below *Medium* can cause the AI to hallucinate or miss words, making the tool practically unusable.
@@ -129,7 +122,7 @@ flowchart LR
 
 ---
 
-## 2. 🎛️ UI Reference: Welcome Screen & Source Selection
+## 2. UI Reference: Welcome Screen & Source Selection
 
 When BadWords opens, you are greeted by the **Welcome Screen**. This view allows you to configure your transcription pipeline or switch to the ultra-fast standalone silence removal tool.
 
@@ -154,13 +147,13 @@ Capture the initial BadWords Welcome Screen with annotations:
 | UI Element | Type | Purpose & Description |
 | :--- | :--- | :--- |
 | **Timeline Selection** | *Dropdown* | Lists all timelines present in your currently open DaVinci Resolve project. Select the timeline you wish to transcribe. |
-| **Refresh Timelines `↺`** | *Button* | Re-queries DaVinci Resolve's API to update the list of timelines and audio tracks if you created or renamed one while BadWords was open. |
-| **Track/s Selection** | *Multi-Select* | Allows you to select one, multiple, or all audio tracks (`A1`, `A2`, etc.). <br>**⚠️ Important:** When multiple tracks are selected, BadWords mixes them into a **single combined audio stream** for Whisper. It does *not* transcribe each track separately. If multiple speakers talk over each other on separate tracks, the AI will "hear" mixed overlapping speech. |
+| **Refresh Timelines `Refresh`** | *Button* | Re-queries DaVinci Resolve's API to update the list of timelines and audio tracks if you created or renamed one while BadWords was open. |
+| **Track/s Selection** | *Multi-Select* | Allows you to select one, multiple, or all audio tracks (`A1`, `A2`, etc.). <br>**Important:** When multiple tracks are selected, BadWords mixes them into a **single combined audio stream** for Whisper. It does *not* transcribe each track separately. If multiple speakers talk over each other on separate tracks, the AI will "hear" mixed overlapping speech. |
 | **Language** | *Searchable Dropdown* | Specifies the spoken language of the recording. Selecting a language automatically configures language-specific verbatim acoustic prompts (from a library of 60+ languages) and backend parameters to prevent the AI from translating or smoothing out native hesitation sounds. |
 | **Model** | *Dropdown* | Selects the local Faster-Whisper neural network model. *(See the detailed Model Selection Guide below).* |
 | **More Accurate Transcription** | *Toggle Switch* | Opens a collapsible slide-out drawer where you can paste or import a reference script (`.txt`, `.pdf`, `.docx`). Keywords from the script are extracted and fed directly into the model's initial prompt, dramatically increasing accuracy on technical jargon, names, and numbers. |
 | **Import Project** | *Button* | Opens an existing BadWords `.bws` project file to resume previous editing sessions. |
-| **▶ Analyze** | *Action Button* | Extracts audio from Resolve, executes VAD & Whisper acoustic transcription, runs initial silence detection, and opens the main editor. |
+| **Analyze** | *Action Button* | Extracts audio from Resolve, executes VAD & Whisper acoustic transcription, runs initial silence detection, and opens the main editor. |
 
 #### Model Selection Guide & Hardware Requirements
 
@@ -225,7 +218,7 @@ When you analyze footage with a specific AI model for the first time:
 
 ---
 
-## 3. 🖥️ UI Reference: Top Titlebar & Project Management
+## 3. UI Reference: Top Titlebar & Project Management
 
 The top bar of BadWords provides a clean, native-feeling titlebar with access to file management, transcript exports, and timeline synchronization.
 
@@ -260,12 +253,12 @@ Capture the Titlebar showing:
 - **Sync DaVinci Timeline on Chapter Switch:** When enabled in settings, switching between versions or chapters inside BadWords automatically changes the active timeline in DaVinci Resolve to match.
 
 ### 3.4 Window Controls & Always on Top
-- **Gear Icon ⚙️:** Opens the comprehensive [Settings Dialog](#8-️-ui-reference-settings--preferences).
+- **Gear Icon Settings:** Opens the comprehensive [Settings Dialog](#8-ui-reference-settings--preferences).
 - **Always on Top:** Can be enabled in Settings, ensuring BadWords floats over DaVinci Resolve even when scrubbing the timeline in Resolve.
 
 ---
 
-## 4. ✍️ UI Reference: Transcript Editor & Word Painting
+## 4. UI Reference: Transcript Editor & Word Painting
 
 The central workspace of BadWords is the **Transcript Canvas**, an IDE-inspired interactive text environment where every single word is bound to frame-accurate audio timestamps.
 
@@ -298,12 +291,12 @@ BadWords uses a **Painting Metaphor** for editing. Selecting a color tool and cl
 
 | Painting Color | DaVinci Clip Color | Default Assembly Action | Purpose |
 | :---: | :---: | :---: | :--- |
-| 🔴 **Red** | **Violet** | **Cut / Ripple Delete** *(if Auto-cut enabled)* | Filler words (*"uh"*, *"um"*, *"yyy"*), obvious stumbles, coughs, and bloopers. |
-| 🔵 **Blue** | **Navy** | **Cut / Ripple Delete** *(if Auto-cut enabled)* | Retakes, repeated sentences, false starts, and second takes. |
-| 🟢 **Green** | **Olive** | **Keep (Color Clip)** | Minor deviations, typos, or improvisations compared to the script. |
-| 🟤 **Brown** | **Chocolate** | **Keep (Color Clip)** | Inaudible sounds, mumbled speech, or microphone clicks. |
-| 🧹 **Eraser** | *Default* | **Keep (Normal Clip)** | Strips all color tags from the selected word, restoring it to normal clip color. |
-| 🎨 **Custom** | *User Assigned* | *Configurable in Assembly* | User-defined categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
+| **Red** | **Violet** | **Cut / Ripple Delete** *(if Auto-cut enabled)* | Filler words (*"uh"*, *"um"*, *"yyy"*), obvious stumbles, coughs, and bloopers. |
+| **Blue** | **Navy** | **Cut / Ripple Delete** *(if Auto-cut enabled)* | Retakes, repeated sentences, false starts, and second takes. |
+| **Green** | **Olive** | **Keep (Color Clip)** | Minor deviations, typos, or improvisations compared to the script. |
+| **Brown** | **Chocolate** | **Keep (Color Clip)** | Inaudible sounds, mumbled speech, or microphone clicks. |
+| **Eraser** | *Default* | **Keep (Normal Clip)** | Strips all color tags from the selected word, restoring it to normal clip color. |
+| **Custom** | *User Assigned* | *Configurable in Assembly* | User-defined categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
 
 > [!WARNING]  
 > **Resolve Clip Color Mapping:** BadWords maps your colors to *Violet*, *Navy*, and *Olive* in DaVinci Resolve to prevent visual conflicts with DaVinci Resolve’s default video (Blue) and audio (Green) clip colors.
@@ -324,7 +317,7 @@ Pressing **`Ctrl + F`** (or `Cmd + F` on macOS) opens the floating search bar:
 
 ---
 
-## 5. 🎧 UI Reference: Audio Preview & Navigation Bar
+## 5. UI Reference: Audio Preview & Navigation Bar
 
 The bottom panel of the editor houses the **Audio Preview Bar**, eliminating guesswork by allowing you to listen to words and navigate Resolve directly from the text.
 
@@ -363,7 +356,7 @@ Click the speed dropdown to select playback rates: `0.5x`, `0.75x`, `1.0x`, `1.2
 
 ---
 
-## 6. 📑 UI Reference: Collapsible Sidebar Activities
+## 6. UI Reference: Collapsible Sidebar Activities
 
 BadWords features an activity sidebar system on the left and right borders of the window. Sidebar panels can be collapsed, reordered, and customized.
 
@@ -418,9 +411,9 @@ Capture Script Analysis & Side-by-Side comparison view:
    - Filler words and speech errors are painted **Red**.
    - Minor phrasing typos are painted **Green**.
 4. **`Side-by-Side View (BETA)`:** Opens a dedicated comparative two-column view displaying the reference script on the left and the live transcript on the right with colored indicators:
-   - 🟡 **Unspoken** (Present in script, never spoken in recording)
-   - 🔵 **Skipped** (Omitted during delivery)
-   - 🔴 **Improvised / Error** (Deviations from script)
+   - **Unspoken** (Present in script, never spoken in recording)
+   - **Skipped** (Omitted during delivery)
+   - **Improvised / Error** (Deviations from script)
 
 ---
 
@@ -435,7 +428,7 @@ Adjusts silence parameters applied after full speech transcription:
 
 ### 6.4 Filler Words Manager (Inline List & Auto-Marking)
 - **Inline Editor:** An interactive list of all filler words recognized by the engine (e.g. `yyy, eee, umm, uh, ah, mhm, hmm, like, you know`).
-- **Live Counter & Save:** Displays total filler words defined. Click `Save` to persist changes or `↺` to restore factory defaults.
+- **Live Counter & Save:** Displays total filler words defined. Click `Save` to persist changes or `Refresh` to restore factory defaults.
 - **`Mark filler words automatically` Toggle:** When enabled, any word matching the list is automatically painted **Red** during transcription.
 
 ---
@@ -462,7 +455,7 @@ Capture the Assembly Matrix showing:
 #### Controls per Color Row:
 1. **Scissors Icon (`Cut Now`):** Prompts you to immediately cut and remove all clips of this color from either a **New Timeline** or the **Currently Selected Timeline** in DaVinci Resolve.
 2. **Auto-Cut Icon (Checkmark):** When checked, any text painted with this color is **automatically ripple-deleted** during the standard `Assemble` process.
-3. **Star Icon (`★`):** Pins this color's Auto-Cut toggle directly onto the Main Panel under *Pinned Favorites*.
+3. **Star Icon (`Star`):** Pins this color's Auto-Cut toggle directly onto the Main Panel under *Pinned Favorites*.
 
 ---
 
@@ -471,7 +464,7 @@ You can reorder sidebar activity icons or drag panels between the left and right
 
 ---
 
-## 7. 🎬 UI Reference: Timeline Assembly & DaVinci Integration
+## 7. UI Reference: Timeline Assembly & DaVinci Integration
 
 When editing is complete, clicking the **Assemble** button converts your text modifications into timeline operations in DaVinci Resolve.
 
@@ -483,7 +476,7 @@ When editing is complete, clicking the **Assemble** button converts your text mo
 IMAGE PLACEHOLDER: docs/images/10_assembly_drawer.png
 Capture the Assemble Split Button expanded with the Track Options Drawer:
 [1] Assemble Button Main Click Area
-[2] Drawer Expand Arrow (▼ / ▲)
+[2] Drawer Expand Arrow (Expand / Collapse)
 [3] Track Mode Selector (All / Transcription Only / Custom)
 [4] Video Tracks Checkboxes (V1, V2...)
 [5] Audio Tracks Checkboxes (A1, A2...)
@@ -491,7 +484,7 @@ Capture the Assemble Split Button expanded with the Track Options Drawer:
 
 ### 7.1 The Assembly Split Button & Track Options Drawer
 - **Main Button Area:** Clicking **`Assemble`** immediately triggers the build process using current track settings.
-- **Drawer Arrow (`▼ / ▲`):** Expands the **Track Options Drawer** directly above the button:
+- **Drawer Arrow (`Expand / Collapse`):** Expands the **Track Options Drawer** directly above the button:
   - **All tracks:** Includes every video and audio track present on the source timeline in the final ripple edit.
   - **Only transcription tracks:** Cuts only the audio track(s) selected during transcription.
   - **Custom selection:** Allows you to check/uncheck specific video tracks (`V1`, `V2`, `V3`) and audio tracks (`A1`, `A2`, `A3`).
@@ -523,9 +516,9 @@ Upon import into DaVinci Resolve, BadWords attaches native timeline markers to e
 
 ---
 
-## 8. ⚙️ UI Reference: Settings & Preferences
+## 8. UI Reference: Settings & Preferences
 
-Clicking the Gear Icon ⚙️ opens the **Settings Dialog**. You can switch between **Basic View** and **Advanced View** at the top.
+Clicking the Gear Icon Settings opens the **Settings Dialog**. You can switch between **Basic View** and **Advanced View** at the top.
 
 <p align="center">
   <img src="images/11_settings_dialog.png" alt="Settings Dialog Overview" width="90%">
@@ -536,7 +529,7 @@ IMAGE PLACEHOLDER: docs/images/11_settings_dialog.png
 Capture Settings dialog showing:
 [1] Basic / Advanced View Switcher
 [2] Left Category Navigation List
-[3] Setting Row with Input & Reset (↺) Button
+[3] Setting Row with Input & Reset (Refresh) Button
 [4] Footer Bar: Reset All Settings, Close, Apply
 -->
 
@@ -617,7 +610,7 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 
 ---
 
-## 9. 💡 Step-by-Step Practical Recipes ("How do I...?")
+## 9. Step-by-Step Practical Recipes ("How do I...?")
 
 ### Recipe A: Cutting Video Based on a Written Script
 **Goal:** You recorded a video reading from a script and made several mistakes or repeated sentences. You want to keep only the good takes that match your script.
@@ -652,7 +645,7 @@ sequenceDiagram
 ### Recipe B: Removing Retakes & False Starts without a Script
 **Goal:** You recorded a casual podcast or gameplay video without any script and want to remove false starts and stumbles automatically.
 
-1. Launch BadWords and click **`▶ Analyze`**.
+1. Launch BadWords and click **`Analyze`**.
 2. Open the **Script Analysis** tab in the sidebar.
 3. Click **`Analyze (Standalone)`**.
 4. BadWords will scan the transcript for acoustic repetitions (e.g. *"In today's video we... In today's video we will explore..."*).
@@ -689,12 +682,12 @@ sequenceDiagram
 
 1. On the Welcome Screen, turn ON **`More accurate transcription`**.
 2. Paste your reference text or documentation into the slide-out script box.
-3. Click **`▶ Analyze`**.
+3. Click **`Analyze`**.
 4. BadWords extracts the technical terms, feeds them directly into Whisper's prompt layer, and delivers a perfect verbatim transcription on the first pass!
 
 ---
 
-## 10. ⌨️ Shortcuts Cheat Sheet & FAQ
+## 10. Shortcuts Cheat Sheet & FAQ
 
 ### Default Keyboard & Mouse Shortcuts
 
