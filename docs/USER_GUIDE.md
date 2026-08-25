@@ -1,8 +1,7 @@
 # BadWords - Complete User Guide & Manual
 
-> [!NOTE]  
-> **Documentation Disclaimer:**  
-> This user guide was created with AI assistance to provide a detailed, comprehensive manual for BadWords. While every effort was made to verify technical accuracy against the source code, some phrasing inaccuracies, oversights, or errors may still be present. If you find anything unclear, confusing, or incorrect, please open an Issue on GitHub or submit a Pull Request — community feedback and contributions are warmly appreciated.
+> [!WARNING]  
+> **Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub — Pull Requests are always welcome!
 
 ---
 
