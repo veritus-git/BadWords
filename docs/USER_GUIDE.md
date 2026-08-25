@@ -5,55 +5,64 @@
 
 ## Table of Contents
 
-1. [Quickstart Guide (3-Minute Setup)](#1-quickstart-guide-3-minute-setup)
-   - [1.1 Launching from DaVinci Resolve](#11-launching-from-davinci-resolve)
-   - [1.2 Choosing Source Audio & Model](#12-choosing-source-audio--model)
-   - [1.3 Reviewing, Color-Coding & Cut Settings](#13-reviewing-color-coding--cut-settings)
-   - [1.4 Assembling the Cut Timeline](#14-assembling-the-cut-timeline)
-2. [UI Reference: Welcome Screen & Source Selection](#2-ui-reference-welcome-screen--source-selection)
-   - [2.1 Transcription Workspace](#21-transcription-workspace)
-   - [2.2 Fast Silence Workspace (Standalone Silence Removal)](#22-fast-silence-workspace-standalone-silence-removal)
-   - [2.3 First-Run Model Download & Setup](#23-first-run-model-download--setup)
-3. [UI Reference: Top Titlebar & Project Management](#3-ui-reference-top-titlebar--project-management)
-   - [3.1 Project Menu (`.bws` Saves & Crash Recovery)](#31-project-menu-bws-saves--crash-recovery)
-   - [3.2 Transcript Menu (Export `.txt` & Clipboard)](#32-transcript-menu-export-txt--clipboard)
-   - [3.3 Versions & Chapter Switching (DaVinci Playhead Sync)](#33-versions--chapter-switching-davinci-playhead-sync)
-   - [3.4 Window Controls & Always on Top](#34-window-controls--always-on-top)
-4. [UI Reference: Transcript Editor & Word Painting](#4-ui-reference-transcript-editor--word-painting)
-   - [4.1 Transcript Layout (Continuous Flow vs Segmented Blocks)](#41-transcript-layout-continuous-flow-vs-segmented-blocks)
-   - [4.2 Word Painting & Color-Coded Markers](#42-word-painting--color-coded-markers)
-   - [4.3 Inaudible Fragments `(...)` & Start Absorption](#43-inaudible-fragments--and-start-absorption)
-   - [4.4 Transcript Search Overlay (`Ctrl + F`)](#44-transcript-search-overlay-ctrl--f)
-5. [UI Reference: Audio Preview & Navigation Bar](#5-ui-reference-audio-preview--navigation-bar)
-   - [5.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#51-jump-to-word-instant-resolve-timeline-scrubbing)
-   - [5.2 Integrated Audio Player Controls](#52-integrated-audio-player-controls)
-   - [5.3 Speed Adjustment & Playhead Synchronization](#53-speed-adjustment--playhead-synchronization)
-6. [UI Reference: Collapsible Sidebar Activities](#6-ui-reference-collapsible-sidebar-activities)
-   - [6.1 Main Panel (Marking Palette & Pinned Favorites)](#61-main-panel-marking-palette--pinned-favorites)
-   - [6.2 Script Analysis (Compare vs Standalone & Side-by-Side View)](#62-script-analysis-compare-vs-standalone--side-by-side-view)
-   - [6.3 Silence Detection (Post-Transcript Trimming)](#63-silence-detection-post-transcript-trimming)
-   - [6.4 Filler Words Manager (Inline List & Auto-Marking)](#64-filler-words-manager-inline-list--auto-marking)
-   - [6.5 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)](#65-assembly--color-cutting-matrix-auto-cut-vs-cut-now)
-   - [6.6 Sidebar Drag & Drop Customization](#66-sidebar-drag--drop-customization)
-7. [UI Reference: Timeline Assembly & DaVinci Integration](#7-ui-reference-timeline-assembly--davinci-integration)
-   - [7.1 The Assembly Split Button & Track Options Drawer](#71-the-assembly-split-button--track-options-drawer)
-   - [7.2 Native `.drt` Pipeline (Non-Destructive Protection)](#72-native-drt-pipeline-non-destructive-protection)
-   - [7.3 Timeline Heatmap Overview](#73-timeline-heatmap-overview)
-8. [UI Reference: Settings & Preferences](#8-ui-reference-settings--preferences)
-   - [8.1 General Settings](#81-general-settings)
-   - [8.2 Interface & Transcript Formatting](#82-interface--transcript-formatting)
-   - [8.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#83-audio-sync-calibration-offset-padding-snap-max)
-   - [8.4 Keyboard & Mouse Shortcut Bindings](#84-keyboard--mouse-shortcut-bindings)
-   - [8.5 Custom Markers Configuration](#85-custom-markers-configuration)
-   - [8.6 AI Engine Configuration (Advanced Mode)](#86-ai-engine-configuration-advanced-mode)
-   - [8.7 Telemetry, Contact & Issue Reporting](#87-telemetry-contact--issue-reporting)
-9. [Step-by-Step Practical Recipes ("How do I...?")](#9-step-by-step-practical-recipes-how-do-i)
-   - [Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)
-   - [Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes--false-starts-without-a-script)
-   - [Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)
-   - [Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)](#recipe-d-one-click-filler-word-purge-yyy-umm-uh)
-   - [Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names--jargon)
-10. [Shortcuts Cheat Sheet & FAQ](#10-shortcuts-cheat-sheet--faq)
+**[1. Quickstart Guide (3-Minute Setup)](#1-quickstart-guide-3-minute-setup)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[1.1 Launching from DaVinci Resolve](#11-launching-from-davinci-resolve)  
+&nbsp;&nbsp;&nbsp;&nbsp;[1.2 Choosing Source Audio & Model](#12-choosing-source-audio--model)  
+&nbsp;&nbsp;&nbsp;&nbsp;[1.3 Reviewing, Color-Coding & Cut Settings](#13-reviewing-color-coding--cut-settings)  
+&nbsp;&nbsp;&nbsp;&nbsp;[1.4 Assembling the Cut Timeline](#14-assembling-the-cut-timeline)  
+
+**[2. UI Reference: Welcome Screen & Source Selection](#2-ui-reference-welcome-screen--source-selection)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[2.1 Transcription Workspace](#21-transcription-workspace)  
+&nbsp;&nbsp;&nbsp;&nbsp;[2.2 Fast Silence Workspace (Standalone Silence Removal)](#22-fast-silence-workspace-standalone-silence-removal)  
+&nbsp;&nbsp;&nbsp;&nbsp;[2.3 First-Run Model Download & Setup](#23-first-run-model-download--setup)  
+
+**[3. UI Reference: Top Titlebar & Project Management](#3-ui-reference-top-titlebar--project-management)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[3.1 Project Menu (`.bws` Saves & Crash Recovery)](#31-project-menu-bws-saves--crash-recovery)  
+&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Transcript Menu (Export `.txt` & Clipboard)](#32-transcript-menu-export-txt--clipboard)  
+&nbsp;&nbsp;&nbsp;&nbsp;[3.3 Versions & Chapter Switching (DaVinci Playhead Sync)](#33-versions--chapter-switching-davinci-playhead-sync)  
+&nbsp;&nbsp;&nbsp;&nbsp;[3.4 Window Controls & Always on Top](#34-window-controls--always-on-top)  
+
+**[4. UI Reference: Transcript Editor & Word Painting](#4-ui-reference-transcript-editor--word-painting)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[4.1 Transcript Layout (Continuous Flow vs Segmented Blocks)](#41-transcript-layout-continuous-flow-vs-segmented-blocks)  
+&nbsp;&nbsp;&nbsp;&nbsp;[4.2 Word Painting & Color-Coded Markers](#42-word-painting--color-coded-markers)  
+&nbsp;&nbsp;&nbsp;&nbsp;[4.3 Inaudible Fragments `(...)` & Start Absorption](#43-inaudible-fragments--and-start-absorption)  
+&nbsp;&nbsp;&nbsp;&nbsp;[4.4 Transcript Search Overlay (`Ctrl + F`)](#44-transcript-search-overlay-ctrl--f)  
+
+**[5. UI Reference: Audio Preview & Navigation Bar](#5-ui-reference-audio-preview--navigation-bar)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[5.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#51-jump-to-word-instant-resolve-timeline-scrubbing)  
+&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Integrated Audio Player Controls](#52-integrated-audio-player-controls)  
+&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Speed Adjustment & Playhead Synchronization](#53-speed-adjustment--playhead-synchronization)  
+
+**[6. UI Reference: Collapsible Sidebar Activities](#6-ui-reference-collapsible-sidebar-activities)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[6.1 Main Panel (Marking Palette & Pinned Favorites)](#61-main-panel-marking-palette--pinned-favorites)  
+&nbsp;&nbsp;&nbsp;&nbsp;[6.2 Script Analysis (Compare vs Standalone & Side-by-Side View)](#62-script-analysis-compare-vs-standalone--side-by-side-view)  
+&nbsp;&nbsp;&nbsp;&nbsp;[6.3 Silence Detection (Post-Transcript Trimming)](#63-silence-detection-post-transcript-trimming)  
+&nbsp;&nbsp;&nbsp;&nbsp;[6.4 Filler Words Manager (Inline List & Auto-Marking)](#64-filler-words-manager-inline-list--auto-marking)  
+&nbsp;&nbsp;&nbsp;&nbsp;[6.5 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)](#65-assembly--color-cutting-matrix-auto-cut-vs-cut-now)  
+&nbsp;&nbsp;&nbsp;&nbsp;[6.6 Sidebar Drag & Drop Customization](#66-sidebar-drag--drop-customization)  
+
+**[7. UI Reference: Timeline Assembly & DaVinci Integration](#7-ui-reference-timeline-assembly--davinci-integration)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[7.1 The Assembly Split Button & Track Options Drawer](#71-the-assembly-split-button--track-options-drawer)  
+&nbsp;&nbsp;&nbsp;&nbsp;[7.2 Native `.drt` Pipeline (Non-Destructive Protection)](#72-native-drt-pipeline-non-destructive-protection)  
+&nbsp;&nbsp;&nbsp;&nbsp;[7.3 Timeline Heatmap Overview](#73-timeline-heatmap-overview)  
+
+**[8. UI Reference: Settings & Preferences](#8-ui-reference-settings--preferences)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.1 General Settings](#81-general-settings)  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.2 Interface & Transcript Formatting](#82-interface--transcript-formatting)  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#83-audio-sync-calibration-offset-padding-snap-max)  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.4 Keyboard & Mouse Shortcut Bindings](#84-keyboard--mouse-shortcut-bindings)  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.5 Custom Markers Configuration](#85-custom-markers-configuration)  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.6 AI Engine Configuration (Advanced Mode)](#86-ai-engine-configuration-advanced-mode)  
+&nbsp;&nbsp;&nbsp;&nbsp;[8.7 Telemetry, Contact & Issue Reporting](#87-telemetry-contact--issue-reporting)  
+
+**[9. Step-by-Step Practical Recipes ("How do I...?")](#9-step-by-step-practical-recipes-how-do-i)**  
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)  
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes--false-starts-without-a-script)  
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)  
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)](#recipe-d-one-click-filler-word-purge-yyy-umm-uh)  
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names--jargon)  
+
+**[10. Shortcuts Cheat Sheet & FAQ](#10-shortcuts-cheat-sheet--faq)**
 
 ## 1. Quickstart Guide (3-Minute Setup)
 
