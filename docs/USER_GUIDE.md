@@ -90,10 +90,11 @@ flowchart LR
 1. **Timeline Selection:** Confirm your active timeline is selected in the dropdown. (Click `↺` if you just created a new timeline).
 2. **Track/s Selection:** Select the audio track(s) where dialogue is recorded (e.g., `A1` for your primary microphone).
 3. **Language:** Select the spoken language of the recording.
-4. **Model:** Choose **Large Turbo** (recommended) or **Large**. If you are on lower-spec hardware, choose **Medium**.
-   > [!IMPORTANT]  
-   > **Model Quality Warning:** While smaller models (*Tiny*, *Base*, *Small*) are available in the dropdown, their transcription precision is significantly degraded. Because BadWords relies entirely on verbatim word accuracy to calculate frame-exact cuts, using models below *Medium* can cause the AI to hallucinate or miss words, making the tool practically unusable.
+4. **Model:** Choose **Large Turbo** (recommended) or **Large** (or **Medium** on lower-spec hardware).
 5. Click the green **`▶ Analyze`** button.
+
+> [!IMPORTANT]  
+> **Model Quality Warning:** While smaller models (*Tiny*, *Base*, *Small*) are available in the dropdown, their transcription precision is significantly degraded. Because BadWords relies entirely on verbatim word accuracy to calculate frame-exact cuts, using models below *Medium* can cause the AI to hallucinate or miss words, making the tool practically unusable.
 
 <p align="center">
   <img src="images/01a_quickstart_source_selection.png" alt="Choosing Source Audio and Model" width="80%">
