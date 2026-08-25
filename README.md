@@ -16,6 +16,10 @@
   <a href="#-linux-any-distro"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
 </p>
 
+<p align="center">
+  <a href="docs/USER_GUIDE.md"><img src="https://img.shields.io/badge/DOCUMENTATION-Read_User_Manual-168f4d?style=for-the-badge&labelColor=333333" alt="User Guide"></a>
+</p>
+
 ---
 
 ## What is it?
