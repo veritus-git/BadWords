@@ -24,7 +24,7 @@
 
 **[3. Transcript Editor & Sidebar Tools](#3-transcript-editor-sidebar-tools)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.1 Word Painting & Color-Coded Markers](#31-word-painting-color-coded-markers)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments `(...)` & Start Absorption](#32-inaudible-fragments-start-absorption)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments `(...)`](#32-inaudible-fragments)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay (`Ctrl + F`)](#33-transcript-search-overlay-ctrl-+-f)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Panel (Marking Palette & Pinned Favorites)](#34-main-panel-marking-palette-pinned-favorites)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis (Compare vs Standalone & Side-by-Side View)](#35-script-analysis-compare-vs-standalone-side-by-side-view)<br>
@@ -288,29 +288,52 @@ Capture Transcript Canvas with annotations:
 -->
 
 ### 3.1 Word Painting & Color-Coded Markers
-BadWords uses a **Painting Metaphor** for editing. Selecting a color tool and clicking or dragging across words applies that color tag to the acoustic segment. When assembled, **the clips themselves on your DaVinci Resolve timeline are color-coded (Clip Color)** to match your text markings:
+BadWords uses a **Painting Metaphor** for editing. Selecting a color tool (from the sidebar palette or keys `1`–`4`) and clicking or dragging across words applies that color tag to the corresponding acoustic segment.
 
-| Painting Color | DaVinci Clip Color | Default Assembly Action | Purpose |
+By default, **all marked words remain on your assembled timeline as color-coded clips (DaVinci Clip Color)** so you can inspect them visually before making destructive decisions.
+
+| Painting Color | DaVinci Clip Color | Default Behavior | Recommended Usage |
 | :---: | :---: | :---: | :--- |
-| **Red** | **Violet** | **Cut / Ripple Delete** *(if Auto-cut enabled)* | Filler words (*"uh"*, *"um"*, *"yyy"*), obvious stumbles, coughs, and bloopers. |
-| **Blue** | **Navy** | **Cut / Ripple Delete** *(if Auto-cut enabled)* | Retakes, repeated sentences, false starts, and second takes. |
-| **Green** | **Olive** | **Keep (Color Clip)** | Minor deviations, typos, or improvisations compared to the script. |
-| **Brown** | **Chocolate** | **Keep (Color Clip)** | Inaudible sounds, mumbled speech, or microphone clicks. |
-| **Eraser** | *Default* | **Keep (Normal Clip)** | Strips all color tags from the selected word, restoring it to normal clip color. |
-| **Custom** | *User Assigned* | *Configurable in Assembly* | User-defined categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
+| **Red** | **Violet** | Keep as colored clip | Filler words (*"uh"*, *"um"*, *"yyy"*), obvious stumbles, coughs, and bloopers. |
+| **Blue** | **Navy** | Keep as colored clip | Retakes, repeated sentences, false starts, and duplicate takes. |
+| **Green** | **Olive** | Keep as colored clip | Minor deviations, typos, or improvisations compared to the script. |
+| **Brown** | **Chocolate** | Keep as colored clip | Inaudible speech, mumbled phrases, or microphone clicks. |
+| **Eraser** | *Default* | Keep as normal clip | Strips color tags from selected words, restoring standard clip color. |
+| **Custom** | *User Assigned* | Keep as colored clip | User-defined categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
 
-> [!WARNING]  
-> **Resolve Clip Color Mapping:** BadWords maps your colors to *Violet*, *Navy*, and *Olive* in DaVinci Resolve to prevent visual conflicts with DaVinci Resolve’s default video (Blue) and audio (Green) clip colors.
+#### Cutting Mechanics (Assembly Panel Controls):
+In the **Assembly** panel, you can decide whether colored clips stay on the timeline or are removed:
+1. **Auto-Cut Toggle (Circular "A" Icon):**
+   - When toggled ON (turns green) next to any color, clips painted with that color are **automatically ripple-deleted** during timeline assembly based on Whisper's verbatim timestamps.
+   - You can toggle Auto-Cut for any standard or custom color.
+2. **Post-Review Mass Cutting (Scissors "Cut Now" Button):**
+   - Provides a flexible two-stage workflow: first assemble your timeline with colored clips intact, fine-tune cut boundaries and transitions manually in DaVinci Resolve, and then return to BadWords to delete all clips of that color in one click.
+   - When clicking the Scissors icon, BadWords lets you apply cuts to either:
+     - **`Currently Selected Timeline`:** Directly removes colored clips from your active open timeline.
+     - **`New Timeline`:** Duplicates the timeline and creates a fresh cut copy, preserving your current timeline as a backup.
 
-### 3.2 Inaudible Fragments `(...)` & Start Absorption
-- **Garbled Audio:** When speech is completely inaudible or masked by loud noise, BadWords marks the segment as `(...)` (Inaudible).
-- **Hidden Start Notice:** If the very start of a clip contains ambient noise or throat-clearing before speech begins, BadWords hides it and displays a subtle banner: `Start of audio detected as inaudible, skipped. [show it anyway]`.
+> [!NOTE]  
+> **Reserved Colors Protection:**  
+> BadWords prohibits creating custom markers using **Green**, **Blue**, **Tan**, and **Chocolate**:
+> - **Green** and **Blue** are DaVinci Resolve's native default clip colors for audio and video.
+> - **Tan** is reserved exclusively for detected silence regions.
+> - **Chocolate** is reserved exclusively for inaudible fragments `(...)`.  
+> This ensures custom user markers never conflict with system clip states or native DaVinci colors.
+
+### 3.2 Inaudible Fragments `(...)`
+When audio is completely unintelligible, muffled, or drowned out by loud background noise, Whisper cannot reliably extract text. BadWords tags these acoustic moments as inaudible tokens, represented in the transcript as **`(...)`**.
+
+In the **Assembly** panel, you have dedicated controls for inaudible fragments:
+- **Show / Hide Inaudible:** Choose whether `(...)` tokens are displayed in the transcript editor or completely hidden.
+- **Mark with Chocolate Clip Color:** When enabled, all inaudible audio regions are highlighted with **Chocolate** clip color in DaVinci Resolve upon assembly.
+- **Why it matters:** Instead of guessing why a silent gap or jump occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
 
 ### 3.3 Transcript Search Overlay (`Ctrl + F`)
-Pressing **`Ctrl + F`** (or `Cmd + F` on macOS) opens the floating search bar:
-- Type any word or phrase to instantly highlight matches across the entire transcript.
+Pressing **`Ctrl + F`** (or `Cmd + F` on macOS) toggles the floating search bar:
+- Type any word or phrase to highlight matches across the entire transcript.
 - Match counter displays live results (e.g., `4/18`).
-- Press **`Enter`** to jump to the next match, **`Shift + Enter`** for the previous match, and **`Esc`** to close.
+- Use the **Up / Down Arrow keys** on your keyboard (or click the arrow buttons in the search box) to cycle through matches.
+- Press **`Ctrl + F`** again (or click the close button) to hide the search bar.
 
 ### 3.4 Main Panel (Marking Palette & Pinned Favorites)
 <p align="center">
