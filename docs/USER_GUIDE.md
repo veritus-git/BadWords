@@ -316,13 +316,10 @@ When audio is completely unintelligible, muffled, or masked by loud background n
   <img src="images/06_inaudible_fragments.png" alt="Inaudible Fragments" width="90%">
 </p>
 
-Depending on your configuration in the [Assembly Panel (#3.8)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now), inaudible fragments behave in one of three ways:
-1. **Hidden:** When `Show inaudible fragments` is toggled off, `(...)` tokens disappear from the editor entirely and their duration is smoothly absorbed by surrounding words and colors.
-2. **Visible (Uncolored):** When displayed without color marking, `(...)` tokens appear as plain text in the canvas and remain as standard uncolored clips in DaVinci Resolve.
-3. **Marked with Chocolate Color:** When `Mark inaudible with color` is enabled, inaudible tokens turn brown in the UI and are assigned the **Chocolate** clip color in DaVinci Resolve upon assembly for easy manual inspection.
+You can customize how inaudible tokens are displayed in the editor (hidden, uncolored, or marked with Chocolate color) and how they are handled on the timeline in the [Assembly & Color Cutting Matrix (#3.8)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
 
 > [!TIP]  
-> **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve. For complete control options, see [Section 3.8: Assembly & Color Cutting Matrix](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
+> **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
 
 ### 3.3 Transcript Search Overlay
 Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
@@ -412,8 +409,10 @@ Capture the Assembly Matrix showing:
 -->
 
 #### Global Inaudible & Typos Toggles:
-- **`Show inaudible fragments`:** Toggles visibility of `(...)` inaudible tokens in the transcript canvas. When disabled, inaudible gaps are absorbed by neighboring words (see [Section 3.2](#32-inaudible-fragments)).
-- **`Mark inaudible with color`:** Color-codes inaudible tokens as **Chocolate** both in BadWords and on the assembled DaVinci timeline.
+- **`Show inaudible fragments`:** Controls how inaudible `(...)` tokens behave in the transcript canvas (see [Section 3.2](#32-inaudible-fragments)):
+  1. **Hidden:** When toggled OFF, inaudible tokens are completely hidden and their duration is smoothly absorbed by surrounding words and color blocks.
+  2. **Visible (Uncolored):** When toggled ON (without color marking), tokens appear as plain text `(...)` and assemble as standard uncolored clips in DaVinci Resolve.
+  3. **Marked with Chocolate Color:** When `Mark inaudible with color` is also toggled ON, inaudible tokens turn brown in the editor and are color-coded as **Chocolate** clips in DaVinci Resolve upon assembly for visual review.
 - **`Show detected typos`:** Toggles whether minor phrasing deviations detected by Script Comparison are highlighted in **Green** or left unpainted.
 
 #### Controls per Color Row:
