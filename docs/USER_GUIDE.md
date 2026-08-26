@@ -329,7 +329,7 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 - Use the **Up / Down Arrow keys** on your keyboard (or click the arrow buttons in the search bar) to cycle through matches.
 - Press **Ctrl + F** again (or click the close button) to hide the search bar.
 
-### 3.4 Main Sidebar Panel <img src="images/icons/icon_main.png" width="20" height="20" valign="middle">
+### 3.4 Main Sidebar Panel <img src=\"../assets/layout/main.png\" width=\"24\" height=\"24\" valign=\"middle\">
 
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
 
@@ -357,7 +357,7 @@ Capture the sidebar activities with callouts:
 - **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button across other sidebar panels (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
 - **`Assemble` Split Button:** Builds the final cut timeline in DaVinci Resolve with an expandable **Track Options Drawer** (see [Section 5.1](#51-the-assembly-split-button-track-options-drawer)).
 
-### 3.5 Script Analysis Sidebar Panel <img src="images/icons/icon_script.png" width="20" height="20" valign="middle">
+### 3.5 Script Analysis Sidebar Panel <img src=\"../assets/layout/script.png\" width=\"24\" height=\"24\" valign=\"middle\">
 
 The **Script Analysis Panel** houses intelligent alignment tools that automatically detect speech errors and retakes, either by comparing the recording against an imported script or by finding acoustic repetitions in unscripted takes.
 
@@ -389,7 +389,7 @@ Capture Script Analysis & Side-by-Side comparison view:
 > [!TIP]  
 > For complete step-by-step editing workflows, see [Recipe A: Cutting Based on a Script](#recipe-a-cutting-video-based-on-a-written-script) and [Recipe B: Removing Retakes without a Script](#recipe-b-removing-retakes-false-starts-without-a-script).
 
-### 3.6 Silence Detection Sidebar Panel <img src="images/icons/icon_silence.png" width="20" height="20" valign="middle">
+### 3.6 Silence Detection Sidebar Panel <img src=\"../assets/layout/silence.png\" width=\"24\" height=\"24\" valign=\"middle\">
 
 The **Silence Detection Panel** allows you to fine-tune acoustic silence trimming applied after full speech transcription, removing awkward pauses and dead air.
 
@@ -405,7 +405,7 @@ The **Silence Detection Panel** allows you to fine-tune acoustic silence trimmin
 > [!TIP]  
 > If you want to remove silence from an entire timeline instantly without transcribing speech, use the **Fast Silence Workspace** on the Welcome Screen (see [Section 1.2](#12-fast-silence-workspace-standalone-silence-removal) and [Recipe C](#recipe-c-fast-silence-cut-without-transcribing)).
 
-### 3.7 Filler Words Sidebar Panel <img src="images/icons/icon_fillers.png" width="20" height="20" valign="middle">
+### 3.7 Filler Words Sidebar Panel <img src=\"../assets/layout/fillers.png\" width=\"24\" height=\"24\" valign=\"middle\">
 
 The **Filler Words Panel** manages BadWords' built-in dictionary for identifying hesitation sounds (*"uh"*, *"um"*, *"yyy"*, *"mhm"*, *"like"*).
 
@@ -418,7 +418,7 @@ The **Filler Words Panel** manages BadWords' built-in dictionary for identifying
 > [!TIP]  
 > To learn how to purge all filler words from your timeline in one click, see [Recipe D: One-Click Filler Word Purge](#recipe-d-one-click-filler-word-purge).
 
-### 3.8 Assembly Sidebar Panel <img src="images/icons/icon_assembly.png" width="20" height="20" valign="middle">
+### 3.8 Assembly Sidebar Panel <img src=\"../assets/layout/assembly.png\" width=\"24\" height=\"24\" valign=\"middle\">
 
 The **Assembly Panel** is the control matrix that defines exactly how each marker color and system state translates into timeline edits in DaVinci Resolve.
 
