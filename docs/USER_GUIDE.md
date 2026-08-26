@@ -438,7 +438,7 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
 
 #### Upper Section: Marking Palette & Custom Colors
-<img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="220">
+<img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="27%" style="padding-left: 5%;">
 
 - **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
 - **Clear Transcript (Brush Icon):** Erases all color markings across the entire project with a confirmation dialog.
@@ -447,11 +447,11 @@ The **Main Panel** serves as the primary control center for manual word painting
 <div style="clear: both;"></div>
 
 #### Lower Section: Favorites & Timeline Export
-<img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="220">
+<img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="27%" style="padding-left: 5%;">
 
-- **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analysis took: 4.2s*).
-- **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button across other sidebar panels (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
-- **`Assemble` Split Button:** Builds the final cut timeline in DaVinci Resolve with an expandable **Track Options Drawer** (see [Section 5.1](#51-the-assembly-split-button-track-options-drawer)).
+- **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
+- **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
+- **`Assemble` Split Button:** Triggers timeline assembly and includes an expandable dropdown drawer to choose which tracks are cut. For complete details on track modes, see [Section 5.1: The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer).
 
 <div style="clear: both;"></div>
 
@@ -466,32 +466,26 @@ The **Main Panel** serves as the primary control center for manual word painting
 The **Script Analysis Panel** houses intelligent alignment tools that automatically detect speech errors and retakes, either by comparing the recording against an imported script or by finding acoustic repetitions in unscripted takes.
 
 <p align="center">
-  <img src="images/08_script_analysis_sbs.png" alt="Script Analysis & Side by Side" width="100%">
+  <img src="images/08a_script_analysis_sbs.png" alt="Script Analysis" width="100%">
 </p>
 
-<!-- 
-IMAGE PLACEHOLDER: docs/images/08_script_analysis_sbs.png
-Capture Script Analysis & Side-by-Side comparison view:
-[1] Script Input Text Area & Import Button (.txt, .pdf, .docx)
-[2] Analyze (Standalone) Button
-[3] Analyze (Compare) Button
-[4] Side-by-Side View (BETA) Button
-[5] Split View Columns: Script (Left) vs Transcript (Right)
--->
+<img align="right" src="images/08b_script_analysis_sbs.png" alt="Script Analysis & Side by Side" width="27%" style="padding-left: 5%; padding-bottom: 10px;">
 
 #### Available Tools & Modes:
 - **Script Input Area & `Import Script`:** Paste your text or load `.txt`, `.docx`, or `.pdf` files. BadWords automatically strips formatting and normalizes whitespace.
-- **`Analyze (Standalone)`:** Analyzes the raw transcript *without* a script. Uses acoustic lookahead and fuzzy ngram matching to detect stuttering, false starts, and repeated sentences automatically, marking earlier discarded takes in **Blue**.
-- **`Analyze (Compare)`:** Compares the transcript against the pasted script using fuzzy anchor alignment:
+- **`Analyze (Standalone)`:** Scans the raw transcript *without* a script using a lightweight repetition detection algorithm to spot repeated phrases and false starts, marking earlier discarded takes in **Blue**. *(Note: This feature is under active development and currently serves as a quick helper to highlight potential retake zones in long transcripts for manual inspection).*
+- **`Analyze (Compare)`:** A proprietary, custom-built sequence alignment algorithm developed specifically for BadWords. Powered by advanced dynamic programming techniques inspired by bioinformatic DNA sequence alignment, it provides rock-solid, dependable script matching. It compares your recording against the imported text and color-codes deviations:
   - Words matching the script remain unpainted.
   - Repeated attempts and retakes are painted **Blue**.
-  - Filler words and speech errors are painted **Red**.
-  - Minor phrasing typos are painted **Green**.
-- **`Side-by-Side View (BETA)`:** Opens a two-column comparative view with the reference script on the left and the live transcript on the right, highlighting unspoken lines, skipped phrases, and improvisations.
-- **`Return to Normal View`:** Closes the comparative side-by-side view and returns to the standard transcript canvas.
+  - Filler words, stumbles, and speech errors are painted **Red**.
+  - Minor phrasing variations and slight mishearings compared to the script are painted **Green** (these green typo tags can be toggled on/off anytime using `Show detected typos` in the [Assembly Panel](#38-assembly-sidebar-panel-)).
+- **`Side-by-Side View (BETA)`:** Opens the two-column comparative view (shown in the screenshot above) with the reference script on the left and the live transcript on the right, highlighting unspoken lines, skipped phrases, and improvisations.
+- **`Return to Normal View`:** To exit the Side-by-Side view at any time, open the Script Analysis sidebar tab and click this button to restore the standard transcript editor canvas.
 
 > [!TIP]  
 > For complete step-by-step editing workflows, see [Recipe A: Cutting Based on a Script](#recipe-a-cutting-video-based-on-a-written-script) and [Recipe B: Removing Retakes without a Script](#recipe-b-removing-retakes-false-starts-without-a-script).
+
+<div style="clear: both;"></div>
 
 <br>
 
