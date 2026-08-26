@@ -19,8 +19,8 @@
 **[2. Top Titlebar & Project Management](#2-top-titlebar--project-management)**  
 &nbsp;&nbsp;&nbsp;&nbsp;[2.1 Project Menu (`.bws` Saves & Crash Recovery)](#21-project-menu-bws-saves--crash-recovery)  
 &nbsp;&nbsp;&nbsp;&nbsp;[2.2 Transcript Menu (Export `.txt` & Clipboard)](#22-transcript-menu-export-txt--clipboard)  
-&nbsp;&nbsp;&nbsp;&nbsp;[2.3 Versions & Chapter Switching (DaVinci Playhead Sync)](#23-versions--chapter-switching-davinci-playhead-sync)  
-&nbsp;&nbsp;&nbsp;&nbsp;[2.4 Window Controls & Always on Top](#24-window-controls--always-on-top)  
+&nbsp;&nbsp;&nbsp;&nbsp;[2.3 Versions Dropdown](#23-versions-dropdown)  
+&nbsp;&nbsp;&nbsp;&nbsp;[2.4 Source Timeline & Audio Tracks Info](#24-source-timeline--audio-tracks-info)  
 
 **[3. Transcript Editor & Word Painting](#3-transcript-editor--word-painting)**  
 &nbsp;&nbsp;&nbsp;&nbsp;[3.1 Transcript Layout (Continuous Flow vs Segmented Blocks)](#31-transcript-layout-continuous-flow-vs-segmented-blocks)  
@@ -214,7 +214,7 @@ When you analyze footage with a specific AI model for the first time:
 > **Initial Download & Animated Progress Bar:**  
 > During this one-time download, **the animated progress bar will run in an infinite loop without a percentage counter**, which might make it feel like the process is taking long or stuck. Do not close or force-quit the application! BadWords is actively fetching large neural network files in the background. Depending on your internet connection speed, this process typically takes a few minutes. If a genuine network issue occurs, BadWords will immediately stop and show an error dialog.
 
-- Once downloaded, the model files are cached permanently on your local drive. All subsequent transcriptions with that model run completely offline and start instantly with zero download delay.
+- Once downloaded, the model files are saved permanently on your local drive. All subsequent transcriptions with that model run completely offline and start instantly with zero download delay.
 
 ## 2. Top Titlebar & Project Management
 
@@ -234,25 +234,29 @@ Capture the Titlebar showing:
 [5] Settings Gear Icon & Window Controls
 -->
 
-### 2.1 Project Menu (`.bws` Saves & Crash Recovery)
-- **Export Project (`.bws`):** Saves the complete state of your current session into a portable `.bws` (BadWords Save) file. This includes the full word-level timestamps, your manual color markings, script comparison data, and timeline metadata.
+### 2.1 Project Menu (Saves & Crash Recovery)
+- **Export Project:** Saves the complete state of your current session into a portable `.bws` (BadWords Save) file. This includes the full word-level timestamps, your manual color markings, script comparison data, audio file for audio preview and timeline metadata.
 - **Import Project:** Restores an existing session from a `.bws` file.
 - **Crash Recovery & AutoSave:** BadWords runs a silent background AutoSave engine. If DaVinci Resolve or your system crashes unexpectedly, BadWords detects the cached session on the next launch and prompts you to restore your work with a single click.
 
 > [!TIP]  
 > If media files have been moved or a timeline renamed since saving a `.bws` file, BadWords includes an intelligent recovery prompt allowing you to re-link or import the original `.drt` state directly.
 
-### 2.2 Transcript Menu (Export `.txt` & Clipboard)
-- **Export as `.txt`:** Exports the entire transcript as a clean, formatted plain text document.
-- **Copy to clipboard:** Copies the transcript directly to your system clipboard for instant pasting into documentation, show notes, or subtitles.
+### 2.2 Transcript Menu (Export .txt & Clipboard)
+- **Export as .txt:** Exports the entire transcript as a clean, formatted plain `.txt` document.
+- **Copy to clipboard:** Copies the transcript directly to your system clipboard
 
-### 2.3 Versions & Chapter Switching (DaVinci Playhead Sync)
-- **Version Dropdown:** Displays the currently active timeline name or processed chapter.
-- **Sync DaVinci Timeline on Chapter Switch:** When enabled in settings, switching between versions or chapters inside BadWords automatically changes the active timeline in DaVinci Resolve to match.
+### 2.3 Versions Dropdown
+- **Version Dropdown:** Displays the currently active timeline and all previous versions. Also allowing to switch between them and come back to any previous version. 
 
-### 2.4 Window Controls & Always on Top
-- **Gear Icon Settings:** Opens the comprehensive [Settings Dialog](#8-ui-reference-settings--preferences).
-- **Always on Top:** Can be enabled in Settings, ensuring BadWords floats over DaVinci Resolve even when scrubbing the timeline in Resolve.
+> [!TIP]  
+> A ***version*** is a save of state of the text and color markings, created every time after clicking **Assemble**
+
+### 2.4 Source Timeline & Audio Tracks Info
+Located directly in the center of the titlebar, this indicator shows exactly what audio was fed into the AI model during analysis:
+- **`Source Timeline:`** The name of the original timeline in DaVinci Resolve that was extracted.
+- **`Tracks:`** The specific audio track(s) (e.g. `A1` or `A1, A2`) that Whisper processed.
+- **Why it matters:** It serves as a constant reference of truth. If you selected multiple microphone tracks, it reminds you that Whisper analyzed a mixed audio stream of those tracks together. It also identifies which timeline in DaVinci Resolve BadWords will duplicate and cut when you assemble.
 
 ## 3. Transcript Editor & Word Painting
 
