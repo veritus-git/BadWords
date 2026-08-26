@@ -24,14 +24,14 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[2.4 Source Timeline & Audio Tracks Info](#24-source-timeline-audio-tracks-info)<br>
 
 **[3. Transcript Editor & Sidebar Tools](#3-transcript-editor-sidebar-tools)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.1 Word Painting & Color-Coded Markers](#31-word-painting-color-coded-markers)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.1 Words Painting](#31-words-painting)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments](#32-inaudible-fragments)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay](#33-transcript-search-overlay)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Panel (Marking Palette & Pinned Favorites)](#34-main-panel-marking-palette-pinned-favorites)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis (Compare vs Standalone & Side-by-Side View)](#35-script-analysis-compare-vs-standalone-side-by-side-view)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.6 Silence Detection Panel (Post-Transcript Trimming)](#36-silence-detection-panel-post-transcript-trimming)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.7 Filler Words Manager (Inline List & Auto-Marking)](#37-filler-words-manager-inline-list-auto-marking)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.8 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Sidebar Panel](#34-main-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis Sidebar Panel](#35-script-analysis-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.6 Silence Detection Sidebar Panel](#36-silence-detection-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.7 Filler Words Sidebar Panel](#37-filler-words-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.8 Assembly Sidebar Panel](#38-assembly-sidebar-panel)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.9 Sidebar Drag & Drop Customization](#39-sidebar-drag-drop-customization)<br>
 
 **[4. Audio Preview & Navigation Bar](#4-audio-preview-navigation-bar)**<br>
@@ -288,8 +288,8 @@ Capture Transcript Canvas with annotations:
 [7] Search Overlay Active
 -->
 
-### 3.1 Word Painting & Color-Coded Markers
-BadWords uses a **Painting Metaphor** for editing. Selecting a color tool (from the sidebar palette or keys `1`–`4`) and clicking or dragging across words applies that color tag to the corresponding acoustic segment.
+### 3.1 Words Painting
+BadWords uses a ***Color-coded heatmap*** for editing. Selecting a color tool (from the sidebar palette or keys `1`–`4`) and clicking or dragging across words applies that color tag to the corresponding acoustic segment.
 
 For manual editing without a script, you can use these colors however you prefer (for instance, marking all errors in Red and retakes in Blue). However, when using automated tools like **Script Comparison** (see [Section 3.5](#35-script-analysis-compare-vs-standalone-side-by-side-view)), BadWords assigns precise semantic meaning to each color:
 
@@ -316,10 +316,11 @@ When audio is completely unintelligible, muffled, or masked by loud background n
   <img src="images/06_inaudible_fragments.png" alt="Inaudible Fragments" width="90%">
 </p>
 
-You can customize how inaudible tokens are displayed in the editor (hidden, uncolored, or marked with Chocolate color) and how they are handled on the timeline in the [Assembly & Color Cutting Matrix (#3.8)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
-
 > [!TIP]  
 > **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
+
+You can customize how inaudible tokens are displayed in the editor (hidden, uncolored, or marked with Chocolate color) and how they are handled on the timeline in the [Assembly & Color Cutting Matrix (#3.8)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
+
 
 ### 3.3 Transcript Search Overlay
 Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
@@ -328,7 +329,10 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 - Use the **Up / Down Arrow keys** on your keyboard (or click the arrow buttons in the search bar) to cycle through matches.
 - Press **Ctrl + F** again (or click the close button) to hide the search bar.
 
-### 3.4 Main Panel (Marking Palette & Pinned Favorites)
+### 3.4 Main Sidebar Panel <img src="images/icons/icon_main.png" width="20" height="20" valign="middle">
+
+The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
+
 <p align="center">
   <img src="images/07_sidebar_tools.png" alt="Sidebar Panels" width="90%">
 </p>
@@ -340,17 +344,22 @@ Capture the sidebar activities with callouts:
 [2] Script Analysis Panel
 [3] Silence Detection Panel
 [4] Filler Words Panel
-[5] Assembly & Color Cutting Matrix
+[5] Assembly Panel
 -->
 
-- **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers.
-- **`Clear Transcript` (Trash Icon):** Clears all painted markers across the entire project with a confirmation dialog.
-- **`+ add custom marker...`:** Opens the marker creation dialog.
-- **Pinned Favorites Section:** Shows your starred tools and toggles (e.g. quick auto-cut switches) for fast one-click access without switching tabs.
-- **Assemble Split Button:** Assembles the final timeline.
+#### Upper Section: Marking Palette & Custom Colors
+- **Active Marker Selector:** Radio buttons to switch between **Red** (Errors/Fillers), **Blue** (Retakes), **Green** (Typos), and **Eraser** (Clears markings). Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
+- **`Clear Transcript` (Trash Icon):** Erases all color markings across the entire project with a confirmation dialog.
+- **`+ add custom marker...`:** Opens the marker creator dialog to define custom color categories, names, and keyboard shortcuts.
 
-### 3.5 Script Analysis (Compare vs Standalone & Side-by-Side View)
-This is one of the most powerful features in BadWords. It compares what was *actually recorded* against your *intended script*:
+#### Lower Section: Favorites & Timeline Export
+- **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analysis took: 4.2s*).
+- **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button across other sidebar panels (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
+- **`Assemble` Split Button:** Builds the final cut timeline in DaVinci Resolve with an expandable **Track Options Drawer** (see [Section 5.1](#51-the-assembly-split-button-track-options-drawer)).
+
+### 3.5 Script Analysis Sidebar Panel <img src="images/icons/icon_script.png" width="20" height="20" valign="middle">
+
+The **Script Analysis Panel** houses intelligent alignment tools that automatically detect speech errors and retakes, either by comparing the recording against an imported script or by finding acoustic repetitions in unscripted takes.
 
 <p align="center">
   <img src="images/08_script_analysis_sbs.png" alt="Script Analysis & Side by Side" width="100%">
@@ -366,35 +375,55 @@ Capture Script Analysis & Side-by-Side comparison view:
 [5] Split View Columns: Script (Left) vs Transcript (Right)
 -->
 
-1. **Script Input Field:** Paste your raw script or click **`Import Script`** (Supports `.txt`, `.docx`, and `.pdf` files with aggressive whitespace normalization).
-2. **`Analyze (Standalone)`:** Analyzes the raw transcript *without* a reference script. Uses acoustic lookahead and fuzzy ngram matching to detect stuttering, false starts, and repeated sentences automatically.
-3. **`Analyze (Compare)`:** Compares the transcript against the pasted script using fuzzy anchor alignment. Automatically paints deviations:
-   - Words matching the script are left unpainted.
-   - Repeated attempts and retakes are painted **Blue**.
-   - Filler words and speech errors are painted **Red**.
-   - Minor phrasing typos are painted **Green**.
-4. **`Side-by-Side View (BETA)`:** Opens a dedicated comparative two-column view displaying the reference script on the left and the live transcript on the right with colored indicators:
-   - **Unspoken** (Present in script, never spoken in recording)
-   - **Skipped** (Omitted during delivery)
-   - **Improvised / Error** (Deviations from script)
+#### Available Tools & Modes:
+- **Script Input Area & `Import Script`:** Paste your text or load `.txt`, `.docx`, or `.pdf` files. BadWords automatically strips formatting and normalizes whitespace.
+- **`Analyze (Standalone)`:** Analyzes the raw transcript *without* a script. Uses acoustic lookahead and fuzzy ngram matching to detect stuttering, false starts, and repeated sentences automatically, marking earlier discarded takes in **Blue**.
+- **`Analyze (Compare)`:** Compares the transcript against the pasted script using fuzzy anchor alignment:
+  - Words matching the script remain unpainted.
+  - Repeated attempts and retakes are painted **Blue**.
+  - Filler words and speech errors are painted **Red**.
+  - Minor phrasing typos are painted **Green**.
+- **`Side-by-Side View (BETA)`:** Opens a two-column comparative view with the reference script on the left and the live transcript on the right, highlighting unspoken lines, skipped phrases, and improvisations.
+- **`Return to Normal View`:** Closes the comparative side-by-side view and returns to the standard transcript canvas.
 
-### 3.6 Silence Detection Panel (Post-Transcript Trimming)
-Adjusts silence parameters applied after full speech transcription:
-- **Threshold (dB):** Sensitivity threshold for silence (default `-42.0 dB`).
-- **Padding (s):** Speech padding (default `0.05s`).
-- **Min Silence Duration (s):** Minimum gap length to cut (default `0.20s`).
-- **Toggles:** `Detect and cut silence` vs `Detect and mark silence`.
+> [!TIP]  
+> For complete step-by-step editing workflows, see [Recipe A: Cutting Based on a Script](#recipe-a-cutting-video-based-on-a-written-script) and [Recipe B: Removing Retakes without a Script](#recipe-b-removing-retakes-false-starts-without-a-script).
 
-### 3.7 Filler Words Manager (Inline List & Auto-Marking)
-- **Inline Editor:** An interactive list of all filler words recognized by the engine (e.g. `yyy, eee, umm, uh, ah, mhm, hmm, like, you know`).
-- **Live Counter & Save:** Displays total filler words defined. Click `Save` to persist changes or `Refresh` to restore factory defaults.
-- **`Mark filler words automatically` Toggle:** When enabled, any word matching the list is automatically painted **Red** during transcription.
+### 3.6 Silence Detection Sidebar Panel <img src="images/icons/icon_silence.png" width="20" height="20" valign="middle">
 
-### 3.8 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)
-This panel gives you granular control over what happens to each color and system state during timeline creation:
+The **Silence Detection Panel** allows you to fine-tune acoustic silence trimming applied after full speech transcription, removing awkward pauses and dead air.
+
+#### Detection Parameters:
+- **Threshold (dB):** Volume floor in decibels (default `-42.0 dB`). Audio below this level is classified as silence. Click `↺` to reset.
+- **Padding (s):** Preserves safety margins around speech (default `0.05s`) so the start and end of spoken words are never clipped. Click `↺` to reset.
+- **Min Silence Duration (s):** Minimum pause length required to trigger a cut (default `0.20s`). Click `↺` to reset.
+
+#### Silence Actions:
+- **`Detect and cut silence` Toggle:** Automatically ripple-deletes silent gaps during timeline assembly.
+- **`Detect and mark silence` Toggle:** Retains silent gaps on the timeline but tags them with the **Tan** clip color in DaVinci Resolve for manual inspection.
+
+> [!TIP]  
+> If you want to remove silence from an entire timeline instantly without transcribing speech, use the **Fast Silence Workspace** on the Welcome Screen (see [Section 1.2](#12-fast-silence-workspace-standalone-silence-removal) and [Recipe C](#recipe-c-fast-silence-cut-without-transcribing)).
+
+### 3.7 Filler Words Sidebar Panel <img src="images/icons/icon_fillers.png" width="20" height="20" valign="middle">
+
+The **Filler Words Panel** manages BadWords' built-in dictionary for identifying hesitation sounds (*"uh"*, *"um"*, *"yyy"*, *"mhm"*, *"like"*).
+
+#### Dictionary & Automation Controls:
+- **Inline Words Editor:** Edit the list of comma-separated filler words directly.
+- **Live Word Counter:** Displays the total count of recognized filler words.
+- **`Save` & `↺` (Reset):** Save custom dictionary edits or revert to the factory default list.
+- **`Mark filler words automatically` Toggle:** When enabled, any word in your transcript matching the dictionary is automatically painted **Red** right as transcription finishes.
+
+> [!TIP]  
+> To learn how to purge all filler words from your timeline in one click, see [Recipe D: One-Click Filler Word Purge](#recipe-d-one-click-filler-word-purge).
+
+### 3.8 Assembly Sidebar Panel <img src="images/icons/icon_assembly.png" width="20" height="20" valign="middle">
+
+The **Assembly Panel** is the control matrix that defines exactly how each marker color and system state translates into timeline edits in DaVinci Resolve.
 
 <p align="center">
-  <img src="images/09_assembly_matrix.png" alt="Assembly Color Cutting Matrix" width="80%">
+  <img src="images/09_assembly_matrix.png" alt="Assembly Panel" width="80%">
 </p>
 
 <!-- 
@@ -418,7 +447,7 @@ Capture the Assembly Matrix showing:
 #### Controls per Color Row:
 1. **Scissors Icon (`Cut Now`):** Prompts you to immediately cut and remove all clips of this color from either the **Currently Selected Timeline** or a **New Timeline** in DaVinci Resolve.
 2. **Auto-Cut Icon (Checkmark / "A"):** When active (green), any text painted with this color is **automatically ripple-deleted** during the standard `Assemble` process.
-3. **Star Icon (`Star`):** Pins this color's Auto-Cut toggle directly onto the Main Panel under *Pinned Favorites*.
+3. **Star Icon (`★`):** Pins this color's Auto-Cut toggle directly onto the Main Panel under *Pinned Favorites*.
 
 ### 3.9 Sidebar Drag & Drop Customization
 You can reorder sidebar activity icons or drag panels between the left and right sides of the window by simply clicking and dragging the sidebar button handles.
