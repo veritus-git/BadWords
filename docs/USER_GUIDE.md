@@ -5,62 +5,61 @@
 
 ## Table of Contents
 
+**[0. Quickstart Guide (How to start using BadWords)](#0-quickstart-guide-how-to-start-using-badwords)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.1 Launching from DaVinci Resolve](#01-launching-from-davinci-resolve)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Source Audio & Model](#02-choosing-source-audio-model)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.3 Reviewing, Color-Coding & Cut Settings](#03-reviewing-color-coding-cut-settings)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.4 Assembling the Cut Timeline](#04-assembling-the-cut-timeline)<br>
 
-**[0. Quickstart Guide (How to start using BadWords)](#0-quickstart-guide-how-to-start-using-badwords)**
-&nbsp;&nbsp;&nbsp;&nbsp;[0.1 Launching from DaVinci Resolve](#01-launching-from-davinci-resolve)  
-&nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Source Audio & Model](#02-choosing-source-audio-model)  
-&nbsp;&nbsp;&nbsp;&nbsp;[0.3 Reviewing, Color-Coding & Cut Settings](#03-reviewing-color-coding-cut-settings)  
-&nbsp;&nbsp;&nbsp;&nbsp;[0.4 Assembling the Cut Timeline](#04-assembling-the-cut-timeline)  
+**[1. Welcome Screen & Source Selection](#1-welcome-screen-source-selection)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[1.1 Transcription Workspace](#11-transcription-workspace)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[1.2 Fast Silence Workspace (Standalone Silence Removal)](#12-fast-silence-workspace-standalone-silence-removal)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[1.3 First-Run Model Download & Setup](#13-first-run-model-download-setup)<br>
 
-**[1. Welcome Screen & Source Selection](#1-welcome-screen-source-selection)**
-&nbsp;&nbsp;&nbsp;&nbsp;[1.1 Transcription Workspace](#11-transcription-workspace)  
-&nbsp;&nbsp;&nbsp;&nbsp;[1.2 Fast Silence Workspace (Standalone Silence Removal)](#12-fast-silence-workspace-standalone-silence-removal)  
-&nbsp;&nbsp;&nbsp;&nbsp;[1.3 First-Run Model Download & Setup](#13-first-run-model-download-setup)  
+**[2. Top Titlebar & Project Management](#2-top-titlebar-project-management)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[2.1 Project Menu](#21-project-menu)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[2.2 Transcript Menu (Export .txt & Clipboard)](#22-transcript-menu-export-txt-clipboard)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[2.3 Versions Dropdown](#23-versions-dropdown)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[2.4 Source Timeline & Audio Tracks Info](#24-source-timeline-audio-tracks-info)<br>
 
-**[2. Top Titlebar & Project Management](#2-top-titlebar-project-management)**
-&nbsp;&nbsp;&nbsp;&nbsp;[2.1 Project Menu](#21-project-menu)  
-&nbsp;&nbsp;&nbsp;&nbsp;[2.2 Transcript Menu (Export .txt & Clipboard)](#22-transcript-menu-export-txt-clipboard)  
-&nbsp;&nbsp;&nbsp;&nbsp;[2.3 Versions Dropdown](#23-versions-dropdown)  
-&nbsp;&nbsp;&nbsp;&nbsp;[2.4 Source Timeline & Audio Tracks Info](#24-source-timeline-audio-tracks-info)  
+**[3. Transcript Editor & Sidebar Tools](#3-transcript-editor-sidebar-tools)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.1 Word Painting & Color-Coded Markers](#31-word-painting-color-coded-markers)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments `(...)` & Start Absorption](#32-inaudible-fragments-start-absorption)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay (`Ctrl + F`)](#33-transcript-search-overlay-ctrl-+-f)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Panel (Marking Palette & Pinned Favorites)](#34-main-panel-marking-palette-pinned-favorites)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis (Compare vs Standalone & Side-by-Side View)](#35-script-analysis-compare-vs-standalone-side-by-side-view)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.6 Silence Detection Panel (Post-Transcript Trimming)](#36-silence-detection-panel-post-transcript-trimming)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.7 Filler Words Manager (Inline List & Auto-Marking)](#37-filler-words-manager-inline-list-auto-marking)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.8 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.9 Sidebar Drag & Drop Customization](#39-sidebar-drag-drop-customization)<br>
 
-**[3. Transcript Editor & Sidebar Tools](#3-transcript-editor-sidebar-tools)**
-&nbsp;&nbsp;&nbsp;&nbsp;[3.1 Word Painting & Color-Coded Markers](#31-word-painting-color-coded-markers)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments `(...)` & Start Absorption](#32-inaudible-fragments-start-absorption)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay (`Ctrl + F`)](#33-transcript-search-overlay-ctrl-+-f)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Panel (Marking Palette & Pinned Favorites)](#34-main-panel-marking-palette-pinned-favorites)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis (Compare vs Standalone & Side-by-Side View)](#35-script-analysis-compare-vs-standalone-side-by-side-view)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.6 Silence Detection Panel (Post-Transcript Trimming)](#36-silence-detection-panel-post-transcript-trimming)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.7 Filler Words Manager (Inline List & Auto-Marking)](#37-filler-words-manager-inline-list-auto-marking)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.8 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now)  
-&nbsp;&nbsp;&nbsp;&nbsp;[3.9 Sidebar Drag & Drop Customization](#39-sidebar-drag-drop-customization)  
+**[4. Audio Preview & Navigation Bar](#4-audio-preview-navigation-bar)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#41-jump-to-word-instant-resolve-timeline-scrubbing)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[4.3 Speed Adjustment & Playhead Synchronization](#43-speed-adjustment-playhead-synchronization)<br>
 
-**[4. Audio Preview & Navigation Bar](#4-audio-preview-navigation-bar)**
-&nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#41-jump-to-word-instant-resolve-timeline-scrubbing)  
-&nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)  
-&nbsp;&nbsp;&nbsp;&nbsp;[4.3 Speed Adjustment & Playhead Synchronization](#43-speed-adjustment-playhead-synchronization)  
+**[5. Timeline Assembly & DaVinci Integration](#5-timeline-assembly-davinci-integration)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.1 The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Native `.drt` Pipeline (Non-Destructive Protection)](#52-native-drt-pipeline-non-destructive-protection)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Timeline Heatmap Overview](#53-timeline-heatmap-overview)<br>
 
-**[5. Timeline Assembly & DaVinci Integration](#5-timeline-assembly-davinci-integration)**
-&nbsp;&nbsp;&nbsp;&nbsp;[5.1 The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer)  
-&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Native `.drt` Pipeline (Non-Destructive Protection)](#52-native-drt-pipeline-non-destructive-protection)  
-&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Timeline Heatmap Overview](#53-timeline-heatmap-overview)  
+**[6. Settings & Preferences](#6-settings-preferences)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.1 General Settings](#61-general-settings)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.2 Interface & Transcript Formatting](#62-interface-transcript-formatting)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#63-audio-sync-calibration-offset-padding-snap-max)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.4 Keyboard & Mouse Shortcut Bindings](#64-keyboard-mouse-shortcut-bindings)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.5 Custom Markers Configuration](#65-custom-markers-configuration)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.6 AI Engine Configuration (Advanced Mode)](#66-ai-engine-configuration-advanced-mode)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[6.7 Telemetry, Contact & Issue Reporting](#67-telemetry-contact-issue-reporting)<br>
 
-**[6. Settings & Preferences](#6-settings-preferences)**
-&nbsp;&nbsp;&nbsp;&nbsp;[6.1 General Settings](#61-general-settings)  
-&nbsp;&nbsp;&nbsp;&nbsp;[6.2 Interface & Transcript Formatting](#62-interface-transcript-formatting)  
-&nbsp;&nbsp;&nbsp;&nbsp;[6.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#63-audio-sync-calibration-offset-padding-snap-max)  
-&nbsp;&nbsp;&nbsp;&nbsp;[6.4 Keyboard & Mouse Shortcut Bindings](#64-keyboard-mouse-shortcut-bindings)  
-&nbsp;&nbsp;&nbsp;&nbsp;[6.5 Custom Markers Configuration](#65-custom-markers-configuration)  
-&nbsp;&nbsp;&nbsp;&nbsp;[6.6 AI Engine Configuration (Advanced Mode)](#66-ai-engine-configuration-advanced-mode)  
-&nbsp;&nbsp;&nbsp;&nbsp;[6.7 Telemetry, Contact & Issue Reporting](#67-telemetry-contact-issue-reporting)  
+**[7. Step-by-Step Practical Recipes ("How do I...?")](#7-step-by-step-practical-recipes-how-do-i)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes-false-starts-without-a-script)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)](#recipe-d-one-click-filler-word-purge-yyy-umm-uh)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names-jargon)<br>
 
-**[7. Step-by-Step Practical Recipes ("How do I...?")](#7-step-by-step-practical-recipes-how-do-i)**
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)  
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes-false-starts-without-a-script)  
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)  
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)](#recipe-d-one-click-filler-word-purge-yyy-umm-uh)  
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names-jargon)  
-
-**[8. Shortcuts Cheat Sheet & FAQ](#8-shortcuts-cheat-sheet-faq)**
+**[8. Shortcuts Cheat Sheet & FAQ](#8-shortcuts-cheat-sheet-faq)**<br>
 
 ## 0. Quickstart Guide (How to start using BadWords)
 If you want to just start using BadWords and go from raw footage to a cut timeline in a few minutes, follow this guide. 
@@ -260,7 +259,14 @@ Located directly in the center of the titlebar, this indicator shows exactly wha
 
 ## 3. Transcript Editor & Sidebar Tools
 
-The central workspace of BadWords pairs an interactive, word-level **Transcript Canvas** with modular, collapsible **Sidebar Activity Panels**. Every word displayed corresponds to a frame-accurate audio timestamp, and the sidebars provide automated detection tools and color cutting controls that operate directly on the transcript.
+BadWords operates within an IDE-inspired interface designed for high-speed dialogue editing. 
+
+The **central workspace** hosts an interactive verbatim transcript canvas, where every single word is bound to frame-accurate audio timestamps. Because each word directly represents its corresponding audio slice, selecting, painting, or cutting text performs exact timeline operations on those audio and video segments.
+
+Surrounding the central transcript are modular **Sidebar Activity Panels** that house automated AI detection, script alignment, and assembly controls. These sidebars are fully customizable to fit your editing workspace:
+- **Resizable:** Drag sidebar borders to adjust width according to your preference.
+- **Draggable:** Freely reorder activity tabs or drag entire panels between the left and right sides of the window.
+- **Collapsible:** Fold and collapse any panel to maximize your canvas for distraction-free text editing.
 
 <p align="center">
   <img src="images/05_transcript_canvas.png" alt="Transcript Canvas and Word Painting" width="100%">
