@@ -5,6 +5,7 @@
 
 ## Table of Contents
 
+
 **[0. Quickstart Guide (How to start using BadWords)](#0-quickstart-guide-how-to-start-using-badwords)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.1 Launching from DaVinci Resolve](#01-launching-from-davinci-resolve)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Source Audio & Model](#02-choosing-source-audio-model)<br>
@@ -24,8 +25,8 @@
 
 **[3. Transcript Editor & Sidebar Tools](#3-transcript-editor-sidebar-tools)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.1 Word Painting & Color-Coded Markers](#31-word-painting-color-coded-markers)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments `(...)`](#32-inaudible-fragments)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay (`Ctrl + F`)](#33-transcript-search-overlay-ctrl-+-f)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments](#32-inaudible-fragments)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay](#33-transcript-search-overlay)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Panel (Marking Palette & Pinned Favorites)](#34-main-panel-marking-palette-pinned-favorites)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis (Compare vs Standalone & Side-by-Side View)](#35-script-analysis-compare-vs-standalone-side-by-side-view)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.6 Silence Detection Panel (Post-Transcript Trimming)](#36-silence-detection-panel-post-transcript-trimming)<br>
@@ -56,7 +57,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes-false-starts-without-a-script)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)](#recipe-d-one-click-filler-word-purge-yyy-umm-uh)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge](#recipe-d-one-click-filler-word-purge)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names-jargon)<br>
 
 **[8. Shortcuts Cheat Sheet & FAQ](#8-shortcuts-cheat-sheet-faq)**<br>
@@ -304,31 +305,24 @@ For manual editing without a script, you can use these colors however you prefer
 By default, **all marked words remain on your assembled timeline as color-coded clips (DaVinci Clip Color)** so you can inspect them visually before making cuts. To configure automatic ripple cutting or post-review mass removal for specific colors, see [Section 3.8: Assembly & Color Cutting Matrix](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
 
 > [!NOTE]  
-> **Silence Representation:**  
-> Silence is **not represented visually** in the BadWords text canvas (there are no text tokens for pauses). The **Tan** clip color is applied exclusively inside DaVinci Resolve to color-code silent regions when you enable `Mark silence with color` in the [Silence Detection Panel](#36-silence-detection-panel-post-transcript-trimming).
+> **Color Rules & Reserved Presets:**  
+> - **Silence Representation:** Silence is not shown as text tokens in the BadWords editor canvas. The **Tan** clip color is applied exclusively on silent cuts inside DaVinci Resolve when you enable `Mark silence with color` in the [Silence Detection Panel](#36-silence-detection-panel-post-transcript-trimming).
+> - **Reserved Colors:** Custom markers cannot use **Green**, **Blue**, **Tan**, or **Chocolate** to prevent visual collisions with native DaVinci clip colors and system states (silence and inaudible audio).
 
-> [!NOTE]  
-> **Reserved Colors Protection:**  
-> BadWords prohibits creating custom markers using **Green**, **Blue**, **Tan**, and **Chocolate**:
-> - **Green** and **Blue** are DaVinci Resolve's native default clip colors for audio and video.
-> - **Tan** is reserved exclusively for detected silence regions.
-> - **Chocolate** is reserved exclusively for inaudible fragments `(...)`.  
-> This ensures custom user markers never conflict with system clip states or native DaVinci colors.
+### 3.2 Inaudible Fragments
+When audio is completely unintelligible, muffled, or masked by loud background noise, Whisper cannot transcribe speech. BadWords flags these sections as inaudible fragments, represented in the transcript canvas as `(...)` tokens.
 
-### 3.2 Inaudible Fragments `(...)`
-When audio is completely unintelligible, muffled, or drowned out by loud background noise, Whisper cannot reliably extract text. BadWords tags these acoustic moments as inaudible tokens, represented in the transcript as **`(...)`**.
+In the **Assembly** panel, you have dedicated controls for inaudible speech:
+- **Show / Hide Inaudible:** Toggle whether inaudible tokens are visible in the transcript canvas or hidden.
+- **Mark with Chocolate Clip Color:** When enabled, inaudible sections are assigned the **Chocolate** clip color in DaVinci Resolve upon assembly.
+- **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
 
-In the **Assembly** panel, you have dedicated controls for inaudible fragments:
-- **Show / Hide Inaudible:** Choose whether `(...)` tokens are displayed in the transcript editor or completely hidden.
-- **Mark with Chocolate Clip Color:** When enabled, all inaudible audio regions are highlighted with **Chocolate** clip color in DaVinci Resolve upon assembly.
-- **Why it matters:** Instead of guessing why a silent gap or jump occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
-
-### 3.3 Transcript Search Overlay (`Ctrl + F`)
-Pressing **`Ctrl + F`** (or `Cmd + F` on macOS) toggles the floating search bar:
+### 3.3 Transcript Search Overlay
+Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 - Type any word or phrase to highlight matches across the entire transcript.
-- Match counter displays live results (e.g., `4/18`).
-- Use the **Up / Down Arrow keys** on your keyboard (or click the arrow buttons in the search box) to cycle through matches.
-- Press **`Ctrl + F`** again (or click the close button) to hide the search bar.
+- Match counter displays live results (e.g. 4/18).
+- Use the **Up / Down Arrow keys** on your keyboard (or click the arrow buttons in the search bar) to cycle through matches.
+- Press **Ctrl + F** again (or click the close button) to hide the search bar.
 
 ### 3.4 Main Panel (Marking Palette & Pinned Favorites)
 <p align="center">
@@ -626,7 +620,7 @@ sequenceDiagram
 5. Click **`Run Detection`**.
 6. Within seconds, a newly rippled, tightened timeline appears in Resolve!
 
-### Recipe D: One-Click Filler Word Purge (`yyy`, `umm`, `uh`)
+### Recipe D: One-Click Filler Word Purge
 **Goal:** Remove all hesitation sounds (*"uh"*, *"um"*, *"like"*) from an interview.
 
 1. Open BadWords and transcribe your timeline.
