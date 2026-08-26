@@ -146,6 +146,8 @@ flowchart LR
 > [!NOTE]
 > **100% Non-Destructive:** Your original timeline remains completely untouched. On the new timeline, cuts are applied frame-accurately and every remaining clip is **color-coded directly in DaVinci Resolve (Clip Color)** according to your text markings for instant visual verification.
 
+<br><br><br>
+
 ## 1. Welcome Screen & Source Selection
 
 When BadWords opens, you are greeted by the **Welcome Screen**. This view allows you to configure your transcription pipeline or switch to the ultra-fast standalone silence removal tool.
@@ -254,6 +256,8 @@ When you analyze footage with a specific AI model for the first time:
 
 - Once downloaded, the model files are saved permanently on your local drive. All subsequent transcriptions with that model run completely offline and start instantly with zero download delay.
 
+<br><br><br>
+
 ## 2. Top Titlebar & Project Management
 
 The top bar of BadWords provides access to file management, transcript exports, and timeline synchronization. Note that these project menus and source details appear only **after the analysis is complete** and the transcript is loaded into the editor.
@@ -320,6 +324,8 @@ Located directly in the center of the titlebar, this indicator shows exactly wha
 <p align="center">
   <img src="images/04d_titlebar_overview.png" alt="Titlebar Overview 4" width="50%">
 </p>
+
+<br><br><br>
 
 ## 3. Transcript Editor & Sidebar Tools
 
@@ -568,6 +574,8 @@ Capture the Assembly Matrix showing:
 ### 3.9 Sidebar Drag & Drop Customization
 You can reorder sidebar activity icons or drag panels between the left and right sides of the window by simply clicking and dragging the sidebar button handles.
 
+<br><br><br>
+
 ## 4. Audio Preview & Navigation Bar
 
 The bottom panel of the editor houses the **Audio Preview Bar**, eliminating guesswork by allowing you to listen to words and navigate Resolve directly from the text.
@@ -618,6 +626,8 @@ Capture the bottom Audio Preview Bar showing:
 
 ### 4.3 Speed Adjustment & Playhead Synchronization
 Click the speed dropdown to select playback rates: `0.5x`, `0.75x`, `1.0x`, `1.25x`, `1.5x`, or `2.0x`. Pitch correction is applied automatically to maintain vocal clarity at high speeds.
+
+<br><br><br>
 
 ## 5. Timeline Assembly & DaVinci Integration
 
@@ -682,6 +692,8 @@ flowchart TD
 
 ### 5.3 Timeline Heatmap Overview
 Upon import into DaVinci Resolve, BadWords attaches native timeline markers to every edited region. This creates a color-coded "heatmap" directly inside Resolve’s Edit Page, allowing you to instantly spot where edits took place and inspect cuts visually.
+
+<br><br><br>
 
 ## 6. Settings & Preferences
 
@@ -804,6 +816,8 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 - **Anonymous Telemetry:** 100% anonymous ping containing OS type and version number only (no audio or personal data is ever collected).
 - **Direct Support Form:** Enter an issue title and description, attach screenshots, and send a diagnostic ticket with log files directly to the developer with one click.
 
+<br><br><br>
+
 ## 7. Step-by-Step Practical Recipes ("How do I...?")
 
 <br>
@@ -900,6 +914,8 @@ sequenceDiagram
 2. Paste your reference text or documentation into the slide-out script box.
 3. Click **`Analyze`**.
 4. BadWords extracts the technical terms, feeds them directly into Whisper's prompt layer, and delivers a perfect verbatim transcription on the first pass!
+
+<br><br><br>
 
 ## 8. Shortcuts Cheat Sheet & FAQ
 
