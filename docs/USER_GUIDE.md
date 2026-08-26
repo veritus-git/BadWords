@@ -290,27 +290,22 @@ Capture Transcript Canvas with annotations:
 ### 3.1 Word Painting & Color-Coded Markers
 BadWords uses a **Painting Metaphor** for editing. Selecting a color tool (from the sidebar palette or keys `1`–`4`) and clicking or dragging across words applies that color tag to the corresponding acoustic segment.
 
-By default, **all marked words remain on your assembled timeline as color-coded clips (DaVinci Clip Color)** so you can inspect them visually before making destructive decisions.
+For manual editing without a script, you can use these colors however you prefer (for instance, marking all errors in Red and retakes in Blue). However, when using automated tools like **Script Comparison** (see [Section 3.5](#35-script-analysis-compare-vs-standalone-side-by-side-view)), BadWords assigns precise semantic meaning to each color:
 
-| Painting Color | DaVinci Clip Color | Default Behavior | Recommended Usage |
-| :---: | :---: | :---: | :--- |
-| **Red** | **Violet** | Keep as colored clip | Filler words (*"uh"*, *"um"*, *"yyy"*), obvious stumbles, coughs, and bloopers. |
-| **Blue** | **Navy** | Keep as colored clip | Retakes, repeated sentences, false starts, and duplicate takes. |
-| **Green** | **Olive** | Keep as colored clip | Minor deviations, typos, or improvisations compared to the script. |
-| **Brown** | **Chocolate** | Keep as colored clip | Inaudible speech, mumbled phrases, or microphone clicks. |
-| **Eraser** | *Default* | Keep as normal clip | Strips color tags from selected words, restoring standard clip color. |
-| **Custom** | *User Assigned* | Keep as colored clip | User-defined categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
+| Painting Color | DaVinci Clip Color | Meaning in Script Comparison / Recommended Usage |
+| :---: | :---: | :--- |
+| **Red** | **Violet** | Filler words (*"uh"*, *"um"*, *"yyy"*), obvious stumbles, coughs, and speech errors. |
+| **Blue** | **Navy** | Retakes, repeated sentences, false starts, and alternate takes. |
+| **Green** | **Olive** | Minor phrasing deviations, typos, or improvisations compared to the script. |
+| **Brown** | **Chocolate** | Inaudible speech, mumbled phrases, or microphone clicks. |
+| **Eraser** | *Default* | Strips color tags from selected words, restoring standard clip status. |
+| **Custom** | *User Assigned* | User-defined custom categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
 
-#### Cutting Mechanics (Assembly Panel Controls):
-In the **Assembly** panel, you can decide whether colored clips stay on the timeline or are removed:
-1. **Auto-Cut Toggle (Circular "A" Icon):**
-   - When toggled ON (turns green) next to any color, clips painted with that color are **automatically ripple-deleted** during timeline assembly based on Whisper's verbatim timestamps.
-   - You can toggle Auto-Cut for any standard or custom color.
-2. **Post-Review Mass Cutting (Scissors "Cut Now" Button):**
-   - Provides a flexible two-stage workflow: first assemble your timeline with colored clips intact, fine-tune cut boundaries and transitions manually in DaVinci Resolve, and then return to BadWords to delete all clips of that color in one click.
-   - When clicking the Scissors icon, BadWords lets you apply cuts to either:
-     - **`Currently Selected Timeline`:** Directly removes colored clips from your active open timeline.
-     - **`New Timeline`:** Duplicates the timeline and creates a fresh cut copy, preserving your current timeline as a backup.
+By default, **all marked words remain on your assembled timeline as color-coded clips (DaVinci Clip Color)** so you can inspect them visually before making cuts. To configure automatic ripple cutting or post-review mass removal for specific colors, see [Section 3.8: Assembly & Color Cutting Matrix](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
+
+> [!NOTE]  
+> **Silence Representation:**  
+> Silence is **not represented visually** in the BadWords text canvas (there are no text tokens for pauses). The **Tan** clip color is applied exclusively inside DaVinci Resolve to color-code silent regions when you enable `Mark silence with color` in the [Silence Detection Panel](#36-silence-detection-panel-post-transcript-trimming).
 
 > [!NOTE]  
 > **Reserved Colors Protection:**  
