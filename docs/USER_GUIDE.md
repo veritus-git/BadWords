@@ -310,12 +310,19 @@ By default, **all marked words remain on your assembled timeline as color-coded 
 > - **Reserved Colors:** Custom markers cannot use **Green**, **Blue**, **Tan**, or **Chocolate** to prevent visual collisions with native DaVinci clip colors and system states (silence and inaudible audio).
 
 ### 3.2 Inaudible Fragments
-When audio is completely unintelligible, muffled, or masked by loud background noise, Whisper cannot transcribe speech. BadWords flags these sections as inaudible fragments, represented in the transcript canvas as `(...)` tokens.
+When audio is completely unintelligible, muffled, or masked by loud background noise, Whisper cannot transcribe speech. BadWords flags these moments as inaudible fragments, represented in the transcript canvas as `(...)` tokens.
 
-In the **Assembly** panel, you have dedicated controls for inaudible speech:
-- **Show / Hide Inaudible:** Toggle whether inaudible tokens are visible in the transcript canvas or hidden.
-- **Mark with Chocolate Clip Color:** When enabled, inaudible sections are assigned the **Chocolate** clip color in DaVinci Resolve upon assembly.
-- **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
+<p align="center">
+  <img src="images/06_inaudible_fragments.png" alt="Inaudible Fragments" width="90%">
+</p>
+
+Depending on your configuration in the [Assembly Panel (#3.8)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now), inaudible fragments behave in one of three ways:
+1. **Hidden:** When `Show inaudible fragments` is toggled off, `(...)` tokens disappear from the editor entirely and their duration is smoothly absorbed by surrounding words and colors.
+2. **Visible (Uncolored):** When displayed without color marking, `(...)` tokens appear as plain text in the canvas and remain as standard uncolored clips in DaVinci Resolve.
+3. **Marked with Chocolate Color:** When `Mark inaudible with color` is enabled, inaudible tokens turn brown in the UI and are assigned the **Chocolate** clip color in DaVinci Resolve upon assembly for easy manual inspection.
+
+> [!TIP]  
+> **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve. For complete control options, see [Section 3.8: Assembly & Color Cutting Matrix](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
 
 ### 3.3 Transcript Search Overlay
 Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
@@ -387,7 +394,7 @@ Adjusts silence parameters applied after full speech transcription:
 - **`Mark filler words automatically` Toggle:** When enabled, any word matching the list is automatically painted **Red** during transcription.
 
 ### 3.8 Assembly & Color Cutting Matrix (Auto-Cut vs Cut Now)
-This panel gives you granular control over what happens to each color during timeline creation:
+This panel gives you granular control over what happens to each color and system state during timeline creation:
 
 <p align="center">
   <img src="images/09_assembly_matrix.png" alt="Assembly Color Cutting Matrix" width="80%">
@@ -404,8 +411,13 @@ Capture the Assembly Matrix showing:
 [6] Star (Pin to Favorites) Button
 -->
 
+#### Global Inaudible & Typos Toggles:
+- **`Show inaudible fragments`:** Toggles visibility of `(...)` inaudible tokens in the transcript canvas. When disabled, inaudible gaps are absorbed by neighboring words (see [Section 3.2](#32-inaudible-fragments)).
+- **`Mark inaudible with color`:** Color-codes inaudible tokens as **Chocolate** both in BadWords and on the assembled DaVinci timeline.
+- **`Show detected typos`:** Toggles whether minor phrasing deviations detected by Script Comparison are highlighted in **Green** or left unpainted.
+
 #### Controls per Color Row:
-1. **Scissors Icon (`Cut Now`):** Prompts you to immediately cut and remove all clips of this color from either a **New Timeline** or the **Currently Selected Timeline** in DaVinci Resolve.
+1. **Scissors Icon (`Cut Now`):** Prompts you to immediately cut and remove all clips of this color from either the **Currently Selected Timeline** or a **New Timeline** in DaVinci Resolve.
 2. **Auto-Cut Icon (Checkmark / "A"):** When active (green), any text painted with this color is **automatically ripple-deleted** during the standard `Assemble` process.
 3. **Star Icon (`Star`):** Pins this color's Auto-Cut toggle directly onto the Main Panel under *Pinned Favorites*.
 
