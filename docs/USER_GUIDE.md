@@ -146,7 +146,11 @@ flowchart LR
 > [!NOTE]
 > **100% Non-Destructive:** Your original timeline remains completely untouched. On the new timeline, cuts are applied frame-accurately and every remaining clip is **color-coded directly in DaVinci Resolve (Clip Color)** according to your text markings for instant visual verification.
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 1. Welcome Screen & Source Selection
 
@@ -256,7 +260,11 @@ When you analyze footage with a specific AI model for the first time:
 
 - Once downloaded, the model files are saved permanently on your local drive. All subsequent transcriptions with that model run completely offline and start instantly with zero download delay.
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 2. Top Titlebar & Project Management
 
@@ -325,7 +333,11 @@ Located directly in the center of the titlebar, this indicator shows exactly wha
   <img src="images/04d_titlebar_overview.png" alt="Titlebar Overview 4" width="50%">
 </p>
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 3. Transcript Editor & Sidebar Tools
 
@@ -425,29 +437,23 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
 
-<p align="center">
-  <img src="images/07_sidebar_tools.png" alt="Sidebar Panels" width="90%">
-</p>
-
-<!-- 
-IMAGE PLACEHOLDER: docs/images/07_sidebar_tools.png
-Capture the sidebar activities with callouts:
-[1] Main Panel
-[2] Script Analysis Panel
-[3] Silence Detection Panel
-[4] Filler Words Panel
-[5] Assembly Panel
--->
-
 #### Upper Section: Marking Palette & Custom Colors
-- **Active Marker Selector:** Radio buttons to switch between **Red** (Errors/Fillers), **Blue** (Retakes), **Green** (Typos), and **Eraser** (Clears markings). Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
-- **`Clear Transcript` (Trash Icon):** Erases all color markings across the entire project with a confirmation dialog.
-- **`+ add custom marker...`:** Opens the marker creator dialog to define custom color categories, names, and keyboard shortcuts.
+<img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="220">
+
+- **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
+- **Clear Transcript (Brush Icon):** Erases all color markings across the entire project with a confirmation dialog.
+- **`+ add custom marker...`:** Opens the Settings dialog directly to create, configure, and assign shortcuts to custom color markers (see [Section 6.5: Custom Markers Configuration](#65-custom-markers-configuration)).
+
+<div style="clear: both;"></div>
 
 #### Lower Section: Favorites & Timeline Export
+<img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="220">
+
 - **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analysis took: 4.2s*).
 - **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button across other sidebar panels (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
 - **`Assemble` Split Button:** Builds the final cut timeline in DaVinci Resolve with an expandable **Track Options Drawer** (see [Section 5.1](#51-the-assembly-split-button-track-options-drawer)).
+
+<div style="clear: both;"></div>
 
 <br>
 
@@ -574,7 +580,11 @@ Capture the Assembly Matrix showing:
 ### 3.9 Sidebar Drag & Drop Customization
 You can reorder sidebar activity icons or drag panels between the left and right sides of the window by simply clicking and dragging the sidebar button handles.
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 4. Audio Preview & Navigation Bar
 
@@ -627,7 +637,11 @@ Capture the bottom Audio Preview Bar showing:
 ### 4.3 Speed Adjustment & Playhead Synchronization
 Click the speed dropdown to select playback rates: `0.5x`, `0.75x`, `1.0x`, `1.25x`, `1.5x`, or `2.0x`. Pitch correction is applied automatically to maintain vocal clarity at high speeds.
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 5. Timeline Assembly & DaVinci Integration
 
@@ -693,7 +707,11 @@ flowchart TD
 ### 5.3 Timeline Heatmap Overview
 Upon import into DaVinci Resolve, BadWords attaches native timeline markers to every edited region. This creates a color-coded "heatmap" directly inside Resolve’s Edit Page, allowing you to instantly spot where edits took place and inspect cuts visually.
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 6. Settings & Preferences
 
@@ -816,7 +834,11 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 - **Anonymous Telemetry:** 100% anonymous ping containing OS type and version number only (no audio or personal data is ever collected).
 - **Direct Support Form:** Enter an issue title and description, attach screenshots, and send a diagnostic ticket with log files directly to the developer with one click.
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 7. Step-by-Step Practical Recipes ("How do I...?")
 
@@ -915,7 +937,11 @@ sequenceDiagram
 3. Click **`Analyze`**.
 4. BadWords extracts the technical terms, feeds them directly into Whisper's prompt layer, and delivers a perfect verbatim transcription on the first pass!
 
-<br><br><br>
+<br>
+
+---
+
+<br>
 
 ## 8. Shortcuts Cheat Sheet & FAQ
 
