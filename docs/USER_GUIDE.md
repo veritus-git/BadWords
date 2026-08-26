@@ -259,17 +259,20 @@ Located directly in the center of the titlebar, this indicator shows exactly wha
 
 ## 3. Transcript Editor & Sidebar Tools
 
-BadWords operates within an IDE-inspired interface designed for high-speed dialogue editing. 
+BadWords operates within an IDE-inspired interface designed for high-efficiency dialogue editing. 
 
-The **central workspace** hosts an interactive verbatim transcript canvas, where every single word is bound to frame-accurate audio timestamps. Because each word directly represents its corresponding audio slice, selecting, painting, or cutting text performs exact timeline operations on those audio and video segments.
+The **central workspace** displays your verbatim speech transcription, where every single word is bound to frame-accurate audio timestamps. Because each word directly represents its corresponding audio slice, selecting, painting, or cutting text performs exact timeline operations on those audio and video segments.
 
-Surrounding the central transcript are modular **Sidebar Activity Panels** that house automated AI detection, script alignment, and assembly controls. These sidebars are fully customizable to fit your editing workspace:
+Surrounding the central transcript are modular **Sidebar Panels** containing tools for script alignment, silence trimming, filler word detection, and timeline assembly. These sidebars are fully customizable:
 - **Resizable:** Drag sidebar borders to adjust width according to your preference.
-- **Draggable:** Freely reorder activity tabs or drag entire panels between the left and right sides of the window.
-- **Collapsible:** Fold and collapse any panel to maximize your canvas for distraction-free text editing.
+- **Draggable:** Freely reorder tabs or drag entire panels between the left and right sides of the window.
+- **Collapsible:** Fold and collapse any panel to let the transcript fill more screen space.
+
+> [!NOTE]  
+> Switching between open tabs retains your custom resized width. However, completely collapsing and reopening a sidebar panel resets its width back to the default size.
 
 <p align="center">
-  <img src="images/05_transcript_canvas.png" alt="Transcript Canvas and Word Painting" width="100%">
+  <img src="images/05_transcript_canvas.png" alt="Transcript Canvas and Word Painting" width="80%">
 </p>
 
 <!-- 
@@ -311,7 +314,7 @@ Pressing **`Ctrl + F`** (or `Cmd + F` on macOS) opens the floating search bar:
 
 ### 3.4 Main Panel (Marking Palette & Pinned Favorites)
 <p align="center">
-  <img src="images/07_sidebar_tools.png" alt="Sidebar Activity Panels" width="90%">
+  <img src="images/07_sidebar_tools.png" alt="Sidebar Panels" width="90%">
 </p>
 
 <!-- 
