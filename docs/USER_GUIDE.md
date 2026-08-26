@@ -437,23 +437,34 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
 
-#### Upper Section: Marking Palette & Custom Colors
-<img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="27%" style="padding-left: 5%;">
+<table>
+<tr>
+<td width="70%" valign="top">
 
+#### Upper Section: Marking Palette & Custom Colors
 - **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
 - **Clear Transcript (Brush Icon):** Erases all color markings across the entire project with a confirmation dialog.
 - **`+ add custom marker...`:** Opens the Settings dialog directly to create, configure, and assign shortcuts to custom color markers (see [Section 6.5: Custom Markers Configuration](#65-custom-markers-configuration)).
 
-<div style="clear: both;"></div>
+</td>
+<td width="30%" valign="middle" align="center">
+  <img src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="100%">
+</td>
+</tr>
+<tr>
+<td width="70%" valign="top">
 
 #### Lower Section: Favorites & Timeline Export
-<img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="27%" style="padding-left: 5%;">
-
 - **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
 - **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
 - **`Assemble` Split Button:** Triggers timeline assembly and includes an expandable dropdown drawer to choose which tracks are cut. For complete details on track modes, see [Section 5.1: The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer).
 
-<div style="clear: both;"></div>
+</td>
+<td width="30%" valign="middle" align="center">
+  <img src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="100%">
+</td>
+</tr>
+</table>
 
 <br>
 
@@ -469,7 +480,9 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
   <img src="images/08a_script_analysis_sbs.png" alt="Script Analysis" width="100%">
 </p>
 
-<img align="right" src="images/08b_script_analysis_sbs.png" alt="Script Analysis & Side by Side" width="27%" style="padding-left: 5%; padding-bottom: 10px;">
+<table>
+<tr>
+<td width="70%" valign="top">
 
 #### Available Tools & Modes:
 - **Script Input Area & `Import Script`:** Paste your text or load `.txt`, `.docx`, or `.pdf` files. BadWords automatically strips formatting and normalizes whitespace.
@@ -482,10 +495,15 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
 - **`Side-by-Side View (BETA)`:** Opens the two-column comparative view (shown in the screenshot above) with the reference script on the left and the live transcript on the right, highlighting unspoken lines, skipped phrases, and improvisations.
 - **`Return to Normal View`:** To exit the Side-by-Side view at any time, open the Script Analysis sidebar tab and click this button to restore the standard transcript editor canvas.
 
+</td>
+<td width="30%" valign="middle" align="center">
+  <img src="images/08b_script_analysis_sbs.png" alt="Script Analysis Sidebar" width="100%">
+</td>
+</tr>
+</table>
+
 > [!TIP]  
 > For complete step-by-step editing workflows, see [Recipe A: Cutting Based on a Script](#recipe-a-cutting-video-based-on-a-written-script) and [Recipe B: Removing Retakes without a Script](#recipe-b-removing-retakes-false-starts-without-a-script).
-
-<div style="clear: both;"></div>
 
 <br>
 
