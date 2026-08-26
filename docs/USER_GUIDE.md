@@ -396,7 +396,7 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
 
-<img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="240" style="padding-left: 5%;">
+<img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="285">
 
 #### Upper Section: Marking Palette & Custom Colors
 - **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
@@ -405,7 +405,7 @@ The **Main Panel** serves as the primary control center for manual word painting
 
 <br clear="all">
 
-<img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="240" style="padding-left: 5%;">
+<img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="285">
 
 #### Lower Section: Favorites & Timeline Export
 - **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
@@ -428,7 +428,7 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
   <img src="images/08a_script_analysis_sbs.png" alt="Script Analysis" width="100%">
 </p>
 
-<img align="right" src="images/08b_script_analysis_sbs.png" alt="Script Analysis Sidebar" width="240" style="padding-left: 5%;">
+<img align="right" src="images/08b_script_analysis_sbs.png" alt="Script Analysis Sidebar" width="285">
 
 #### Available Tools & Modes:
 - **Script Input Area & `Import Script`:** Paste your text or load `.txt`, `.docx`, or `.pdf` files. BadWords automatically strips formatting and normalizes whitespace.
@@ -499,7 +499,7 @@ The **Filler Words Panel** manages BadWords' built-in dictionary for identifying
 
 The **Assembly Panel** allows you to configure global display toggles and choose how each marker color is handled during timeline assembly or cut immediately from an active timeline.
 
-<img align="right" src="images/09_assembly_panel.png" alt="Assembly Panel" width="280" style="padding-left: 5%; padding-bottom: 3%;">
+<img align="right" src="images/09_assembly_panel.png" alt="Assembly Panel" width="325">
 
 #### Global Inaudible & Typos Toggles:
 - **`Show inaudible fragments`:** Controls how inaudible `(...)` tokens behave in the transcript canvas (see [Section 3.2](#32-inaudible-fragments)):
