@@ -78,6 +78,8 @@ flowchart LR
 
 ---
 
+<br>
+
 ### 0.1 Launching from DaVinci Resolve
 1. Open your project in **DaVinci Resolve**.
 2. In DaVinci Resolve's top application menu bar, navigate to:
@@ -87,6 +89,8 @@ flowchart LR
 <br>
 
 ---
+
+<br>
 
 ### 0.2 Choosing Source Audio & Model
 1. **Timeline Selection:** Confirm your active timeline is selected in the dropdown. (Click `Refresh` if you just created a new timeline).
@@ -105,6 +109,8 @@ flowchart LR
 <br>
 
 ---
+
+<br>
 
 ### 0.3 Reviewing, Color-Coding & Cut Settings
 1. Once processing finishes, your audio appears formatted as interactive text.
@@ -131,6 +137,8 @@ flowchart LR
 <br>
 
 ---
+
+<br>
 
 ### 0.4 Assembling the Cut Timeline
 1. When you have finished marking your transcript, click the green **`Assemble`** button in the corner of the main panel on the right.
@@ -162,6 +170,8 @@ Capture the initial BadWords Welcome Screen with annotations:
 
 ---
 
+<br>
+
 ### 1.1 Transcription Workspace
 
 | UI Element | Type | Purpose & Description |
@@ -192,6 +202,8 @@ Capture the initial BadWords Welcome Screen with annotations:
 <br>
 
 ---
+
+<br>
 
 ### 1.2 Fast Silence Workspace (Standalone Silence Removal)
 
@@ -230,6 +242,8 @@ Capture Fast Silence mode with annotations:
 
 ---
 
+<br>
+
 ### 1.3 First-Run Model Download & Setup
 When you analyze footage with a specific AI model for the first time:
 - BadWords automatically downloads the neural network weights from HuggingFace directly into your local installation directory (`models/`).
@@ -248,6 +262,8 @@ The top bar of BadWords provides access to file management, transcript exports, 
 
 ---
 
+<br>
+
 ### 2.1 Project Menu
 - **Export Project:** Saves the complete state of your current session into a portable `.bws` (BadWords Save) file. This includes the full word-level timestamps, your manual color markings, script comparison data, audio file for audio preview and timeline metadata.
 - **Import Project:** Restores an existing session from a `.bws` file.
@@ -263,6 +279,8 @@ The top bar of BadWords provides access to file management, transcript exports, 
 
 ---
 
+<br>
+
 ### 2.2 Transcript Menu (Export .txt & Clipboard)
 - **Export as .txt:** Exports the entire transcript as a clean, formatted plain `.txt` document.
 - **Copy to clipboard:** Copies the transcript directly to your system clipboard
@@ -274,6 +292,8 @@ The top bar of BadWords provides access to file management, transcript exports, 
 <br>
 
 ---
+
+<br>
 
 ### 2.3 Versions Dropdown
 - **Version Dropdown:** Displays the currently active timeline and all previous versions. Also allowing to switch between them and come back to any previous version. 
@@ -288,6 +308,8 @@ The top bar of BadWords provides access to file management, transcript exports, 
 <br>
 
 ---
+
+<br>
 
 ### 2.4 Source Timeline & Audio Tracks Info
 Located directly in the center of the titlebar, this indicator shows exactly what audio was fed into the AI model during analysis:
@@ -333,6 +355,8 @@ Capture Transcript Canvas with annotations:
 
 ---
 
+<br>
+
 ### 3.1 Words Painting
 BadWords uses a ***Color-coded heatmap*** for editing. Selecting a color tool (from the sidebar palette or keys `1`–`4`) and clicking or dragging across words applies that color tag to the corresponding acoustic segment.
 
@@ -358,6 +382,8 @@ By default, **all marked words remain on your assembled timeline as color-coded 
 
 ---
 
+<br>
+
 ### 3.2 Inaudible Fragments
 When audio is completely unintelligible, muffled, or masked by loud background noise, Whisper cannot transcribe speech. BadWords flags these moments as inaudible fragments, represented in the transcript canvas as `(...)` tokens.
 
@@ -374,6 +400,8 @@ You can customize how inaudible tokens are displayed in the editor (hidden, unco
 
 ---
 
+<br>
+
 ### 3.3 Transcript Search Overlay
 Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 - Type any word or phrase to highlight matches across the entire transcript.
@@ -384,6 +412,8 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 <br>
 
 ---
+
+<br>
 
 ### 3.4 Main Sidebar Panel <img src="../assets/layout/main.png" width="24" height="24" valign="middle">
 
@@ -416,6 +446,8 @@ Capture the sidebar activities with callouts:
 <br>
 
 ---
+
+<br>
 
 ### 3.5 Script Analysis Sidebar Panel <img src="../assets/layout/script.png" width="24" height="24" valign="middle">
 
@@ -453,6 +485,8 @@ Capture Script Analysis & Side-by-Side comparison view:
 
 ---
 
+<br>
+
 ### 3.6 Silence Detection Sidebar Panel <img src="../assets/layout/silence.png" width="24" height="24" valign="middle">
 
 The **Silence Detection Panel** allows you to fine-tune acoustic silence trimming applied after full speech transcription, removing awkward pauses and dead air.
@@ -473,6 +507,8 @@ The **Silence Detection Panel** allows you to fine-tune acoustic silence trimmin
 
 ---
 
+<br>
+
 ### 3.7 Filler Words Sidebar Panel <img src="../assets/layout/fillers.png" width="24" height="24" valign="middle">
 
 The **Filler Words Panel** manages BadWords' built-in dictionary for identifying hesitation sounds (*"uh"*, *"um"*, *"yyy"*, *"mhm"*, *"like"*).
@@ -489,6 +525,8 @@ The **Filler Words Panel** manages BadWords' built-in dictionary for identifying
 <br>
 
 ---
+
+<br>
 
 ### 3.8 Assembly Sidebar Panel <img src="../assets/layout/assembly.png" width="24" height="24" valign="middle">
 
@@ -525,6 +563,8 @@ Capture the Assembly Matrix showing:
 
 ---
 
+<br>
+
 ### 3.9 Sidebar Drag & Drop Customization
 You can reorder sidebar activity icons or drag panels between the left and right sides of the window by simply clicking and dragging the sidebar button handles.
 
@@ -550,6 +590,8 @@ Capture the bottom Audio Preview Bar showing:
 
 ---
 
+<br>
+
 ### 4.1 Jump to Word (Instant Resolve Timeline Scrubbing)
 - **Shortcut:** **`Ctrl` + Left Click** (Configurable in Settings to `Alt` or `Shift` + Left/Right click).
 - Clicking any word in the transcript instantly moves **both**:
@@ -560,6 +602,8 @@ Capture the bottom Audio Preview Bar showing:
 
 ---
 
+<br>
+
 ### 4.2 Integrated Audio Player Controls
 - **Play / Pause:** Click the animated play button or press **`Space`**.
 - **Seeker Bar (JumpSlider):** Click anywhere on the progress bar to scrub through the audio.
@@ -569,6 +613,8 @@ Capture the bottom Audio Preview Bar showing:
 <br>
 
 ---
+
+<br>
 
 ### 4.3 Speed Adjustment & Playhead Synchronization
 Click the speed dropdown to select playback rates: `0.5x`, `0.75x`, `1.0x`, `1.25x`, `1.5x`, or `2.0x`. Pitch correction is applied automatically to maintain vocal clarity at high speeds.
@@ -595,6 +641,8 @@ Capture the Assemble Split Button expanded with the Track Options Drawer:
 
 ---
 
+<br>
+
 ### 5.1 The Assembly Split Button & Track Options Drawer
 - **Main Button Area:** Clicking **`Assemble`** immediately triggers the build process using current track settings.
 - **Drawer Arrow (`Expand / Collapse`):** Expands the **Track Options Drawer** directly above the button:
@@ -605,6 +653,8 @@ Capture the Assemble Split Button expanded with the Track Options Drawer:
 <br>
 
 ---
+
+<br>
 
 ### 5.2 Native `.drt` Pipeline (Non-Destructive Protection)
 
@@ -627,6 +677,8 @@ flowchart TD
 <br>
 
 ---
+
+<br>
 
 ### 5.3 Timeline Heatmap Overview
 Upon import into DaVinci Resolve, BadWords attaches native timeline markers to every edited region. This creates a color-coded "heatmap" directly inside Resolve’s Edit Page, allowing you to instantly spot where edits took place and inspect cuts visually.
@@ -652,6 +704,8 @@ Capture Settings dialog showing:
 
 ---
 
+<br>
+
 ### 6.1 General Settings
 - **Interface Language (`Language`):** Switches UI language (English, Polish, German, French, Spanish, Russian, Italian, Japanese, Chinese, etc.).
 - **Accent Color:** Selects the theme accent color (Green, Blue, Purple, Orange, Red, Teal, Pink, Amber).
@@ -664,6 +718,8 @@ Capture Settings dialog showing:
 
 ---
 
+<br>
+
 ### 6.2 Interface & Transcript Formatting
 - **Transcript Layout Mode:** Choose between **Segmented Blocks** (breaks text into clean sentence chunks with `[00:14]` timestamp headers) and **Continuous Flow** (unbroken paragraph prose).
 - **Transcript Font & Font Size:** Changes typography and font scaling (pt).
@@ -675,6 +731,8 @@ Capture Settings dialog showing:
 <br>
 
 ---
+
+<br>
 
 ### 6.3 Audio Sync Calibration (Offset, Padding, Snap Max)
 
@@ -690,6 +748,8 @@ Fine-tune these parameters if you need razor-sharp acoustic synchronization:
 
 ---
 
+<br>
+
 ### 6.4 Keyboard & Mouse Shortcut Bindings
 Configure custom keys for every action:
 - Switch to Red / Blue / Green Marker
@@ -704,6 +764,8 @@ Configure custom keys for every action:
 
 ---
 
+<br>
+
 ### 6.5 Custom Markers Configuration
 Create bespoke markers for your personal workflow:
 1. Click **`+ Add Marker`**.
@@ -715,6 +777,8 @@ Create bespoke markers for your personal workflow:
 <br>
 
 ---
+
+<br>
 
 ### 6.6 AI Engine Configuration (Advanced Mode)
 
@@ -734,6 +798,8 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 
 ---
 
+<br>
+
 ### 6.7 Telemetry, Contact & Issue Reporting
 - **Anonymous Telemetry:** 100% anonymous ping containing OS type and version number only (no audio or personal data is ever collected).
 - **Direct Support Form:** Enter an issue title and description, attach screenshots, and send a diagnostic ticket with log files directly to the developer with one click.
@@ -743,6 +809,8 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 <br>
 
 ---
+
+<br>
 
 ### Recipe A: Cutting Video Based on a Written Script
 **Goal:** You recorded a video reading from a script and made several mistakes or repeated sentences. You want to keep only the good takes that match your script.
@@ -776,6 +844,8 @@ sequenceDiagram
 
 ---
 
+<br>
+
 ### Recipe B: Removing Retakes & False Starts without a Script
 **Goal:** You recorded a casual podcast or gameplay video without any script and want to remove false starts and stumbles automatically.
 
@@ -789,6 +859,8 @@ sequenceDiagram
 <br>
 
 ---
+
+<br>
 
 ### Recipe C: Fast Silence Cut without Transcribing
 **Goal:** You have a 2-hour podcast and just want to remove all silent pauses instantly without waiting for speech-to-text.
@@ -804,6 +876,8 @@ sequenceDiagram
 
 ---
 
+<br>
+
 ### Recipe D: One-Click Filler Word Purge
 **Goal:** Remove all hesitation sounds (*"uh"*, *"um"*, *"like"*) from an interview.
 
@@ -816,6 +890,8 @@ sequenceDiagram
 <br>
 
 ---
+
+<br>
 
 ### Recipe E: Working with Difficult Words, Names & Jargon
 **Goal:** You are editing a technical tutorial containing code snippets, system paths, or brand names that standard AI models mishear.
@@ -830,6 +906,8 @@ sequenceDiagram
 <br>
 
 ---
+
+<br>
 
 ### Default Keyboard & Mouse Shortcuts
 
@@ -850,6 +928,8 @@ sequenceDiagram
 <br>
 
 ---
+
+<br>
 
 ### Frequently Asked Questions (FAQ)
 
