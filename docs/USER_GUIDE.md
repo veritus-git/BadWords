@@ -27,12 +27,11 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[3.1 Words Painting](#31-words-painting)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments](#32-inaudible-fragments)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay](#33-transcript-search-overlay)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.4 Main Sidebar Panel](#34-main-sidebar-panel)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.5 Script Analysis Sidebar Panel](#35-script-analysis-sidebar-panel)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.6 Silence Detection Sidebar Panel](#36-silence-detection-sidebar-panel)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.7 Filler Words Sidebar Panel](#37-filler-words-sidebar-panel)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.8 Assembly Sidebar Panel](#38-assembly-sidebar-panel)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[3.9 Sidebar Drag & Drop Customization](#39-sidebar-drag-drop-customization)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.4 ***Main*** Sidebar Panel](#34-main-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.5 ***Script Analysis*** Sidebar Panel](#35-script-analysis-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.6 ***Silence Detection*** Sidebar Panel](#36-silence-detection-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.7 ***Filler Words*** Sidebar Panel](#37-filler-words-sidebar-panel)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[3.8 ***Assembly*** Sidebar Panel](#38-assembly-sidebar-panel)<br>
 
 **[4. Audio Preview & Navigation Bar](#4-audio-preview-navigation-bar)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#41-jump-to-word-instant-resolve-timeline-scrubbing)<br>
@@ -73,10 +72,6 @@ flowchart LR
     D --> E["Assemble"]
     E --> F["New Cut Timeline"]
 ```
-
-<br>
-
----
 
 <br>
 
@@ -159,22 +154,6 @@ When BadWords opens, you are greeted by the **Welcome Screen**. This view allows
 <p align="center">
   <img src="images/02_welcome_screen.png" alt="Welcome Screen Layout" width="80%">
 </p>
-
-<!-- 
-IMAGE PLACEHOLDER: docs/images/02_welcome_screen.png
-Capture the initial BadWords Welcome Screen with annotations:
-[1] Timeline Selector & Refresh Button
-[2] Track/s Selector Dropdown
-[3] Language Searchable Dropdown
-[4] Model Dropdown & Info Tooltip
-[5] More Accurate Transcription Toggle & Script Drawer
-[6] Import Project (.bws) & Analyze Buttons
-[7] Fast Silence Detection Link
--->
-
-<br>
-
----
 
 <br>
 
@@ -272,10 +251,6 @@ The top bar of BadWords provides access to file management, transcript exports, 
 
 <br>
 
----
-
-<br>
-
 ### 2.1 Project Menu
 - **Export Project:** Saves the complete state of your current session into a portable `.bws` (BadWords Save) file. This includes the full word-level timestamps, your manual color markings, script comparison data, audio file for audio preview and timeline metadata.
 - **Import Project:** Restores an existing session from a `.bws` file.
@@ -357,22 +332,6 @@ Surrounding the central transcript are modular **Sidebar Panels** containing too
   <img src="images/05_transcript_canvas.png" alt="Transcript Canvas and Word Painting" width="80%">
 </p>
 
-<!-- 
-IMAGE PLACEHOLDER: docs/images/05_transcript_canvas.png
-Capture Transcript Canvas with annotations:
-[1] Timestamp Header [00:14]
-[2] Sentence Block
-[3] Red Highlighted Filler Word
-[4] Blue Highlighted Retake Block
-[5] Green Highlighted Typo
-[6] Inaudible (...) Token
-[7] Search Overlay Active
--->
-
-<br>
-
----
-
 <br>
 
 ### 3.1 Words Painting
@@ -433,7 +392,7 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 
 <br>
 
-### 3.4 Main Sidebar Panel <img src="../assets/layout/main.png" width="24" height="24" valign="middle">
+### 3.4 ***Main*** Sidebar Panel <img src="../assets/layout/main.png" width="24" height="24" valign="middle">
 
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
 
@@ -451,7 +410,7 @@ The **Main Panel** serves as the primary control center for manual word painting
 #### Lower Section: Favorites & Timeline Export
 - **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
 - **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
-- **`Assemble` Split Button:** Triggers timeline assembly and includes an expandable dropdown drawer to choose which tracks are cut. For complete details on track modes, see [Section 5.1: The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer).
+- **`Assemble` Button:** Triggers timeline assembly and includes an expandable dropdown drawer to choose which tracks are cut. For complete details on track modes, see [Section 5.1: The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer).
 
 <br clear="all">
 
@@ -461,7 +420,7 @@ The **Main Panel** serves as the primary control center for manual word painting
 
 <br>
 
-### 3.5 Script Analysis Sidebar Panel <img src="../assets/layout/script.png" width="24" height="24" valign="middle">
+### 3.5 ***Script Analysis*** Sidebar Panel <img src="../assets/layout/script.png" width="24" height="24" valign="middle">
 
 The **Script Analysis Panel** houses intelligent alignment tools that automatically detect speech errors and retakes, either by comparing the recording against an imported script or by finding acoustic repetitions in unscripted takes.
 
@@ -493,18 +452,21 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
 
 <br>
 
-### 3.6 Silence Detection Sidebar Panel <img src="../assets/layout/silence.png" width="24" height="24" valign="middle">
+### 3.6 ***Silence Detection*** Sidebar Panel <img src="../assets/layout/silence.png" width="24" height="24" valign="middle">
 
 The **Silence Detection Panel** allows you to fine-tune acoustic silence trimming applied after full speech transcription, removing awkward pauses and dead air.
 
 #### Detection Parameters:
 - **Threshold (dB):** Volume floor in decibels (default `-42.0 dB`). Audio below this level is classified as silence. Click `↺` to reset.
-- **Padding (s):** Preserves safety margins around speech (default `0.05s`) so the start and end of spoken words are never clipped. Click `↺` to reset.
+- **Padding (s):** Preserves safety margins around speech (default `0.10s`) so the start and end of spoken words are never clipped. Click `↺` to reset.
 - **Min Silence Duration (s):** Minimum pause length required to trigger a cut (default `0.20s`). Click `↺` to reset.
 
 #### Silence Actions:
 - **`Detect and cut silence` Toggle:** Automatically ripple-deletes silent gaps during timeline assembly.
 - **`Detect and mark silence` Toggle:** Retains silent gaps on the timeline but tags them with the **Tan** clip color in DaVinci Resolve for manual inspection.
+
+> [!NOTE]  
+> BadWords automatically normalizes audio volume prior to silence detection, making the default parameters effective and consistent across different microphones and environments.
 
 > [!TIP]  
 > If you want to remove silence from an entire timeline instantly without transcribing speech, use the **Fast Silence Workspace** on the Welcome Screen (see [Section 1.2](#12-fast-silence-workspace-standalone-silence-removal) and [Recipe C](#recipe-c-fast-silence-cut-without-transcribing)).
@@ -515,13 +477,12 @@ The **Silence Detection Panel** allows you to fine-tune acoustic silence trimmin
 
 <br>
 
-### 3.7 Filler Words Sidebar Panel <img src="../assets/layout/fillers.png" width="24" height="24" valign="middle">
+### 3.7 ***Filler Words*** Sidebar Panel <img src="../assets/layout/fillers.png" width="24" height="24" valign="middle">
 
 The **Filler Words Panel** manages BadWords' built-in dictionary for identifying hesitation sounds (*"uh"*, *"um"*, *"yyy"*, *"mhm"*, *"like"*).
 
 #### Dictionary & Automation Controls:
 - **Inline Words Editor:** Edit the list of comma-separated filler words directly.
-- **Live Word Counter:** Displays the total count of recognized filler words.
 - **`Save` & `↺` (Reset):** Save custom dictionary edits or revert to the factory default list.
 - **`Mark filler words automatically` Toggle:** When enabled, any word in your transcript matching the dictionary is automatically painted **Red** right as transcription finishes.
 
@@ -534,24 +495,11 @@ The **Filler Words Panel** manages BadWords' built-in dictionary for identifying
 
 <br>
 
-### 3.8 Assembly Sidebar Panel <img src="../assets/layout/assembly.png" width="24" height="24" valign="middle">
+### 3.8 ***Assembly*** Sidebar Panel <img src="../assets/layout/assembly.png" width="24" height="24" valign="middle">
 
-The **Assembly Panel** is the control matrix that defines exactly how each marker color and system state translates into timeline edits in DaVinci Resolve.
+The **Assembly Panel** allows you to configure global display toggles and choose how each marker color is handled during timeline assembly or cut immediately from an active timeline.
 
-<p align="center">
-  <img src="images/09_assembly_matrix.png" alt="Assembly Panel" width="80%">
-</p>
-
-<!-- 
-IMAGE PLACEHOLDER: docs/images/09_assembly_matrix.png
-Capture the Assembly Matrix showing:
-[1] Show/Mark Inaudible Toggles
-[2] Show Detected Typos Toggle
-[3] Color Row: Color Name & Hex Badge
-[4] Cut Now (Scissors) Button
-[5] Auto-Cut Checkbox Icon
-[6] Star (Pin to Favorites) Button
--->
+<img align="right" src="images/09_assembly_panel.png" alt="Assembly Panel" width="240">
 
 #### Global Inaudible & Typos Toggles:
 - **`Show inaudible fragments`:** Controls how inaudible `(...)` tokens behave in the transcript canvas (see [Section 3.2](#32-inaudible-fragments)):
@@ -561,18 +509,12 @@ Capture the Assembly Matrix showing:
 - **`Show detected typos`:** Toggles whether minor phrasing deviations detected by Script Comparison are highlighted in **Green** or left unpainted.
 
 #### Controls per Color Row:
-1. **Scissors Icon (`Cut Now`):** Prompts you to immediately cut and remove all clips of this color from either the **Currently Selected Timeline** or a **New Timeline** in DaVinci Resolve.
-2. **Auto-Cut Icon (Checkmark / "A"):** When active (green), any text painted with this color is **automatically ripple-deleted** during the standard `Assemble` process.
+1. **Scissors Icon (`Cut Now`):** Prompts you to immediately cut and remove all clips of this color from either the **Currently Selected Timeline** or a **New Timeline** in DaVinci Resolve (leaving your source timeline intact). This allows you to assemble your timeline with colors intact for visual review, and then mass-delete specific colors in one click after verification.
+2. **Auto-Cut Icon (Circle "A"):** When active (green), any text painted with this color is **automatically ripple-deleted** during the standard `Assemble` process.  
+   *(Note: Auto-Cut "A" is available for all standard and custom marker colors. Native Resolve system colors like Green, Blue, Tan for silence, and Chocolate for inaudibles provide the Scissors Cut Now action).*
 3. **Star Icon (`★`):** Pins this color's Auto-Cut toggle directly onto the Main Panel under *Pinned Favorites*.
 
-<br>
-
----
-
-<br>
-
-### 3.9 Sidebar Drag & Drop Customization
-You can reorder sidebar activity icons or drag panels between the left and right sides of the window by simply clicking and dragging the sidebar button handles.
+<br clear="all">
 
 <br>
 
@@ -587,20 +529,6 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 <p align="center">
   <img src="images/06_audio_preview_bar.png" alt="Audio Preview Bar" width="100%">
 </p>
-
-<!-- 
-IMAGE PLACEHOLDER: docs/images/06_audio_preview_bar.png
-Capture the bottom Audio Preview Bar showing:
-[1] Floating Audio Preview Toggle Island
-[2] Play/Pause Button
-[3] Waveform / Seeker JumpSlider
-[4] Timestamp Display (Current / Total)
-[5] Speed Dropdown (1.0x)
--->
-
-<br>
-
----
 
 <br>
 
