@@ -34,9 +34,8 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[3.8 ***Assembly*** Sidebar Panel](#38-assembly-sidebar-panel)<br>
 
 **[4. Audio Preview & Navigation Bar](#4-audio-preview-navigation-bar)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word (Instant Resolve Timeline Scrubbing)](#41-jump-to-word-instant-resolve-timeline-scrubbing)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word](#41-jump-to-word)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[4.3 Speed Adjustment & Playhead Synchronization](#43-speed-adjustment-playhead-synchronization)<br>
 
 **[5. Timeline Assembly & DaVinci Integration](#5-timeline-assembly-davinci-integration)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.1 The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer)<br>
@@ -530,10 +529,8 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
   <img src="images/06_audio_preview_bar.png" alt="Audio Preview Bar" width="100%">
 </p>
 
-<br>
-
-### 4.1 Jump to Word (Instant Resolve Timeline Scrubbing)
-- **Shortcut:** **`Ctrl` + Left Click** (Configurable in Settings to `Alt` or `Shift` + Left/Right click).
+### 4.1 Jump to Word
+- **Shortcut:** **`Ctrl + Left Click`** (Configurable in Settings to `Alt` or `Shift` + Left/Right click).
 - Clicking any word in the transcript instantly moves **both**:
   1. The internal BadWords audio playback head.
   2. The **DaVinci Resolve timeline playhead** to the exact frame where the word was spoken!
@@ -548,16 +545,8 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 - **Play / Pause:** Click the animated play button or press **`Space`**.
 - **Seeker Bar (JumpSlider):** Click anywhere on the progress bar to scrub through the audio.
 - **Skip Backward / Forward:** Press **`Left Arrow`** / **`Right Arrow`** to jump in 2-second increments.
+- **Speed Adjustment:** Click the speed dropdown to select playback rates (`0.5x`, `0.75x`, `1.0x`, `1.25x`, `1.5x`, or `2.0x`). Pitch correction is applied automatically to maintain vocal clarity at high speeds.
 - **Toggle Floating Tab:** Click the floating island tab at the bottom of the editor to hide or show the audio bar.
-
-<br>
-
----
-
-<br>
-
-### 4.3 Speed Adjustment & Playhead Synchronization
-Click the speed dropdown to select playback rates: `0.5x`, `0.75x`, `1.0x`, `1.25x`, `1.5x`, or `2.0x`. Pitch correction is applied automatically to maintain vocal clarity at high speeds.
 
 <br>
 
