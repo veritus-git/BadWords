@@ -402,7 +402,7 @@ The **Main Panel** serves as the primary control center for manual word painting
 <img align="right" src="images/07b_sidebar_tools.png" alt="Sidebar Main Lower" width="285">
 
 #### Lower Section: Favorites & Timeline Export
-- **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
+- **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0:48min*).
 - **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on the *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
 - **`Assemble` Button:** Clicking it triggers the final cut process in DaVinci Resolve. Clicking the arrow button opens the expandable track configuration menu:
   - **Audio Tracks:**
@@ -556,6 +556,7 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 ---
 
 <br>
+
 ## 5. Settings & Preferences <img src="../assets/layout/settings.png" width="24" height="24" valign="middle">
 
 Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with more parameters and unlocks the dedicated AI Engine tab).
@@ -583,19 +584,18 @@ The **General** tab allows you to configure core application settings, including
 
 **Updates & Version Card:**
 - Displays your currently installed version and checks for updates automatically.
-- **`Update Now` Button:** Appears whenever a new patch or version is released on GitHub/GitLab, allowing you to update in one click without leaving the app.
+- **`Update Now` Button:** Appears whenever a new patch or version is released on GitHub, allowing you to update in one click.
 - **`Check for updates on startup` Toggle:** Automatically checks remote repositories for new releases on launch.
-- **`Auto-update on startup` Toggle:** Automatically downloads and applies updates silently in the background before opening.
+- **`Auto-update on startup` Toggle:** Automatically downloads and installs new releases in the background upon launch. Due to DaVinci Resolve script runtime constraints, newly installed updates take effect on the next application launch (simply close and reopen BadWords to use the new version).
 
 **Language (`Language`):**
-- Switches the entire BadWords user interface between supported languages (English, Polish, German, French, Spanish, Italian, Japanese, Chinese, etc.).
+- Switches the entire BadWords user interface between supported languages: English, Polish (*Polski*), German (*Deutsch*), Spanish (*Español*), French (*Français*), Italian (*Italiano*), Portuguese (*Português*), Dutch (*Nederlands*), Ukrainian (*Українська*), and Russian (*Русский*).
 
 **App Icon Style:**
 - Choose between 4 distinct window icon designs (**Default**, **Monochrome**, **White B**, **White**) to match your system theme.
 
 **Settings Backup:**
-- **`Import Settings`:** Restores your preferences from a saved `.json` file.
-- **`Export Settings`:** Exports your entire configuration to migrate between computers.
+- **`Import Settings` / `Export Settings`:** Exports or restores your preferences via a `.json` backup file to migrate configurations between computers. *(Note: This feature is in early development; while basic preferences transfer reliably, minor formatting quirks may occur on import).*
 
 <br>
 
@@ -614,28 +614,29 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
   <img src="images/11b_settings_transcript.png" alt="Settings Transcript Tab" width="90%">
 </p>
 
+**`Always on Top` Toggle:**
+- Forces BadWords to float permanently above DaVinci Resolve and other windows.
+
 **Display Mode:**
 - **`Segmented Blocks`:** Groups sentences into structured dialogue blocks with timestamp headers `[00:14]` for easy skimming.
-- **`Continuous Flow`:** Displays transcription as continuous running prose.
+- **`Continuous Flow`:** Displays transcription as one continuous text block (paragraph).
+
+**Chunk Segmentation Parameters (for Segmented Mode):**
+*(In Segmented Blocks mode, a "chunk" represents a single displayed line/block of dialogue with its own timestamp header).*
+- **Max Chunk Words (default `30`):** Target maximum number of words per block before attempting a line break.
+- **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `33` instead of `30`).
+- **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
 
 **Transcript Typography:**
 - **Font Family:** Select any font installed on your operating system.
 - **Font Size (pt):** Adjust text scale (8pt to 48pt).
 - **Line Spacing (px):** Adjust vertical padding between lines of text.
-- **Live Preview Box:** Instantly previews typography, colors, and line height adjustments before applying.
-
-**`Always on Top` Toggle:**
-- Forces BadWords to float permanently above DaVinci Resolve and other windows.
-
-**Chunk Segmentation Parameters (for Segmented Mode):**
-- **Max Chunk Words (default `30`):** Maximum number of words in a sentence block before forcing a break.
-- **Chunk Lookahead (default `3`):** Number of words the engine looks ahead to find natural punctuation points (`.`, `?`, `!`) before breaking a line.
-- **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
+- **Live Preview Box:** Instantly previews typography and line height adjustments before applying.
 
 **DaVinci Resolve Synchronization:**
-- **`Sync playhead with DaVinci Resolve chapters` Toggle:** Keeps playhead position synchronized between Resolve and BadWords.
-- **`Preserve XML track order` Toggle:** Guarantees strict timeline track order preservation during XML import/export.
-- **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (`[01:08]`) to full millisecond precision (`[01:08.432]`).
+- **`Sync DaVinci Timeline on Chapter Switch` Toggle:** When switching between project versions in BadWords (via the top titlebar Versions dropdown), DaVinci Resolve automatically switches its active timeline view to the timeline assembled for that version. If disabled, Resolve's timeline view does not change when switching versions in BadWords.
+- **`Preserve original track order` Toggle:** Maintains the exact source track numbers in DaVinci Resolve. For example, if you assemble only audio track `A2`, by default Resolve places it onto `A1`; with this option enabled, it remains strictly on `A2` (leaving `A1` empty). Applies to both audio and video tracks.
+- **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (e.g. **`[01:08]`**) to full millisecond precision (e.g. **`[01:08.432]`**).
 
 <br>
 
@@ -648,7 +649,7 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 The **Shortcuts** tab enables you to customize keyboard and mouse bindings for word painting, playback controls, navigation, and search.
 
 <p align="center">
-  <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="90%">
+  <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="60%">
 </p>
 
 **Conflict Detection:**
@@ -678,7 +679,7 @@ The **Shortcuts** tab enables you to customize keyboard and mouse bindings for w
 The **Custom Markers** tab allows you to create, organize, and reorder custom color markers mapped to DaVinci Resolve clip colors for specialized workflows.
 
 <p align="center">
-  <img src="images/11d_settings_markers.png" alt="Settings Custom Markers Tab" width="90%">
+  <img src="images/11d_settings_markers.png" alt="Settings Custom Markers Tab" width="60%">
 </p>
 
 **Custom Marker List:**
@@ -703,12 +704,13 @@ The **Custom Markers** tab allows you to create, organize, and reorder custom co
 
 The **AI Engine** tab provides deep control over neural speech recognition, hardware acceleration (GPU/CPU), and acoustic Whisper inference parameters.
 
+> [!NOTE]  
+> The **AI Engine Tab** is unlocked exclusively in **Advanced View** for users who want complete control over neural network inference and Faster-Whisper decoding behavior.
+
 <p align="center">
   <img src="images/11e_settings_ai_engine.png" alt="Settings AI Engine Tab" width="90%">
 </p>
 
-> [!NOTE]  
-> The **AI Engine Tab** is unlocked exclusively in **Advanced View** for users who want complete control over neural network inference and Faster-Whisper decoding behavior.
 
 **Hardware & Precision:**
 - **Device (`Auto`, `GPU`, `CPU`):** Selects whether AI transcription executes on dedicated GPU hardware or system CPU.
@@ -737,7 +739,7 @@ The **AI Engine** tab provides deep control over neural speech recognition, hard
 The **Telemetry** tab allows you to manage anonymous diagnostics and privacy options, and provides direct links to community resources.
 
 <p align="center">
-  <img src="images/11f_settings_telemetry.png" alt="Settings Telemetry Tab" width="90%">
+  <img src="images/11f_settings_telemetry.png" alt="Settings Telemetry Tab" width="60%">
 </p>
 
 **Privacy & Diagnostic Settings:**
@@ -753,12 +755,12 @@ The **Telemetry** tab allows you to manage anonymous diagnostics and privacy opt
 
 <br>
 
-### 5.7 ***Support*** Tab
+### 5.7 ***Contact*** Tab
 
-The **Support** tab lets you locate local debug log files for troubleshooting and submit diagnostic support tickets directly to the developer.
+The **Contact** tab lets you locate local debug log files for troubleshooting and submit diagnostic support tickets directly to the developer.
 
 <p align="center">
-  <img src="images/11g_settings_support.png" alt="Settings Support Tab" width="90%">
+  <img src="images/11g_contact_tab.png" alt="Contact Tab" width="60%">
 </p>
 
 **Debug Logs:**
