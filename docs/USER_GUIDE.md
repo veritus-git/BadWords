@@ -558,11 +558,14 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 <br>
 ## 5. Settings & Preferences <img src="../assets/layout/settings.png" width="24" height="24" valign="middle">
 
-Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with more parameters and unlocks the dedicated AI Engine tab). The screenshots below showcase the complete settings layout, while options available exclusively in Advanced View are explicitly marked with a note.
+Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with more parameters and unlocks the dedicated AI Engine tab).
 
 <p align="center">
   <img src="images/11_settings_dialog.png" alt="Settings Dialog Overview" width="90%">
 </p>
+
+> [!NOTE]
+> The screenshots below showcase the complete settings layout, while options available exclusively in **Advanced View** are explicitly marked with a note.
 
 <br>
 
@@ -572,22 +575,27 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 ### 5.1 ***General*** Tab
 
-The **General** tab allows you to configure core application settings, including UI language, window icon styling, automatic update checks, and configuration backup.
+The **General** tab allows you to configure core application settings, including UI language, app icon, automatic update checks, and configuration backup.
 
 <p align="center">
   <img src="images/11a_settings_general.png" alt="Settings General Tab" width="60%">
 </p>
 
-- **Updates & Version Card:**
-  - Displays your currently installed version and checks for updates automatically.
-  - **`Update Now` Button:** Appears whenever a new patch or version is released on GitHub/GitLab, allowing you to update in one click without leaving the app.
-  - **`Check for updates on startup` Toggle:** Automatically checks remote repositories for new releases on launch.
-  - **`Auto-update on startup` Toggle:** Automatically downloads and applies updates silently in the background before opening.
-- **Language (`Language`):** Switches the entire BadWords user interface between supported languages (English, Polish, German, French, Spanish, Italian, Japanese, Chinese, etc.).
-- **App Icon Style:** Choose between 4 distinct window icon designs (**Default**, **Monochrome**, **White B**, **White**) to match your system theme.
-- **Settings Backup:**
-  - **`Import Settings`:** Restores your preferences from a saved `.json` file.
-  - **`Export Settings`:** Exports your entire configuration to migrate between computers.
+**Updates & Version Card:**
+- Displays your currently installed version and checks for updates automatically.
+- **`Update Now` Button:** Appears whenever a new patch or version is released on GitHub/GitLab, allowing you to update in one click without leaving the app.
+- **`Check for updates on startup` Toggle:** Automatically checks remote repositories for new releases on launch.
+- **`Auto-update on startup` Toggle:** Automatically downloads and applies updates silently in the background before opening.
+
+**Language (`Language`):**
+- Switches the entire BadWords user interface between supported languages (English, Polish, German, French, Spanish, Italian, Japanese, Chinese, etc.).
+
+**App Icon Style:**
+- Choose between 4 distinct window icon designs (**Default**, **Monochrome**, **White B**, **White**) to match your system theme.
+
+**Settings Backup:**
+- **`Import Settings`:** Restores your preferences from a saved `.json` file.
+- **`Export Settings`:** Exports your entire configuration to migrate between computers.
 
 <br>
 
@@ -599,30 +607,35 @@ The **General** tab allows you to configure core application settings, including
 
 The **Interface** tab lets you customize how your transcript looks and behaves, adjust font scaling and line spacing, and control synchronization with DaVinci Resolve.
 
+> [!NOTE]  
+> The **`Always on Top`** toggle and the **Chunk Segmentation Parameters** (`Max Chunk Words`, `Chunk Lookahead`, `Min Chunk Characters`) are visible only when **Advanced View** is enabled.
+
 <p align="center">
   <img src="images/11b_settings_transcript.png" alt="Settings Transcript Tab" width="90%">
 </p>
 
-- **Display Mode:**
-  - **`Segmented Blocks`:** Groups sentences into structured dialogue blocks with timestamp headers `[00:14]` for easy skimming.
-  - **`Continuous Flow`:** Displays transcription as continuous running prose.
-- **Transcript Typography:**
-  - **Font Family:** Select any font installed on your operating system.
-  - **Font Size (pt):** Adjust text scale (8pt to 48pt).
-  - **Line Spacing (px):** Adjust vertical padding between lines of text.
-  - **Live Preview Box:** Instantly previews typography, colors, and line height adjustments before applying.
-- **`Always on Top` Toggle:** Forces BadWords to float permanently above DaVinci Resolve and other windows.
-- **Chunk Segmentation Parameters (for Segmented Mode):**
-  - **Max Chunk Words (default `30`):** Maximum number of words in a sentence block before forcing a break.
-  - **Chunk Lookahead (default `3`):** Number of words the engine looks ahead to find natural punctuation points (`.`, `?`, `!`) before breaking a line.
-  - **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
-- **DaVinci Resolve Synchronization:**
-  - **`Sync playhead with DaVinci Resolve chapters` Toggle:** Keeps playhead position synchronized between Resolve and BadWords.
-  - **`Preserve XML track order` Toggle:** Guarantees strict timeline track order preservation during XML import/export.
-  - **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (`[01:08]`) to full millisecond precision (`[01:08.432]`).
+**Display Mode:**
+- **`Segmented Blocks`:** Groups sentences into structured dialogue blocks with timestamp headers `[00:14]` for easy skimming.
+- **`Continuous Flow`:** Displays transcription as continuous running prose.
 
-> [!NOTE]  
-> The **`Always on Top`** toggle and the **Chunk Segmentation Parameters** (`Max Chunk Words`, `Chunk Lookahead`, `Min Chunk Characters`) are visible only when **Advanced View** is enabled.
+**Transcript Typography:**
+- **Font Family:** Select any font installed on your operating system.
+- **Font Size (pt):** Adjust text scale (8pt to 48pt).
+- **Line Spacing (px):** Adjust vertical padding between lines of text.
+- **Live Preview Box:** Instantly previews typography, colors, and line height adjustments before applying.
+
+**`Always on Top` Toggle:**
+- Forces BadWords to float permanently above DaVinci Resolve and other windows.
+
+**Chunk Segmentation Parameters (for Segmented Mode):**
+- **Max Chunk Words (default `30`):** Maximum number of words in a sentence block before forcing a break.
+- **Chunk Lookahead (default `3`):** Number of words the engine looks ahead to find natural punctuation points (`.`, `?`, `!`) before breaking a line.
+- **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
+
+**DaVinci Resolve Synchronization:**
+- **`Sync playhead with DaVinci Resolve chapters` Toggle:** Keeps playhead position synchronized between Resolve and BadWords.
+- **`Preserve XML track order` Toggle:** Guarantees strict timeline track order preservation during XML import/export.
+- **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (`[01:08]`) to full millisecond precision (`[01:08.432]`).
 
 <br>
 
@@ -638,15 +651,21 @@ The **Shortcuts** tab enables you to customize keyboard and mouse bindings for w
   <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="90%">
 </p>
 
-- **Conflict Detection:** Key capture buttons automatically detect duplicate hotkeys across tools, turning the border **Red** if two actions share the same shortcut.
-- **Color Marker Keys:** Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create.
-- **Navigation & Editing Controls:**
-  - **Jump to Word:** Configure mouse click combination (`Ctrl + Left Click`, `Alt + Left Click`, `Shift + Left Click`, or Right Click variants).
-  - **Play / Pause:** Default `Space`.
-  - **Skip Backward / Forward:** Default `Left Arrow` / `Right Arrow` (2-second jumps).
-  - **Search Overlay:** Default `Ctrl + F`.
-  - **Open Settings:** Default `Escape`.
-- **Reset Buttons (`↺` & `✕`):** Clear a binding or revert individual shortcuts to default.
+**Conflict Detection:**
+- Key capture buttons automatically detect duplicate hotkeys across tools, turning the border **Red** if two actions share the same shortcut.
+
+**Color Marker Keys:**
+- Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create.
+
+**Navigation & Editing Controls:**
+- **Jump to Word:** Configure mouse click combination (`Ctrl + Left Click`, `Alt + Left Click`, `Shift + Left Click`, or Right Click variants).
+- **Play / Pause:** Default `Space`.
+- **Skip Backward / Forward:** Default `Left Arrow` / `Right Arrow` (2-second jumps).
+- **Search Overlay:** Default `Ctrl + F`.
+- **Open Settings:** Default `Escape`.
+
+**Reset & Clear Controls:**
+- Use the **`↺`** and **`✕`** buttons to clear a binding or revert individual shortcuts back to default.
 
 <br>
 
@@ -662,12 +681,17 @@ The **Custom Markers** tab allows you to create, organize, and reorder custom co
   <img src="images/11d_settings_markers.png" alt="Settings Custom Markers Tab" width="90%">
 </p>
 
-- **Custom Marker List:** Drag-and-drop handles allow you to freely reorder marker priority and display sequence in the editor palette.
-- **`+ Add Marker`:** Define custom marker tags with:
+**Custom Marker List:**
+- Drag-and-drop handles allow you to freely reorder marker priority and display sequence in the editor palette.
+
+**`+ Add Marker`:**
+- Define custom marker tags with:
   1. Custom Name (e.g. *"B-Roll"*, *"Zoom In"*, *"Sound Effect"*).
   2. DaVinci Resolve Clip Color (choose from unused Resolve palette colors).
   3. Keyboard shortcut key.
-- **`Export Markers` / `Import Markers`:** Save your custom color system as a portable preset file to share with other team members.
+
+**`Export Markers` / `Import Markers`:**
+- Save your custom color system as a portable preset file to share with other team members.
 
 <br>
 
@@ -686,19 +710,21 @@ The **AI Engine** tab provides deep control over neural speech recognition, hard
 > [!NOTE]  
 > The **AI Engine Tab** is unlocked exclusively in **Advanced View** for users who want complete control over neural network inference and Faster-Whisper decoding behavior.
 
-- **Hardware & Precision:**
-  - **Device (`Auto`, `GPU`, `CPU`):** Selects whether AI transcription executes on dedicated GPU hardware or system CPU.
-  - **Compute Type (`Auto`, `float16`, `int8`, `float32`, `int8_float16`, `int8_float32`):** Selects neural quantization precision. `float16` is fastest on modern GPUs; `int8` saves VRAM and runs efficiently on CPU.
-- **Acoustic Guidance:**
-  - **Initial Prompt:** Custom text prompt fed directly into Whisper before transcription. Pre-loaded with BadWords' *Golden Verbatim* prompt tailored to each language to prevent AI hallucination and ensure accurate capture of filler phonemes and stutters.
-- **Deep Inference Thresholds:**
-  - **VAD Filter (Voice Activity Detection):** Pre-filters non-speech audio using Silero VAD before feeding chunks to Whisper.
-  - **Condition on Previous Text (default `False`):** When disabled, prevents Whisper from entering infinite repetition loops on acoustic noise.
-  - **Beam Size (default `1`):** Beam search width. `1` provides fastest greedy decoding.
-  - **Temperature (default `0.0`):** Randomness sampling. `0.0` ensures 100% deterministic transcription.
-  - **Logprob Threshold (default `-0.8`):** Confidence floor for acoustic tokens.
-  - **No Speech Threshold (default `0.7`):** Probability boundary to classify segment as silence.
-  - **Patience, Compression Ratio, No-repeat N-gram, Length & Repetition Penalties:** Precision tuning for edge-case speech models.
+**Hardware & Precision:**
+- **Device (`Auto`, `GPU`, `CPU`):** Selects whether AI transcription executes on dedicated GPU hardware or system CPU.
+- **Compute Type (`Auto`, `float16`, `int8`, `float32`, `int8_float16`, `int8_float32`):** Selects neural quantization precision. `float16` is fastest on modern GPUs; `int8` saves VRAM and runs efficiently on CPU.
+
+**Acoustic Guidance:**
+- **Initial Prompt:** Custom text prompt fed directly into Whisper before transcription. Pre-loaded with BadWords' *Golden Verbatim* prompt tailored to each language to prevent AI hallucination and ensure accurate capture of filler phonemes and stutters.
+
+**Deep Inference Thresholds:**
+- **VAD Filter (Voice Activity Detection):** Pre-filters non-speech audio using Silero VAD before feeding chunks to Whisper.
+- **Condition on Previous Text (default `False`):** When disabled, prevents Whisper from entering infinite repetition loops on acoustic noise.
+- **Beam Size (default `1`):** Beam search width. `1` provides fastest greedy decoding.
+- **Temperature (default `0.0`):** Randomness sampling. `0.0` ensures 100% deterministic transcription.
+- **Logprob Threshold (default `-0.8`):** Confidence floor for acoustic tokens.
+- **No Speech Threshold (default `0.7`):** Probability boundary to classify segment as silence.
+- **Patience, Compression Ratio, No-repeat N-gram, Length & Repetition Penalties:** Precision tuning for edge-case speech models.
 
 <br>
 
@@ -714,9 +740,12 @@ The **Telemetry** tab allows you to manage anonymous diagnostics and privacy opt
   <img src="images/11f_settings_telemetry.png" alt="Settings Telemetry Tab" width="90%">
 </p>
 
+**Privacy & Diagnostic Settings:**
 - **`Anonymous Telemetry` Toggle:** 100% anonymous ping containing only your OS type and BadWords version number (used solely to gauge active platform usage). **No audio, speech, transcripts, or personal data are ever collected.**
 - **`Include Geographic Region` Toggle:** Sends country-level region for translation prioritization.
-- **Community Links:** Direct buttons to support BadWords on *Buy Me a Coffee* or visit the official *GitHub repository*.
+
+**Community Links:**
+- Direct buttons to support BadWords on *Buy Me a Coffee* or visit the official *GitHub repository*.
 
 <br>
 
@@ -732,17 +761,21 @@ The **Support** tab lets you locate local debug log files for troubleshooting an
   <img src="images/11g_settings_support.png" alt="Settings Support Tab" width="90%">
 </p>
 
+**Debug Logs:**
 - **Logs Location & One-Click Copy:** Displays the absolute path to your `badwords_debug.log` file with a copy button for easy troubleshooting.
-- **Direct Support Ticket Form:**
-  - Enter a problem title and detailed description.
-  - Automatically bundles system diagnostics and error logs.
-  - Click **`Send Report`** to transmit the diagnostic ticket directly to the developer with zero manual email hassle.
+
+**Direct Support Ticket Form:**
+- Enter a problem title and detailed description.
+- Automatically bundles system diagnostics and error logs.
+- Click **`Send Report`** to transmit the diagnostic ticket directly to the developer with zero manual email hassle.
 
 <br>
 
 ---
 
 <br>
+
+
 
 
 
