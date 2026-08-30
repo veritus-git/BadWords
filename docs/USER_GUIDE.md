@@ -560,13 +560,7 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 
 ## 5. Settings & Preferences
 
-Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. 
-
-The settings dialog allows you to switch between two display modes:
-- **Basic View (Default):** Shows the most important day-to-day settings. For the vast majority of editing workflows, Basic View is completely sufficient.
-- **Advanced View:** Expands certain tabs with granular fine-tuning options and unlocks the dedicated **AI Engine** tab.
-
-The screenshots below display the **Advanced View** to illustrate all available features. Any setting or tab that is only visible in Advanced View is explicitly marked with *(Advanced View only)*.
+Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with granular developer parameters and unlocks the dedicated AI Engine tab). The screenshots below showcase the complete settings layout, while options available exclusively in Advanced View are explicitly marked with a note.
 
 <p align="center">
   <img src="images/11_settings_dialog.png" alt="Settings Dialog Overview" width="90%">
@@ -615,8 +609,8 @@ The screenshots below display the **Advanced View** to illustrate all available 
   - **Font Size (pt):** Adjust text scale (8pt to 48pt).
   - **Line Spacing (px):** Adjust vertical padding between lines of text.
   - **Live Preview Box:** Instantly previews typography, colors, and line height adjustments before applying.
-- **`Always on Top` Toggle *(Advanced View only)*:** Forces BadWords to float permanently above DaVinci Resolve and other windows.
-- **Chunk Segmentation Parameters *(Advanced View only - for Segmented Mode)*:**
+- **`Always on Top` Toggle:** Forces BadWords to float permanently above DaVinci Resolve and other windows.
+- **Chunk Segmentation Parameters (for Segmented Mode):**
   - **Max Chunk Words (default `30`):** Maximum number of words in a sentence block before forcing a break.
   - **Chunk Lookahead (default `3`):** Number of words the engine looks ahead to find natural punctuation points (`.`, `?`, `!`) before breaking a line.
   - **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
@@ -624,6 +618,9 @@ The screenshots below display the **Advanced View** to illustrate all available 
   - **`Sync playhead with DaVinci Resolve chapters` Toggle:** Keeps playhead position synchronized between Resolve and BadWords.
   - **`Preserve XML track order` Toggle:** Guarantees strict timeline track order preservation during XML import/export.
   - **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (`[01:08]`) to full millisecond precision (`[01:08.432]`).
+
+> [!NOTE]  
+> The **`Always on Top`** toggle and the **Chunk Segmentation Parameters** (`Max Chunk Words`, `Chunk Lookahead`, `Min Chunk Characters`) are visible only when **Advanced View** is enabled.
 
 <br>
 
