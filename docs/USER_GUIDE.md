@@ -589,13 +589,13 @@ The **General** tab allows you to configure core application settings, including
 - **`Auto-update on startup` Toggle:** Automatically downloads and installs new releases in the background upon launch. Due to DaVinci Resolve script runtime constraints, newly installed updates take effect on the next application launch (simply close and reopen BadWords to use the new version).
 
 **Language (`Language`):**
-- Switches the entire BadWords user interface between supported languages: English, Polish (*Polski*), German (*Deutsch*), Spanish (*Español*), French (*Français*), Italian (*Italiano*), Portuguese (*Português*), Dutch (*Nederlands*), Ukrainian (*Українська*), and Russian (*Русский*).
+- Switches the entire BadWords user interface between supported languages: English, Polish, German, Spanish, French, Italian, Portuguese, Dutch, Ukrainian, and Russian.
 
 **App Icon Style:**
 - Choose between 4 distinct window icon designs (**Default**, **Monochrome**, **White B**, **White**) to match your system theme.
 
 **Settings Backup:**
-- **`Import Settings` / `Export Settings`:** Exports or restores your preferences via a `.json` backup file to migrate configurations between computers. *(Note: This feature is in early development; while basic preferences transfer reliably, minor formatting quirks may occur on import).*
+- **`Import Settings` / `Export Settings`:** Exports or restores your preferences via a `.json` backup file to migrate configurations between computers.
 
 <br>
 
@@ -621,7 +621,7 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 - **`Segmented Blocks`:** Groups sentences into structured dialogue blocks with timestamp headers `[00:14]` for easy skimming.
 - **`Continuous Flow`:** Displays transcription as one continuous text block (paragraph).
 
-**Chunk Segmentation Parameters (for Segmented Mode):**
+**Chunk Segmentation Parameters (for Segmented Mode):** <br>
 *(In Segmented Blocks mode, a "chunk" represents a single displayed line/block of dialogue with its own timestamp header).*
 - **Max Chunk Words (default `30`):** Target maximum number of words per block before attempting a line break.
 - **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `33` instead of `30`).
@@ -634,8 +634,8 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 - **Live Preview Box:** Instantly previews typography and line height adjustments before applying.
 
 **DaVinci Resolve Synchronization:**
-- **`Sync DaVinci Timeline on Chapter Switch` Toggle:** When switching between project versions in BadWords (via the top titlebar Versions dropdown), DaVinci Resolve automatically switches its active timeline view to the timeline assembled for that version. If disabled, Resolve's timeline view does not change when switching versions in BadWords.
-- **`Preserve original track order` Toggle:** Maintains the exact source track numbers in DaVinci Resolve. For example, if you assemble only audio track `A2`, by default Resolve places it onto `A1`; with this option enabled, it remains strictly on `A2` (leaving `A1` empty). Applies to both audio and video tracks.
+- **`Sync DaVinci Timeline on Chapter Switch` Toggle:** When switching between project versions in BadWords (via the top titlebar Versions dropdown: [Section 2.3: Versions Dropdown](#23-versions-dropdown)), DaVinci Resolve automatically switches its active timeline view to the timeline assembled for that version. If disabled, Resolve's timeline view does not change when switching versions in BadWords.
+- **`Preserve original track order` Toggle:** Maintains the exact source track numbers in DaVinci Resolve. For example, if you assemble only audio track `A2`, by default Resolve places it onto `A1`; with this option enabled, it remains strictly on original `A2` (leaving `A1` empty). Applies to both audio and video tracks.
 - **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (e.g. **`[01:08]`**) to full millisecond precision (e.g. **`[01:08.432]`**).
 
 <br>
@@ -652,14 +652,14 @@ The **Shortcuts** tab enables you to customize keyboard and mouse bindings for w
   <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="60%">
 </p>
 
-**Conflict Detection:**
-- Key capture buttons automatically detect duplicate hotkeys across tools, turning the border **Red** if two actions share the same shortcut.
+> [!NOTE]  
+> The key capture inputs automatically detect duplicate shortcut assignments across tools and will highlight conflicting inputs with a **Red** border.
 
 **Color Marker Keys:**
-- Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create.
+- Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create. *(Note: Newly created custom markers do not receive a shortcut key by default and must be manually assigned here).*
 
 **Navigation & Editing Controls:**
-- **Jump to Word:** Configure mouse click combination (`Ctrl + Left Click`, `Alt + Left Click`, `Shift + Left Click`, or Right Click variants).
+- **Jump to Word:** Configure mouse click combination (`Ctrl`/`Alt`/`Shift` + `Left Click` or `Right Click`).
 - **Play / Pause:** Default `Space`.
 - **Skip Backward / Forward:** Default `Left Arrow` / `Right Arrow` (2-second jumps).
 - **Search Overlay:** Default `Ctrl + F`.
@@ -685,14 +685,11 @@ The **Custom Markers** tab allows you to create, organize, and reorder custom co
 **Custom Marker List:**
 - Drag-and-drop handles allow you to freely reorder marker priority and display sequence in the editor palette.
 
-**`+ Add Marker`:**
-- Define custom marker tags with:
-  1. Custom Name (e.g. *"B-Roll"*, *"Zoom In"*, *"Sound Effect"*).
-  2. DaVinci Resolve Clip Color (choose from unused Resolve palette colors).
-  3. Keyboard shortcut key.
+**`Add Marker`:**
+- Adds a new marker by setting its custom name and choosing an available clip color from the dropdown list.
 
 **`Export Markers` / `Import Markers`:**
-- Save your custom color system as a portable preset file to share with other team members.
+- Save your custom color system as a portable preset.
 
 <br>
 
@@ -714,7 +711,11 @@ The **AI Engine** tab provides deep control over neural speech recognition, hard
 
 **Hardware & Precision:**
 - **Device (`Auto`, `GPU`, `CPU`):** Selects whether AI transcription executes on dedicated GPU hardware or system CPU.
-- **Compute Type (`Auto`, `float16`, `int8`, `float32`, `int8_float16`, `int8_float32`):** Selects neural quantization precision. `float16` is fastest on modern GPUs; `int8` saves VRAM and runs efficiently on CPU.
+
+> [!NOTE]  
+> When set to **Auto** and no GPU is found, the application will fall back to CPU. **ONLY NVIDIA GPU's are supported**
+
+- **Compute Type (`Auto`, `float16`, `int8`, `float32`, `int8_float16`, `int8_float32`):** Selects neural quantization precision. `int8_float16` is fastest on modern GPUs; `int8` saves RAM and runs on CPU but reduces precision.
 
 **Acoustic Guidance:**
 - **Initial Prompt:** Custom text prompt fed directly into Whisper before transcription. Pre-loaded with BadWords' *Golden Verbatim* prompt tailored to each language to prevent AI hallucination and ensure accurate capture of filler phonemes and stutters.
@@ -736,7 +737,7 @@ The **AI Engine** tab provides deep control over neural speech recognition, hard
 
 ### 5.6 ***Telemetry*** Tab
 
-The **Telemetry** tab allows you to manage anonymous diagnostics and privacy options, and provides direct links to community resources.
+The **Telemetry** tab allows you to review or modify the diagnostic and privacy choices you selected in the initial first-run popup, and provides direct links to community resources.
 
 <p align="center">
   <img src="images/11f_settings_telemetry.png" alt="Settings Telemetry Tab" width="60%">
@@ -744,7 +745,7 @@ The **Telemetry** tab allows you to manage anonymous diagnostics and privacy opt
 
 **Privacy & Diagnostic Settings:**
 - **`Anonymous Telemetry` Toggle:** 100% anonymous ping containing only your OS type and BadWords version number (used solely to gauge active platform usage). **No audio, speech, transcripts, or personal data are ever collected.**
-- **`Include Geographic Region` Toggle:** Sends country-level region for translation prioritization.
+- **`Include Geographic Region` Toggle:** Optionally includes approximate location (country-level only) with anonymous usage pings.
 
 **Community Links:**
 - Direct buttons to support BadWords on *Buy Me a Coffee* or visit the official *GitHub repository*.
@@ -759,6 +760,10 @@ The **Telemetry** tab allows you to manage anonymous diagnostics and privacy opt
 
 The **Contact** tab lets you locate local debug log files for troubleshooting and submit diagnostic support tickets directly to the developer.
 
+> [!NOTE]
+> yes I know the naming of this tab is super non-intuitive, I'll fix it in the next updates... (maybe)
+
+
 <p align="center">
   <img src="images/11g_contact_tab.png" alt="Contact Tab" width="60%">
 </p>
@@ -768,28 +773,18 @@ The **Contact** tab lets you locate local debug log files for troubleshooting an
 
 **Direct Support Ticket Form:**
 - Enter a problem title and detailed description.
-- Automatically bundles system diagnostics and error logs.
+- Optionally provide your email address if you would like to receive a direct reply from the developer.
+- Attach relevant screenshots to illustrate the issue.
+- Error logs (`badwords_debug.log`) are bundled and attached automatically.
 - Click **`Send Report`** to transmit the diagnostic ticket directly to the developer with zero manual email hassle.
 
-<br>
-
----
-
-<br>
-
-
-
-
-
-
-
-
 
 <br>
 
 ---
 
 <br>
+
 
 ## 6. Step-by-Step Practical Recipes ("How do I...?")
 
