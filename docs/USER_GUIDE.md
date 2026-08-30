@@ -1,5 +1,7 @@
 # BadWords - Complete User Guide & Manual
 
+> **Documentation for BadWords v3.2.4**
+
 > [!WARNING]  
 > **Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub - Pull Requests are also welcome!
 
@@ -8,22 +10,22 @@
 
 **[0. Quickstart Guide (How to start using BadWords)](#0-quickstart-guide-how-to-start-using-badwords)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.1 Launching from DaVinci Resolve](#01-launching-from-davinci-resolve)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Audio Sources & Model](#02-choosing-audio-sources-model)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[0.3 Reviewing, Color-Coding & Cut Settings](#03-reviewing-color-coding-cut-settings)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Audio Sources & Model](#02-choosing-audio-sources--model)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.3 Reviewing, Color-Coding & Cut Settings](#03-reviewing-color-coding--cut-settings)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.4 Assembling the Cut Timeline](#04-assembling-the-cut-timeline)<br>
 
-**[1. Welcome Screen & Source Selection](#1-welcome-screen-source-selection)**<br>
+**[1. Welcome Screen & Source Selection](#1-welcome-screen--source-selection)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[1.1 Transcription Workspace](#11-transcription-workspace)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[1.2 Fast Silence Workspace (Standalone Silence Removal)](#12-fast-silence-workspace-standalone-silence-removal)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[1.3 First-Run Model Download & Setup](#13-first-run-model-download-setup)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[1.3 First-Run Model Download & Setup](#13-first-run-model-download--setup)<br>
 
-**[2. Top Titlebar & Project Management](#2-top-titlebar-project-management)**<br>
+**[2. Top Titlebar & Project Management](#2-top-titlebar--project-management)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[2.1 Project Menu](#21-project-menu)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[2.2 Transcript Menu (Export .txt & Clipboard)](#22-transcript-menu-export-txt-clipboard)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[2.2 Transcript Menu (Export .txt & Clipboard)](#22-transcript-menu-export-txt--clipboard)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[2.3 Versions Dropdown](#23-versions-dropdown)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[2.4 Source Timeline & Audio Tracks Info](#24-source-timeline-audio-tracks-info)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[2.4 Source Timeline & Audio Tracks Info](#24-source-timeline--audio-tracks-info)<br>
 
-**[3. Transcript Editor & Sidebar Tools](#3-transcript-editor-sidebar-tools)**<br>
+**[3. Transcript Editor & Sidebar Tools](#3-transcript-editor--sidebar-tools)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.1 Words Painting](#31-words-painting)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.2 Inaudible Fragments](#32-inaudible-fragments)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.3 Transcript Search Overlay](#33-transcript-search-overlay)<br>
@@ -33,11 +35,11 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[3.7 ***Filler Words*** Sidebar Panel](#37-filler-words-sidebar-panel)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[3.8 ***Assembly*** Sidebar Panel](#38-assembly-sidebar-panel)<br>
 
-**[4. Audio Preview & Navigation Bar](#4-audio-preview-navigation-bar)**<br>
+**[4. Audio Preview & Navigation Bar](#4-audio-preview--navigation-bar)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word](#41-jump-to-word)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)<br>
 
-**[5. Settings & Preferences](#5-settings-preferences)**<br>
+**[5. Settings & Preferences](#5-settings--preferences)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.1 ***General*** Tab](#51-general-tab)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.2 ***Interface*** Tab](#52-interface-tab)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.3 ***Shortcuts*** Tab](#53-shortcuts-tab)<br>
@@ -45,15 +47,6 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[5.5 ***AI Engine*** Tab](#55-ai-engine-tab)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.6 ***Telemetry*** Tab](#56-telemetry-tab)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.7 ***Contact*** Tab](#57-contact-tab)<br>
-
-**[6. Step-by-Step Practical Recipes ("How do I...?")](#6-step-by-step-practical-recipes-how-do-i)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes-false-starts-without-a-script)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge](#recipe-d-one-click-filler-word-purge)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names-jargon)<br>
-
-**[7. Shortcuts Cheat Sheet & FAQ](#7-shortcuts-cheat-sheet-faq)**<br>
 
 ## 0. Quickstart Guide (How to start using BadWords)
 If you want to just start using BadWords and go from raw footage to a cut timeline in a few minutes, follow this guide. 
@@ -444,7 +437,7 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
 - **`Return to Normal View`:** To exit the Side-by-Side view at any time, open the Script Analysis sidebar tab and click this button to restore the standard transcript editor canvas.
 
 > [!TIP]  
-> For complete step-by-step editing workflows, see [Recipe A: Cutting Based on a Script](#recipe-a-cutting-video-based-on-a-written-script) and [Recipe B: Removing Retakes without a Script](#recipe-b-removing-retakes-false-starts-without-a-script).
+> Use **Analyze (Compare)** when you have a prepared script, and **Analyze (Standalone)** when editing unscripted recordings to quickly highlight repeated takes.
 
 <br clear="all">
 
@@ -471,7 +464,7 @@ The **Silence Detection Panel** allows you to fine-tune acoustic silence trimmin
 > BadWords automatically normalizes audio volume prior to silence detection, making the default parameters effective and consistent across different microphones and environments.
 
 > [!TIP]  
-> If you want to remove silence from an entire timeline instantly without transcribing speech, use the **Fast Silence Workspace** on the Welcome Screen (see [Section 1.2](#12-fast-silence-workspace-standalone-silence-removal) and [Recipe C](#recipe-c-fast-silence-cut-without-transcribing)).
+> If you want to remove silence from an entire timeline instantly without transcribing speech, use the **Fast Silence Workspace** on the Welcome Screen (see [Section 1.2: Fast Silence Workspace](#12-fast-silence-workspace-standalone-silence-removal)).
 
 <br>
 
@@ -489,7 +482,7 @@ The **Filler Words Panel** manages BadWords' built-in dictionary for identifying
 - **`Mark filler words automatically` Toggle:** When enabled, any word in your transcript matching the dictionary is automatically painted **Red** right as transcription finishes.
 
 > [!TIP]  
-> To learn how to purge all filler words from your timeline in one click, see [Recipe D: One-Click Filler Word Purge](#recipe-d-one-click-filler-word-purge).
+> Enable **Auto-Cut** for **Red** markers in the [Assembly Panel](#38-assembly-sidebar-panel) to automatically ripple-delete all detected filler words when you click **Assemble**.
 
 <br>
 
@@ -636,7 +629,7 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 **DaVinci Resolve Synchronization:**
 - **`Sync DaVinci Timeline on Chapter Switch` Toggle:** When switching between project versions in BadWords (via the top titlebar Versions dropdown: [Section 2.3: Versions Dropdown](#23-versions-dropdown)), DaVinci Resolve automatically switches its active timeline view to the timeline assembled for that version. If disabled, Resolve's timeline view does not change when switching versions in BadWords.
 - **`Preserve original track order` Toggle:** Maintains the exact source track numbers in DaVinci Resolve. For example, if you assemble only audio track `A2`, by default Resolve places it onto `A1`; with this option enabled, it remains strictly on original `A2` (leaving `A1` empty). Applies to both audio and video tracks.
-- **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (e.g. **`[01:08]`**) to full millisecond precision (e.g. **`[01:08.432]`**).
+- **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (e.g. **[01:08]**) to full millisecond precision (e.g. **[01:08.432]**).
 
 <br>
 
@@ -648,15 +641,19 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 
 The **Shortcuts** tab enables you to customize keyboard and mouse bindings for word painting, playback controls, navigation, and search.
 
+> [!NOTE]  
+> The key capture inputs automatically detect duplicate shortcut assignments across tools and will highlight conflicting inputs with a **Red** border.
+
+
 <p align="center">
   <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="60%">
 </p>
 
-> [!NOTE]  
-> The key capture inputs automatically detect duplicate shortcut assignments across tools and will highlight conflicting inputs with a **Red** border.
-
 **Color Marker Keys:**
-- Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create. *(Note: Newly created custom markers do not receive a shortcut key by default and must be manually assigned here).*
+- Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create.
+
+> [!NOTE]  
+> Newly created custom markers do not receive a shortcut key by default and must be manually assigned here.
 
 **Navigation & Editing Controls:**
 - **Jump to Word:** Configure mouse click combination (`Ctrl`/`Alt`/`Shift` + `Left Click` or `Right Click`).
@@ -689,7 +686,7 @@ The **Custom Markers** tab allows you to create, organize, and reorder custom co
 - Adds a new marker by setting its custom name and choosing an available clip color from the dropdown list.
 
 **`Export Markers` / `Import Markers`:**
-- Save your custom color system as a portable preset.
+- Save your custom markers bundle as a portable preset.
 
 <br>
 
@@ -745,7 +742,7 @@ The **Telemetry** tab allows you to review or modify the diagnostic and privacy 
 
 **Privacy & Diagnostic Settings:**
 - **`Anonymous Telemetry` Toggle:** 100% anonymous ping containing only your OS type and BadWords version number (used solely to gauge active platform usage). **No audio, speech, transcripts, or personal data are ever collected.**
-- **`Include Geographic Region` Toggle:** Optionally includes approximate location (country-level only) with anonymous usage pings.
+- **`Include Geographic Region` Toggle:** Optionally includes approximate location (country-level) with anonymous usage pings.
 
 **Community Links:**
 - Direct buttons to support BadWords on *Buy Me a Coffee* or visit the official *GitHub repository*.
@@ -776,7 +773,7 @@ The **Contact** tab lets you locate local debug log files for troubleshooting an
 - Optionally provide your email address if you would like to receive a direct reply from the developer.
 - Attach relevant screenshots to illustrate the issue.
 - Error logs (`badwords_debug.log`) are bundled and attached automatically.
-- Click **`Send Report`** to transmit the diagnostic ticket directly to the developer with zero manual email hassle.
+- Click **`Send Report`** to transmit the diagnostic ticket directly to the developer.
 
 
 <br>
@@ -785,153 +782,10 @@ The **Contact** tab lets you locate local debug log files for troubleshooting an
 
 <br>
 
-
-## 6. Step-by-Step Practical Recipes ("How do I...?")
-
-<br>
-
----
+> [!NOTE]  
+> **Documentation in Active Development:** This user manual is actively being updated and expanded. Additional step-by-step practical workflows, editing recipes, and detailed FAQs will be added in upcoming documentation updates!
 
 <br>
-
-### Recipe A: Cutting Video Based on a Written Script
-**Goal:** You recorded a video reading from a script and made several mistakes or repeated sentences. You want to keep only the good takes that match your script.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Video Editor
-    participant BW as BadWords
-    participant DR as DaVinci Resolve
-    
-    User->>BW: Paste original script into "Script Analysis" panel
-    User->>BW: Click "Analyze (Compare)"
-    BW->>BW: Fuzzy Anchor Match & Deviation Detection
-    Note over BW: Retakes marked Blue, Errors marked Red
-    User->>BW: Review text & hit "Assemble"
-    BW->>DR: Create clean timeline with only successful takes!
-```
-
-1. Launch BadWords on your raw recording timeline.
-2. In the left sidebar, open the **Script Analysis** tab.
-3. Paste your script into the box or click **`Import Script`** to load your `.docx` or `.pdf`.
-4. Click **`Analyze (Compare)`**.
-5. BadWords automatically aligns the transcript with the script:
-   - Repeated attempts are painted **Blue**.
-   - Bloopers and misspoken words are painted **Red**.
-6. Skim the text. If you prefer a take the AI marked blue, use the **Eraser (`4`)** on that take and paint the other one **Blue (`2`)**.
-7. Click **`Assemble`** to create your clean cut.
-
-<br>
-
----
-
-<br>
-
-### Recipe B: Removing Retakes & False Starts without a Script
-**Goal:** You recorded a casual podcast or gameplay video without any script and want to remove false starts and stumbles automatically.
-
-1. Launch BadWords and click **`Analyze`**.
-2. Open the **Script Analysis** tab in the sidebar.
-3. Click **`Analyze (Standalone)`**.
-4. BadWords will scan the transcript for acoustic repetitions (e.g. *"In today's video we... In today's video we will explore..."*).
-5. The earlier, discarded attempts will turn **Blue**.
-6. Click **`Assemble`**.
-
-<br>
-
----
-
-<br>
-
-### Recipe C: Fast Silence Cut without Transcribing
-**Goal:** You have a 2-hour podcast and just want to remove all silent pauses instantly without waiting for speech-to-text.
-
-1. Open BadWords from DaVinci Resolve.
-2. At the bottom of the Welcome Screen, click **`Simple Silence Detection`**.
-3. Set your threshold (Default `-42.0 dB` works for most microphones).
-4. Ensure **`Cut silence directly`** is toggled ON.
-5. Click **`Run Detection`**.
-6. Within seconds, a newly rippled, tightened timeline appears in Resolve!
-
-<br>
-
----
-
-<br>
-
-### Recipe D: One-Click Filler Word Purge
-**Goal:** Remove all hesitation sounds (*"uh"*, *"um"*, *"like"*) from an interview.
-
-1. Open BadWords and transcribe your timeline.
-2. Filler words are automatically highlighted in **Red**.
-3. Open the **Filler Words** tab in the sidebar if you want to add custom words (e.g. slang or recurring filler phrases).
-4. In the **Assembly** panel, ensure **Auto-Cut** is enabled for **Red (Errors)**.
-5. Click **`Assemble`**. All filler words are cleanly removed from the timeline.
-
-<br>
-
----
-
-<br>
-
-### Recipe E: Working with Difficult Words, Names & Jargon
-**Goal:** You are editing a technical tutorial containing code snippets, system paths, or brand names that standard AI models mishear.
-
-1. On the Welcome Screen, turn ON **`More accurate transcription`**.
-2. Paste your reference text or documentation into the slide-out script box.
-3. Click **`Analyze`**.
-4. BadWords extracts the technical terms, feeds them directly into Whisper's prompt layer, and delivers a perfect verbatim transcription on the first pass!
-
-<br>
-
----
-
-<br>
-
-## 7. Shortcuts Cheat Sheet & FAQ
-
-<br>
-
----
-
-<br>
-
-### Default Keyboard & Mouse Shortcuts
-
-| Shortcut | Action | Scope |
-| :--- | :--- | :--- |
-| **`1`** | Select Red Marker (Errors / Fillers) | Transcript Editor |
-| **`2`** | Select Blue Marker (Retakes) | Transcript Editor |
-| **`3`** | Select Green Marker (Typos) | Transcript Editor |
-| **`4`** | Select Eraser (Clear Marks) | Transcript Editor |
-| **`Ctrl` + Left Click** | Jump to Word (Scrub Resolve & Audio Player) | Transcript Editor |
-| **`Space`** | Play / Pause Audio Preview | Global |
-| **`Left Arrow`** | Skip 2 seconds backward | Audio Player |
-| **`Right Arrow`** | Skip 2 seconds forward | Audio Player |
-| **`Ctrl + F`** | Open Transcript Search Overlay | Transcript Editor |
-| **`Enter` / `Shift + Enter`** | Next / Previous Search Result | Search Overlay |
-| **`Escape`** | Close Search / Open Settings Dialog | Global |
-
-<br>
-
----
-
-<br>
-
-### Frequently Asked Questions (FAQ)
-
-#### Q: Does BadWords overwrite or modify my original timeline?
-**A:** **No, never.** BadWords is 100% non-destructive. Every time you click *Assemble* or *Cut Now*, BadWords generates a brand new timeline copy (e.g. `Timeline_Edit 1`, `Timeline_Edit 2`). Your original timeline remains completely untouched.
-
-#### Q: Why did the first transcription take longer than usual?
-**A:** On the first run with a new AI model, BadWords downloads the model weights and optimizes them for your GPU/CPU architecture. All subsequent transcriptions run locally from cache at maximum hardware speed.
-
-#### Q: Are my audio files or transcripts uploaded to any cloud server?
-**A:** **No.** All speech recognition, silence processing, and timeline manipulation execute 100% locally on your computer.
-
-#### Q: What if a cut is slightly too tight or cuts a breath?
-**A:** In Settings -> **Audio Sync**, slightly increase **Padding (s)** (e.g. to `0.05s` or `0.10s`) or adjust **Offset (s)**.
 
 <p align="center">
   <b>BadWords - Cleaner Timelines, Faster.</b><br>
