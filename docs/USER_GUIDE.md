@@ -44,7 +44,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[5.4 ***Custom Markers*** Tab](#54-custom-markers-tab)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.5 ***AI Engine*** Tab](#55-ai-engine-tab)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[5.6 ***Telemetry*** Tab](#56-telemetry-tab)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.7 ***Support*** Tab](#57-support-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.7 ***Contact*** Tab](#57-contact-tab)<br>
 
 **[6. Step-by-Step Practical Recipes ("How do I...?")](#6-step-by-step-practical-recipes-how-do-i)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
