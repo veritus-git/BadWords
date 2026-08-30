@@ -38,13 +38,13 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)<br>
 
 **[5. Settings & Preferences](#5-settings-preferences)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.1 General Settings](#51-general-settings)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Interface & Transcript Formatting](#52-interface-transcript-formatting)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#53-audio-sync-calibration-offset-padding-snap-max)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.4 Keyboard & Mouse Shortcut Bindings](#54-keyboard-mouse-shortcut-bindings)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.5 Custom Markers Configuration](#55-custom-markers-configuration)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.6 AI Engine Configuration (Advanced Mode)](#56-ai-engine-configuration-advanced-mode)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.7 Telemetry, Contact & Issue Reporting](#57-telemetry-contact-issue-reporting)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.1 General Tab](#51-general-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Transcript & Interface Tab](#52-transcript-interface-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Shortcuts Tab](#53-shortcuts-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.4 Custom Markers Tab](#54-custom-markers-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.5 AI Engine Tab (Advanced View Only)](#55-ai-engine-tab-advanced-view-only)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.6 Telemetry & Privacy Tab](#56-telemetry-privacy-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.7 Support & Bug Reporting Tab](#57-support-bug-reporting-tab)<br>
 
 **[6. Step-by-Step Practical Recipes ("How do I...?")](#6-step-by-step-practical-recipes-how-do-i)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
@@ -393,9 +393,9 @@ The **Main Panel** serves as the primary control center for manual word painting
 <img align="right" src="images/07a_sidebar_tools.png" alt="Sidebar Main Upper" width="285">
 
 #### Upper Section: Marking Palette & Custom Colors
-- **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
-- **Clear Transcript (Brush Icon):** Erases all color markings across the entire project with a confirmation dialog.
-- **`+ add custom marker...`:** Opens the Settings dialog directly to create, configure, and assign shortcuts to custom color markers (see [Section 5.5: Custom Markers Configuration](#55-custom-markers-configuration)).
+- **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. You can also use the `1`, `2`, `3`, `4` shortcut keys to select these tools.
+- **Clear Transcript (Brush Icon):** Erases all color markings across the entire transcript with a confirmation dialog.
+- **`+ add custom marker...`:** Opens the Settings dialog directly to create, configure, and assign shortcuts to custom color markers (see [Section 5.4: Custom Markers Tab](#54-custom-markers-tab)).
 
 <br clear="all">
 
@@ -404,15 +404,15 @@ The **Main Panel** serves as the primary control center for manual word painting
 #### Lower Section: Favorites & Timeline Export
 - **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
 - **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on the *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
-- **`Assemble` Button & Track Options Menu:** Clicking the main **`Assemble`** button triggers the final cut process in DaVinci Resolve. Clicking the arrow (`^`) opens the expandable track configuration menu:
+- **`Assemble` Button:** Clicking it triggers the final cut process in DaVinci Resolve. Clicking the arrow button opens the expandable track configuration menu:
   - **Audio Tracks:**
-    - **`All tracks`:** Includes every audio track from your source timeline in the ripple cut.
-    - **`Only transcription tracks`:** Cuts and includes only the dialogue audio track(s) selected during transcription.
-    - **`Custom selection`:** Lets you manually check or uncheck individual audio tracks (`A1`, `A2`, etc.) to cut.
+    - **`All tracks`:** Includes every audio track from your source timeline (default).
+    - **`Only transcription tracks`:** Includes only the dialogue audio track(s) selected for transcription in the first step.
+    - **`Custom selection`:** Lets you manually choose which audio tracks to use.
   - **Video Tracks:**
-    - **`All tracks`:** Includes every video track (`V1`, `V2`, etc.) from your source timeline in the ripple cut.
-    - **`No tracks`:** Does not modify or cut any video tracks (audio-only ripple cut).
-    - **`Custom selection`:** Lets you manually check or uncheck individual video tracks (`V1`, `V2`, etc.).
+    - **`All tracks`:** Includes every video track from your source timeline (default).
+    - **`No tracks`:** Does not use any video tracks (audio-only assembly).
+    - **`Custom selection`:** Lets you manually choose which video tracks to use.
 
 <br clear="all">
 
@@ -556,27 +556,21 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 ---
 
 <br>
-<br>
-
----
-
-<br>
-
 ## 5. Settings & Preferences
 
-Clicking the Gear Icon Settings opens the **Settings Dialog**. You can switch between **Basic View** and **Advanced View** at the top.
+Clicking the Gear icon (`⚙️`) in the top titlebar or pressing **`Escape`** opens the **Settings Dialog**. 
+
+At the very top of the dialog, you can toggle between two modes:
+- **Basic View (Default):** A clean, streamlined view containing only the essential everyday preferences (language, typography, shortcuts, marker management, and automatic updates).
+- **Advanced View:** Unlocks granular developer and power-user parameters across tabs (including the dedicated **AI Engine** tab, floating window mode, and deep Whisper inference thresholds).
 
 <p align="center">
-  <img src="images/11_settings_dialog.png" alt="Settings Dialog Overview" width="90%">
+  <img src="images/11_settings_dialog.png" alt="Settings Dialog Overview (Basic vs Advanced View)" width="90%">
 </p>
 
 <!-- 
 IMAGE PLACEHOLDER: docs/images/11_settings_dialog.png
-Capture Settings dialog showing:
-[1] Basic / Advanced View Switcher
-[2] Left Category Navigation List
-[3] Setting Row with Input & Reset (Refresh) Button
-[4] Footer Bar: Reset All Settings, Close, Apply
+Overview of Settings dialog comparing Basic View vs Advanced View switcher.
 -->
 
 <br>
@@ -585,13 +579,23 @@ Capture Settings dialog showing:
 
 <br>
 
-### 5.1 General Settings
-- **Interface Language (`Language`):** Switches UI language (English, Polish, German, French, Spanish, Russian, Italian, Japanese, Chinese, etc.).
-- **Accent Color:** Selects the theme accent color (Green, Blue, Purple, Orange, Red, Teal, Pink, Amber).
-- **App Icon:** Chooses the application window icon style.
-- **Always on top:** Keeps BadWords floating above DaVinci Resolve.
-- **Notify me about new versions:** Checks GitHub/GitLab releases on startup.
-- **Auto-update on startup:** Silently downloads and installs patches automatically before opening.
+### 5.1 General Tab
+
+<p align="center">
+  <img src="images/11a_settings_general.png" alt="Settings General Tab" width="90%">
+</p>
+
+#### Basic View:
+- **Updates & Version Card:**
+  - Displays your currently installed version and checks for updates automatically.
+  - **`Update Now` Button:** Appears whenever a new patch or version is released on GitHub/GitLab, allowing you to update in one click without leaving the app.
+  - **`Check for updates on startup` Toggle:** Automatically checks remote repositories for new releases on launch.
+  - **`Auto-update on startup` Toggle:** Automatically downloads and applies updates silently in the background before launching.
+- **Language (`Language`):** Switches the entire BadWords user interface between supported languages (English, Polish, German, French, Spanish, Italian, Japanese, Chinese, etc.).
+- **App Icon Style:** Choose between 4 distinct window icon designs (**Default**, **Monochrome**, **White B**, **White**) to match your system theme.
+- **Settings Backup:**
+  - **`Import Settings`:** Restores your preferences from a saved `.json` file.
+  - **`Export Settings`:** Exports your entire configuration to migrate between computers.
 
 <br>
 
@@ -599,13 +603,32 @@ Capture Settings dialog showing:
 
 <br>
 
-### 5.2 Interface & Transcript Formatting
-- **Transcript Layout Mode:** Choose between **Segmented Blocks** (breaks text into clean sentence chunks with `[00:14]` timestamp headers) and **Continuous Flow** (unbroken paragraph prose).
-- **Transcript Font & Font Size:** Changes typography and font scaling (pt).
-- **Line Spacing (px):** Adjusts vertical padding between lines.
-- **Precise Timestamps (ms):** Displays full millisecond timestamps (e.g. `[01:08.432]`) instead of rounded seconds (`[01:08]`).
-- **Punctuation marks per block (`chunk_punct_count`):** Number of sentences grouped into a single transcript block.
-- **Max chunk words / Lookahead words:** Controls maximum line length and punctuation-aware word wrapping.
+### 5.2 Transcript & Interface Tab
+
+<p align="center">
+  <img src="images/11b_settings_transcript.png" alt="Settings Transcript Tab" width="90%">
+</p>
+
+#### Basic View:
+- **Display Mode:**
+  - **`Segmented Blocks`:** Groups sentences into structured dialogue blocks with timestamp headers `[00:14]` for easy skimming.
+  - **`Continuous Flow`:** Displays transcription as continuous running prose.
+- **Transcript Typography:**
+  - **Font Family:** Select any font installed on your operating system.
+  - **Font Size (pt):** Adjust text scale (8pt to 48pt).
+  - **Line Spacing (px):** Adjust vertical padding between lines of text.
+  - **Live Preview Box:** Instantly previews typography, colors, and line height adjustments before applying.
+- **DaVinci Resolve Synchronization:**
+  - **`Sync playhead with DaVinci Resolve chapters` Toggle:** Keeps playhead position synchronized between Resolve and BadWords.
+  - **`Preserve XML track order` Toggle:** Guarantees strict timeline track order preservation during XML import/export.
+  - **`Precise Timestamps` Toggle:** Switches timestamps from rounded seconds (`[01:08]`) to full millisecond precision (`[01:08.432]`).
+
+#### Advanced View Additions:
+- **`Always on Top` Toggle:** Forces BadWords to float permanently above DaVinci Resolve and other windows.
+- **Chunk Segmentation Parameters (for Segmented Mode):**
+  - **Max Chunk Words (default `30`):** Maximum number of words in a sentence block before forcing a break.
+  - **Chunk Lookahead (default `3`):** Number of words the engine looks ahead to find natural punctuation points (`.`, `?`, `!`) before breaking a line.
+  - **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
 
 <br>
 
@@ -613,31 +636,22 @@ Capture Settings dialog showing:
 
 <br>
 
-### 5.3 Audio Sync Calibration (Offset, Padding, Snap Max)
+### 5.3 Shortcuts Tab
 
-Fine-tune these parameters if you need razor-sharp acoustic synchronization:
+<p align="center">
+  <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="90%">
+</p>
 
-| Parameter | Default Value | Description |
-| :--- | :---: | :--- |
-| **Offset (s)** | `0.133s` | Shifts all transcript timestamps backward or forward. Negative values start cuts slightly earlier; positive values delay them. |
-| **Padding (s)** | `0.000s` | Adds extra duration to the tail of each spoken word, ensuring trailing consonants are never clipped. |
-| **Snap Max (s)** | `0.250s` | Maximum silence gap between two adjacent words to merge them into a single uninterrupted audio clip. |
-
-<br>
-
----
-
-<br>
-
-### 5.4 Keyboard & Mouse Shortcut Bindings
-Configure custom keys for every action:
-- Switch to Red / Blue / Green Marker
-- Switch to Eraser
-- Jump to Word (`Ctrl` / `Alt` / `Shift` + Left / Right Mouse Button)
-- Play / Pause (`Space`)
-- Skip Backward / Forward (`Left` / `Right`)
-- Search (`Ctrl + F`)
-- Open Settings (`Escape`)
+#### Basic & Advanced View:
+- **Conflict Detection:** Key capture buttons automatically detect duplicate hotkeys across tools, turning the border **Red** if two actions share the same shortcut.
+- **Color Marker Keys:** Assign custom keybindings to **Red (`1`)**, **Blue (`2`)**, **Green (`3`)**, **Eraser (`4`)**, and any custom markers you create.
+- **Navigation & Editing Controls:**
+  - **Jump to Word:** Configure mouse click combination (`Ctrl + Left Click`, `Alt + Left Click`, `Shift + Left Click`, or Right Click variants).
+  - **Play / Pause:** Default `Space`.
+  - **Skip Backward / Forward:** Default `Left Arrow` / `Right Arrow` (2-second jumps).
+  - **Search Overlay:** Default `Ctrl + F`.
+  - **Open Settings:** Default `Escape`.
+- **Reset Buttons (`↺` & `✕`):** Clear a binding or revert individual shortcuts to default.
 
 <br>
 
@@ -645,13 +659,19 @@ Configure custom keys for every action:
 
 <br>
 
-### 5.5 Custom Markers Configuration
-Create bespoke markers for your personal workflow:
-1. Click **`+ Add Marker`**.
-2. Enter a marker name (e.g., *"B-Roll Insert"* or *"Sound Effect"*).
-3. Assign any unused DaVinci Resolve color.
-4. Assign a keyboard shortcut key.
-5. Export or import your marker configurations across different editing workstations.
+### 5.4 Custom Markers Tab
+
+<p align="center">
+  <img src="images/11d_settings_markers.png" alt="Settings Custom Markers Tab" width="90%">
+</p>
+
+#### Basic & Advanced View:
+- **Custom Marker List:** Drag-and-drop handles allow you to freely reorder marker priority and display sequence in the editor palette.
+- **`+ Add Marker`:** Define custom marker tags with:
+  1. Custom Name (e.g. *"B-Roll"*, *"Zoom In"*, *"Sound Effect"*).
+  2. DaVinci Resolve Clip Color (choose from unused Resolve palette colors).
+  3. Keyboard shortcut key.
+- **`Export Markers` / `Import Markers`:** Save your custom color system as a portable preset file to share with other team members.
 
 <br>
 
@@ -659,19 +679,30 @@ Create bespoke markers for your personal workflow:
 
 <br>
 
-### 5.6 AI Engine Configuration (Advanced Mode)
+### 5.5 AI Engine Tab (Advanced View Only)
 
-For power users who wish to customize the Faster-Whisper transcription engine:
+<p align="center">
+  <img src="images/11e_settings_ai_engine.png" alt="Settings AI Engine Tab" width="90%">
+</p>
 
-| Setting | Default | Description |
-| :--- | :---: | :--- |
-| **Device** | `Auto` | Selects processing device (`Auto`, `CUDA` for NVIDIA GPUs, or `CPU`). |
-| **Compute Type** | `int8` / `Auto` | Quantization precision (`int8`, `float16`, `bfloat16`, `float32`). |
-| **VAD Filter** | `False` | Silero Voice Activity Detection pre-filter. |
-| **Beam Size** | `1` | Greedy decoding (`1`) forces raw acoustic capture without grammatical smoothing. |
-| **Temperature** | `0.0` | Sampling temperature. `0.0` ensures deterministic, hallucination-free output. |
-| **Condition on Previous Text** | `False` | Disables previous context chaining to eliminate infinite repetition loops. |
-| **Initial Prompt** | *Golden Verbatim* | Custom acoustic prompt guiding the AI to capture stutters and filler phonemes. |
+> [!NOTE]  
+> The **AI Engine Tab** is unlocked exclusively in **Advanced View** for users who want complete control over neural network inference and Faster-Whisper decoding behavior.
+
+#### Hardware & Precision:
+- **Device (`Auto`, `GPU`, `CPU`):** Selects whether AI transcription executes on dedicated GPU hardware or system CPU.
+- **Compute Type (`Auto`, `float16`, `int8`, `float32`, `int8_float16`, `int8_float32`):** Selects neural quantization precision. `float16` is fastest on modern GPUs; `int8` saves VRAM and runs efficiently on CPU.
+
+#### Acoustic Guidance:
+- **Initial Prompt:** Custom text prompt fed directly into Whisper before transcription. Pre-loaded with BadWords' *Golden Verbatim* prompt tailored to each language to prevent AI hallucination and ensure accurate capture of filler phonemes and stutters.
+
+#### Deep Inference Thresholds:
+- **VAD Filter (Voice Activity Detection):** Pre-filters non-speech audio using Silero VAD before feeding chunks to Whisper.
+- **Condition on Previous Text (default `False`):** When disabled, prevents Whisper from entering infinite repetition loops on acoustic noise.
+- **Beam Size (default `1`):** Beam search width. `1` provides fastest greedy decoding.
+- **Temperature (default `0.0`):** Randomness sampling. `0.0` ensures 100% deterministic transcription.
+- **Logprob Threshold (default `-0.8`):** Confidence floor for acoustic tokens.
+- **No Speech Threshold (default `0.7`):** Probability boundary to classify segment as silence.
+- **Patience, Compression Ratio, No-repeat N-gram, Length & Repetition Penalties:** Precision tuning for edge-case speech models.
 
 <br>
 
@@ -679,9 +710,43 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 
 <br>
 
-### 5.7 Telemetry, Contact & Issue Reporting
-- **Anonymous Telemetry:** 100% anonymous ping containing OS type and version number only (no audio or personal data is ever collected).
-- **Direct Support Form:** Enter an issue title and description, attach screenshots, and send a diagnostic ticket with log files directly to the developer with one click.
+### 5.6 Telemetry & Privacy Tab
+
+<p align="center">
+  <img src="images/11f_settings_telemetry.png" alt="Settings Telemetry Tab" width="90%">
+</p>
+
+#### Basic & Advanced View:
+- **`Anonymous Telemetry` Toggle:** 100% anonymous ping containing only your OS type and BadWords version number (used solely to gauge active platform usage). **No audio, speech, transcripts, or personal data are ever collected.**
+- **`Include Geographic Region` Toggle:** Sends country-level region for translation prioritization.
+- **Community Links:** Direct buttons to support BadWords on *Buy Me a Coffee* or visit the official *GitHub repository*.
+
+<br>
+
+---
+
+<br>
+
+### 5.7 Support & Bug Reporting Tab
+
+<p align="center">
+  <img src="images/11g_settings_support.png" alt="Settings Support Tab" width="90%">
+</p>
+
+#### Basic & Advanced View:
+- **Logs Location & One-Click Copy:** Displays the absolute path to your `badwords_debug.log` file with a copy button for easy troubleshooting.
+- **Direct Support Ticket Form:**
+  - Enter a problem title and detailed description.
+  - Automatically bundles system diagnostics and error logs.
+  - Click **`Send Report`** to transmit the diagnostic ticket directly to the developer with zero manual email hassle.
+
+<br>
+
+---
+
+<br>
+
+
 
 <br>
 
