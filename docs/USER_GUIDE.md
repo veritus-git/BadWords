@@ -1,6 +1,6 @@
 # BadWords - Complete User Guide & Manual
 
-> **Documentation for BadWords v3.2.4**
+> **Documentation for BadWords release: 3.2.4**
 
 > [!WARNING]  
 > **Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub - Pull Requests are also welcome!
@@ -124,7 +124,7 @@ flowchart LR
 
 ### 0.4 Assembling the Cut Timeline
 1. When you have finished marking your transcript, click the green **`Assemble`** button in the corner of the main panel on the right.
-2. BadWords automatically builds and imports a **brand new timeline** into DaVinci Resolve named `<Timeline-Name> Edit 1`.
+2. BadWords automatically builds and imports a **brand new timeline** into DaVinci Resolve named `<Timeline-Name> BadWords Edit 1`.
 > [!NOTE]
 > **100% Non-Destructive:** Your original timeline remains completely untouched. On the new timeline, cuts are applied frame-accurately and every remaining clip is **color-coded directly in DaVinci Resolve (Clip Color)** according to your text markings for instant visual verification.
 
@@ -188,16 +188,6 @@ Clicking the link **`Simple Silence Detection`** at the bottom of the Welcome Sc
   <img src="images/03_fast_silence_screen.png" alt="Fast Silence Screen" width="70%">
 </p>
 
-<!-- 
-IMAGE PLACEHOLDER: docs/images/03_fast_silence_screen.png
-Capture Fast Silence mode with annotations:
-[1] Silence Threshold (dB)
-[2] Padding (s)
-[3] Min Silence Duration (s)
-[4] Cut Silence Directly vs Mark Silence with Color Toggles
-[5] Run Detection Button
--->
-
 #### Fast Silence Controls:
 1. **Silence Threshold (dB):** Volume level below which normalized audio is classified as silence.  
    *Default: `-42.0 dB` (Pre-normalized audio ensures this threshold works universally).*
@@ -208,7 +198,7 @@ Capture Fast Silence mode with annotations:
 4. **Mode Toggles (Mutually Exclusive):**
    - **`Cut silence directly`:** Automatically removes silence gaps and ripples the timeline together upon execution.
    - **`Mark silence with color`:** Leaves clips intact but color-codes silent regions with **Tan** clip colors in DaVinci Resolve for manual review.
-5. **`Run Detection`:** Executes the pass and instantly builds a **brand new timeline** in DaVinci Resolve (e.g. `<Timeline_Name>_Edit 1`), leaving your source timeline **100% untouched**.
+5. **`Run Detection`:** Executes the pass and instantly builds a **brand new timeline** in DaVinci Resolve (e.g. `<Timeline-Name> BadWords Edit 1`), leaving your source timeline **100% untouched**.
 
 <br>
 
@@ -379,6 +369,7 @@ Pressing **Ctrl + F** (or Cmd + F on macOS) toggles the floating search bar:
 
 <br>
 
+<a id="34-main-sidebar-panel"></a>
 ### 3.4 ***Main*** Sidebar Panel <img src="../assets/layout/main.png" width="24" height="24" valign="middle">
 
 The **Main Panel** serves as the primary control center for manual word painting and quick assembly actions. It is organized into two sections:
@@ -415,6 +406,7 @@ The **Main Panel** serves as the primary control center for manual word painting
 
 <br>
 
+<a id="35-script-analysis-sidebar-panel"></a>
 ### 3.5 ***Script Analysis*** Sidebar Panel <img src="../assets/layout/script.png" width="24" height="24" valign="middle">
 
 The **Script Analysis Panel** houses intelligent alignment tools that automatically detect speech errors and retakes, either by comparing the recording against an imported script or by finding acoustic repetitions in unscripted takes.
@@ -447,6 +439,7 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
 
 <br>
 
+<a id="36-silence-detection-sidebar-panel"></a>
 ### 3.6 ***Silence Detection*** Sidebar Panel <img src="../assets/layout/silence.png" width="24" height="24" valign="middle">
 
 The **Silence Detection Panel** allows you to fine-tune acoustic silence trimming applied after full speech transcription, removing awkward pauses and dead air.
@@ -472,6 +465,7 @@ The **Silence Detection Panel** allows you to fine-tune acoustic silence trimmin
 
 <br>
 
+<a id="37-filler-words-sidebar-panel"></a>
 ### 3.7 ***Filler Words*** Sidebar Panel <img src="../assets/layout/fillers.png" width="24" height="24" valign="middle">
 
 The **Filler Words Panel** manages BadWords' built-in dictionary for identifying hesitation sounds (*"uh"*, *"um"*, *"yyy"*, *"mhm"*, *"like"*).
@@ -490,6 +484,7 @@ The **Filler Words Panel** manages BadWords' built-in dictionary for identifying
 
 <br>
 
+<a id="38-assembly-sidebar-panel"></a>
 ### 3.8 ***Assembly*** Sidebar Panel <img src="../assets/layout/assembly.png" width="24" height="24" valign="middle">
 
 The **Assembly Panel** allows you to configure global display toggles and choose how each marker color is handled during timeline assembly or cut immediately from an active timeline.
@@ -550,6 +545,7 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 
 <br>
 
+<a id="5-settings--preferences"></a>
 ## 5. Settings & Preferences <img src="../assets/layout/settings.png" width="24" height="24" valign="middle">
 
 Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with more parameters and unlocks the dedicated AI Engine tab).
@@ -619,6 +615,11 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 - **Max Chunk Words (default `30`):** Target maximum number of words per block before attempting a line break.
 - **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `33` instead of `30`).
 - **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
+
+> [!NOTE]  
+> **Known Behavior & Re-analysis Requirement:**  
+> - **Initial Default Value:** In current releases, the backend initializes with an internal default of `15` words per chunk under the hood, even though the UI input box displays `30`. Explicitly changing the value in Settings will properly overwrite and save your custom choice.
+> - **Re-analysis Required:** Dialogue segmentation into blocks is computed exclusively during transcription. If you adjust any Chunk Segmentation parameters in Settings, you must **re-run transcription (`Analyze`)** on your audio to see the updated chunk lengths reflected in the transcript canvas.
 
 **Transcript Typography:**
 - **Font Family:** Select any font installed on your operating system.
