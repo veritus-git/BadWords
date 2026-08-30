@@ -8,7 +8,7 @@
 
 **[0. Quickstart Guide (How to start using BadWords)](#0-quickstart-guide-how-to-start-using-badwords)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.1 Launching from DaVinci Resolve](#01-launching-from-davinci-resolve)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Source Audio & Model](#02-choosing-source-audio-model)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[0.2 Choosing Audio Sources & Model](#02-choosing-audio-sources-model)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.3 Reviewing, Color-Coding & Cut Settings](#03-reviewing-color-coding-cut-settings)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[0.4 Assembling the Cut Timeline](#04-assembling-the-cut-timeline)<br>
 
@@ -37,28 +37,23 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[4.1 Jump to Word](#41-jump-to-word)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)<br>
 
-**[5. Timeline Assembly & DaVinci Integration](#5-timeline-assembly-davinci-integration)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.1 The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Native `.drt` Pipeline (Non-Destructive Protection)](#52-native-drt-pipeline-non-destructive-protection)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Timeline Heatmap Overview](#53-timeline-heatmap-overview)<br>
+**[5. Settings & Preferences](#5-settings-preferences)**<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.1 General Settings](#51-general-settings)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Interface & Transcript Formatting](#52-interface-transcript-formatting)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#53-audio-sync-calibration-offset-padding-snap-max)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.4 Keyboard & Mouse Shortcut Bindings](#54-keyboard-mouse-shortcut-bindings)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.5 Custom Markers Configuration](#55-custom-markers-configuration)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.6 AI Engine Configuration (Advanced Mode)](#56-ai-engine-configuration-advanced-mode)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.7 Telemetry, Contact & Issue Reporting](#57-telemetry-contact-issue-reporting)<br>
 
-**[6. Settings & Preferences](#6-settings-preferences)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.1 General Settings](#61-general-settings)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.2 Interface & Transcript Formatting](#62-interface-transcript-formatting)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.3 Audio Sync Calibration (Offset, Padding, Snap Max)](#63-audio-sync-calibration-offset-padding-snap-max)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.4 Keyboard & Mouse Shortcut Bindings](#64-keyboard-mouse-shortcut-bindings)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.5 Custom Markers Configuration](#65-custom-markers-configuration)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.6 AI Engine Configuration (Advanced Mode)](#66-ai-engine-configuration-advanced-mode)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[6.7 Telemetry, Contact & Issue Reporting](#67-telemetry-contact-issue-reporting)<br>
-
-**[7. Step-by-Step Practical Recipes ("How do I...?")](#7-step-by-step-practical-recipes-how-do-i)**<br>
+**[6. Step-by-Step Practical Recipes ("How do I...?")](#6-step-by-step-practical-recipes-how-do-i)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe B: Removing Retakes & False Starts without a Script](#recipe-b-removing-retakes-false-starts-without-a-script)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe C: Fast Silence Cut without Transcribing](#recipe-c-fast-silence-cut-without-transcribing)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe D: One-Click Filler Word Purge](#recipe-d-one-click-filler-word-purge)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe E: Working with Difficult Words, Names & Jargon](#recipe-e-working-with-difficult-words-names-jargon)<br>
 
-**[8. Shortcuts Cheat Sheet & FAQ](#8-shortcuts-cheat-sheet-faq)**<br>
+**[7. Shortcuts Cheat Sheet & FAQ](#7-shortcuts-cheat-sheet-faq)**<br>
 
 ## 0. Quickstart Guide (How to start using BadWords)
 If you want to just start using BadWords and go from raw footage to a cut timeline in a few minutes, follow this guide. 
@@ -86,7 +81,7 @@ flowchart LR
 
 <br>
 
-### 0.2 Choosing Source Audio & Model
+### 0.2 Choosing Audio Sources & Model
 1. **Timeline Selection:** Confirm your active timeline is selected in the dropdown. (Click `Refresh` if you just created a new timeline).
 2. **Track/s Selection:** Select the audio track(s) where dialogue is recorded (e.g., `A1` for your primary microphone).
 3. **Language:** Select the spoken language of the recording.
@@ -136,7 +131,7 @@ flowchart LR
 
 ### 0.4 Assembling the Cut Timeline
 1. When you have finished marking your transcript, click the green **`Assemble`** button in the corner of the main panel on the right.
-2. BadWords automatically builds and imports a **brand new timeline** into DaVinci Resolve named `<Timeline_Name>_Edit 1`.
+2. BadWords automatically builds and imports a **brand new timeline** into DaVinci Resolve named `<Timeline-Name> Edit 1`.
 > [!NOTE]
 > **100% Non-Destructive:** Your original timeline remains completely untouched. On the new timeline, cuts are applied frame-accurately and every remaining clip is **color-coded directly in DaVinci Resolve (Clip Color)** according to your text markings for instant visual verification.
 
@@ -336,7 +331,7 @@ Surrounding the central transcript are modular **Sidebar Panels** containing too
 ### 3.1 Words Painting
 BadWords uses a ***Color-coded heatmap*** for editing. Selecting a color tool (from the sidebar palette or keys `1`–`4`) and clicking or dragging across words applies that color tag to the corresponding acoustic segment.
 
-For manual editing without a script, you can use these colors however you prefer (for instance, marking all errors in Red and retakes in Blue). However, when using automated tools like **Script Comparison** (see [Section 3.5](#35-script-analysis-compare-vs-standalone-side-by-side-view)), BadWords assigns precise semantic meaning to each color:
+For manual editing without a script, you can use these colors however you prefer (for instance, marking all errors in Red and retakes in Blue). However, when using automated tools like **Script Comparison** (see [Section 3.5](#35-script-analysis-sidebar-panel)), BadWords assigns precise semantic meaning to each color:
 
 | Painting Color | DaVinci Clip Color | Meaning in Script Comparison / Recommended Usage |
 | :---: | :---: | :--- |
@@ -347,11 +342,11 @@ For manual editing without a script, you can use these colors however you prefer
 | **Eraser** | *Default* | Strips color tags from selected words, restoring standard clip status. |
 | **Custom** | *User Assigned* | User-defined custom categories (e.g. "B-Roll", "Zoom In", "Sound Effect"). |
 
-By default, **all marked words remain on your assembled timeline as color-coded clips (DaVinci Clip Color)** so you can inspect them visually before making cuts. To configure automatic ripple cutting or post-review mass removal for specific colors, see [Section 3.8: Assembly & Color Cutting Matrix](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
+By default, **all marked words remain on your assembled timeline as color-coded clips (DaVinci Clip Color)** so you can inspect them visually before making cuts. To configure automatic ripple cutting or post-review mass removal for specific colors, see [Section 3.8: Assembly & Color Cutting Matrix](#38-assembly-sidebar-panel).
 
 > [!NOTE]  
 > **Color Rules & Reserved Presets:**  
-> - **Silence Representation:** Silence is not shown as text tokens in the BadWords editor canvas. The **Tan** clip color is applied exclusively on silent cuts inside DaVinci Resolve when you enable `Mark silence with color` in the [Silence Detection Panel](#36-silence-detection-panel-post-transcript-trimming).
+> - **Silence Representation:** Silence is not shown as text tokens in the BadWords editor canvas. The **Tan** clip color is applied exclusively on silent cuts inside DaVinci Resolve when you enable `Mark silence with color` in the [Silence Detection Panel](#36-silence-detection-sidebar-panel).
 > - **Reserved Colors:** Custom markers cannot use **Green**, **Blue**, **Tan**, or **Chocolate** to prevent visual collisions with native DaVinci clip colors and system states (silence and inaudible audio).
 
 <br>
@@ -370,7 +365,7 @@ When audio is completely unintelligible, muffled, or masked by loud background n
 > [!TIP]  
 > **Why it matters:** Instead of guessing why a jump or silent gap occurred, this gives you full transparency to see exactly what the AI couldn't parse, allowing you to review those moments manually in Resolve.
 
-You can customize how inaudible tokens are displayed in the editor (hidden, uncolored, or marked with Chocolate color) and how they are handled on the timeline in the [Assembly & Color Cutting Matrix (#3.8)](#38-assembly-color-cutting-matrix-auto-cut-vs-cut-now).
+You can customize how inaudible tokens are displayed in the editor (hidden, uncolored, or marked with Chocolate color) and how they are handled on the timeline in the [Assembly & Color Cutting Matrix (#3.8)](#38-assembly-sidebar-panel).
 
 <br>
 
@@ -400,7 +395,7 @@ The **Main Panel** serves as the primary control center for manual word painting
 #### Upper Section: Marking Palette & Custom Colors
 - **Active Marker Selector:** Radio buttons to switch between **Red**, **Blue**, **Green**, **Eraser**, and custom markers. Shortcut keys `1`, `2`, `3`, `4` select these tools instantly.
 - **Clear Transcript (Brush Icon):** Erases all color markings across the entire project with a confirmation dialog.
-- **`+ add custom marker...`:** Opens the Settings dialog directly to create, configure, and assign shortcuts to custom color markers (see [Section 6.5: Custom Markers Configuration](#65-custom-markers-configuration)).
+- **`+ add custom marker...`:** Opens the Settings dialog directly to create, configure, and assign shortcuts to custom color markers (see [Section 5.5: Custom Markers Configuration](#55-custom-markers-configuration)).
 
 <br clear="all">
 
@@ -408,8 +403,16 @@ The **Main Panel** serves as the primary control center for manual word painting
 
 #### Lower Section: Favorites & Timeline Export
 - **Analysis Duration Indicator:** Displays exact stats on transcription processing time (e.g. *Analyzed in: 0.18min*).
-- **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
-- **`Assemble` Button:** Triggers timeline assembly and includes an expandable dropdown drawer to choose which tracks are cut. For complete details on track modes, see [Section 5.1: The Assembly Split Button & Track Options Drawer](#51-the-assembly-split-button-track-options-drawer).
+- **Pinned Favorites:** Dynamically reveals any tools or toggles you have starred with the Star `★` button on the *Assembly* Sidebar Panel (such as one-click auto-cut toggles), letting you control them without leaving the Main tab.
+- **`Assemble` Button & Track Options Menu:** Clicking the main **`Assemble`** button triggers the final cut process in DaVinci Resolve. Clicking the arrow (`^`) opens the expandable track configuration menu:
+  - **Audio Tracks:**
+    - **`All tracks`:** Includes every audio track from your source timeline in the ripple cut.
+    - **`Only transcription tracks`:** Cuts and includes only the dialogue audio track(s) selected during transcription.
+    - **`Custom selection`:** Lets you manually check or uncheck individual audio tracks (`A1`, `A2`, etc.) to cut.
+  - **Video Tracks:**
+    - **`All tracks`:** Includes every video track (`V1`, `V2`, etc.) from your source timeline in the ripple cut.
+    - **`No tracks`:** Does not modify or cut any video tracks (audio-only ripple cut).
+    - **`Custom selection`:** Lets you manually check or uncheck individual video tracks (`V1`, `V2`, etc.).
 
 <br clear="all">
 
@@ -436,7 +439,7 @@ The **Script Analysis Panel** houses intelligent alignment tools that automatica
   - Words matching the script remain unpainted.
   - Repeated attempts and retakes are painted **Blue**.
   - Filler words, stumbles, and speech errors are painted **Red**.
-  - Minor phrasing variations and slight mishearings compared to the script are painted **Green** (these green typo tags can be toggled on/off anytime using `Show detected typos` in the [Assembly Panel](#38-assembly-sidebar-panel-)).
+  - Minor phrasing variations and slight mishearings compared to the script are painted **Green** (these green typo tags can be toggled on/off anytime using `Show detected typos` in the [Assembly Panel](#38-assembly-sidebar-panel)).
 - **`Side-by-Side View (BETA)`:** Opens the two-column comparative view (shown in the screenshot above) with the reference script on the left and the live transcript on the right, highlighting unspoken lines, skipped phrases, and improvisations.
 - **`Return to Normal View`:** To exit the Side-by-Side view at any time, open the Script Analysis sidebar tab and click this button to restore the standard transcript editor canvas.
 
@@ -553,78 +556,13 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 ---
 
 <br>
-
-## 5. Timeline Assembly & DaVinci Integration
-
-When editing is complete, clicking the **Assemble** button converts your text modifications into timeline operations in DaVinci Resolve.
-
-<p align="center">
-  <img src="images/10_assembly_drawer.png" alt="Assembly Track Selection Drawer" width="90%">
-</p>
-
-<!-- 
-IMAGE PLACEHOLDER: docs/images/10_assembly_drawer.png
-Capture the Assemble Split Button expanded with the Track Options Drawer:
-[1] Assemble Button Main Click Area
-[2] Drawer Expand Arrow (Expand / Collapse)
-[3] Track Mode Selector (All / Transcription Only / Custom)
-[4] Video Tracks Checkboxes (V1, V2...)
-[5] Audio Tracks Checkboxes (A1, A2...)
--->
-
 <br>
 
 ---
 
 <br>
 
-### 5.1 The Assembly Split Button & Track Options Drawer
-- **Main Button Area:** Clicking **`Assemble`** immediately triggers the build process using current track settings.
-- **Drawer Arrow (`Expand / Collapse`):** Expands the **Track Options Drawer** directly above the button:
-  - **All tracks:** Includes every video and audio track present on the source timeline in the final ripple edit.
-  - **Only transcription tracks:** Cuts only the audio track(s) selected during transcription.
-  - **Custom selection:** Allows you to check/uncheck specific video tracks (`V1`, `V2`, `V3`) and audio tracks (`A1`, `A2`, `A3`).
-
-<br>
-
----
-
-<br>
-
-### 5.2 Native `.drt` Pipeline (Non-Destructive Protection)
-
-Unlike tools relying on legacy Final Cut Pro 7 XML exports (which break adjustment clips, Fusion titles, and generators), BadWords uses a **Native DaVinci Resolve Timeline (`.drt`) Engine**:
-
-```mermaid
-flowchart TD
-    A["Source Timeline in Resolve"] -->|1. Export .drt| B["ZIP Archive Extraction"]
-    B -->|2. Parse SeqContainer XML| C["Calculate Frame-Accurate Cuts"]
-    C -->|3. Modify Start / Duration / In| D["Repack .drt Archive"]
-    D -->|4. Import into Resolve| E["Brand New Assembled Timeline"]
-    E -->|5. Apply Markers & Colors| F["Finished Output"]
-```
-
-#### What this guarantees:
-- **100% Non-Destructive:** Your source timeline is NEVER modified or overwritten.
-- **Preserves All Effects:** Video transitions, color grades, Fusion compositions, adjustment clips, and subtitles remain intact.
-- **Sub-50ms Timing Accuracy:** Incorporates a global calibrated temporal offset (`0.133s`) to align acoustic phonemes with video frames.
-
-<br>
-
----
-
-<br>
-
-### 5.3 Timeline Heatmap Overview
-Upon import into DaVinci Resolve, BadWords attaches native timeline markers to every edited region. This creates a color-coded "heatmap" directly inside Resolve’s Edit Page, allowing you to instantly spot where edits took place and inspect cuts visually.
-
-<br>
-
----
-
-<br>
-
-## 6. Settings & Preferences
+## 5. Settings & Preferences
 
 Clicking the Gear Icon Settings opens the **Settings Dialog**. You can switch between **Basic View** and **Advanced View** at the top.
 
@@ -647,7 +585,7 @@ Capture Settings dialog showing:
 
 <br>
 
-### 6.1 General Settings
+### 5.1 General Settings
 - **Interface Language (`Language`):** Switches UI language (English, Polish, German, French, Spanish, Russian, Italian, Japanese, Chinese, etc.).
 - **Accent Color:** Selects the theme accent color (Green, Blue, Purple, Orange, Red, Teal, Pink, Amber).
 - **App Icon:** Chooses the application window icon style.
@@ -661,7 +599,7 @@ Capture Settings dialog showing:
 
 <br>
 
-### 6.2 Interface & Transcript Formatting
+### 5.2 Interface & Transcript Formatting
 - **Transcript Layout Mode:** Choose between **Segmented Blocks** (breaks text into clean sentence chunks with `[00:14]` timestamp headers) and **Continuous Flow** (unbroken paragraph prose).
 - **Transcript Font & Font Size:** Changes typography and font scaling (pt).
 - **Line Spacing (px):** Adjusts vertical padding between lines.
@@ -675,7 +613,7 @@ Capture Settings dialog showing:
 
 <br>
 
-### 6.3 Audio Sync Calibration (Offset, Padding, Snap Max)
+### 5.3 Audio Sync Calibration (Offset, Padding, Snap Max)
 
 Fine-tune these parameters if you need razor-sharp acoustic synchronization:
 
@@ -691,7 +629,7 @@ Fine-tune these parameters if you need razor-sharp acoustic synchronization:
 
 <br>
 
-### 6.4 Keyboard & Mouse Shortcut Bindings
+### 5.4 Keyboard & Mouse Shortcut Bindings
 Configure custom keys for every action:
 - Switch to Red / Blue / Green Marker
 - Switch to Eraser
@@ -707,7 +645,7 @@ Configure custom keys for every action:
 
 <br>
 
-### 6.5 Custom Markers Configuration
+### 5.5 Custom Markers Configuration
 Create bespoke markers for your personal workflow:
 1. Click **`+ Add Marker`**.
 2. Enter a marker name (e.g., *"B-Roll Insert"* or *"Sound Effect"*).
@@ -721,7 +659,7 @@ Create bespoke markers for your personal workflow:
 
 <br>
 
-### 6.6 AI Engine Configuration (Advanced Mode)
+### 5.6 AI Engine Configuration (Advanced Mode)
 
 For power users who wish to customize the Faster-Whisper transcription engine:
 
@@ -741,7 +679,7 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 
 <br>
 
-### 6.7 Telemetry, Contact & Issue Reporting
+### 5.7 Telemetry, Contact & Issue Reporting
 - **Anonymous Telemetry:** 100% anonymous ping containing OS type and version number only (no audio or personal data is ever collected).
 - **Direct Support Form:** Enter an issue title and description, attach screenshots, and send a diagnostic ticket with log files directly to the developer with one click.
 
@@ -751,7 +689,7 @@ For power users who wish to customize the Faster-Whisper transcription engine:
 
 <br>
 
-## 7. Step-by-Step Practical Recipes ("How do I...?")
+## 6. Step-by-Step Practical Recipes ("How do I...?")
 
 <br>
 
@@ -854,7 +792,7 @@ sequenceDiagram
 
 <br>
 
-## 8. Shortcuts Cheat Sheet & FAQ
+## 7. Shortcuts Cheat Sheet & FAQ
 
 <br>
 
