@@ -6,23 +6,23 @@
 </p>
 
 <p align="center">
-  <a href="#-windows"><img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Download"></a>
-  <a href="#-windows"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
+  <a href="#windows"><img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0wIDBoMTEuMzc3djExLjM3Mkgwem0xMi42MjMgMEgyNHYxMS4zNzJIMTIuNjIzek0wIDEyLjYyM2gxMS4zNzdWMjRIMHptMTIuNjIzIDBIMjRWMjRIMTIuNjIzeiIvPjwvc3ZnPg==" alt="Windows"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="#-macos"><img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Script"></a>
-  <a href="#-macos"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
+  <a href="#macos"><img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="#-linux-any-distro"><img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux Script"></a>
-  <a href="#-linux-any-distro"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
+  <a href="#linux-any-distro"><img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
 </p>
 
 <p align="center">
-  <a href="docs/USER_GUIDE.md"><img src="https://img.shields.io/badge/DOCUMENTATION-Read_User_Manual-168f4d?style=for-the-badge&labelColor=333333" alt="User Guide"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/INSTALLATION-333333?style=for-the-badge&logo=gnubash&logoColor=white"><img src="https://img.shields.io/badge/QUICK_SETUP-168f4d?style=for-the-badge" alt="Quick Setup"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="docs/USER_GUIDE.md"><img src="https://img.shields.io/badge/DOCUMENTATION-333333?style=for-the-badge&logo=gitbook&logoColor=white"><img src="https://img.shields.io/badge/USER_MANUAL-168f4d?style=for-the-badge" alt="User Manual"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://img.shields.io/badge/SUPPORT-333333?style=for-the-badge&logo=buymeacoffee&logoColor=FFFFFF"><img src="https://img.shields.io/badge/BUY_ME_A_COFFEE-168f4d?style=for-the-badge" alt="Buy Me A Coffee"></a>
 </p>
 
----
 
-## What is it?
+## <img src="https://api.iconify.design/lucide:info.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> What is it?
 
 **BadWords** is a plugin-app for DaVinci Resolve built for anyone dealing with dialogue-heavy footage (podcasts, talking heads, gameplays). Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your workflow into an easy text-editing experience.
 
@@ -30,7 +30,7 @@ It uses local AI (Faster-Whisper) to give you a full transcript of your audio. Y
 
 BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the final polishing to you.
 
-## 🌟 Key Features
+## <img src="https://api.iconify.design/lucide:sparkles.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> Key Features
 
 Here is what makes BadWords stand out from other editing tools:
 
@@ -42,7 +42,7 @@ Here is what makes BadWords stand out from other editing tools:
 
 * **Convenient Silence Detection:** Yes, DaVinci Resolve now has its own silence cutter, but BadWords does it differently. Before scanning for silence, BadWords automatically normalizes the audio in the background. This means speech volume is leveled out, making the default silence threshold (-42dB) incredibly precise without you having to tweak it for every single project - just flip a switch. It even features "island absorption": random short noises like a desk bump or a quick cough get swallowed up and cut out as silence anyway.
 
-## ⚙️ How it works
+## <img src="https://api.iconify.design/lucide:workflow.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> How it works
 
 1. **Select & Transcribe:** Launch BadWords directly from Resolve, pick your audio tracks, and hit Analyze. The AI transcribes everything.
 2. **Edit like a Document:** Your audio opens as text in an IDE-inspired editor. You (or the algorithm) can paint words with different colors:
@@ -56,7 +56,7 @@ Here is what makes BadWords stand out from other editing tools:
   <img src="repo/heatmap_preview.png" alt="BadWords Heatmap" width="85%">
 </p>
 
-## ✨ Why use BadWords?
+## <img src="https://api.iconify.design/lucide:circle-check.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> Why use BadWords?
 
 - **Massive Time Saver:** Turns hours of manual clicking and scrubbing into a quick visual review. The silence detection alone is highly precise and will save you tons of time.
 - **100% Local & Private:** No cloud processing, no subscriptions, no data harvesting. All processing happens entirely on your own hardware (except for optional, anonymous telemetry).
@@ -65,7 +65,7 @@ Here is what makes BadWords stand out from other editing tools:
 
 ---
 
-## 🔥 What's New in 3.2?
+## <img src="https://api.iconify.design/lucide:flame.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> What's New in 3.2?
 
 Version 3.2 is another massive update. I dug deep into the core code to fix some of the most annoying bugs and completely rewrote how BadWords builds your final timeline. Here is what I managed to put together:
 
@@ -86,11 +86,12 @@ Version 3.2 is another massive update. I dug deep into the core code to fix some
 
 ---
 
-## 🛠️ Installation & Setup
+<a id="installation"></a>
+## <img src="https://api.iconify.design/lucide:wrench.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> Installation & Setup
 
 I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. You don't need to manually download zip files, configure paths, or install dependencies.
 
-### 📝 The Installation Process
+### <img src="https://api.iconify.design/lucide:download.svg?color=%23168f4d" width="18" height="18" valign="text-bottom"> The Installation Process
 
 1. **Copy the command** for your specific operating system from the section below.
 2. **Paste the command** into your terminal (PowerShell on Windows, Terminal on macOS/Linux) and press **Enter**.
@@ -108,14 +109,14 @@ I know that installing plugins can sometimes be a headache. That's why I made Ba
 
 ---
 
-### 🚀 Option 1: Automated Terminal Command (Recommended)
+### <img src="https://api.iconify.design/lucide:terminal.svg?color=%23168f4d" width="18" height="18" valign="text-bottom"> Option 1: Automated Terminal Command (Recommended)
 The absolute easiest way to start the setup. It securely downloads and runs the open-source installer script directly from this repository.
 
 > 🔍 *Note: The commands below only prepare your system before running the main installer. [You can view the core setup.py script here](https://github.com/veritus-git/BadWords/blob/main/setupfiles/setup.py).*
 
 <br>
 
-#### 🪟 Windows
+#### <img src="https://api.iconify.design/simple-icons:windows11.svg?color=%23168f4d" width="16" height="16" valign="text-bottom"> Windows
 Open the Start Menu, search for **PowerShell**, open it, paste the following command, and press **Enter**:
 
 ```powershell
@@ -125,7 +126,7 @@ irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/wind
 
 <br>
 
-#### 🍎 macOS
+#### <img src="https://api.iconify.design/simple-icons:apple.svg?color=%23168f4d" width="16" height="16" valign="text-bottom"> macOS
 > [!WARNING]
 > BadWords will not work with the Mac App Store version of DaVinci Resolve. Re-install from the [official website](https://www.blackmagicdesign.com/products/davinciresolve/) if needed.
 
@@ -139,7 +140,7 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 
 <br>
 
-#### 🐧 Linux (Any Distro)
+#### <img src="https://api.iconify.design/simple-icons:linux.svg?color=%23168f4d" width="16" height="16" valign="text-bottom"> Linux (Any Distro)
 Open your terminal, paste the following command, and press **Enter**:
 
 ```bash
@@ -150,7 +151,7 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 
 ---
 
-### 📦 Option 2: Manual Install
+### <img src="https://api.iconify.design/lucide:package.svg?color=%23168f4d" width="18" height="18" valign="text-bottom"> Option 2: Manual Install
 Don't like pasting terminal commands? I completely understand! You can run the setup manually:
 1. Go to the [Releases page](https://github.com/veritus-git/BadWords/releases/latest) and download the Source Code `.zip`.
 2. Extract the folder somewhere on your drive.
@@ -171,7 +172,7 @@ Don't like pasting terminal commands? I completely understand! You can run the s
 
 ---
 
-### 🛡️ Wait, are these terminal commands actually safe?
+### <img src="https://api.iconify.design/lucide:shield-check.svg?color=%23168f4d" width="18" height="18" valign="text-bottom"> Wait, are these terminal commands actually safe?
 Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here is why BadWords uses them and why you don't need to worry:
 
 * **Zero System Interference:** These commands **do not require Administrator / root privileges** (no `sudo` or "Run as Administrator" needed). Everything is downloaded into a safe, isolated directory in your local user folder.
@@ -180,7 +181,7 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 
 ---
 
-## 🎬 Launching in DaVinci Resolve
+## <img src="https://api.iconify.design/lucide:circle-arrow-up.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> Launching in DaVinci Resolve
 
 1. Open DaVinci Resolve and navigate to a project timeline.
 2. At the very top menu bar, click on **Workspace** → **Scripts** → **BadWords**.
@@ -190,14 +191,14 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 
 ---
 
-## 📋 Requirements
+## <img src="https://api.iconify.design/lucide:list-checks.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> Requirements
 - **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
 - **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
 - **Disk Space:** ~4GB free space for the app, plus 1–5GB depending on your chosen AI models.
 
 ---
 
-## 🎬 A little about me & the project
+## <img src="https://api.iconify.design/lucide:user.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> A little about me & the project
 
 Hi! I am Simon - the 17 year old solo-developer of BadWords. This project started totally randomly. It wasn't planned, it wasn't supposed to become a full-on program. Heck! It wasn't supposed to even leave my computer... but somehow it became the biggest and most advanced project I've made.
 It's probably not the best, the fastest, the cleanest, or the most useful thing you'll see... but while making it, I realized that it could actually be useful not only to me - but for many others.
@@ -208,11 +209,11 @@ Just by using BadWords and sending feedback, you are contributing to this projec
 **Support the Project!**  
 If BadWords saved you even a bit of time, consider buying me a coffee. It helps me maintain the project between school and life!
 
-<a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" align="top" width="250px" alt="Buy Me A Coffee Logo"></a>
+<a href="https://www.buymeacoffee.com/BadWords" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Bribe me with coffee&emoji=☕&slug=BadWords&button_colour=0b8e46&font_colour=ffffff&font_family=Inter&outline_colour=ffffff&coffee_colour=FFFFFF" alt="Bribe Me With Coffee" width="30%"/></a>
 
 ---
 
-## 🤝 Contribute & Contact
+## <img src="https://api.iconify.design/lucide:users.svg?color=%23168f4d" width="22" height="22" valign="text-bottom"> Contribute & Contact
 
 This is an open-source project. Feel free to open issues or pull requests to improve the tool!
 
