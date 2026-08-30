@@ -38,13 +38,13 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[4.2 Integrated Audio Player Controls](#42-integrated-audio-player-controls)<br>
 
 **[5. Settings & Preferences](#5-settings-preferences)**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.1 General Tab](#51-general-tab)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.2 Transcript & Interface Tab](#52-transcript-interface-tab)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.3 Shortcuts Tab](#53-shortcuts-tab)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.4 Custom Markers Tab](#54-custom-markers-tab)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.5 AI Engine Tab (Advanced View Only)](#55-ai-engine-tab-advanced-view-only)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.6 Telemetry & Privacy Tab](#56-telemetry-privacy-tab)<br>
-&nbsp;&nbsp;&nbsp;&nbsp;[5.7 Support & Bug Reporting Tab](#57-support-bug-reporting-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.1 ***General*** Tab](#51-general-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.2 ***Interface*** Tab](#52-interface-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.3 ***Shortcuts*** Tab](#53-shortcuts-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.4 ***Custom Markers*** Tab](#54-custom-markers-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.5 ***AI Engine*** Tab](#55-ai-engine-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.6 ***Telemetry*** Tab](#56-telemetry-tab)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;[5.7 ***Support*** Tab](#57-support-tab)<br>
 
 **[6. Step-by-Step Practical Recipes ("How do I...?")](#6-step-by-step-practical-recipes-how-do-i)**<br>
 &nbsp;&nbsp;&nbsp;&nbsp;[Recipe A: Cutting Video Based on a Written Script](#recipe-a-cutting-video-based-on-a-written-script)<br>
@@ -556,11 +556,9 @@ The bottom panel of the editor houses the **Audio Preview Bar**, eliminating gue
 ---
 
 <br>
+## 5. Settings & Preferences <img src="../assets/layout/settings.png" width="24" height="24" valign="middle">
 
-
-## 5. Settings & Preferences
-
-Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with granular developer parameters and unlocks the dedicated AI Engine tab). The screenshots below showcase the complete settings layout, while options available exclusively in Advanced View are explicitly marked with a note.
+Clicking the Gear icon in the bottom-left corner of the window (or pressing **`Escape`**) opens the **Settings Dialog**. The dialog allows you to toggle between **Basic View** (which presents a clean set of essential settings sufficient for the vast majority of workflows) and **Advanced View** (which expands specific tabs with more parameters and unlocks the dedicated AI Engine tab). The screenshots below showcase the complete settings layout, while options available exclusively in Advanced View are explicitly marked with a note.
 
 <p align="center">
   <img src="images/11_settings_dialog.png" alt="Settings Dialog Overview" width="90%">
@@ -572,10 +570,12 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.1 General Tab
+### 5.1 ***General*** Tab
+
+The **General** tab allows you to configure core application settings, including UI language, window icon styling, automatic update checks, and configuration backup.
 
 <p align="center">
-  <img src="images/11a_settings_general.png" alt="Settings General Tab" width="90%">
+  <img src="images/11a_settings_general.png" alt="Settings General Tab" width="60%">
 </p>
 
 - **Updates & Version Card:**
@@ -595,7 +595,9 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.2 Transcript & Interface Tab
+### 5.2 ***Interface*** Tab
+
+The **Interface** tab lets you customize how your transcript looks and behaves, adjust font scaling and line spacing, and control synchronization with DaVinci Resolve.
 
 <p align="center">
   <img src="images/11b_settings_transcript.png" alt="Settings Transcript Tab" width="90%">
@@ -628,7 +630,9 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.3 Shortcuts Tab
+### 5.3 ***Shortcuts*** Tab
+
+The **Shortcuts** tab enables you to customize keyboard and mouse bindings for word painting, playback controls, navigation, and search.
 
 <p align="center">
   <img src="images/11c_settings_shortcuts.png" alt="Settings Shortcuts Tab" width="90%">
@@ -650,7 +654,9 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.4 Custom Markers Tab
+### 5.4 ***Custom Markers*** Tab
+
+The **Custom Markers** tab allows you to create, organize, and reorder custom color markers mapped to DaVinci Resolve clip colors for specialized workflows.
 
 <p align="center">
   <img src="images/11d_settings_markers.png" alt="Settings Custom Markers Tab" width="90%">
@@ -669,7 +675,9 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.5 AI Engine Tab (Advanced View Only)
+### 5.5 ***AI Engine*** Tab
+
+The **AI Engine** tab provides deep control over neural speech recognition, hardware acceleration (GPU/CPU), and acoustic Whisper inference parameters.
 
 <p align="center">
   <img src="images/11e_settings_ai_engine.png" alt="Settings AI Engine Tab" width="90%">
@@ -698,7 +706,9 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.6 Telemetry & Privacy Tab
+### 5.6 ***Telemetry*** Tab
+
+The **Telemetry** tab allows you to manage anonymous diagnostics and privacy options, and provides direct links to community resources.
 
 <p align="center">
   <img src="images/11f_settings_telemetry.png" alt="Settings Telemetry Tab" width="90%">
@@ -714,7 +724,9 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 
 <br>
 
-### 5.7 Support & Bug Reporting Tab
+### 5.7 ***Support*** Tab
+
+The **Support** tab lets you locate local debug log files for troubleshooting and submit diagnostic support tickets directly to the developer.
 
 <p align="center">
   <img src="images/11g_settings_support.png" alt="Settings Support Tab" width="90%">
@@ -731,6 +743,8 @@ Clicking the Gear icon in the bottom-left corner of the window (or pressing **`E
 ---
 
 <br>
+
+
 
 
 
