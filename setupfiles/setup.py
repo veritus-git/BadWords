@@ -1834,7 +1834,9 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         else:
             console.print(Text(f"{PAD}   1. A restart of DaVinci Resolve might be required.", style="yellow"), no_wrap=True)
             console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
-        console.print()
+        if ARGS.non_interactive or ARGS.no_launch:
+            return
+
         console.print(Text(f"{PAD}Launch BadWords now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
         sys.stdout.flush()
         launched = False
@@ -1856,7 +1858,8 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         if tmp_dl:
             shutil.rmtree(tmp_dl, ignore_errors=True)
 
-    pause(f"{PAD}Press Enter to exit...")
+    if not ARGS.non_interactive:
+        pause(f"{PAD}Press Enter to exit...")
 
 # ── Dummy stubs ───────────────────────────────────────────────
 def option_dummy(n, label):
