@@ -26,12 +26,12 @@ pub fn has_system_python() -> bool {
                 }
             }
         }
-        if let Ok(out) = std::process::Command::new("where.exe").arg("python").output() {
+        if let Ok(out) = crate::os::create_hidden_command("where.exe").arg("python").output() {
             if out.status.success() {
                 return true;
             }
         }
-        if let Ok(out) = std::process::Command::new("py.exe").arg("-0").output() {
+        if let Ok(out) = crate::os::create_hidden_command("py.exe").arg("-0").output() {
             if out.status.success() && String::from_utf8_lossy(&out.stdout).contains("3.") {
                 return true;
             }
@@ -59,7 +59,7 @@ pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
 
         if py_installer.exists() {
             crate::state::emit_log(sender, "INFO", "Installing System Python 3.10 (PrependPath=1)...");
-            let status = std::process::Command::new(&py_installer)
+            let status = crate::os::create_hidden_command(&py_installer)
                 .args(["/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0", "Include_launcher=0"])
                 .status();
 
@@ -187,8 +187,8 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
         }
 
         let full_script = script_parts.join(" ");
-        let _ = std::process::Command::new("powershell")
-            .args(&["-NoProfile", "-NonInteractive", "-Command", &full_script])
+        let _ = crate::os::create_hidden_command("powershell")
+            .args(&["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &full_script])
             .output();
     }
 
@@ -201,19 +201,23 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
 }
 
 #[allow(dead_code)]
-/// Removes Desktop and Start Menu shortcuts on Windows
+/// Removes Desktop and Start Menu shortcuts on Windows in pure Rust without launching PowerShell
 pub fn remove_windows_shortcuts() -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
-        let script = 
-            "$desktop = [Environment]::GetFolderPath('Desktop'); \
-             $programs = [Environment]::GetFolderPath('Programs'); \
-             Remove-Item \"$desktop\\BadWords.lnk\" -Force -ErrorAction SilentlyContinue; \
-             Remove-Item \"$programs\\BadWords.lnk\" -Force -ErrorAction SilentlyContinue;";
-
-        let _ = std::process::Command::new("powershell")
-            .args(&["-NoProfile", "-NonInteractive", "-Command", script])
-            .output();
+        if let Some(user_home) = dirs::home_dir() {
+            let desktop_lnk = user_home.join("Desktop").join("BadWords.lnk");
+            let _ = std::fs::remove_file(desktop_lnk);
+        }
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let menu_lnk = Path::new(&appdata)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Start Menu")
+                .join("Programs")
+                .join("BadWords.lnk");
+            let _ = std::fs::remove_file(menu_lnk);
+        }
     }
 
     Ok(())

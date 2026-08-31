@@ -569,14 +569,25 @@ impl eframe::App for InstallerApp {
             Screen::Complete => {
                 if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::Space)) {
                     if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
-                        #[allow(unused_variables)]
                         let target = self.current_target_path();
                         #[cfg(target_os = "windows")]
-                        let _ = std::process::Command::new(target.join("BadWords.exe")).spawn();
+                        {
+                            let pythonw = target.join("venv").join("Scripts").join("pythonw.exe");
+                            let main_py = target.join("main.py");
+                            let _ = os::create_hidden_command(&pythonw).arg(&main_py).spawn();
+                        }
                         #[cfg(target_os = "macos")]
-                        let _ = std::process::Command::new("open").arg("-a").arg("BadWords").spawn();
+                        {
+                            let python = target.join("venv").join("bin").join("python3");
+                            let main_py = target.join("main.py");
+                            let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                        }
                         #[cfg(target_os = "linux")]
-                        let _ = std::process::Command::new(target.join("main.py")).spawn();
+                        {
+                            let python = target.join("venv").join("bin").join("python");
+                            let main_py = target.join("main.py");
+                            let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                        }
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -1286,14 +1297,25 @@ impl eframe::App for InstallerApp {
                                                 Screen::Complete => {
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_finish) {
                                                         if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
-                                                            #[allow(unused_variables)]
                                                             let target = self.current_target_path();
                                                             #[cfg(target_os = "windows")]
-                                                            let _ = std::process::Command::new(target.join("BadWords.exe")).spawn();
+                                                            {
+                                                                let pythonw = target.join("venv").join("Scripts").join("pythonw.exe");
+                                                                let main_py = target.join("main.py");
+                                                                let _ = os::create_hidden_command(&pythonw).arg(&main_py).spawn();
+                                                            }
                                                             #[cfg(target_os = "macos")]
-                                                            let _ = std::process::Command::new("open").arg("-a").arg("BadWords").spawn();
+                                                            {
+                                                                let python = target.join("venv").join("bin").join("python3");
+                                                                let main_py = target.join("main.py");
+                                                                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                                                            }
                                                             #[cfg(target_os = "linux")]
-                                                            let _ = std::process::Command::new(target.join("main.py")).spawn();
+                                                            {
+                                                                let python = target.join("venv").join("bin").join("python");
+                                                                let main_py = target.join("main.py");
+                                                                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                                                            }
                                                         }
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                                     }

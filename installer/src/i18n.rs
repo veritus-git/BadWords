@@ -94,12 +94,14 @@ impl Language {
 
         #[cfg(target_os = "windows")]
         {
-            // Fallback for Windows PowerShell / CMD locale
-            if let Ok(out) = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-Command", "[System.Globalization.CultureInfo]::InstalledUICulture.Name"])
-                .output()
-            {
-                let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn GetUserDefaultLocaleName(lp_locale_name: *mut u16, cch_locale_name: i32) -> i32;
+            }
+            let mut buf = [0u16; 85];
+            let len = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
+            if len > 0 {
+                let s = String::from_utf16_lossy(&buf[..(len as usize - 1)]).to_lowercase();
                 if s.starts_with("pl") { return Language::Pl; }
                 if s.starts_with("de") { return Language::De; }
                 if s.starts_with("es") { return Language::Es; }
