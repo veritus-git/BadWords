@@ -28,6 +28,12 @@ if ($LocalDebug -and (Test-Path $LocalDebug)) {
     Start-Process -FilePath $LocalDebug -ArgumentList $args
     exit 0
 }
+$CargoToml = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\Cargo.toml" } else { "" }
+if ($CargoToml -and (Test-Path $CargoToml) -and (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
+    Write-Host "Compiling and launching BadWords Setup via cargo..." -ForegroundColor Cyan
+    cargo run --release --manifest-path "$CargoToml" -- $args
+    exit 0
+}
 
 # 2. Remote download
 $CacheDir = Join-Path $env:LOCALAPPDATA "BadWords-bootstrap"
