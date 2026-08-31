@@ -130,8 +130,10 @@ pub fn resolve_script_dirs() -> Vec<PathBuf> {
     {
         if let Some(home) = dirs::home_dir() {
             raw_paths.push(home.join(".local").join("share").join("DaVinciResolve").join("Fusion").join("Scripts").join("Utility"));
+            raw_paths.push(home.join(".var").join("app").join("com.blackmagicdesign.resolve").join("data").join("DaVinciResolve").join("Fusion").join("Scripts").join("Utility"));
         }
         raw_paths.push(PathBuf::from("/opt/resolve/libs/Fusion/Scripts/Utility"));
+        raw_paths.push(PathBuf::from("/opt/resolve/Fusion/Scripts/Utility"));
     }
 
     // Deduplicate while preserving order
@@ -162,10 +164,10 @@ pub fn detect_existing_install() -> Option<PathBuf> {
         return Some(p);
     }
 
-    // 2. Check DaVinci Resolve script wrappers
+    // 2. Check DaVinci Resolve script wrappers (legacy versions e.g. 3.2.4)
     let script_dirs = resolve_script_dirs();
     for dir in script_dirs {
-        for filename in ["BadWords.py", "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (Windows).py"] {
+        for filename in ["BadWords.py", "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (Windows).py", "Badwords.py"] {
             let wrapper = dir.join(filename);
             if wrapper.is_file() {
                 if let Ok(content) = std::fs::read_to_string(&wrapper) {

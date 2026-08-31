@@ -841,6 +841,7 @@ def detect_existing_install(default_dir, resolve_script_dirs):
     # 4. Resolve wrappers check
     for resolve_dir in resolve_script_dirs:
         for wf in [os.path.join(resolve_dir, "BadWords.py"),
+                   os.path.join(resolve_dir, "Badwords.py"),
                    os.path.join(resolve_dir, "BadWords (Linux).py"),
                    os.path.join(resolve_dir, "BadWords (Mac).py"),
                    os.path.join(resolve_dir, "BadWords (Windows).py")]:
