@@ -948,6 +948,127 @@ else:
     return wrapper_count > 0
 
 
+def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
+    install_dir = os.path.abspath(install_dir)
+    main_py = os.path.join(install_dir, "main.py")
+    icon_ico = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
+    icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
+
+    if os.name == "nt":
+        pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+        ps_commands = ["$ws = New-Object -ComObject WScript.Shell;"]
+        if create_desktop:
+            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{pyw_path}'; $s1.Arguments = '\"{main_py}\"'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{icon_ico},0'; $s1.Save();")
+        if create_menu:
+            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{pyw_path}'; $s2.Arguments = '\"{main_py}\"'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{icon_ico},0'; $s2.Save();")
+        
+        full_script = " ".join(ps_commands)
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True)
+
+        # Register in Windows Add/Remove Programs (HKCU)
+        try:
+            import winreg
+            hkcu = winreg.HKEY_CURRENT_USER
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords"
+            key = winreg.CreateKey(hkcu, key_path)
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "BadWords")
+            winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, "4.0.0")
+            winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Szymon Wolarz")
+            winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, str(install_dir))
+            winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, str(icon_ico))
+            setup_script = os.path.join(install_dir, "setupfiles", "setup.py")
+            py_bin = os.path.join(install_dir, "venv", "Scripts", "python.exe")
+            winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, f'"{py_bin}" "{setup_script}" --uninstall')
+            winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, "https://github.com/veritus-git/BadWords")
+            winreg.CloseKey(key)
+        except Exception as e:
+            debug_log(f"Registry registration error: {e}")
+
+    elif sys.platform.startswith("linux"):
+        py_bin = os.path.join(install_dir, "venv", "bin", "python")
+        desktop_content = f"""[Desktop Entry]
+Type=Application
+Name=BadWords
+Comment=AI Automated Profanity & Silence Detection for DaVinci Resolve
+Exec="{py_bin}" "{main_py}"
+Path={install_dir}
+Icon={icon_png}
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;
+StartupWMClass=BadWords
+Keywords=davinci;resolve;subtitles;ai;whisper;
+"""
+        home = os.path.expanduser("~")
+        apps_dir = os.path.join(home, ".local", "share", "applications")
+        os.makedirs(apps_dir, exist_ok=True)
+        try:
+            with open(os.path.join(apps_dir, "badwords.desktop"), "w", encoding="utf-8") as f:
+                f.write(desktop_content)
+        except Exception:
+            pass
+
+        if create_desktop:
+            dt_dir = os.path.join(home, "Desktop")
+            if os.path.exists(dt_dir):
+                dt_file = os.path.join(dt_dir, "badwords.desktop")
+                try:
+                    with open(dt_file, "w", encoding="utf-8") as f:
+                        f.write(desktop_content)
+                    os.chmod(dt_file, 0o755)
+                    subprocess.run(["gio", "set", dt_file, "metadata::trusted", "true"], capture_output=True)
+                except Exception:
+                    pass
+
+        subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
+
+def _remove_os_shortcuts(install_dir=None):
+    if os.name == "nt":
+        try:
+            home = os.path.expanduser("~")
+            dt_lnk = os.path.join(home, "Desktop", "BadWords.lnk")
+            if os.path.exists(dt_lnk):
+                try: os.remove(dt_lnk)
+                except: pass
+            appdata = os.environ.get("APPDATA")
+            if appdata:
+                prog_lnk = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "BadWords.lnk")
+                if os.path.exists(prog_lnk):
+                    try: os.remove(prog_lnk)
+                    except: pass
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+                winreg.DeleteKey(key, "BadWords")
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    elif sys.platform.startswith("linux"):
+        home = os.path.expanduser("~")
+        for p in [os.path.join(home, ".local", "share", "applications", "badwords.desktop"),
+                  os.path.join(home, "Desktop", "badwords.desktop")]:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except Exception: pass
+
+def _launch_badwords(install_dir):
+    if os.name == "nt":
+        pyw = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+        main_py = os.path.join(install_dir, "main.py")
+        if os.path.isfile(pyw) and os.path.isfile(main_py):
+            subprocess.Popen([pyw, main_py], cwd=install_dir)
+            return True
+    else:
+        py = os.path.join(install_dir, "venv", "bin", "python")
+        main_py = os.path.join(install_dir, "main.py")
+        if os.path.isfile(py) and os.path.isfile(main_py):
+            subprocess.Popen([py, main_py], cwd=install_dir)
+            return True
+    return False
+
+
 # ── Option 1 — Standard Install / Update ─────────────────────
 def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green"):
     header()
@@ -986,6 +1107,23 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
             install_dir = custom
             log_info(f"Using custom path: {install_dir}")
+
+    # Shortcuts options
+    console.print(Text(f"{PAD}Create Desktop shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        ans_dt = readline_with_esc()
+        create_desktop = ans_dt.strip().lower() != "n"
+    except UserCancelled:
+        create_desktop = True
+
+    console.print(Text(f"{PAD}Create Start Menu shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
+    sys.stdout.flush()
+    try:
+        ans_menu = readline_with_esc()
+        create_menu = ans_menu.strip().lower() != "n"
+    except UserCancelled:
+        create_menu = True
 
     # Aggressively clean up old Inno Setup (Add/Remove Programs) leftovers
     _clean_legacy_inno_setup(install_dir)
@@ -1634,6 +1772,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             except Exception as e:
                 log_warn(f"Failed to create dev.json: {e}")
 
+        # ── OS Shortcuts & Registry Integration ───────────────
+        _create_os_shortcuts(install_dir, create_desktop=create_desktop, create_menu=create_menu)
+        log_ok("System shortcuts & application registration updated.")
+
         # ── Done ─────────────────────────────────────────────
         console.print()
         console.print(Text(f"{PAD}✓  INSTALLATION SUCCESSFUL!", style="bold green"), no_wrap=True)
@@ -1650,6 +1792,17 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         else:
             console.print(Text(f"{PAD}   1. A restart of DaVinci Resolve might be required.", style="yellow"), no_wrap=True)
             console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
+        console.print()
+
+        console.print(Text(f"{PAD}Launch BadWords now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            launch_ans = readline_with_esc()
+            if launch_ans.strip().lower() != "n":
+                if _launch_badwords(install_dir):
+                    log_ok("BadWords launched.")
+        except UserCancelled:
+            pass
         console.print()
 
     finally:
@@ -2059,11 +2212,13 @@ def option_move():
     else:
         log_warn("Could not locate site-packages in new venv.")
 
-    # ── Step 6: Update DaVinci Resolve wrapper ───────────────
+    # ── Step 6: Update DaVinci Resolve wrapper & shortcuts ───
     console.print()
-    log_step("Updating DaVinci Resolve wrapper...")
+    log_step("Updating DaVinci Resolve wrapper & system shortcuts...")
+    _remove_os_shortcuts(install_dir)
+    _create_os_shortcuts(new_path)
     if _create_davinci_wrappers(new_path, resolve_dirs):
-        log_ok("Wrapper updated.")
+        log_ok("Wrapper and shortcuts updated.")
     else:
         log_warn("Failed to update wrapper.")
 
@@ -2315,15 +2470,20 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
     else:
         log_warn("No DaVinci Resolve wrappers found (may have already been removed).")
 
-    # Step 2: Clean Windows registry (before dir removal)
+    # Step 2: Clean Windows registry and system shortcuts
+    log_step("Cleaning system shortcuts and registry...")
+    for d in all_install_dirs:
+        try:
+            _remove_os_shortcuts(d)
+        except Exception as e:
+            debug_log(f"Shortcut cleanup error for {d}: {e}")
     if PLAT.startswith("win"):
-        log_step("Cleaning Windows registry entries...")
         for d in all_install_dirs:
             try:
                 _clean_legacy_inno_setup(d)
             except Exception as e:
                 log_warn(f"Registry cleanup error for {d}: {e}")
-        log_ok("Registry cleaned.")
+    log_ok("Shortcuts & registry cleaned.")
 
     # Step 3: Remove all found installation directories
     for install_dir in all_install_dirs:
