@@ -2,11 +2,13 @@
 
 mod dialogs;
 mod engine;
+mod i18n;
 mod os;
 mod state;
 
 use eframe::egui;
 use engine::APP_VERSION;
+use i18n::Language;
 use state::IpcEvent;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -47,6 +49,11 @@ fn main() -> eframe::Result<()> {
     // Reset log file for fresh session
     let _ = std::fs::write(state::log_file_path(), "=== BadWords Setup Session Log ===\n");
 
+    // CLI / Headless integration mode for testing & CI
+    if args.iter().any(|a| a == "--cli" || a == "--headless") {
+        return run_headless_cli(&args);
+    }
+
     // 650x550 okno + 28px marginesu na wielowarstwowy cień Gaussa = 706x606
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -71,6 +78,62 @@ fn main() -> eframe::Result<()> {
             Box::new(InstallerApp::new_with_args(&app_args))
         }),
     )
+}
+
+/// Headless CLI runner for GitHub Actions & automated scripts
+fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
+    println!("[CLI] BadWords Installer {} Headless Engine Initialized", APP_VERSION);
+    let (tx, rx) = channel();
+
+    let target_dir = if let Some(idx) = args.iter().position(|a| a == "--install" || a == "--dir") {
+        if idx + 1 < args.len() {
+            PathBuf::from(&args[idx + 1])
+        } else {
+            os::default_install_dir()
+        }
+    } else {
+        os::default_install_dir()
+    };
+
+    let create_dt = !args.iter().any(|a| a == "--no-desktop-shortcut");
+    let create_menu = !args.iter().any(|a| a == "--no-menu-shortcut");
+
+    if args.iter().any(|a| a == "--uninstall") {
+        println!("[CLI] Running headless uninstall on: {}", target_dir.display());
+        engine::run_uninstall(target_dir, tx);
+    } else if args.iter().any(|a| a == "--repair") {
+        println!("[CLI] Running headless repair on: {}", target_dir.display());
+        engine::run_repair(target_dir, tx);
+    } else if args.iter().any(|a| a == "--reset") {
+        println!("[CLI] Running headless reset on: {}", target_dir.display());
+        engine::run_reset(target_dir, tx);
+    } else {
+        println!("[CLI] Running headless install to: {}", target_dir.display());
+        engine::run_install(target_dir, create_dt, create_menu, tx);
+    }
+
+    while let Ok(event) = rx.recv() {
+        if event.event == "log" {
+            let lvl = event.data.get("level").and_then(|v| v.as_str()).unwrap_or("INFO");
+            let msg = event.data.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            println!("[{}] {}", lvl, msg);
+        } else if event.event == "progress" {
+            let pct = event.data.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let status = event.data.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let details = event.data.get("details").and_then(|v| v.as_str()).unwrap_or("");
+            println!("[STEP {:.0}%] {} - {}", pct, status, details);
+        } else if event.event == "complete" {
+            let success = event.data.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+            let msg = event.data.get("message").and_then(|v| v.as_str()).unwrap_or("Complete");
+            println!("[COMPLETE] success={} message={}", success, msg);
+            if !success {
+                std::process::exit(1);
+            }
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 /// Standalone terminal process - 100% niezależny proces OS bez lagów
@@ -177,6 +240,10 @@ struct InstallerApp {
     action: Option<InstallAction>,
     menu_selected_index: usize,
     keyboard_navigation_active: bool,
+    language: Language,
+    language_dropdown_open: bool,
+    create_desktop_shortcut: bool,
+    create_start_menu_shortcut: bool,
     install_path_str: String,
     detected_existing: Option<PathBuf>,
     status_title: String,
@@ -187,6 +254,7 @@ struct InstallerApp {
     displayed_sub_progress: f32,
     launch_on_finish: bool,
     logs: Vec<LogEntry>,
+    terminal_child: Option<std::process::Child>,
     tx: Sender<IpcEvent>,
     rx: Receiver<IpcEvent>,
 }
@@ -207,6 +275,10 @@ impl InstallerApp {
             action: None,
             menu_selected_index: 0,
             keyboard_navigation_active: false,
+            language: Language::auto_detect(),
+            language_dropdown_open: false,
+            create_desktop_shortcut: true,
+            create_start_menu_shortcut: true,
             install_path_str: path_str,
             detected_existing: detected,
             status_title: "Ready to begin.".to_string(),
@@ -217,6 +289,7 @@ impl InstallerApp {
             displayed_sub_progress: 0.0,
             launch_on_finish: true,
             logs: vec![],
+            terminal_child: None,
             tx,
             rx,
         }
@@ -238,9 +311,18 @@ impl InstallerApp {
         PathBuf::from(self.install_path_str.trim())
     }
 
-    fn spawn_terminal(&self) {
+    fn toggle_terminal(&mut self) {
+        if let Some(ref mut child) = self.terminal_child {
+            if child.try_wait().ok().flatten().is_none() {
+                let _ = child.kill();
+                self.terminal_child = None;
+                return;
+            }
+        }
         if let Ok(exe) = std::env::current_exe() {
-            let _ = std::process::Command::new(exe).arg("--terminal").spawn();
+            if let Ok(child) = std::process::Command::new(exe).arg("--terminal").spawn() {
+                self.terminal_child = Some(child);
+            }
         }
     }
 
@@ -258,7 +340,7 @@ impl InstallerApp {
 
         match self.action {
             Some(InstallAction::InstallUpdate) => {
-                engine::run_install(target, tx);
+                engine::run_install(target, self.create_desktop_shortcut, self.create_start_menu_shortcut, tx);
             }
             Some(InstallAction::Repair) => {
                 engine::run_repair(target, tx);
@@ -310,6 +392,8 @@ impl eframe::App for InstallerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let t = self.language.t();
+
         // Płynna animacja pasków postępu (lerp)
         if self.screen == Screen::Progress {
             let target_p = self.progress;
@@ -379,12 +463,16 @@ impl eframe::App for InstallerApp {
 
         // ── Sterowanie Klawiaturą ─────────────────────────────────────
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            if self.language_dropdown_open {
+                self.language_dropdown_open = false;
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
 
-        // Skrót 'T' odpala dedykowany, całkowicie płynny proces terminala
+        // Skrót 'T' przełącza (otwiera/chowa) okno terminala
         if ctx.input(|i| i.key_pressed(egui::Key::T) && !i.raw.modifiers.command && !i.raw.modifiers.ctrl) && self.screen != Screen::SelectPath {
-            self.spawn_terminal();
+            self.toggle_terminal();
         }
 
         match self.screen {
@@ -453,38 +541,25 @@ impl eframe::App for InstallerApp {
             }
         }
 
-        // ── Główny Panel Aplikacji ───────────────────────────────────
+        // ── Główny Panel Aplikacji (Ścisłe wymiary 650x550 w oknie 706x606) ──
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT).inner_margin(0.0))
             .show(ctx, |ui| {
-                
                 let margin = 28.0;
                 let window_rect = egui::Rect::from_min_size(
                     ui.min_rect().min + egui::vec2(margin, margin),
                     egui::vec2(650.0, 550.0),
                 );
 
-                // 3 warstwy miękkiego cienia Gaussa
                 let painter = ui.painter();
+
+                // 8-warstwowy, ultra-gładki cień Gaussa
                 let shadow_layers = [
-                    egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 1.0),
-                        blur: 8.0,
-                        spread: 1.0,
-                        color: egui::Color32::from_black_alpha(45),
-                    },
-                    egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 3.0),
-                        blur: 18.0,
-                        spread: 2.0,
-                        color: egui::Color32::from_black_alpha(35),
-                    },
-                    egui::epaint::Shadow {
-                        offset: egui::vec2(0.0, 5.0),
-                        blur: 28.0,
-                        spread: 3.0,
-                        color: egui::Color32::from_black_alpha(20),
-                    },
+                    egui::epaint::Shadow { offset: egui::vec2(0.0, 1.0), blur: 3.0, spread: 0.0, color: egui::Color32::from_black_alpha(65) },
+                    egui::epaint::Shadow { offset: egui::vec2(0.0, 2.0), blur: 6.0, spread: 0.5, color: egui::Color32::from_black_alpha(55) },
+                    egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 10.0, spread: 1.0, color: egui::Color32::from_black_alpha(45) },
+                    egui::epaint::Shadow { offset: egui::vec2(0.0, 4.0), blur: 18.0, spread: 2.0, color: egui::Color32::from_black_alpha(35) },
+                    egui::epaint::Shadow { offset: egui::vec2(0.0, 6.0), blur: 28.0, spread: 3.0, color: egui::Color32::from_black_alpha(25) },
                 ];
 
                 for shadow in shadow_layers {
@@ -499,6 +574,8 @@ impl eframe::App for InstallerApp {
                     .outer_margin(margin)
                     .rounding(0.0)
                     .show(ui, |ui| {
+                        ui.set_width(650.0);
+                        ui.set_height(550.0);
                         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
 
                         ui.vertical(|ui| {
@@ -516,7 +593,7 @@ impl eframe::App for InstallerApp {
                                     ui.horizontal(|ui| {
                                         ui.spacing_mut().item_spacing.x = 0.0;
                                         
-                                        let (close_rect, min_rect) = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let (close_rect, min_rect, term_rect) = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             let button_size = [46.0, 36.0];
                                             let stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_gray(215));
                                             
@@ -531,6 +608,7 @@ impl eframe::App for InstallerApp {
                                             let center = close_rect.center();
                                             ui.painter().line_segment([center + egui::vec2(-4.5, -4.5), center + egui::vec2(4.5, 4.5)], stroke);
                                             ui.painter().line_segment([center + egui::vec2(-4.5, 4.5), center + egui::vec2(4.5, -4.5)], stroke);
+                                            close_resp.on_hover_text(t.close_tooltip);
 
                                             // Minimalizuj (-)
                                             let (min_rect, min_resp) = ui.allocate_exact_size(button_size.into(), egui::Sense::click());
@@ -542,6 +620,32 @@ impl eframe::App for InstallerApp {
                                             }
                                             let m_center = min_rect.center();
                                             ui.painter().line_segment([m_center + egui::vec2(-4.5, 0.0), m_center + egui::vec2(4.5, 0.0)], stroke);
+                                            min_resp.on_hover_text(t.minimize_tooltip);
+
+                                            // Przycisk Terminala (SVG prompt '>' i kursor '_')
+                                            let term_size = [36.0, 36.0];
+                                            let (term_rect, term_resp) = ui.allocate_exact_size(term_size.into(), egui::Sense::click());
+                                            if term_resp.clicked() {
+                                                self.toggle_terminal();
+                                            }
+                                            let is_term_hovered = term_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| term_rect.contains(p)));
+                                            let term_stroke_color = if is_term_hovered {
+                                                ui.painter().rect_filled(term_rect, 0.0, egui::Color32::from_white_alpha(15));
+                                                egui::Color32::WHITE
+                                            } else {
+                                                egui::Color32::from_gray(180)
+                                            };
+                                            let t_center = term_rect.center();
+                                            let t_stroke = egui::Stroke::new(1.6_f32, term_stroke_color);
+                                            let p1 = t_center + egui::vec2(-6.0, -4.5);
+                                            let p2 = t_center + egui::vec2(-1.5, 0.0);
+                                            let p3 = t_center + egui::vec2(-6.0, 4.5);
+                                            ui.painter().line_segment([p1, p2], t_stroke);
+                                            ui.painter().line_segment([p2, p3], t_stroke);
+                                            let c1 = t_center + egui::vec2(0.5, 4.5);
+                                            let c2 = t_center + egui::vec2(6.5, 4.5);
+                                            ui.painter().line_segment([c1, c2], t_stroke);
+                                            term_resp.on_hover_text(t.terminal_tooltip);
                                             
                                             // Lewa strona (ikona + tytuł)
                                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -558,13 +662,13 @@ impl eframe::App for InstallerApp {
                                                 );
                                             });
 
-                                            (close_rect, min_rect)
+                                            (close_rect, min_rect, term_rect)
                                         }).inner;
 
-                                        // Drag okna
+                                        // Drag okna (wykluczając przyciski)
                                         if ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
                                             if let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) {
-                                                if title_bar_rect.contains(pos) && !close_rect.contains(pos) && !min_rect.contains(pos) {
+                                                if title_bar_rect.contains(pos) && !close_rect.contains(pos) && !min_rect.contains(pos) && !term_rect.contains(pos) {
                                                     ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                                                 }
                                             }
@@ -572,7 +676,7 @@ impl eframe::App for InstallerApp {
                                     });
                                 });
 
-                            // 2. GŁÓWNY OBSZAR (459px, RGB 30, 30, 30)
+                            // 2. GŁÓWNY OBSZAR ZAWARTOSCI (650x459px, ścisłe ograniczenie szerokości)
                             egui::Frame::none()
                                 .fill(egui::Color32::from_rgb(30, 30, 30))
                                 .rounding(0.0)
@@ -581,31 +685,49 @@ impl eframe::App for InstallerApp {
                                     ui.set_height(459.0);
                                     ui.set_width(650.0);
 
-                                    ui.horizontal_top(|ui| {
+                                    ui.horizontal(|ui| {
                                         ui.spacing_mut().item_spacing.x = 0.0;
+
+                                        // Lewy Panel: Banner Wizualny (210px)
+                                        let banner_size = egui::vec2(210.0, 459.0);
+                                        let (banner_rect, _) = ui.allocate_exact_size(banner_size, egui::Sense::hover());
                                         
-                                        // Lewa kolumna: Banner Inno Setup (187x459px)
-                                        ui.add(
-                                            egui::Image::new(egui::include_image!("../setup-banner.png"))
-                                                .fit_to_exact_size(egui::vec2(187.0, 459.0))
-                                        );
+                                        ui.painter().rect_filled(banner_rect, 0.0, egui::Color32::from_rgb(20, 20, 20));
                                         
-                                        // Prawa kolumna (463x459px): Dynamiczna treść
+                                        // Pasek gradientu pionowego po lewej stronie bannera
+                                        let edge_rect = egui::Rect::from_min_size(banner_rect.min, egui::vec2(3.0, banner_rect.height()));
+                                        let mut edge_mesh = egui::Mesh::default();
+                                        edge_mesh.colored_vertex(edge_rect.left_top(), egui::Color32::from_rgb(26, 122, 62));
+                                        edge_mesh.colored_vertex(edge_rect.right_top(), egui::Color32::from_rgb(26, 122, 62));
+                                        edge_mesh.colored_vertex(edge_rect.left_bottom(), egui::Color32::from_rgb(184, 208, 53));
+                                        edge_mesh.colored_vertex(edge_rect.right_bottom(), egui::Color32::from_rgb(184, 208, 53));
+                                        edge_mesh.add_triangle(0, 1, 2);
+                                        edge_mesh.add_triangle(2, 1, 3);
+                                        ui.painter().add(egui::Shape::Mesh(edge_mesh));
+
+                                        // Duża Ikona BadWords
+                                        let icon_center = banner_rect.center();
+                                        let icon_size = 148.0;
+                                        let icon_rect = egui::Rect::from_center_size(icon_center, egui::vec2(icon_size, icon_size));
+                                        egui::Image::new(egui::include_image!("../../assets/icons/icon_default.png"))
+                                            .paint_at(ui, icon_rect);
+
+                                        // Prawy Panel: Zawartość Ekranu (Dokładnie 400px szerokości + 24px gwarantowanego prawego paddingu)
                                         ui.allocate_ui_with_layout(
-                                            egui::vec2(463.0, 459.0),
-                                            egui::Layout::top_down(egui::Align::Min),
+                                            egui::vec2(440.0, 459.0),
+                                            egui::Layout::top_down(egui::Align::LEFT),
                                             |ui| {
+                                                ui.set_max_width(400.0);
                                                 egui::Frame::none()
-                                                    .inner_margin(egui::Margin::symmetric(24.0, 22.0))
+                                                    .inner_margin(egui::Margin { left: 24.0, right: 24.0, top: 28.0, bottom: 20.0 })
                                                     .show(ui, |ui| {
-                                                        ui.set_width(415.0);
-                                                        ui.set_max_width(415.0);
+                                                        ui.set_max_width(392.0);
                                                         ui.style_mut().wrap = Some(true);
 
                                                         match self.screen {
                                                             Screen::Welcome => {
                                                                 ui.heading(
-                                                                    egui::RichText::new("Welcome to BadWords Setup")
+                                                                    egui::RichText::new(t.welcome_title)
                                                                         .size(22.0)
                                                                         .strong()
                                                                         .color(egui::Color32::WHITE)
@@ -615,7 +737,7 @@ impl eframe::App for InstallerApp {
                                                                 ui.horizontal_wrapped(|ui| {
                                                                     ui.spacing_mut().item_spacing.x = 4.0;
                                                                     ui.label(
-                                                                        egui::RichText::new("This wizard will guide you through the installation or management of BadWords version")
+                                                                        egui::RichText::new(t.welcome_intro_prefix)
                                                                             .size(13.5)
                                                                             .color(egui::Color32::from_gray(215))
                                                                     );
@@ -633,13 +755,13 @@ impl eframe::App for InstallerApp {
                                                                 });
                                                                 ui.add_space(10.0);
                                                                 ui.label(
-                                                                    egui::RichText::new("It is recommended that you close all other applications before continuing.")
+                                                                    egui::RichText::new(t.welcome_close_apps)
                                                                         .size(13.5)
                                                                         .color(egui::Color32::from_gray(215))
                                                                 );
                                                                 ui.add_space(10.0);
                                                                 ui.label(
-                                                                    egui::RichText::new("Click Next to choose an action, or Cancel to exit Setup.")
+                                                                    egui::RichText::new(t.welcome_prompt)
                                                                         .size(13.5)
                                                                         .color(egui::Color32::from_gray(215))
                                                                 );
@@ -647,14 +769,14 @@ impl eframe::App for InstallerApp {
 
                                                             Screen::Menu => {
                                                                 ui.heading(
-                                                                    egui::RichText::new("Installation Options")
+                                                                    egui::RichText::new(t.menu_title)
                                                                         .size(21.0)
                                                                         .strong()
                                                                         .color(egui::Color32::WHITE)
                                                                 );
                                                                 ui.add_space(4.0);
                                                                 ui.label(
-                                                                    egui::RichText::new("Select an option with mouse, arrow keys or numbers [1-5]:")
+                                                                    egui::RichText::new(t.menu_prompt)
                                                                         .size(12.5)
                                                                         .color(egui::Color32::from_gray(180))
                                                                 );
@@ -666,8 +788,8 @@ impl eframe::App for InstallerApp {
                                                                     ctx,
                                                                     "1",
                                                                     egui::Color32::from_rgb(52, 211, 153),
-                                                                    "Standard Install / Update",
-                                                                    "Install or update BadWords. Keeps your settings and models.",
+                                                                    t.opt_install_title,
+                                                                    t.opt_install_desc,
                                                                     self.keyboard_navigation_active && self.menu_selected_index == 0,
                                                                 ) {
                                                                     self.menu_selected_index = 0;
@@ -681,8 +803,8 @@ impl eframe::App for InstallerApp {
                                                                     ctx,
                                                                     "2",
                                                                     egui::Color32::from_rgb(56, 189, 248),
-                                                                    "Repair Installation",
-                                                                    "Replace core files only. Keeps your settings and models.",
+                                                                    t.opt_repair_title,
+                                                                    t.opt_repair_desc,
                                                                     self.keyboard_navigation_active && self.menu_selected_index == 1,
                                                                 ) {
                                                                     self.menu_selected_index = 1;
@@ -696,8 +818,8 @@ impl eframe::App for InstallerApp {
                                                                     ctx,
                                                                     "3",
                                                                     egui::Color32::from_rgb(129, 140, 248),
-                                                                    "Move Installation",
-                                                                    "Relocate BadWords to a different folder.",
+                                                                    t.opt_move_title,
+                                                                    t.opt_move_desc,
                                                                     self.keyboard_navigation_active && self.menu_selected_index == 2,
                                                                 ) {
                                                                     self.menu_selected_index = 2;
@@ -711,8 +833,8 @@ impl eframe::App for InstallerApp {
                                                                     ctx,
                                                                     "4",
                                                                     egui::Color32::from_rgb(251, 191, 36),
-                                                                    "Complete Reset",
-                                                                    "Delete EVERYTHING and reinstall from scratch.",
+                                                                    t.opt_reset_title,
+                                                                    t.opt_reset_desc,
                                                                     self.keyboard_navigation_active && self.menu_selected_index == 3,
                                                                 ) {
                                                                     self.menu_selected_index = 3;
@@ -726,8 +848,8 @@ impl eframe::App for InstallerApp {
                                                                     ctx,
                                                                     "5",
                                                                     egui::Color32::from_rgb(248, 113, 113),
-                                                                    "Uninstall",
-                                                                    "Remove BadWords completely from this system.",
+                                                                    t.opt_uninstall_title,
+                                                                    t.opt_uninstall_desc,
                                                                     self.keyboard_navigation_active && self.menu_selected_index == 4,
                                                                 ) {
                                                                     self.menu_selected_index = 4;
@@ -738,37 +860,33 @@ impl eframe::App for InstallerApp {
                                                             Screen::SelectPath => {
                                                                 let is_move = self.action == Some(InstallAction::Move);
                                                                 ui.heading(
-                                                                    egui::RichText::new(if is_move { "Select New Location" } else { "Select Destination Location" })
+                                                                    egui::RichText::new(if is_move { t.opt_move_title } else { t.select_path_title })
                                                                         .size(21.0)
                                                                         .strong()
                                                                         .color(egui::Color32::WHITE)
                                                                 );
-                                                                ui.add_space(8.0);
+                                                                ui.add_space(6.0);
                                                                 
                                                                 ui.label(
-                                                                    egui::RichText::new(if is_move {
-                                                                        "Where should BadWords be relocated to?"
-                                                                    } else {
-                                                                        "Where should BadWords be installed on your computer?"
-                                                                    })
-                                                                    .size(13.0)
-                                                                    .color(egui::Color32::from_gray(215))
+                                                                    egui::RichText::new(t.select_path_label)
+                                                                        .size(13.0)
+                                                                        .color(egui::Color32::from_gray(215))
                                                                 );
                                                                 
                                                                 if let Some(ref detected) = self.detected_existing {
-                                                                    ui.add_space(8.0);
+                                                                    ui.add_space(6.0);
                                                                     ui.horizontal(|ui| {
                                                                         ui.label(
-                                                                            egui::RichText::new(format!("Existing installation detected: {}", detected.display()))
-                                                                                .size(12.0)
+                                                                            egui::RichText::new(format!("Existing: {}", detected.display()))
+                                                                                .size(11.5)
                                                                                 .color(egui::Color32::from_rgb(52, 211, 153))
                                                                         );
                                                                     });
                                                                 }
 
-                                                                ui.add_space(18.0);
+                                                                ui.add_space(14.0);
 
-                                                                // Czysty, jednolity input ścieżki (bez podwójnych ramek i bez czarnego tła)
+                                                                // Czysty, jednolity input ścieżki
                                                                 ui.horizontal(|ui| {
                                                                     egui::Frame::none()
                                                                         .fill(egui::Color32::from_rgb(38, 38, 38))
@@ -777,7 +895,7 @@ impl eframe::App for InstallerApp {
                                                                         .rounding(3.0)
                                                                         .show(ui, |ui| {
                                                                             ui.add_sized(
-                                                                                [275.0, 20.0],
+                                                                                [270.0, 20.0],
                                                                                 egui::TextEdit::singleline(&mut self.install_path_str)
                                                                                     .frame(false)
                                                                                     .text_color(egui::Color32::WHITE)
@@ -787,17 +905,26 @@ impl eframe::App for InstallerApp {
                                                                     
                                                                     ui.add_space(6.0);
                                                                     
-                                                                    if custom_button(ui, ctx, [85.0, 36.0], "Browse...") {
+                                                                    if custom_button(ui, ctx, [90.0, 36.0], t.browse_btn) {
                                                                         if let Some(folder) = dialogs::pick_folder(Some(&self.install_path_str)) {
                                                                             self.install_path_str = folder;
                                                                         }
                                                                     }
                                                                 });
                                                                 
-                                                                ui.add_space(22.0);
+                                                                ui.add_space(16.0);
+                                                                ui.checkbox(&mut self.create_desktop_shortcut, t.shortcut_desktop);
+
+                                                                #[cfg(not(target_os = "macos"))]
+                                                                {
+                                                                    ui.add_space(8.0);
+                                                                    ui.checkbox(&mut self.create_start_menu_shortcut, t.shortcut_menu);
+                                                                }
+
+                                                                ui.add_space(14.0);
                                                                 ui.label(
                                                                     egui::RichText::new("At least 500 MB of free disk space is required.")
-                                                                        .size(12.0)
+                                                                        .size(11.5)
                                                                         .color(egui::Color32::from_gray(160))
                                                                 );
                                                             }
@@ -805,7 +932,7 @@ impl eframe::App for InstallerApp {
                                                             Screen::ConfirmAction => {
                                                                 let is_uninstall = self.action == Some(InstallAction::Uninstall);
                                                                 ui.heading(
-                                                                    egui::RichText::new(if is_uninstall { "Confirm Uninstallation" } else { "Confirm Complete Reset" })
+                                                                    egui::RichText::new(t.confirm_title)
                                                                         .size(21.0)
                                                                         .strong()
                                                                         .color(if is_uninstall { egui::Color32::from_rgb(248, 113, 113) } else { egui::Color32::from_rgb(251, 191, 36) })
@@ -814,13 +941,13 @@ impl eframe::App for InstallerApp {
 
                                                                 if is_uninstall {
                                                                     ui.label(
-                                                                        egui::RichText::new("Are you sure you want to completely remove BadWords and its DaVinci Resolve script integrations from this system?")
+                                                                        egui::RichText::new(t.confirm_uninstall_warn)
                                                                             .size(13.5)
                                                                             .color(egui::Color32::from_gray(220))
                                                                     );
                                                                 } else {
                                                                     ui.label(
-                                                                        egui::RichText::new("Warning: Complete Reset will DELETE all existing files, settings, models, and configuration in:")
+                                                                        egui::RichText::new(t.confirm_reset_warn)
                                                                             .size(13.5)
                                                                             .color(egui::Color32::from_gray(220))
                                                                     );
@@ -830,12 +957,6 @@ impl eframe::App for InstallerApp {
                                                                             .size(12.5)
                                                                             .monospace()
                                                                             .color(egui::Color32::from_rgb(251, 191, 36))
-                                                                    );
-                                                                    ui.add_space(8.0);
-                                                                    ui.label(
-                                                                        egui::RichText::new("A fresh clean copy of BadWords will be installed.")
-                                                                            .size(13.0)
-                                                                            .color(egui::Color32::from_gray(200))
                                                                     );
                                                                 }
                                                             }
@@ -869,7 +990,7 @@ impl eframe::App for InstallerApp {
 
                                                             Screen::Complete => {
                                                                 ui.heading(
-                                                                    egui::RichText::new("Operation Completed")
+                                                                    egui::RichText::new(t.complete_title)
                                                                         .size(22.0)
                                                                         .strong()
                                                                         .color(egui::Color32::WHITE)
@@ -884,7 +1005,7 @@ impl eframe::App for InstallerApp {
                                                                 
                                                                 if self.action == Some(InstallAction::InstallUpdate) {
                                                                     ui.add_space(20.0);
-                                                                    ui.checkbox(&mut self.launch_on_finish, "Launch BadWords now");
+                                                                    ui.checkbox(&mut self.launch_on_finish, t.launch_checkbox);
                                                                 }
                                                             }
                                                         }
@@ -904,71 +1025,116 @@ impl eframe::App for InstallerApp {
                                     ui.set_width(610.0);
 
                                     ui.horizontal(|ui| {
-                                        if terminal_icon_button(ui, ctx, [32.0, 32.0]) {
-                                            self.spawn_terminal();
+                                        // Wybór Języka (Custom Dropdown w stylu BadWords)
+                                        let lang_text = format!("🌐  {}  ▾", self.language.display_name());
+                                        let lang_btn = ui.add(
+                                            egui::Button::new(
+                                                egui::RichText::new(lang_text)
+                                                    .size(12.0)
+                                                    .color(egui::Color32::from_gray(215))
+                                            )
+                                            .fill(egui::Color32::from_white_alpha(10))
+                                            .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(25)))
+                                            .rounding(4.0)
+                                        );
+                                        if lang_btn.clicked() {
+                                            self.language_dropdown_open = !self.language_dropdown_open;
+                                        }
+
+                                        // Popup menu z 10 językami
+                                        if self.language_dropdown_open {
+                                            egui::Area::new(egui::Id::new("lang_popup_menu"))
+                                                .fixed_pos(lang_btn.rect.left_top() + egui::vec2(0.0, -290.0))
+                                                .order(egui::Order::Foreground)
+                                                .show(ctx, |ui| {
+                                                    egui::Frame::popup(ui.style())
+                                                        .fill(egui::Color32::from_rgb(26, 26, 26))
+                                                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(60, 60, 60)))
+                                                        .rounding(5.0)
+                                                        .inner_margin(4.0)
+                                                        .show(ui, |ui| {
+                                                            ui.set_width(130.0);
+                                                            for lang in Language::ALL {
+                                                                let is_curr = lang == self.language;
+                                                                let item_resp = ui.add(
+                                                                    egui::Button::new(
+                                                                        egui::RichText::new(lang.display_name())
+                                                                            .size(12.0)
+                                                                            .color(if is_curr { egui::Color32::from_rgb(52, 211, 153) } else { egui::Color32::from_gray(220) })
+                                                                    )
+                                                                    .fill(if is_curr { egui::Color32::from_white_alpha(15) } else { egui::Color32::TRANSPARENT })
+                                                                    .frame(false)
+                                                                );
+                                                                if item_resp.clicked() {
+                                                                    self.language = lang;
+                                                                    self.language_dropdown_open = false;
+                                                                }
+                                                            }
+                                                        });
+                                                });
                                         }
                                         
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             match self.screen {
                                                 Screen::Welcome => {
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "Cancel") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_cancel) {
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                                     }
                                                     ui.add_space(10.0);
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "Next >") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_next) {
                                                         self.screen = Screen::Menu;
                                                     }
                                                 }
 
                                                 Screen::Menu => {
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "Cancel") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_cancel) {
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                                     }
                                                     ui.add_space(10.0);
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "< Back") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
                                                         self.screen = Screen::Welcome;
                                                     }
                                                 }
 
                                                 Screen::SelectPath => {
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "Cancel") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_cancel) {
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                                     }
                                                     ui.add_space(10.0);
-                                                    let btn_label = if self.action == Some(InstallAction::Move) { "Move >" } else { "Next >" };
+                                                    let btn_label = if self.action == Some(InstallAction::Move) { t.btn_move } else { t.btn_next };
                                                     if custom_button(ui, ctx, [100.0, 32.0], btn_label) {
                                                         self.start_action();
                                                     }
                                                     ui.add_space(10.0);
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "< Back") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
                                                         self.screen = Screen::Menu;
                                                     }
                                                 }
 
                                                 Screen::ConfirmAction => {
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "Cancel") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_cancel) {
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                                     }
                                                     ui.add_space(10.0);
                                                     let is_uninstall = self.action == Some(InstallAction::Uninstall);
-                                                    let btn_label = if is_uninstall { "Uninstall" } else { "Reset & Install" };
+                                                    let btn_label = if is_uninstall { t.btn_uninstall } else { t.btn_reset };
                                                     if custom_button(ui, ctx, [115.0, 32.0], btn_label) {
                                                         self.start_action();
                                                     }
                                                     ui.add_space(10.0);
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "< Back") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
                                                         self.screen = Screen::Menu;
                                                     }
                                                 }
 
                                                 Screen::Progress => {
                                                     ui.add_enabled_ui(false, |ui| {
-                                                        let _ = ui.add_sized([100.0, 32.0], egui::Button::new("Cancel"));
+                                                        let _ = ui.add_sized([100.0, 32.0], egui::Button::new(t.btn_cancel));
                                                     });
                                                 }
 
                                                 Screen::Complete => {
-                                                    if custom_button(ui, ctx, [100.0, 32.0], "Finish") {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_finish) {
                                                         if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
                                                             let target = self.current_target_path();
                                                             #[cfg(target_os = "windows")]
@@ -1000,50 +1166,39 @@ fn render_badwords_dual_progress(
     status_title: &str,
     status_details: &str,
 ) {
-    let width = ui.available_width().min(405.0);
+    let width = 380.0;
     let time = ctx.input(|i| i.time);
 
-    // 1. Nagłówek i odczyt procentowy (dokładnie dopasowany do szerokości paska)
+    // 1. GŁÓWNA OPERACJA: Tytuł + Procent
     ui.allocate_ui_with_layout(
-        egui::vec2(width, 22.0),
+        egui::vec2(width, 20.0),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            ui.set_max_width(width);
-            let pct_num = (main_progress.clamp(0.0, 1.0) * 100.0).round() as u32;
-
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(status_title)
+                        .size(13.5)
+                        .color(egui::Color32::from_gray(225))
+                ).truncate(true).wrap(false)
+            );
+            
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!("{:>3}%", pct_num))
-                            .size(13.5)
-                            .strong()
-                            .family(egui::FontFamily::Monospace)
-                            .color(egui::Color32::from_rgb(184, 208, 53)),
-                    ).wrap(false)
+                ui.label(
+                    egui::RichText::new(format!("{:.0}%", (main_progress * 100.0).clamp(0.0, 100.0)))
+                        .size(13.5)
+                        .strong()
+                        .color(egui::Color32::from_rgb(184, 208, 53))
                 );
-
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(status_title)
-                                .size(13.5)
-                                .strong()
-                                .color(egui::Color32::WHITE)
-                        ).truncate(true).wrap(false)
-                    );
-                });
             });
         }
     );
     ui.add_space(6.0);
 
-    // 2. GŁÓWNY PASEK POSTĘPU (10px wysokości, zaokrąglone rogi 5px, gradient #1a7a3e -> #b8d035)
-    let (main_rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0), egui::Sense::hover());
+    // Główny Pasek Postępu (10px wysokości)
     {
+        let (main_rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0), egui::Sense::hover());
         let painter = ui.painter();
-
-        // Tło paska (#202020) z ciemnoszarą ramką (#363636)
-        painter.rect_filled(main_rect, 5.0, egui::Color32::from_rgb(28, 28, 28));
+        painter.rect_filled(main_rect, 5.0, egui::Color32::from_rgb(26, 26, 26));
         painter.rect_stroke(main_rect, 5.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(48, 48, 48)));
 
         let clamped_main = main_progress.clamp(0.0, 1.0);
@@ -1105,7 +1260,7 @@ fn render_badwords_dual_progress(
 
     ui.add_space(16.0);
 
-    // 3. POD-OPERACJA: Detale mikro-kroku (bez drugiego procenta) i pasek podoperacji / animowana pastylka
+    // 3. POD-OPERACJA: Detale mikro-kroku i pasek podoperacji / animowana pastylka
     if !status_details.is_empty() {
         ui.allocate_ui_with_layout(
             egui::vec2(width, 18.0),
@@ -1206,37 +1361,6 @@ fn render_badwords_dual_progress(
     }
 }
 
-/// Przycisk ikony terminala (bez tła, z płynnym podświetleniem SVG ścieżek terminal.svg)
-fn terminal_icon_button(ui: &mut egui::Ui, ctx: &egui::Context, size: [f32; 2]) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(size.into(), egui::Sense::click());
-    let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| rect.contains(p)));
-
-    let stroke_color = if is_hovered {
-        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-        egui::Color32::from_rgb(255, 255, 255)
-    } else {
-        egui::Color32::from_gray(160)
-    };
-
-    let painter = ui.painter();
-    let center = rect.center();
-    let stroke = egui::Stroke::new(1.8_f32, stroke_color);
-
-    // Prompt Chevron '>': M4 17l6-6l-6-6 -> (4, 5) -> (10, 11) -> (4, 17) przesunięte względem center
-    let p1 = center + egui::vec2(-7.5, -5.5);
-    let p2 = center + egui::vec2(-2.0, 0.0);
-    let p3 = center + egui::vec2(-7.5, 5.5);
-    painter.line_segment([p1, p2], stroke);
-    painter.line_segment([p2, p3], stroke);
-
-    // Underscore cursor '_': M12 19h8 -> (12, 19) to (20, 19)
-    let c1 = center + egui::vec2(0.5, 5.5);
-    let c2 = center + egui::vec2(8.0, 5.5);
-    painter.line_segment([c1, c2], stroke);
-
-    resp.on_hover_text("Open Live Terminal Logs (T)").clicked()
-}
-
 /// Niezawodny, płynny przycisk z aktywnym stanem hover po dragowaniu
 fn custom_button(ui: &mut egui::Ui, ctx: &egui::Context, size: [f32; 2], text: &str) -> bool {
     let (rect, resp) = ui.allocate_exact_size(size.into(), egui::Sense::click());
@@ -1270,7 +1394,7 @@ fn render_menu_option(
     desc: &str,
     is_keyboard_selected: bool,
 ) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(400.0, 52.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(390.0, 52.0), egui::Sense::click());
     let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| rect.contains(p)));
 
     if is_hovered || is_keyboard_selected {
@@ -1297,22 +1421,22 @@ fn render_menu_option(
         tag_color,
     );
 
-    // 2. Tytuł opcji (na tej samej wysokości co cyfra)
+    // 2. Tytuł Opcji (14px, Bold, czysta biel)
     painter.text(
-        rect.min + egui::vec2(34.0, 9.0),
+        rect.min + egui::vec2(34.0, 8.0),
         egui::Align2::LEFT_TOP,
         title,
-        egui::FontId::proportional(13.5),
+        egui::FontId::proportional(14.0),
         egui::Color32::WHITE,
     );
 
-    // 3. Opis opcji (drugi wiersz)
+    // 3. Opis Opcji (11.5px, jasnoszary, subtelny)
     painter.text(
-        rect.min + egui::vec2(34.0, 29.0),
+        rect.min + egui::vec2(34.0, 27.5),
         egui::Align2::LEFT_TOP,
         desc,
         egui::FontId::proportional(11.5),
-        egui::Color32::from_gray(160),
+        egui::Color32::from_gray(175),
     );
 
     resp.clicked()

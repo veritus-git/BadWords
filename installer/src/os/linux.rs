@@ -136,7 +136,7 @@ pub fn find_all_linux_desktop_dirs(home: &Path) -> Vec<PathBuf> {
     dirs_list
 }
 
-pub fn create_linux_desktop_entry(install_dir: &Path) -> std::io::Result<()> {
+pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, create_menu: bool) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
     {
         if let Some(home) = dirs::home_dir() {
@@ -182,59 +182,63 @@ pub fn create_linux_desktop_entry(install_dir: &Path) -> std::io::Result<()> {
                 icon = src_icon.to_string_lossy()
             );
 
-            std::fs::write(&desktop_file, &content)?;
+            if create_menu {
+                std::fs::write(&desktop_file, &content)?;
 
-            // Uninstaller entry in application menu
-            let uninstaller_exec = if installer_bin.is_file() {
-                format!("\"{}\" --uninstall", installer_bin.to_string_lossy())
-            } else if let Ok(cur_exe) = std::env::current_exe() {
-                format!("\"{}\" --uninstall", cur_exe.to_string_lossy())
-            } else {
-                format!("\"{}/badwords-installer\" --uninstall", install_dir.to_string_lossy())
-            };
+                // Uninstaller entry in application menu
+                let uninstaller_exec = if installer_bin.is_file() {
+                    format!("\"{}\" --uninstall", installer_bin.to_string_lossy())
+                } else if let Ok(cur_exe) = std::env::current_exe() {
+                    format!("\"{}\" --uninstall", cur_exe.to_string_lossy())
+                } else {
+                    format!("\"{}/badwords-installer\" --uninstall", install_dir.to_string_lossy())
+                };
 
-            let uninstall_content = format!(
-                "[Desktop Entry]\n\
-                 Version=1.0\n\
-                 Type=Application\n\
-                 Name=Uninstall BadWords\n\
-                 GenericName=BadWords Uninstaller\n\
-                 Comment=Uninstall BadWords and remove all configured components\n\
-                 Exec={exec}\n\
-                 Path={dir}\n\
-                 Icon={icon}\n\
-                 Terminal=false\n\
-                 Categories=Utility;\n\
-                 Keywords=BadWords;uninstall;remove;clean;\n",
-                exec = uninstaller_exec,
-                dir = install_dir.to_string_lossy(),
-                icon = src_icon.to_string_lossy()
-            );
+                let uninstall_content = format!(
+                    "[Desktop Entry]\n\
+                     Version=1.0\n\
+                     Type=Application\n\
+                     Name=Uninstall BadWords\n\
+                     GenericName=BadWords Uninstaller\n\
+                     Comment=Uninstall BadWords and remove all configured components\n\
+                     Exec={exec}\n\
+                     Path={dir}\n\
+                     Icon={icon}\n\
+                     Terminal=false\n\
+                     Categories=Utility;\n\
+                     Keywords=BadWords;uninstall;remove;clean;\n",
+                    exec = uninstaller_exec,
+                    dir = install_dir.to_string_lossy(),
+                    icon = src_icon.to_string_lossy()
+                );
 
-            let _ = std::fs::write(&uninstall_desktop_file, &uninstall_content);
+                let _ = std::fs::write(&uninstall_desktop_file, &uninstall_content);
 
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&desktop_file, std::fs::Permissions::from_mode(0o755));
-                let _ = std::fs::set_permissions(&uninstall_desktop_file, std::fs::Permissions::from_mode(0o755));
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&desktop_file, std::fs::Permissions::from_mode(0o755));
+                    let _ = std::fs::set_permissions(&uninstall_desktop_file, std::fs::Permissions::from_mode(0o755));
+                }
             }
 
             // Desktop shortcut on all detected desktop directories across distros and locales
-            let desktop_dirs = find_all_linux_desktop_dirs(&home);
-            for dt_dir in desktop_dirs {
-                if dt_dir.is_dir() {
-                    let dt_shortcut = dt_dir.join("BadWords.desktop");
-                    let _ = std::fs::write(&dt_shortcut, &content);
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(&dt_shortcut, std::fs::Permissions::from_mode(0o755));
+            if create_desktop {
+                let desktop_dirs = find_all_linux_desktop_dirs(&home);
+                for dt_dir in desktop_dirs {
+                    if dt_dir.is_dir() {
+                        let dt_shortcut = dt_dir.join("BadWords.desktop");
+                        let _ = std::fs::write(&dt_shortcut, &content);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = std::fs::set_permissions(&dt_shortcut, std::fs::Permissions::from_mode(0o755));
+                        }
+                        // Mark as trusted for GNOME desktop environment
+                        let _ = std::process::Command::new("gio")
+                            .args(["set", &dt_shortcut.to_string_lossy().to_string(), "metadata::trusted", "true"])
+                            .status();
                     }
-                    // Mark as trusted for GNOME desktop environment
-                    let _ = std::process::Command::new("gio")
-                        .args(["set", &dt_shortcut.to_string_lossy().to_string(), "metadata::trusted", "true"])
-                        .status();
                 }
             }
 
@@ -250,7 +254,7 @@ pub fn create_linux_desktop_entry(install_dir: &Path) -> std::io::Result<()> {
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = install_dir;
+        let _ = (install_dir, create_desktop, create_menu);
     }
 
     Ok(())

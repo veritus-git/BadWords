@@ -1,0 +1,175 @@
+name: Deep Automated Installer Test Suite (Cross-Platform Matrix)
+
+on:
+  push:
+    branches:
+      - 'dev-v4'
+      - 'main'
+    paths:
+      - 'installer/**'
+      - 'src/**'
+      - 'setupfiles/**'
+      - '.github/workflows/installer_test.yml'
+  pull_request:
+    branches:
+      - 'dev-v4'
+      - 'main'
+  workflow_dispatch:
+
+jobs:
+  test-installer-matrix:
+    name: Test on ${{ matrix.os_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_name: Linux x86_64
+            binary_name: badwords-installer
+            target_env: linux
+          - os: windows-latest
+            os_name: Windows x86_64
+            binary_name: badwords-installer.exe
+            target_env: windows
+          - os: macos-latest
+            os_name: macOS Universal
+            binary_name: badwords-installer
+            target_env: macos
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libx11-dev libasound2-dev libudev-dev libfontconfig1-dev libdbus-1-dev desktop-file-utils
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile BadWords Installer
+        run: cargo build --release --manifest-path installer/Cargo.toml
+
+      - name: Verify Binary Output
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f installer/target/release/${{ matrix.binary_name }} || exit 1
+          else
+            chmod +x installer/target/release/${{ matrix.binary_name }}
+            test -x installer/target/release/${{ matrix.binary_name }} || exit 1
+          fi
+          echo "Binary successfully verified: installer/target/release/${{ matrix.binary_name }}"
+
+      - name: 1. Test Clean Installation (CLI Headless)
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          echo "Target installation folder: $TEST_DIR"
+          
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./installer/target/release/${{ matrix.binary_name }} --cli --install "$TEST_DIR"
+          else
+            ./installer/target/release/${{ matrix.binary_name }} --cli --install "$TEST_DIR"
+          fi
+
+      - name: 2. File & Directory Structure Integrity Audit
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          echo "Auditing core files in: $TEST_DIR"
+
+          test -d "$TEST_DIR" || { echo "Missing target directory"; exit 1; }
+          test -f "$TEST_DIR/main.py" || { echo "Missing main.py"; exit 1; }
+          test -d "$TEST_DIR/assets" || { echo "Missing assets directory"; exit 1; }
+          test -d "$TEST_DIR/assets/icons" || { echo "Missing assets/icons directory"; exit 1; }
+          test -d "$TEST_DIR/bin" || { echo "Missing bin directory"; exit 1; }
+          test -d "$TEST_DIR/venv" || { echo "Missing venv directory"; exit 1; }
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f "$TEST_DIR/bin/ffmpeg.exe" || { echo "Missing FFmpeg executable"; exit 1; }
+            test -f "$TEST_DIR/venv/Scripts/python.exe" || { echo "Missing venv Python"; exit 1; }
+          else
+            test -f "$TEST_DIR/bin/ffmpeg" || { echo "Missing FFmpeg executable"; exit 1; }
+            test -x "$TEST_DIR/bin/ffmpeg" || { echo "FFmpeg is not executable"; exit 1; }
+            test -f "$TEST_DIR/venv/bin/python" || { echo "Missing venv Python"; exit 1; }
+            test -x "$TEST_DIR/venv/bin/python" || { echo "Venv Python is not executable"; exit 1; }
+          fi
+
+          echo "Audit Passed: All core files and directories exist!"
+
+      - name: 3. Portable FFmpeg Execution & Codec Test
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            "$TEST_DIR/bin/ffmpeg.exe" -version
+          else
+            "$TEST_DIR/bin/ffmpeg" -version
+          fi
+
+      - name: 4. Python Environment & AI Dependency Imports
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          echo "Validating isolated venv imports (PySide6, faster-whisper, pypdf)..."
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            "$TEST_DIR/venv/Scripts/python.exe" -c "import PySide6; import faster_whisper; import pypdf; print('CI VERIFICATION: All Python AI dependencies loaded successfully!')"
+          else
+            "$TEST_DIR/venv/bin/python" -c "import PySide6; import faster_whisper; import pypdf; print('CI VERIFICATION: All Python AI dependencies loaded successfully!')"
+          fi
+
+      - name: 5. Test Installation Integrity Repair
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          echo "Simulating damaged binary..."
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            rm -f "$TEST_DIR/bin/ffmpeg.exe"
+          else
+            rm -f "$TEST_DIR/bin/ffmpeg"
+          fi
+
+          echo "Running repair mode..."
+          ./installer/target/release/${{ matrix.binary_name }} --cli --repair --install "$TEST_DIR"
+
+          echo "Verifying repaired binary..."
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f "$TEST_DIR/bin/ffmpeg.exe" || exit 1
+          else
+            test -f "$TEST_DIR/bin/ffmpeg" || exit 1
+          fi
+          echo "Repair Passed: Corrupted components successfully restored!"
+
+      - name: 6. Test Complete Reset & Reinstallation
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          echo "Running reset mode..."
+          ./installer/target/release/${{ matrix.binary_name }} --cli --reset --install "$TEST_DIR"
+
+          test -f "$TEST_DIR/main.py" || exit 1
+          echo "Reset Passed: Clean installation successfully re-deployed!"
+
+      - name: 7. Test Complete Uninstallation & Cleanup
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsTestInstall"
+          echo "Running uninstallation..."
+          ./installer/target/release/${{ matrix.binary_name }} --cli --uninstall --install "$TEST_DIR"
+
+          if [ -d "$TEST_DIR" ]; then
+            echo "Error: Directory still exists after uninstall!"
+            exit 1
+          fi
+          echo "Uninstall Passed: Application and dependencies completely removed!"
