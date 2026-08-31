@@ -165,6 +165,13 @@ fn run_pip_install_streaming(
                                     let friendly = friendly_pkg_name(clean_name);
                                     current_detail = format!("Collecting {}", friendly);
                                 }
+                            } else if line.contains("Using cached") {
+                                if let Some(pkg_name) = line.split("Using cached").nth(1) {
+                                    let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
+                                    let friendly = friendly_pkg_name(clean_name);
+                                    current_detail = format!("Using cached {}", friendly);
+                                    emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
+                                }
                             } else if line.contains("Installing collected packages") {
                                 current_detail = "Unpacking & configuring Python packages...".to_string();
                                 // Set sub_pct = 0 so indeterminate gliding pill immediately activates

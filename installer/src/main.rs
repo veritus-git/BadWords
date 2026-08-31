@@ -1047,10 +1047,11 @@ fn render_badwords_dual_progress(
             mesh.add_triangle(2, 1, 3);
             painter.add(egui::Shape::Mesh(mesh));
 
-            // Windows-Style Soft Gloss Shimmer Beam (70px szerokości, miękki dwustronny gradient)
+            // Windows-Style Soft Gloss Shimmer Beam (70px szerokości, stały cykl na całej szerokości ramki paska)
             let beam_w = 70.0;
-            let cycle = ((time * 160.0) as f32) % (fill_rect.width() + beam_w * 2.0);
-            let beam_center = fill_rect.min.x + cycle - beam_w;
+            let full_cycle = main_rect.width() + beam_w * 2.0;
+            let cycle = ((time * 160.0) as f32) % full_cycle;
+            let beam_center = main_rect.min.x + cycle - beam_w;
 
             let b_left = (beam_center - beam_w * 0.5).max(fill_rect.min.x);
             let b_mid = beam_center.clamp(fill_rect.min.x, fill_rect.max.x);
@@ -1128,10 +1129,11 @@ fn render_badwords_dual_progress(
             sub_mesh.add_triangle(2, 1, 3);
             painter.add(egui::Shape::Mesh(sub_mesh));
 
-            // Soft shimmer na pod-pasku (40px)
+            // Soft shimmer na pod-pasku (40px, stały cykl na całej szerokości ramki pod-paska)
             let sub_beam_w = 40.0;
-            let sub_cycle = ((time * 180.0) as f32) % (sub_fill_rect.width() + sub_beam_w * 2.0);
-            let sub_beam_center = sub_fill_rect.min.x + sub_cycle - sub_beam_w;
+            let sub_full_cycle = sub_rect.width() + sub_beam_w * 2.0;
+            let sub_cycle = ((time * 180.0) as f32) % sub_full_cycle;
+            let sub_beam_center = sub_rect.min.x + sub_cycle - sub_beam_w;
             let sb_left = (sub_beam_center - sub_beam_w * 0.5).max(sub_fill_rect.min.x);
             let sb_mid = sub_beam_center.clamp(sub_fill_rect.min.x, sub_fill_rect.max.x);
             let sb_right = (sub_beam_center + sub_beam_w * 0.5).min(sub_fill_rect.max.x);
