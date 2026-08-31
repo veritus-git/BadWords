@@ -149,6 +149,7 @@ pub fn create_linux_desktop_entry(install_dir: &Path) -> std::io::Result<()> {
             let _ = std::fs::create_dir_all(&icons_root);
 
             let desktop_file = apps_dir.join("badwords.desktop");
+            let uninstall_desktop_file = apps_dir.join("badwords-uninstall.desktop");
             let src_icon = install_dir.join("assets").join("icons").join("icon_default.png");
             
             // Deploy icons to standard XDG search paths
@@ -159,6 +160,7 @@ pub fn create_linux_desktop_entry(install_dir: &Path) -> std::io::Result<()> {
 
             let python_bin = install_dir.join("venv").join("bin").join("python");
             let main_script = install_dir.join("main.py");
+            let installer_bin = install_dir.join("badwords-installer");
 
             let content = format!(
                 "[Desktop Entry]\n\
@@ -182,10 +184,40 @@ pub fn create_linux_desktop_entry(install_dir: &Path) -> std::io::Result<()> {
 
             std::fs::write(&desktop_file, &content)?;
 
+            // Uninstaller entry in application menu
+            let uninstaller_exec = if installer_bin.is_file() {
+                format!("\"{}\" --uninstall", installer_bin.to_string_lossy())
+            } else if let Ok(cur_exe) = std::env::current_exe() {
+                format!("\"{}\" --uninstall", cur_exe.to_string_lossy())
+            } else {
+                format!("\"{}/badwords-installer\" --uninstall", install_dir.to_string_lossy())
+            };
+
+            let uninstall_content = format!(
+                "[Desktop Entry]\n\
+                 Version=1.0\n\
+                 Type=Application\n\
+                 Name=Uninstall BadWords\n\
+                 GenericName=BadWords Uninstaller\n\
+                 Comment=Uninstall BadWords and remove all configured components\n\
+                 Exec={exec}\n\
+                 Path={dir}\n\
+                 Icon={icon}\n\
+                 Terminal=false\n\
+                 Categories=Utility;\n\
+                 Keywords=BadWords;uninstall;remove;clean;\n",
+                exec = uninstaller_exec,
+                dir = install_dir.to_string_lossy(),
+                icon = src_icon.to_string_lossy()
+            );
+
+            let _ = std::fs::write(&uninstall_desktop_file, &uninstall_content);
+
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 let _ = std::fs::set_permissions(&desktop_file, std::fs::Permissions::from_mode(0o755));
+                let _ = std::fs::set_permissions(&uninstall_desktop_file, std::fs::Permissions::from_mode(0o755));
             }
 
             // Desktop shortcut on all detected desktop directories across distros and locales
@@ -230,8 +262,12 @@ pub fn remove_linux_desktop_entry() -> std::io::Result<()> {
         if let Some(home) = dirs::home_dir() {
             let apps_dir = home.join(".local").join("share").join("applications");
             let desktop_file = apps_dir.join("badwords.desktop");
+            let uninstall_desktop_file = apps_dir.join("badwords-uninstall.desktop");
             if desktop_file.exists() {
                 let _ = std::fs::remove_file(desktop_file);
+            }
+            if uninstall_desktop_file.exists() {
+                let _ = std::fs::remove_file(uninstall_desktop_file);
             }
 
             let desktop_dirs = find_all_linux_desktop_dirs(&home);

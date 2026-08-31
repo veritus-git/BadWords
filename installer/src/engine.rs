@@ -353,6 +353,19 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
             }
         }
 
+        let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+        if let Ok(cur_exe) = std::env::current_exe() {
+            let dest_bin = target_dir.join(installer_dest_name);
+            if cur_exe != dest_bin {
+                let _ = fs::copy(&cur_exe, &dest_bin);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                }
+            }
+        }
+
         emit_log(sender, "OK", "Local application files deployed successfully.");
         return true;
     }
@@ -409,6 +422,19 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
                 let updater_sub = p.join("setupfiles").join("updater.py");
                 if updater_sub.is_file() {
                     let _ = fs::copy(updater_sub, target_dir.join("updater.py"));
+                }
+
+                let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+                if let Ok(cur_exe) = std::env::current_exe() {
+                    let dest_bin = target_dir.join(installer_dest_name);
+                    if cur_exe != dest_bin {
+                        let _ = fs::copy(&cur_exe, &dest_bin);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                        }
+                    }
                 }
 
                 emit_log(sender, "OK", "Remote application files deployed successfully.");

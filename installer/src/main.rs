@@ -1,9 +1,12 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod dialogs;
 mod engine;
 mod os;
 mod state;
 
 use eframe::egui;
+use engine::APP_VERSION;
 use state::IpcEvent;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -609,11 +612,25 @@ impl eframe::App for InstallerApp {
                                                                 );
                                                                 ui.add_space(18.0);
                                                                 
-                                                                ui.label(
-                                                                    egui::RichText::new("This wizard will guide you through the installation or management of BadWords version 4.0.0.")
-                                                                        .size(13.5)
-                                                                        .color(egui::Color32::from_gray(215))
-                                                                );
+                                                                ui.horizontal_wrapped(|ui| {
+                                                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                                                    ui.label(
+                                                                        egui::RichText::new("This wizard will guide you through the installation or management of BadWords version")
+                                                                            .size(13.5)
+                                                                            .color(egui::Color32::from_gray(215))
+                                                                    );
+                                                                    ui.label(
+                                                                        egui::RichText::new(APP_VERSION)
+                                                                            .size(13.5)
+                                                                            .strong()
+                                                                            .color(egui::Color32::WHITE)
+                                                                    );
+                                                                    ui.label(
+                                                                        egui::RichText::new(".")
+                                                                            .size(13.5)
+                                                                            .color(egui::Color32::from_gray(215))
+                                                                    );
+                                                                });
                                                                 ui.add_space(10.0);
                                                                 ui.label(
                                                                     egui::RichText::new("It is recommended that you close all other applications before continuing.")
@@ -887,7 +904,7 @@ impl eframe::App for InstallerApp {
                                     ui.set_width(610.0);
 
                                     ui.horizontal(|ui| {
-                                        if custom_button(ui, ctx, [95.0, 32.0], "Terminal") {
+                                        if terminal_icon_button(ui, ctx, [32.0, 32.0]) {
                                             self.spawn_terminal();
                                         }
                                         
@@ -1187,6 +1204,37 @@ fn render_badwords_dual_progress(
             }
         }
     }
+}
+
+/// Przycisk ikony terminala (bez tła, z płynnym podświetleniem SVG ścieżek terminal.svg)
+fn terminal_icon_button(ui: &mut egui::Ui, ctx: &egui::Context, size: [f32; 2]) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(size.into(), egui::Sense::click());
+    let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| rect.contains(p)));
+
+    let stroke_color = if is_hovered {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        egui::Color32::from_rgb(255, 255, 255)
+    } else {
+        egui::Color32::from_gray(160)
+    };
+
+    let painter = ui.painter();
+    let center = rect.center();
+    let stroke = egui::Stroke::new(1.8_f32, stroke_color);
+
+    // Prompt Chevron '>': M4 17l6-6l-6-6 -> (4, 5) -> (10, 11) -> (4, 17) przesunięte względem center
+    let p1 = center + egui::vec2(-7.5, -5.5);
+    let p2 = center + egui::vec2(-2.0, 0.0);
+    let p3 = center + egui::vec2(-7.5, 5.5);
+    painter.line_segment([p1, p2], stroke);
+    painter.line_segment([p2, p3], stroke);
+
+    // Underscore cursor '_': M12 19h8 -> (12, 19) to (20, 19)
+    let c1 = center + egui::vec2(0.5, 5.5);
+    let c2 = center + egui::vec2(8.0, 5.5);
+    painter.line_segment([c1, c2], stroke);
+
+    resp.on_hover_text("Open Live Terminal Logs (T)").clicked()
 }
 
 /// Niezawodny, płynny przycisk z aktywnym stanem hover po dragowaniu
