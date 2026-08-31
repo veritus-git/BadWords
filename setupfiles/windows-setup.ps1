@@ -39,6 +39,9 @@ New-Item -ItemType Directory -Path $BW_TMP -Force | Out-Null
 
 # -- Helper: Run Rich Terminal Python Fallback -----------------
 function Invoke-PythonFallback() {
+    Clear-Host
+    Write-Host "PS C:\Users\User> irm `"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1`" | iex" -ForegroundColor White
+    Write-Host "Downloading BadWords Setup..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " [!] Windows Security Notice:" -ForegroundColor Yellow
@@ -46,7 +49,7 @@ function Invoke-PythonFallback() {
     Write-Host "     Control (SAC) or SmartScreen because it lacks an EV certificate." -ForegroundColor White
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " How would you like to proceed?" -ForegroundColor White
-    Write-Host "  [1] Run Rich Terminal Installer via Python (Recommended - 100% bypasses security)" -ForegroundColor Green
+    Write-Host "  [1] Run Terminal Installer via Python (Recommended - 100% bypasses security)" -ForegroundColor Green
     Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
     Write-Host "========================================================================" -ForegroundColor Cyan
     

@@ -39,14 +39,17 @@ fi
 
 # ── Helper: Rich Terminal Python Fallback ─────────────────────
 invoke_python_fallback() {
+    clear
+    echo -e "user@MacBook-Pro ~ % curl -fsSL \"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh\" | bash"
+    echo -e "\033[36mDownloading BadWords Setup for macOS...\033[0m"
     echo ""
     echo -e "\033[36m========================================================================\033[0m"
     echo -e "\033[33m [!] macOS Security / Gatekeeper Notice:\033[0m"
-    echo -e "     The graphical installer binary was blocked or unsupported on"
-    echo -e "     this system architecture."
+    echo -e "     The graphical installer binary was blocked by macOS Gatekeeper"
+    echo -e "     because it is not signed with an Apple Developer certificate."
     echo -e "\033[36m========================================================================\033[0m"
     echo -e " How would you like to proceed?"
-    echo -e "  \033[32m[1] Run Rich Terminal Installer via Python (Recommended - 100% bypasses Gatekeeper)\033[0m"
+    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended - 100% bypasses Gatekeeper)\033[0m"
     echo -e "  \033[90m[2] Exit (I want to change Privacy & Security settings and try again)\033[0m"
     echo -e "\033[36m========================================================================\033[0m"
 
