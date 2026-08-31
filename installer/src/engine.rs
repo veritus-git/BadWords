@@ -372,17 +372,47 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
     }
 
     // Remote download
-    emit_log(sender, "INFO", "Downloading BadWords release archive from GitHub...");
+    deploy_remote_files(target_dir, sender)
+}
+
+/// Queries GitHub API for the latest published release tag and zipball URL
+pub fn fetch_latest_github_release() -> Option<(String, String)> {
+    let resp = ureq::get("https://api.github.com/repos/veritus-git/BadWords/releases/latest")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(4))
+        .call()
+        .ok()?;
+
+    let json: serde_json::Value = resp.into_json().ok()?;
+    let tag = json.get("tag_name").and_then(|v| v.as_str())?.to_string();
+    let zip_url = json.get("zipball_url").and_then(|v| v.as_str())?.to_string();
+    Some((tag, zip_url))
+}
+
+/// Downloads and deploys BadWords from latest GitHub Release or repository
+fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
     let temp_dir = std::env::temp_dir();
-    let zip_dest = temp_dir.join("badwords_source.zip");
-    let extract_dest = temp_dir.join("badwords_extracted");
+    let zip_dest = temp_dir.join("badwords_release.zip");
+    let extract_dest = temp_dir.join("badwords_release_extracted");
+
+    let _ = fs::remove_file(&zip_dest);
     let _ = fs::remove_dir_all(&extract_dest);
     let _ = fs::create_dir_all(&extract_dest);
 
     let mut downloaded = false;
-    for url in [GITHUB_RELEASE_TAG_URL, GITHUB_ZIP_MAIN_URL, GITHUB_ZIP_DEV_URL, GITLAB_ZIP_URL] {
+    let mut candidate_urls = Vec::new();
+    if let Some((tag, zip_url)) = fetch_latest_github_release() {
+        emit_log(sender, "INFO", &format!("Detected latest GitHub release: {}", tag));
+        candidate_urls.push(zip_url);
+    }
+    candidate_urls.push(GITHUB_RELEASE_TAG_URL.to_string());
+    candidate_urls.push(GITHUB_ZIP_MAIN_URL.to_string());
+    candidate_urls.push(GITHUB_ZIP_DEV_URL.to_string());
+    candidate_urls.push(GITLAB_ZIP_URL.to_string());
+
+    for url in candidate_urls {
         emit_log(sender, "INFO", &format!("Fetching release source from: {}", url));
-        if download_file_with_progress(url, &zip_dest, 30, "Deploying application files...", "Downloading release archive", sender).is_ok() {
+        if download_file_with_progress(&url, &zip_dest, 30, "Deploying application files...", "Downloading release archive", sender).is_ok() {
             downloaded = true;
             break;
         }
@@ -624,7 +654,7 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
     let v_py = venv_dir.join("bin").join("python");
 
     if v_py.exists() {
-        // Sub-step 1/4: pip, setuptools & wheel
+        // Sub-step: pip, setuptools & wheel
         emit_log(sender, "INFO", "Upgrading pip, setuptools & wheel...");
         run_pip_install_streaming(
             &v_py,
@@ -632,12 +662,12 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
             60,
             68,
             "Configuring Python packages...",
-            "[1/4] Upgrading pip, setuptools & wheel",
+            "Upgrading pip, setuptools & wheel",
             sender,
         );
         emit_log(sender, "OK", "Package manager tools updated.");
 
-        // Sub-step 2/4: PySide6
+        // Sub-step: PySide6
         let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
         if !pyside_check {
             emit_log(sender, "INFO", "Installing PySide6 framework...");
@@ -647,16 +677,16 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
                 68,
                 78,
                 "Installing GUI framework...",
-                "[2/4] Downloading and installing PySide6 Qt framework",
+                "Downloading and installing PySide6 Qt framework",
                 sender,
             );
             emit_log(sender, "OK", "PySide6 installed.");
         } else {
-            emit_progress_sub(sender, 78, 100, "Installing GUI framework...", "[2/4] PySide6 framework verified");
+            emit_progress_sub(sender, 78, 100, "Installing GUI framework...", "PySide6 framework verified");
             emit_log(sender, "OK", "PySide6 is ready.");
         }
 
-        // Sub-step 3/4: faster-whisper, pypdf
+        // Sub-step: faster-whisper, pypdf
         emit_log(sender, "INFO", "Installing faster-whisper and pypdf...");
         run_pip_install_streaming(
             &v_py,
@@ -664,12 +694,12 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
             78,
             85,
             "Installing AI speech engine...",
-            "[3/4] Downloading Faster-Whisper AI engine & PyPDF",
+            "Downloading Faster-Whisper AI engine & PyPDF",
             sender,
         );
         emit_log(sender, "OK", "Faster-Whisper and PyPDF installed.");
 
-        // Sub-step 4/4: Hardware Acceleration (CUDA 12 or CPU runtime)
+        // Sub-step: Hardware Acceleration (CUDA 12 or CPU runtime)
         if has_nvidia {
             emit_log(sender, "INFO", "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...");
             run_pip_install_streaming(
@@ -678,12 +708,12 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
                 85,
                 90,
                 "Installing GPU acceleration...",
-                "[4/4] Downloading NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)",
+                "Downloading NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)",
                 sender,
             );
             emit_log(sender, "OK", "NVIDIA CUDA 12 hardware acceleration packages installed.");
         } else {
-            emit_progress_sub(sender, 90, 100, "Configuring AI engine...", "[4/4] CPU AI computation verified");
+            emit_progress_sub(sender, 90, 100, "Configuring AI engine...", "CPU AI computation verified");
             emit_log(sender, "OK", "CPU AI acceleration configured.");
         }
 
