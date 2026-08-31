@@ -1,4 +1,4 @@
-name: Build Installer Binaries (Artifacts)
+name: Build Installer Binaries
 
 on:
   push:
@@ -8,7 +8,12 @@ on:
     paths:
       - 'installer/**'
       - '.github/workflows/build-installer.yml'
+  release:
+    types: [published, created]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -62,9 +67,17 @@ jobs:
             chmod +x dist/${{ matrix.output_name }}
           fi
 
-      - name: Upload Installer Artifact (Option B - Actions Only)
+      - name: Upload Private Action Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output_name }}
           path: dist/${{ matrix.output_name }}
           retention-days: 90
+
+      - name: Publish Public Release Asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.output_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

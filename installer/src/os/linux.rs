@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Szymon Wolarz
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 //! Linux system integration (.desktop entry, System Python check/install & XDG menus)
 
 use std::path::{Path, PathBuf};

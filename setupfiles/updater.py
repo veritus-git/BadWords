@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 # --- BADWORDS AUTO-UPDATE (Cross-Platform) ---
 # Called by the BadWords GUI when the user clicks "Update Now".
 # No prompts, no terminal needed. Exits 0 on success, 1 on failure.
