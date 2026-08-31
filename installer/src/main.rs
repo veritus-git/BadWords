@@ -248,6 +248,7 @@ struct InstallerApp {
     create_start_menu_shortcut: bool,
     install_path_str: String,
     detected_existing: Option<PathBuf>,
+    detected_version: String,
     status_title: String,
     status_details: String,
     progress: f32,
@@ -272,6 +273,20 @@ impl InstallerApp {
         
         let path_str = initial_path.to_string_lossy().into_owned();
 
+        // Spawn background fetch for latest GitHub release version
+        let tx_rel = tx.clone();
+        std::thread::spawn(move || {
+            if let Some((tag, zip_url)) = engine::fetch_latest_github_release() {
+                let _ = tx_rel.send(IpcEvent {
+                    event: "release_detected".to_string(),
+                    data: serde_json::json!({
+                        "tag": tag,
+                        "zip_url": zip_url,
+                    }),
+                });
+            }
+        });
+
         Self {
             screen: Screen::Welcome,
             action: None,
@@ -283,6 +298,7 @@ impl InstallerApp {
             create_start_menu_shortcut: true,
             install_path_str: path_str,
             detected_existing: detected,
+            detected_version: APP_VERSION.to_string(),
             status_title: "Ready to begin.".to_string(),
             status_details: "Click Next to choose an action.".to_string(),
             progress: 0.0,
@@ -409,7 +425,11 @@ impl eframe::App for InstallerApp {
         let mut had_events = false;
         while let Ok(event) = self.rx.try_recv() {
             had_events = true;
-            if event.event == "log" {
+            if event.event == "release_detected" {
+                if let Some(tag) = event.data.get("tag").and_then(|v| v.as_str()) {
+                    self.detected_version = tag.trim_start_matches('v').to_string();
+                }
+            } else if event.event == "log" {
                 let level = event.data.get("level").and_then(|v| v.as_str()).unwrap_or("INFO").to_string();
                 let message = event.data.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 if !message.is_empty() {
@@ -694,10 +714,16 @@ impl eframe::App for InstallerApp {
                                     ui.horizontal(|ui| {
                                         ui.spacing_mut().item_spacing.x = 0.0;
 
-                                        // Lewy Panel: Oryginalny Banner Wizualny (Dokładnie 210x459px)
+                                        // Lewy Panel: Banner Wizualny (210x459px z zachowaniem 100% proporcji logo)
                                         let banner_size = egui::vec2(210.0, 459.0);
                                         let (banner_rect, _) = ui.allocate_exact_size(banner_size, egui::Sense::hover());
+                                        let uv_y_crop = (515.0_f32 - 459.0_f32) / (2.0 * 515.0_f32);
+                                        let uv_rect = egui::Rect::from_min_max(
+                                            egui::pos2(0.0, uv_y_crop),
+                                            egui::pos2(1.0, 1.0 - uv_y_crop),
+                                        );
                                         egui::Image::new(egui::include_image!("../setup-banner.png"))
+                                            .uv(uv_rect)
                                             .paint_at(ui, banner_rect);
 
                                         // Prawy Panel: Zawartość Ekranu w układzie pionowym (440x459px z 24px marginesem)
@@ -711,278 +737,358 @@ impl eframe::App for InstallerApp {
                                                         ui.set_width(392.0);
                                                         ui.style_mut().wrap = Some(true);
 
-                                                match self.screen {
-                                                    Screen::Welcome => {
-                                                        ui.heading(
-                                                            egui::RichText::new(t.welcome_title)
-                                                                .size(21.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE)
-                                                        );
-                                                        ui.add_space(16.0);
-                                                        
-                                                        let intro_text = format!("{} {}.", t.welcome_intro_prefix, APP_VERSION);
-                                                        ui.label(
-                                                            egui::RichText::new(intro_text)
-                                                                .size(13.5)
-                                                                .color(egui::Color32::from_gray(215))
-                                                        );
-                                                        ui.add_space(12.0);
-                                                        ui.label(
-                                                            egui::RichText::new(t.welcome_close_apps)
-                                                                .size(13.5)
-                                                                .color(egui::Color32::from_gray(215))
-                                                        );
-                                                        ui.add_space(12.0);
-                                                        ui.label(
-                                                            egui::RichText::new(t.welcome_prompt)
-                                                                .size(13.5)
-                                                                .color(egui::Color32::from_gray(215))
-                                                        );
-                                                    }
+                                                        match self.screen {
+                                                            Screen::Welcome => {
+                                                                ui.heading(
+                                                                    egui::RichText::new(t.welcome_title)
+                                                                        .size(21.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE)
+                                                                );
+                                                                ui.add_space(16.0);
+                                                                
+                                                                let mut intro_job = egui::text::LayoutJob::default();
+                                                                intro_job.append(
+                                                                    t.welcome_intro_prefix,
+                                                                    0.0,
+                                                                    egui::TextFormat {
+                                                                        font_id: egui::FontId::proportional(13.5),
+                                                                        color: egui::Color32::from_gray(215),
+                                                                        ..Default::default()
+                                                                    },
+                                                                );
+                                                                intro_job.append(
+                                                                    &format!(" {}", self.detected_version),
+                                                                    0.0,
+                                                                    egui::TextFormat {
+                                                                        font_id: egui::FontId::proportional(13.5),
+                                                                        color: egui::Color32::WHITE,
+                                                                        ..Default::default()
+                                                                    },
+                                                                );
+                                                                intro_job.append(
+                                                                    ".",
+                                                                    0.0,
+                                                                    egui::TextFormat {
+                                                                        font_id: egui::FontId::proportional(13.5),
+                                                                        color: egui::Color32::from_gray(215),
+                                                                        ..Default::default()
+                                                                    },
+                                                                );
+                                                                ui.label(intro_job);
+                                                                
+                                                                ui.add_space(12.0);
+                                                                ui.label(
+                                                                    egui::RichText::new(t.welcome_close_apps)
+                                                                        .size(13.5)
+                                                                        .color(egui::Color32::from_gray(215))
+                                                                );
+                                                                ui.add_space(12.0);
+                                                                ui.label(
+                                                                    egui::RichText::new(t.welcome_prompt)
+                                                                        .size(13.5)
+                                                                        .color(egui::Color32::from_gray(215))
+                                                                );
+                                                            }
 
-                                                    Screen::Menu => {
-                                                        ui.heading(
-                                                            egui::RichText::new(t.menu_title)
-                                                                .size(20.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE)
-                                                        );
-                                                        ui.add_space(4.0);
-                                                        ui.label(
-                                                            egui::RichText::new(t.menu_prompt)
-                                                                .size(12.0)
-                                                                .color(egui::Color32::from_gray(180))
-                                                        );
-                                                        ui.add_space(10.0);
+                                                            Screen::Menu => {
+                                                                ui.heading(
+                                                                    egui::RichText::new(t.menu_title)
+                                                                        .size(20.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE)
+                                                                );
+                                                                ui.add_space(4.0);
+                                                                ui.label(
+                                                                    egui::RichText::new(t.menu_prompt)
+                                                                        .size(12.0)
+                                                                        .color(egui::Color32::from_gray(180))
+                                                                );
+                                                                ui.add_space(10.0);
 
-                                                        // 1. Standard Install / Update
-                                                        if render_menu_option(
-                                                            ui,
-                                                            ctx,
-                                                            "1",
-                                                            egui::Color32::from_rgb(52, 211, 153),
-                                                            t.opt_install_title,
-                                                            t.opt_install_desc,
-                                                            self.keyboard_navigation_active && self.menu_selected_index == 0,
-                                                        ) {
-                                                            self.menu_selected_index = 0;
-                                                            self.select_menu_option(0);
-                                                        }
-                                                        ui.add_space(3.0);
+                                                                // 1. Standard Install / Update
+                                                                if render_menu_option(
+                                                                    ui,
+                                                                    ctx,
+                                                                    "1",
+                                                                    egui::Color32::from_rgb(52, 211, 153),
+                                                                    t.opt_install_title,
+                                                                    t.opt_install_desc,
+                                                                    self.keyboard_navigation_active && self.menu_selected_index == 0,
+                                                                ) {
+                                                                    self.menu_selected_index = 0;
+                                                                    self.select_menu_option(0);
+                                                                }
+                                                                ui.add_space(3.0);
 
-                                                        // 2. Repair Installation
-                                                        if render_menu_option(
-                                                            ui,
-                                                            ctx,
-                                                            "2",
-                                                            egui::Color32::from_rgb(56, 189, 248),
-                                                            t.opt_repair_title,
-                                                            t.opt_repair_desc,
-                                                            self.keyboard_navigation_active && self.menu_selected_index == 1,
-                                                        ) {
-                                                            self.menu_selected_index = 1;
-                                                            self.select_menu_option(1);
-                                                        }
-                                                        ui.add_space(3.0);
+                                                                // 2. Repair Installation
+                                                                if render_menu_option(
+                                                                    ui,
+                                                                    ctx,
+                                                                    "2",
+                                                                    egui::Color32::from_rgb(56, 189, 248),
+                                                                    t.opt_repair_title,
+                                                                    t.opt_repair_desc,
+                                                                    self.keyboard_navigation_active && self.menu_selected_index == 1,
+                                                                ) {
+                                                                    self.menu_selected_index = 1;
+                                                                    self.select_menu_option(1);
+                                                                }
+                                                                ui.add_space(3.0);
 
-                                                        // 3. Move Installation
-                                                        if render_menu_option(
-                                                            ui,
-                                                            ctx,
-                                                            "3",
-                                                            egui::Color32::from_rgb(129, 140, 248),
-                                                            t.opt_move_title,
-                                                            t.opt_move_desc,
-                                                            self.keyboard_navigation_active && self.menu_selected_index == 2,
-                                                        ) {
-                                                            self.menu_selected_index = 2;
-                                                            self.select_menu_option(2);
-                                                        }
-                                                        ui.add_space(3.0);
+                                                                // 3. Move Installation
+                                                                if render_menu_option(
+                                                                    ui,
+                                                                    ctx,
+                                                                    "3",
+                                                                    egui::Color32::from_rgb(129, 140, 248),
+                                                                    t.opt_move_title,
+                                                                    t.opt_move_desc,
+                                                                    self.keyboard_navigation_active && self.menu_selected_index == 2,
+                                                                ) {
+                                                                    self.menu_selected_index = 2;
+                                                                    self.select_menu_option(2);
+                                                                }
+                                                                ui.add_space(3.0);
 
-                                                        // 4. Complete Reset
-                                                        if render_menu_option(
-                                                            ui,
-                                                            ctx,
-                                                            "4",
-                                                            egui::Color32::from_rgb(251, 191, 36),
-                                                            t.opt_reset_title,
-                                                            t.opt_reset_desc,
-                                                            self.keyboard_navigation_active && self.menu_selected_index == 3,
-                                                        ) {
-                                                            self.menu_selected_index = 3;
-                                                            self.select_menu_option(3);
-                                                        }
-                                                        ui.add_space(3.0);
+                                                                // 4. Complete Reset
+                                                                if render_menu_option(
+                                                                    ui,
+                                                                    ctx,
+                                                                    "4",
+                                                                    egui::Color32::from_rgb(251, 191, 36),
+                                                                    t.opt_reset_title,
+                                                                    t.opt_reset_desc,
+                                                                    self.keyboard_navigation_active && self.menu_selected_index == 3,
+                                                                ) {
+                                                                    self.menu_selected_index = 3;
+                                                                    self.select_menu_option(3);
+                                                                }
+                                                                ui.add_space(3.0);
 
-                                                        // 5. Uninstall
-                                                        if render_menu_option(
-                                                            ui,
-                                                            ctx,
-                                                            "5",
-                                                            egui::Color32::from_rgb(248, 113, 113),
-                                                            t.opt_uninstall_title,
-                                                            t.opt_uninstall_desc,
-                                                            self.keyboard_navigation_active && self.menu_selected_index == 4,
-                                                        ) {
-                                                            self.menu_selected_index = 4;
-                                                            self.select_menu_option(4);
-                                                        }
-                                                    }
-
-                                                    Screen::SelectPath => {
-                                                        let is_move = self.action == Some(InstallAction::Move);
-                                                        ui.heading(
-                                                            egui::RichText::new(if is_move { t.opt_move_title } else { t.select_path_title })
-                                                                .size(20.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE)
-                                                        );
-                                                        ui.add_space(6.0);
-                                                        
-                                                        ui.label(
-                                                            egui::RichText::new(t.select_path_label)
-                                                                .size(13.0)
-                                                                .color(egui::Color32::from_gray(215))
-                                                        );
-                                                        
-                                                        if let Some(ref detected) = self.detected_existing {
-                                                            ui.add_space(6.0);
-                                                            ui.label(
-                                                                egui::RichText::new(format!("Existing: {}", detected.display()))
-                                                                    .size(11.5)
-                                                                    .color(egui::Color32::from_rgb(52, 211, 153))
-                                                            );
-                                                        }
-
-                                                        ui.add_space(14.0);
-
-                                                        // Czysty input ścieżki i przycisk Przeglądaj
-                                                        ui.horizontal(|ui| {
-                                                            egui::Frame::none()
-                                                                .fill(egui::Color32::from_rgb(38, 38, 38))
-                                                                .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(68, 68, 68)))
-                                                                .inner_margin(egui::Margin::symmetric(10.0, 7.0))
-                                                                .rounding(3.0)
-                                                                .show(ui, |ui| {
-                                                                    ui.add_sized(
-                                                                        [270.0, 20.0],
-                                                                        egui::TextEdit::singleline(&mut self.install_path_str)
-                                                                            .frame(false)
-                                                                            .text_color(egui::Color32::WHITE)
-                                                                            .font(egui::FontId::proportional(13.0))
-                                                                    );
-                                                                });
-                                                            
-                                                            ui.add_space(6.0);
-                                                            
-                                                            if custom_button(ui, ctx, [90.0, 36.0], t.browse_btn) {
-                                                                if let Some(folder) = dialogs::pick_folder(Some(&self.install_path_str)) {
-                                                                    self.install_path_str = folder;
+                                                                // 5. Uninstall
+                                                                if render_menu_option(
+                                                                    ui,
+                                                                    ctx,
+                                                                    "5",
+                                                                    egui::Color32::from_rgb(248, 113, 113),
+                                                                    t.opt_uninstall_title,
+                                                                    t.opt_uninstall_desc,
+                                                                    self.keyboard_navigation_active && self.menu_selected_index == 4,
+                                                                ) {
+                                                                    self.menu_selected_index = 4;
+                                                                    self.select_menu_option(4);
                                                                 }
                                                             }
-                                                        });
-                                                        
-                                                        ui.add_space(16.0);
-                                                        ui.checkbox(&mut self.create_desktop_shortcut, t.shortcut_desktop);
 
-                                                        #[cfg(not(target_os = "macos"))]
-                                                        {
-                                                            ui.add_space(8.0);
-                                                            ui.checkbox(&mut self.create_start_menu_shortcut, t.shortcut_menu);
+                                                            Screen::SelectPath => {
+                                                                let is_move = self.action == Some(InstallAction::Move);
+                                                                ui.heading(
+                                                                    egui::RichText::new(if is_move { t.opt_move_title } else { t.select_path_title })
+                                                                        .size(20.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE)
+                                                                );
+                                                                ui.add_space(6.0);
+                                                                
+                                                                ui.label(
+                                                                    egui::RichText::new(t.select_path_label)
+                                                                        .size(13.0)
+                                                                        .color(egui::Color32::from_gray(215))
+                                                                );
+                                                                
+                                                                if let Some(ref detected) = self.detected_existing {
+                                                                    ui.add_space(6.0);
+                                                                    ui.label(
+                                                                        egui::RichText::new(format!("Existing: {}", detected.display()))
+                                                                            .size(11.5)
+                                                                            .color(egui::Color32::from_rgb(52, 211, 153))
+                                                                    );
+                                                                }
+
+                                                                ui.add_space(14.0);
+
+                                                                // Czysty input ścieżki i przycisk Przeglądaj
+                                                                ui.horizontal(|ui| {
+                                                                    egui::Frame::none()
+                                                                        .fill(egui::Color32::from_rgb(38, 38, 38))
+                                                                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(68, 68, 68)))
+                                                                        .inner_margin(egui::Margin::symmetric(10.0, 7.0))
+                                                                        .rounding(3.0)
+                                                                        .show(ui, |ui| {
+                                                                            ui.add_sized(
+                                                                                [270.0, 20.0],
+                                                                                egui::TextEdit::singleline(&mut self.install_path_str)
+                                                                                    .frame(false)
+                                                                                    .text_color(egui::Color32::WHITE)
+                                                                                    .font(egui::FontId::proportional(13.0))
+                                                                            );
+                                                                        });
+                                                                    
+                                                                    ui.add_space(6.0);
+                                                                    
+                                                                    if custom_button(ui, ctx, [90.0, 36.0], t.browse_btn) {
+                                                                        if let Some(folder) = dialogs::pick_folder(Some(&self.install_path_str)) {
+                                                                            self.install_path_str = folder;
+                                                                        }
+                                                                    }
+                                                                });
+                                                                
+                                                                ui.add_space(16.0);
+                                                                ui.checkbox(&mut self.create_desktop_shortcut, t.shortcut_desktop);
+
+                                                                #[cfg(not(target_os = "macos"))]
+                                                                {
+                                                                    ui.add_space(8.0);
+                                                                    ui.checkbox(&mut self.create_start_menu_shortcut, t.shortcut_menu);
+                                                                }
+
+                                                                ui.add_space(14.0);
+                                                                ui.label(
+                                                                    egui::RichText::new("At least 500 MB of free disk space is required.")
+                                                                        .size(11.5)
+                                                                        .color(egui::Color32::from_gray(160))
+                                                                );
+                                                            }
+
+                                                            Screen::ConfirmAction => {
+                                                                let is_uninstall = self.action == Some(InstallAction::Uninstall);
+                                                                ui.heading(
+                                                                    egui::RichText::new(t.confirm_title)
+                                                                        .size(20.0)
+                                                                        .strong()
+                                                                        .color(if is_uninstall { egui::Color32::from_rgb(248, 113, 113) } else { egui::Color32::from_rgb(251, 191, 36) })
+                                                                );
+                                                                ui.add_space(14.0);
+
+                                                                if is_uninstall {
+                                                                    ui.label(
+                                                                        egui::RichText::new(t.confirm_uninstall_warn)
+                                                                            .size(13.5)
+                                                                            .color(egui::Color32::from_gray(220))
+                                                                    );
+                                                                } else {
+                                                                    ui.label(
+                                                                        egui::RichText::new(t.confirm_reset_warn)
+                                                                            .size(13.5)
+                                                                            .color(egui::Color32::from_gray(220))
+                                                                    );
+                                                                    ui.add_space(8.0);
+                                                                    ui.label(
+                                                                        egui::RichText::new(&self.install_path_str)
+                                                                            .size(12.0)
+                                                                            .monospace()
+                                                                            .color(egui::Color32::from_rgb(251, 191, 36))
+                                                                    );
+                                                                }
+                                                            }
+
+                                                            Screen::Progress => {
+                                                                let title = match self.action {
+                                                                    Some(InstallAction::Repair) => match self.language {
+                                                                        Language::Pl => "Naprawianie BadWords...",
+                                                                        Language::De => "BadWords reparieren...",
+                                                                        Language::Es => "Reparando BadWords...",
+                                                                        Language::Fr => "Réparation de BadWords...",
+                                                                        Language::It => "Riparazione di BadWords...",
+                                                                        Language::Nl => "BadWords repareren...",
+                                                                        Language::Pt => "Reparando o BadWords...",
+                                                                        Language::Ru => "Восстановление BadWords...",
+                                                                        Language::Uk => "Відновлення BadWords...",
+                                                                        _ => "Repairing BadWords...",
+                                                                    },
+                                                                    Some(InstallAction::Move) => match self.language {
+                                                                        Language::Pl => "Przenoszenie BadWords...",
+                                                                        Language::De => "BadWords verschieben...",
+                                                                        Language::Es => "Moviendo BadWords...",
+                                                                        Language::Fr => "Déplacement de BadWords...",
+                                                                        Language::It => "Spostamento di BadWords...",
+                                                                        Language::Nl => "BadWords verplaatsen...",
+                                                                        Language::Pt => "Movendo o BadWords...",
+                                                                        Language::Ru => "Перемещение BadWords...",
+                                                                        Language::Uk => "Переміщення BadWords...",
+                                                                        _ => "Relocating BadWords...",
+                                                                    },
+                                                                    Some(InstallAction::Reset) => match self.language {
+                                                                        Language::Pl => "Resetowanie i ponowna instalacja...",
+                                                                        Language::De => "Zurücksetzen & Neuinstallation...",
+                                                                        Language::Es => "Restableciendo y reinstalando...",
+                                                                        Language::Fr => "Réinitialisation et réinstallation...",
+                                                                        Language::It => "Ripristino e reinstallazione...",
+                                                                        Language::Nl => "Resetten en opnieuw installeren...",
+                                                                        Language::Pt => "Redefinindo e reinstalando...",
+                                                                        Language::Ru => "Сброс и переустановка...",
+                                                                        Language::Uk => "Скидання та перевстановлення...",
+                                                                        _ => "Resetting & Reinstalling...",
+                                                                    },
+                                                                    Some(InstallAction::Uninstall) => match self.language {
+                                                                        Language::Pl => "Odinstalowywanie BadWords...",
+                                                                        Language::De => "BadWords deinstallieren...",
+                                                                        Language::Es => "Desinstalando BadWords...",
+                                                                        Language::Fr => "Désinstallation de BadWords...",
+                                                                        Language::It => "Disinstallazione di BadWords...",
+                                                                        Language::Nl => "BadWords verwijderen...",
+                                                                        Language::Pt => "Desinstalando o BadWords...",
+                                                                        Language::Ru => "Удаление BadWords...",
+                                                                        Language::Uk => "Видалення BadWords...",
+                                                                        _ => "Uninstalling BadWords...",
+                                                                    },
+                                                                    _ => match self.language {
+                                                                        Language::Pl => "Instalowanie BadWords...",
+                                                                        Language::De => "BadWords installieren...",
+                                                                        Language::Es => "Instalando BadWords...",
+                                                                        Language::Fr => "Installation de BadWords...",
+                                                                        Language::It => "Installazione di BadWords...",
+                                                                        Language::Nl => "BadWords installeren...",
+                                                                        Language::Pt => "Instalando o BadWords...",
+                                                                        Language::Ru => "Установка BadWords...",
+                                                                        Language::Uk => "Встановлення BadWords...",
+                                                                        _ => "Installing BadWords...",
+                                                                    },
+                                                                };
+                                                                ui.heading(
+                                                                    egui::RichText::new(title)
+                                                                        .size(20.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE)
+                                                                );
+                                                                ui.add_space(18.0);
+
+                                                                // Płynny, dwupoziomowy pasek postępu Liquid ze statusem POD każdym paskiem
+                                                                render_badwords_dual_progress(
+                                                                    ui,
+                                                                    ctx,
+                                                                    self.displayed_progress,
+                                                                    self.displayed_sub_progress,
+                                                                    &self.status_title,
+                                                                    &self.status_details,
+                                                                );
+                                                            }
+
+                                                            Screen::Complete => {
+                                                                ui.heading(
+                                                                    egui::RichText::new(t.complete_title)
+                                                                        .size(21.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE)
+                                                                );
+                                                                ui.add_space(16.0);
+
+                                                                ui.label(
+                                                                    egui::RichText::new(&self.status_title)
+                                                                        .size(13.5)
+                                                                        .color(egui::Color32::from_gray(220))
+                                                                );
+                                                                
+                                                                if self.action == Some(InstallAction::InstallUpdate) {
+                                                                    ui.add_space(20.0);
+                                                                    ui.checkbox(&mut self.launch_on_finish, t.launch_checkbox);
+                                                                }
+                                                            }
                                                         }
-
-                                                        ui.add_space(14.0);
-                                                        ui.label(
-                                                            egui::RichText::new("At least 500 MB of free disk space is required.")
-                                                                .size(11.5)
-                                                                .color(egui::Color32::from_gray(160))
-                                                        );
-                                                    }
-
-                                                    Screen::ConfirmAction => {
-                                                        let is_uninstall = self.action == Some(InstallAction::Uninstall);
-                                                        ui.heading(
-                                                            egui::RichText::new(t.confirm_title)
-                                                                .size(20.0)
-                                                                .strong()
-                                                                .color(if is_uninstall { egui::Color32::from_rgb(248, 113, 113) } else { egui::Color32::from_rgb(251, 191, 36) })
-                                                        );
-                                                        ui.add_space(14.0);
-
-                                                        if is_uninstall {
-                                                            ui.label(
-                                                                egui::RichText::new(t.confirm_uninstall_warn)
-                                                                    .size(13.5)
-                                                                    .color(egui::Color32::from_gray(220))
-                                                            );
-                                                        } else {
-                                                            ui.label(
-                                                                egui::RichText::new(t.confirm_reset_warn)
-                                                                    .size(13.5)
-                                                                    .color(egui::Color32::from_gray(220))
-                                                            );
-                                                            ui.add_space(8.0);
-                                                            ui.label(
-                                                                egui::RichText::new(&self.install_path_str)
-                                                                    .size(12.0)
-                                                                    .monospace()
-                                                                    .color(egui::Color32::from_rgb(251, 191, 36))
-                                                            );
-                                                        }
-                                                    }
-
-                                                    Screen::Progress => {
-                                                        let title = match self.action {
-                                                            Some(InstallAction::Repair) => "Repairing BadWords...",
-                                                            Some(InstallAction::Move) => "Relocating BadWords...",
-                                                            Some(InstallAction::Reset) => "Resetting & Reinstalling...",
-                                                            Some(InstallAction::Uninstall) => "Uninstalling BadWords...",
-                                                            _ => "Installing BadWords...",
-                                                        };
-                                                        ui.heading(
-                                                            egui::RichText::new(title)
-                                                                .size(20.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE)
-                                                        );
-                                                        ui.add_space(18.0);
-
-                                                        // Płynny, dwupoziomowy pasek postępu Liquid z gradientem BadWords i animacją shimmer
-                                                        render_badwords_dual_progress(
-                                                            ui,
-                                                            ctx,
-                                                            self.displayed_progress,
-                                                            self.displayed_sub_progress,
-                                                            &self.status_title,
-                                                            &self.status_details,
-                                                        );
-                                                    }
-
-                                                    Screen::Complete => {
-                                                        ui.heading(
-                                                            egui::RichText::new(t.complete_title)
-                                                                .size(21.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE)
-                                                        );
-                                                        ui.add_space(16.0);
-
-                                                        ui.label(
-                                                            egui::RichText::new(&self.status_title)
-                                                                .size(13.5)
-                                                                .color(egui::Color32::from_gray(220))
-                                                        );
-                                                        
-                                                        if self.action == Some(InstallAction::InstallUpdate) {
-                                                            ui.add_space(20.0);
-                                                            ui.checkbox(&mut self.launch_on_finish, t.launch_checkbox);
-                                                        }
-                                                    }
-                                                }
-                                            });
-                                        });
+                                                    });
+                                            },
+                                        );
                                     });
                                 });
 
@@ -1075,6 +1181,7 @@ impl eframe::App for InstallerApp {
                                                                 if item_resp.clicked() {
                                                                     self.language = lang;
                                                                     self.language_dropdown_open = false;
+                                                                    ctx.request_repaint();
                                                                 }
                                                             }
                                                         });
@@ -1165,7 +1272,7 @@ impl eframe::App for InstallerApp {
     }
 }
 
-/// Rysuje podwójny, animowany pasek postępu Liquid z gradientem BadWords i pod-paskiem operacji
+/// Rysuje podwójny, animowany pasek postępu Liquid ze statusem POD każdym paskiem
 fn render_badwords_dual_progress(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
@@ -1177,7 +1284,70 @@ fn render_badwords_dual_progress(
     let width = 392.0;
     let time = ctx.input(|i| i.time);
 
-    // 1. GŁÓWNA OPERACJA: Tytuł + Procent
+    // 1. GŁÓWNY PASEK POSTĘPU (10px wysokości)
+    let pct_str = format!("{:.0}%", (main_progress * 100.0).clamp(0.0, 100.0));
+    let (main_rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0), egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(main_rect, 5.0, egui::Color32::from_rgb(26, 26, 26));
+    painter.rect_stroke(main_rect, 5.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(48, 48, 48)));
+
+    let clamped_main = main_progress.clamp(0.0, 1.0);
+    if clamped_main > 0.005 {
+        let fill_w = (main_rect.width() * clamped_main).max(8.0);
+        let fill_rect = egui::Rect::from_min_size(main_rect.min, egui::vec2(fill_w, main_rect.height()));
+
+        let start_col = egui::Color32::from_rgb(26, 122, 62);
+        let end_col = egui::Color32::from_rgb(184, 208, 53);
+
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(fill_rect.left_top(), start_col);
+        mesh.colored_vertex(fill_rect.left_bottom(), start_col);
+        mesh.colored_vertex(fill_rect.right_top(), end_col);
+        mesh.colored_vertex(fill_rect.right_bottom(), end_col);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(2, 1, 3);
+        painter.add(egui::Shape::Mesh(mesh));
+
+        // Windows-Style Soft Gloss Shimmer Beam
+        let beam_w = 70.0;
+        let full_cycle = main_rect.width() + beam_w * 2.0;
+        let cycle = ((time * 160.0) as f32) % full_cycle;
+        let beam_center = main_rect.min.x + cycle - beam_w;
+
+        let b_left = (beam_center - beam_w * 0.5).max(fill_rect.min.x);
+        let b_mid = beam_center.clamp(fill_rect.min.x, fill_rect.max.x);
+        let b_right = (beam_center + beam_w * 0.5).min(fill_rect.max.x);
+
+        if b_right > b_left {
+            if b_mid > b_left {
+                let mut left_mesh = egui::Mesh::default();
+                left_mesh.colored_vertex(egui::pos2(b_left, fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                left_mesh.colored_vertex(egui::pos2(b_left, fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                left_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.min.y), egui::Color32::from_white_alpha(90));
+                left_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.max.y), egui::Color32::from_white_alpha(90));
+                left_mesh.add_triangle(0, 1, 2);
+                left_mesh.add_triangle(2, 1, 3);
+                painter.add(egui::Shape::Mesh(left_mesh));
+            }
+            if b_right > b_mid {
+                let mut right_mesh = egui::Mesh::default();
+                right_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.min.y), egui::Color32::from_white_alpha(90));
+                right_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.max.y), egui::Color32::from_white_alpha(90));
+                right_mesh.colored_vertex(egui::pos2(b_right, fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                right_mesh.colored_vertex(egui::pos2(b_right, fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                right_mesh.add_triangle(0, 1, 2);
+                right_mesh.add_triangle(2, 1, 3);
+                painter.add(egui::Shape::Mesh(right_mesh));
+            }
+        }
+
+        let gloss_rect = egui::Rect::from_min_size(fill_rect.min, egui::vec2(fill_w, 3.5));
+        painter.rect_filled(gloss_rect, 2.5, egui::Color32::from_white_alpha(25));
+    }
+
+    ui.add_space(6.0);
+
+    // GŁÓWNY TYTUŁ + PROCENT: Umieszczony POD głównym paskiem
     let (header_rect, _) = ui.allocate_exact_size(egui::vec2(width, 18.0), egui::Sense::hover());
     let title_max_w = width - 55.0;
     let title_galley = ui.painter().layout(
@@ -1189,82 +1359,15 @@ fn render_badwords_dual_progress(
     let title_clip = egui::Rect::from_min_size(header_rect.min, egui::vec2(title_max_w, 18.0));
     ui.painter().with_clip_rect(title_clip).galley(header_rect.min, title_galley, egui::Color32::from_gray(225));
 
-    let pct_str = format!("{:.0}%", (main_progress * 100.0).clamp(0.0, 100.0));
     ui.painter().text(
         header_rect.right_top(),
         egui::Align2::RIGHT_TOP,
         pct_str,
-        egui::FontId::proportional(13.5),
+        egui::FontId::proportional(13.0),
         egui::Color32::from_rgb(184, 208, 53),
     );
 
-    ui.add_space(6.0);
-
-    // Główny Pasek Postępu (10px wysokości)
-    {
-        let (main_rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0), egui::Sense::hover());
-        let painter = ui.painter();
-        painter.rect_filled(main_rect, 5.0, egui::Color32::from_rgb(26, 26, 26));
-        painter.rect_stroke(main_rect, 5.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(48, 48, 48)));
-
-        let clamped_main = main_progress.clamp(0.0, 1.0);
-        if clamped_main > 0.005 {
-            let fill_w = (main_rect.width() * clamped_main).max(8.0);
-            let fill_rect = egui::Rect::from_min_size(main_rect.min, egui::vec2(fill_w, main_rect.height()));
-
-            // Gradient poziomy od #1a7a3e (RGB 26, 122, 62) do #b8d035 (RGB 184, 208, 53)
-            let start_col = egui::Color32::from_rgb(26, 122, 62);
-            let end_col = egui::Color32::from_rgb(184, 208, 53);
-
-            let mut mesh = egui::Mesh::default();
-            mesh.colored_vertex(fill_rect.left_top(), start_col);
-            mesh.colored_vertex(fill_rect.left_bottom(), start_col);
-            mesh.colored_vertex(fill_rect.right_top(), end_col);
-            mesh.colored_vertex(fill_rect.right_bottom(), end_col);
-            mesh.add_triangle(0, 1, 2);
-            mesh.add_triangle(2, 1, 3);
-            painter.add(egui::Shape::Mesh(mesh));
-
-            // Windows-Style Soft Gloss Shimmer Beam (70px szerokości, stały cykl na całej szerokości ramki paska)
-            let beam_w = 70.0;
-            let full_cycle = main_rect.width() + beam_w * 2.0;
-            let cycle = ((time * 160.0) as f32) % full_cycle;
-            let beam_center = main_rect.min.x + cycle - beam_w;
-
-            let b_left = (beam_center - beam_w * 0.5).max(fill_rect.min.x);
-            let b_mid = beam_center.clamp(fill_rect.min.x, fill_rect.max.x);
-            let b_right = (beam_center + beam_w * 0.5).min(fill_rect.max.x);
-
-            if b_right > b_left {
-                if b_mid > b_left {
-                    let mut left_mesh = egui::Mesh::default();
-                    left_mesh.colored_vertex(egui::pos2(b_left, fill_rect.min.y), egui::Color32::from_white_alpha(0));
-                    left_mesh.colored_vertex(egui::pos2(b_left, fill_rect.max.y), egui::Color32::from_white_alpha(0));
-                    left_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.min.y), egui::Color32::from_white_alpha(90));
-                    left_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.max.y), egui::Color32::from_white_alpha(90));
-                    left_mesh.add_triangle(0, 1, 2);
-                    left_mesh.add_triangle(2, 1, 3);
-                    painter.add(egui::Shape::Mesh(left_mesh));
-                }
-                if b_right > b_mid {
-                    let mut right_mesh = egui::Mesh::default();
-                    right_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.min.y), egui::Color32::from_white_alpha(90));
-                    right_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.max.y), egui::Color32::from_white_alpha(90));
-                    right_mesh.colored_vertex(egui::pos2(b_right, fill_rect.min.y), egui::Color32::from_white_alpha(0));
-                    right_mesh.colored_vertex(egui::pos2(b_right, fill_rect.max.y), egui::Color32::from_white_alpha(0));
-                    right_mesh.add_triangle(0, 1, 2);
-                    right_mesh.add_triangle(2, 1, 3);
-                    painter.add(egui::Shape::Mesh(right_mesh));
-                }
-            }
-
-            // Subtelny połysk górnej krawędzi
-            let gloss_rect = egui::Rect::from_min_size(fill_rect.min, egui::vec2(fill_w, 3.5));
-            painter.rect_filled(gloss_rect, 2.5, egui::Color32::from_white_alpha(25));
-        }
-    }
-
-    ui.add_space(8.0);
+    ui.add_space(14.0);
 
     // 2. POD-PASEK POSTĘPU: Animowany pasek mikro-kroku
     {
@@ -1278,7 +1381,6 @@ fn render_badwords_dual_progress(
 
         let clamped_sub = sub_progress.clamp(0.0, 1.0);
         if clamped_sub > 0.01 && clamped_sub <= 1.0 {
-            // Tryb określony: Płynne wypełnienie podczas aktywnego pobierania bajtów
             let sub_fill_w = (sub_rect.width() * clamped_sub).max(6.0);
             let sub_fill_rect = egui::Rect::from_min_size(sub_rect.min, egui::vec2(sub_fill_w, sub_rect.height()));
 
@@ -1291,7 +1393,7 @@ fn render_badwords_dual_progress(
             sub_mesh.add_triangle(2, 1, 3);
             painter.add(egui::Shape::Mesh(sub_mesh));
 
-            // Soft shimmer na pod-pasku (40px, stały cykl na całej szerokości ramki pod-paska)
+            // Soft shimmer
             let sub_beam_w = 40.0;
             let sub_full_cycle = sub_rect.width() + sub_beam_w * 2.0;
             let sub_cycle = ((time * 180.0) as f32) % sub_full_cycle;
@@ -1323,10 +1425,9 @@ fn render_badwords_dual_progress(
                 }
             }
         } else {
-            // Tryb nieokreślony: Nieskończona, płynnie sunąca pastylka BadWords z pełnym gradientem #1a7a3e -> #b8d035
             let pill_w = (sub_rect.width() * 0.25).clamp(65.0, 95.0);
             let cycle_period = sub_rect.width() + pill_w;
-            let speed = 190.0; // px per second
+            let speed = 190.0;
             let x_rel = ((time * speed) as f32) % cycle_period - pill_w;
 
             let pill_left = (sub_rect.min.x + x_rel).max(sub_rect.min.x);
@@ -1350,9 +1451,9 @@ fn render_badwords_dual_progress(
         }
     }
 
-    ui.add_space(8.0);
+    ui.add_space(6.0);
 
-    // 3. POD-OPERACJA: Detale mikro-kroku umieszczone POD dolnym paskiem z pełną przestrzenią na łamanie tekstu
+    // 3. DETALE MIKRO-KROKU: Umieszczone POD dolnym paskiem z pełną przestrzenią na łamanie tekstu
     if !status_details.is_empty() {
         let (details_rect, _) = ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::hover());
         let details_galley = ui.painter().layout(
