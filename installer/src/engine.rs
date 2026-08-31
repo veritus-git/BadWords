@@ -14,6 +14,100 @@ const GITHUB_ZIP_MAIN_URL: &str = "https://github.com/veritus-git/BadWords/archi
 const GITHUB_ZIP_DEV_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/heads/dev-v4.zip";
 const GITLAB_ZIP_URL: &str = "https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip";
 
+/// Recursively collects all files in a directory tree with relative paths and byte sizes
+fn collect_all_files(dir: &Path, base: &Path) -> Vec<(PathBuf, PathBuf, u64)> {
+    let mut result = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let rel = p.strip_prefix(base).unwrap_or(&p).to_path_buf();
+            if p.is_dir() {
+                result.extend(collect_all_files(&p, base));
+            } else if p.is_file() || p.is_symlink() {
+                let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+                result.push((p, rel, size));
+            }
+        }
+    }
+    result
+}
+
+/// Recursively copies a directory tree with continuous live progress
+fn copy_dir_with_progress(
+    src: &Path,
+    dst: &Path,
+    start_pct: i32,
+    end_pct: i32,
+    title: &str,
+    sender: &EventSender,
+) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    let files = collect_all_files(src, src);
+    let total_bytes: u64 = files.iter().map(|(_, _, s)| *s).sum();
+    let total_files = files.len();
+    let mut copied_bytes: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+
+    for (idx, (src_file, rel_path, file_size)) in files.into_iter().enumerate() {
+        let target_file = dst.join(&rel_path);
+        if let Some(parent) = target_file.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::copy(&src_file, &target_file);
+        copied_bytes += file_size;
+
+        if last_emit.elapsed() > std::time::Duration::from_millis(40) || idx + 1 == total_files {
+            let frac = if total_bytes > 0 {
+                (copied_bytes as f32 / total_bytes as f32).clamp(0.0, 1.0)
+            } else {
+                ((idx + 1) as f32 / total_files.max(1) as f32).clamp(0.0, 1.0)
+            };
+            let main_pct = start_pct + ((end_pct - start_pct) as f32 * frac) as i32;
+            let sub_pct = (frac * 100.0) as i32;
+            let copied_mb = (copied_bytes as f64) / 1_048_576.0;
+            let total_mb = (total_bytes as f64) / 1_048_576.0;
+            let details = if total_mb > 0.1 {
+                format!("Copying: {} ({:.1}/{:.1} MB)", rel_path.display(), copied_mb, total_mb)
+            } else {
+                format!("Copying: {} ({}/{})", rel_path.display(), idx + 1, total_files)
+            };
+            emit_progress_sub(sender, main_pct as u32, sub_pct as u32, title, &details);
+            last_emit = std::time::Instant::now();
+        }
+    }
+    Ok(())
+}
+
+/// Recursively deletes a directory with continuous live progress
+fn delete_dir_with_progress(
+    dir: &Path,
+    start_pct: i32,
+    end_pct: i32,
+    title: &str,
+    sender: &EventSender,
+) {
+    if !dir.exists() {
+        return;
+    }
+    let files = collect_all_files(dir, dir);
+    let total_items = files.len();
+    let mut last_emit = std::time::Instant::now();
+
+    for (idx, (file_path, rel_path, _)) in files.into_iter().enumerate() {
+        let _ = fs::remove_file(&file_path);
+
+        if last_emit.elapsed() > std::time::Duration::from_millis(30) || idx + 1 == total_items {
+            let frac = ((idx + 1) as f32 / total_items.max(1) as f32).clamp(0.0, 1.0);
+            let main_pct = start_pct + ((end_pct - start_pct) as f32 * frac) as i32;
+            let sub_pct = (frac * 100.0) as i32;
+            let details = format!("Removing: {} ({}/{})", rel_path.display(), idx + 1, total_items);
+            emit_progress_sub(sender, main_pct as u32, sub_pct as u32, title, &details);
+            last_emit = std::time::Instant::now();
+        }
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
 /// Recursively copies a directory tree
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
     fs::create_dir_all(&dst)?;
@@ -304,17 +398,51 @@ fn detect_nvidia_gpu() -> bool {
 }
 
 /// Locates local source repository if available
-fn find_local_repo() -> Option<PathBuf> {
-    let candidates = [
+pub fn find_local_repo() -> Option<PathBuf> {
+    let mut candidates = vec![
         PathBuf::from("."),
         PathBuf::from(".."),
+        PathBuf::from("../.."),
         PathBuf::from("/mnt/dump/BadWords"),
     ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.to_path_buf());
+            if let Some(p2) = parent.parent() {
+                candidates.push(p2.to_path_buf());
+            }
+        }
+    }
 
     for candidate in candidates {
-        if candidate.join("src").join("main.py").is_file() {
-            return candidate.canonicalize().ok();
+        if candidate.join("src").join("main.py").is_file() || (candidate.join("main.py").is_file() && candidate.join("setupfiles").is_dir()) {
+            if let Ok(canon) = candidate.canonicalize() {
+                return Some(canon);
+            }
         }
+    }
+    None
+}
+
+/// Detects version from local files if running from repo/source directory
+pub fn detect_local_version() -> Option<String> {
+    if let Some(repo_dir) = find_local_repo() {
+        for config_path in [repo_dir.join("src").join("config.py"), repo_dir.join("config.py")] {
+            if let Ok(content) = fs::read_to_string(&config_path) {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("APP_VERSION") || trimmed.starts_with("VERSION") {
+                        if let Some((_, val)) = trimmed.split_once('=') {
+                            let clean = val.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+                            if !clean.is_empty() {
+                                return Some(clean.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return Some(APP_VERSION.to_string());
     }
     None
 }
@@ -882,7 +1010,7 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
 pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", "Starting verification and repair...");
-        emit_progress(&sender, 15, 0, "Scanning files...", "Verifying directory structure");
+        emit_progress(&sender, 10, 0, "Scanning files...", "Verifying directory structure");
 
         if !target_dir.exists() {
             if let Some(detected) = os::detect_existing_install() {
@@ -896,16 +1024,17 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         }
 
         // Re-deploy application core files
-        emit_progress(&sender, 40, 1, "Repairing core files...", "Re-syncing files from repository");
+        emit_progress(&sender, 30, 1, "Repairing core files...", "Re-syncing files from repository");
         let _ = deploy_application_files(&target_dir, &sender);
 
         // Verify FFmpeg
+        emit_progress(&sender, 45, 1, "Checking media engine...", "Verifying FFmpeg binary");
         let bin_dir = target_dir.join("bin");
         let _ = fs::create_dir_all(&bin_dir);
         ensure_ffmpeg(&bin_dir, &sender);
 
         // Verify virtual environment and packages
-        emit_progress(&sender, 70, 2, "Checking dependencies...", "Verifying Python virtual environment");
+        emit_progress(&sender, 60, 2, "Checking dependencies...", "Verifying Python virtual environment");
         let venv_dir = target_dir.join("venv");
         #[cfg(target_os = "windows")]
         let v_py = venv_dir.join("Scripts").join("python.exe");
@@ -964,7 +1093,6 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
 pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Relocating BadWords from {} to {}", from_dir.display(), to_dir.display()));
-        emit_progress(&sender, 20, 0, "Copying files...", "Transferring installation files");
 
         if !from_dir.exists() {
             emit_log(&sender, "ERROR", "Source installation directory not found!");
@@ -972,13 +1100,15 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
             return;
         }
 
-        if let Err(e) = copy_dir_all(&from_dir, &to_dir) {
+        // Step 1: Copy files progressively with live MB and file count updates
+        emit_progress(&sender, 5, 0, "Transferring files...", "Scanning source files");
+        if let Err(e) = copy_dir_with_progress(&from_dir, &to_dir, 5, 55, "Transferring files...", &sender) {
             emit_log(&sender, "ERROR", &format!("Failed to copy files: {}", e));
             emit_complete(&sender, "move", false, "Failed to copy files to new location.");
             return;
         }
 
-        // Re-generate Python venv to fix hardcoded absolute paths at the new location
+        // Step 2: Re-generate Python venv to fix hardcoded absolute paths at the new location
         emit_progress(&sender, 60, 1, "Reconfiguring Python environment...", "Updating virtual environment paths");
         let venv_dir = to_dir.join("venv");
         if venv_dir.exists() {
@@ -987,7 +1117,8 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
         let has_nvidia = detect_nvidia_gpu();
         setup_python_environment(&to_dir, None, has_nvidia, &sender);
 
-        emit_progress(&sender, 75, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
+        // Step 3: Update DaVinci Resolve wrappers
+        emit_progress(&sender, 85, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
         let resolve_dirs = resolve_script_dirs();
         for r_dir in &resolve_dirs {
             let wrapper_path = r_dir.join("BadWords.py");
@@ -1000,8 +1131,9 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
             }
         }
 
-        emit_progress(&sender, 85, 2, "Cleaning old directory...", "Removing files from previous location");
-        let _ = fs::remove_dir_all(&from_dir);
+        // Step 4: Clean old directory progressively
+        emit_progress(&sender, 90, 2, "Cleaning old directory...", "Removing old installation files");
+        delete_dir_with_progress(&from_dir, 90, 98, "Cleaning old directory...", &sender);
 
         #[cfg(target_os = "windows")]
         {
@@ -1022,36 +1154,33 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
 pub fn run_reset(target_dir: PathBuf, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Resetting BadWords in: {}", target_dir.display()));
-        emit_progress(&sender, 20, 0, "Removing old files...", "Deleting existing installation");
 
         if target_dir.exists() {
-            let _ = fs::remove_dir_all(&target_dir);
+            emit_progress(&sender, 5, 0, "Removing old files...", "Deleting existing installation files");
+            delete_dir_with_progress(&target_dir, 5, 30, "Removing old files...", &sender);
             emit_log(&sender, "OK", "Previous installation removed.");
         }
 
-        emit_progress(&sender, 40, 1, "Reinstalling fresh copy...", "Beginning clean installation");
+        emit_progress(&sender, 35, 1, "Reinstalling fresh copy...", "Beginning clean installation");
         run_install(target_dir, true, true, sender);
     });
 }
 
-/// Executes complete uninstallation
+/// Executes complete uninstallation with live file-by-file progress
 pub fn run_uninstall(target_dir: PathBuf, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Uninstalling BadWords from: {}", target_dir.display()));
-        emit_progress(&sender, 20, 0, "Removing files...", "Deleting installation folder");
 
         let auto_py_marker = target_dir.join(".python_auto_installed");
         let had_auto_python = auto_py_marker.exists();
 
         if target_dir.exists() {
-            if let Err(e) = fs::remove_dir_all(&target_dir) {
-                emit_log(&sender, "WARN", &format!("Failed to completely delete folder: {}", e));
-            } else {
-                emit_log(&sender, "OK", "Installation files deleted.");
-            }
+            emit_progress(&sender, 5, 0, "Removing files...", "Deleting installation folder");
+            delete_dir_with_progress(&target_dir, 5, 70, "Removing files...", &sender);
+            emit_log(&sender, "OK", "Installation files deleted.");
         }
 
-        emit_progress(&sender, 60, 1, "Removing integrations...", "Deleting DaVinci Resolve wrappers");
+        emit_progress(&sender, 75, 1, "Removing integrations...", "Deleting DaVinci Resolve wrappers");
         let resolve_dirs = resolve_script_dirs();
         for r_dir in &resolve_dirs {
             let wrapper_path = r_dir.join("BadWords.py");
@@ -1061,7 +1190,7 @@ pub fn run_uninstall(target_dir: PathBuf, sender: EventSender) {
             }
         }
 
-        emit_progress(&sender, 85, 2, "Cleaning system entries...", "Removing desktop launchers and shortcuts");
+        emit_progress(&sender, 90, 2, "Cleaning system entries...", "Removing desktop launchers and shortcuts");
         #[cfg(target_os = "windows")]
         {
             let _ = os::windows::remove_windows_shortcuts();

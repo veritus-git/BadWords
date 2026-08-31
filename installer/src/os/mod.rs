@@ -159,3 +159,100 @@ pub fn detect_existing_install() -> Option<PathBuf> {
     }
     None
 }
+
+/// Detects primary screen resolution for initial window centering
+pub fn get_primary_screen_size() -> Option<(f32, f32)> {
+    #[cfg(target_os = "linux")]
+    {
+        // 1. Try xrandr
+        if let Ok(out) = std::process::Command::new("xrandr").arg("--current").output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if line.contains(" connected") && (line.contains("primary") || line.contains("+0+0")) {
+                    for part in line.split_whitespace() {
+                        if let Some((w_str, rest)) = part.split_once('x') {
+                            if let Some((h_str, _)) = rest.split_once('+') {
+                                if let (Ok(w), Ok(h)) = (w_str.parse::<f32>(), h_str.parse::<f32>()) {
+                                    if w > 400.0 && h > 300.0 {
+                                        return Some((w, h));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // fallback in xrandr: "current 1920 x 1080"
+            for line in text.lines() {
+                if line.contains("current ") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if let Some(pos) = parts.iter().position(|&p| p == "current") {
+                        if pos + 3 < parts.len() {
+                            if let (Ok(w), Ok(h)) = (parts[pos + 1].parse::<f32>(), parts[pos + 3].trim_end_matches(',').parse::<f32>()) {
+                                if w > 400.0 && h > 300.0 {
+                                    return Some((w, h));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Try xdpyinfo
+        if let Ok(out) = std::process::Command::new("xdpyinfo").output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if line.contains("dimensions:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Some((w_str, h_str)) = parts[1].split_once('x') {
+                            if let (Ok(w), Ok(h)) = (w_str.parse::<f32>(), h_str.parse::<f32>()) {
+                                if w > 400.0 && h > 300.0 {
+                                    return Some((w, h));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(out) = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height"])
+            .output()
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let nums: Vec<f32> = text.lines().filter_map(|l| l.trim().parse::<f32>().ok()).collect();
+            if nums.len() >= 2 && nums[0] > 400.0 && nums[1] > 300.0 {
+                return Some((nums[0], nums[1]));
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(out) = std::process::Command::new("system_profiler").args(["SPDisplaysDataType"]).output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if line.contains("Resolution:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if let Some(pos) = parts.iter().position(|&p| p == "Resolution:") {
+                        if pos + 3 < parts.len() {
+                            if let (Ok(w), Ok(h)) = (parts[pos + 1].parse::<f32>(), parts[pos + 3].parse::<f32>()) {
+                                if w > 400.0 && h > 300.0 {
+                                    return Some((w, h));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
