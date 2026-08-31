@@ -1,4 +1,4 @@
-name: Deep Automated Installer Test Suite (Cross-Platform Matrix)
+name: Deep Automated Installer Test (Cross-Platform)
 
 on:
   push:
