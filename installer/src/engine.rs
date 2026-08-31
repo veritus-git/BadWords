@@ -81,6 +81,33 @@ fn download_file_with_progress(
     Ok(())
 }
 
+/// Converts raw wheel / package filenames into clean, user-friendly names
+fn friendly_pkg_name(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    if lower.contains("pyside6_essentials") {
+        "PySide6 Essentials".to_string()
+    } else if lower.contains("pyside6_addons") {
+        "PySide6 Addons".to_string()
+    } else if lower.contains("pyside6") {
+        "PySide6 Framework".to_string()
+    } else if lower.contains("cudnn") {
+        "NVIDIA cuDNN CUDA 12".to_string()
+    } else if lower.contains("cublas") {
+        "NVIDIA cuBLAS CUDA 12".to_string()
+    } else if lower.contains("faster_whisper") || lower.contains("faster-whisper") {
+        "Faster-Whisper AI Engine".to_string()
+    } else if lower.contains("ctranslate2") {
+        "CTranslate2 Runtime".to_string()
+    } else if lower.contains("pypdf") {
+        "PyPDF Library".to_string()
+    } else if lower.contains("shiboken6") {
+        "Shiboken6 Core".to_string()
+    } else {
+        let name = raw.split('-').next().unwrap_or(raw);
+        name.trim_end_matches(".whl").trim_end_matches(".tar.gz").to_string()
+    }
+}
+
 /// Executes pip install with live streaming progress updates
 fn run_pip_install_streaming(
     py_bin: &Path,
@@ -129,16 +156,19 @@ fn run_pip_install_streaming(
                             if line.contains("Downloading") {
                                 if let Some(pkg_name) = line.split("Downloading").nth(1) {
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
-                                    current_detail = format!("Downloading {}", clean_name);
+                                    let friendly = friendly_pkg_name(clean_name);
+                                    current_detail = format!("Downloading {}", friendly);
                                 }
                             } else if line.contains("Collecting") {
                                 if let Some(pkg_name) = line.split("Collecting").nth(1) {
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
-                                    current_detail = format!("Collecting {}", clean_name);
+                                    let friendly = friendly_pkg_name(clean_name);
+                                    current_detail = format!("Collecting {}", friendly);
                                 }
                             } else if line.contains("Installing collected packages") {
-                                current_detail = "Installing modules into virtual environment...".to_string();
-                                emit_progress_sub(&sender_clone, main_pct_end - 1, 95, &status_str, &current_detail);
+                                current_detail = "Unpacking & configuring Python packages...".to_string();
+                                // Set sub_pct = 0 so indeterminate gliding pill immediately activates
+                                emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
                             }
 
                             // Parse download fraction (e.g. 45.2/78.3 MB or kB)
@@ -151,7 +181,7 @@ fn run_pip_install_streaming(
                                                 let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
                                                 let span = (main_pct_end - main_pct_start) as f32;
                                                 let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
-                                                let det_with_size = format!("{} ({:.1}/{:.1} MB)", current_detail, cur, tot);
+                                                let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur, tot);
                                                 emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
                                             }
                                         }
