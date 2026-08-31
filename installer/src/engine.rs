@@ -414,7 +414,6 @@ pub fn find_local_repo() -> Option<PathBuf> {
         PathBuf::from("."),
         PathBuf::from(".."),
         PathBuf::from("../.."),
-        PathBuf::from("/mnt/dump/BadWords"),
     ];
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
