@@ -49,7 +49,7 @@ invoke_python_fallback() {
     echo -e "     because it is not signed with an Apple Developer certificate."
     echo -e "\033[36m========================================================================\033[0m"
     echo -e " How would you like to proceed?"
-    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended - 100% bypasses Gatekeeper)\033[0m"
+    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended)\033[0m"
     echo -e "  \033[90m[2] Exit (I want to change Privacy & Security settings and try again)\033[0m"
     echo -e "\033[36m========================================================================\033[0m"
 

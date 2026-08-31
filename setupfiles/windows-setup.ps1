@@ -49,7 +49,7 @@ function Invoke-PythonFallback() {
     Write-Host "     Control (SAC) or SmartScreen because it lacks an EV certificate." -ForegroundColor White
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " How would you like to proceed?" -ForegroundColor White
-    Write-Host "  [1] Run Terminal Installer via Python (Recommended - 100% bypasses security)" -ForegroundColor Green
+    Write-Host "  [1] Run Terminal Installer via Python (Recommended)" -ForegroundColor Green
     Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
     Write-Host "========================================================================" -ForegroundColor Cyan
     
