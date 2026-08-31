@@ -96,13 +96,11 @@ Version 3.2 is another massive update. I dug deep into the core code to fix some
 
 I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. You don't need to manually download zip files, configure Python paths, or install dependencies - the setup handles everything automatically.
 
-<br>
-
 In version 4.0, BadWords features a **brand new Graphical User Interface** for easier and more accessible instalation process.
 
 ### <img src="repo/icons/download.svg" alt="Installation Process" width="24" height="24" valign="text-bottom"> The Installation Process
 
-1. **Copy the command** for your specific operating system from the [section below](#option-1-automated-setup-commands).
+1. **Copy the command** for your specific operating system from the [section below](#-option-1-automated-setup-commands-recommended).
 2. **Paste the command** into your terminal (PowerShell on Windows, Terminal on macOS/Linux) and press **Enter**.
 3. The **BadWords Setup** window will appear
 4. Skip Welcome Screen with `Enter`, then **select `1. Fresh Install / Update`** (you can click with your mouse or simply press **`1`** on your keyboard).
@@ -111,8 +109,7 @@ In version 4.0, BadWords features a **brand new Graphical User Interface** for e
   <img src="repo/gui_setup_preview.png" alt="BadWords GUI Setup Preview" width="70%">
 </p>
 
-> [!NOTE] 
-> As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, or completely *Uninstall* BadWords!
+> As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, *Reinstall* or completely *Uninstall* BadWords!
 
 5. **Confirm the install path** (~4GB for core files + AI models), or browse/type in a custom destination path.
 6. Wait for the setup to finish. When it's done you can simply Launch BadWords as normal desktop app or open it from DaVinci Resolve: **Workspace** → **Scripts** → **BadWords**
@@ -122,6 +119,7 @@ In version 4.0, BadWords features a **brand new Graphical User Interface** for e
 
 ---
 
+<a id="automated-setup-commands"></a>
 ### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Option 1: Automated Setup Commands (Recommended)
 The absolute easiest way to start the setup. It securely downloads and runs the lightweight setup wizard directly from this repository.
 
