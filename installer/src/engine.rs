@@ -119,7 +119,7 @@ fn run_pip_install_streaming(
     sender: &EventSender,
 ) -> bool {
     let mut cmd = Command::new(py_bin);
-    cmd.args(["-m", "pip", "install", "--no-cache-dir", "--progress-bar", "raw"]);
+    cmd.args(["-m", "pip", "install", "--no-cache-dir"]);
     for arg in args {
         cmd.arg(arg);
     }
@@ -135,6 +135,7 @@ fn run_pip_install_streaming(
     };
 
     let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
     let sender_clone = sender.clone();
     let status_str = status_label.to_string();
     let mut current_detail = default_detail.to_string();
@@ -157,13 +158,20 @@ fn run_pip_install_streaming(
                                 if let Some(pkg_name) = line.split("Downloading").nth(1) {
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
-                                    current_detail = format!("Downloading {}", friendly);
+                                    let size_str = pkg_name.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("");
+                                    current_detail = if !size_str.is_empty() {
+                                        format!("Downloading {} ({})", friendly, size_str)
+                                    } else {
+                                        format!("Downloading {}", friendly)
+                                    };
+                                    emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
                                 }
                             } else if line.contains("Collecting") {
                                 if let Some(pkg_name) = line.split("Collecting").nth(1) {
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
                                     current_detail = format!("Collecting {}", friendly);
+                                    emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
                                 }
                             } else if line.contains("Using cached") {
                                 if let Some(pkg_name) = line.split("Using cached").nth(1) {
@@ -178,36 +186,18 @@ fn run_pip_install_streaming(
                                 emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
                             }
 
-                            // 1. Parse raw pip progress: "Progress <bytes_cur> of <bytes_tot>"
-                            if line.starts_with("Progress ") {
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-                                if parts.len() == 4 && parts[2] == "of" {
-                                    if let (Ok(cur), Ok(tot)) = (parts[1].parse::<f64>(), parts[3].parse::<f64>()) {
-                                        if tot > 0.0 && cur <= tot {
-                                            let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
-                                            let span = (main_pct_end - main_pct_start) as f32;
-                                            let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
-                                            let cur_mb = cur / 1_048_576.0;
-                                            let tot_mb = tot / 1_048_576.0;
-                                            let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur_mb, tot_mb);
-                                            emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
-                                        }
-                                    }
-                                }
-                            } else {
-                                // 2. Fallback parse for fraction (e.g. 45.2/78.3 MB)
-                                for part in line.split_whitespace() {
-                                    if part.contains('/') {
-                                        let pieces: Vec<&str> = part.split('/').collect();
-                                        if pieces.len() == 2 {
-                                            if let (Ok(cur), Ok(tot)) = (pieces[0].parse::<f32>(), pieces[1].parse::<f32>()) {
-                                                if tot > 0.0 && cur <= tot {
-                                                    let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
-                                                    let span = (main_pct_end - main_pct_start) as f32;
-                                                    let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
-                                                    let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur, tot);
-                                                    emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
-                                                }
+                            // Parse fraction (e.g. 45.2/78.3 MB or kB)
+                            for part in line.split_whitespace() {
+                                if part.contains('/') {
+                                    let pieces: Vec<&str> = part.split('/').collect();
+                                    if pieces.len() == 2 {
+                                        if let (Ok(cur), Ok(tot)) = (pieces[0].parse::<f32>(), pieces[1].parse::<f32>()) {
+                                            if tot > 0.0 && cur <= tot {
+                                                let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
+                                                let span = (main_pct_end - main_pct_start) as f32;
+                                                let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
+                                                let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur, tot);
+                                                emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
                                             }
                                         }
                                     }
@@ -223,12 +213,26 @@ fn run_pip_install_streaming(
         }
     });
 
+    let mut err_output = String::new();
+    if let Some(ref mut err) = stderr {
+        use std::io::Read;
+        let _ = err.read_to_string(&mut err_output);
+    }
+
     let status = child.wait();
     let _ = reader_thread.join();
 
     match status {
-        Ok(st) => st.success(),
-        Err(_) => false,
+        Ok(st) => {
+            if !st.success() && !err_output.trim().is_empty() {
+                emit_log(sender, "WARN", &format!("pip output: {}", err_output.trim()));
+            }
+            st.success()
+        }
+        Err(e) => {
+            emit_log(sender, "ERROR", &format!("pip process error: {}", e));
+            false
+        }
     }
 }
 
