@@ -1115,7 +1115,7 @@ fn render_badwords_dual_progress(
         let sub_end = egui::Color32::from_rgb(184, 208, 53);
 
         let clamped_sub = sub_progress.clamp(0.0, 1.0);
-        if clamped_sub > 0.01 && clamped_sub < 0.99 {
+        if clamped_sub > 0.01 && clamped_sub <= 1.0 {
             // Tryb określony: Płynne wypełnienie podczas aktywnego pobierania bajtów
             let sub_fill_w = (sub_rect.width() * clamped_sub).max(6.0);
             let sub_fill_rect = egui::Rect::from_min_size(sub_rect.min, egui::vec2(sub_fill_w, sub_rect.height()));

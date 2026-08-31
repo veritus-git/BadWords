@@ -136,9 +136,9 @@ fn run_pip_install_streaming(
 
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
+    emit_progress_sub(sender, main_pct_start, 0, status_label, default_detail);
     let sender_clone = sender.clone();
     let status_str = status_label.to_string();
-    let mut current_detail = default_detail.to_string();
 
     let reader_thread = std::thread::spawn(move || {
         if let Some(ref mut out) = stdout {
@@ -159,7 +159,7 @@ fn run_pip_install_streaming(
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
                                     let size_str = pkg_name.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("");
-                                    current_detail = if !size_str.is_empty() {
+                                    let current_detail = if !size_str.is_empty() {
                                         format!("Downloading {} ({})", friendly, size_str)
                                     } else {
                                         format!("Downloading {}", friendly)
@@ -170,38 +170,19 @@ fn run_pip_install_streaming(
                                 if let Some(pkg_name) = line.split("Collecting").nth(1) {
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
-                                    current_detail = format!("Collecting {}", friendly);
+                                    let current_detail = format!("Collecting {}", friendly);
                                     emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
                                 }
                             } else if line.contains("Using cached") {
                                 if let Some(pkg_name) = line.split("Using cached").nth(1) {
                                     let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
-                                    current_detail = format!("Using cached {}", friendly);
-                                    emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
+                                    let current_detail = format!("Using cached {}", friendly);
+                                    emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
                                 }
                             } else if line.contains("Installing collected packages") {
-                                current_detail = "Unpacking & configuring Python packages...".to_string();
-                                // Set sub_pct = 0 so indeterminate gliding pill immediately activates
+                                let current_detail = "Unpacking & configuring Python packages...".to_string();
                                 emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
-                            }
-
-                            // Parse fraction (e.g. 45.2/78.3 MB or kB)
-                            for part in line.split_whitespace() {
-                                if part.contains('/') {
-                                    let pieces: Vec<&str> = part.split('/').collect();
-                                    if pieces.len() == 2 {
-                                        if let (Ok(cur), Ok(tot)) = (pieces[0].parse::<f32>(), pieces[1].parse::<f32>()) {
-                                            if tot > 0.0 && cur <= tot {
-                                                let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
-                                                let span = (main_pct_end - main_pct_start) as f32;
-                                                let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
-                                                let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur, tot);
-                                                emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
                         line_buf.clear();
