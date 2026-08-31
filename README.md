@@ -114,7 +114,7 @@ In version 4.0, BadWords features a **brand new Graphical User Interface** for e
 
 <br>
 
-> As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, *Reinstall* or completely *Uninstall* BadWords!
+> As you can see on the screenshot above, the installer menu gives you **5** other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, *Reinstall* or completely *Uninstall* BadWords!
 
 > [!WARNING]
 > If you want BadWords' full functionality with **Davinci Resolve** and you have only ***FREE*** version of it, you NEED to launch it directly from Davinci Resolve as external scripting is not supported in free version (If you have Studio version you can launch it normally).

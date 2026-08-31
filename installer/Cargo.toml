@@ -20,6 +20,9 @@ urlencoding = "2.1"
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [profile.release]
 opt-level = 3
 lto = true
