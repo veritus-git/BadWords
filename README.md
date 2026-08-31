@@ -94,62 +94,27 @@ Version 3.2 is another massive update. I dug deep into the core code to fix some
 <a id="installation"></a>
 ## <img src="repo/icons/wrench.svg" alt="Installation & Setup" width="30" height="30" valign="text-bottom"> Installation & Setup
 
-I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. In version 4.0, BadWords features a **brand-new, modern Graphical User Interface (GUI)** crafted to match DaVinci Resolve's dark theme. You don't need to manually download zip files, configure Python paths, install virtual environments, or manage FFmpeg dependencies — the setup handles everything automatically.
+I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. In version 4.0, BadWords features a **brand-new, modern Graphical User Interface (GUI)** crafted to match DaVinci Resolve's dark theme. You don't need to manually download zip files, configure Python paths, or install dependencies — the setup handles everything automatically.
 
 ### <img src="repo/icons/download.svg" alt="Installation Process" width="24" height="24" valign="text-bottom"> The Installation Process
 
 1. **Copy the command** for your specific operating system from the section below.
 2. **Paste the command** into your terminal (PowerShell on Windows, Terminal on macOS/Linux) and press **Enter**.
-3. The **BadWords Setup GUI** will launch automatically:
+3. The **BadWords Setup** window will appear:
 
 <p align="center">
-  <img src="repo/gui_setup_preview.png" alt="BadWords GUI Setup Preview" width="75%">
+  <img src="repo/gui_setup_preview.png" alt="BadWords GUI Setup Preview" width="70%">
 </p>
 
-4. **Navigate Your Way:**
-   * **Full Mouse & Keyboard Support:** You can click with your mouse or navigate entirely with your keyboard using number keys **`1` - `5`**, **Arrow Keys**, **Enter**, **Tab**, or **Esc**.
-   * **Real-time Live Terminal:** Click the prompt icon (`>_`) in the top-right titlebar or press **`T`** at any time to toggle the real-time installation logs.
-   * **Multi-Language:** Click the language button at the bottom-left to switch between 10 supported languages instantly.
+4. **Select `1. Fresh Install / Update`** (you can click with your mouse or simply press **`1`** on your keyboard).
+5. **Confirm the install path** (~4GB for core files + AI models), or type a custom destination path.
+6. Wait for the setup to finish, then click **Launch BadWords** (or open it inside DaVinci Resolve: **Workspace** → **Scripts** → **BadWords**).
 
-5. **Choose Your Action:**
-   * **`[1] Fresh Install / Update`** — Installs or updates BadWords while preserving your settings and downloaded AI models.
-   * **`[2] Repair Installation`** — Verifies file integrity, repairs corrupted virtual environment dependencies, and renews shortcuts.
-   * **`[3] Move Installation`** — Relocates your installation to another drive or folder without re-downloading packages from the internet.
-   * **`[4] Reset Application`** — Wipes existing installation cache and performs a completely fresh install.
-   * **`[5] Uninstall BadWords`** — Cleanly removes BadWords, DaVinci Resolve script wrappers, desktop shortcuts, and system registry entries.
-
-6. **Confirm & Relax:**
-   * Choose whether to create Desktop and Start Menu shortcuts.
-   * Confirm your install folder (or press Enter to use the default).
-   * Watch the dual progress bars track exact megabytes, download speeds, and package configurations.
-   * When finished, you can launch BadWords immediately with one click!
-
-> [!IMPORTANT]
-> ### 🛡️ Windows Smart App Control (SAC), SmartScreen & macOS Gatekeeper Notice
-> 
-> **Why do you see a security warning or block?**  
-> BadWords is a **100% free and open-source project created by an independent solo developer**. Commercial code-signing certificates cost upwards of $400/year, which is simply not feasible for a free hobby project. Because new releases are compiled without expensive commercial certificates, security systems like **Windows 11 Smart App Control (SAC)**, **Windows Defender SmartScreen**, and **macOS Gatekeeper** may flag new binaries as "unknown publisher" until Microsoft and Apple cloud telemetry builds reputation over time.
->
-> **Built-in Seamless Python CLI Fallback:**  
-> If your operating system's security blocks the graphical binary from opening, the setup script **automatically detects the block** and presents an interactive fallback choice:
->
-> <p align="center">
->   <img src="repo/sac_notice.png" alt="Security Notice & Fallback Prompt" width="75%">
-> </p>
->
-> Choosing **`[1]`** automatically bootstraps a portable Python environment and runs the full-featured **Rich Terminal Setup**, which executes via the official, digitally-signed `python.exe` — completely bypassing any security blocks without needing to change your OS settings!
->
-> <p align="center">
->   <img src="repo/cli_setup_preview.png" alt="BadWords CLI Setup Preview" width="70%">
-> </p>
->
-> **Prefer the Graphical Installer? (Manual Unblocking):**
-> * **Windows:** Right-click `badwords-setup-windows.exe` → **Properties** → check **Unblock** at the bottom → click **Apply**.
-> * **macOS:** Right-click `badwords-setup-macos` → click **Open** → choose **Open anyway** in the Security prompt (or run `xattr -d com.apple.quarantine <file>` in Terminal).
+> **Note:** As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to Update your app, Repair broken files, Move the installation to another drive, or completely Uninstall BadWords! (You can also fully navigate using your keyboard: numbers `1`-`5`, arrow keys, and press `T` for real-time terminal logs).
 
 ---
 
-### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Automated Setup Commands
+### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Option 1: Automated Setup Commands (Recommended)
 
 <br>
 
@@ -182,6 +147,24 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 ```
 
 <br>
+
+> [!NOTE]
+> ### 🛡️ Security Notice & Built-in Terminal Fallback
+> BadWords is a **100% free and open-source project created by an independent solo developer**. Since it doesn't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** might block the graphical binary.
+> 
+> If that happens, the setup script **automatically detects the block and prompts you to run the Terminal Installer (`[1]`)**:
+>
+> <p align="center">
+>   <img src="repo/sac_notice.png" alt="Security Fallback Notice" width="70%">
+> </p>
+>
+> The Terminal installer provides **100% of the exact same features** and runs without needing to change any system security settings!
+>
+> <p align="center">
+>   <img src="repo/cli_setup_preview.png" alt="Terminal Setup Preview" width="65%">
+> </p>
+>
+> *(Alternatively, you can manually unblock the `.exe` in file Properties on Windows or click "Open anyway" on macOS).*
 
 ---
 
