@@ -144,9 +144,25 @@ pub fn resolve_script_dirs() -> Vec<PathBuf> {
     unique
 }
 
-/// Searches all known DaVinci Resolve script directories for a BadWords wrapper with a valid INSTALL_DIR,
-/// and falls back to checking default and common application paths.
+/// Detects existing BadWords installation path via OS registration, DaVinci Resolve wrappers, or standard directories.
 pub fn detect_existing_install() -> Option<PathBuf> {
+    // 1. Check OS native registration (Windows Registry, Linux .desktop entry, macOS App Bundle)
+    #[cfg(target_os = "windows")]
+    if let Some(p) = windows::detect_installed_location() {
+        return Some(p);
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Some(p) = linux::detect_installed_location() {
+        return Some(p);
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(p) = macos::detect_installed_location() {
+        return Some(p);
+    }
+
+    // 2. Check DaVinci Resolve script wrappers
     let script_dirs = resolve_script_dirs();
     for dir in script_dirs {
         for filename in ["BadWords.py", "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (Windows).py"] {

@@ -788,10 +788,62 @@ def get_latest_tag(force_main=False):
     return "main", "", ""
 
 def detect_existing_install(default_dir, resolve_script_dirs):
-    """Search all known Resolve script dirs for a BadWords wrapper with a valid INSTALL_DIR."""
+    """Detect existing installation via system registration (Registry/.desktop), Resolve wrappers, or default dir."""
+    # 1. Windows Registry check
+    if PLAT.startswith("win"):
+        try:
+            import winreg
+            for root_key in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(root_key, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords") as key:
+                        val, _ = winreg.QueryValueEx(key, "InstallLocation")
+                        if val and os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
+                            return os.path.abspath(val)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # 2. Linux .desktop check
+    if PLAT.startswith("linux"):
+        home = os.path.expanduser("~")
+        for df in [os.path.join(home, ".local", "share", "applications", "badwords.desktop"),
+                   os.path.join(home, ".local", "share", "applications", "BadWords.desktop"),
+                   "/usr/share/applications/badwords.desktop"]:
+            if os.path.isfile(df):
+                try:
+                    with open(df, encoding="utf-8") as f:
+                        for line in f:
+                            if line.startswith("Path="):
+                                p = line.split("=", 1)[1].strip()
+                                if os.path.isdir(p) and os.path.isfile(os.path.join(p, "main.py")):
+                                    return os.path.abspath(p)
+                except Exception:
+                    pass
+
+    # 3. macOS App Bundle check
+    if "darwin" in PLAT or "mac" in PLAT:
+        home = os.path.expanduser("~")
+        for app_dir in [os.path.join(home, "Applications", "BadWords.app"), "/Applications/BadWords.app"]:
+            launcher = os.path.join(app_dir, "Contents", "MacOS", "BadWords")
+            if os.path.isfile(launcher):
+                try:
+                    with open(launcher, encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("cd \"") and line.endswith("\""):
+                                p = line[4:-1]
+                                if os.path.isdir(p) and os.path.isfile(os.path.join(p, "main.py")):
+                                    return os.path.abspath(p)
+                except Exception:
+                    pass
+
+    # 4. Resolve wrappers check
     for resolve_dir in resolve_script_dirs:
         for wf in [os.path.join(resolve_dir, "BadWords.py"),
-                   os.path.join(resolve_dir, "BadWords (Linux).py")]:
+                   os.path.join(resolve_dir, "BadWords (Linux).py"),
+                   os.path.join(resolve_dir, "BadWords (Mac).py"),
+                   os.path.join(resolve_dir, "BadWords (Windows).py")]:
             if not os.path.isfile(wf):
                 continue
             try:
@@ -801,9 +853,14 @@ def detect_existing_install(default_dir, resolve_script_dirs):
                         if line.startswith("INSTALL_DIR"):
                             val = line.split("=", 1)[1].strip().strip("r\"'")
                             if os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
-                                return val
+                                return os.path.abspath(val)
             except Exception:
                 pass
+
+    # 5. Default directory check
+    if os.path.isdir(default_dir) and os.path.isfile(os.path.join(default_dir, "main.py")):
+        return os.path.abspath(default_dir)
+
     return None
 
 def two_way_sync(src_paths, dst, protected_files, protected_dirs):

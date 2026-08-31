@@ -293,3 +293,36 @@ pub fn remove_linux_desktop_entry() -> std::io::Result<()> {
 
     Ok(())
 }
+
+/// Detects existing installation path from Linux XDG .desktop entries
+pub fn detect_installed_location() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            let desktop_files = [
+                home.join(".local").join("share").join("applications").join("badwords.desktop"),
+                home.join(".local").join("share").join("applications").join("BadWords.desktop"),
+                PathBuf::from("/usr/share/applications/badwords.desktop"),
+                PathBuf::from("/usr/share/applications/BadWords.desktop"),
+            ];
+
+            for df in desktop_files {
+                if df.is_file() {
+                    if let Ok(content) = std::fs::read_to_string(&df) {
+                        for line in content.lines() {
+                            let line = line.trim();
+                            if line.starts_with("Path=") {
+                                let path_str = line.trim_start_matches("Path=").trim();
+                                let p = PathBuf::from(path_str);
+                                if (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) && p.exists() {
+                                    return Some(p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
