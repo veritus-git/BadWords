@@ -8,31 +8,36 @@
 
 $ErrorActionPreference = "Continue"
 
-$RepoOwner = "veritus-git"
-$RepoName  = "BadWords"
-$Tag       = if ($env:BADWORDS_TAG) { $env:BADWORDS_TAG } else { "latest" }
-$BinName   = "badwords-setup-windows.exe"
-$SetupPyUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/setupfiles/setup.py"
-$EmbedPyUrl = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip"
+$RepoOwner        = "veritus-git"
+$RepoName         = "BadWords"
+$Tag              = if ($env:BADWORDS_TAG) { $env:BADWORDS_TAG } else { "latest" }
+$BinName          = "badwords-setup-windows.exe"
+$INSTALLER_URL    = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/setupfiles/setup.py"
+$INSTALLER_URL_FB = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
+$EMBED_URL        = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip"
+$GETPIP_URL       = "https://bootstrap.pypa.io/get-pip.py"
 
-$CacheDir   = Join-Path $env:LOCALAPPDATA "BadWords-bootstrap"
-$EmbedPyDir = Join-Path $CacheDir "python"
-$EmbedPyExe = Join-Path $EmbedPyDir "python.exe"
-$TargetExe  = Join-Path $CacheDir "BadWords-Setup.exe"
-$SetupPy    = Join-Path $CacheDir "setup.py"
-
-New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
-
-# ── Local File Detection ──────────────────────────────────────
+# -- Local File Detection --------------------------------------
 $ScriptDir = ""
 if ($MyInvocation.MyCommand.Path) {
     $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
-$LocalBin = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\release\badwords-installer.exe" } else { "" }
-$LocalDebug = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\debug\badwords-installer.exe" } else { "" }
-$LocalSetupPy = if ($ScriptDir) { Join-Path $ScriptDir "setup.py" } else { "" }
+$LocalBin     = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\release\badwords-installer.exe" } else { "" }
+$LocalDebug   = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\debug\badwords-installer.exe" } else { "" }
+$LocalSetup   = if ($ScriptDir) { Join-Path $ScriptDir "setup.py" } else { "" }
+$LocalRepo    = if ($ScriptDir) { Split-Path -Parent $ScriptDir } else { "" }
 
-# ── Helper: Run Python CLI Fallback ───────────────────────────
+# -- Directories -----------------------------------------------
+$CacheDir   = Join-Path $env:LOCALAPPDATA "BadWords-bootstrap"
+$EmbedPyDir = Join-Path $CacheDir "python"
+$EmbedPyExe = Join-Path $EmbedPyDir "python.exe"
+$TargetExe  = Join-Path $CacheDir "BadWords-Setup.exe"
+$BW_TMP     = Join-Path ([System.IO.Path]::GetTempPath()) ("bw_bs_" + [System.Guid]::NewGuid().ToString("N").Substring(0,8))
+
+New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
+New-Item -ItemType Directory -Path $BW_TMP -Force | Out-Null
+
+# -- Helper: Run Rich Terminal Python Fallback -----------------
 function Invoke-PythonFallback() {
     Write-Host ""
     Write-Host "========================================================================" -ForegroundColor Cyan
@@ -41,7 +46,7 @@ function Invoke-PythonFallback() {
     Write-Host "     Control (SAC) or SmartScreen because it lacks an EV certificate." -ForegroundColor White
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " How would you like to proceed?" -ForegroundColor White
-    Write-Host "  [1] Run CLI Installer via Python (Recommended - 100% bypasses security)" -ForegroundColor Green
+    Write-Host "  [1] Run Rich Terminal Installer via Python (Recommended - 100% bypasses security)" -ForegroundColor Green
     Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
     Write-Host "========================================================================" -ForegroundColor Cyan
     
@@ -52,54 +57,107 @@ function Invoke-PythonFallback() {
     }
 
     Write-Host ""
-    Write-Host "Preparing Python environment for CLI installer..." -ForegroundColor Cyan
+    Write-Host "Preparing portable Python environment..." -ForegroundColor Cyan
 
-    # 1. Check for system python
-    $PyRunner = ""
     try {
-        $sysPy = Get-Command "python" -ErrorAction SilentlyContinue
-        if ($sysPy) {
-            $ver = & python -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                $PyRunner = "python"
-            }
+        # 1. Ensure portable Python exists (cached)
+        $NeedDownload = $true
+        if (Test-Path $EmbedPyExe) {
+            try {
+                & $EmbedPyExe -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    & $EmbedPyExe -m pip --version 2>$null | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        $NeedDownload = $false
+                    }
+                }
+            } catch {}
         }
-    } catch {}
 
-    # 2. If no system python, download portable embedded Python 3.12
-    if (-not $PyRunner) {
-        if (-not (Test-Path $EmbedPyExe)) {
-            Write-Host "Downloading portable Python runtime..." -ForegroundColor Cyan
-            $zipPath = Join-Path $CacheDir "python-embed.zip"
-            Invoke-WebRequest -Uri $EmbedPyUrl -OutFile $zipPath -UseBasicParsing
-            Expand-Archive -Path $zipPath -DestinationPath $EmbedPyDir -Force
-            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-
-            # Enable site-packages in ._pth
-            $pth = Get-ChildItem $EmbedPyDir -Filter "python*._pth" | Select-Object -First 1
-            if ($pth) {
-                $c = (Get-Content $pth.FullName -Raw) -replace "#import site", "import site"
-                Set-Content -Path $pth.FullName -Value $c -Encoding ASCII
+        if ($NeedDownload) {
+            Write-Host "Downloading portable Python 3.12..." -ForegroundColor Cyan
+            if (Test-Path $EmbedPyDir) {
+                Remove-Item $EmbedPyDir -Recurse -Force -ErrorAction SilentlyContinue
             }
+            New-Item -ItemType Directory -Path $EmbedPyDir -Force | Out-Null
+
+            $EmbedZip = Join-Path $BW_TMP "python-embed.zip"
+            try { Invoke-WebRequest -Uri $EMBED_URL -OutFile $EmbedZip -UseBasicParsing }
+            catch { Write-Host "Failed to download embedded Python. Check your connection." -ForegroundColor Red; exit 1 }
+
+            Expand-Archive -Path $EmbedZip -DestinationPath $EmbedPyDir -Force
+
+            # Patch ._pth to enable pip/site-packages
+            $pthFile = Get-ChildItem $EmbedPyDir -Filter "python*._pth" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($pthFile) {
+                $c = Get-Content $pthFile.FullName -Raw
+                $c = $c -replace "#import site", "import site"
+                Set-Content -Path $pthFile.FullName -Value $c -Encoding ASCII
+            }
+
+            $GetPipScript = Join-Path $BW_TMP "get-pip.py"
+            try { Invoke-WebRequest -Uri $GETPIP_URL -OutFile $GetPipScript -UseBasicParsing }
+            catch { Write-Host "Failed to download get-pip.py." -ForegroundColor Red; exit 1 }
+            & $EmbedPyExe $GetPipScript --quiet 2>$null
         }
-        $PyRunner = $EmbedPyExe
-    }
 
-    # 3. Ensure setup.py is ready
-    if ($LocalSetupPy -and (Test-Path $LocalSetupPy)) {
-        Copy-Item -Path $LocalSetupPy -Destination $SetupPy -Force
-    } elseif (-not (Test-Path $SetupPy)) {
-        Write-Host "Fetching setup engine..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $SetupPyUrl -OutFile $SetupPy -UseBasicParsing
-    }
+        # 2. Install rich to temp
+        Write-Host "Installing dependencies (rich UI)..." -ForegroundColor Cyan
+        $PkgDir = Join-Path $BW_TMP "packages"
+        New-Item -ItemType Directory -Path $PkgDir -Force | Out-Null
+        & $EmbedPyExe -m pip install rich --target $PkgDir --quiet 2>$null | Out-Null
 
-    # 4. Launch setup.py
-    Write-Host "Launching BadWords CLI Setup..." -ForegroundColor Green
-    & $PyRunner $SetupPy
-    exit 0
+        # 3. Download setup.py to temp
+        $SetupPy = Join-Path $BW_TMP "setup.py"
+        $downloaded = $false
+
+        if ($LocalSetup -and (Test-Path $LocalSetup)) {
+            Copy-Item -Path $LocalSetup -Destination $SetupPy -Force
+            $downloaded = $true
+        }
+
+        if (-not $downloaded) {
+            try {
+                Invoke-WebRequest -Uri $INSTALLER_URL -OutFile $SetupPy -UseBasicParsing -ErrorAction Stop
+                if (Test-Path $SetupPy) { $downloaded = $true }
+            } catch {}
+        }
+        if (-not $downloaded) {
+            try {
+                Invoke-WebRequest -Uri $INSTALLER_URL_FB -OutFile $SetupPy -UseBasicParsing -ErrorAction Stop
+                if (Test-Path $SetupPy) { $downloaded = $true }
+            } catch {}
+        }
+
+        if (-not $downloaded) {
+            Write-Host "Failed to download setup.py." -ForegroundColor Red
+            exit 1
+        }
+
+        # 4. Launch setup.py in CMD / Windows Terminal
+        Write-Host "Launching BadWords Rich Setup..." -ForegroundColor Green
+        $PyArg = "`"$SetupPy`" --platform windows --bootstrap-python `"$EmbedPyExe`""
+        if ($LocalRepo -and (Test-Path $LocalSetup)) {
+            $PyArg += " --local-repo `"$LocalRepo`""
+        }
+        $CmdLine = "set PYTHONPATH=$PkgDir&& `"$EmbedPyExe`" $PyArg"
+        $CmdArgs = "/c title BadWords Setup && mode con cols=88 lines=30 && $CmdLine"
+
+        $wt = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\wt.exe"
+        if (Test-Path $wt) {
+            Start-Process -FilePath $wt -ArgumentList "--size", "88,30", "cmd.exe", $CmdArgs -WindowStyle Normal
+        } else {
+            Start-Process -FilePath "cmd.exe" -ArgumentList $CmdArgs -WindowStyle Normal
+        }
+        exit 0
+
+    } catch {
+        Write-Host "Error in fallback: $_" -ForegroundColor Red
+        exit 1
+    }
 }
 
-# ── Helper: Start Executable Safely ───────────────────────────
+# ── Helper: Start Native Executable Safely ─────────────────────
 function Start-NativeExecutable($exePath, $arguments) {
     Unblock-File -Path $exePath -ErrorAction SilentlyContinue
     try {
@@ -112,7 +170,6 @@ function Start-NativeExecutable($exePath, $arguments) {
             exit 0
         }
     } catch {
-        # Process blocked by Smart App Control / security policy
         Invoke-PythonFallback
     }
 }
@@ -150,7 +207,6 @@ try {
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $TargetExe -UseBasicParsing
     $Downloaded = $true
 } catch {
-    # Fallback to checking GitHub API for release assets
     try {
         $ApiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
         $Releases = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing -Headers @{"User-Agent"="BadWords-Bootstrapper"}
@@ -165,6 +221,5 @@ try {
 if ($Downloaded -and (Test-Path $TargetExe)) {
     Start-NativeExecutable $TargetExe $args
 } else {
-    # If binary download was not available (e.g. pre-release), fall back to Python CLI
     Invoke-PythonFallback
 }
