@@ -174,6 +174,11 @@ function Start-NativeExecutable($exePath, $arguments) {
     }
 }
 
+# 0. Force fallback check (for testing or explicitly requested CLI mode)
+if ($env:BADWORDS_FORCE_FALLBACK -or ($args -and ($args -contains "--fallback" -or $args -contains "--cli"))) {
+    Invoke-PythonFallback
+}
+
 # 1. Try local compiled binary first (if inside repo clone)
 if ($LocalBin -and (Test-Path $LocalBin)) {
     Start-NativeExecutable $LocalBin $args

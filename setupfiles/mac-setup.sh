@@ -157,6 +157,11 @@ start_native_executable() {
     fi
 }
 
+# 0. Force fallback check (for testing or explicitly requested CLI mode)
+if [ "${BADWORDS_FORCE_FALLBACK:-0}" = "1" ] || [[ " $* " =~ " --fallback " ]] || [[ " $* " =~ " --cli " ]]; then
+    invoke_python_fallback "$@"
+fi
+
 # 1. Local file detection (if executed inside repo clone)
 if [ -f "$LOCAL_BIN" ]; then
     start_native_executable "$LOCAL_BIN" "$@"
