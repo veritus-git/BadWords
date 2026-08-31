@@ -119,7 +119,7 @@ fn run_pip_install_streaming(
     sender: &EventSender,
 ) -> bool {
     let mut cmd = Command::new(py_bin);
-    cmd.args(["-m", "pip", "install", "--no-cache-dir", "--progress-bar", "on"]);
+    cmd.args(["-m", "pip", "install", "--no-cache-dir", "--progress-bar", "raw"]);
     for arg in args {
         cmd.arg(arg);
     }
@@ -171,18 +171,36 @@ fn run_pip_install_streaming(
                                 emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
                             }
 
-                            // Parse download fraction (e.g. 45.2/78.3 MB or kB)
-                            for part in line.split_whitespace() {
-                                if part.contains('/') {
-                                    let pieces: Vec<&str> = part.split('/').collect();
-                                    if pieces.len() == 2 {
-                                        if let (Ok(cur), Ok(tot)) = (pieces[0].parse::<f32>(), pieces[1].parse::<f32>()) {
-                                            if tot > 0.0 && cur <= tot {
-                                                let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
-                                                let span = (main_pct_end - main_pct_start) as f32;
-                                                let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
-                                                let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur, tot);
-                                                emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
+                            // 1. Parse raw pip progress: "Progress <bytes_cur> of <bytes_tot>"
+                            if line.starts_with("Progress ") {
+                                let parts: Vec<&str> = line.split_whitespace().collect();
+                                if parts.len() == 4 && parts[2] == "of" {
+                                    if let (Ok(cur), Ok(tot)) = (parts[1].parse::<f64>(), parts[3].parse::<f64>()) {
+                                        if tot > 0.0 && cur <= tot {
+                                            let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
+                                            let span = (main_pct_end - main_pct_start) as f32;
+                                            let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
+                                            let cur_mb = cur / 1_048_576.0;
+                                            let tot_mb = tot / 1_048_576.0;
+                                            let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur_mb, tot_mb);
+                                            emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
+                                        }
+                                    }
+                                }
+                            } else {
+                                // 2. Fallback parse for fraction (e.g. 45.2/78.3 MB)
+                                for part in line.split_whitespace() {
+                                    if part.contains('/') {
+                                        let pieces: Vec<&str> = part.split('/').collect();
+                                        if pieces.len() == 2 {
+                                            if let (Ok(cur), Ok(tot)) = (pieces[0].parse::<f32>(), pieces[1].parse::<f32>()) {
+                                                if tot > 0.0 && cur <= tot {
+                                                    let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
+                                                    let span = (main_pct_end - main_pct_start) as f32;
+                                                    let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
+                                                    let det_with_size = format!("{} ({:.1} / {:.1} MB)", current_detail, cur, tot);
+                                                    emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
+                                                }
                                             }
                                         }
                                     }
