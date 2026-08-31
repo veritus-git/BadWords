@@ -3,7 +3,7 @@
 //! GPU detection, venv, pip packages, ffmpeg, libs link, DaVinci Resolve wrappers, and OS standalone integration.
 
 use crate::os::{self, resolve_script_dirs};
-use crate::state::{emit_complete, emit_log, emit_progress, EventSender};
+use crate::state::{emit_complete, emit_log, emit_progress, emit_progress_sub, EventSender};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -160,6 +160,14 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
         let src_assets = repo_dir.join("assets");
         if src_assets.is_dir() {
             let _ = copy_dir_all(&src_assets, target_dir.join("assets"));
+            let icons_sub = src_assets.join("icons");
+            if icons_sub.is_dir() {
+                let _ = copy_dir_all(&icons_sub, target_dir.join("icons"));
+            }
+            let layout_sub = src_assets.join("layout");
+            if layout_sub.is_dir() {
+                let _ = copy_dir_all(&layout_sub, target_dir.join("layout"));
+            }
         }
 
         let updater_src = repo_dir.join("setupfiles").join("updater.py");
@@ -217,6 +225,14 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
                 let assets_sub = p.join("assets");
                 if assets_sub.is_dir() {
                     let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
+                    let icons_sub = assets_sub.join("icons");
+                    if icons_sub.is_dir() {
+                        let _ = copy_dir_all(&icons_sub, target_dir.join("icons"));
+                    }
+                    let layout_sub = assets_sub.join("layout");
+                    if layout_sub.is_dir() {
+                        let _ = copy_dir_all(&layout_sub, target_dir.join("layout"));
+                    }
                 }
 
                 let updater_sub = p.join("setupfiles").join("updater.py");
@@ -441,11 +457,13 @@ pub fn run_install(target_dir: PathBuf, sender: EventSender) {
         let v_py = venv_dir.join("bin").join("python");
 
         if v_py.exists() {
-            emit_progress(&sender, 65, 2, "Upgrading pip...", "Ensuring pip is up to date");
-            let _ = Command::new(&v_py).args(["-m", "pip", "install", "--upgrade", "pip", "-q"]).status();
+            // Sub-step 1/4: pip, setuptools & wheel
+            emit_progress_sub(&sender, 65, 20, "Configuring Python packages...", "[1/4] Upgrading pip, setuptools & wheel");
+            let _ = Command::new(&v_py).args(["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "-q"]).status();
+            emit_log(&sender, "OK", "Package manager tools updated.");
 
-            // Install PySide6
-            emit_progress(&sender, 70, 2, "Installing GUI framework...", "Installing PySide6");
+            // Sub-step 2/4: PySide6
+            emit_progress_sub(&sender, 72, 45, "Installing GUI framework...", "[2/4] Installing PySide6 Qt GUI framework");
             let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
             if !pyside_check {
                 emit_log(&sender, "INFO", "Installing PySide6 framework...");
@@ -455,23 +473,25 @@ pub fn run_install(target_dir: PathBuf, sender: EventSender) {
                 emit_log(&sender, "OK", "PySide6 is ready.");
             }
 
-            // Install faster-whisper, pypdf and CUDA packages if applicable
-            emit_progress(&sender, 80, 2, "Installing AI models engine...", "Installing Faster-Whisper & dependencies");
-            let mut pkgs = vec!["faster-whisper", "pypdf"];
-            if has_nvidia {
-                pkgs.extend(["nvidia-cublas-cu12", "nvidia-cudnn-cu12"]);
-            }
-            emit_log(&sender, "INFO", &format!("Installing core packages: {}", pkgs.join(", ")));
-            let mut pip_cmd = Command::new(&v_py);
-            pip_cmd.args(["-m", "pip", "install", "--no-cache-dir", "-q"]);
-            for pkg in pkgs {
-                pip_cmd.arg(pkg);
-            }
-            let _ = pip_cmd.status();
-            emit_log(&sender, "OK", "All AI engine dependencies installed.");
+            // Sub-step 3/4: faster-whisper, pypdf
+            emit_progress_sub(&sender, 80, 70, "Installing AI speech engine...", "[3/4] Installing Faster-Whisper transcription engine & PyPDF");
+            emit_log(&sender, "INFO", "Installing faster-whisper and pypdf...");
+            let _ = Command::new(&v_py).args(["-m", "pip", "install", "faster-whisper", "pypdf", "--no-cache-dir", "-q"]).status();
+            emit_log(&sender, "OK", "Faster-Whisper and PyPDF installed.");
 
-            // Create libs symlink/junction
-            emit_progress(&sender, 88, 2, "Creating libs link...", "Linking libraries for DaVinci Resolve integration");
+            // Sub-step 4/4: Hardware Acceleration (CUDA 12 or CPU runtime)
+            if has_nvidia {
+                emit_progress_sub(&sender, 86, 90, "Installing GPU acceleration...", "[4/4] Installing NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)");
+                emit_log(&sender, "INFO", "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...");
+                let _ = Command::new(&v_py).args(["-m", "pip", "install", "nvidia-cublas-cu12", "nvidia-cudnn-cu12", "--no-cache-dir", "-q"]).status();
+                emit_log(&sender, "OK", "NVIDIA CUDA 12 hardware acceleration packages installed.");
+            } else {
+                emit_progress_sub(&sender, 86, 90, "Configuring AI engine...", "[4/4] Verifying CPU computation packages");
+                emit_log(&sender, "OK", "CPU AI acceleration configured.");
+            }
+
+            // Final linking
+            emit_progress_sub(&sender, 89, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
             let libs_dir = target_dir.join("libs");
             if !libs_dir.exists() {
                 #[cfg(unix)]

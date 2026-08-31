@@ -43,17 +43,22 @@ pub fn emit_log(sender: &EventSender, level: &str, message: &str) {
     });
 }
 
-pub fn emit_progress(sender: &EventSender, percent: u32, step: u32, status: &str, details: &str) {
-    append_to_logfile(&format!("[STEP] {} - {} ({}%)", status, details, percent));
+pub fn emit_progress_sub(sender: &EventSender, percent: u32, sub_percent: u32, status: &str, details: &str) {
+    append_to_logfile(&format!("[STEP] {} - {} ({}% / sub: {}%)", status, details, percent, sub_percent));
     let _ = sender.send(IpcEvent {
         event: "progress".to_string(),
         data: serde_json::json!({
             "percent": percent,
-            "step": step,
+            "sub_percent": sub_percent,
             "status": status,
             "details": details
         }),
     });
+}
+
+pub fn emit_progress(sender: &EventSender, percent: u32, step: u32, status: &str, details: &str) {
+    let sub_percent = ((step + 1) * 25).min(100);
+    emit_progress_sub(sender, percent, sub_percent, status, details);
 }
 
 pub fn emit_complete(sender: &EventSender, action: &str, success: bool, message: &str) {
