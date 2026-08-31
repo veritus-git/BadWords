@@ -1110,11 +1110,11 @@ fn render_badwords_dual_progress(
         painter.rect_filled(sub_rect, 3.0, egui::Color32::from_rgb(22, 22, 22));
         painter.rect_stroke(sub_rect, 3.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(42, 42, 42)));
 
-        let sub_start = egui::Color32::from_rgb(30, 143, 76);
-        let sub_end = egui::Color32::from_rgb(82, 224, 135);
+        let sub_start = egui::Color32::from_rgb(26, 122, 62);
+        let sub_end = egui::Color32::from_rgb(184, 208, 53);
 
         let clamped_sub = sub_progress.clamp(0.0, 1.0);
-        if clamped_sub > 0.05 && clamped_sub < 0.90 {
+        if clamped_sub > 0.01 && clamped_sub < 0.99 {
             // Tryb określony: Płynne wypełnienie podczas aktywnego pobierania bajtów
             let sub_fill_w = (sub_rect.width() * clamped_sub).max(6.0);
             let sub_fill_rect = egui::Rect::from_min_size(sub_rect.min, egui::vec2(sub_fill_w, sub_rect.height()));
@@ -1133,19 +1133,36 @@ fn render_badwords_dual_progress(
             let sub_cycle = ((time * 180.0) as f32) % (sub_fill_rect.width() + sub_beam_w * 2.0);
             let sub_beam_center = sub_fill_rect.min.x + sub_cycle - sub_beam_w;
             let sb_left = (sub_beam_center - sub_beam_w * 0.5).max(sub_fill_rect.min.x);
+            let sb_mid = sub_beam_center.clamp(sub_fill_rect.min.x, sub_fill_rect.max.x);
             let sb_right = (sub_beam_center + sub_beam_w * 0.5).min(sub_fill_rect.max.x);
+
             if sb_right > sb_left {
-                let s_rect = egui::Rect::from_min_max(
-                    egui::pos2(sb_left, sub_fill_rect.min.y),
-                    egui::pos2(sb_right, sub_fill_rect.max.y),
-                );
-                painter.rect_filled(s_rect, 2.0, egui::Color32::from_white_alpha(50));
+                if sb_mid > sb_left {
+                    let mut sm = egui::Mesh::default();
+                    sm.colored_vertex(egui::pos2(sb_left, sub_fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                    sm.colored_vertex(egui::pos2(sb_left, sub_fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.min.y), egui::Color32::from_white_alpha(60));
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.max.y), egui::Color32::from_white_alpha(60));
+                    sm.add_triangle(0, 1, 2);
+                    sm.add_triangle(2, 1, 3);
+                    painter.add(egui::Shape::Mesh(sm));
+                }
+                if sb_right > sb_mid {
+                    let mut sm = egui::Mesh::default();
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.min.y), egui::Color32::from_white_alpha(60));
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.max.y), egui::Color32::from_white_alpha(60));
+                    sm.colored_vertex(egui::pos2(sb_right, sub_fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                    sm.colored_vertex(egui::pos2(sb_right, sub_fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                    sm.add_triangle(0, 1, 2);
+                    sm.add_triangle(2, 1, 3);
+                    painter.add(egui::Shape::Mesh(sm));
+                }
             }
         } else {
-            // Tryb nieokreślony: Nieskończona, płynnie sunąca pastylka BadWords (Liquid Gliding Pill)
-            let pill_w = (sub_rect.width() * 0.28).clamp(70.0, 110.0);
+            // Tryb nieokreślony: Nieskończona, płynnie sunąca pastylka BadWords z pełnym gradientem #1a7a3e -> #b8d035
+            let pill_w = (sub_rect.width() * 0.25).clamp(65.0, 95.0);
             let cycle_period = sub_rect.width() + pill_w;
-            let speed = 200.0; // px per second
+            let speed = 190.0; // px per second
             let x_rel = ((time * speed) as f32) % cycle_period - pill_w;
 
             let pill_left = (sub_rect.min.x + x_rel).max(sub_rect.min.x);
@@ -1165,19 +1182,6 @@ fn render_badwords_dual_progress(
                 pill_mesh.add_triangle(0, 1, 2);
                 pill_mesh.add_triangle(2, 1, 3);
                 painter.add(egui::Shape::Mesh(pill_mesh));
-
-                // Połysk na środku pastylki
-                let center_x = (pill_rect.min.x + pill_rect.max.x) * 0.5;
-                let gleam_w = 30.0;
-                let g_left = (center_x - gleam_w * 0.5).max(pill_rect.min.x);
-                let g_right = (center_x + gleam_w * 0.5).min(pill_rect.max.x);
-                if g_right > g_left {
-                    let g_rect = egui::Rect::from_min_max(
-                        egui::pos2(g_left, pill_rect.min.y),
-                        egui::pos2(g_right, pill_rect.max.y),
-                    );
-                    painter.rect_filled(g_rect, 2.0, egui::Color32::from_white_alpha(65));
-                }
             }
         }
     }
