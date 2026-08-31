@@ -55,18 +55,26 @@ fn main() -> eframe::Result<()> {
     }
 
     // 650x550 okno + 28px marginesu na wielowarstwowy cień Gaussa = 706x606
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([706.0, 606.0])
+        .with_min_inner_size([706.0, 606.0])
+        .with_max_inner_size([706.0, 606.0])
+        .with_resizable(false)
+        .with_decorations(false)
+        .with_transparent(true)
+        .with_icon(
+            eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_monochrome.png"))
+                .expect("Failed to load icon"),
+        );
+
+    if let Some((sw, sh)) = os::get_primary_screen_size() {
+        let pos_x = ((sw - 706.0) / 2.0).max(0.0);
+        let pos_y = ((sh - 606.0) / 2.0).max(0.0);
+        viewport = viewport.with_position([pos_x, pos_y]);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([706.0, 606.0])
-            .with_min_inner_size([706.0, 606.0])
-            .with_max_inner_size([706.0, 606.0])
-            .with_resizable(false)
-            .with_decorations(false)
-            .with_transparent(true)
-            .with_icon(
-                eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_monochrome.png"))
-                    .expect("Failed to load icon"),
-            ),
+        viewport,
         ..Default::default()
     };
 
@@ -249,6 +257,7 @@ struct InstallerApp {
     install_path_str: String,
     detected_existing: Option<PathBuf>,
     detected_version: String,
+    window_centered: bool,
     status_title: String,
     status_details: String,
     progress: f32,
@@ -273,19 +282,29 @@ impl InstallerApp {
         
         let path_str = initial_path.to_string_lossy().into_owned();
 
-        // Spawn background fetch for latest GitHub release version
-        let tx_rel = tx.clone();
-        std::thread::spawn(move || {
-            if let Some((tag, zip_url)) = engine::fetch_latest_github_release() {
-                let _ = tx_rel.send(IpcEvent {
-                    event: "release_detected".to_string(),
-                    data: serde_json::json!({
-                        "tag": tag,
-                        "zip_url": zip_url,
-                    }),
-                });
-            }
-        });
+        // 1. Priorytet: Lokalne pliki (repozytorium lub wypakowany source code)
+        let local_ver = engine::detect_local_version();
+        let (initial_version, should_fetch_remote) = if let Some(v) = local_ver {
+            (v, false)
+        } else {
+            (APP_VERSION.to_string(), true)
+        };
+
+        // 2. Zdalne zapytanie o Latest Release TYLKO jeśli instalator działa w trybie standalone
+        if should_fetch_remote {
+            let tx_rel = tx.clone();
+            std::thread::spawn(move || {
+                if let Some((tag, zip_url)) = engine::fetch_latest_github_release() {
+                    let _ = tx_rel.send(IpcEvent {
+                        event: "release_detected".to_string(),
+                        data: serde_json::json!({
+                            "tag": tag,
+                            "zip_url": zip_url,
+                        }),
+                    });
+                }
+            });
+        }
 
         Self {
             screen: Screen::Welcome,
@@ -298,7 +317,8 @@ impl InstallerApp {
             create_start_menu_shortcut: true,
             install_path_str: path_str,
             detected_existing: detected,
-            detected_version: APP_VERSION.to_string(),
+            detected_version: initial_version,
+            window_centered: false,
             status_title: "Ready to begin.".to_string(),
             status_details: "Click Next to choose an action.".to_string(),
             progress: 0.0,
@@ -410,6 +430,16 @@ impl eframe::App for InstallerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Gwarancja idealnego wycentrowania okna na monitorze w momencie uruchomienia
+        if !self.window_centered {
+            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
+                let x = ((monitor_size.x - 706.0) / 2.0).max(0.0);
+                let y = ((monitor_size.y - 606.0) / 2.0).max(0.0);
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
+                self.window_centered = true;
+            }
+        }
+
         let t = self.language.t();
 
         // Płynna animacja pasków postępu (lerp)
