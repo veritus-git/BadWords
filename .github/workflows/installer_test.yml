@@ -188,6 +188,8 @@ jobs:
             os_name: macOS Universal
 
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONIOENCODING: "utf-8"
 
     steps:
       - name: Checkout Source Code

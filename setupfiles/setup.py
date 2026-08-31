@@ -7,6 +7,13 @@
 # ============================================================
 import argparse, hashlib, os, shutil, subprocess, sys, tempfile, threading, time
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ── Bootstrap rich if missing ────────────────────────────────
 try:
     from rich.console import Console
@@ -1298,8 +1305,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         log_step("Syncing application files...")
         protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", ".python_auto_installed"}
-        protected_dirs  = {"models", "saves", "venv", "bin", "libs"}
-        src_list = [s for s in [source_path, assets_path] if s and os.path.isdir(s)]
+        protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets"}
         is_update = os.path.isdir(venv_dir)
         
         if is_update:
@@ -1318,11 +1324,17 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 is_update = False
 
         if is_update:
-            two_way_sync(src_list, install_dir, protected_files, protected_dirs)
+            if source_path and os.path.isdir(source_path):
+                two_way_sync([source_path], install_dir, protected_files, protected_dirs)
+            if assets_path and os.path.isdir(assets_path):
+                dest_assets = os.path.join(install_dir, "assets")
+                two_way_sync([assets_path], dest_assets, set(), set())
         else:
-            for sp in src_list:
-                if os.path.isdir(sp):
-                    shutil.copytree(sp, install_dir, dirs_exist_ok=True)
+            if source_path and os.path.isdir(source_path):
+                shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
+            if assets_path and os.path.isdir(assets_path):
+                dest_assets = os.path.join(install_dir, "assets")
+                shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
         log_ok("Files synced.")
 
         # ── FFmpeg ────────────────────────────────────────────
