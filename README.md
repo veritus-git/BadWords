@@ -159,9 +159,9 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 
 > [!NOTE]
 > ### 🛡️ Security Notice (Windows SAC & macOS Gatekeeper)
-> BadWords is a **100% free and open-source project created by an independent solo developer**. Since it doesn't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** may flag the newly compiled graphical binary.
+> BadWords is a **100% free and open-source project created by an independent solo developer**. Since I don't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** may flag the newly compiled graphical binary.
 > 
-> If that happens, the setup script **automatically detects the block and gives you an option to run the Terminal Setup (`[1]`)**:
+> If that happens, the setup script **automatically detects the block and gives you an option to run the Terminal Setup (option 1)**:
 
 <p align="center">
   <img src="repo/sac_notice.png" alt="Security Fallback Notice" width="70%">
@@ -179,13 +179,11 @@ If your system blocks the graphical window, the terminal setup offers **100% of 
 2. Choose whether to create **Desktop and Start Menu shortcuts** (`Y/n`).
 3. Provide a path where you want BadWords (~4GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
 4. Wait for the download and setup to complete.
-5. Press **Enter** to launch BadWords immediately!
-
-> 💡 *Tip: If you prefer the graphical installer instead, you can try unblocking it manually (on Windows: right-click the `.exe` → Properties → check Unblock; on macOS: right-click the binary → Open → "Open anyway").*
+5. Press **Enter** to launch BadWords (or **n** to skip it).
 
 ---
 
-### <img src="repo/icons/package.svg" alt="Option 2" width="24" height="24" valign="text-bottom"> Option 2: Manual / Standalone Install
+### <img src="repo/icons/package.svg" alt="Option 2" width="24" height="24" valign="text-bottom"> Option 2: Manual Locall Setup
 Don't like running online terminal commands? You can download the pre-compiled standalone installer directly from the [Releases page](https://github.com/veritus-git/BadWords/releases/latest):
 
 * **Windows:**
@@ -198,7 +196,7 @@ Don't like running online terminal commands? You can download the pre-compiled s
 
 * **Linux:**
   1. Download `badwords-setup-linux`.
-  2. Open terminal in the download folder, make it executable, and run:
+  2. Double click to run or (if it fails) open terminal in the download folder, make it executable, and run:
      ```bash
      chmod +x badwords-setup-linux && ./badwords-setup-linux
      ```
