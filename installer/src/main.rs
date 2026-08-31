@@ -1087,52 +1087,37 @@ fn render_badwords_dual_progress(
 
     ui.add_space(16.0);
 
-    // 3. POD-OPERACJA: Detale mikro-kroku i mniejszy pasek podoperacji z gradientem
+    // 3. POD-OPERACJA: Detale mikro-kroku (bez drugiego procenta) i pasek podoperacji / animowana pastylka
     if !status_details.is_empty() {
         ui.allocate_ui_with_layout(
             egui::vec2(width, 18.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_max_width(width);
-                let sub_pct_num = (sub_progress.clamp(0.0, 1.0) * 100.0).round() as u32;
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(format!("{}%", sub_pct_num))
-                                .size(11.5)
-                                .family(egui::FontFamily::Monospace)
-                                .color(egui::Color32::from_rgb(74, 222, 128)),
-                        ).wrap(false)
-                    );
-
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(status_details)
-                                    .size(12.0)
-                                    .color(egui::Color32::from_gray(185))
-                            ).truncate(true).wrap(false)
-                        );
-                    });
-                });
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(status_details)
+                            .size(12.0)
+                            .color(egui::Color32::from_gray(185))
+                    ).truncate(true).wrap(false)
+                );
             }
         );
-        ui.add_space(6.0);
+        ui.add_space(5.0);
 
         let (sub_rect, _) = ui.allocate_exact_size(egui::vec2(width, 6.0), egui::Sense::hover());
         let painter = ui.painter();
         painter.rect_filled(sub_rect, 3.0, egui::Color32::from_rgb(22, 22, 22));
         painter.rect_stroke(sub_rect, 3.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(42, 42, 42)));
 
+        let sub_start = egui::Color32::from_rgb(30, 143, 76);
+        let sub_end = egui::Color32::from_rgb(82, 224, 135);
+
         let clamped_sub = sub_progress.clamp(0.0, 1.0);
-        if clamped_sub > 0.005 {
+        if clamped_sub > 0.05 && clamped_sub < 0.90 {
+            // Tryb określony: Płynne wypełnienie podczas aktywnego pobierania bajtów
             let sub_fill_w = (sub_rect.width() * clamped_sub).max(6.0);
             let sub_fill_rect = egui::Rect::from_min_size(sub_rect.min, egui::vec2(sub_fill_w, sub_rect.height()));
-
-            // Gradient pod-paska: szmaragdowy (#1e8f4c) do miętowego/limonkowego (#52e087)
-            let sub_start = egui::Color32::from_rgb(30, 143, 76);
-            let sub_end = egui::Color32::from_rgb(82, 224, 135);
 
             let mut sub_mesh = egui::Mesh::default();
             sub_mesh.colored_vertex(sub_fill_rect.left_top(), sub_start);
@@ -1143,34 +1128,55 @@ fn render_badwords_dual_progress(
             sub_mesh.add_triangle(2, 1, 3);
             painter.add(egui::Shape::Mesh(sub_mesh));
 
-            // Soft shimmer na pod-pasku (45px)
-            let sub_beam_w = 45.0;
-            let sub_cycle = ((time * 200.0) as f32) % (sub_fill_rect.width() + sub_beam_w * 2.0);
+            // Soft shimmer na pod-pasku (40px)
+            let sub_beam_w = 40.0;
+            let sub_cycle = ((time * 180.0) as f32) % (sub_fill_rect.width() + sub_beam_w * 2.0);
             let sub_beam_center = sub_fill_rect.min.x + sub_cycle - sub_beam_w;
             let sb_left = (sub_beam_center - sub_beam_w * 0.5).max(sub_fill_rect.min.x);
-            let sb_mid = sub_beam_center.clamp(sub_fill_rect.min.x, sub_fill_rect.max.x);
             let sb_right = (sub_beam_center + sub_beam_w * 0.5).min(sub_fill_rect.max.x);
-
             if sb_right > sb_left {
-                if sb_mid > sb_left {
-                    let mut sm = egui::Mesh::default();
-                    sm.colored_vertex(egui::pos2(sb_left, sub_fill_rect.min.y), egui::Color32::from_white_alpha(0));
-                    sm.colored_vertex(egui::pos2(sb_left, sub_fill_rect.max.y), egui::Color32::from_white_alpha(0));
-                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.min.y), egui::Color32::from_white_alpha(75));
-                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.max.y), egui::Color32::from_white_alpha(75));
-                    sm.add_triangle(0, 1, 2);
-                    sm.add_triangle(2, 1, 3);
-                    painter.add(egui::Shape::Mesh(sm));
-                }
-                if sb_right > sb_mid {
-                    let mut sm = egui::Mesh::default();
-                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.min.y), egui::Color32::from_white_alpha(75));
-                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.max.y), egui::Color32::from_white_alpha(75));
-                    sm.colored_vertex(egui::pos2(sb_right, sub_fill_rect.min.y), egui::Color32::from_white_alpha(0));
-                    sm.colored_vertex(egui::pos2(sb_right, sub_fill_rect.max.y), egui::Color32::from_white_alpha(0));
-                    sm.add_triangle(0, 1, 2);
-                    sm.add_triangle(2, 1, 3);
-                    painter.add(egui::Shape::Mesh(sm));
+                let s_rect = egui::Rect::from_min_max(
+                    egui::pos2(sb_left, sub_fill_rect.min.y),
+                    egui::pos2(sb_right, sub_fill_rect.max.y),
+                );
+                painter.rect_filled(s_rect, 2.0, egui::Color32::from_white_alpha(50));
+            }
+        } else {
+            // Tryb nieokreślony: Nieskończona, płynnie sunąca pastylka BadWords (Liquid Gliding Pill)
+            let pill_w = (sub_rect.width() * 0.28).clamp(70.0, 110.0);
+            let cycle_period = sub_rect.width() + pill_w;
+            let speed = 200.0; // px per second
+            let x_rel = ((time * speed) as f32) % cycle_period - pill_w;
+
+            let pill_left = (sub_rect.min.x + x_rel).max(sub_rect.min.x);
+            let pill_right = (sub_rect.min.x + x_rel + pill_w).min(sub_rect.max.x);
+
+            if pill_right > pill_left {
+                let pill_rect = egui::Rect::from_min_max(
+                    egui::pos2(pill_left, sub_rect.min.y),
+                    egui::pos2(pill_right, sub_rect.max.y),
+                );
+
+                let mut pill_mesh = egui::Mesh::default();
+                pill_mesh.colored_vertex(pill_rect.left_top(), sub_start);
+                pill_mesh.colored_vertex(pill_rect.left_bottom(), sub_start);
+                pill_mesh.colored_vertex(pill_rect.right_top(), sub_end);
+                pill_mesh.colored_vertex(pill_rect.right_bottom(), sub_end);
+                pill_mesh.add_triangle(0, 1, 2);
+                pill_mesh.add_triangle(2, 1, 3);
+                painter.add(egui::Shape::Mesh(pill_mesh));
+
+                // Połysk na środku pastylki
+                let center_x = (pill_rect.min.x + pill_rect.max.x) * 0.5;
+                let gleam_w = 30.0;
+                let g_left = (center_x - gleam_w * 0.5).max(pill_rect.min.x);
+                let g_right = (center_x + gleam_w * 0.5).min(pill_rect.max.x);
+                if g_right > g_left {
+                    let g_rect = egui::Rect::from_min_max(
+                        egui::pos2(g_left, pill_rect.min.y),
+                        egui::pos2(g_right, pill_rect.max.y),
+                    );
+                    painter.rect_filled(g_rect, 2.0, egui::Color32::from_white_alpha(65));
                 }
             }
         }
