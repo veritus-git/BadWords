@@ -3,7 +3,7 @@
 
 //! Windows system integration (Registry HKCU, System Python check/install & Shortcuts)
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "windows")]
 use winreg::enums::*;
@@ -139,6 +139,25 @@ pub fn unregister_uninstall_entry() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+/// Detects existing installation path from Windows Registry (HKCU)
+pub fn detect_installed_location() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords";
+        if let Ok(key) = hkcu.open_subkey(path) {
+            if let Ok(loc) = key.get_value::<String, _>("InstallLocation") {
+                let p = PathBuf::from(loc.trim());
+                if (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) && p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    None
 }
 
 #[allow(dead_code)]

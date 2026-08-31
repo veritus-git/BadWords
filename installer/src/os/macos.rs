@@ -3,7 +3,7 @@
 
 //! macOS system integration (.app bundle, System Python check/install & Spotlight)
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
 /// Checks if an official macOS Python framework (3.8+) exists in /Library/Frameworks/Python.framework
@@ -143,4 +143,36 @@ pub fn remove_macos_app_bundle() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+/// Detects existing installation path from macOS App Bundle launcher script
+pub fn detect_installed_location() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            let app_dirs = [
+                home.join("Applications").join("BadWords.app"),
+                PathBuf::from("/Applications/BadWords.app"),
+            ];
+
+            for app_dir in app_dirs {
+                let launcher = app_dir.join("Contents").join("MacOS").join("BadWords");
+                if launcher.is_file() {
+                    if let Ok(content) = std::fs::read_to_string(&launcher) {
+                        for line in content.lines() {
+                            let line = line.trim();
+                            if line.starts_with("cd \"") && line.ends_with("\"") {
+                                let dir_str = line.trim_start_matches("cd \"").trim_end_matches('"');
+                                let p = PathBuf::from(dir_str);
+                                if (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) && p.exists() {
+                                    return Some(p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
