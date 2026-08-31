@@ -1151,59 +1151,74 @@ impl eframe::App for InstallerApp {
                                             let item_h = 24.0;
                                             let popup_pad = 4.0;
                                             let popup_h = Language::ALL.len() as f32 * item_h + popup_pad * 2.0;
-                                            let popup_pos = egui::pos2(lang_rect.min.x, lang_rect.min.y - popup_h - 2.0);
+                                            let popup_rect = egui::Rect::from_min_size(
+                                                egui::pos2(lang_rect.min.x, lang_rect.min.y - popup_h - 2.0),
+                                                egui::vec2(lang_btn_size[0], popup_h),
+                                            );
+                                            let dropdown_full_rect = popup_rect.union(lang_rect);
 
-                                            egui::Area::new(egui::Id::new("lang_popup_menu"))
-                                                .fixed_pos(popup_pos)
-                                                .order(egui::Order::Foreground)
-                                                .show(ctx, |ui| {
-                                                    egui::Frame::none()
-                                                        .fill(egui::Color32::from_rgb(34, 34, 34))
-                                                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(66, 66, 66)))
-                                                        .rounding(3.0)
-                                                        .inner_margin(egui::Margin::symmetric(3.0, popup_pad))
-                                                        .show(ui, |ui| {
-                                                            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                                                            ui.set_width(lang_btn_size[0] - 6.0);
-                                                            for lang in Language::ALL {
-                                                                let is_curr = lang == self.language;
-                                                                let (item_rect, item_resp) = ui.allocate_exact_size(
-                                                                    egui::vec2(lang_btn_size[0] - 6.0, item_h),
-                                                                    egui::Sense::click(),
-                                                                );
-                                                                let is_item_hover = item_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| item_rect.contains(p)));
+                                            // Zamknięcie po kliknięciu w dowolny inny obszar okna
+                                            if ctx.input(|i| i.pointer.any_click()) {
+                                                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                                                    if !dropdown_full_rect.contains(pos) {
+                                                        self.language_dropdown_open = false;
+                                                    }
+                                                }
+                                            }
 
-                                                                if is_item_hover {
-                                                                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                                                                    ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_rgb(54, 54, 54));
-                                                                } else if is_curr {
-                                                                    ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_white_alpha(20));
+                                            if self.language_dropdown_open {
+                                                egui::Area::new(egui::Id::new("lang_popup_menu"))
+                                                    .fixed_pos(popup_rect.min)
+                                                    .order(egui::Order::Foreground)
+                                                    .show(ctx, |ui| {
+                                                        egui::Frame::none()
+                                                            .fill(egui::Color32::from_rgb(34, 34, 34))
+                                                            .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(66, 66, 66)))
+                                                            .rounding(3.0)
+                                                            .inner_margin(egui::Margin::symmetric(3.0, popup_pad))
+                                                            .show(ui, |ui| {
+                                                                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                                                                ui.set_width(lang_btn_size[0] - 6.0);
+                                                                for lang in Language::ALL {
+                                                                    let is_curr = lang == self.language;
+                                                                    let (item_rect, item_resp) = ui.allocate_exact_size(
+                                                                        egui::vec2(lang_btn_size[0] - 6.0, item_h),
+                                                                        egui::Sense::click(),
+                                                                    );
+                                                                    let is_item_hover = item_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| item_rect.contains(p)));
+
+                                                                    if is_item_hover {
+                                                                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                                                        ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_rgb(54, 54, 54));
+                                                                    } else if is_curr {
+                                                                        ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_white_alpha(20));
+                                                                    }
+
+                                                                    let (text_color, font) = if is_curr {
+                                                                        (egui::Color32::WHITE, egui::FontId::proportional(12.0))
+                                                                    } else if is_item_hover {
+                                                                        (egui::Color32::WHITE, egui::FontId::proportional(12.0))
+                                                                    } else {
+                                                                        (egui::Color32::from_gray(215), egui::FontId::proportional(12.0))
+                                                                    };
+
+                                                                    ui.painter().text(
+                                                                        item_rect.center(),
+                                                                        egui::Align2::CENTER_CENTER,
+                                                                        lang.display_name(),
+                                                                        font,
+                                                                        text_color,
+                                                                    );
+
+                                                                    if item_resp.clicked() {
+                                                                        self.language = lang;
+                                                                        self.language_dropdown_open = false;
+                                                                        ctx.request_repaint();
+                                                                    }
                                                                 }
-
-                                                                let (text_color, font) = if is_curr {
-                                                                    (egui::Color32::WHITE, egui::FontId::proportional(12.0))
-                                                                } else if is_item_hover {
-                                                                    (egui::Color32::WHITE, egui::FontId::proportional(12.0))
-                                                                } else {
-                                                                    (egui::Color32::from_gray(215), egui::FontId::proportional(12.0))
-                                                                };
-
-                                                                ui.painter().text(
-                                                                    item_rect.center(),
-                                                                    egui::Align2::CENTER_CENTER,
-                                                                    lang.display_name(),
-                                                                    font,
-                                                                    text_color,
-                                                                );
-
-                                                                if item_resp.clicked() {
-                                                                    self.language = lang;
-                                                                    self.language_dropdown_open = false;
-                                                                    ctx.request_repaint();
-                                                                }
-                                                            }
-                                                        });
-                                                });
+                                                            });
+                                                    });
+                                            }
                                         }
                                         
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

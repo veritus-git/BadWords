@@ -1,4 +1,4 @@
-name: Build Modern Webview Installer (Artifacts)
+name: Build Installer Binaries (Artifacts)
 
 on:
   push:
