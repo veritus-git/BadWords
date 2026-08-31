@@ -508,34 +508,63 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
 
     #[cfg(target_os = "linux")]
     {
-        let url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
+        let urls = [
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+        ];
         let parent = bin_dir.parent().unwrap_or(bin_dir);
         let archive = parent.join("ffmpeg_static.tar.xz");
 
-        if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Linux)", sender).is_ok() {
-            let _ = Command::new("tar").args(["-xf", &archive.to_string_lossy(), "-C", &parent.to_string_lossy()]).status();
+        for url in urls {
+            if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Linux)", sender).is_ok() {
+                let _ = Command::new("tar").args(["-xf", &archive.to_string_lossy(), "-C", &parent.to_string_lossy()]).status();
 
-            if let Ok(entries) = fs::read_dir(parent) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.is_dir() && p.file_name().map_or(false, |n| n.to_string_lossy().starts_with("ffmpeg-")) {
-                        let src_ff = p.join("ffmpeg");
-                        if src_ff.is_file() {
-                            let _ = fs::copy(&src_ff, &ffmpeg_bin);
-                            #[cfg(unix)]
-                            {
-                                use std::os::unix::fs::PermissionsExt;
-                                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                if let Ok(entries) = fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() && p.file_name().map_or(false, |n| n.to_string_lossy().starts_with("ffmpeg-")) {
+                            let src_ff = if p.join("bin").join("ffmpeg").is_file() {
+                                p.join("bin").join("ffmpeg")
+                            } else {
+                                p.join("ffmpeg")
+                            };
+                            if src_ff.is_file() {
+                                let _ = fs::copy(&src_ff, &ffmpeg_bin);
+                                #[cfg(unix)]
+                                {
+                                    use std::os::unix::fs::PermissionsExt;
+                                    let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                                }
                             }
+                            let _ = fs::remove_dir_all(p);
+                            break;
                         }
-                        let _ = fs::remove_dir_all(p);
-                        break;
+                    }
+                }
+                let _ = fs::remove_file(&archive);
+                if ffmpeg_bin.is_file() {
+                    emit_log(sender, "OK", "Portable FFmpeg for Linux installed successfully.");
+                    return;
+                }
+            }
+        }
+
+        // Fallback: Copy system ffmpeg if available on machine
+        if let Ok(output) = Command::new("which").arg("ffmpeg").output() {
+            if output.status.success() {
+                let sys_ff = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() {
+                    if fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                        }
+                        emit_log(sender, "OK", "Copied system FFmpeg as local runtime binary.");
+                        return;
                     }
                 }
             }
-            let _ = fs::remove_file(&archive);
-            emit_log(sender, "OK", "Portable FFmpeg for Linux installed successfully.");
-            return;
         }
     }
 
@@ -563,7 +592,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
 }
 
 /// Executes the full installation or update process
-pub fn run_install(target_dir: PathBuf, create_desktop: bool, create_menu: bool, sender: EventSender) {
+pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Starting BadWords {} installation...", APP_VERSION));
         emit_progress(&sender, 5, 0, "Checking environment...", "Detecting Python runtime & GPU hardware");
