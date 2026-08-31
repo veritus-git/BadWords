@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Szymon Wolarz
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 //! macOS system integration (.app bundle, System Python check/install & Spotlight)
 
 use std::path::Path;

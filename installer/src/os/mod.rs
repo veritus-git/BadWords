@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Szymon Wolarz
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 #[allow(dead_code)]
 pub mod windows;
 #[allow(dead_code)]

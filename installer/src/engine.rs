@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Szymon Wolarz
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 //! Core installation, repair, move, and uninstallation engine
 //! Matches setupfiles/setup.py feature-for-feature: System Python detection & auto-installation,
 //! GPU detection, venv, pip packages, ffmpeg, libs link, DaVinci Resolve wrappers, and OS standalone integration.

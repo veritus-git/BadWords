@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Szymon Wolarz
+# Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 # ============================================================
 #  BadWords Windows Bootstrapper v4.0 (Native)
 #  Run with: irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1" | iex
