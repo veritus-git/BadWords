@@ -253,7 +253,7 @@ fn run_pip_install_streaming(
                         if !line.is_empty() {
                             if line.contains("Downloading") {
                                 if let Some(pkg_name) = line.split("Downloading").nth(1) {
-                                    let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
+                                    let clean_name = pkg_name.split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
                                     let size_str = pkg_name.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("");
                                     let current_detail = if !size_str.is_empty() {
@@ -265,14 +265,14 @@ fn run_pip_install_streaming(
                                 }
                             } else if line.contains("Collecting") {
                                 if let Some(pkg_name) = line.split("Collecting").nth(1) {
-                                    let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
+                                    let clean_name = pkg_name.split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
                                     let current_detail = format!("Collecting {}", friendly);
                                     emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
                                 }
                             } else if line.contains("Using cached") {
                                 if let Some(pkg_name) = line.split("Using cached").nth(1) {
-                                    let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
+                                    let clean_name = pkg_name.split_whitespace().next().unwrap_or("package");
                                     let friendly = friendly_pkg_name(clean_name);
                                     let current_detail = format!("Using cached {}", friendly);
                                     emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
@@ -633,16 +633,14 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
     // Check if local repo already has bin/ffmpeg
     if let Some(repo) = find_local_repo() {
         let repo_ffmpeg = repo.join("bin").join(ffmpeg_name);
-        if repo_ffmpeg.is_file() {
-            if fs::copy(&repo_ffmpeg, &ffmpeg_bin).is_ok() {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
-                }
-                emit_log(sender, "OK", "Copied local portable FFmpeg binary.");
-                return;
+        if repo_ffmpeg.is_file() && fs::copy(&repo_ffmpeg, &ffmpeg_bin).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
             }
+            emit_log(sender, "OK", "Copied local portable FFmpeg binary.");
+            return;
         }
     }
 
@@ -692,7 +690,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
                 if let Ok(entries) = fs::read_dir(parent) {
                     for entry in entries.flatten() {
                         let p = entry.path();
-                        if p.is_dir() && p.file_name().map_or(false, |n| n.to_string_lossy().starts_with("ffmpeg-")) {
+                        if p.is_dir() && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("ffmpeg-")) {
                             let src_ff = if p.join("bin").join("ffmpeg").is_file() {
                                 p.join("bin").join("ffmpeg")
                             } else {
@@ -723,16 +721,14 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         if let Ok(output) = os::create_hidden_command("which").arg("ffmpeg").output() {
             if output.status.success() {
                 let sys_ff = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() {
-                    if fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
-                        }
-                        emit_log(sender, "OK", "Copied system FFmpeg as local runtime binary.");
-                        return;
+                if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() && fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
                     }
+                    emit_log(sender, "OK", "Copied system FFmpeg as local runtime binary.");
+                    return;
                 }
             }
         }
@@ -807,7 +803,7 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
         emit_log(sender, "OK", "Package manager tools updated.");
 
         // Sub-step: PySide6
-        let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
+        let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().is_ok_and(|o| o.status.success());
         if !pyside_check {
             emit_log(sender, "INFO", "Installing PySide6 framework...");
             run_pip_install_streaming(
@@ -932,7 +928,7 @@ fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender)
         let test_ok = os::create_hidden_command(&v_py)
             .args(["-c", "import PySide6; import faster_whisper"])
             .output()
-            .map_or(false, |o| o.status.success());
+            .is_ok_and(|o| o.status.success());
         if test_ok {
             emit_log(sender, "OK", "Preserved all existing packages and GPU acceleration libraries from previous location.");
             return true;
@@ -1113,12 +1109,12 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
             let has_nvidia = detect_nvidia_gpu();
             let _ = setup_python_environment(&target_dir, None, has_nvidia, &sender);
         } else {
-            let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
+            let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().is_ok_and(|o| o.status.success());
             if !pyside_check {
                 emit_log(&sender, "WARN", "PySide6 missing in venv; reinstalling...");
                 let _ = os::create_hidden_command(&v_py).args(["-m", "pip", "install", "PySide6", "-q"]).status();
             }
-            let whisper_check = os::create_hidden_command(&v_py).args(["-c", "import faster_whisper"]).output().map_or(false, |o| o.status.success());
+            let whisper_check = os::create_hidden_command(&v_py).args(["-c", "import faster_whisper"]).output().is_ok_and(|o| o.status.success());
             if !whisper_check {
                 emit_log(&sender, "WARN", "faster-whisper missing in venv; reinstalling...");
                 let _ = os::create_hidden_command(&v_py).args(["-m", "pip", "install", "faster-whisper", "pypdf", "-q"]).status();
