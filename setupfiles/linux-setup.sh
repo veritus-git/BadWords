@@ -39,14 +39,17 @@ fi
 
 # ── Helper: Rich Terminal Python Fallback ─────────────────────
 invoke_python_fallback() {
+    clear
+    echo -e "user@computer:~$ curl -fsSL \"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh\" | bash"
+    echo -e "\033[36mDownloading BadWords Setup for Linux...\033[0m"
     echo ""
     echo -e "\033[36m========================================================================\033[0m"
-    echo -e "\033[33m [!] Linux GUI / System Compatibility Notice:\033[0m"
-    echo -e "     The graphical installer binary could not run (missing GUI libraries"
-    echo -e "     or unsupported distribution environment)."
+    echo -e "\033[33m [!] Security & Compatibility Notice:\033[0m"
+    echo -e "     The graphical installer binary could not run on this system"
+    echo -e "     (unsupported environment or security policy)."
     echo -e "\033[36m========================================================================\033[0m"
     echo -e " How would you like to proceed?"
-    echo -e "  \033[32m[1] Run Rich Terminal Installer via Python (Recommended - 100% universal)\033[0m"
+    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended - 100% universal)\033[0m"
     echo -e "  \033[90m[2] Exit\033[0m"
     echo -e "\033[36m========================================================================\033[0m"
 
