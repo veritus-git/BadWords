@@ -186,12 +186,9 @@ def build_welcome_view(win) -> QWidget:
         
     win._combo_model.valueChanged.connect(lambda v: win.engine.save_preferences({"model": v}))
     
+    from gui.utils import get_layout_icon_path
     info_model = QLabel()
-    _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    _prod_assets_dir = os.path.join(_src_dir, "layout")
-    _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-    _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-    info_icon_path = os.path.join(_assets_dir, "information.png")
+    info_icon_path = get_layout_icon_path("information.png")
     if os.path.exists(info_icon_path):
         info_model.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
     else:

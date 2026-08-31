@@ -10,11 +10,7 @@ use crate::state::{emit_complete, emit_log, emit_progress, emit_progress_sub, Ev
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const APP_VERSION: &str = "4.0.0";
-const GITHUB_RELEASE_TAG_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/tags/v4.0.0.zip";
-const GITHUB_ZIP_MAIN_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/heads/main.zip";
-const GITHUB_ZIP_DEV_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/heads/dev-v4.zip";
-const GITLAB_ZIP_URL: &str = "https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip";
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Recursively collects all files in a directory tree with relative paths and byte sizes
 fn collect_all_files(dir: &Path, base: &Path) -> Vec<(PathBuf, PathBuf, u64)> {
@@ -517,13 +513,28 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
 pub fn fetch_latest_github_release() -> Option<(String, String)> {
     let resp = ureq::get("https://api.github.com/repos/veritus-git/BadWords/releases/latest")
         .set("User-Agent", "badwords-installer")
-        .timeout(std::time::Duration::from_secs(4))
+        .timeout(std::time::Duration::from_secs(5))
         .call()
         .ok()?;
 
     let json: serde_json::Value = resp.into_json().ok()?;
     let tag = json.get("tag_name").and_then(|v| v.as_str())?.to_string();
     let zip_url = json.get("zipball_url").and_then(|v| v.as_str())?.to_string();
+    Some((tag, zip_url))
+}
+
+/// Queries GitLab API for releases if GitHub API fails
+pub fn fetch_latest_gitlab_release() -> Option<(String, String)> {
+    let resp = ureq::get("https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(5))
+        .call()
+        .ok()?;
+
+    let json: serde_json::Value = resp.into_json().ok()?;
+    let first = json.as_array()?.first()?;
+    let tag = first.get("tag_name").and_then(|v| v.as_str())?.to_string();
+    let zip_url = format!("https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip");
     Some((tag, zip_url))
 }
 
@@ -539,14 +550,20 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
 
     let mut downloaded = false;
     let mut candidate_urls = Vec::new();
+
     if let Some((tag, zip_url)) = fetch_latest_github_release() {
         emit_log(sender, "INFO", &format!("Detected latest GitHub release: {}", tag));
         candidate_urls.push(zip_url);
+        candidate_urls.push(format!("https://github.com/veritus-git/BadWords/archive/refs/tags/{}.zip", tag));
+    } else if let Some((tag, zip_url)) = fetch_latest_gitlab_release() {
+        emit_log(sender, "INFO", &format!("Detected latest GitLab release: {}", tag));
+        candidate_urls.push(zip_url);
     }
-    candidate_urls.push(GITHUB_RELEASE_TAG_URL.to_string());
-    candidate_urls.push(GITHUB_ZIP_MAIN_URL.to_string());
-    candidate_urls.push(GITHUB_ZIP_DEV_URL.to_string());
-    candidate_urls.push(GITLAB_ZIP_URL.to_string());
+
+    // Git branch archives as reliable dynamic fallbacks
+    candidate_urls.push("https://github.com/veritus-git/BadWords/archive/refs/heads/main.zip".to_string());
+    candidate_urls.push("https://github.com/veritus-git/BadWords/archive/refs/heads/dev-v4.zip".to_string());
+    candidate_urls.push("https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip".to_string());
 
     for url in candidate_urls {
         emit_log(sender, "INFO", &format!("Fetching release source from: {}", url));

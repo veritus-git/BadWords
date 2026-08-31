@@ -40,12 +40,8 @@ def build_main_workspace_panel(win) -> QFrame:
     win.btn_clear_transcript.setToolTip("")
     win.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
     
-    _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    _prod_assets_dir = os.path.join(_src_dir, "layout")
-    _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-    _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-    
-    win.btn_clear_transcript.setIcon(QIcon(os.path.join(_assets_dir, "clean.png")))
+    from gui.utils import get_layout_icon_path
+    win.btn_clear_transcript.setIcon(QIcon(get_layout_icon_path("clean.png")))
     win.btn_clear_transcript.setIconSize(QSize(18, 18))
     win.btn_clear_transcript.setStyleSheet(
         "QPushButton { background: transparent; border: none; padding: 2px; } "

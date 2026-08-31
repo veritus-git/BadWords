@@ -1023,8 +1023,12 @@ else:
 def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
     install_dir = os.path.abspath(install_dir)
     main_py = os.path.join(install_dir, "main.py")
-    icon_ico = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
-    icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
+    icon_ico = os.path.join(install_dir, "icons", "icon_default.ico")
+    if not os.path.isfile(icon_ico):
+        icon_ico = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
+    icon_png = os.path.join(install_dir, "icons", "icon_default.png")
+    if not os.path.isfile(icon_png):
+        icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
 
     if os.name == "nt":
         pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
@@ -1363,7 +1367,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         log_step("Syncing application files...")
         protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", ".python_auto_installed"}
-        protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets"}
+        protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout"}
         is_update = os.path.isdir(venv_dir)
         
         if is_update:
@@ -1387,12 +1391,24 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             if assets_path and os.path.isdir(assets_path):
                 dest_assets = os.path.join(install_dir, "assets")
                 two_way_sync([assets_path], dest_assets, set(), set())
+                # Unpack assets subdirectories directly into install_dir for layout/icons access
+                for sub in ["icons", "layout"]:
+                    src_sub = os.path.join(assets_path, sub)
+                    if os.path.isdir(src_sub):
+                        dst_sub = os.path.join(install_dir, sub)
+                        two_way_sync([src_sub], dst_sub, set(), set())
         else:
             if source_path and os.path.isdir(source_path):
                 shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
             if assets_path and os.path.isdir(assets_path):
                 dest_assets = os.path.join(install_dir, "assets")
                 shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
+                # Unpack assets subdirectories directly into install_dir for layout/icons access
+                for sub in ["icons", "layout"]:
+                    src_sub = os.path.join(assets_path, sub)
+                    if os.path.isdir(src_sub):
+                        dst_sub = os.path.join(install_dir, sub)
+                        shutil.copytree(src_sub, dst_sub, dirs_exist_ok=True)
         log_ok("Files synced.")
 
         # ── FFmpeg ────────────────────────────────────────────

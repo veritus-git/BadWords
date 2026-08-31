@@ -121,12 +121,8 @@ class SearchOverlayWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        _prod_assets_dir = os.path.join(_src_dir, "layout")
-        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-        
-        _icon_path = os.path.join(_assets_dir, "search.png")
+        from gui.utils import get_layout_icon_path
+        _icon_path = get_layout_icon_path("search.png")
         self.btn_open_search = QPushButton()
         self.btn_open_search.setObjectName("BtnOpenSearch")
         self.btn_open_search.setFixedSize(36, 36)

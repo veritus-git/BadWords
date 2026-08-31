@@ -17,14 +17,62 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtGui import QIcon
 import config
 
-def _app_icon() -> QIcon:
+def get_icon_path(icon_name: str = "default") -> str:
+    """Returns absolute path to an app icon (.ico on Windows, .png on Unix), checking all possible prod/dev locations."""
     try:
-        import json
-        # install_dir points to src/ (dev) or install root (prod)
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         is_win = platform.system() == "Windows"
         ext = ".ico" if is_win else ".png"
 
+        candidates = [
+            os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}"),
+            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}{ext}"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}{ext}"),
+        ]
+
+        if is_win:
+            candidates.extend([
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.png"),
+                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.png"),
+                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.png"),
+            ])
+
+        for p in candidates:
+            if os.path.isfile(p):
+                return p
+
+        if icon_name != "default":
+            return get_icon_path("default")
+    except Exception:
+        pass
+    return ""
+
+
+def get_layout_dir() -> str:
+    """Returns absolute path to layout icons folder, supporting both flat install, nested assets, and dev layout."""
+    src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    prod_layout = os.path.join(src_dir, "layout")
+    if os.path.isdir(prod_layout):
+        return prod_layout
+    prod_nested = os.path.join(src_dir, "assets", "layout")
+    if os.path.isdir(prod_nested):
+        return prod_nested
+    dev_layout = os.path.join(os.path.dirname(src_dir), "assets", "layout")
+    if os.path.isdir(dev_layout):
+        return dev_layout
+    return prod_layout
+
+
+def get_layout_icon_path(icon_name: str) -> str:
+    """Returns path to a specific layout image asset."""
+    layout_dir = get_layout_dir()
+    return os.path.join(layout_dir, icon_name)
+
+
+def _app_icon() -> QIcon:
+    try:
+        import json
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         icon_name = "default"
         settings_file = os.path.join(install_dir, "settings.json")
         if os.path.exists(settings_file):
@@ -32,25 +80,8 @@ def _app_icon() -> QIcon:
                 data = json.load(f)
                 icon_name = data.get('app_icon', 'default')
 
-        # Check prod layout (icons/ in install_dir) and dev layout (assets/icons/ next to src/)
-        prod_icon_path = os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}")
-        dev_icon_path = os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}{ext}")
-
-        icon_path = prod_icon_path if os.path.exists(prod_icon_path) else dev_icon_path
-
-        # Windows fallback: if ICO is missing, fallback to PNG
-        if not os.path.exists(icon_path) and is_win:
-            prod_png = os.path.join(install_dir, "icons", f"icon_{icon_name}.png")
-            dev_png = os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.png")
-            icon_path = prod_png if os.path.exists(prod_png) else dev_png
-
-        # Fallback to default icon if chosen custom icon is missing
-        if not os.path.exists(icon_path):
-            prod_def = os.path.join(install_dir, "icons", f"icon_default{ext}")
-            dev_def = os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_default{ext}")
-            icon_path = prod_def if os.path.exists(prod_def) else dev_def
-
-        if os.path.exists(icon_path):
+        icon_path = get_icon_path(icon_name)
+        if icon_path and os.path.exists(icon_path):
             return QIcon(icon_path)
     except Exception:
         pass

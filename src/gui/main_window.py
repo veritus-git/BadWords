@@ -96,7 +96,7 @@ _QPushButton = QPushButton
 
 _QRadioButton = QRadioButton
 
-from .utils import _app_icon, apply_dark_title_bar, _center_on_screen, _txt, _qwidget_txt
+from .utils import _app_icon, apply_dark_title_bar, _center_on_screen, _txt, _qwidget_txt, get_layout_icon_path, get_layout_dir, get_icon_path
 from .components.dialogs import SplashScreen, TelemetryPopup, MarkerDragZone, MarkerRowWidget, CustomMsgBox, UpdateNotifyDialog, MarkerDialog, UnsavedChangesDialog, SettingsDialog, GlobalAppFilter, SidebarDragZone, UpdateCheckThread
 from .components.audio_preview import AudioPreviewWidget
 from .components.transcription_canvas import TranscriptionCanvas
@@ -2148,9 +2148,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         color_name_title = c_n
                         break
                         
-                _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-                _assets_dir = os.path.join(_src_dir, "layout") if os.path.exists(os.path.join(_src_dir, "layout")) else os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-
                 lbl_color = QLabel(self.txt("lbl_cut_color_fmt").format(hex=color_hex, color=label_text))
                 row_layout.addWidget(lbl_color)
                 row_layout.addStretch()
@@ -2160,7 +2157,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 btn_cut_now_proxy.setFixedSize(24, 24)
                 btn_cut_now_proxy.setCursor(Qt.PointingHandCursor)
                 btn_cut_now_proxy.setStyleSheet("background: transparent; border: none;")
-                btn_cut_now_proxy.setIcon(QIcon(os.path.join(_assets_dir, "cut.png")))
+                btn_cut_now_proxy.setIcon(QIcon(get_layout_icon_path("cut.png")))
                 btn_cut_now_proxy.setIconSize(QSize(20, 20))
                 btn_cut_now_proxy.setToolTip(self.txt("tooltip_cut_now"))
                 btn_cut_now_proxy.clicked.connect(lambda _, c=color_name_title: self._on_cut_now_clicked(c))
@@ -2542,11 +2539,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _create_info_icon(self, tooltip_key: str) -> QLabel:
         info = QLabel()
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        _prod_assets_dir = os.path.join(_src_dir, "layout")
-        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-        info_icon_path = os.path.join(_assets_dir, "information.png")
+        info_icon_path = get_layout_icon_path("information.png")
         if os.path.exists(info_icon_path):
             info.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:

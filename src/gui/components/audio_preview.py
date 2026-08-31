@@ -725,19 +725,15 @@ class AudioPreviewWidget(QFrame):
     def _on_volume_changed(self, v):
         self.audio_output.setVolume(v / 100.0)
         self._force_system_volume(v)
-        import os
         from PySide6.QtGui import QPixmap
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        _prod_assets_dir = os.path.join(_src_dir, "layout")
-        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
+        from gui.utils import get_layout_icon_path
         
         if v > 70:
-            path = os.path.join(_assets_dir, "volume-max.png")
+            path = get_layout_icon_path("volume-max.png")
         elif v >= 40:
-            path = os.path.join(_assets_dir, "volume-mid.png")
+            path = get_layout_icon_path("volume-mid.png")
         else:
-            path = os.path.join(_assets_dir, "volume-min.png")
+            path = get_layout_icon_path("volume-min.png")
             
         from PySide6.QtCore import Qt
         pixmap = QPixmap(path)

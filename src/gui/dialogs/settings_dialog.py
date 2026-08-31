@@ -792,20 +792,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         from PySide6.QtGui import QIcon
         from PySide6.QtCore import QSize
-        import os
+        from gui.utils import get_icon_path
         
         for i, name in enumerate(icon_names):
             btn = QPushButton()
-            ext = ".ico" if self.engine.os_doc.is_win else ".png"
-            prod_icon = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}{ext}")
-            dev_icon = os.path.join(os.path.dirname(self.engine.os_doc.install_dir), "assets", "icons", f"icon_{name}{ext}")
-            icon_path = prod_icon if os.path.exists(prod_icon) else dev_icon
-            if not os.path.exists(icon_path) and self.engine.os_doc.is_win:
-                prod_png = os.path.join(self.engine.os_doc.install_dir, "icons", f"icon_{name}.png")
-                dev_png = os.path.join(os.path.dirname(self.engine.os_doc.install_dir), "assets", "icons", f"icon_{name}.png")
-                icon_path = prod_png if os.path.exists(prod_png) else dev_png
-            
-            if os.path.exists(icon_path):
+            icon_path = get_icon_path(name)
+            if icon_path and os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
                 btn.setIconSize(QSize(48, 48))
             btn.setCheckable(True)
@@ -1668,11 +1660,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         btn_copy_logs = QPushButton("")
         import PySide6.QtGui as qg
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        _prod_assets_dir = os.path.join(_src_dir, "layout")
-        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-        btn_copy_logs.setIcon(qg.QIcon(os.path.join(_assets_dir, "copy.png")))
+        from gui.utils import get_layout_icon_path
+        btn_copy_logs.setIcon(qg.QIcon(get_layout_icon_path("copy.png")))
         btn_copy_logs.setToolTip(self.txt("btn_copy_path"))
         btn_copy_logs.setStyleSheet("background: transparent; border: none; padding: 4px;")
         btn_copy_logs.setCursor(Qt.PointingHandCursor)

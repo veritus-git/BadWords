@@ -225,20 +225,15 @@ class CustomTitleBar(QWidget):
         self.chapter_dropdown.setMinimumWidth(100)
         self.chapter_dropdown.hide()  # Always hidden — Edit menu now owns this
         
-        # Resolve icon directory relative to gui/components/titlebar.py -> src/assets/layout
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        _prod_assets_dir = os.path.join(_src_dir, "layout")
-        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-
+        from ..utils import get_layout_icon_path
         self.btn_min = AnimatedTitleButton(
-            os.path.join(_assets_dir, "minimize.png"),
+            get_layout_icon_path("minimize.png"),
             "btn_minimize", lang, parent=self)
         self.btn_max = AnimatedTitleButton(
-            os.path.join(_assets_dir, "maximize.png"),
+            get_layout_icon_path("maximize.png"),
             "btn_maximize", lang, parent=self)
         self.btn_close    = AnimatedTitleButton(
-            os.path.join(_assets_dir, "exit.png"),
+            get_layout_icon_path("exit.png"),
             "btn_close",    lang, parent=self)
 
         self.btn_min.clicked.connect(self._minimize_window)
@@ -455,11 +450,8 @@ class CustomTitleBar(QWidget):
 
     def update_maximize_icon(self, is_maximized):
         icon_name = 'windowed.png' if is_maximized else 'maximize.png'
-        _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        _prod_assets_dir = os.path.join(_src_dir, "layout")
-        _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-        _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-        icon_path = os.path.join(_assets_dir, icon_name)
+        from ..utils import get_layout_icon_path
+        icon_path = get_layout_icon_path(icon_name)
 
         # Używamy nowej metody, która zabezpiecza ikonę przed resetem przez animację hover!
         self.btn_max.change_base_icon(icon_path)
