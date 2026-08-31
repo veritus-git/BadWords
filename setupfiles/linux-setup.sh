@@ -49,7 +49,7 @@ invoke_python_fallback() {
     echo -e "     (unsupported environment or security policy)."
     echo -e "\033[36m========================================================================\033[0m"
     echo -e " How would you like to proceed?"
-    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended - 100% universal)\033[0m"
+    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended)\033[0m"
     echo -e "  \033[90m[2] Exit\033[0m"
     echo -e "\033[36m========================================================================\033[0m"
 

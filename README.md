@@ -132,17 +132,11 @@ I know that installing plugins can sometimes be a headache. That's why I made Ba
 >
 > **Built-in Seamless Python CLI Fallback:**  
 > If your operating system's security blocks the graphical binary from opening, the setup script **automatically detects the block** and presents an interactive fallback choice:
-> ```text
-> ========================================================================
->  [!] Security Notice:
->      The graphical installer binary was blocked by Windows Smart App
->      Control (SAC) or macOS Gatekeeper because it lacks an EV certificate.
-> ========================================================================
->  How would you like to proceed?
->   [1] Run Rich Terminal Installer via Python (Recommended - 100% bypasses security)
->   [2] Exit (I want to change security settings and try again)
-> ========================================================================
-> ```
+>
+> <p align="center">
+>   <img src="repo/sac_notice.png" alt="Security Notice & Fallback Prompt" width="75%">
+> </p>
+>
 > Choosing **`[1]`** automatically bootstraps a portable Python environment and runs the full-featured **Rich Terminal Setup**, which executes via the official, digitally-signed `python.exe` — completely bypassing any security blocks without needing to change your OS settings!
 >
 > <p align="center">
