@@ -996,9 +996,9 @@ impl eframe::App for InstallerApp {
                                     ui.set_max_size(egui::vec2(610.0, 32.0));
 
                                     ui.horizontal(|ui| {
-                                        // Wybór Języka - stylizowany identycznie jak przyciski nawigacyjne
-                                        let lang_text = format!("🌐  {}  ▾", self.language.display_name());
-                                        let lang_btn_size = [115.0, 32.0];
+                                        // Wybór Języka - czysty tekst (np. "Polski") w stylu przycisków
+                                        let lang_text = self.language.display_name();
+                                        let lang_btn_size = [100.0, 32.0];
                                         let (lang_rect, lang_resp) = ui.allocate_exact_size(lang_btn_size.into(), egui::Sense::click());
                                         let is_lang_hover = lang_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| lang_rect.contains(p)));
 
@@ -1013,8 +1013,8 @@ impl eframe::App for InstallerApp {
                                         ui.painter().text(
                                             lang_rect.center(),
                                             egui::Align2::CENTER_CENTER,
-                                            &lang_text,
-                                            egui::FontId::proportional(12.0),
+                                            lang_text,
+                                            egui::FontId::proportional(12.5),
                                             egui::Color32::WHITE,
                                         );
 
@@ -1022,10 +1022,11 @@ impl eframe::App for InstallerApp {
                                             self.language_dropdown_open = !self.language_dropdown_open;
                                         }
 
-                                        // Popup menu z 10 językami - zaraz NAD przyciskiem (bez wielkich przerw)
+                                        // Popup menu z 10 językami - zaczyna się dokładnie NAD przyciskiem (bez zasłaniania go!)
                                         if self.language_dropdown_open {
                                             let item_h = 24.0;
-                                            let popup_h = Language::ALL.len() as f32 * item_h + 8.0;
+                                            let popup_pad = 4.0;
+                                            let popup_h = Language::ALL.len() as f32 * item_h + popup_pad * 2.0;
                                             let popup_pos = egui::pos2(lang_rect.min.x, lang_rect.min.y - popup_h - 2.0);
 
                                             egui::Area::new(egui::Id::new("lang_popup_menu"))
@@ -1036,8 +1037,9 @@ impl eframe::App for InstallerApp {
                                                         .fill(egui::Color32::from_rgb(34, 34, 34))
                                                         .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(66, 66, 66)))
                                                         .rounding(3.0)
-                                                        .inner_margin(egui::Margin::symmetric(3.0, 4.0))
+                                                        .inner_margin(egui::Margin::symmetric(3.0, popup_pad))
                                                         .show(ui, |ui| {
+                                                            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                                                             ui.set_width(lang_btn_size[0] - 6.0);
                                                             for lang in Language::ALL {
                                                                 let is_curr = lang == self.language;
@@ -1051,22 +1053,22 @@ impl eframe::App for InstallerApp {
                                                                     ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                                                                     ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_rgb(54, 54, 54));
                                                                 } else if is_curr {
-                                                                    ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_white_alpha(10));
+                                                                    ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_white_alpha(20));
                                                                 }
 
-                                                                let text_color = if is_curr {
-                                                                    egui::Color32::from_rgb(52, 211, 153)
+                                                                let (text_color, font) = if is_curr {
+                                                                    (egui::Color32::WHITE, egui::FontId::proportional(12.0))
                                                                 } else if is_item_hover {
-                                                                    egui::Color32::WHITE
+                                                                    (egui::Color32::WHITE, egui::FontId::proportional(12.0))
                                                                 } else {
-                                                                    egui::Color32::from_gray(215)
+                                                                    (egui::Color32::from_gray(215), egui::FontId::proportional(12.0))
                                                                 };
 
                                                                 ui.painter().text(
-                                                                    item_rect.left_center() + egui::vec2(8.0, 0.0),
-                                                                    egui::Align2::LEFT_CENTER,
+                                                                    item_rect.center(),
+                                                                    egui::Align2::CENTER_CENTER,
                                                                     lang.display_name(),
-                                                                    egui::FontId::proportional(12.0),
+                                                                    font,
                                                                     text_color,
                                                                 );
 
@@ -1262,20 +1264,10 @@ fn render_badwords_dual_progress(
         }
     }
 
-    ui.add_space(16.0);
+    ui.add_space(8.0);
 
-    // 3. POD-OPERACJA: Detale mikro-kroku ze ścisłym przycinaniem i łamaniem tekstu
-    if !status_details.is_empty() {
-        let (details_rect, _) = ui.allocate_exact_size(egui::vec2(width, 18.0), egui::Sense::hover());
-        let details_galley = ui.painter().layout(
-            status_details.to_string(),
-            egui::FontId::proportional(11.5),
-            egui::Color32::from_gray(185),
-            width,
-        );
-        ui.painter().with_clip_rect(details_rect).galley(details_rect.min, details_galley, egui::Color32::from_gray(185));
-        ui.add_space(5.0);
-
+    // 2. POD-PASEK POSTĘPU: Animowany pasek mikro-kroku
+    {
         let (sub_rect, _) = ui.allocate_exact_size(egui::vec2(width, 6.0), egui::Sense::hover());
         let painter = ui.painter();
         painter.rect_filled(sub_rect, 3.0, egui::Color32::from_rgb(22, 22, 22));
@@ -1356,6 +1348,20 @@ fn render_badwords_dual_progress(
                 painter.add(egui::Shape::Mesh(pill_mesh));
             }
         }
+    }
+
+    ui.add_space(8.0);
+
+    // 3. POD-OPERACJA: Detale mikro-kroku umieszczone POD dolnym paskiem z pełną przestrzenią na łamanie tekstu
+    if !status_details.is_empty() {
+        let (details_rect, _) = ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::hover());
+        let details_galley = ui.painter().layout(
+            status_details.to_string(),
+            egui::FontId::proportional(11.5),
+            egui::Color32::from_gray(185),
+            width,
+        );
+        ui.painter().with_clip_rect(details_rect).galley(details_rect.min, details_galley, egui::Color32::from_gray(185));
     }
 }
 
