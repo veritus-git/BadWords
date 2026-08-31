@@ -160,46 +160,57 @@ pub fn detect_existing_install() -> Option<PathBuf> {
     None
 }
 
-/// Detects primary screen resolution for initial window centering
-pub fn get_primary_screen_size() -> Option<(f32, f32)> {
-    #[cfg(target_os = "linux")]
-    {
-        // 1. Try xrandr
-        if let Ok(out) = std::process::Command::new("xrandr").arg("--current").output() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            for line in text.lines() {
-                if line.contains(" connected") && (line.contains("primary") || line.contains("+0+0")) {
-                    for part in line.split_whitespace() {
-                        if let Some((w_str, rest)) = part.split_once('x') {
-                            if let Some((h_str, _)) = rest.split_once('+') {
-                                if let (Ok(w), Ok(h)) = (w_str.parse::<f32>(), h_str.parse::<f32>()) {
-                                    if w > 400.0 && h > 300.0 {
-                                        return Some((w, h));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // fallback in xrandr: "current 1920 x 1080"
-            for line in text.lines() {
-                if line.contains("current ") {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if let Some(pos) = parts.iter().position(|&p| p == "current") {
-                        if pos + 3 < parts.len() {
-                            if let (Ok(w), Ok(h)) = (parts[pos + 1].parse::<f32>(), parts[pos + 3].trim_end_matches(',').parse::<f32>()) {
-                                if w > 400.0 && h > 300.0 {
-                                    return Some((w, h));
-                                }
-                            }
+/// Parses an xrandr output line to extract monitor geometry (w, h, offset_x, offset_y) and returns the centered position
+fn parse_xrandr_geometry(line: &str, win_w: f32, win_h: f32) -> Option<(f32, f32)> {
+    for part in line.split_whitespace() {
+        if part.contains('x') && part.contains('+') {
+            let subparts: Vec<&str> = part.split('+').collect();
+            if subparts.len() >= 3 {
+                if let Some((w_str, h_str)) = subparts[0].split_once('x') {
+                    if let (Ok(w), Ok(h), Ok(ox), Ok(oy)) = (
+                        w_str.parse::<f32>(),
+                        h_str.parse::<f32>(),
+                        subparts[1].parse::<f32>(),
+                        subparts[2].parse::<f32>(),
+                    ) {
+                        if w > 400.0 && h > 300.0 {
+                            let cx = ox + (w - win_w) / 2.0;
+                            let cy = oy + (h - win_h) / 2.0;
+                            return Some((cx, cy));
                         }
                     }
                 }
             }
         }
+    }
+    None
+}
 
-        // 2. Try xdpyinfo
+/// Detects the exact primary monitor bounds and returns the top-left (x, y) coordinates to center a window
+pub fn get_primary_monitor_center(win_w: f32, win_h: f32) -> Option<(f32, f32)> {
+    #[cfg(target_os = "linux")]
+    {
+        // 1. Try xrandr with connected primary
+        if let Ok(out) = std::process::Command::new("xrandr").arg("--current").output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if line.contains(" connected") && line.contains("primary") {
+                    if let Some(pos) = parse_xrandr_geometry(line, win_w, win_h) {
+                        return Some(pos);
+                    }
+                }
+            }
+            // 2. Fallback to first connected monitor
+            for line in text.lines() {
+                if line.contains(" connected") {
+                    if let Some(pos) = parse_xrandr_geometry(line, win_w, win_h) {
+                        return Some(pos);
+                    }
+                }
+            }
+        }
+
+        // 3. Try xdpyinfo
         if let Ok(out) = std::process::Command::new("xdpyinfo").output() {
             let text = String::from_utf8_lossy(&out.stdout);
             for line in text.lines() {
@@ -209,7 +220,7 @@ pub fn get_primary_screen_size() -> Option<(f32, f32)> {
                         if let Some((w_str, h_str)) = parts[1].split_once('x') {
                             if let (Ok(w), Ok(h)) = (w_str.parse::<f32>(), h_str.parse::<f32>()) {
                                 if w > 400.0 && h > 300.0 {
-                                    return Some((w, h));
+                                    return Some(((w - win_w) / 2.0, (h - win_h) / 2.0));
                                 }
                             }
                         }
@@ -222,13 +233,15 @@ pub fn get_primary_screen_size() -> Option<(f32, f32)> {
     #[cfg(target_os = "windows")]
     {
         if let Ok(out) = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height"])
+            .args(["-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \"$($s.X),$($s.Y),$($s.Width),$($s.Height)\""])
             .output()
         {
-            let text = String::from_utf8_lossy(&out.stdout);
-            let nums: Vec<f32> = text.lines().filter_map(|l| l.trim().parse::<f32>().ok()).collect();
-            if nums.len() >= 2 && nums[0] > 400.0 && nums[1] > 300.0 {
-                return Some((nums[0], nums[1]));
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let parts: Vec<f32> = text.split(',').filter_map(|s| s.trim().parse::<f32>().ok()).collect();
+            if parts.len() == 4 && parts[2] > 400.0 && parts[3] > 300.0 {
+                let cx = parts[0] + (parts[2] - win_w) / 2.0;
+                let cy = parts[1] + (parts[3] - win_h) / 2.0;
+                return Some((cx.max(0.0), cy.max(0.0)));
             }
         }
     }
@@ -244,7 +257,7 @@ pub fn get_primary_screen_size() -> Option<(f32, f32)> {
                         if pos + 3 < parts.len() {
                             if let (Ok(w), Ok(h)) = (parts[pos + 1].parse::<f32>(), parts[pos + 3].parse::<f32>()) {
                                 if w > 400.0 && h > 300.0 {
-                                    return Some((w, h));
+                                    return Some(((w - win_w) / 2.0, (h - win_h) / 2.0));
                                 }
                             }
                         }
