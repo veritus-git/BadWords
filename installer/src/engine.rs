@@ -29,21 +29,152 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
     Ok(())
 }
 
-/// Downloads a file over HTTP(S) to the specified destination
-fn download_file(url: &str, dest: &Path) -> Result<(), String> {
+/// Downloads a file over HTTP(S) to the specified destination with live byte progress
+fn download_file_with_progress(
+    url: &str,
+    dest: &Path,
+    main_pct: u32,
+    status_label: &str,
+    details_prefix: &str,
+    sender: &EventSender,
+) -> Result<(), String> {
     let resp = ureq::get(url)
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(180))
         .call()
         .map_err(|e| format!("Download error from {}: {}", url, e))?;
 
+    let total_bytes = resp.header("content-length").and_then(|l| l.parse::<u64>().ok());
     let mut reader = resp.into_reader();
     let mut out = fs::File::create(dest)
         .map_err(|e| format!("Failed to create destination file {}: {}", dest.display(), e))?;
 
-    std::io::copy(&mut reader, &mut out)
-        .map_err(|e| format!("Failed to write downloaded content: {}", e))?;
+    let mut buffer = [0u8; 64 * 1024];
+    let mut downloaded: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
 
+    loop {
+        use std::io::Read;
+        let bytes_read = reader.read(&mut buffer).map_err(|e| format!("Read error: {}", e))?;
+        if bytes_read == 0 {
+            break;
+        }
+        use std::io::Write;
+        out.write_all(&buffer[..bytes_read]).map_err(|e| format!("Write error: {}", e))?;
+        downloaded += bytes_read as u64;
+
+        if last_emit.elapsed().as_millis() >= 120 {
+            last_emit = std::time::Instant::now();
+            let mb_down = downloaded as f64 / 1_048_576.0;
+            if let Some(total) = total_bytes {
+                let mb_total = total as f64 / 1_048_576.0;
+                let sub_pct = ((downloaded as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32;
+                let det = format!("{} ({:.1}/{:.1} MB)", details_prefix, mb_down, mb_total);
+                emit_progress_sub(sender, main_pct, sub_pct, status_label, &det);
+            } else {
+                let det = format!("{} ({:.1} MB downloaded)", details_prefix, mb_down);
+                emit_progress_sub(sender, main_pct, 50, status_label, &det);
+            }
+        }
+    }
+
+    emit_progress_sub(sender, main_pct, 100, status_label, &format!("{} (Done)", details_prefix));
     Ok(())
+}
+
+/// Executes pip install with live streaming progress updates
+fn run_pip_install_streaming(
+    py_bin: &Path,
+    args: &[&str],
+    main_pct_start: u32,
+    main_pct_end: u32,
+    status_label: &str,
+    default_detail: &str,
+    sender: &EventSender,
+) -> bool {
+    let mut cmd = Command::new(py_bin);
+    cmd.args(["-m", "pip", "install", "--no-cache-dir", "--progress-bar", "on"]);
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            emit_log(sender, "ERROR", &format!("Failed to start pip: {}", e));
+            return false;
+        }
+    };
+
+    let mut stdout = child.stdout.take();
+    let sender_clone = sender.clone();
+    let status_str = status_label.to_string();
+    let mut current_detail = default_detail.to_string();
+
+    let reader_thread = std::thread::spawn(move || {
+        if let Some(ref mut out) = stdout {
+            use std::io::Read;
+            let mut byte_buf = [0u8; 1024];
+            let mut line_buf = String::new();
+
+            while let Ok(n) = out.read(&mut byte_buf) {
+                if n == 0 {
+                    break;
+                }
+                for &b in &byte_buf[..n] {
+                    if b == b'\n' || b == b'\r' {
+                        let line = line_buf.trim();
+                        if !line.is_empty() {
+                            if line.contains("Downloading") {
+                                if let Some(pkg_name) = line.split("Downloading").nth(1) {
+                                    let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
+                                    current_detail = format!("Downloading {}", clean_name);
+                                }
+                            } else if line.contains("Collecting") {
+                                if let Some(pkg_name) = line.split("Collecting").nth(1) {
+                                    let clean_name = pkg_name.trim().split_whitespace().next().unwrap_or("package");
+                                    current_detail = format!("Collecting {}", clean_name);
+                                }
+                            } else if line.contains("Installing collected packages") {
+                                current_detail = "Installing modules into virtual environment...".to_string();
+                                emit_progress_sub(&sender_clone, main_pct_end - 1, 95, &status_str, &current_detail);
+                            }
+
+                            // Parse download fraction (e.g. 45.2/78.3 MB or kB)
+                            for part in line.split_whitespace() {
+                                if part.contains('/') {
+                                    let pieces: Vec<&str> = part.split('/').collect();
+                                    if pieces.len() == 2 {
+                                        if let (Ok(cur), Ok(tot)) = (pieces[0].parse::<f32>(), pieces[1].parse::<f32>()) {
+                                            if tot > 0.0 && cur <= tot {
+                                                let sub_pct = ((cur / tot) * 100.0).clamp(0.0, 100.0) as u32;
+                                                let span = (main_pct_end - main_pct_start) as f32;
+                                                let main_pct = main_pct_start + (span * (sub_pct as f32 / 100.0)) as u32;
+                                                let det_with_size = format!("{} ({:.1}/{:.1} MB)", current_detail, cur, tot);
+                                                emit_progress_sub(&sender_clone, main_pct, sub_pct, &status_str, &det_with_size);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        line_buf.clear();
+                    } else {
+                        line_buf.push(b as char);
+                    }
+                }
+            }
+        }
+    });
+
+    let status = child.wait();
+    let _ = reader_thread.join();
+
+    match status {
+        Ok(st) => st.success(),
+        Err(_) => false,
+    }
 }
 
 /// Extracts a ZIP archive to a destination directory using the zip crate
@@ -197,7 +328,7 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
     let mut downloaded = false;
     for url in [GITHUB_ZIP_DEV_URL, GITHUB_ZIP_MAIN_URL, GITLAB_ZIP_URL] {
         emit_log(sender, "INFO", &format!("Fetching source from: {}", url));
-        if download_file(url, &zip_dest).is_ok() {
+        if download_file_with_progress(url, &zip_dest, 30, "Deploying application files...", "Downloading release archive", sender).is_ok() {
             downloaded = true;
             break;
         }
@@ -283,13 +414,14 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
 
     #[cfg(target_os = "windows")]
     {
-        let url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip";
+        let url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip";
         let temp_dir = std::env::temp_dir();
         let archive = temp_dir.join("ffmpeg_win.zip");
-        let extract_dir = temp_dir.join("ffmpeg_extract");
+        let extract_dir = temp_dir.join("ffmpeg_extracted");
+        let _ = fs::remove_dir_all(&extract_dir);
+        let _ = fs::create_dir_all(&extract_dir);
 
-        if download_file(url, &archive).is_ok() {
-            let _ = fs::create_dir_all(&extract_dir);
+        if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Windows)", sender).is_ok() {
             if extract_zip(&archive, &extract_dir).is_ok() {
                 // Search for ffmpeg.exe inside extracted tree
                 if let Ok(entries) = fs::read_dir(&extract_dir) {
@@ -314,7 +446,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         let parent = bin_dir.parent().unwrap_or(bin_dir);
         let archive = parent.join("ffmpeg_static.tar.xz");
 
-        if download_file(url, &archive).is_ok() {
+        if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Linux)", sender).is_ok() {
             let _ = Command::new("tar").args(["-xf", &archive.to_string_lossy(), "-C", &parent.to_string_lossy()]).status();
 
             if let Ok(entries) = fs::read_dir(parent) {
@@ -347,7 +479,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         let temp_dir = std::env::temp_dir();
         let archive = temp_dir.join("ffmpeg_mac.zip");
 
-        if download_file(url, &archive).is_ok() {
+        if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (macOS)", sender).is_ok() {
             if extract_zip(&archive, bin_dir).is_ok() {
                 #[cfg(unix)]
                 {
@@ -458,40 +590,70 @@ pub fn run_install(target_dir: PathBuf, sender: EventSender) {
 
         if v_py.exists() {
             // Sub-step 1/4: pip, setuptools & wheel
-            emit_progress_sub(&sender, 65, 20, "Configuring Python packages...", "[1/4] Upgrading pip, setuptools & wheel");
-            let _ = Command::new(&v_py).args(["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "-q"]).status();
+            emit_log(&sender, "INFO", "Upgrading pip, setuptools & wheel...");
+            run_pip_install_streaming(
+                &v_py,
+                &["--upgrade", "pip", "setuptools", "wheel"],
+                60,
+                68,
+                "Configuring Python packages...",
+                "[1/4] Upgrading pip, setuptools & wheel",
+                &sender,
+            );
             emit_log(&sender, "OK", "Package manager tools updated.");
 
             // Sub-step 2/4: PySide6
-            emit_progress_sub(&sender, 72, 45, "Installing GUI framework...", "[2/4] Installing PySide6 Qt GUI framework");
             let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
             if !pyside_check {
                 emit_log(&sender, "INFO", "Installing PySide6 framework...");
-                let _ = Command::new(&v_py).args(["-m", "pip", "install", "PySide6", "-q"]).status();
+                run_pip_install_streaming(
+                    &v_py,
+                    &["PySide6"],
+                    68,
+                    78,
+                    "Installing GUI framework...",
+                    "[2/4] Downloading and installing PySide6 Qt framework",
+                    &sender,
+                );
                 emit_log(&sender, "OK", "PySide6 installed.");
             } else {
+                emit_progress_sub(&sender, 78, 100, "Installing GUI framework...", "[2/4] PySide6 framework verified");
                 emit_log(&sender, "OK", "PySide6 is ready.");
             }
 
             // Sub-step 3/4: faster-whisper, pypdf
-            emit_progress_sub(&sender, 80, 70, "Installing AI speech engine...", "[3/4] Installing Faster-Whisper transcription engine & PyPDF");
             emit_log(&sender, "INFO", "Installing faster-whisper and pypdf...");
-            let _ = Command::new(&v_py).args(["-m", "pip", "install", "faster-whisper", "pypdf", "--no-cache-dir", "-q"]).status();
+            run_pip_install_streaming(
+                &v_py,
+                &["faster-whisper", "pypdf"],
+                78,
+                85,
+                "Installing AI speech engine...",
+                "[3/4] Downloading Faster-Whisper AI engine & PyPDF",
+                &sender,
+            );
             emit_log(&sender, "OK", "Faster-Whisper and PyPDF installed.");
 
             // Sub-step 4/4: Hardware Acceleration (CUDA 12 or CPU runtime)
             if has_nvidia {
-                emit_progress_sub(&sender, 86, 90, "Installing GPU acceleration...", "[4/4] Installing NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)");
                 emit_log(&sender, "INFO", "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...");
-                let _ = Command::new(&v_py).args(["-m", "pip", "install", "nvidia-cublas-cu12", "nvidia-cudnn-cu12", "--no-cache-dir", "-q"]).status();
+                run_pip_install_streaming(
+                    &v_py,
+                    &["nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
+                    85,
+                    90,
+                    "Installing GPU acceleration...",
+                    "[4/4] Downloading NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)",
+                    &sender,
+                );
                 emit_log(&sender, "OK", "NVIDIA CUDA 12 hardware acceleration packages installed.");
             } else {
-                emit_progress_sub(&sender, 86, 90, "Configuring AI engine...", "[4/4] Verifying CPU computation packages");
+                emit_progress_sub(&sender, 90, 100, "Configuring AI engine...", "[4/4] CPU AI computation verified");
                 emit_log(&sender, "OK", "CPU AI acceleration configured.");
             }
 
             // Final linking
-            emit_progress_sub(&sender, 89, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
+            emit_progress_sub(&sender, 91, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
             let libs_dir = target_dir.join("libs");
             if !libs_dir.exists() {
                 #[cfg(unix)]

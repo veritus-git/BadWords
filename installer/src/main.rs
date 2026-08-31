@@ -994,23 +994,27 @@ fn render_badwords_dual_progress(
             ui.set_max_width(width);
             let pct_num = (main_progress.clamp(0.0, 1.0) * 100.0).round() as u32;
 
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(status_title)
-                        .size(13.5)
-                        .strong()
-                        .color(egui::Color32::WHITE)
-                ).truncate(true)
-            );
-
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(
-                    egui::RichText::new(format!("{:>3}%", pct_num))
-                        .size(13.5)
-                        .strong()
-                        .family(egui::FontFamily::Monospace)
-                        .color(egui::Color32::from_rgb(184, 208, 53)),
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{:>3}%", pct_num))
+                            .size(13.5)
+                            .strong()
+                            .family(egui::FontFamily::Monospace)
+                            .color(egui::Color32::from_rgb(184, 208, 53)),
+                    ).wrap(false)
                 );
+
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(status_title)
+                                .size(13.5)
+                                .strong()
+                                .color(egui::Color32::WHITE)
+                        ).truncate(true).wrap(false)
+                    );
+                });
             });
         }
     );
@@ -1043,8 +1047,8 @@ fn render_badwords_dual_progress(
             mesh.add_triangle(2, 1, 3);
             painter.add(egui::Shape::Mesh(mesh));
 
-            // Windows-Style Soft Gloss Shimmer Beam (Płynny, dwustronny gradient połysku świetlnego)
-            let beam_w = 90.0;
+            // Windows-Style Soft Gloss Shimmer Beam (70px szerokości, miękki dwustronny gradient)
+            let beam_w = 70.0;
             let cycle = ((time * 160.0) as f32) % (fill_rect.width() + beam_w * 2.0);
             let beam_center = fill_rect.min.x + cycle - beam_w;
 
@@ -1092,21 +1096,25 @@ fn render_badwords_dual_progress(
                 ui.set_max_width(width);
                 let sub_pct_num = (sub_progress.clamp(0.0, 1.0) * 100.0).round() as u32;
 
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(status_details)
-                            .size(12.0)
-                            .color(egui::Color32::from_gray(185))
-                    ).wrap(true)
-                );
-
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{}%", sub_pct_num))
-                            .size(11.5)
-                            .family(egui::FontFamily::Monospace)
-                            .color(egui::Color32::from_rgb(74, 222, 128)),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("{}%", sub_pct_num))
+                                .size(11.5)
+                                .family(egui::FontFamily::Monospace)
+                                .color(egui::Color32::from_rgb(74, 222, 128)),
+                        ).wrap(false)
                     );
+
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(status_details)
+                                    .size(12.0)
+                                    .color(egui::Color32::from_gray(185))
+                            ).truncate(true).wrap(false)
+                        );
+                    });
                 });
             }
         );
@@ -1135,8 +1143,8 @@ fn render_badwords_dual_progress(
             sub_mesh.add_triangle(2, 1, 3);
             painter.add(egui::Shape::Mesh(sub_mesh));
 
-            // Soft shimmer na pod-pasku
-            let sub_beam_w = 60.0;
+            // Soft shimmer na pod-pasku (45px)
+            let sub_beam_w = 45.0;
             let sub_cycle = ((time * 200.0) as f32) % (sub_fill_rect.width() + sub_beam_w * 2.0);
             let sub_beam_center = sub_fill_rect.min.x + sub_cycle - sub_beam_w;
             let sb_left = (sub_beam_center - sub_beam_w * 0.5).max(sub_fill_rect.min.x);
