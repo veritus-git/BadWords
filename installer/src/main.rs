@@ -657,7 +657,7 @@ impl eframe::App for InstallerApp {
                                             let (close_rect, close_resp) = ui.allocate_exact_size(button_size.into(), egui::Sense::click());
                                             if close_resp.clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
                                             
-                                            let is_close_hovered = close_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| close_rect.contains(p)));
+                                            let is_close_hovered = close_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| close_rect.contains(p)));
                                             if is_close_hovered {
                                                 ui.painter().rect_filled(close_rect, 0.0, egui::Color32::from_rgb(190, 45, 45));
                                             }
@@ -670,7 +670,7 @@ impl eframe::App for InstallerApp {
                                             let (min_rect, min_resp) = ui.allocate_exact_size(button_size.into(), egui::Sense::click());
                                             if min_resp.clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); }
                                             
-                                            let is_min_hovered = min_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| min_rect.contains(p)));
+                                            let is_min_hovered = min_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| min_rect.contains(p)));
                                             if is_min_hovered {
                                                 ui.painter().rect_filled(min_rect, 0.0, egui::Color32::from_white_alpha(15));
                                             }
@@ -684,7 +684,7 @@ impl eframe::App for InstallerApp {
                                             if term_resp.clicked() {
                                                 self.toggle_terminal();
                                             }
-                                            let is_term_hovered = term_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| term_rect.contains(p)));
+                                            let is_term_hovered = term_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| term_rect.contains(p)));
                                             let term_stroke_color = if is_term_hovered {
                                                 ui.painter().rect_filled(term_rect, 0.0, egui::Color32::from_white_alpha(15));
                                                 egui::Color32::WHITE
@@ -1138,7 +1138,7 @@ impl eframe::App for InstallerApp {
                                         let lang_text = self.language.display_name();
                                         let lang_btn_size = [100.0, 32.0];
                                         let (lang_rect, lang_resp) = ui.allocate_exact_size(lang_btn_size.into(), egui::Sense::click());
-                                        let is_lang_hover = lang_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| lang_rect.contains(p)));
+                                        let is_lang_hover = lang_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| lang_rect.contains(p)));
 
                                         if is_lang_hover || self.language_dropdown_open {
                                             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1199,7 +1199,7 @@ impl eframe::App for InstallerApp {
                                                                         egui::vec2(lang_btn_size[0] - 6.0, item_h),
                                                                         egui::Sense::click(),
                                                                     );
-                                                                    let is_item_hover = item_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| item_rect.contains(p)));
+                                                                    let is_item_hover = item_resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| item_rect.contains(p)));
 
                                                                     if is_item_hover {
                                                                         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1208,9 +1208,7 @@ impl eframe::App for InstallerApp {
                                                                         ui.painter().rect_filled(item_rect, 2.0, egui::Color32::from_white_alpha(20));
                                                                     }
 
-                                                                    let (text_color, font) = if is_curr {
-                                                                        (egui::Color32::WHITE, egui::FontId::proportional(12.0))
-                                                                    } else if is_item_hover {
+                                                                    let (text_color, font) = if is_curr || is_item_hover {
                                                                         (egui::Color32::WHITE, egui::FontId::proportional(12.0))
                                                                     } else {
                                                                         (egui::Color32::from_gray(215), egui::FontId::proportional(12.0))
@@ -1528,7 +1526,7 @@ fn render_badwords_dual_progress(
 /// Niezawodny, płynny przycisk z aktywnym stanem hover po dragowaniu
 fn custom_button(ui: &mut egui::Ui, ctx: &egui::Context, size: [f32; 2], text: &str) -> bool {
     let (rect, resp) = ui.allocate_exact_size(size.into(), egui::Sense::click());
-    let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| rect.contains(p)));
+    let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
 
     if is_hovered {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1561,7 +1559,7 @@ fn render_menu_option(
     let width = 392.0;
     let height = 56.0;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
-    let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().map_or(false, |p| rect.contains(p)));
+    let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
 
     if is_hovered || is_keyboard_selected {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);

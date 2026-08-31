@@ -239,7 +239,7 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
                         }
                         // Mark as trusted for GNOME desktop environment
                         let _ = std::process::Command::new("gio")
-                            .args(["set", &dt_shortcut.to_string_lossy().to_string(), "metadata::trusted", "true"])
+                            .args(["set", dt_shortcut.to_string_lossy().as_ref(), "metadata::trusted", "true"])
                             .status();
                     }
                 }
@@ -247,10 +247,10 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
 
             // Force update desktop database and icon caches so GNOME/KDE index it immediately
             let _ = std::process::Command::new("update-desktop-database")
-                .arg(apps_dir.to_string_lossy().to_string())
+                .arg(apps_dir.to_string_lossy().as_ref())
                 .status();
             let _ = std::process::Command::new("gtk-update-icon-cache")
-                .args(["-f", "-t", &home.join(".local").join("share").join("icons").join("hicolor").to_string_lossy().to_string()])
+                .args(["-f", "-t", home.join(".local").join("share").join("icons").join("hicolor").to_string_lossy().as_ref()])
                 .status();
         }
     }
