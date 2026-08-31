@@ -23,18 +23,31 @@ if ($MyInvocation.MyCommand.Path) {
 $LocalBin = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\release\badwords-installer.exe" } else { "" }
 $LocalDebug = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\debug\badwords-installer.exe" } else { "" }
 
+function Start-Executable($exePath, $arguments) {
+    Unblock-File -Path $exePath -ErrorAction SilentlyContinue
+    if ($arguments -and $arguments.Count -gt 0) {
+        Start-Process -FilePath $exePath -ArgumentList $arguments
+    } else {
+        Start-Process -FilePath $exePath
+    }
+}
+
 if ($LocalBin -and (Test-Path $LocalBin)) {
-    Start-Process -FilePath $LocalBin -ArgumentList $args
+    Start-Executable $LocalBin $args
     exit 0
 }
 if ($LocalDebug -and (Test-Path $LocalDebug)) {
-    Start-Process -FilePath $LocalDebug -ArgumentList $args
+    Start-Executable $LocalDebug $args
     exit 0
 }
 $CargoToml = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\Cargo.toml" } else { "" }
 if ($CargoToml -and (Test-Path $CargoToml) -and (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
     Write-Host "Compiling and launching BadWords Setup via cargo..." -ForegroundColor Cyan
-    cargo run --release --manifest-path "$CargoToml" -- $args
+    if ($args -and $args.Count -gt 0) {
+        cargo run --release --manifest-path "$CargoToml" -- $args
+    } else {
+        cargo run --release --manifest-path "$CargoToml"
+    }
     exit 0
 }
 
@@ -77,5 +90,5 @@ if (-not $Downloaded -or -not (Test-Path $TargetExe)) {
 }
 
 # 3. Launch native GUI without terminal
-Start-Process -FilePath $TargetExe -ArgumentList $args
+Start-Executable $TargetExe $args
 exit 0
