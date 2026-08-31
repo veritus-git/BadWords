@@ -1054,18 +1054,39 @@ def _remove_os_shortcuts(install_dir=None):
                 except Exception: pass
 
 def _launch_badwords(install_dir):
-    if os.name == "nt":
-        pyw = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
-        main_py = os.path.join(install_dir, "main.py")
-        if os.path.isfile(pyw) and os.path.isfile(main_py):
-            subprocess.Popen([pyw, main_py], cwd=install_dir)
-            return True
-    else:
-        py = os.path.join(install_dir, "venv", "bin", "python")
-        main_py = os.path.join(install_dir, "main.py")
-        if os.path.isfile(py) and os.path.isfile(main_py):
-            subprocess.Popen([py, main_py], cwd=install_dir)
-            return True
+    try:
+        if os.name == "nt":
+            pyw = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+            main_py = os.path.join(install_dir, "main.py")
+            if os.path.isfile(pyw) and os.path.isfile(main_py):
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                DETACHED_PROCESS = 0x00000008
+                subprocess.Popen(
+                    [pyw, main_py],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True
+                )
+                return True
+        else:
+            py = os.path.join(install_dir, "venv", "bin", "python")
+            main_py = os.path.join(install_dir, "main.py")
+            if os.path.isfile(py) and os.path.isfile(main_py):
+                subprocess.Popen(
+                    [py, main_py],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+    except Exception as e:
+        debug_log(f"Failed to launch BadWords: {e}")
     return False
 
 
@@ -1793,17 +1814,22 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             console.print(Text(f"{PAD}   1. A restart of DaVinci Resolve might be required.", style="yellow"), no_wrap=True)
             console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
         console.print()
-
         console.print(Text(f"{PAD}Launch BadWords now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
         sys.stdout.flush()
+        launched = False
         try:
             launch_ans = readline_with_esc()
             if launch_ans.strip().lower() != "n":
                 if _launch_badwords(install_dir):
                     log_ok("BadWords launched.")
+                    launched = True
         except UserCancelled:
             pass
-        console.print()
+
+        if launched:
+            console.print()
+            time.sleep(0.6)
+            return
 
     finally:
         if tmp_dl:
