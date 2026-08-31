@@ -28,6 +28,13 @@ parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument("--platform", default=sys.platform)
 parser.add_argument("--bootstrap-python", default=sys.executable)
 parser.add_argument("--local-repo", default="")
+parser.add_argument("--install", default=None, help="Install to target path")
+parser.add_argument("--repair", action="store_true", help="Run repair")
+parser.add_argument("--move", default=None, help="Move installation")
+parser.add_argument("--reset", action="store_true", help="Run complete reset")
+parser.add_argument("--uninstall", action="store_true", help="Run complete uninstall")
+parser.add_argument("--non-interactive", action="store_true", help="Run without prompts")
+parser.add_argument("--no-launch", action="store_true", help="Do not launch app at end")
 ARGS, _ = parser.parse_known_args()
 PLAT = ARGS.platform.lower()
 
@@ -1102,10 +1109,8 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
     py_auto_installed = False
-
-    if preset_path:
-        # Path was chosen upstream (e.g. by option_reset) — skip detect & prompt
-        install_dir = preset_path
+    if preset_path or (ARGS.non_interactive and ARGS.install):
+        install_dir = preset_path or ARGS.install
         log_info(f"Using preset install path: {install_dir}")
     else:
         detected = detect_existing_install(default_dir, resolve_dirs)
@@ -1130,21 +1135,25 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             log_info(f"Using custom path: {install_dir}")
 
     # Shortcuts options
-    console.print(Text(f"{PAD}Create Desktop shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        ans_dt = readline_with_esc()
-        create_desktop = ans_dt.strip().lower() != "n"
-    except UserCancelled:
+    if ARGS.non_interactive:
         create_desktop = True
-
-    console.print(Text(f"{PAD}Create Start Menu shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        ans_menu = readline_with_esc()
-        create_menu = ans_menu.strip().lower() != "n"
-    except UserCancelled:
         create_menu = True
+    else:
+        console.print(Text(f"{PAD}Create Desktop shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            ans_dt = readline_with_esc()
+            create_desktop = ans_dt.strip().lower() != "n"
+        except UserCancelled:
+            create_desktop = True
+
+        console.print(Text(f"{PAD}Create Start Menu shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            ans_menu = readline_with_esc()
+            create_menu = ans_menu.strip().lower() != "n"
+        except UserCancelled:
+            create_menu = True
 
     # Aggressively clean up old Inno Setup (Add/Remove Programs) leftovers
     _clean_legacy_inno_setup(install_dir)
@@ -1846,7 +1855,7 @@ def option_dummy(n, label):
 
 
 # ── Option 2 — Repair Installation ─────────────────────────────
-def option_repair():
+def option_repair(preset_path=None):
     header()
     console.print(Text(f"{PAD}-- Repair Installation --", style="bold cyan"), no_wrap=True)
     console.print()
@@ -1859,40 +1868,45 @@ def option_repair():
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
 
-    log_step("Searching via DaVinci Resolve wrapper...")
-    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
-    if wrapper_dir:
-        log_ok(f"Wrapper found -> {wrapper_dir}")
-        install_dir = wrapper_dir
+    if preset_path or (ARGS.non_interactive and ARGS.install):
+        install_dir = preset_path or ARGS.install
     else:
-        log_warn("No wrapper detected. Falling back to deep scan...")
-        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
-        found_dirs = _deep_search_badwords()
-        sp_scan.done(ok=True)
-        if not found_dirs:
+        log_step("Searching via DaVinci Resolve wrapper...")
+        wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+        if wrapper_dir:
+            log_ok(f"Wrapper found -> {wrapper_dir}")
+            install_dir = wrapper_dir
+        else:
+            log_warn("No wrapper detected. Falling back to deep scan...")
+            sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+            found_dirs = _deep_search_badwords()
+            sp_scan.done(ok=True)
+            if not found_dirs:
+                console.print()
+                log_err("No BadWords installation found to repair.")
+                if not ARGS.non_interactive:
+                    pause()
+                return
+            install_dir = found_dirs[0]
+            log_ok(f"Installation found -> {install_dir}")
+
+    if not ARGS.non_interactive:
+        console.print()
+        console.print(Text(f'{PAD}Type "yes" to confirm Repair and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            answer = readline_with_esc()
+        except UserCancelled:
             console.print()
-            log_err("No BadWords installation found to repair.")
+            log_info("Repair cancelled.")
             pause()
             return
-        install_dir = found_dirs[0]
-        log_ok(f"Installation found -> {install_dir}")
-
-    console.print()
-    console.print(Text(f'{PAD}Type "yes" to confirm Repair and press Enter: ', style="bold yellow"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        answer = readline_with_esc()
-    except UserCancelled:
         console.print()
-        log_info("Repair cancelled.")
-        pause()
-        return
-    console.print()
 
-    if answer.strip().lower() != "yes":
-        log_info("Repair cancelled.")
-        pause()
-        return
+        if answer.strip().lower() != "yes":
+            log_info("Repair cancelled.")
+            pause()
+            return
 
     console.print()
     log_step(f"Cleaning core files in: {install_dir}")
@@ -2550,65 +2564,76 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
 
 
 # ── Option 4 — Complete Reset ──────────────────────────────────
-def option_reset():
+def option_reset(preset_path=None):
     header()
-    console.print(Text(f"{PAD}-- Complete Reset --", style="bold magenta"), no_wrap=True)
+    console.print(Text(f"{PAD}── Complete Reset ──", style="bold yellow"), no_wrap=True)
     console.print()
-    console.print(Text(f"{PAD}This will:", style="bold white"), no_wrap=True)
-    console.print(Text(f"{PAD}  1. Remove EVERYTHING (app, venv, models, settings, wrappers)", style="magenta"), no_wrap=True)
-    console.print(Text(f"{PAD}  2. Perform a fresh Standard Install from scratch", style="cyan"), no_wrap=True)
+    console.print(Text(f"{PAD}This will completely delete ALL BadWords files, including:", style="yellow"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Downloaded Whisper models", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Application settings and preferences", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Project saves (.bws)", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Virtual environment and dependencies", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * DaVinci Resolve script wrappers", style="dim"), no_wrap=True)
+    console.print()
+    console.print(Text(f"{PAD}And then perform a fresh installation from scratch.", style="yellow"), no_wrap=True)
     console.print()
 
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
 
-    # Fast path: detect via Resolve wrapper
-    log_step("Searching via DaVinci Resolve wrapper...")
-    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
-    if wrapper_dir:
-        log_ok(f"Wrapper found -> {wrapper_dir}")
+    if preset_path or (ARGS.non_interactive and ARGS.install):
+        custom_path = preset_path or ARGS.install
+        all_install_dirs = [custom_path] if os.path.exists(custom_path) else []
     else:
-        log_warn("No wrapper detected (will still deep-scan for leftovers).")
+        # Fast path: detect via Resolve wrapper
+        log_step("Searching via DaVinci Resolve wrapper...")
+        wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+        if wrapper_dir:
+            log_ok(f"Wrapper found -> {wrapper_dir}")
+        else:
+            log_warn("No wrapper detected (will still deep-scan for leftovers).")
 
-    # Deep search
-    sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
-    found_dirs = _deep_search_badwords()
-    sp_scan.done(ok=True)
+        # Deep search
+        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+        found_dirs = _deep_search_badwords()
+        sp_scan.done(ok=True)
 
-    # Merge + deduplicate
-    all_install_dirs = list(dict.fromkeys(
-        [os.path.abspath(d) for d in ([wrapper_dir] if wrapper_dir else []) + found_dirs]
-    ))
-    
-    # Save the old path so we can reinstall there by default
-    reinstall_default = all_install_dirs[0] if all_install_dirs else default_dir
+        # Merge + deduplicate
+        all_install_dirs = list(dict.fromkeys(
+            [os.path.abspath(d) for d in ([wrapper_dir] if wrapper_dir else []) + found_dirs]
+        ))
+        
+        # Save the old path so we can reinstall there by default
+        reinstall_default = all_install_dirs[0] if all_install_dirs else default_dir
 
-    # Show what will be wiped
-    console.print()
-    if all_install_dirs:
-        console.print(Text(f"{PAD}The following installation(s) will be wiped:", style="bold white"), no_wrap=True)
-        for d in all_install_dirs:
-            console.print(Text(f"{PAD}  * {d}", style="magenta"), no_wrap=True)
-    else:
-        console.print(Text(f"{PAD}No existing installation found — will do a clean install.", style="dim"), no_wrap=True)
-    console.print()
-    console.print(Text(f"{PAD}All data (models, settings, saves) will be permanently lost.", style="bold magenta"), no_wrap=True)
-    console.print()
-    console.print(Text(f'{PAD}Type "yes" to confirm Complete Reset and press Enter: ', style="bold yellow"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        answer = readline_with_esc()
-    except UserCancelled:
+        # Show what will be wiped
         console.print()
-        log_info("Reset cancelled.")
-        pause()
-        return
-    console.print()
+        if all_install_dirs:
+            console.print(Text(f"{PAD}The following installation(s) will be wiped:", style="bold white"), no_wrap=True)
+            for d in all_install_dirs:
+                console.print(Text(f"{PAD}  * {d}", style="magenta"), no_wrap=True)
+        else:
+            console.print(Text(f"{PAD}No existing installation found — will do a clean install.", style="dim"), no_wrap=True)
+        console.print()
+        console.print(Text(f"{PAD}All data (models, settings, saves) will be permanently lost.", style="bold magenta"), no_wrap=True)
+        console.print()
 
-    if answer.strip().lower() != "yes":
-        log_info("Reset cancelled.")
-        pause()
-        return
+        if not ARGS.non_interactive:
+            console.print(Text(f'{PAD}Type "yes" to confirm Complete Reset and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+            sys.stdout.flush()
+            try:
+                answer = readline_with_esc()
+            except UserCancelled:
+                console.print()
+                log_info("Reset cancelled.")
+                pause()
+                return
+            console.print()
+
+            if answer.strip().lower() != "yes":
+                log_info("Reset cancelled.")
+                pause()
+                return
 
     # ── Phase 1: Uninstall ────────────────────────────────────
     console.print()
@@ -2630,29 +2655,46 @@ def option_reset():
     console.print(Text(f"{PAD}[ Phase 2 / 2 ]  Installing BadWords from scratch...", style="bold cyan"), no_wrap=True)
     console.print()
 
-    # Let the user pick a new install path (or keep the default which is the previous install location)
-    console.print(Text(f"{PAD}Install path: {reinstall_default}", style="dim"), no_wrap=True)
-    console.print(Text(f"{PAD}Press Enter to use this path, or type a custom path: ", style="cyan"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        custom_path = readline_with_esc()
-    except UserCancelled:
-        custom_path = ""
+    if not (preset_path or (ARGS.non_interactive and ARGS.install)):
+        # Let the user pick a new install path (or keep the default which is the previous install location)
+        console.print(Text(f"{PAD}Install path: {reinstall_default}", style="dim"), no_wrap=True)
+        console.print(Text(f"{PAD}Press Enter to use this path, or type a custom path: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            custom_path = readline_with_esc()
+        except UserCancelled:
+            custom_path = ""
 
-    if custom_path.strip():
-        custom_path = os.path.expanduser(custom_path.strip())
-        if not custom_path.endswith(APP_NAME):
-            custom_path = os.path.join(custom_path.rstrip("/\\"), APP_NAME)
-        log_info(f"New install path: {custom_path}")
-    else:
-        custom_path = reinstall_default
-        log_info(f"Using path: {custom_path}")
+        if custom_path.strip():
+            custom_path = os.path.expanduser(custom_path.strip())
+            if not custom_path.endswith(APP_NAME):
+                custom_path = os.path.join(custom_path.rstrip("/\\"), APP_NAME)
+            log_info(f"New install path: {custom_path}")
+        else:
+            custom_path = reinstall_default
+            log_info(f"Using path: {custom_path}")
 
     option_install_update(preset_path=custom_path, title="── Complete Reset ──", title_color="yellow")
 
 
 # ── Main loop ─────────────────────────────────────────────────
 def main():
+    if ARGS.uninstall:
+        target = ARGS.install or _default_install_dir()
+        _do_uninstall(_resolve_script_dirs(), [target])
+        sys.exit(0)
+    elif ARGS.repair:
+        target = ARGS.install or _default_install_dir()
+        option_repair(preset_path=target)
+        sys.exit(0)
+    elif ARGS.reset:
+        target = ARGS.install or _default_install_dir()
+        option_reset(preset_path=target)
+        sys.exit(0)
+    elif ARGS.install:
+        option_install_update(preset_path=ARGS.install)
+        sys.exit(0)
+
     # One-time setup: resize + title + lock scrollbar + Quick Edit
     _resize()
     _set_title("BadWords Setup")

@@ -173,3 +173,135 @@ jobs:
             exit 1
           fi
           echo "Uninstall Passed: Application and dependencies completely removed!"
+
+  test-python-cli-matrix:
+    name: Test Python CLI on ${{ matrix.os_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_name: Linux x86_64
+          - os: windows-latest
+            os_name: Windows x86_64
+          - os: macos-latest
+            os_name: macOS Universal
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xz-utils desktop-file-utils
+
+      - name: Install Rich for Setup Runner
+        run: pip install rich
+
+      - name: 1. Test Clean Python Installation (Unattended)
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          echo "Target installation folder: $TEST_DIR"
+          python setupfiles/setup.py --install "$TEST_DIR" --non-interactive --no-launch
+
+      - name: 2. File & Directory Structure Integrity Audit
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          echo "Auditing core files in: $TEST_DIR"
+
+          test -d "$TEST_DIR" || { echo "Missing target directory"; exit 1; }
+          test -f "$TEST_DIR/main.py" || { echo "Missing main.py"; exit 1; }
+          test -d "$TEST_DIR/assets" || { echo "Missing assets directory"; exit 1; }
+          test -d "$TEST_DIR/assets/icons" || { echo "Missing assets/icons directory"; exit 1; }
+          test -d "$TEST_DIR/bin" || { echo "Missing bin directory"; exit 1; }
+          test -d "$TEST_DIR/venv" || { echo "Missing venv directory"; exit 1; }
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f "$TEST_DIR/bin/ffmpeg.exe" || { echo "Missing FFmpeg executable"; exit 1; }
+            test -f "$TEST_DIR/venv/Scripts/python.exe" || { echo "Missing venv Python"; exit 1; }
+          else
+            test -f "$TEST_DIR/bin/ffmpeg" || { echo "Missing FFmpeg executable"; exit 1; }
+            test -x "$TEST_DIR/bin/ffmpeg" || { echo "FFmpeg is not executable"; exit 1; }
+            test -f "$TEST_DIR/venv/bin/python" || { echo "Missing venv Python"; exit 1; }
+            test -x "$TEST_DIR/venv/bin/python" || { echo "Venv Python is not executable"; exit 1; }
+          fi
+
+          echo "Audit Passed: All core files and directories exist!"
+
+      - name: 3. Portable FFmpeg Execution & Codec Test
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            "$TEST_DIR/bin/ffmpeg.exe" -version
+          else
+            "$TEST_DIR/bin/ffmpeg" -version
+          fi
+
+      - name: 4. Python Environment & AI Dependency Imports
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          echo "Validating isolated venv imports (PySide6, faster-whisper, pypdf)..."
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            "$TEST_DIR/venv/Scripts/python.exe" -c "import PySide6; import faster_whisper; import pypdf; print('CI VERIFICATION: All Python AI dependencies loaded successfully!')"
+          else
+            "$TEST_DIR/venv/bin/python" -c "import PySide6; import faster_whisper; import pypdf; print('CI VERIFICATION: All Python AI dependencies loaded successfully!')"
+          fi
+
+      - name: 5. Test Installation Integrity Repair
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          echo "Simulating damaged binary..."
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            rm -f "$TEST_DIR/bin/ffmpeg.exe"
+          else
+            rm -f "$TEST_DIR/bin/ffmpeg"
+          fi
+
+          echo "Running repair mode..."
+          python setupfiles/setup.py --repair --install "$TEST_DIR" --non-interactive --no-launch
+
+          echo "Verifying repaired binary..."
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f "$TEST_DIR/bin/ffmpeg.exe" || exit 1
+          else
+            test -f "$TEST_DIR/bin/ffmpeg" || exit 1
+          fi
+          echo "Repair Passed: Corrupted components successfully restored!"
+
+      - name: 6. Test Complete Reset & Reinstallation
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          echo "Running reset mode..."
+          python setupfiles/setup.py --reset --install "$TEST_DIR" --non-interactive --no-launch
+
+          test -f "$TEST_DIR/main.py" || exit 1
+          echo "Reset Passed: Clean installation successfully re-deployed!"
+
+      - name: 7. Test Complete Uninstallation & Cleanup
+        shell: bash
+        run: |
+          TEST_DIR="${{ runner.temp }}/BadWordsPyTestInstall"
+          echo "Running uninstallation..."
+          python setupfiles/setup.py --uninstall --install "$TEST_DIR" --non-interactive
+
+          if [ -d "$TEST_DIR" ]; then
+            echo "Error: Directory still exists after uninstall!"
+            exit 1
+          fi
+          echo "Uninstall Passed: Application and dependencies completely removed!"
