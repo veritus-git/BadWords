@@ -563,7 +563,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
 }
 
 /// Executes the full installation or update process
-pub fn run_install(target_dir: PathBuf, sender: EventSender) {
+pub fn run_install(target_dir: PathBuf, create_desktop: bool, create_menu: bool, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Starting BadWords {} installation...", APP_VERSION));
         emit_progress(&sender, 5, 0, "Checking environment...", "Detecting Python runtime & GPU hardware");
@@ -791,17 +791,17 @@ pub fn run_install(target_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "windows")]
         {
             let _ = os::windows::register_uninstall_entry(&target_dir, APP_VERSION);
-            let _ = os::windows::create_windows_shortcuts(&target_dir);
-            emit_log(&sender, "OK", "Windows shortcuts (Desktop/Start Menu) & uninstaller registered.");
+            let _ = os::windows::create_windows_shortcuts(&target_dir, create_desktop, create_menu);
+            emit_log(&sender, "OK", "Windows shortcuts & uninstaller registered.");
         }
         #[cfg(target_os = "macos")]
         {
-            let _ = os::macos::create_macos_app_bundle(&target_dir);
+            let _ = os::macos::create_macos_app_bundle(&target_dir, create_desktop);
             emit_log(&sender, "OK", "macOS application bundle (.app) registered.");
         }
         #[cfg(target_os = "linux")]
         {
-            let _ = os::linux::create_linux_desktop_entry(&target_dir);
+            let _ = os::linux::create_linux_desktop_entry(&target_dir, create_desktop, create_menu);
             emit_log(&sender, "OK", "Linux desktop launcher (.desktop) created.");
         }
 
@@ -877,12 +877,12 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "windows")]
         {
             let _ = os::windows::register_uninstall_entry(&target_dir, APP_VERSION);
-            let _ = os::windows::create_windows_shortcuts(&target_dir);
+            let _ = os::windows::create_windows_shortcuts(&target_dir, true, true);
         }
         #[cfg(target_os = "macos")]
-        let _ = os::macos::create_macos_app_bundle(&target_dir);
+        let _ = os::macos::create_macos_app_bundle(&target_dir, true);
         #[cfg(target_os = "linux")]
-        let _ = os::linux::create_linux_desktop_entry(&target_dir);
+        let _ = os::linux::create_linux_desktop_entry(&target_dir, true, true);
 
         emit_progress(&sender, 100, 3, "Repair complete!", "All files and integrations restored");
         emit_complete(&sender, "repair", true, "BadWords has been successfully verified and repaired!");
@@ -926,12 +926,12 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "windows")]
         {
             let _ = os::windows::register_uninstall_entry(&to_dir, APP_VERSION);
-            let _ = os::windows::create_windows_shortcuts(&to_dir);
+            let _ = os::windows::create_windows_shortcuts(&to_dir, true, true);
         }
         #[cfg(target_os = "macos")]
-        let _ = os::macos::create_macos_app_bundle(&to_dir);
+        let _ = os::macos::create_macos_app_bundle(&to_dir, true);
         #[cfg(target_os = "linux")]
-        let _ = os::linux::create_linux_desktop_entry(&to_dir);
+        let _ = os::linux::create_linux_desktop_entry(&to_dir, true, true);
 
         emit_progress(&sender, 100, 3, "Move complete!", "Relocation finished successfully");
         emit_complete(&sender, "move", true, "BadWords has been successfully relocated!");
@@ -950,7 +950,7 @@ pub fn run_reset(target_dir: PathBuf, sender: EventSender) {
         }
 
         emit_progress(&sender, 40, 1, "Reinstalling fresh copy...", "Beginning clean installation");
-        run_install(target_dir, sender);
+        run_install(target_dir, true, true, sender);
     });
 }
 

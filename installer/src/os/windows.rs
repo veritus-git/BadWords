@@ -140,43 +140,58 @@ pub fn unregister_uninstall_entry() -> std::io::Result<()> {
 
 #[allow(dead_code)]
 /// Creates Desktop and Start Menu shortcuts on Windows launching pythonw without console
-pub fn create_windows_shortcuts(install_dir: &Path) -> std::io::Result<()> {
+pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create_menu: bool) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         let pythonw_path = install_dir.join("venv").join("Scripts").join("pythonw.exe");
         let main_py = install_dir.join("main.py");
         let icon_path = install_dir.join("assets").join("icons").join("icon_default.ico");
 
-        let script = format!(
-            "$ws = New-Object -ComObject WScript.Shell; \
-             $desktop = [Environment]::GetFolderPath('Desktop'); \
-             $programs = [Environment]::GetFolderPath('Programs'); \
-             $s1 = $ws.CreateShortcut(\"$desktop\\BadWords.lnk\"); \
-             $s1.TargetPath = '{py}'; \
-             $s1.Arguments = '\"{main}\"'; \
-             $s1.WorkingDirectory = '{dir}'; \
-             $s1.IconLocation = '{ico},0'; \
-             $s1.Save(); \
-             $s2 = $ws.CreateShortcut(\"$programs\\BadWords.lnk\"); \
-             $s2.TargetPath = '{py}'; \
-             $s2.Arguments = '\"{main}\"'; \
-             $s2.WorkingDirectory = '{dir}'; \
-             $s2.IconLocation = '{ico},0'; \
-             $s2.Save();",
-            py = pythonw_path.to_string_lossy(),
-            main = main_py.to_string_lossy(),
-            dir = install_dir.to_string_lossy(),
-            ico = icon_path.to_string_lossy()
-        );
+        let mut script_parts = vec![
+            "$ws = New-Object -ComObject WScript.Shell;".to_string(),
+        ];
 
+        if create_desktop {
+            script_parts.push(format!(
+                "$desktop = [Environment]::GetFolderPath('Desktop'); \
+                 $s1 = $ws.CreateShortcut(\"$desktop\\BadWords.lnk\"); \
+                 $s1.TargetPath = '{py}'; \
+                 $s1.Arguments = '\"{main}\"'; \
+                 $s1.WorkingDirectory = '{dir}'; \
+                 $s1.IconLocation = '{ico},0'; \
+                 $s1.Save();",
+                py = pythonw_path.to_string_lossy(),
+                main = main_py.to_string_lossy(),
+                dir = install_dir.to_string_lossy(),
+                ico = icon_path.to_string_lossy()
+            ));
+        }
+
+        if create_menu {
+            script_parts.push(format!(
+                "$programs = [Environment]::GetFolderPath('Programs'); \
+                 $s2 = $ws.CreateShortcut(\"$programs\\BadWords.lnk\"); \
+                 $s2.TargetPath = '{py}'; \
+                 $s2.Arguments = '\"{main}\"'; \
+                 $s2.WorkingDirectory = '{dir}'; \
+                 $s2.IconLocation = '{ico},0'; \
+                 $s2.Save();",
+                py = pythonw_path.to_string_lossy(),
+                main = main_py.to_string_lossy(),
+                dir = install_dir.to_string_lossy(),
+                ico = icon_path.to_string_lossy()
+            ));
+        }
+
+        let full_script = script_parts.join(" ");
         let _ = std::process::Command::new("powershell")
-            .args(&["-NoProfile", "-NonInteractive", "-Command", &script])
+            .args(&["-NoProfile", "-NonInteractive", "-Command", &full_script])
             .output();
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = install_dir;
+        let _ = (install_dir, create_desktop, create_menu);
     }
 
     Ok(())

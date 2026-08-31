@@ -58,7 +58,7 @@ pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
 }
 
 #[allow(dead_code)]
-pub fn create_macos_app_bundle(install_dir: &Path) -> std::io::Result<()> {
+pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = dirs::home_dir() {
@@ -108,12 +108,20 @@ pub fn create_macos_app_bundle(install_dir: &Path) -> std::io::Result<()> {
 </dict>
 </plist>"#;
             std::fs::write(&plist_path, plist_content)?;
+
+            if create_desktop {
+                let dt_link = home.join("Desktop").join("BadWords.app");
+                if !dt_link.exists() {
+                    #[cfg(unix)]
+                    let _ = std::os::unix::fs::symlink(&app_dir, &dt_link);
+                }
+            }
         }
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = install_dir;
+        let _ = (install_dir, create_desktop);
     }
 
     Ok(())
