@@ -144,11 +144,12 @@ pub fn resolve_script_dirs() -> Vec<PathBuf> {
     unique
 }
 
-/// Searches all known DaVinci Resolve script directories for a BadWords wrapper with a valid INSTALL_DIR
+/// Searches all known DaVinci Resolve script directories for a BadWords wrapper with a valid INSTALL_DIR,
+/// and falls back to checking default and common application paths.
 pub fn detect_existing_install() -> Option<PathBuf> {
     let script_dirs = resolve_script_dirs();
     for dir in script_dirs {
-        for filename in ["BadWords.py", "BadWords (Linux).py"] {
+        for filename in ["BadWords.py", "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (Windows).py"] {
             let wrapper = dir.join(filename);
             if wrapper.is_file() {
                 if let Ok(content) = std::fs::read_to_string(&wrapper) {
@@ -162,7 +163,7 @@ pub fn detect_existing_install() -> Option<PathBuf> {
                                 }
                                 let clean_path = raw.trim().trim_matches(|c| c == '"' || c == '\'');
                                 let path = PathBuf::from(clean_path);
-                                if path.exists() {
+                                if path.exists() && (path.join("main.py").is_file() || path.join("src").join("main.py").is_file()) {
                                     return Some(path);
                                 }
                             }
@@ -172,6 +173,29 @@ pub fn detect_existing_install() -> Option<PathBuf> {
             }
         }
     }
+
+    // Fallback 1: Default installation directory
+    let def = default_install_dir();
+    if def.join("main.py").is_file() || def.join("src").join("main.py").is_file() {
+        return Some(def);
+    }
+
+    // Fallback 2: Common OS standard paths
+    if let Some(home) = dirs::home_dir() {
+        let candidates = [
+            home.join(".local").join("share").join(APP_NAME),
+            home.join(".local").join(APP_NAME),
+            home.join(APP_NAME),
+            home.join("AppData").join("Local").join(APP_NAME),
+            home.join("Library").join("Application Support").join(APP_NAME),
+        ];
+        for c in candidates {
+            if (c.join("main.py").is_file() || c.join("src").join("main.py").is_file()) && c.exists() {
+                return Some(c);
+            }
+        }
+    }
+
     None
 }
 

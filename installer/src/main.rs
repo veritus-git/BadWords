@@ -66,7 +66,7 @@ fn main() -> eframe::Result<()> {
         .with_decorations(false)
         .with_transparent(true)
         .with_icon(
-            eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_default.png"))
+            eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_monochrome.png"))
                 .expect("Failed to load icon"),
         );
 
@@ -158,7 +158,7 @@ fn run_standalone_terminal() -> eframe::Result<()> {
             .with_decorations(true)
             .with_transparent(false)
             .with_icon(
-                eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_default.png"))
+                eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_monochrome.png"))
                     .expect("Failed to load icon"),
             ),
         ..Default::default()
@@ -707,7 +707,7 @@ impl eframe::App for InstallerApp {
                                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                                                 ui.add_space(10.0);
                                                 ui.add(
-                                                    egui::Image::new(egui::include_image!("../../assets/icons/icon_default.png"))
+                                                    egui::Image::new(egui::include_image!("../../assets/icons/icon_monochrome.png"))
                                                         .max_height(16.0)
                                                 );
                                                 ui.add_space(8.0);
