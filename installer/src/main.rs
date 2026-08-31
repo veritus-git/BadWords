@@ -42,7 +42,7 @@ fn main() -> eframe::Result<()> {
     }
 
     // Reset log file for fresh session
-    let _ = std::fs::write("/tmp/badwords_setup.log", "=== BadWords Setup Session Log ===\n");
+    let _ = std::fs::write(state::log_file_path(), "=== BadWords Setup Session Log ===\n");
 
     // 650x550 okno + 28px marginesu na wielowarstwowy cień Gaussa = 706x606
     let options = eframe::NativeOptions {
@@ -58,13 +58,14 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    let app_args = args.clone();
     eframe::run_native(
         "BadWords Setup",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            Box::new(InstallerApp::new())
+            Box::new(InstallerApp::new_with_args(&app_args))
         }),
     )
 }
@@ -112,7 +113,7 @@ impl eframe::App for StandaloneTerminalApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(150));
 
-        if let Ok(content) = std::fs::read_to_string("/tmp/badwords_setup.log") {
+        if let Ok(content) = std::fs::read_to_string(state::log_file_path()) {
             self.last_content = content;
         }
 
@@ -210,6 +211,18 @@ impl InstallerApp {
             tx,
             rx,
         }
+    }
+
+    fn new_with_args(args: &[String]) -> Self {
+        let mut app = Self::new();
+        if args.iter().any(|a| a == "--uninstall") {
+            app.action = Some(InstallAction::Uninstall);
+            app.screen = Screen::ConfirmAction;
+        } else if args.iter().any(|a| a == "--repair") {
+            app.action = Some(InstallAction::Repair);
+            app.screen = Screen::ConfirmAction;
+        }
+        app
     }
 
     fn current_target_path(&self) -> PathBuf {
