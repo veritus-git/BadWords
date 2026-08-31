@@ -530,6 +530,7 @@ impl eframe::App for InstallerApp {
             Screen::Complete => {
                 if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::Space)) {
                     if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
+                        #[allow(unused_variables)]
                         let target = self.current_target_path();
                         #[cfg(target_os = "windows")]
                         let _ = std::process::Command::new(target.join("BadWords.exe")).spawn();
@@ -699,13 +700,16 @@ impl eframe::App for InstallerApp {
                                         egui::Image::new(egui::include_image!("../setup-banner.png"))
                                             .paint_at(ui, banner_rect);
 
-                                        // Prawy Panel: Zawartość Ekranu (Dokładnie 440x459px z 24px marginesem z prawej strony)
-                                        egui::Frame::none()
-                                            .inner_margin(egui::Margin { left: 24.0, right: 24.0, top: 24.0, bottom: 20.0 })
-                                            .show(ui, |ui| {
-                                                ui.set_min_size(egui::vec2(392.0, 415.0));
-                                                ui.set_max_size(egui::vec2(392.0, 415.0));
-                                                ui.style_mut().wrap = Some(true);
+                                        // Prawy Panel: Zawartość Ekranu w układzie pionowym (440x459px z 24px marginesem)
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(440.0, 459.0),
+                                            egui::Layout::top_down(egui::Align::LEFT),
+                                            |ui| {
+                                                egui::Frame::none()
+                                                    .inner_margin(egui::Margin { left: 24.0, right: 24.0, top: 24.0, bottom: 20.0 })
+                                                    .show(ui, |ui| {
+                                                        ui.set_width(392.0);
+                                                        ui.style_mut().wrap = Some(true);
 
                                                 match self.screen {
                                                     Screen::Welcome => {
@@ -978,6 +982,7 @@ impl eframe::App for InstallerApp {
                                                     }
                                                 }
                                             });
+                                        });
                                     });
                                 });
 
@@ -1136,6 +1141,7 @@ impl eframe::App for InstallerApp {
                                                 Screen::Complete => {
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_finish) {
                                                         if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
+                                                            #[allow(unused_variables)]
                                                             let target = self.current_target_path();
                                                             #[cfg(target_os = "windows")]
                                                             let _ = std::process::Command::new(target.join("BadWords.exe")).spawn();

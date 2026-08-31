@@ -1,5 +1,8 @@
+#[allow(dead_code)]
 pub mod windows;
+#[allow(dead_code)]
 pub mod macos;
+#[allow(dead_code)]
 pub mod linux;
 
 use std::path::PathBuf;
