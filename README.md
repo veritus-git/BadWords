@@ -94,27 +94,36 @@ Version 3.2 is another massive update. I dug deep into the core code to fix some
 <a id="installation"></a>
 ## <img src="repo/icons/wrench.svg" alt="Installation & Setup" width="30" height="30" valign="text-bottom"> Installation & Setup
 
-I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. In version 4.0, BadWords features a **brand-new, modern Graphical User Interface (GUI)** crafted to match DaVinci Resolve's dark theme. You don't need to manually download zip files, configure Python paths, or install dependencies — the setup handles everything automatically.
+I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. You don't need to manually download zip files, configure Python paths, or install dependencies - the setup handles everything automatically.
+
+<br>
+
+In version 4.0, BadWords features a **brand new Graphical User Interface** for easier and more accessible instalation process.
 
 ### <img src="repo/icons/download.svg" alt="Installation Process" width="24" height="24" valign="text-bottom"> The Installation Process
 
-1. **Copy the command** for your specific operating system from the section below.
+1. **Copy the command** for your specific operating system from the [section below](#option-1-automated-setup-commands).
 2. **Paste the command** into your terminal (PowerShell on Windows, Terminal on macOS/Linux) and press **Enter**.
-3. The **BadWords Setup** window will appear:
+3. The **BadWords Setup** window will appear
+4. Skip Welcome Screen with `Enter`, then **select `1. Fresh Install / Update`** (you can click with your mouse or simply press **`1`** on your keyboard).
 
 <p align="center">
   <img src="repo/gui_setup_preview.png" alt="BadWords GUI Setup Preview" width="70%">
 </p>
 
-4. **Select `1. Fresh Install / Update`** (you can click with your mouse or simply press **`1`** on your keyboard).
-5. **Confirm the install path** (~4GB for core files + AI models), or type a custom destination path.
-6. Wait for the setup to finish, then click **Launch BadWords** (or open it inside DaVinci Resolve: **Workspace** → **Scripts** → **BadWords**).
+> [!NOTE] 
+> As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, or completely *Uninstall* BadWords!
 
-> **Note:** As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to Update your app, Repair broken files, Move the installation to another drive, or completely Uninstall BadWords! (You can also fully navigate using your keyboard: numbers `1`-`5`, arrow keys, and press `T` for real-time terminal logs).
+5. **Confirm the install path** (~4GB for core files + AI models), or browse/type in a custom destination path.
+6. Wait for the setup to finish. When it's done you can simply Launch BadWords as normal desktop app or open it from DaVinci Resolve: **Workspace** → **Scripts** → **BadWords**
+
+> [!WARNING]
+> If you want full functionality with **Davinci Resolve**, and you have only FREE version of it, you NEED to launch it directly from Davinci Resolve as external scripting is not supported in free version (If you have Studio version you can launch it normally).
 
 ---
 
 ### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Option 1: Automated Setup Commands (Recommended)
+The absolute easiest way to start the setup. It securely downloads and runs the lightweight setup wizard directly from this repository.
 
 <br>
 
@@ -149,32 +158,50 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 <br>
 
 > [!NOTE]
-> ### 🛡️ Security Notice & Built-in Terminal Fallback
-> BadWords is a **100% free and open-source project created by an independent solo developer**. Since it doesn't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** might block the graphical binary.
+> ### 🛡️ Security Notice (Windows SAC & macOS Gatekeeper)
+> BadWords is a **100% free and open-source project created by an independent solo developer**. Since it doesn't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** may flag the newly compiled graphical binary.
 > 
-> If that happens, the setup script **automatically detects the block and prompts you to run the Terminal Installer (`[1]`)**:
->
-> <p align="center">
->   <img src="repo/sac_notice.png" alt="Security Fallback Notice" width="70%">
-> </p>
->
-> The Terminal installer provides **100% of the exact same features** and runs without needing to change any system security settings!
->
-> <p align="center">
->   <img src="repo/cli_setup_preview.png" alt="Terminal Setup Preview" width="65%">
-> </p>
->
-> *(Alternatively, you can manually unblock the `.exe` in file Properties on Windows or click "Open anyway" on macOS).*
+> If that happens, the setup script **automatically detects the block and gives you an option to run the Terminal Setup (`[1]`)**:
+
+<p align="center">
+  <img src="repo/sac_notice.png" alt="Security Fallback Notice" width="70%">
+</p>
+
+### <img src="repo/icons/terminal.svg" alt="Terminal Setup" width="24" height="24" valign="text-bottom"> Alternative: Terminal Setup Process
+
+If your system blocks the graphical window, the terminal setup offers **100% of the exact same features and tools**:
+
+<p align="center">
+  <img src="repo/cli_setup_preview.png" alt="Terminal Setup Preview" width="65%">
+</p>
+
+1. **Press `1`** for standard installation.
+2. Choose whether to create **Desktop and Start Menu shortcuts** (`Y/n`).
+3. Provide a path where you want BadWords (~4GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
+4. Wait for the download and setup to complete.
+5. Press **Enter** to launch BadWords immediately!
+
+> 💡 *Tip: If you prefer the graphical installer instead, you can try unblocking it manually (on Windows: right-click the `.exe` → Properties → check Unblock; on macOS: right-click the binary → Open → "Open anyway").*
 
 ---
 
 ### <img src="repo/icons/package.svg" alt="Option 2" width="24" height="24" valign="text-bottom"> Option 2: Manual / Standalone Install
-Don't like running online terminal commands? You can run the setup entirely offline or manually:
-1. Go to the [Releases page](https://github.com/veritus-git/BadWords/releases/latest) and download the pre-compiled installer for your OS (`badwords-setup-windows.exe`, `badwords-setup-macos`, or `badwords-setup-linux`) or the Source Code `.zip`.
-2. If downloaded as an archive, extract the folder somewhere on your drive.
-3. Run the installer:
-   * **Windows**: Double-click `badwords-setup-windows.exe`, or run `powershell -ExecutionPolicy Bypass -File setupfiles\windows-setup.ps1`.
-   * **macOS / Linux**: Run `bash setupfiles/mac-setup.sh` or `bash setupfiles/linux-setup.sh`.
+Don't like running online terminal commands? You can download the pre-compiled standalone installer directly from the [Releases page](https://github.com/veritus-git/BadWords/releases/latest):
+
+* **Windows:**
+  1. Download `badwords-setup-windows.exe`.
+  2. Double-click to run. *(If blocked by SmartScreen: right-click the file → **Properties** → check **Unblock** at the bottom → click **Apply**).*
+
+* **macOS:**
+  1. Download `badwords-setup-macos`.
+  2. Right-click the file → select **Open** → click **Open anyway** *(or run `xattr -d com.apple.quarantine badwords-setup-macos` in Terminal)*.
+
+* **Linux:**
+  1. Download `badwords-setup-linux`.
+  2. Open terminal in the download folder, make it executable, and run:
+     ```bash
+     chmod +x badwords-setup-linux && ./badwords-setup-linux
+     ```
 
 ---
 
