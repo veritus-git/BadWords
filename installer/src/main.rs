@@ -176,9 +176,12 @@ struct InstallerApp {
     keyboard_navigation_active: bool,
     install_path_str: String,
     detected_existing: Option<PathBuf>,
-    status_text: String,
+    status_title: String,
+    status_details: String,
     progress: f32,
     displayed_progress: f32,
+    sub_progress: f32,
+    displayed_sub_progress: f32,
     launch_on_finish: bool,
     logs: Vec<LogEntry>,
     tx: Sender<IpcEvent>,
@@ -203,9 +206,12 @@ impl InstallerApp {
             keyboard_navigation_active: false,
             install_path_str: path_str,
             detected_existing: detected,
-            status_text: "Ready to begin.".to_string(),
+            status_title: "Ready to begin.".to_string(),
+            status_details: "Click Next to choose an action.".to_string(),
             progress: 0.0,
             displayed_progress: 0.0,
+            sub_progress: 0.0,
+            displayed_sub_progress: 0.0,
             launch_on_finish: true,
             logs: vec![],
             tx,
@@ -239,7 +245,10 @@ impl InstallerApp {
         self.screen = Screen::Progress;
         self.progress = 0.0;
         self.displayed_progress = 0.0;
-        self.status_text = "Starting operation...".to_string();
+        self.sub_progress = 0.0;
+        self.displayed_sub_progress = 0.0;
+        self.status_title = "Starting operation...".to_string();
+        self.status_details = "Preparing tasks".to_string();
 
         let tx = self.tx.clone();
         let target = self.current_target_path();
@@ -298,11 +307,13 @@ impl eframe::App for InstallerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Płynna animacja paska postępu (lerp)
+        // Płynna animacja pasków postępu (lerp)
         if self.screen == Screen::Progress {
             let target_p = self.progress;
             self.displayed_progress += (target_p - self.displayed_progress) * 0.12;
-            ctx.request_repaint_after(Duration::from_millis(25));
+            let target_sub = self.sub_progress;
+            self.displayed_sub_progress += (target_sub - self.displayed_sub_progress) * 0.15;
+            ctx.request_repaint_after(Duration::from_millis(20));
         }
 
         // ── Obsługa zdarzeń z wątku instalacyjnego ──
@@ -313,29 +324,40 @@ impl eframe::App for InstallerApp {
                 let level = event.data.get("level").and_then(|v| v.as_str()).unwrap_or("INFO").to_string();
                 let message = event.data.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 if !message.is_empty() {
-                    self.status_text = message.clone();
+                    self.status_details = message.clone();
                     self.logs.push(LogEntry { level, message });
                 }
             } else if event.event == "progress" {
                 if let Some(pct) = event.data.get("percent").and_then(|v| v.as_f64()) {
                     self.progress = (pct as f32) / 100.0;
                 }
-                let details = event.data.get("details").and_then(|v| v.as_str()).unwrap_or("");
-                let message = event.data.get("message").and_then(|v| v.as_str()).unwrap_or(details);
-                if !message.is_empty() {
-                    self.status_text = message.to_string();
-                    let pct_str = format!("{:.0}%", self.progress * 100.0);
-                    self.logs.push(LogEntry {
-                        level: "STEP".to_string(),
-                        message: format!("{} ({})", message, pct_str),
-                    });
+                if let Some(sub_pct) = event.data.get("sub_percent").and_then(|v| v.as_f64()) {
+                    self.sub_progress = (sub_pct as f32) / 100.0;
+                } else if let Some(step) = event.data.get("step").and_then(|v| v.as_f64()) {
+                    self.sub_progress = ((step + 1.0) / 4.0).clamp(0.1, 1.0) as f32;
                 }
+                let status = event.data.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                let details = event.data.get("details").and_then(|v| v.as_str()).unwrap_or("");
+                if !status.is_empty() {
+                    self.status_title = status.to_string();
+                }
+                if !details.is_empty() {
+                    self.status_details = details.to_string();
+                }
+                let pct_str = format!("{:.0}%", self.progress * 100.0);
+                self.logs.push(LogEntry {
+                    level: "STEP".to_string(),
+                    message: format!("{} - {} ({})", self.status_title, self.status_details, pct_str),
+                });
             } else if event.event == "complete" {
                 self.progress = 1.0;
                 self.displayed_progress = 1.0;
+                self.sub_progress = 1.0;
+                self.displayed_sub_progress = 1.0;
                 let success = event.data.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
                 let message = event.data.get("message").and_then(|v| v.as_str()).unwrap_or("Operation finished.").to_string();
-                self.status_text = message.clone();
+                self.status_title = message.clone();
+                self.status_details = if success { "Done.".to_string() } else { "Error occurred.".to_string() };
                 self.logs.push(LogEntry {
                     level: if success { "OK".to_string() } else { "ERR!".to_string() },
                     message,
@@ -570,12 +592,13 @@ impl eframe::App for InstallerApp {
                                             egui::vec2(463.0, 459.0),
                                             egui::Layout::top_down(egui::Align::Min),
                                             |ui| {
-                                                ui.horizontal(|ui| {
-                                                    ui.add_space(24.0);
-                                                    
-                                                    ui.vertical(|ui| {
-                                                        ui.add_space(22.0);
-                                                        
+                                                egui::Frame::none()
+                                                    .inner_margin(egui::Margin::symmetric(24.0, 22.0))
+                                                    .show(ui, |ui| {
+                                                        ui.set_width(415.0);
+                                                        ui.set_max_width(415.0);
+                                                        ui.style_mut().wrap = Some(true);
+
                                                         match self.screen {
                                                             Screen::Welcome => {
                                                                 ui.heading(
@@ -816,14 +839,14 @@ impl eframe::App for InstallerApp {
                                                                 );
                                                                 ui.add_space(20.0);
 
-                                                                // Płynny, animowany pasek postępu Liquid z połyskiem
-                                                                render_badwords_progress_bar(ui, self.displayed_progress);
-                                                                
-                                                                ui.add_space(14.0);
-                                                                ui.label(
-                                                                    egui::RichText::new(&self.status_text)
-                                                                        .size(13.0)
-                                                                        .color(egui::Color32::from_gray(200))
+                                                                // Płynny, dwupoziomowy pasek postępu Liquid z gradientem BadWords i animacją shimmer
+                                                                render_badwords_dual_progress(
+                                                                    ui,
+                                                                    ctx,
+                                                                    self.displayed_progress,
+                                                                    self.displayed_sub_progress,
+                                                                    &self.status_title,
+                                                                    &self.status_details,
                                                                 );
                                                             }
 
@@ -837,7 +860,7 @@ impl eframe::App for InstallerApp {
                                                                 ui.add_space(16.0);
 
                                                                 ui.label(
-                                                                    egui::RichText::new(&self.status_text)
+                                                                    egui::RichText::new(&self.status_title)
                                                                         .size(13.5)
                                                                         .color(egui::Color32::from_gray(220))
                                                                 );
@@ -849,7 +872,6 @@ impl eframe::App for InstallerApp {
                                                             }
                                                         }
                                                     });
-                                                });
                                             },
                                         );
                                     });
@@ -952,26 +974,198 @@ impl eframe::App for InstallerApp {
     }
 }
 
-/// Rysuje płynny pasek postępu Liquid z połyskiem i zaokrąglonymi rogami
-fn render_badwords_progress_bar(ui: &mut egui::Ui, progress: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(380.0, 12.0), egui::Sense::hover());
-    let painter = ui.painter();
+/// Rysuje podwójny, animowany pasek postępu Liquid z gradientem BadWords i pod-paskiem operacji
+fn render_badwords_dual_progress(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    main_progress: f32,
+    sub_progress: f32,
+    status_title: &str,
+    status_details: &str,
+) {
+    let width = ui.available_width().min(405.0);
+    let time = ctx.input(|i| i.time);
 
-    // Tło paska (#262626) z ciemną ramką (#3A3A3A)
-    painter.rect_filled(rect, 6.0, egui::Color32::from_rgb(38, 38, 38));
-    painter.rect_stroke(rect, 6.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(58, 58, 58)));
+    // 1. Nagłówek i odczyt procentowy (dokładnie dopasowany do szerokości paska)
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, 22.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_max_width(width);
+            let pct_num = (main_progress.clamp(0.0, 1.0) * 100.0).round() as u32;
 
-    let clamped = progress.clamp(0.0, 1.0);
-    if clamped > 0.005 {
-        let fill_w = (rect.width() * clamped).max(12.0);
-        let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_w, rect.height()));
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(status_title)
+                        .size(13.5)
+                        .strong()
+                        .color(egui::Color32::WHITE)
+                ).truncate(true)
+            );
 
-        // Soczyste wypełnienie BadWords (#23A559)
-        painter.rect_filled(fill_rect, 6.0, egui::Color32::from_rgb(35, 165, 89));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(format!("{:>3}%", pct_num))
+                        .size(13.5)
+                        .strong()
+                        .family(egui::FontFamily::Monospace)
+                        .color(egui::Color32::from_rgb(184, 208, 53)),
+                );
+            });
+        }
+    );
+    ui.add_space(6.0);
 
-        // Subtelny połysk na górnej krawędzi
-        let gloss_rect = egui::Rect::from_min_size(fill_rect.min, egui::vec2(fill_w, 5.0));
-        painter.rect_filled(gloss_rect, 4.0, egui::Color32::from_white_alpha(35));
+    // 2. GŁÓWNY PASEK POSTĘPU (10px wysokości, zaokrąglone rogi 5px, gradient #1a7a3e -> #b8d035)
+    let (main_rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0), egui::Sense::hover());
+    {
+        let painter = ui.painter();
+
+        // Tło paska (#202020) z ciemnoszarą ramką (#363636)
+        painter.rect_filled(main_rect, 5.0, egui::Color32::from_rgb(28, 28, 28));
+        painter.rect_stroke(main_rect, 5.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(48, 48, 48)));
+
+        let clamped_main = main_progress.clamp(0.0, 1.0);
+        if clamped_main > 0.005 {
+            let fill_w = (main_rect.width() * clamped_main).max(8.0);
+            let fill_rect = egui::Rect::from_min_size(main_rect.min, egui::vec2(fill_w, main_rect.height()));
+
+            // Gradient poziomy od #1a7a3e (RGB 26, 122, 62) do #b8d035 (RGB 184, 208, 53)
+            let start_col = egui::Color32::from_rgb(26, 122, 62);
+            let end_col = egui::Color32::from_rgb(184, 208, 53);
+
+            let mut mesh = egui::Mesh::default();
+            mesh.colored_vertex(fill_rect.left_top(), start_col);
+            mesh.colored_vertex(fill_rect.left_bottom(), start_col);
+            mesh.colored_vertex(fill_rect.right_top(), end_col);
+            mesh.colored_vertex(fill_rect.right_bottom(), end_col);
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(2, 1, 3);
+            painter.add(egui::Shape::Mesh(mesh));
+
+            // Windows-Style Soft Gloss Shimmer Beam (Płynny, dwustronny gradient połysku świetlnego)
+            let beam_w = 90.0;
+            let cycle = ((time * 160.0) as f32) % (fill_rect.width() + beam_w * 2.0);
+            let beam_center = fill_rect.min.x + cycle - beam_w;
+
+            let b_left = (beam_center - beam_w * 0.5).max(fill_rect.min.x);
+            let b_mid = beam_center.clamp(fill_rect.min.x, fill_rect.max.x);
+            let b_right = (beam_center + beam_w * 0.5).min(fill_rect.max.x);
+
+            if b_right > b_left {
+                if b_mid > b_left {
+                    let mut left_mesh = egui::Mesh::default();
+                    left_mesh.colored_vertex(egui::pos2(b_left, fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                    left_mesh.colored_vertex(egui::pos2(b_left, fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                    left_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.min.y), egui::Color32::from_white_alpha(90));
+                    left_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.max.y), egui::Color32::from_white_alpha(90));
+                    left_mesh.add_triangle(0, 1, 2);
+                    left_mesh.add_triangle(2, 1, 3);
+                    painter.add(egui::Shape::Mesh(left_mesh));
+                }
+                if b_right > b_mid {
+                    let mut right_mesh = egui::Mesh::default();
+                    right_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.min.y), egui::Color32::from_white_alpha(90));
+                    right_mesh.colored_vertex(egui::pos2(b_mid, fill_rect.max.y), egui::Color32::from_white_alpha(90));
+                    right_mesh.colored_vertex(egui::pos2(b_right, fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                    right_mesh.colored_vertex(egui::pos2(b_right, fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                    right_mesh.add_triangle(0, 1, 2);
+                    right_mesh.add_triangle(2, 1, 3);
+                    painter.add(egui::Shape::Mesh(right_mesh));
+                }
+            }
+
+            // Subtelny połysk górnej krawędzi
+            let gloss_rect = egui::Rect::from_min_size(fill_rect.min, egui::vec2(fill_w, 3.5));
+            painter.rect_filled(gloss_rect, 2.5, egui::Color32::from_white_alpha(25));
+        }
+    }
+
+    ui.add_space(16.0);
+
+    // 3. POD-OPERACJA: Detale mikro-kroku i mniejszy pasek podoperacji z gradientem
+    if !status_details.is_empty() {
+        ui.allocate_ui_with_layout(
+            egui::vec2(width, 18.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_max_width(width);
+                let sub_pct_num = (sub_progress.clamp(0.0, 1.0) * 100.0).round() as u32;
+
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(status_details)
+                            .size(12.0)
+                            .color(egui::Color32::from_gray(185))
+                    ).wrap(true)
+                );
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{}%", sub_pct_num))
+                            .size(11.5)
+                            .family(egui::FontFamily::Monospace)
+                            .color(egui::Color32::from_rgb(74, 222, 128)),
+                    );
+                });
+            }
+        );
+        ui.add_space(6.0);
+
+        let (sub_rect, _) = ui.allocate_exact_size(egui::vec2(width, 6.0), egui::Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(sub_rect, 3.0, egui::Color32::from_rgb(22, 22, 22));
+        painter.rect_stroke(sub_rect, 3.0, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(42, 42, 42)));
+
+        let clamped_sub = sub_progress.clamp(0.0, 1.0);
+        if clamped_sub > 0.005 {
+            let sub_fill_w = (sub_rect.width() * clamped_sub).max(6.0);
+            let sub_fill_rect = egui::Rect::from_min_size(sub_rect.min, egui::vec2(sub_fill_w, sub_rect.height()));
+
+            // Gradient pod-paska: szmaragdowy (#1e8f4c) do miętowego/limonkowego (#52e087)
+            let sub_start = egui::Color32::from_rgb(30, 143, 76);
+            let sub_end = egui::Color32::from_rgb(82, 224, 135);
+
+            let mut sub_mesh = egui::Mesh::default();
+            sub_mesh.colored_vertex(sub_fill_rect.left_top(), sub_start);
+            sub_mesh.colored_vertex(sub_fill_rect.left_bottom(), sub_start);
+            sub_mesh.colored_vertex(sub_fill_rect.right_top(), sub_end);
+            sub_mesh.colored_vertex(sub_fill_rect.right_bottom(), sub_end);
+            sub_mesh.add_triangle(0, 1, 2);
+            sub_mesh.add_triangle(2, 1, 3);
+            painter.add(egui::Shape::Mesh(sub_mesh));
+
+            // Soft shimmer na pod-pasku
+            let sub_beam_w = 60.0;
+            let sub_cycle = ((time * 200.0) as f32) % (sub_fill_rect.width() + sub_beam_w * 2.0);
+            let sub_beam_center = sub_fill_rect.min.x + sub_cycle - sub_beam_w;
+            let sb_left = (sub_beam_center - sub_beam_w * 0.5).max(sub_fill_rect.min.x);
+            let sb_mid = sub_beam_center.clamp(sub_fill_rect.min.x, sub_fill_rect.max.x);
+            let sb_right = (sub_beam_center + sub_beam_w * 0.5).min(sub_fill_rect.max.x);
+
+            if sb_right > sb_left {
+                if sb_mid > sb_left {
+                    let mut sm = egui::Mesh::default();
+                    sm.colored_vertex(egui::pos2(sb_left, sub_fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                    sm.colored_vertex(egui::pos2(sb_left, sub_fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.min.y), egui::Color32::from_white_alpha(75));
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.max.y), egui::Color32::from_white_alpha(75));
+                    sm.add_triangle(0, 1, 2);
+                    sm.add_triangle(2, 1, 3);
+                    painter.add(egui::Shape::Mesh(sm));
+                }
+                if sb_right > sb_mid {
+                    let mut sm = egui::Mesh::default();
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.min.y), egui::Color32::from_white_alpha(75));
+                    sm.colored_vertex(egui::pos2(sb_mid, sub_fill_rect.max.y), egui::Color32::from_white_alpha(75));
+                    sm.colored_vertex(egui::pos2(sb_right, sub_fill_rect.min.y), egui::Color32::from_white_alpha(0));
+                    sm.colored_vertex(egui::pos2(sb_right, sub_fill_rect.max.y), egui::Color32::from_white_alpha(0));
+                    sm.add_triangle(0, 1, 2);
+                    sm.add_triangle(2, 1, 3);
+                    painter.add(egui::Shape::Mesh(sm));
+                }
+            }
+        }
     }
 }
 
