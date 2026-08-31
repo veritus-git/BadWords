@@ -9,7 +9,6 @@ use crate::os::{self, resolve_script_dirs};
 use crate::state::{emit_complete, emit_log, emit_progress, emit_progress_sub, EventSender};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub const APP_VERSION: &str = "4.0.0";
 const GITHUB_RELEASE_TAG_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/tags/v4.0.0.zip";
@@ -216,7 +215,7 @@ fn run_pip_install_streaming(
     default_detail: &str,
     sender: &EventSender,
 ) -> bool {
-    let mut cmd = Command::new(py_bin);
+    let mut cmd = os::create_hidden_command(py_bin);
     cmd.args(["-m", "pip", "install", "--no-cache-dir"]);
     for arg in args {
         cmd.arg(arg);
@@ -364,7 +363,7 @@ fn find_python() -> Option<String> {
     ];
 
     for cmd in candidates {
-        if let Ok(output) = Command::new(cmd).arg("-c").arg("import sys; exit(0 if sys.version_info >= (3, 10) else 1)").output() {
+        if let Ok(output) = os::create_hidden_command(cmd).arg("-c").arg("import sys; exit(0 if sys.version_info >= (3, 10) else 1)").output() {
             if output.status.success() {
                 return Some(cmd.to_string());
             }
@@ -377,21 +376,30 @@ fn find_python() -> Option<String> {
 fn detect_nvidia_gpu() -> bool {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(output) = Command::new("powershell")
-            .args(["-NoProfile", "-Command", "try{$g=Get-WmiObject Win32_VideoController -EA Stop | Where-Object {$_.Name -like '*NVIDIA*'} | Select-Object -First 1; if($g){'1'}else{'0'}}catch{'0'}"])
-            .output()
-        {
-            return String::from_utf8_lossy(&output.stdout).trim() == "1";
+        if Path::new(r"C:\Windows\System32\nvcuda.dll").exists() || Path::new(r"C:\Windows\System32\nvapi64.dll").exists() {
+            return true;
+        }
+        let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+        if let Ok(class_key) = hklm.open_subkey(r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}") {
+            for subkey in class_key.enum_keys().filter_map(|k| k.ok()) {
+                if let Ok(dev) = class_key.open_subkey(&subkey) {
+                    if let Ok(desc) = dev.get_value::<String, _>("DriverDesc") {
+                        if desc.to_lowercase().contains("nvidia") {
+                            return true;
+                        }
+                    }
+                }
+            }
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        if let Ok(output) = Command::new("lspci").output() {
+        if let Ok(output) = os::create_hidden_command("lspci").output() {
             if String::from_utf8_lossy(&output.stdout).to_lowercase().contains("nvidia") {
                 return true;
             }
         }
-        if let Ok(output) = Command::new("lshw").args(["-C", "display"]).output() {
+        if let Ok(output) = os::create_hidden_command("lshw").args(["-C", "display"]).output() {
             if String::from_utf8_lossy(&output.stdout).to_lowercase().contains("nvidia") {
                 return true;
             }
@@ -679,7 +687,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
 
         for url in urls {
             if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Linux)", sender).is_ok() {
-                let _ = Command::new("tar").args(["-xf", &archive.to_string_lossy(), "-C", &parent.to_string_lossy()]).status();
+                let _ = os::create_hidden_command("tar").args(["-xf", &archive.to_string_lossy(), "-C", &parent.to_string_lossy()]).status();
 
                 if let Ok(entries) = fs::read_dir(parent) {
                     for entry in entries.flatten() {
@@ -712,7 +720,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         }
 
         // Fallback: Copy system ffmpeg if available on machine
-        if let Ok(output) = Command::new("which").arg("ffmpeg").output() {
+        if let Ok(output) = os::create_hidden_command("which").arg("ffmpeg").output() {
             if output.status.success() {
                 let sys_ff = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() {
@@ -761,7 +769,7 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
     let py_exec = python_cmd.unwrap_or("python3");
     if !venv_dir.exists() {
         emit_log(sender, "INFO", "Creating Python virtual environment in venv/...");
-        let status = Command::new(py_exec)
+        let status = os::create_hidden_command(py_exec)
             .args(["-m", "venv", &venv_dir.to_string_lossy()])
             .status();
 
@@ -770,8 +778,8 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
                 emit_log(sender, "OK", "Virtual environment initialized successfully.");
             } else {
                 emit_log(sender, "WARN", "Standard venv creation failed; attempting virtualenv fallback.");
-                let _ = Command::new(py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
-                let _ = Command::new(py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
+                let _ = os::create_hidden_command(py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
+                let _ = os::create_hidden_command(py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
             }
         }
     } else {
@@ -799,7 +807,7 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
         emit_log(sender, "OK", "Package manager tools updated.");
 
         // Sub-step: PySide6
-        let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
+        let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
         if !pyside_check {
             emit_log(sender, "INFO", "Installing PySide6 framework...");
             run_pip_install_streaming(
@@ -921,7 +929,7 @@ fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender)
     }
 
     if v_py.is_file() {
-        let test_ok = Command::new(&v_py)
+        let test_ok = os::create_hidden_command(&v_py)
             .args(["-c", "import PySide6; import faster_whisper"])
             .output()
             .map_or(false, |o| o.status.success());
@@ -1105,15 +1113,15 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
             let has_nvidia = detect_nvidia_gpu();
             let _ = setup_python_environment(&target_dir, None, has_nvidia, &sender);
         } else {
-            let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
+            let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
             if !pyside_check {
                 emit_log(&sender, "WARN", "PySide6 missing in venv; reinstalling...");
-                let _ = Command::new(&v_py).args(["-m", "pip", "install", "PySide6", "-q"]).status();
+                let _ = os::create_hidden_command(&v_py).args(["-m", "pip", "install", "PySide6", "-q"]).status();
             }
-            let whisper_check = Command::new(&v_py).args(["-c", "import faster_whisper"]).output().map_or(false, |o| o.status.success());
+            let whisper_check = os::create_hidden_command(&v_py).args(["-c", "import faster_whisper"]).output().map_or(false, |o| o.status.success());
             if !whisper_check {
                 emit_log(&sender, "WARN", "faster-whisper missing in venv; reinstalling...");
-                let _ = Command::new(&v_py).args(["-m", "pip", "install", "faster-whisper", "pypdf", "-q"]).status();
+                let _ = os::create_hidden_command(&v_py).args(["-m", "pip", "install", "faster-whisper", "pypdf", "-q"]).status();
             }
             emit_log(&sender, "OK", "Virtual environment verified.");
         }

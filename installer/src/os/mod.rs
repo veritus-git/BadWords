@@ -10,6 +10,18 @@ pub mod linux;
 
 use std::path::PathBuf;
 
+/// Creates a standard `Command` configured to never show a console window on Windows
+pub fn create_hidden_command<P: AsRef<std::ffi::OsStr>>(program: P) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
 pub const APP_NAME: &str = "BadWords";
 
 /// Returns default installation directory depending on current OS
@@ -235,16 +247,17 @@ pub fn get_primary_monitor_center(win_w: f32, win_h: f32) -> Option<(f32, f32)> 
 
     #[cfg(target_os = "windows")]
     {
-        if let Ok(out) = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \"$($s.X),$($s.Y),$($s.Width),$($s.Height)\""])
-            .output()
-        {
-            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let parts: Vec<f32> = text.split(',').filter_map(|s| s.trim().parse::<f32>().ok()).collect();
-            if parts.len() == 4 && parts[2] > 400.0 && parts[3] > 300.0 {
-                let cx = parts[0] + (parts[2] - win_w) / 2.0;
-                let cy = parts[1] + (parts[3] - win_h) / 2.0;
-                return Some((cx.max(0.0), cy.max(0.0)));
+        #[link(name = "user32")]
+        extern "system" {
+            fn GetSystemMetrics(n_index: i32) -> i32;
+        }
+        unsafe {
+            let sw = GetSystemMetrics(0) as f32; // SM_CXSCREEN
+            let sh = GetSystemMetrics(1) as f32; // SM_CYSCREEN
+            if sw > 400.0 && sh > 300.0 {
+                let cx = ((sw - win_w) / 2.0).max(0.0);
+                let cy = ((sh - win_h) / 2.0).max(0.0);
+                return Some((cx, cy));
             }
         }
     }
