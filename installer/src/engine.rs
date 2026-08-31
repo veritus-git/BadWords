@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub const APP_VERSION: &str = "4.0.0";
-const GITHUB_ZIP_DEV_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/heads/dev-v4.zip";
+const GITHUB_RELEASE_TAG_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/tags/v4.0.0.zip";
 const GITHUB_ZIP_MAIN_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/heads/main.zip";
+const GITHUB_ZIP_DEV_URL: &str = "https://github.com/veritus-git/BadWords/archive/refs/heads/dev-v4.zip";
 const GITLAB_ZIP_URL: &str = "https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip";
 
 /// Recursively copies a directory tree
@@ -379,8 +380,8 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
     let _ = fs::create_dir_all(&extract_dest);
 
     let mut downloaded = false;
-    for url in [GITHUB_ZIP_DEV_URL, GITHUB_ZIP_MAIN_URL, GITLAB_ZIP_URL] {
-        emit_log(sender, "INFO", &format!("Fetching source from: {}", url));
+    for url in [GITHUB_RELEASE_TAG_URL, GITHUB_ZIP_MAIN_URL, GITHUB_ZIP_DEV_URL, GITLAB_ZIP_URL] {
+        emit_log(sender, "INFO", &format!("Fetching release source from: {}", url));
         if download_file_with_progress(url, &zip_dest, 30, "Deploying application files...", "Downloading release archive", sender).is_ok() {
             downloaded = true;
             break;
@@ -591,6 +592,133 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
     emit_log(sender, "WARN", "Could not download portable FFmpeg. System FFmpeg will be used if present.");
 }
 
+/// Configures the Python virtual environment, upgrades pip tools, and installs all dependencies
+fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvidia: bool, sender: &EventSender) -> bool {
+    emit_progress(sender, 55, 2, "Configuring Python environment...", "Setting up isolated virtual environment");
+    let venv_dir = target_dir.join("venv");
+    
+    let py_exec = python_cmd.unwrap_or("python3");
+    if !venv_dir.exists() {
+        emit_log(sender, "INFO", "Creating Python virtual environment in venv/...");
+        let status = Command::new(py_exec)
+            .args(["-m", "venv", &venv_dir.to_string_lossy()])
+            .status();
+
+        if let Ok(st) = status {
+            if st.success() {
+                emit_log(sender, "OK", "Virtual environment initialized successfully.");
+            } else {
+                emit_log(sender, "WARN", "Standard venv creation failed; attempting virtualenv fallback.");
+                let _ = Command::new(py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
+                let _ = Command::new(py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
+            }
+        }
+    } else {
+        emit_log(sender, "OK", "Virtual environment already present.");
+    }
+
+    // Determine venv python & pip binaries
+    #[cfg(target_os = "windows")]
+    let v_py = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let v_py = venv_dir.join("bin").join("python");
+
+    if v_py.exists() {
+        // Sub-step 1/4: pip, setuptools & wheel
+        emit_log(sender, "INFO", "Upgrading pip, setuptools & wheel...");
+        run_pip_install_streaming(
+            &v_py,
+            &["--upgrade", "pip", "setuptools", "wheel"],
+            60,
+            68,
+            "Configuring Python packages...",
+            "[1/4] Upgrading pip, setuptools & wheel",
+            sender,
+        );
+        emit_log(sender, "OK", "Package manager tools updated.");
+
+        // Sub-step 2/4: PySide6
+        let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
+        if !pyside_check {
+            emit_log(sender, "INFO", "Installing PySide6 framework...");
+            run_pip_install_streaming(
+                &v_py,
+                &["PySide6"],
+                68,
+                78,
+                "Installing GUI framework...",
+                "[2/4] Downloading and installing PySide6 Qt framework",
+                sender,
+            );
+            emit_log(sender, "OK", "PySide6 installed.");
+        } else {
+            emit_progress_sub(sender, 78, 100, "Installing GUI framework...", "[2/4] PySide6 framework verified");
+            emit_log(sender, "OK", "PySide6 is ready.");
+        }
+
+        // Sub-step 3/4: faster-whisper, pypdf
+        emit_log(sender, "INFO", "Installing faster-whisper and pypdf...");
+        run_pip_install_streaming(
+            &v_py,
+            &["faster-whisper", "pypdf"],
+            78,
+            85,
+            "Installing AI speech engine...",
+            "[3/4] Downloading Faster-Whisper AI engine & PyPDF",
+            sender,
+        );
+        emit_log(sender, "OK", "Faster-Whisper and PyPDF installed.");
+
+        // Sub-step 4/4: Hardware Acceleration (CUDA 12 or CPU runtime)
+        if has_nvidia {
+            emit_log(sender, "INFO", "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...");
+            run_pip_install_streaming(
+                &v_py,
+                &["nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
+                85,
+                90,
+                "Installing GPU acceleration...",
+                "[4/4] Downloading NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)",
+                sender,
+            );
+            emit_log(sender, "OK", "NVIDIA CUDA 12 hardware acceleration packages installed.");
+        } else {
+            emit_progress_sub(sender, 90, 100, "Configuring AI engine...", "[4/4] CPU AI computation verified");
+            emit_log(sender, "OK", "CPU AI acceleration configured.");
+        }
+
+        // Final linking
+        emit_progress_sub(sender, 91, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
+        let libs_dir = target_dir.join("libs");
+        if !libs_dir.exists() {
+            #[cfg(unix)]
+            {
+                let site_packages_parent = venv_dir.join("lib");
+                if let Ok(entries) = fs::read_dir(&site_packages_parent) {
+                    for entry in entries.flatten() {
+                        let sp = entry.path().join("site-packages");
+                        if sp.is_dir() {
+                            let _ = std::os::unix::fs::symlink(&sp, &libs_dir);
+                            emit_log(sender, "OK", "Libs symlink created.");
+                            break;
+                        }
+                    }
+                }
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let sp = venv_dir.join("Lib").join("site-packages");
+                if sp.is_dir() {
+                    let _ = std::os::windows::fs::symlink_dir(&sp, &libs_dir);
+                    emit_log(sender, "OK", "Libs junction created.");
+                }
+            }
+        }
+        return true;
+    }
+    false
+}
+
 /// Executes the full installation or update process
 pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, sender: EventSender) {
     std::thread::spawn(move || {
@@ -654,127 +782,7 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
         ensure_ffmpeg(&bin_dir, &sender);
 
         // 6. Virtual Environment & Python Packages (1:1 with setup.py)
-        emit_progress(&sender, 55, 2, "Configuring Python environment...", "Setting up isolated virtual environment");
-        let venv_dir = target_dir.join("venv");
-        
-        let py_exec = python_cmd.as_deref().unwrap_or("python3");
-        if !venv_dir.exists() {
-            emit_log(&sender, "INFO", "Creating Python virtual environment in venv/...");
-            let status = Command::new(py_exec)
-                .args(["-m", "venv", &venv_dir.to_string_lossy()])
-                .status();
-
-            if let Ok(st) = status {
-                if st.success() {
-                    emit_log(&sender, "OK", "Virtual environment initialized successfully.");
-                } else {
-                    emit_log(&sender, "WARN", "Standard venv creation failed; attempting virtualenv fallback.");
-                    let _ = Command::new(py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
-                    let _ = Command::new(py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
-                }
-            }
-        } else {
-            emit_log(&sender, "OK", "Virtual environment already present.");
-        }
-
-        // Determine venv python & pip binaries
-        #[cfg(target_os = "windows")]
-        let v_py = venv_dir.join("Scripts").join("python.exe");
-        #[cfg(not(target_os = "windows"))]
-        let v_py = venv_dir.join("bin").join("python");
-
-        if v_py.exists() {
-            // Sub-step 1/4: pip, setuptools & wheel
-            emit_log(&sender, "INFO", "Upgrading pip, setuptools & wheel...");
-            run_pip_install_streaming(
-                &v_py,
-                &["--upgrade", "pip", "setuptools", "wheel"],
-                60,
-                68,
-                "Configuring Python packages...",
-                "[1/4] Upgrading pip, setuptools & wheel",
-                &sender,
-            );
-            emit_log(&sender, "OK", "Package manager tools updated.");
-
-            // Sub-step 2/4: PySide6
-            let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
-            if !pyside_check {
-                emit_log(&sender, "INFO", "Installing PySide6 framework...");
-                run_pip_install_streaming(
-                    &v_py,
-                    &["PySide6"],
-                    68,
-                    78,
-                    "Installing GUI framework...",
-                    "[2/4] Downloading and installing PySide6 Qt framework",
-                    &sender,
-                );
-                emit_log(&sender, "OK", "PySide6 installed.");
-            } else {
-                emit_progress_sub(&sender, 78, 100, "Installing GUI framework...", "[2/4] PySide6 framework verified");
-                emit_log(&sender, "OK", "PySide6 is ready.");
-            }
-
-            // Sub-step 3/4: faster-whisper, pypdf
-            emit_log(&sender, "INFO", "Installing faster-whisper and pypdf...");
-            run_pip_install_streaming(
-                &v_py,
-                &["faster-whisper", "pypdf"],
-                78,
-                85,
-                "Installing AI speech engine...",
-                "[3/4] Downloading Faster-Whisper AI engine & PyPDF",
-                &sender,
-            );
-            emit_log(&sender, "OK", "Faster-Whisper and PyPDF installed.");
-
-            // Sub-step 4/4: Hardware Acceleration (CUDA 12 or CPU runtime)
-            if has_nvidia {
-                emit_log(&sender, "INFO", "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...");
-                run_pip_install_streaming(
-                    &v_py,
-                    &["nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
-                    85,
-                    90,
-                    "Installing GPU acceleration...",
-                    "[4/4] Downloading NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)",
-                    &sender,
-                );
-                emit_log(&sender, "OK", "NVIDIA CUDA 12 hardware acceleration packages installed.");
-            } else {
-                emit_progress_sub(&sender, 90, 100, "Configuring AI engine...", "[4/4] CPU AI computation verified");
-                emit_log(&sender, "OK", "CPU AI acceleration configured.");
-            }
-
-            // Final linking
-            emit_progress_sub(&sender, 91, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
-            let libs_dir = target_dir.join("libs");
-            if !libs_dir.exists() {
-                #[cfg(unix)]
-                {
-                    let site_packages_parent = venv_dir.join("lib");
-                    if let Ok(entries) = fs::read_dir(&site_packages_parent) {
-                        for entry in entries.flatten() {
-                            let sp = entry.path().join("site-packages");
-                            if sp.is_dir() {
-                                let _ = std::os::unix::fs::symlink(&sp, &libs_dir);
-                                emit_log(&sender, "OK", "Libs symlink created.");
-                                break;
-                            }
-                        }
-                    }
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    let sp = venv_dir.join("Lib").join("site-packages");
-                    if sp.is_dir() {
-                        let _ = std::os::windows::fs::symlink_dir(&sp, &libs_dir);
-                        emit_log(&sender, "OK", "Libs junction created.");
-                    }
-                }
-            }
-        }
+        setup_python_environment(&target_dir, python_cmd.as_deref(), has_nvidia, &sender);
 
         // 7. DaVinci Resolve Wrapper (1:1 with setup.py)
         emit_progress(&sender, 92, 3, "Configuring DaVinci Resolve...", "Writing Fusion utility script wrappers");
@@ -874,7 +882,11 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         #[cfg(not(target_os = "windows"))]
         let v_py = venv_dir.join("bin").join("python");
 
-        if v_py.exists() {
+        if !v_py.exists() {
+            emit_log(&sender, "WARN", "Virtual environment missing or damaged; rebuilding fresh environment...");
+            let has_nvidia = detect_nvidia_gpu();
+            let _ = setup_python_environment(&target_dir, None, has_nvidia, &sender);
+        } else {
             let pyside_check = Command::new(&v_py).args(["-c", "import PySide6"]).output().map_or(false, |o| o.status.success());
             if !pyside_check {
                 emit_log(&sender, "WARN", "PySide6 missing in venv; reinstalling...");
@@ -936,7 +948,16 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
             return;
         }
 
-        emit_progress(&sender, 70, 1, "Updating wrappers...", "Updating DaVinci Resolve script paths");
+        // Re-generate Python venv to fix hardcoded absolute paths at the new location
+        emit_progress(&sender, 60, 1, "Reconfiguring Python environment...", "Updating virtual environment paths");
+        let venv_dir = to_dir.join("venv");
+        if venv_dir.exists() {
+            let _ = fs::remove_dir_all(&venv_dir);
+        }
+        let has_nvidia = detect_nvidia_gpu();
+        setup_python_environment(&to_dir, None, has_nvidia, &sender);
+
+        emit_progress(&sender, 75, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
         let resolve_dirs = resolve_script_dirs();
         for r_dir in &resolve_dirs {
             let wrapper_path = r_dir.join("BadWords.py");
