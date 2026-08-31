@@ -1,6 +1,61 @@
-//! macOS system integration (.app bundle & Spotlight)
+//! macOS system integration (.app bundle, System Python check/install & Spotlight)
 
 use std::path::Path;
+
+#[allow(dead_code)]
+/// Checks if an official macOS Python framework (3.8+) exists in /Library/Frameworks/Python.framework
+pub fn has_system_python() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let framework_base = Path::new("/Library/Frameworks/Python.framework/Versions");
+        if framework_base.is_dir() {
+            for ver in ["3.13", "3.12", "3.11", "3.10", "3.9", "3.8"] {
+                if framework_base.join(ver).is_dir() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+#[allow(dead_code)]
+/// Downloads and installs official Python 3.10 macOS framework package
+pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        crate::state::emit_log(sender, "INFO", "Downloading official Python 3.10 for macOS...");
+        let temp_dir = std::env::temp_dir();
+        let py_pkg = temp_dir.join("python-3.10.11-macos11.pkg");
+        let url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-macos11.pkg";
+
+        if let Ok(resp) = ureq::get(url).call() {
+            if let Ok(mut out) = std::fs::File::create(&py_pkg) {
+                let mut reader = resp.into_reader();
+                let _ = std::io::copy(&mut reader, &mut out);
+            }
+        }
+
+        if py_pkg.exists() {
+            crate::state::emit_log(sender, "INFO", "Installing Python 3.10 framework...");
+            let status = std::process::Command::new("sudo")
+                .args(["installer", "-pkg", &py_pkg.to_string_lossy(), "-target", "/"])
+                .status();
+
+            if let Ok(st) = status {
+                if st.success() {
+                    crate::state::emit_log(sender, "OK", "System Python framework installed successfully.");
+                    return true;
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = sender;
+    }
+    false
+}
 
 #[allow(dead_code)]
 pub fn create_macos_app_bundle(install_dir: &Path) -> std::io::Result<()> {
@@ -18,7 +73,7 @@ pub fn create_macos_app_bundle(install_dir: &Path) -> std::io::Result<()> {
             // Launcher script
             let launcher_path = macos.join("BadWords");
             let launcher_content = format!(
-                "#!/bin/bash\nexec \"{}/runtime/python\" \"{}/main.py\" \"$@\"\n",
+                "#!/bin/bash\nexec \"{}/venv/bin/python\" \"{}/main.py\" \"$@\"\n",
                 install_dir.to_string_lossy(),
                 install_dir.to_string_lossy()
             );

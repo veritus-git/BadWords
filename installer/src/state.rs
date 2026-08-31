@@ -1,6 +1,7 @@
 //! Shared state and IPC event messaging for the installer
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,9 +20,14 @@ pub struct IpcEvent {
 
 pub type EventSender = Sender<IpcEvent>;
 
+pub fn log_file_path() -> PathBuf {
+    std::env::temp_dir().join("badwords_setup.log")
+}
+
 fn append_to_logfile(line: &str) {
     use std::io::Write;
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/badwords_setup.log") {
+    let log_path = log_file_path();
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(log_path) {
         let _ = writeln!(file, "{}", line);
     }
 }
