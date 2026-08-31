@@ -342,13 +342,23 @@ def main():
             # Metal and CoreGraphics both suffer from fractional scaling (0.8) rendering artifacts (dots) in QWidgets.
             os.environ["QSG_RHI_BACKEND"] = "opengl"
 
+        if os_doc.is_win:
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+            except Exception:
+                pass
+
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
 
         if os_doc.is_mac:
             app.setStyle('Fusion')
-            app.setWindowIcon(gui._app_icon())
+
+        app_icon = gui._app_icon()
+        if not app_icon.isNull():
+            app.setWindowIcon(app_icon)
 
         # 3. Create controller (holds all GUI references → GC-safe)
         _controller = AppController(os_doc)

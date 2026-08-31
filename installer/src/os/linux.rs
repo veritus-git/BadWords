@@ -153,7 +153,14 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
 
             let desktop_file = apps_dir.join("badwords.desktop");
             let uninstall_desktop_file = apps_dir.join("badwords-uninstall.desktop");
-            let src_icon = install_dir.join("assets").join("icons").join("icon_default.png");
+            let src_icon = {
+                let direct = install_dir.join("icons").join("icon_default.png");
+                if direct.is_file() {
+                    direct
+                } else {
+                    install_dir.join("assets").join("icons").join("icon_default.png")
+                }
+            };
             
             // Deploy icons to standard XDG search paths
             if src_icon.is_file() {

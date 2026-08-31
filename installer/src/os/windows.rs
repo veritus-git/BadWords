@@ -100,7 +100,14 @@ pub fn register_uninstall_entry(install_dir: &Path, version: &str) -> std::io::R
         let (key, _) = hkcu.create_subkey(path)?;
 
         let install_str = install_dir.to_string_lossy().to_string();
-        let icon_path = install_dir.join("assets").join("icons").join("icon_default.ico");
+        let icon_path = {
+            let direct = install_dir.join("icons").join("icon_default.ico");
+            if direct.is_file() {
+                direct
+            } else {
+                install_dir.join("assets").join("icons").join("icon_default.ico")
+            }
+        };
         let uninstall_exe = install_dir.join("uninstall.exe");
         let uninstall_cmd = format!("\"{}\" --uninstall", uninstall_exe.to_string_lossy());
 
@@ -167,7 +174,14 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
     {
         let pythonw_path = install_dir.join("venv").join("Scripts").join("pythonw.exe");
         let main_py = install_dir.join("main.py");
-        let icon_path = install_dir.join("assets").join("icons").join("icon_default.ico");
+        let icon_path = {
+            let direct = install_dir.join("icons").join("icon_default.ico");
+            if direct.is_file() {
+                direct
+            } else {
+                install_dir.join("assets").join("icons").join("icon_default.ico")
+            }
+        };
 
         let mut script_parts = vec![
             "$ws = New-Object -ComObject WScript.Shell;".to_string(),

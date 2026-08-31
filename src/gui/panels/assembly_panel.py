@@ -92,11 +92,8 @@ def build_assembly_panel(win) -> QFrame:
     div_top.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
     l_colors_container.addWidget(div_top)
     
-    _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    _prod_assets_dir = os.path.join(_src_dir, "layout")
-    _dev_assets_dir = os.path.join(os.path.dirname(_src_dir), "assets", "layout")
-    _assets_dir = _prod_assets_dir if os.path.exists(_prod_assets_dir) else _dev_assets_dir
-    
+    from gui.utils import get_layout_icon_path
+
     color_idx = 0
     for color_name, color_hex in config.RESOLVE_COLORS_HEX.items():
         row_color = QHBoxLayout()
@@ -124,9 +121,9 @@ def build_assembly_panel(win) -> QFrame:
             is_checked = color_name in auto_cut_colors
             btn_auto.setChecked(is_checked)
             
-            def _update_auto_icon(checked, b=btn_auto, ad=_assets_dir):
+            def _update_auto_icon(checked, b=btn_auto):
                 icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
-                b.setIcon(QIcon(os.path.join(ad, icon_name)))
+                b.setIcon(QIcon(get_layout_icon_path(icon_name)))
                 b.setIconSize(QSize(20, 20))
                 
             _update_auto_icon(is_checked)
@@ -137,7 +134,7 @@ def build_assembly_panel(win) -> QFrame:
         btn_cut_now.setFixedSize(24, 24)
         btn_cut_now.setCursor(Qt.PointingHandCursor)
         btn_cut_now.setStyleSheet("background: transparent; border: none;")
-        btn_cut_now.setIcon(QIcon(os.path.join(_assets_dir, "cut.png")))
+        btn_cut_now.setIcon(QIcon(get_layout_icon_path("cut.png")))
         btn_cut_now.setIconSize(QSize(20, 20))
         btn_cut_now.setToolTip(win.txt("tooltip_cut_now"))
         btn_cut_now.clicked.connect(lambda _, c=color_name: win._on_cut_now_clicked(c))
