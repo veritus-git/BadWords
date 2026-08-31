@@ -67,9 +67,7 @@ fn main() -> eframe::Result<()> {
                 .expect("Failed to load icon"),
         );
 
-    if let Some((sw, sh)) = os::get_primary_screen_size() {
-        let pos_x = ((sw - 706.0) / 2.0).max(0.0);
-        let pos_y = ((sh - 606.0) / 2.0).max(0.0);
+    if let Some((pos_x, pos_y)) = os::get_primary_monitor_center(706.0, 606.0) {
         viewport = viewport.with_position([pos_x, pos_y]);
     }
 
@@ -257,7 +255,6 @@ struct InstallerApp {
     install_path_str: String,
     detected_existing: Option<PathBuf>,
     detected_version: String,
-    window_centered: bool,
     status_title: String,
     status_details: String,
     progress: f32,
@@ -318,7 +315,6 @@ impl InstallerApp {
             install_path_str: path_str,
             detected_existing: detected,
             detected_version: initial_version,
-            window_centered: false,
             status_title: "Ready to begin.".to_string(),
             status_details: "Click Next to choose an action.".to_string(),
             progress: 0.0,
@@ -430,16 +426,6 @@ impl eframe::App for InstallerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Gwarancja idealnego wycentrowania okna na monitorze w momencie uruchomienia
-        if !self.window_centered {
-            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
-                let x = ((monitor_size.x - 706.0) / 2.0).max(0.0);
-                let y = ((monitor_size.y - 606.0) / 2.0).max(0.0);
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
-                self.window_centered = true;
-            }
-        }
-
         let t = self.language.t();
 
         // Płynna animacja pasków postępu (lerp)
@@ -1084,14 +1070,16 @@ impl eframe::App for InstallerApp {
                                                                 );
                                                                 ui.add_space(18.0);
 
-                                                                // Płynny, dwupoziomowy pasek postępu Liquid ze statusem POD każdym paskiem
+                                                                // Płynny, dwupoziomowy pasek postępu ze statusem przetłumaczonym na żywo na wybrany język
+                                                                let disp_title = i18n::translate_phrase(&self.status_title, self.language);
+                                                                let disp_details = i18n::translate_phrase(&self.status_details, self.language);
                                                                 render_badwords_dual_progress(
                                                                     ui,
                                                                     ctx,
                                                                     self.displayed_progress,
                                                                     self.displayed_sub_progress,
-                                                                    &self.status_title,
-                                                                    &self.status_details,
+                                                                    &disp_title,
+                                                                    &disp_details,
                                                                 );
                                                             }
 
@@ -1483,16 +1471,17 @@ fn render_badwords_dual_progress(
 
     ui.add_space(6.0);
 
-    // 3. DETALE MIKRO-KROKU: Umieszczone POD dolnym paskiem z pełną przestrzenią na łamanie tekstu
+    // 3. DETALE MIKRO-KROKU: Umieszczone POD dolnym paskiem z pełną, dynamiczną wysokością na łamanie tekstu
     if !status_details.is_empty() {
-        let (details_rect, _) = ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::hover());
         let details_galley = ui.painter().layout(
             status_details.to_string(),
             egui::FontId::proportional(11.5),
             egui::Color32::from_gray(185),
             width,
         );
-        ui.painter().with_clip_rect(details_rect).galley(details_rect.min, details_galley, egui::Color32::from_gray(185));
+        let g_height = details_galley.size().y.max(18.0);
+        let (details_rect, _) = ui.allocate_exact_size(egui::vec2(width, g_height), egui::Sense::hover());
+        ui.painter().galley(details_rect.min, details_galley, egui::Color32::from_gray(185));
     }
 }
 

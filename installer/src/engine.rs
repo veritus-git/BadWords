@@ -847,34 +847,90 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
 
         // Final linking
         emit_progress_sub(sender, 91, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
-        let libs_dir = target_dir.join("libs");
-        if !libs_dir.exists() {
-            #[cfg(unix)]
-            {
-                let site_packages_parent = venv_dir.join("lib");
-                if let Ok(entries) = fs::read_dir(&site_packages_parent) {
-                    for entry in entries.flatten() {
-                        let sp = entry.path().join("site-packages");
-                        if sp.is_dir() {
-                            let _ = std::os::unix::fs::symlink(&sp, &libs_dir);
-                            emit_log(sender, "OK", "Libs symlink created.");
-                            break;
-                        }
-                    }
-                }
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let sp = venv_dir.join("Lib").join("site-packages");
-                if sp.is_dir() {
-                    let _ = std::os::windows::fs::symlink_dir(&sp, &libs_dir);
-                    emit_log(sender, "OK", "Libs junction created.");
-                }
-            }
-        }
+        link_site_packages_for_resolve(target_dir, sender);
         return true;
     }
     false
+}
+
+/// Links site-packages to target_dir/libs for DaVinci Resolve script execution
+fn link_site_packages_for_resolve(target_dir: &Path, sender: &EventSender) {
+    let libs_dir = target_dir.join("libs");
+    let venv_dir = target_dir.join("venv");
+
+    if libs_dir.is_symlink() || libs_dir.exists() {
+        let _ = fs::remove_file(&libs_dir);
+        let _ = fs::remove_dir_all(&libs_dir);
+    }
+
+    #[cfg(unix)]
+    {
+        let site_packages_parent = venv_dir.join("lib");
+        if let Ok(entries) = fs::read_dir(&site_packages_parent) {
+            for entry in entries.flatten() {
+                let sp = entry.path().join("site-packages");
+                if sp.is_dir() {
+                    let _ = std::os::unix::fs::symlink(&sp, &libs_dir);
+                    emit_log(sender, "OK", "Libs symlink created.");
+                    return;
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let sp = venv_dir.join("Lib").join("site-packages");
+        if sp.is_dir() {
+            let _ = std::os::windows::fs::symlink_dir(&sp, &libs_dir);
+            emit_log(sender, "OK", "Libs junction created.");
+        }
+    }
+}
+
+/// Fast reconfiguration of relocated Python virtual environment preserving all copied packages without re-downloading
+fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender) -> bool {
+    emit_log(sender, "INFO", "Reconfiguring relocated Python virtual environment...");
+    let venv_dir = to_dir.join("venv");
+    if !venv_dir.is_dir() {
+        return false;
+    }
+
+    link_site_packages_for_resolve(to_dir, sender);
+
+    #[cfg(target_os = "windows")]
+    let v_py = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let v_py = venv_dir.join("bin").join("python");
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if !v_py.exists() {
+            if let Some(sys_py) = find_python() {
+                let bin_dir = venv_dir.join("bin");
+                let _ = fs::create_dir_all(&bin_dir);
+                let _ = fs::remove_file(&v_py);
+                let _ = std::os::unix::fs::symlink(&sys_py, &v_py);
+                let py3 = bin_dir.join("python3");
+                let _ = fs::remove_file(&py3);
+                let _ = std::os::unix::fs::symlink(&sys_py, &py3);
+            }
+        }
+    }
+
+    if v_py.is_file() {
+        let test_ok = Command::new(&v_py)
+            .args(["-c", "import PySide6; import faster_whisper"])
+            .output()
+            .map_or(false, |o| o.status.success());
+        if test_ok {
+            emit_log(sender, "OK", "Preserved all existing packages and GPU acceleration libraries from previous location.");
+            return true;
+        }
+    }
+
+    emit_log(sender, "WARN", "Relocated venv needed refresh; rebuilding environment...");
+    let has_nvidia = detect_nvidia_gpu();
+    setup_python_environment(to_dir, None, has_nvidia, sender)
 }
 
 /// Executes the full installation or update process
@@ -1100,25 +1156,20 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
             return;
         }
 
-        // Step 1: Copy files progressively with live MB and file count updates
+        // Step 1: Copy files progressively with live MB and file count updates (5% -> 70%)
         emit_progress(&sender, 5, 0, "Transferring files...", "Scanning source files");
-        if let Err(e) = copy_dir_with_progress(&from_dir, &to_dir, 5, 55, "Transferring files...", &sender) {
+        if let Err(e) = copy_dir_with_progress(&from_dir, &to_dir, 5, 70, "Transferring files...", &sender) {
             emit_log(&sender, "ERROR", &format!("Failed to copy files: {}", e));
             emit_complete(&sender, "move", false, "Failed to copy files to new location.");
             return;
         }
 
-        // Step 2: Re-generate Python venv to fix hardcoded absolute paths at the new location
-        emit_progress(&sender, 60, 1, "Reconfiguring Python environment...", "Updating virtual environment paths");
-        let venv_dir = to_dir.join("venv");
-        if venv_dir.exists() {
-            let _ = fs::remove_dir_all(&venv_dir);
-        }
-        let has_nvidia = detect_nvidia_gpu();
-        setup_python_environment(&to_dir, None, has_nvidia, &sender);
+        // Step 2: Reconfigure Python environment preserving all 10 GB of existing packages (70% -> 80%)
+        emit_progress(&sender, 70, 1, "Reconfiguring Python environment...", "Updating virtual environment paths");
+        reconfigure_relocated_python_environment(&to_dir, &sender);
 
-        // Step 3: Update DaVinci Resolve wrappers
-        emit_progress(&sender, 85, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
+        // Step 3: Update DaVinci Resolve wrappers (80% -> 85%)
+        emit_progress(&sender, 80, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
         let resolve_dirs = resolve_script_dirs();
         for r_dir in &resolve_dirs {
             let wrapper_path = r_dir.join("BadWords.py");
@@ -1131,9 +1182,9 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
             }
         }
 
-        // Step 4: Clean old directory progressively
-        emit_progress(&sender, 90, 2, "Cleaning old directory...", "Removing old installation files");
-        delete_dir_with_progress(&from_dir, 90, 98, "Cleaning old directory...", &sender);
+        // Step 4: Clean old directory progressively (85% -> 98%)
+        emit_progress(&sender, 85, 2, "Cleaning old directory...", "Removing old installation files");
+        delete_dir_with_progress(&from_dir, 85, 98, "Cleaning old directory...", &sender);
 
         #[cfg(target_os = "windows")]
         {
