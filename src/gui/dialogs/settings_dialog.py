@@ -446,6 +446,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(config.S(8))
+        row.setAlignment(Qt.AlignVCenter)
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
         btn_rev = QPushButton("↺")
@@ -936,7 +937,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             container = QWidget()
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(6)
+            row.setSpacing(config.S(6))
+            row.setAlignment(Qt.AlignVCenter)
             
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row.addWidget(widget)
@@ -1205,7 +1207,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             container = QWidget()
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(6)
+            row.setSpacing(config.S(6))
+            row.setAlignment(Qt.AlignVCenter)
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row.addWidget(widget)
             

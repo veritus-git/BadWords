@@ -131,6 +131,8 @@ exec "$PY" "$MAIN_PY" "$@"
     <string>com.veritus.badwords</string>
     <key>CFBundleName</key>
     <string>BadWords</string>
+    <key>CFBundleDisplayName</key>
+    <string>BadWords</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -139,6 +141,8 @@ exec "$PY" "$MAIN_PY" "$@"
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
 </dict>
 </plist>"#;
             std::fs::write(&plist_path, plist_content)?;

@@ -132,6 +132,7 @@ def build_welcome_view(win) -> QWidget:
     _hbox_tl0 = QHBoxLayout()
     _hbox_tl0.setContentsMargins(0, 0, 0, 0)
     _hbox_tl0.setSpacing(config.S(4))
+    _hbox_tl0.setAlignment(Qt.AlignVCenter)
     _hbox_tl0.addWidget(win.combo_tl_0, 1)
     _btn_ref_tl0 = QPushButton("↺")
     _btn_ref_tl0.setFixedSize(config.S(30), config.S(30))
@@ -139,7 +140,7 @@ def build_welcome_view(win) -> QWidget:
     _btn_ref_tl0.setToolTip(win.txt("tt_refresh_timelines"))
     _btn_ref_tl0.setStyleSheet(f"""
         QPushButton {{ background: transparent; border: 1px solid #444; 
-        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(11)}pt; }} 
+        border-radius: {config.S(3)}px; color: #777; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(11)}pt; padding: 0px; text-align: center; }} 
         QPushButton:hover {{ color: #ccc; border-color: #666; }}
     """)
     _btn_ref_tl0.clicked.connect(win._populate_timeline_track_combos)
@@ -448,6 +449,7 @@ def build_welcome_view(win) -> QWidget:
     _hbox_tl1 = QHBoxLayout()
     _hbox_tl1.setContentsMargins(0, 0, 0, 0)
     _hbox_tl1.setSpacing(config.S(4))
+    _hbox_tl1.setAlignment(Qt.AlignVCenter)
     _hbox_tl1.addWidget(win.combo_tl_1, 1)
     _btn_ref_tl1 = QPushButton("↺")
     _btn_ref_tl1.setFixedSize(config.S(30), config.S(30))
@@ -455,7 +457,7 @@ def build_welcome_view(win) -> QWidget:
     _btn_ref_tl1.setToolTip(win.txt("tt_refresh_timelines"))
     _btn_ref_tl1.setStyleSheet(f"""
         QPushButton {{ background: transparent; border: 1px solid #444; 
-        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(11)}pt; }} 
+        border-radius: {config.S(3)}px; color: #777; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(11)}pt; padding: 0px; text-align: center; }} 
         QPushButton:hover {{ color: #ccc; border-color: #666; }}
     """)
     _btn_ref_tl1.clicked.connect(win._populate_timeline_track_combos)
@@ -496,6 +498,7 @@ def build_welcome_view(win) -> QWidget:
         hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(config.S(4))
+        hbox.setAlignment(Qt.AlignVCenter)
         hbox.addWidget(widget, 1)
 
         rst = QPushButton("↺")
@@ -503,7 +506,7 @@ def build_welcome_view(win) -> QWidget:
         rst.setCursor(Qt.PointingHandCursor)
         rst.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid #444; 
-            border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(10)}pt; }} 
+            border-radius: {config.S(3)}px; color: #777; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; padding: 0px; text-align: center; }} 
             QPushButton:hover {{ color: #ccc; border-color: #666; }}
         """)
         rst.clicked.connect(lambda: widget.setText(reset_val_str))
