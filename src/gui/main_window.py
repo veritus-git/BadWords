@@ -758,14 +758,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 # Base panel width (280px on standard 1920x1080 display)
                 base_w = int(win_w * (280.0 / 1920.0))
                 
-                # On 16:9 displays (~1.75 - 1.80 ratio), keep exact standard width.
+                # On 16:9 displays (~1.75 - 1.80 ratio), keep exact standard proportional width (14.58%).
                 # On non-16:9 / narrower displays (e.g. 16:10 MacBooks, 4:3, 3:2, etc.),
                 # open panel 5% larger than its current area (base_w * 1.05).
                 is_16_9 = 1.74 <= aspect_ratio <= 1.80
                 if is_16_9:
-                    target_w = max(180, min(300, base_w))
+                    target_w = max(config.S(180), base_w)
                 else:
-                    target_w = max(190, min(320, int(base_w * 1.05)))
+                    target_w = max(config.S(190), int(base_w * 1.05))
 
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
