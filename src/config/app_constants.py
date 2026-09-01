@@ -25,9 +25,16 @@ POSTHOG_HOST = "https://eu.i.posthog.com"
 # ==========================================
 # WINDOW & GUI SETTINGS
 # ==========================================
-# Base dimensions for 100% DPI (96 PPI)
-CFG_WINDOW_W_BASE = 400
-CFG_WINDOW_H_BASE = 740
+IS_MAC = platform.system() == "Darwin"
+
+# Base dimensions tailored per OS for ideal screen proportions
+CFG_WINDOW_W_BASE = 340 if IS_MAC else 400
+CFG_WINDOW_H_BASE = 620 if IS_MAC else 740
+SETTINGS_WINDOW_W = 640 if IS_MAC else 750
+SETTINGS_WINDOW_H = 490 if IS_MAC else 580
+SIDEBAR_WIDTH = 46 if IS_MAC else 54
+BTN_HEIGHT = 28 if IS_MAC else 34
+INPUT_HEIGHT = 28 if IS_MAC else 32
 
 def get_system_font_name():
     """
@@ -35,17 +42,16 @@ def get_system_font_name():
     macOS uses native 'Helvetica Neue'.
     Windows & Linux use 'Ubuntu Sans' (modern Canonical font with native Medium 500 / SemiBold 600).
     """
-    system = platform.system()
-    if system == "Darwin":  # macOS
+    if IS_MAC:
         return "Helvetica Neue"
     return "Ubuntu Sans"
 
 UI_FONT_NAME = get_system_font_name()
-BASE_FONT_PT = 12 if platform.system() == "Darwin" else 10
+BASE_FONT_PT = 10
 
 def FS(size):
-    """Dynamically scales font sizes based on OS."""
-    return size + 2 if platform.system() == "Darwin" else size
+    """Returns normalized font sizes across all desktop platforms."""
+    return size
 
 # ==========================================
 # ANALYSIS PARAMETERS

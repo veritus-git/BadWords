@@ -306,23 +306,9 @@ pub fn get_primary_monitor_center(win_w: f32, win_h: f32) -> Option<(f32, f32)> 
 
     #[cfg(target_os = "macos")]
     {
-        if let Ok(out) = std::process::Command::new("system_profiler").args(["SPDisplaysDataType"]).output() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            for line in text.lines() {
-                if line.contains("Resolution:") {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if let Some(pos) = parts.iter().position(|&p| p == "Resolution:") {
-                        if pos + 3 < parts.len() {
-                            if let (Ok(w), Ok(h)) = (parts[pos + 1].parse::<f32>(), parts[pos + 3].parse::<f32>()) {
-                                if w > 400.0 && h > 300.0 {
-                                    return Some(((w - win_w) / 2.0, (h - win_h) / 2.0));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // On macOS, winit natively and cleanly centers the window on the active display in logical points.
+        // Returning None avoids incorrect physical pixel coordinate calculations from system_profiler.
+        return None;
     }
 
     None

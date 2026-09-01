@@ -195,7 +195,10 @@ Don't like running online terminal commands? You can download the pre-compiled s
 
 **macOS:**
   1. Download `badwords-setup-macos`.
-  2. Right-click the file → select **Open** → click **Open anyway** *(or run `xattr -d com.apple.quarantine badwords-setup-macos` in Terminal)*.
+  2. Open Terminal in your download folder, remove the macOS quarantine attribute, and launch the installer:
+     ```bash
+     xattr -d com.apple.quarantine badwords-setup-macos && chmod +x badwords-setup-macos && ./badwords-setup-macos
+     ```
 
 **Linux:**
   1. Download `badwords-setup-linux`.

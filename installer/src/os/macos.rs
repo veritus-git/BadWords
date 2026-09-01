@@ -88,6 +88,16 @@ pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std:
                 let _ = std::fs::set_permissions(&launcher_path, std::fs::Permissions::from_mode(0o755));
             }
 
+            // Copy/embed application icon into Resources
+            let icon_dest = resources.join("icon.icns");
+            let icon_src = install_dir.join("assets").join("icons").join("icon_default.icns");
+            if icon_src.is_file() {
+                let _ = std::fs::copy(&icon_src, &icon_dest);
+            } else {
+                let embedded_icon = include_bytes!("../../../assets/icons/icon_default.icns");
+                let _ = std::fs::write(&icon_dest, embedded_icon);
+            }
+
             // Info.plist
             let plist_path = contents.join("Info.plist");
             let plist_content = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -96,6 +106,8 @@ pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std:
 <dict>
     <key>CFBundleExecutable</key>
     <string>BadWords</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>com.veritus.badwords</string>
     <key>CFBundleName</key>
@@ -114,11 +126,18 @@ pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std:
 
             if create_desktop {
                 let dt_link = home.join("Desktop").join("BadWords.app");
-                if !dt_link.exists() {
-                    #[cfg(unix)]
-                    let _ = std::os::unix::fs::symlink(&app_dir, &dt_link);
+                if dt_link.exists() || dt_link.is_symlink() {
+                    let _ = std::fs::remove_file(&dt_link);
+                    let _ = std::fs::remove_dir_all(&dt_link);
                 }
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&app_dir, &dt_link);
             }
+
+            // Touch bundle so LaunchServices immediately updates icon cache
+            let _ = std::process::Command::new("touch")
+                .arg(app_dir.to_string_lossy().as_ref())
+                .status();
         }
     }
 
@@ -135,9 +154,28 @@ pub fn remove_macos_app_bundle() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = dirs::home_dir() {
-            let app_dir = home.join("Applications").join("BadWords.app");
-            if app_dir.exists() {
-                let _ = std::fs::remove_dir_all(app_dir);
+            // Remove user app bundle
+            let user_app = home.join("Applications").join("BadWords.app");
+            if user_app.exists() {
+                let _ = std::fs::remove_dir_all(&user_app);
+            }
+
+            // Remove global app bundle if exists
+            let global_app = PathBuf::from("/Applications/BadWords.app");
+            if global_app.exists() {
+                let _ = std::fs::remove_dir_all(&global_app);
+            }
+
+            // Remove desktop shortcut / symlink
+            let dt_link = home.join("Desktop").join("BadWords.app");
+            if dt_link.exists() || dt_link.is_symlink() {
+                let _ = std::fs::remove_file(&dt_link);
+                let _ = std::fs::remove_dir_all(&dt_link);
+            }
+            let dt_file = home.join("Desktop").join("BadWords");
+            if dt_file.exists() || dt_file.is_symlink() {
+                let _ = std::fs::remove_file(&dt_file);
+                let _ = std::fs::remove_dir_all(&dt_file);
             }
         }
     }

@@ -333,16 +333,13 @@ def main():
         os_doc = osdoc.OSDoctor()
         osdoc.log_info("=== Starting BadWords ===")
 
-        if not os_doc.is_mac:
-            import os
-            os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-        else:
-            import os
-            os.environ["QT_SCALE_FACTOR"] = "0.80"
-            # Force Qt 6 to use the OpenGL backend instead of Metal. 
-            # Metal and CoreGraphics both suffer from fractional scaling (0.8) rendering artifacts (dots) in QWidgets.
-            os.environ["QSG_RHI_BACKEND"] = "opengl"
+        import os
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtCore import Qt
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
         if os_doc.is_win:
             try:
