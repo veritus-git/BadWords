@@ -91,13 +91,13 @@ def build_welcome_view(win) -> QWidget:
 
     lbl_sub = QLabel(win.txt("lbl_transcription_workspace"))
     lbl_sub.setAlignment(Qt.AlignCenter)
-    lbl_sub.setFixedHeight(20)
+    lbl_sub.setFixedHeight(config.S(20))
     lbl_sub.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 10pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(10)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
     )
     l_trans.addWidget(lbl_sub)
-    l_trans.addSpacing(20)
+    l_trans.addSpacing(config.S(16))
 
     win.slider_widget = QWidget()
     win.slider_widget.setStyleSheet("background: transparent;")
@@ -107,7 +107,7 @@ def build_welcome_view(win) -> QWidget:
     win.slider_layout.setAlignment(Qt.AlignTop)
     
     win.settings_container = QWidget()
-    win.settings_container.setFixedWidth(310)
+    win.settings_container.setFixedWidth(config.S(310))
     win.settings_container.setStyleSheet("background: transparent;")
     win.settings_layout = QVBoxLayout(win.settings_container)
     win.settings_layout.setContentsMargins(0, 0, 0, 0)
@@ -116,55 +116,55 @@ def build_welcome_view(win) -> QWidget:
     win.slider_layout.addWidget(win.settings_container)
 
     win.combo_tl_0 = CustomDropdown([])
-    win.combo_tl_0.setFixedHeight(30)
+    win.combo_tl_0.setFixedHeight(config.S(30))
     win.combo_tl_0.valueChanged.connect(
         lambda tl: win._on_timeline_selected(tl, win.combo_tr_0, win.combo_tl_1)
     )
     _vbox_tl0 = QVBoxLayout()
     _vbox_tl0.setContentsMargins(0, 0, 0, 0)
-    _vbox_tl0.setSpacing(3)
+    _vbox_tl0.setSpacing(config.S(3))
     _lbl_tl0 = QLabel(win.txt("lbl_timeline_selection"))
-    _lbl_tl0.setFixedHeight(16)
+    _lbl_tl0.setFixedHeight(config.S(16))
     _lbl_tl0.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 9pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     _hbox_tl0 = QHBoxLayout()
     _hbox_tl0.setContentsMargins(0, 0, 0, 0)
-    _hbox_tl0.setSpacing(4)
+    _hbox_tl0.setSpacing(config.S(4))
     _hbox_tl0.addWidget(win.combo_tl_0, 1)
     _btn_ref_tl0 = QPushButton("↺")
-    _btn_ref_tl0.setFixedSize(30, 30)
+    _btn_ref_tl0.setFixedSize(config.S(30), config.S(30))
     _btn_ref_tl0.setCursor(Qt.PointingHandCursor)
     _btn_ref_tl0.setToolTip(win.txt("tt_refresh_timelines"))
-    _btn_ref_tl0.setStyleSheet(
-        "QPushButton { background: transparent; border: 1px solid #444; "
-        "border-radius: 3px; color: #777; font-size: 11pt; } "
-        "QPushButton:hover { color: #ccc; border-color: #666; }"
-    )
+    _btn_ref_tl0.setStyleSheet(f"""
+        QPushButton {{ background: transparent; border: 1px solid #444; 
+        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(11)}pt; }} 
+        QPushButton:hover {{ color: #ccc; border-color: #666; }}
+    """)
     _btn_ref_tl0.clicked.connect(win._populate_timeline_track_combos)
     _hbox_tl0.addWidget(_btn_ref_tl0)
     _vbox_tl0.addWidget(_lbl_tl0)
     _vbox_tl0.addLayout(_hbox_tl0)
     win.settings_layout.addLayout(_vbox_tl0)
-    win.settings_layout.addSpacing(10)
+    win.settings_layout.addSpacing(config.S(10))
 
     win.combo_tr_0 = MultiSelectDropdown([])
-    win.combo_tr_0.setFixedHeight(30)
+    win.combo_tr_0.setFixedHeight(config.S(30))
     win.settings_layout.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_0))
-    win.settings_layout.addSpacing(10)
+    win.settings_layout.addSpacing(config.S(10))
 
     # Language
     lang_items = list(config.SUPPORTED_LANGUAGES.values())
     win._combo_lang = SearchableDropdown(lang_items)
-    win._combo_lang.setFixedHeight(30)
+    win._combo_lang.setFixedHeight(config.S(30))
     saved_lang = prefs.get('lang', '')
     display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
     placeholder = win.txt("lbl_choose_recording_language") if hasattr(win, 'txt') else "Choose recording language"
     win._combo_lang.setText(display_name if display_name in lang_items else placeholder)
     win._combo_lang.valueChanged.connect(lambda v: win.engine.save_preferences({"lang": v}))
     win.settings_layout.addLayout(_row(win.txt("lbl_lang"), win._combo_lang))
-    win.settings_layout.addSpacing(10)
+    win.settings_layout.addSpacing(config.S(10))
 
     # Model
     model_items = [
@@ -177,7 +177,7 @@ def build_welcome_view(win) -> QWidget:
     ]
     win._combo_model = CustomDropdown(model_items)
     win._combo_model.max_visible_items = 6
-    win._combo_model.setFixedHeight(30)
+    win._combo_model.setFixedHeight(config.S(30))
     
     saved_model = prefs.get("model", "")
     if saved_model in model_items:
@@ -192,12 +192,12 @@ def build_welcome_view(win) -> QWidget:
     info_model = QLabel()
     info_icon_path = get_layout_icon_path("information.png")
     if os.path.exists(info_icon_path):
-        info_model.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        info_model.setPixmap(QPixmap(info_icon_path).scaled(config.S(18), config.S(18), Qt.KeepAspectRatio, Qt.SmoothTransformation))
     else:
         info_model.setText("🛈")
-        info_model.setStyleSheet("color: #888888; font-size: 11pt;")
+        info_model.setStyleSheet(f"color: #888888; font-size: {config.FS(11)}pt;")
         
-    info_model.custom_tooltip_text = f"<div style='max-width: 320px; white-space: pre-wrap;'>{win.txt('tt_model_size_info')}</div>"
+    info_model.custom_tooltip_text = f"<div style='max-width: {config.S(320)}px; white-space: pre-wrap;'>{win.txt('tt_model_size_info')}</div>"
     info_model.setCursor(Qt.WhatsThisCursor)
     
     def instant_tooltip_model(event):
@@ -209,11 +209,11 @@ def build_welcome_view(win) -> QWidget:
     
     row_model_lbl = QHBoxLayout()
     row_model_lbl.setContentsMargins(0, 0, 0, 0)
-    row_model_lbl.setSpacing(5)
+    row_model_lbl.setSpacing(config.S(5))
     lbl_model = QLabel(win.txt("lbl_model"))
-    lbl_model.setFixedHeight(16)
+    lbl_model.setFixedHeight(config.S(16))
     lbl_model.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 9pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     row_model_lbl.addWidget(lbl_model)
@@ -222,12 +222,12 @@ def build_welcome_view(win) -> QWidget:
     
     vbox_model = QVBoxLayout()
     vbox_model.setContentsMargins(0, 0, 0, 0)
-    vbox_model.setSpacing(3)
+    vbox_model.setSpacing(config.S(3))
     vbox_model.addLayout(row_model_lbl)
     vbox_model.addWidget(win._combo_model)
     
     win.settings_layout.addLayout(vbox_model)
-    win.settings_layout.addSpacing(15)
+    win.settings_layout.addSpacing(config.S(15))
 
     # More Accurate Mode
     win.tgl_more_accurate = ToggleSwitch()
@@ -236,16 +236,16 @@ def build_welcome_view(win) -> QWidget:
     win.tgl_more_accurate.toggled.connect(win._on_more_accurate_toggled)
     
     lbl_acc = QLabel(win.txt("lbl_more_accurate"))
-    lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 10pt;")
+    lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt;")
     
     info_acc = QLabel()
     if os.path.exists(info_icon_path):
-        info_acc.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        info_acc.setPixmap(QPixmap(info_icon_path).scaled(config.S(18), config.S(18), Qt.KeepAspectRatio, Qt.SmoothTransformation))
     else:
         info_acc.setText("🛈")
-        info_acc.setStyleSheet("color: #888888; font-size: 11pt;")
+        info_acc.setStyleSheet(f"color: #888888; font-size: {config.FS(11)}pt;")
     tt_acc_text = win.txt("tt_more_accurate")
-    info_acc.custom_tooltip_text = f"<div style='max-width: 350px; white-space: pre-wrap;'>{tt_acc_text}</div>"
+    info_acc.custom_tooltip_text = f"<div style='max-width: {config.S(350)}px; white-space: pre-wrap;'>{tt_acc_text}</div>"
     info_acc.setCursor(Qt.WhatsThisCursor)
     
     def instant_tooltip_acc(event):
@@ -259,59 +259,60 @@ def build_welcome_view(win) -> QWidget:
     row_acc.addWidget(lbl_acc)
     row_acc.addStretch()
     row_acc.addWidget(info_acc)
-    row_acc.addSpacing(6)
+    row_acc.addSpacing(config.S(6))
     row_acc.addWidget(win.tgl_more_accurate)
     
     win.settings_layout.addLayout(row_acc)
-    win.settings_layout.addSpacing(24)
+    win.settings_layout.addSpacing(config.S(24))
 
     # Script Container
     win.script_container = QWidget()
-    win.script_container.setFixedWidth(350 if is_more_accurate else 0)
+    win.script_container.setFixedWidth(config.S(350) if is_more_accurate else 0)
     win.script_container.setStyleSheet("background: transparent;")
     
     win.script_container_layout = QHBoxLayout(win.script_container)
-    win.script_container_layout.setContentsMargins(15, 0, 15, 0)
+    win.script_container_layout.setContentsMargins(config.S(15), 0, config.S(15), 0)
     win.script_container_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
     
     win.script_content_widget = QWidget()
-    win.script_content_widget.setFixedWidth(320)
+    win.script_content_widget.setFixedWidth(config.S(320))
     win.script_layout = QVBoxLayout(win.script_content_widget)
     win.script_layout.setContentsMargins(0, 0, 0, 0)
     win.script_layout.setSpacing(0)
     win.script_layout.setAlignment(Qt.AlignTop)
     
     _lbl_script = QLabel(win.txt("lbl_script"))
-    _lbl_script.setFixedHeight(16)
+    _lbl_script.setFixedHeight(config.S(16))
     _lbl_script.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 9pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     win.script_layout.addWidget(_lbl_script)
-    win.script_layout.addSpacing(3)
+    win.script_layout.addSpacing(config.S(3))
     
     win.welcome_script_edit = QTextEdit()
-    win.welcome_script_edit.setFixedHeight(247)
+    win.welcome_script_edit.setFixedHeight(config.S(247))
     win.welcome_script_edit.setAcceptRichText(False)
-    win.welcome_script_edit.setStyleSheet(f'''
+    win.welcome_script_edit.setStyleSheet(f"""
         QTextEdit {{
             background-color: #1e1e1e; color: #d4d4d4; 
-            border: 1px solid #3a3a3a; border-radius: 3px; 
-            padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+            border: 1px solid #3a3a3a; border-radius: {config.S(3)}px; 
+            padding: {config.S(4)}px; outline: none; font-family: '{config.UI_FONT_NAME}';
+            font-size: {config.FS(9.5)}pt;
         }}
         QTextEdit:focus {{ border: 1px solid #1a7a3e; }}
-    ''')
+    """)
     win.script_layout.addWidget(win.welcome_script_edit)
     
     win.btn_import_welcome_script = QPushButton(win.txt("btn_import_script"))
     win.btn_import_welcome_script.setObjectName("btn_ghost")
     win.btn_import_welcome_script.setCursor(Qt.PointingHandCursor)
-    win.btn_import_welcome_script.setFixedHeight(30)
+    win.btn_import_welcome_script.setFixedHeight(config.S(30))
     win.btn_import_welcome_script.setStyleSheet(f"""
         QPushButton#btn_ghost {{
             background-color: #1e1e1e; color: {config.FG_COLOR};
-            font-family: {config.UI_FONT_NAME}; font-size: 10pt;
-            border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(10)}pt;
+            border: 1px solid #3a3a3a; border-radius: {config.S(3)}px; padding: 0 {config.S(12)}px;
         }}
         QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
         QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
@@ -338,12 +339,12 @@ def build_welcome_view(win) -> QWidget:
     btn_import = QPushButton(win.txt("btn_import_project"))
     btn_import.setObjectName("btn_ghost")
     btn_import.setCursor(Qt.PointingHandCursor)
-    btn_import.setFixedHeight(30)
+    btn_import.setFixedHeight(config.S(30))
     btn_import.setStyleSheet(f"""
         QPushButton#btn_ghost {{
             background-color: #1e1e1e; color: {config.FG_COLOR};
-            font-family: {config.UI_FONT_NAME}; font-size: 10pt;
-            border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 12px;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(10)}pt;
+            border: 1px solid #3a3a3a; border-radius: {config.S(3)}px; padding: 0 {config.S(12)}px;
         }}
         QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
         QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
@@ -353,26 +354,26 @@ def build_welcome_view(win) -> QWidget:
 
     btn_analyze = QPushButton(win.txt("btn_analyze"))
     btn_analyze.setObjectName("btn_primary")
-    btn_analyze.setIcon(get_play_icon(12, "#ffffff", 1.5))
-    btn_analyze.setIconSize(QSize(12, 12))
+    btn_analyze.setIcon(get_play_icon(config.S(12), "#ffffff", 1.5))
+    btn_analyze.setIconSize(QSize(config.S(12), config.S(12)))
     btn_analyze.setCursor(Qt.PointingHandCursor)
-    btn_analyze.setFixedHeight(30)
+    btn_analyze.setFixedHeight(config.S(30))
     btn_analyze.setStyleSheet(f"""
         QPushButton#btn_primary {{
             background-color: {config.BTN_BG}; color: #ffffff;
-            font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
-            border: none; border-radius: 3px; padding: 0 16px;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(10)}pt; font-weight: bold;
+            border: none; border-radius: {config.S(3)}px; padding: 0 {config.S(16)}px;
         }}
         QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
         QPushButton#btn_primary:pressed {{ background-color: #176e38; }}
     """)
     btn_analyze.clicked.connect(win._on_start_analysis)
-    btn_row_t.addSpacing(8)
+    btn_row_t.addSpacing(config.S(8))
     btn_row_t.addWidget(btn_analyze)
     
     win.btn_import_wrapper = QWidget()
     wrapper_l = QHBoxLayout(win.btn_import_wrapper)
-    wrapper_l.setContentsMargins(8, 0, 0, 0)
+    wrapper_l.setContentsMargins(config.S(8), 0, 0, 0)
     wrapper_l.setSpacing(0)
     wrapper_l.addWidget(win.btn_import_welcome_script)
     btn_row_t.addWidget(win.btn_import_wrapper)
@@ -386,13 +387,13 @@ def build_welcome_view(win) -> QWidget:
     btn_row_t_centered.addStretch()
     
     l_trans.addLayout(btn_row_t_centered)
-    l_trans.addSpacing(14)
+    l_trans.addSpacing(config.S(14))
 
     btn_switch_fast = QPushButton(win.txt("btn_standalone_silence_detection"))
     btn_switch_fast.setCursor(Qt.PointingHandCursor)
     btn_switch_fast.setStyleSheet(
         f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-        " font-size: 9pt; text-decoration: underline; border: none; padding: 0;"
+        f" font-size: {config.FS(9)}pt; text-decoration: underline; border: none; padding: 0;"
     )
     btn_switch_fast.clicked.connect(lambda: win.welcome_stack.setCurrentIndex(1))
     l_trans.addWidget(btn_switch_fast, 0, Qt.AlignCenter)
@@ -410,7 +411,7 @@ def build_welcome_view(win) -> QWidget:
     p_fast_layout.setSpacing(0)
     
     p_fast = QWidget()
-    p_fast.setFixedWidth(310)
+    p_fast.setFixedWidth(config.S(310))
     p_fast.setStyleSheet("background: transparent;")
     l_fast = QVBoxLayout(p_fast)
     l_fast.setContentsMargins(0, 0, 0, 0)
@@ -423,86 +424,88 @@ def build_welcome_view(win) -> QWidget:
 
     lbl_fs_title = QLabel(win.txt("lbl_standalone_silence_workspace"))
     lbl_fs_title.setAlignment(Qt.AlignCenter)
-    lbl_fs_title.setFixedHeight(20)
+    lbl_fs_title.setFixedHeight(config.S(20))
     lbl_fs_title.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 10pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(10)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
     )
     l_fast.addWidget(lbl_fs_title)
-    l_fast.addSpacing(20)
+    l_fast.addSpacing(config.S(16))
 
     win.combo_tl_1 = CustomDropdown([])
-    win.combo_tl_1.setFixedHeight(30)
+    win.combo_tl_1.setFixedHeight(config.S(30))
     win.combo_tl_1.valueChanged.connect(
         lambda tl: win._on_timeline_selected(tl, win.combo_tr_1, win.combo_tl_0)
     )
     _vbox_tl1 = QVBoxLayout()
     _vbox_tl1.setContentsMargins(0, 0, 0, 0)
-    _vbox_tl1.setSpacing(3)
+    _vbox_tl1.setSpacing(config.S(3))
     _lbl_tl1 = QLabel(win.txt("lbl_timeline_selection"))
     _lbl_tl1.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 9pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
     )
     _hbox_tl1 = QHBoxLayout()
     _hbox_tl1.setContentsMargins(0, 0, 0, 0)
-    _hbox_tl1.setSpacing(4)
+    _hbox_tl1.setSpacing(config.S(4))
     _hbox_tl1.addWidget(win.combo_tl_1, 1)
     _btn_ref_tl1 = QPushButton("↺")
-    _btn_ref_tl1.setFixedSize(30, 30)
+    _btn_ref_tl1.setFixedSize(config.S(30), config.S(30))
     _btn_ref_tl1.setCursor(Qt.PointingHandCursor)
     _btn_ref_tl1.setToolTip(win.txt("tt_refresh_timelines"))
-    _btn_ref_tl1.setStyleSheet(
-        "QPushButton { background: transparent; border: 1px solid #444; "
-        "border-radius: 3px; color: #777; font-size: 11pt; } "
-        "QPushButton:hover { color: #ccc; border-color: #666; }"
-    )
+    _btn_ref_tl1.setStyleSheet(f"""
+        QPushButton {{ background: transparent; border: 1px solid #444; 
+        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(11)}pt; }} 
+        QPushButton:hover {{ color: #ccc; border-color: #666; }}
+    """)
     _btn_ref_tl1.clicked.connect(win._populate_timeline_track_combos)
     _hbox_tl1.addWidget(_btn_ref_tl1)
     _vbox_tl1.addWidget(_lbl_tl1)
     _vbox_tl1.addLayout(_hbox_tl1)
     l_fast.addLayout(_vbox_tl1)
-    l_fast.addSpacing(10)
+    l_fast.addSpacing(config.S(10))
 
     win.combo_tr_1 = MultiSelectDropdown([])
-    win.combo_tr_1.setFixedHeight(30)
+    win.combo_tr_1.setFixedHeight(config.S(30))
     l_fast.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_1))
-    l_fast.addSpacing(10)
+    l_fast.addSpacing(config.S(10))
 
-    input_style = '''
-        QLineEdit {
+    input_style = f"""
+        QLineEdit {{
             background-color: #1e1e1e; color: #d4d4d4; 
-            border: 1px solid #3a3a3a; border-radius: 3px; 
-            padding: 4px 8px;
+            border: 1px solid #3a3a3a; border-radius: {config.S(3)}px; 
+            padding: {config.S(4)}px {config.S(8)}px;
             outline: none;
-        }
-        QLineEdit:focus { border: 1px solid #1a7a3e; outline: none; }
-    '''
+            font-family: '{config.UI_FONT_NAME}';
+            font-size: {config.FS(9.5)}pt;
+        }}
+        QLineEdit:focus {{ border: 1px solid #1a7a3e; outline: none; }}
+    """
 
     def _row_rst(label_text, widget, reset_val_str):
         vbox = QVBoxLayout()
         vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(3)
+        vbox.setSpacing(config.S(3))
         lbl = QLabel(label_text)
         lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
         )
         vbox.addWidget(lbl)
 
         hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
-        hbox.setSpacing(4)
+        hbox.setSpacing(config.S(4))
         hbox.addWidget(widget, 1)
 
         rst = QPushButton("↺")
-        rst.setFixedSize(22, 22)
+        rst.setFixedSize(config.S(22), config.S(22))
         rst.setCursor(Qt.PointingHandCursor)
-        rst.setStyleSheet(
-            "QPushButton { background: transparent; border: 1px solid #444; "
-            "border-radius: 3px; color: #777; font-size: 10pt; } "
-            "QPushButton:hover { color: #ccc; border-color: #666; }"
-        )
+        rst.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid #444; 
+            border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(10)}pt; }} 
+            QPushButton:hover {{ color: #ccc; border-color: #666; }}
+        """)
         rst.clicked.connect(lambda: widget.setText(reset_val_str))
         rst.setToolTip(win.txt("tt_reset_to_default"))
         hbox.addWidget(rst)
@@ -512,56 +515,56 @@ def build_welcome_view(win) -> QWidget:
     win.input_fs_thresh = QLineEdit()
     win.input_fs_thresh.setText(str(prefs.get('silence_threshold_db', prefs.get('ui_spin_thresh', -42.0))))
     win.input_fs_thresh.setStyleSheet(input_style)
-    win.input_fs_thresh.setFixedHeight(30)
+    win.input_fs_thresh.setFixedHeight(config.S(30))
     l_fast.addLayout(_row_rst(win.txt("lbl_silence_threshold_db"), win.input_fs_thresh, "-42.0"))
-    l_fast.addSpacing(10)
+    l_fast.addSpacing(config.S(10))
 
     win.input_fs_pad = QLineEdit()
     win.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.05)))
     win.input_fs_pad.setStyleSheet(input_style)
-    win.input_fs_pad.setFixedHeight(30)
+    win.input_fs_pad.setFixedHeight(config.S(30))
     l_fast.addLayout(_row_rst(win.txt("lbl_padding_s"), win.input_fs_pad, "0.05"))
-    l_fast.addSpacing(10)
+    l_fast.addSpacing(config.S(10))
 
     win.input_fs_min_dur = QLineEdit()
     win.input_fs_min_dur.setText(str(prefs.get('silence_min_dur', 0.2)))
     win.input_fs_min_dur.setStyleSheet(input_style)
-    win.input_fs_min_dur.setFixedHeight(30)
+    win.input_fs_min_dur.setFixedHeight(config.S(30))
     win.input_fs_min_dur.setToolTip(
         "Minimum gap duration (s) to classify as silence. "
         "Lower = more gaps detected. Shared with post-transcript mode."
     )
     l_fast.addLayout(_row_rst(win.txt("lbl_min_silence_dur"), win.input_fs_min_dur, "0.2"))
-    l_fast.addSpacing(16)
+    l_fast.addSpacing(config.S(16))
 
     # MODE TOGGLES
     row_fs_cut = QHBoxLayout()
     lbl_fs_cut = QLabel(win.txt("lbl_cut_silence_directly"))
-    lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
+    lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; background: transparent;")
     row_fs_cut.addWidget(lbl_fs_cut)
     row_fs_cut.addStretch()
     info_fs_cut = win._create_info_icon("tt_cut_silence_directly")
     row_fs_cut.addWidget(info_fs_cut)
-    row_fs_cut.addSpacing(6)
+    row_fs_cut.addSpacing(config.S(6))
     win.tgl_fs_cut = ToggleSwitch()
     win.tgl_fs_cut.setChecked(prefs.get('fs_cut_mode', True), animated=False)
     row_fs_cut.addWidget(win.tgl_fs_cut)
     l_fast.addLayout(row_fs_cut)
-    l_fast.addSpacing(10)
+    l_fast.addSpacing(config.S(10))
 
     row_fs_mark = QHBoxLayout()
     lbl_fs_mark = QLabel(win.txt("lbl_mark_silence_with_color"))
-    lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: 10pt; background: transparent;")
+    lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; background: transparent;")
     row_fs_mark.addWidget(lbl_fs_mark)
     row_fs_mark.addStretch()
     info_fs_mark = win._create_info_icon("tt_mark_silence_with_color")
     row_fs_mark.addWidget(info_fs_mark)
-    row_fs_mark.addSpacing(6)
+    row_fs_mark.addSpacing(config.S(6))
     win.tgl_fs_mark = ToggleSwitch()
     win.tgl_fs_mark.setChecked(prefs.get('fs_mark_mode', False), animated=False)
     row_fs_mark.addWidget(win.tgl_fs_mark)
     l_fast.addLayout(row_fs_mark)
-    l_fast.addSpacing(24)
+    l_fast.addSpacing(config.S(24))
 
     win.tgl_fs_cut.toggled.connect(lambda c: win.tgl_fs_mark.setChecked(False) if c else None)
     win.tgl_fs_mark.toggled.connect(lambda c: win.tgl_fs_cut.setChecked(False) if c else None)
@@ -575,7 +578,7 @@ def build_welcome_view(win) -> QWidget:
     btn_back.setCursor(Qt.PointingHandCursor)
     btn_back.setStyleSheet(
         f"background: transparent; color: #888888; font-family: '{config.UI_FONT_NAME}';"
-        " font-size: 9pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
+        f" font-size: {config.FS(9)}pt; text-decoration: underline; border: none; padding: 0; text-align: left;"
     )
     btn_back.clicked.connect(lambda: win.welcome_stack.setCurrentIndex(0))
     btn_row_fs.addWidget(btn_back)
@@ -583,16 +586,16 @@ def build_welcome_view(win) -> QWidget:
 
     win.btn_run_fs = QPushButton(win.txt("btn_run_standalone_silence"))
     win.btn_run_fs.setCursor(Qt.PointingHandCursor)
-    win.btn_run_fs.setFixedHeight(30)
-    win.btn_run_fs.setStyleSheet(f'''
+    win.btn_run_fs.setFixedHeight(config.S(30))
+    win.btn_run_fs.setStyleSheet(f"""
         QPushButton {{
             background-color: {config.BTN_BG}; color: #ffffff;
-            font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
-            border: none; border-radius: 3px; padding: 0 18px;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(10)}pt; font-weight: bold;
+            border: none; border-radius: {config.S(3)}px; padding: 0 {config.S(18)}px;
         }}
         QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
         QPushButton:pressed {{ background-color: #176e38; }}
-    ''')
+    """)
     win.btn_run_fs.clicked.connect(win._on_fast_silence)
     btn_row_fs.addWidget(win.btn_run_fs)
     

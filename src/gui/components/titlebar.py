@@ -68,10 +68,11 @@ class AnimatedTitleButton(QPushButton):
         self._update_style()
 
     def _update_style(self):
+        s_sz = config.S(32)
         self.setStyleSheet(f"""
             QPushButton#TitleBarBtn {{
                 background-color: {self._cur}; border: none; border-radius: 0px;
-                min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px;
+                min-width: {s_sz}px; max-width: {s_sz}px; min-height: {s_sz}px; max-height: {s_sz}px;
                 margin: 0px; padding: 0px;
             }}
             QPushButton#TitleBarBtn:pressed {{ background-color: {self._press}; }}
@@ -116,10 +117,10 @@ class CustomTitleBar(QWidget):
             background: transparent;
             color: {fg};
             font-family: "{font}";
-            font-size: 9pt;
+            font-size: {font_size}pt;
             border: none;
-            padding: 2px 8px;
-            border-radius: 3px;
+            padding: {pad_y}px {pad_x}px;
+            border-radius: {radius}px;
         }}
         QPushButton:hover {{ background: #2b2b2b; color: #ffffff; }}
         QPushButton:pressed {{ background: #333333; color: #ffffff; }}
@@ -137,7 +138,7 @@ class CustomTitleBar(QWidget):
         self._lang = lang
         self._transcription_active = False  # True after first transcription
         self.setObjectName("CustomTitleBar")
-        self.setFixedHeight(32)
+        self.setFixedHeight(config.S(32))
         self.setAutoFillBackground(True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
@@ -145,18 +146,18 @@ class CustomTitleBar(QWidget):
         )
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 0, 0, 0)
+        lay.setContentsMargins(config.S(12), 0, 0, 0)
         lay.setSpacing(0)
 
         # Small app-icon
         icon_lbl = QLabel()
-        icon_pix = _app_icon().pixmap(QSize(14, 14))
+        icon_pix = _app_icon().pixmap(QSize(config.S(14), config.S(14)))
         if not icon_pix.isNull():
             icon_lbl.setPixmap(icon_pix)
-        icon_lbl.setFixedSize(18, 32)
+        icon_lbl.setFixedSize(config.S(18), config.S(32))
         icon_lbl.setStyleSheet("background: transparent;")
         lay.addWidget(icon_lbl)
-        lay.addSpacing(6)
+        lay.addSpacing(config.S(6))
 
         # ── DEFAULT title label (shown before transcription) ──
         self._lbl_title = QLabel(config.APP_NAME)
@@ -165,7 +166,7 @@ class CustomTitleBar(QWidget):
         self._lbl_title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._lbl_title.setStyleSheet(
             f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
-            f"font-size: 9pt; background: transparent;"
+            f"font-size: {config.FS(9)}pt; background: transparent;"
         )
         lay.addWidget(self._lbl_title)
 
@@ -174,9 +175,16 @@ class CustomTitleBar(QWidget):
         self._menu_container.setStyleSheet("background: transparent;")
         menu_lay = QHBoxLayout(self._menu_container)
         menu_lay.setContentsMargins(0, 0, 0, 0)
-        menu_lay.setSpacing(2)
+        menu_lay.setSpacing(config.S(2))
 
-        _btn_qss = self._MENU_BTN_QSS.format(fg="#888888", font=config.UI_FONT_NAME)
+        _btn_qss = self._MENU_BTN_QSS.format(
+            fg="#888888",
+            font=config.UI_FONT_NAME,
+            font_size=config.FS(9),
+            pad_y=config.S(2),
+            pad_x=config.S(8),
+            radius=config.S(3)
+        )
 
         def _t(key):
             return config.get_trans(key, lang)
@@ -212,7 +220,7 @@ class CustomTitleBar(QWidget):
         self._lbl_source_info.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._lbl_source_info.setStyleSheet(
             f"color: #777777; font-family: \"{config.UI_FONT_NAME}\"; "
-            f"font-size: 9pt; background: transparent;"
+            f"font-size: {config.FS(9)}pt; background: transparent;"
         )
         self._lbl_source_info.hide()
         self._full_source_info = ""
@@ -221,8 +229,8 @@ class CustomTitleBar(QWidget):
         # Chapter Dropdown — kept for backwards compat but now internal to Edit menu
         _orig_label = config.get_trans("titlebar_original", lang)
         self.chapter_dropdown = TitleDropdown([_orig_label], parent=self)
-        self.chapter_dropdown.setFixedHeight(24)
-        self.chapter_dropdown.setMinimumWidth(100)
+        self.chapter_dropdown.setFixedHeight(config.S(24))
+        self.chapter_dropdown.setMinimumWidth(config.S(100))
         self.chapter_dropdown.hide()  # Always hidden — Edit menu now owns this
         
         from ..utils import get_layout_icon_path
@@ -248,16 +256,16 @@ class CustomTitleBar(QWidget):
         """Generic popup for titlebar menus. items = [(label, callback), ...]"""
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet("""
-            QFrame {
+        popup.setStyleSheet(f"""
+            QFrame {{
                 background-color: #1a1a1a;
                 border: 1px solid #333333;
-                border-radius: 6px;
-                padding: 4px 0;
-            }
+                border-radius: {config.S(6)}px;
+                padding: {config.S(4)}px 0;
+            }}
         """)
         layout = QVBoxLayout(popup)
-        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setContentsMargins(0, config.S(4), 0, config.S(4))
         layout.setSpacing(0)
 
         for label, callback in items:
@@ -268,9 +276,9 @@ class CustomTitleBar(QWidget):
                     background: transparent;
                     color: #b0b0b0;
                     font-family: "{config.UI_FONT_NAME}";
-                    font-size: 9pt;
+                    font-size: {config.FS(9)}pt;
                     text-align: left;
-                    padding: 5px 14px;
+                    padding: {config.S(5)}px {config.S(14)}px;
                     border: none;
                     border-radius: 0px;
                 }}
@@ -305,14 +313,14 @@ class CustomTitleBar(QWidget):
         """Shows the edit/chapter selection popup (same as old chapter_dropdown)."""
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet("""
-            QFrame {
+        popup.setStyleSheet(f"""
+            QFrame {{
                 background-color: #1a1a1a;
                 border: 1px solid #333333;
-                border-radius: 6px;
+                border-radius: {config.S(6)}px;
                 padding: 0px;
                 margin: 0px;
-            }
+            }}
         """)
         layout = QVBoxLayout(popup)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -323,16 +331,16 @@ class CustomTitleBar(QWidget):
         list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.addItems(self.chapter_dropdown.options_list)
-        list_widget.setStyleSheet("""
-            QListWidget {
+        list_widget.setStyleSheet(f"""
+            QListWidget {{
                 border: none; padding: 0px; margin: 0px; outline: none;
-                background: transparent; color: #b0b0b0; font-size: 9pt;
-            }
-            QListWidget::item { height: 26px; padding: 0px 8px; border: none; }
-            QListWidget::item:selected { background-color: #171717; color: #1ed760; font-weight: bold; }
-            QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #222222; color: #ffffff; }
-            QListWidget::item:selected:hover { background-color: #171717; color: #1ed760; }
+                background: transparent; color: #b0b0b0; font-size: {config.FS(9)}pt;
+            }}
+            QListWidget::item {{ height: {config.S(26)}px; padding: 0px {config.S(8)}px; border: none; }}
+            QListWidget::item:selected {{ background-color: #171717; color: #1ed760; font-weight: bold; }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
+            QListWidget::item:hover {{ background-color: #222222; color: #ffffff; }}
+            QListWidget::item:selected:hover {{ background-color: #171717; color: #1ed760; }}
         """)
 
         cur = self.chapter_dropdown.currentText()
@@ -347,7 +355,7 @@ class CustomTitleBar(QWidget):
         list_widget.itemClicked.connect(_on_item)
         layout.addWidget(list_widget)
 
-        row_h = 26
+        row_h = config.S(26)
         display_count = list_widget.count()
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
@@ -355,7 +363,7 @@ class CustomTitleBar(QWidget):
 
         global_pos = self.btn_menu_edit.mapToGlobal(QPoint(0, self.btn_menu_edit.height() + 2))
         popup.move(global_pos)
-        popup.setFixedWidth(max(self.btn_menu_edit.width(), 140))
+        popup.setFixedWidth(max(self.btn_menu_edit.width(), config.S(140)))
         popup.show()
 
     # ── Activate post-transcription mode ──────────────────────────────────────
@@ -507,10 +515,7 @@ class CustomTitleBar(QWidget):
                 win.setGeometry(saved_geo)
         else:
             win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
-            if getattr(win, '_is_mac', False):
-                win.showFullScreen()
-            else:
-                win.showMaximized()
+            win.showMaximized()
 
     def mousePressEvent(self, event):
         if not getattr(self, 'movable', True):
@@ -519,6 +524,7 @@ class CustomTitleBar(QWidget):
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
             self._click_pos = event.position().toPoint()
+            self._global_click_pos = event.globalPosition().toPoint()
             event.accept()
             return
 
@@ -532,19 +538,49 @@ class CustomTitleBar(QWidget):
             super().mouseMoveEvent(event)
             return
 
+        # Threshold check: prevent accidental micro-drags
+        if hasattr(self, '_global_click_pos'):
+            dist = (event.globalPosition().toPoint() - self._global_click_pos).manhattanLength()
+            if dist < 4:
+                return
+
         win = self.window()
         self._is_dragging = False
-        
+
+        if win.isMaximized():
+            max_w = max(1, win.width())
+            click_ratio = event.position().x() / max_w
+
+            pre_geo = getattr(win, '_pre_max_geometry', None)
+            restore_w = pre_geo.width() if (pre_geo and pre_geo.isValid()) else config.S(580)
+            restore_h = pre_geo.height() if (pre_geo and pre_geo.isValid()) else config.S(670)
+
+            curr_global_pos = event.globalPosition().toPoint()
+            new_x = int(curr_global_pos.x() - click_ratio * restore_w)
+            local_y = self._click_pos.y() if hasattr(self, '_click_pos') else config.S(16)
+            new_y = int(curr_global_pos.y() - local_y)
+
+            win.showNormal()
+            win.setGeometry(new_x, new_y, restore_w, restore_h)
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+
         # Native window dragging
-        # Modern Window Managers (DWM, Mutter, KWin, Wayland) natively un-maximize 
-        # the window if startSystemMove is called while maximized, providing seamless 
-        # cursor proportional attachment and edge-snapping (Aero Snap) out of the box.
+        started = False
         if hasattr(win, 'windowHandle') and win.windowHandle():
             try:
-                win.windowHandle().startSystemMove()
+                started = win.windowHandle().startSystemMove()
             except Exception as e:
                 import osdoc
                 osdoc.log_info(f"startSystemMove error: {e}")
+
+        if not started:
+            # Fallback manual drag
+            self._is_dragging = True
+            curr_pos = event.globalPosition().toPoint()
+            local_y = self._click_pos.y() if hasattr(self, '_click_pos') else config.S(16)
+            local_x = self._click_pos.x() if hasattr(self, '_click_pos') else config.S(100)
+            win.move(curr_pos.x() - local_x, curr_pos.y() - local_y)
 
         event.accept()
 

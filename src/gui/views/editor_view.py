@@ -51,14 +51,14 @@ def build_editor_view(win) -> QWidget:
     ol_layout.setAlignment(Qt.AlignCenter)
     
     lbl = QLabel(win.txt("lbl_just_a_second"))
-    lbl.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 13pt; font-family: '{config.UI_FONT_NAME}'; background: transparent;")
+    lbl.setStyleSheet(f"color: {config.NOTE_COL}; font-size: {config.FS(13)}pt; font-family: '{config.UI_FONT_NAME}'; background: transparent;")
     lbl.setAlignment(Qt.AlignCenter)
     ol_layout.addWidget(lbl)
     
-    ol_layout.addSpacing(15)
+    ol_layout.addSpacing(config.S(15))
     
     win.sbs_loading_bar = LiquidProgressBar(win.sbs_loading_page)
-    win.sbs_loading_bar.setFixedWidth(400)
+    win.sbs_loading_bar.setFixedWidth(config.S(400))
     ol_layout.addWidget(win.sbs_loading_bar, 0, Qt.AlignCenter)
 
     win.editor_view_stack = QStackedWidget(page)

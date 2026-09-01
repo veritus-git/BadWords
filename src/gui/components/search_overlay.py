@@ -72,45 +72,47 @@ class SearchOverlayWidget(QFrame):
         
         self.setObjectName("SearchOverlay")
         self.setProperty("expanded", False)
-        self.setFixedHeight(36)
+        self.setFixedHeight(config.S(36))
         
-        self.setStyleSheet("""
-            QFrame#SearchOverlay {
+        self.setStyleSheet(f"""
+            QFrame#SearchOverlay {{
                 background-color: transparent;
                 border: none;
-            }
-            QFrame#SearchContainer {
+            }}
+            QFrame#SearchContainer {{
                 background-color: #252525;
                 border: 1px solid #3a3a3a;
-                border-radius: 6px;
-            }
-            QLineEdit, QLabel, QPushButton {
+                border-radius: {config.S(6)}px;
+            }}
+            QLineEdit, QLabel, QPushButton {{
                 background: transparent;
                 border: none;
                 color: #dddddd;
-            }
-            QLineEdit {
-                padding: 4px;
-            }
-            QLabel {
-                padding-right: 8px;
-            }
-            QPushButton {
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QLineEdit {{
+                padding: {config.S(4)}px;
+            }}
+            QLabel {{
+                padding-right: {config.S(8)}px;
+            }}
+            QPushButton {{
                 font-weight: bold;
-                padding: 4px;
-            }
-            QPushButton:hover {
+                padding: {config.S(4)}px;
+            }}
+            QPushButton:hover {{
                 color: #ffffff;
                 background-color: #333333;
-                border-radius: 4px;
-            }
-            QPushButton#BtnOpenSearch {
-                border-radius: 6px;
+                border-radius: {config.S(4)}px;
+            }}
+            QPushButton#BtnOpenSearch {{
+                border-radius: {config.S(6)}px;
                 background-color: transparent;
-            }
-            QPushButton#BtnOpenSearch:hover {
+            }}
+            QPushButton#BtnOpenSearch:hover {{
                 background-color: #333333;
-            }
+            }}
         """)
         
         self.opacity_effect = QGraphicsOpacityEffect(self)

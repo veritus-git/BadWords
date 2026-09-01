@@ -46,27 +46,28 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
 
         self.setStyleSheet(f"""
             QDialog {{ background-color: transparent; }}
-            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: 6px; }}
-            QLabel {{ color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; }}
-            QLabel#lbl_title {{ font-size: 13pt; font-weight: bold; color: #ffffff; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: {config.S(6)}px; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
+            QLabel#lbl_title {{ font-size: {config.FS(13)}pt; font-weight: bold; color: #ffffff; }}
             QLineEdit {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                padding: 5px 8px;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
+                border-radius: {config.S(3)}px;
+                padding: {config.S(5)}px {config.S(8)}px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
             }}
             QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
             QPushButton {{
                 background-color: {config.BTN_GHOST_BG};
                 color: {config.BTN_FG};
-                padding: 6px 16px;
-                border-radius: 4px;
-                min-width: 80px;
+                padding: {config.S(6)}px {config.S(16)}px;
+                border-radius: {config.S(4)}px;
+                min-width: {config.S(80)}px;
                 font-weight: bold;
-                font-family: {config.UI_FONT_NAME};
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
             }}
             QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton#btn_ok {{ background-color: {config.BTN_BG}; }}
@@ -74,13 +75,13 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
 
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
 
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(config.S(30))
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 4)
         self.inner_frame.setGraphicsEffect(shadow)
@@ -102,8 +103,8 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
 
         content = QWidget(self.inner_frame)
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(20, 20, 20, 20)
-        content_layout.setSpacing(14)
+        content_layout.setContentsMargins(config.S(20), config.S(20), config.S(20), config.S(20))
+        content_layout.setSpacing(config.S(14))
         root_layout.addWidget(content)
 
         lbl_title = QLabel(title_text, content)
@@ -113,8 +114,9 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         # Name row
         name_row = QHBoxLayout()
         name_lbl = QLabel(_txt(lang, "lbl_marker_name"), content)
-        name_lbl.setFixedWidth(100)
+        name_lbl.setFixedWidth(config.S(100))
         self._name_edit = QLineEdit(content)
+        self._name_edit.setFixedHeight(config.S(30))
         self._name_edit.setText(prefill_name)
         self._name_edit.setPlaceholderText(_txt(lang, "placeholder_marker_name"))
         name_row.addWidget(name_lbl)
@@ -124,7 +126,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         # Color row
         color_row = QHBoxLayout()
         color_lbl = QLabel(_txt(lang, "lbl_marker_color"), content)
-        color_lbl.setFixedWidth(100)
+        color_lbl.setFixedWidth(config.S(100))
         _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
         self._color_key_map: dict[str, str] = {}
         translated_options: list[str] = []
@@ -135,6 +137,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
             self._color_key_map[t] = c
             translated_options.append(t)
         self._color_combo = CustomDropdown(translated_options)
+        self._color_combo.setFixedHeight(config.S(30))
         if not (prefill_color and prefill_color in config.RESOLVE_COLORS):
             self._color_combo.setText(_txt(lang, "txt_select"))
         if prefill_color and prefill_color in config.RESOLVE_COLORS:
@@ -153,7 +156,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         btn_ok.setObjectName("btn_ok")
         btn_ok.clicked.connect(self._on_ok)
         btn_row.addWidget(btn_cancel)
-        btn_row.addSpacing(8)
+        btn_row.addSpacing(config.S(8))
         btn_row.addWidget(btn_ok)
         content_layout.addLayout(btn_row)
 

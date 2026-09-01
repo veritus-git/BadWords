@@ -396,14 +396,14 @@ class ShortcutCaptureButton(QPushButton):
             background-color: #1e1e1e;
             color: #d4d4d4;
             border: 1px solid {border};
-            border-radius: 3px;
-            padding: 0px 8px;
-            min-width: 80px;
-            min-height: 26px;
-            max-height: 26px;
+            border-radius: {radius}px;
+            padding: 0px {pad_x}px;
+            min-width: {min_w}px;
+            min-height: {h}px;
+            max-height: {h}px;
             text-align: center;
             font-family: monospace;
-            font-size: 10pt;
+            font-size: {font_size}pt;
         }}
         QPushButton:hover {{
             background-color: #252525;
@@ -432,7 +432,14 @@ class ShortcutCaptureButton(QPushButton):
             border = "#23a559"
         else:
             border = "#3a3a3a"
-        self.setStyleSheet(self._BASE_SS.format(border=border))
+        self.setStyleSheet(self._BASE_SS.format(
+            border=border,
+            radius=config.S(3),
+            pad_x=config.S(8),
+            min_w=config.S(80),
+            h=config.S(26),
+            font_size=config.FS(9.5)
+        ))
 
     def _update_label(self):
         if self.display_only:
@@ -734,20 +741,20 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: 18pt; 
+                    font-size: {config.FS(16)}pt; 
                     background-color: #333333; 
-                    border-radius: 4px;
+                    border-radius: {config.S(4)}px;
                     border: none;
-                    {border_css}: 2px solid {config.BTN_BG};
+                    {border_css}: {config.S(2)}px solid {config.BTN_BG};
                 }}
             """)
         else:
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: 18pt; 
+                    font-size: {config.FS(16)}pt; 
                     background: transparent; 
-                    border-radius: 4px;
+                    border-radius: {config.S(4)}px;
                     border: none;
                 }}
                 QPushButton:hover {{
@@ -936,17 +943,18 @@ class CustomDropdown(QPushButton):
 class TitleDropdown(CustomDropdown):
     def __init__(self, options_list, parent=None):
         super().__init__(options_list, parent)
-        self.setStyleSheet("""
-            QPushButton {
+        self.setStyleSheet(f"""
+            QPushButton {{
                 background: transparent;
                 color: #aaaaaa;
                 text-align: center;
                 border: none;
-                font-size: 9pt;
-                padding: 2px 6px;
-            }
-            QPushButton:hover { color: #ffffff; }
-            QPushButton:pressed { background: transparent; color: #ffffff; }
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9)}pt;
+                padding: {config.S(2)}px {config.S(6)}px;
+            }}
+            QPushButton:hover {{ color: #ffffff; }}
+            QPushButton:pressed {{ background: transparent; color: #ffffff; }}
         """)
 
     def setText(self, text):
@@ -962,14 +970,14 @@ class TitleDropdown(CustomDropdown):
     def mousePressEvent(self, event):
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet("""
-            QFrame {
+        popup.setStyleSheet(f"""
+            QFrame {{
                 background-color: #1a1a1a;
                 border: 1px solid #333333;
-                border-radius: 6px;
+                border-radius: {config.S(6)}px;
                 padding: 0px;
                 margin: 0px;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(popup)
@@ -981,38 +989,38 @@ class TitleDropdown(CustomDropdown):
         list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.addItems(self.options_list)
-        list_widget.setStyleSheet("""
-            QListWidget {
+        list_widget.setStyleSheet(f"""
+            QListWidget {{
                 border: none;
                 padding: 0px;
                 margin: 0px;
                 outline: none;
                 background: transparent;
                 color: #b0b0b0;
-                font-size: 9pt;
-            }
-            QListWidget::item {
-                height: 26px;
-                padding: 0px 8px;
+                font-size: {config.FS(9)}pt;
+            }}
+            QListWidget::item {{
+                height: {config.S(26)}px;
+                padding: 0px {config.S(8)}px;
                 border: none;
-            }
-            QListWidget::item:selected {
+            }}
+            QListWidget::item:selected {{
                 background-color: #171717;
                 color: #1ed760;
                 font-weight: bold;
-            }
-            QListWidget::item:focus {
+            }}
+            QListWidget::item:focus {{
                 border: none;
                 outline: none;
-            }
-            QListWidget::item:hover {
+            }}
+            QListWidget::item:hover {{
                 background-color: #222222;
                 color: #ffffff;
-            }
-            QListWidget::item:selected:hover {
+            }}
+            QListWidget::item:selected:hover {{
                 background-color: #171717;
                 color: #1ed760;
-            }
+            }}
         """)
         
         cur = self.currentText()
@@ -1024,7 +1032,7 @@ class TitleDropdown(CustomDropdown):
         list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
         layout.addWidget(list_widget)
         
-        row_h = 26
+        row_h = config.S(26)
         display_count = list_widget.count()
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
@@ -1044,19 +1052,20 @@ class SpeedDropdown(QPushButton):
         self.options_list = list(options_list) if options_list else []
         self._current_text = ""
         self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("""
-            QPushButton {
+        self.setStyleSheet(f"""
+            QPushButton {{
                 background: transparent;
                 border: none;
                 color: #b0b0b0;
                 font-weight: 600;
-                font-size: 12px;
-                padding: 4px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9)}pt;
+                padding: {config.S(4)}px;
                 text-align: center;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 color: #1ed760;
-            }
+            }}
         """)
 
     def addItems(self, items):
@@ -1078,14 +1087,14 @@ class SpeedDropdown(QPushButton):
             return
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet("""
-            QFrame {
+        popup.setStyleSheet(f"""
+            QFrame {{
                 background-color: #1a1a1a;
                 border: 1px solid #333333;
-                border-radius: 6px;
+                border-radius: {config.S(6)}px;
                 padding: 0px;
                 margin: 0px;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(popup)
@@ -1097,39 +1106,39 @@ class SpeedDropdown(QPushButton):
         list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.addItems(self.options_list)
-        list_widget.setStyleSheet("""
-            QListWidget {
+        list_widget.setStyleSheet(f"""
+            QListWidget {{
                 border: none;
                 padding: 0px;
                 margin: 0px;
                 outline: none;
                 background: transparent;
                 color: #b0b0b0;
-                font-size: 12px;
-            }
-            QListWidget::item {
-                height: 26px;
-                padding: 0px 8px;
+                font-size: {config.FS(9)}pt;
+            }}
+            QListWidget::item {{
+                height: {config.S(26)}px;
+                padding: 0px {config.S(8)}px;
                 border: none;
                 text-align: center;
-            }
-            QListWidget::item:selected {
+            }}
+            QListWidget::item:selected {{
                 background-color: #171717;
                 color: #1ed760;
                 font-weight: bold;
-            }
-            QListWidget::item:focus {
+            }}
+            QListWidget::item:focus {{
                 border: none;
                 outline: none;
-            }
-            QListWidget::item:hover {
+            }}
+            QListWidget::item:hover {{
                 background-color: #222222;
                 color: #ffffff;
-            }
-            QListWidget::item:selected:hover {
+            }}
+            QListWidget::item:selected:hover {{
                 background-color: #171717;
                 color: #1ed760;
-            }
+            }}
         """)
         
         cur = self.currentText()
@@ -1145,13 +1154,13 @@ class SpeedDropdown(QPushButton):
         list_widget.itemClicked.connect(_on_item_clicked)
         layout.addWidget(list_widget)
         
-        row_h = 26
+        row_h = config.S(26)
         display_count = list_widget.count()
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
         popup.setFixedHeight(list_height + 2)
         
-        popup_w = max(self.width(), 64)
+        popup_w = max(self.width(), config.S(64))
         
         global_pos = self.mapToGlobal(QPoint(0, 0))
         popup_x = global_pos.x() + (self.width() - popup_w) // 2
@@ -1171,7 +1180,9 @@ class MultiSelectDropdown(QPushButton):
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e; color: #d4d4d4; text-align: left;
-                padding: 4px 8px; border: 1px solid #3a3a3a; border-radius: 3px; min-height: 20px;
+                padding: {config.S(4)}px {config.S(8)}px; border: 1px solid #3a3a3a;
+                border-radius: {config.S(3)}px; min-height: {config.S(20)}px;
+                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -1180,7 +1191,7 @@ class MultiSelectDropdown(QPushButton):
         super().mousePressEvent(event)
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet("QFrame { background-color: #1e1e1e; border: 1px solid #444; border-radius: 3px; padding: 0px; margin: 0px; }")
+        popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
 
         layout = QVBoxLayout(popup)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1205,15 +1216,15 @@ class MultiSelectDropdown(QPushButton):
                 self.opt_text = text
                 
                 lay = QHBoxLayout(self)
-                lay.setContentsMargins(8, 0, 8, 0)
-                lay.setSpacing(8)
+                lay.setContentsMargins(config.S(8), 0, config.S(8), 0)
+                lay.setSpacing(config.S(8))
                 
                 self.tick_box = QLabel()
-                self.tick_box.setFixedSize(14, 14)
+                self.tick_box.setFixedSize(config.S(14), config.S(14))
                 self.tick_box.setAlignment(Qt.AlignCenter)
                 
                 self.lbl = QLabel(text)
-                self.lbl.setStyleSheet("border: none; outline: none; color: #d4d4d4; font-size: 10pt; background: transparent;")
+                self.lbl.setStyleSheet(f"border: none; outline: none; color: #d4d4d4; font-size: {config.FS(9.5)}pt; background: transparent;")
                 
                 lay.addWidget(self.tick_box)
                 lay.addWidget(self.lbl)
@@ -1223,10 +1234,10 @@ class MultiSelectDropdown(QPushButton):
             def update_ui(self):
                 if self.is_checked:
                     self.tick_box.setText("✔")
-                    self.tick_box.setStyleSheet("background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: 11px;")
+                    self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: {config.S(10)}px; border-radius: {config.S(2)}px;")
                 else:
                     self.tick_box.setText("")
-                    self.tick_box.setStyleSheet("background: #111; border: 1px solid #333;")
+                    self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #333; border-radius: {config.S(2)}px;")
                     
             def toggle(self):
                 self.is_checked = not self.is_checked
@@ -1236,7 +1247,7 @@ class MultiSelectDropdown(QPushButton):
         from PySide6.QtWidgets import QSizePolicy
         for opt in self.options_list:
             item = QListWidgetItem(list_widget)
-            item.setSizeHint(QSize(0, 28))
+            item.setSizeHint(QSize(0, config.S(28)))
             widget = CustomCheckItemWidget(opt, opt in self.selected_items)
             widget.setCursor(Qt.PointingHandCursor)
             list_widget.setItemWidget(item, widget)
@@ -1491,11 +1502,11 @@ class AssembleArrowButton(QPushButton):
             p.fillRect(0, 0, int(w), int(h), QColor(255, 255, 255, 25))
 
         chevron_col = QColor("#ffffff") if self.hovered else QColor("#e0e0e0")
-        pen_chevron = QPen(chevron_col, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        pen_chevron = QPen(chevron_col, float(config.S(1.8)), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         p.setPen(pen_chevron)
 
-        half_w = 4.5
-        offset_y = 2.0
+        half_w = float(config.S(4.5))
+        offset_y = float(config.S(2.0))
 
         if self.is_open:
             # Arrow pointing UP (▲)
@@ -1514,7 +1525,7 @@ class AssembleSplitButton(QFrame):
         super().__init__(parent)
         self.parent_gui = parent_gui
         self.is_open = False
-        self.setFixedHeight(35)
+        self.setFixedHeight(config.S(35))
 
         from PySide6.QtWidgets import QHBoxLayout, QPushButton, QFrame
         from PySide6.QtCore import Qt
@@ -1527,29 +1538,30 @@ class AssembleSplitButton(QFrame):
         layout.setSpacing(0)
 
         self.btn_main = QPushButton(text)
-        self.btn_main.setFixedHeight(33)
+        self.btn_main.setFixedHeight(config.S(33))
         self.btn_main.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_main.setStyleSheet("""
-            QPushButton {
+        self.btn_main.setStyleSheet(f"""
+            QPushButton {{
                 background: transparent;
                 color: #ffffff;
                 font-weight: bold;
-                font-size: 13px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
                 border: none;
-                padding-left: 14px;
-                padding-right: 10px;
+                padding-left: {config.S(14)}px;
+                padding-right: {config.S(10)}px;
                 text-align: center;
-            }
+            }}
         """)
         self.btn_main.clicked.connect(self.assembleClicked)
 
         self.sep = QFrame()
-        self.sep.setFixedWidth(1)
-        self.sep.setFixedHeight(18)
+        self.sep.setFixedWidth(config.S(1))
+        self.sep.setFixedHeight(config.S(18))
         self.sep.setStyleSheet("background-color: rgba(255, 255, 255, 0.3); border: none;")
 
         self.btn_arrow = AssembleArrowButton(self)
-        self.btn_arrow.setFixedSize(32, 33)
+        self.btn_arrow.setFixedSize(config.S(32), config.S(33))
         self.btn_arrow.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_arrow.clicked.connect(self._on_arrow_click)
 
@@ -1567,30 +1579,31 @@ class AssembleSplitButton(QFrame):
         self.update_style()
 
     def update_style(self):
+        r = config.S(4)
         if self.is_open:
-            self.setStyleSheet("""
-                QFrame#AssembleSplitButtonFrame {
+            self.setStyleSheet(f"""
+                QFrame#AssembleSplitButtonFrame {{
                     background-color: #11703c;
-                    border-top-left-radius: 4px;
-                    border-top-right-radius: 4px;
+                    border-top-left-radius: {r}px;
+                    border-top-right-radius: {r}px;
                     border-bottom-left-radius: 0px;
                     border-bottom-right-radius: 0px;
                     border: 1px solid #11703c;
                     border-bottom: none;
-                }
-                QFrame#AssembleSplitButtonFrame:hover {
+                }}
+                QFrame#AssembleSplitButtonFrame:hover {{
                     background-color: #168f4d;
-                }
+                }}
             """)
         else:
-            self.setStyleSheet("""
-                QFrame#AssembleSplitButtonFrame {
+            self.setStyleSheet(f"""
+                QFrame#AssembleSplitButtonFrame {{
                     background-color: #11703c;
-                    border-radius: 4px;
+                    border-radius: {r}px;
                     border: 1px solid #0a4d28;
-                }
-                QFrame#AssembleSplitButtonFrame:hover {
+                }}
+                QFrame#AssembleSplitButtonFrame:hover {{
                     background-color: #168f4d;
-                }
+                }}
             """)
 

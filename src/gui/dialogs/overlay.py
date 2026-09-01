@@ -86,10 +86,11 @@ class SidebarDragZone(QFrame):
         self.setAcceptDrops(True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self._drop_line_y = -1
+        import config
         self.setLayout(QVBoxLayout())
-        self.layout().setAlignment(Qt.AlignTop)
+        self.layout().setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         self.layout().setContentsMargins(0, 0, 0, 0)
-        self.layout().setSpacing(6)
+        self.layout().setSpacing(config.S(6))
         
     def paintEvent(self, event):
         super().paintEvent(event)

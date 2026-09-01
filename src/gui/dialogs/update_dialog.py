@@ -172,25 +172,26 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #111;
-                border-radius: 8px;
+                border-radius: {config.S(8)}px;
             }}
-            QLabel {{ color: {config.FG_COLOR}; background: transparent; }}
-            QLabel#lbl_title  {{ font-size: 15pt; font-weight: bold; }}
-            QLabel#lbl_sub    {{ font-size: 10pt; color: #999; }}
-            QLabel#lbl_status {{ font-size: 10pt; color: #888; font-style: italic; }}
+            QLabel {{ color: {config.FG_COLOR}; background: transparent; font-family: "{config.UI_FONT_NAME}"; }}
+            QLabel#lbl_title  {{ font-size: {config.FS(15)}pt; font-weight: bold; }}
+            QLabel#lbl_sub    {{ font-size: {config.FS(10)}pt; color: #999; }}
+            QLabel#lbl_status {{ font-size: {config.FS(10)}pt; color: #888; font-style: italic; }}
             #ver_frame {{
                 background-color: #101010;
                 border: 1px solid #1e1e1e;
-                border-radius: 8px;
+                border-radius: {config.S(8)}px;
             }}
             QPushButton {{
                 background-color: {config.BTN_GHOST_BG};
                 color: {config.BTN_FG};
-                padding: 7px 20px;
-                border-radius: 5px;
-                min-width: 90px;
+                padding: {config.S(7)}px {config.S(20)}px;
+                border-radius: {config.S(5)}px;
+                min-width: {config.S(90)}px;
                 font-weight: bold;
-                font-size: 10pt;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
             }}
             QPushButton:hover    {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton:disabled {{ color: #444; background-color: #181818; }}
@@ -200,13 +201,13 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 14)
+        outer.setContentsMargins(config.S(14), config.S(14), config.S(14), config.S(14))
 
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
 
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(32)
+        shadow.setBlurRadius(config.S(32))
         shadow.setColor(QColor(0, 0, 0, 160))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
@@ -224,8 +225,8 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         root.addWidget(self._tb)
 
         body = QVBoxLayout()
-        body.setContentsMargins(28, 20, 28, 24)
-        body.setSpacing(12)
+        body.setContentsMargins(config.S(28), config.S(20), config.S(28), config.S(24))
+        body.setSpacing(config.S(12))
         root.addLayout(body)
 
         lbl_title = QLabel(_txt(lang, 'update_notify_title'))
@@ -236,21 +237,21 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         lbl_sub.setObjectName("lbl_sub")
         body.addWidget(lbl_sub)
 
-        body.addSpacing(6)
+        body.addSpacing(config.S(6))
 
         ver_frame = QFrame()
         ver_frame.setObjectName("ver_frame")
         ver_layout = QHBoxLayout(ver_frame)
-        ver_layout.setContentsMargins(24, 16, 24, 16)
+        ver_layout.setContentsMargins(config.S(24), config.S(16), config.S(24), config.S(16))
         ver_layout.setSpacing(0)
 
         def _ver_col(label_txt, ver_txt, ver_color):
             col = QVBoxLayout()
-            col.setSpacing(3)
+            col.setSpacing(config.S(3))
             lbl = QLabel(label_txt)
-            lbl.setStyleSheet("color: #555; font-size: 9pt; letter-spacing: 1px;")
+            lbl.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; letter-spacing: 1px;")
             val = QLabel(ver_txt)
-            val.setStyleSheet(f"color: {ver_color}; font-size: 20pt; font-weight: bold;")
+            val.setStyleSheet(f"color: {ver_color}; font-size: {config.FS(20)}pt; font-weight: bold;")
             col.addWidget(lbl)
             col.addWidget(val)
             return col
@@ -261,7 +262,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         ))
 
         lbl_arrow = QLabel("→")
-        lbl_arrow.setStyleSheet("color: #333; font-size: 24pt; padding: 0 24px 0 20px;")
+        lbl_arrow.setStyleSheet(f"color: #333; font-size: {config.FS(24)}pt; padding: 0 {config.S(24)}px 0 {config.S(20)}px;")
         lbl_arrow.setAlignment(Qt.AlignCenter)
         ver_layout.addWidget(lbl_arrow)
 
@@ -276,7 +277,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._lbl_status.hide()
         body.addWidget(self._lbl_status)
 
-        body.addSpacing(4)
+        body.addSpacing(config.S(4))
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -286,7 +287,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._btn_dismiss.clicked.connect(self._on_dismiss)
         btn_row.addWidget(self._btn_dismiss)
 
-        btn_row.addSpacing(8)
+        btn_row.addSpacing(config.S(8))
 
         self._btn_primary = QPushButton(_txt(lang, 'update_notify_btn_update'))
         self._btn_primary.setObjectName("btn_primary")
@@ -304,7 +305,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._btn_primary.setText(_txt(self._lang, 'update_notify_updating'))
         self._btn_dismiss.setEnabled(False)
         self._lbl_status.setText(_txt(self._lang, 'update_notify_wait'))
-        self._lbl_status.setStyleSheet("color: #888; font-style: italic; font-size: 10pt;")
+        self._lbl_status.setStyleSheet(f"color: #888; font-style: italic; font-size: {config.FS(10)}pt;")
         self._lbl_status.show()
         self.adjustSize()
 

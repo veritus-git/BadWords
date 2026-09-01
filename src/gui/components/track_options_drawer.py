@@ -92,20 +92,20 @@ class TrackSquareCheckbox(QWidget):
     def update_ui(self):
         if self.is_checked:
             self.box.setText("✔")
-            self.box.setStyleSheet("""
+            self.box.setStyleSheet(f"""
                 background-color: #111111;
                 border: 1px solid #1a7a3e;
                 color: #1a7a3e;
                 font-weight: bold;
-                font-size: 11px;
-                border-radius: 2px;
+                font-size: {config.S(10)}px;
+                border-radius: {config.S(2)}px;
             """)
         else:
             self.box.setText("")
-            self.box.setStyleSheet("""
+            self.box.setStyleSheet(f"""
                 background-color: #111111;
                 border: 1px solid #3a3a3a;
-                border-radius: 2px;
+                border-radius: {config.S(2)}px;
             """)
 
     def setChecked(self, checked):
@@ -120,13 +120,6 @@ class TrackSquareCheckbox(QWidget):
         self.update_ui()
         self.toggled.emit(self.is_checked)
         super().mousePressEvent(event)
-
-
-
-
-
-
-
 
 
 class _FlowListWidget(QWidget):
@@ -165,19 +158,19 @@ class TrackOptionsDrawer(QWidget):
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setObjectName("TrackOptionsScroll")
-        self.scroll_area.setStyleSheet("""
-            QScrollArea#TrackOptionsScroll {
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea#TrackOptionsScroll {{
                 background-color: #0f2d1e;
                 border: 1px solid #11703c;
                 border-top: none;
                 border-top-left-radius: 0px;
                 border-top-right-radius: 0px;
-                border-bottom-left-radius: 6px;
-                border-bottom-right-radius: 6px;
-            }
-            QScrollArea#TrackOptionsScroll > QWidget > QWidget {
+                border-bottom-left-radius: {config.S(6)}px;
+                border-bottom-right-radius: {config.S(6)}px;
+            }}
+            QScrollArea#TrackOptionsScroll > QWidget > QWidget {{
                 background: transparent;
-            }
+            }}
         """)
         main_layout.addWidget(self.scroll_area, 1)
 
@@ -203,16 +196,16 @@ class TrackOptionsDrawer(QWidget):
         inner_layout = QVBoxLayout(self.inner_frame)
         inner_layout.setSizeConstraint(QVBoxLayout.SetMinAndMaxSize)
         inner_layout.setAlignment(Qt.AlignBottom)
-        inner_layout.setContentsMargins(10, 6, 10, 8)
-        inner_layout.setSpacing(4)
+        inner_layout.setContentsMargins(config.S(10), config.S(6), config.S(10), config.S(8))
+        inner_layout.setSpacing(config.S(4))
 
         def make_section_header(title_text):
             w = QWidget()
             lay = QHBoxLayout(w)
-            lay.setContentsMargins(0, 4, 0, 2)
-            lay.setSpacing(6)
+            lay.setContentsMargins(0, config.S(4), 0, config.S(2))
+            lay.setSpacing(config.S(6))
             lbl = QLabel(title_text)
-            lbl.setStyleSheet("font-size: 8.5pt; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
+            lbl.setStyleSheet(f"font-size: {config.FS(8.5)}pt; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
             line = QFrame()
             line.setFrameShape(QFrame.HLine)
             line.setStyleSheet("background-color: #1a5433; max-height: 1px; border: none;")
@@ -229,9 +222,9 @@ class TrackOptionsDrawer(QWidget):
 
         def make_toggle_row(lbl_text, tgl):
             w = QWidget()
-            w.setFixedHeight(26)
+            w.setFixedHeight(config.S(26))
             l = QHBoxLayout(w)
-            l.setContentsMargins(2, 0, 2, 0)
+            l.setContentsMargins(config.S(2), 0, config.S(2), 0)
             lbl = MarqueeLabel(lbl_text)
             l.addWidget(lbl, 1)
             l.addWidget(tgl)
@@ -256,7 +249,7 @@ class TrackOptionsDrawer(QWidget):
         self.w_a_cust_list.setMaximumHeight(0)
         self.w_a_cust_list.setStyleSheet("background: transparent; border: none;")
         
-        grid_a = FlowLayout(self.w_a_cust_list, margin=4, hSpacing=14, vSpacing=4)
+        grid_a = FlowLayout(self.w_a_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
         self.a_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(audio_tracks):
@@ -266,7 +259,7 @@ class TrackOptionsDrawer(QWidget):
             self.a_track_checkboxes[idx] = cb
         inner_layout.addWidget(self.w_a_cust_list)
 
-        inner_layout.addSpacing(2)
+        inner_layout.addSpacing(config.S(2))
 
         # Video section header
         inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_video_tracks')))
@@ -283,7 +276,7 @@ class TrackOptionsDrawer(QWidget):
         self.w_v_cust_list.setMaximumHeight(0)
         self.w_v_cust_list.setStyleSheet("background: transparent; border: none;")
         
-        grid_v = FlowLayout(self.w_v_cust_list, margin=4, hSpacing=14, vSpacing=4)
+        grid_v = FlowLayout(self.w_v_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
         self.v_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(video_tracks):

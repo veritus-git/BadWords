@@ -107,9 +107,10 @@ class AudioPreviewWidget(QFrame):
                 border: none;
                 color: #b0b0b0;
                 font-weight: 600;
-                font-size: 14px;
-                padding: 6px 10px;
-                border-radius: 8px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
+                padding: {config.S(6)}px {config.S(10)}px;
+                border-radius: {config.S(6)}px;
             }}
             QPushButton:hover {{
                 background: rgba(255, 255, 255, 0.08);
@@ -121,8 +122,8 @@ class AudioPreviewWidget(QFrame):
             QPushButton#PlayBtn {{
                 background-color: {config.BTN_BG};
                 color: #ffffff;
-                border-radius: 20px;
-                font-size: 16px;
+                border-radius: {config.S(16)}px;
+                font-size: {config.FS(11)}pt;
             }}
             QPushButton#PlayBtn:hover {{
                 background-color: {config.BTN_ACTIVE};
@@ -131,15 +132,17 @@ class AudioPreviewWidget(QFrame):
                 background: transparent;
                 border: none;
                 color: #b0b0b0;
-                font-size: 13px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9.5)}pt;
             }}
             QComboBox {{
                 background: rgba(255, 255, 255, 0.06);
                 border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 6px;
+                border-radius: {config.S(6)}px;
                 color: #d0d0d0;
-                padding: 4px 10px;
-                font-size: 12px;
+                padding: {config.S(4)}px {config.S(10)}px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9)}pt;
             }}
             QComboBox:hover {{
                 border: 1px solid rgba(255, 255, 255, 0.15);
@@ -149,44 +152,44 @@ class AudioPreviewWidget(QFrame):
                 width: 0px;
             }}
             QSlider::groove:horizontal {{
-                height: 4px;
+                height: {config.S(4)}px;
                 background: rgba(255, 255, 255, 0.10);
-                border-radius: 2px;
+                border-radius: {config.S(2)}px;
             }}
             QSlider::handle:horizontal {{
                 background: #d0d0d0;
-                width: 10px;
-                margin: -3px 0;
-                border-radius: 5px;
+                width: {config.S(10)}px;
+                margin: -{config.S(3)}px 0;
+                border-radius: {config.S(5)}px;
             }}
             QSlider::handle:horizontal:hover {{
                 background: #ffffff;
             }}
             QSlider#SeekSlider::groove:horizontal {{
-                height: 4px;
+                height: {config.S(4)}px;
                 background: rgba(255, 255, 255, 0.08);
-                border-radius: 2px;
+                border-radius: {config.S(2)}px;
             }}
             QSlider#SeekSlider::sub-page:horizontal {{
                 background: #1ed760;
-                border-radius: 2px;
+                border-radius: {config.S(2)}px;
             }}
             QSlider#SeekSlider::handle:horizontal {{
                 background: #ffffff;
-                width: 8px;
-                margin: -3px 0;
-                border-radius: 4px;
+                width: {config.S(8)}px;
+                margin: -{config.S(3)}px 0;
+                border-radius: {config.S(4)}px;
             }}
             QLabel#TimeLabel {{
                 font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
-                font-size: 11px;
+                font-size: {config.FS(8.5)}pt;
                 color: #707070;
                 letter-spacing: 0.5px;
             }}
             QLabel#StatusLabel {{
                 color: #666666;
                 font-style: italic;
-                font-size: 12px;
+                font-size: {config.FS(9)}pt;
             }}
         """)
 
@@ -213,30 +216,30 @@ class AudioPreviewWidget(QFrame):
 
         self.lbl_status = QLabel("")
         self.lbl_status.setObjectName("StatusLabel")
-        self.lbl_status.setFixedHeight(70)
+        self.lbl_status.setFixedHeight(config.S(70))
         self.lbl_status.setAlignment(Qt.AlignCenter)
         self.lbl_status.setOpenExternalLinks(False)
         self.lbl_status.setTextFormat(Qt.RichText)
-        self.lbl_status.setStyleSheet("""
-            QLabel#StatusLabel {
+        self.lbl_status.setStyleSheet(f"""
+            QLabel#StatusLabel {{
                 background-color: #1a1a1a;
                 color: #d0d0d0;
-                font-size: 13px;
-                padding: 12px;
+                font-size: {config.FS(9.5)}pt;
+                padding: {config.S(12)}px;
                 border-top: 1px solid #2a2a2a;
                 border-left: none;
                 border-right: none;
                 border-bottom: none;
-            }
-            QLabel#StatusLabel a {
+            }}
+            QLabel#StatusLabel a {{
                 color: #1a7a45;
                 font-weight: 600;
                 text-decoration: underline;
                 text-underline-offset: 3px;
-            }
-            QLabel#StatusLabel a:hover {
+            }}
+            QLabel#StatusLabel a:hover {{
                 color: #23a559;
-            }
+            }}
         """)
         self.lbl_status.linkActivated.connect(self._on_fetch_missing_audio)
         self.lbl_status.hide()
@@ -245,74 +248,74 @@ class AudioPreviewWidget(QFrame):
         self.controls_widget = QWidget()
         self.controls_widget.setObjectName("AudioControls")
         controls_layout = QHBoxLayout(self.controls_widget)
-        controls_layout.setContentsMargins(16, 12, 16, 12)
-        controls_layout.setSpacing(16)
+        controls_layout.setContentsMargins(config.S(16), config.S(12), config.S(16), config.S(12))
+        controls_layout.setSpacing(config.S(16))
         
         # Left controls (Keep centered)
         left_widget = QWidget()
         left_layout = QHBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(6)
+        left_layout.setSpacing(config.S(6))
         
         self.tgl_centered = ToggleSwitch(parent=self)
         self.tgl_centered.toggled.connect(self._on_tgl_centered_changed)
         
         self.lbl_centered = QLabel(self.main_window.txt("msg_keep_centered"))
-        self.lbl_centered.setStyleSheet("color: #b0b0b0; font-size: 13px;")
+        self.lbl_centered.setStyleSheet(f"color: #b0b0b0; font-size: {config.FS(9.5)}pt;")
         
         left_layout.addWidget(self.tgl_centered)
-        left_layout.addSpacing(12)
+        left_layout.addSpacing(config.S(12))
         left_layout.addWidget(self.lbl_centered)
         left_layout.addStretch()
         
         self.lbl_vol_icon = QLabel()
-        self.lbl_vol_icon.setFixedSize(20, 20)
+        self.lbl_vol_icon.setFixedSize(config.S(20), config.S(20))
         self.lbl_vol_icon.setAlignment(Qt.AlignCenter)
         
         self.slider_vol = JumpSlider(Qt.Horizontal)
         self.slider_vol.setRange(0, 100)
         self.slider_vol.setValue(100)
-        self.slider_vol.setFixedWidth(60)
+        self.slider_vol.setFixedWidth(config.S(60))
         
         self.cb_speed = SpeedDropdown()
         self.cb_speed.addItems(["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x", "3.0x"])
         self.cb_speed.setCurrentText("1.0x")
-        self.cb_speed.setFixedWidth(60)
+        self.cb_speed.setFixedWidth(config.S(60))
         
         # Center controls (Playback + Seek slider)
         center_widget = QWidget()
         center_layout = QVBoxLayout(center_widget)
         center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(8)
+        center_layout.setSpacing(config.S(8))
         
         play_layout = QHBoxLayout()
         play_layout.setAlignment(Qt.AlignCenter)
         
-        self.btn_prev = AnimatedPlayerButton("player-backward.png", button_size=32, icon_size=16)
-        self.btn_play = AnimatedPlayerButton("player-play.png", button_size=32, icon_size=16)
+        self.btn_prev = AnimatedPlayerButton("player-backward.png", button_size=config.S(32), icon_size=config.S(16))
+        self.btn_play = AnimatedPlayerButton("player-play.png", button_size=config.S(32), icon_size=config.S(16))
         self.btn_play.setObjectName("PlayBtn")
         self.btn_play.setStyleSheet(f"""
             QPushButton#PlayBtn {{
                 background-color: #ffffff;
-                border-radius: 16px;
+                border-radius: {config.S(16)}px;
             }}
             QPushButton#PlayBtn:hover {{
                 background-color: #e0e0e0;
             }}
         """)
-        self.btn_next = AnimatedPlayerButton("player-forward.png", button_size=32, icon_size=16)
+        self.btn_next = AnimatedPlayerButton("player-forward.png", button_size=config.S(32), icon_size=config.S(16))
         
         play_layout.addWidget(self.btn_prev)
-        play_layout.addSpacing(8)
+        play_layout.addSpacing(config.S(8))
         play_layout.addWidget(self.btn_play)
-        play_layout.addSpacing(8)
+        play_layout.addSpacing(config.S(8))
         play_layout.addWidget(self.btn_next)
         
         self.slider_seek = JumpSlider(Qt.Horizontal)
         self.slider_seek.setObjectName("SeekSlider")
         self.slider_seek.setRange(0, 1000)
         self.slider_seek.setValue(0)
-        self.slider_seek.setMinimumWidth(100)
+        self.slider_seek.setMinimumWidth(config.S(100))
         from PySide6.QtWidgets import QSizePolicy
         self.slider_seek.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._seek_dragging = False
@@ -324,19 +327,19 @@ class AudioPreviewWidget(QFrame):
         self.lbl_time_curr = QLabel("0:00")
         self.lbl_time_curr.setObjectName("TimeLabel")
         self.lbl_time_curr.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.lbl_time_curr.setFixedWidth(40)
+        self.lbl_time_curr.setFixedWidth(config.S(40))
         
         self.lbl_time_total = QLabel("0:00")
         self.lbl_time_total.setObjectName("TimeLabel")
         self.lbl_time_total.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_time_total.setFixedWidth(40)
+        self.lbl_time_total.setFixedWidth(config.S(40))
         
         seek_layout = QHBoxLayout()
         seek_layout.setAlignment(Qt.AlignCenter)
         seek_layout.addWidget(self.lbl_time_curr)
-        seek_layout.addSpacing(8)
+        seek_layout.addSpacing(config.S(8))
         seek_layout.addWidget(self.slider_seek, 1)
-        seek_layout.addSpacing(8)
+        seek_layout.addSpacing(config.S(8))
         seek_layout.addWidget(self.lbl_time_total)
         
         center_layout.addLayout(play_layout)
@@ -346,7 +349,7 @@ class AudioPreviewWidget(QFrame):
         right_widget = QWidget()
         right_layout = QHBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(6)
+        right_layout.setSpacing(config.S(6))
         
         right_layout.addWidget(self.cb_speed)
         right_layout.addSpacing(4)

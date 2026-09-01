@@ -24,26 +24,27 @@ def build_silence_panel(win) -> QFrame:
     """Build the Silence Detection activity panel and bind widgets to main window."""
     p_silence = QWidget()
     l_silence = QVBoxLayout(p_silence)
-    l_silence.setContentsMargins(15, 15, 15, 15)
-    l_silence.setSpacing(10)
+    l_silence.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+    l_silence.setSpacing(config.S(10))
     
-    _sil_input_style = (
-        "QLineEdit { background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a; "
-        "border-radius: 3px; padding: 2px 6px; outline: none; } "
-        "QLineEdit:focus { border: 1px solid #1a7a3e; outline: none; }"
-    )
-    _sil_rst_style = (
-        "QPushButton { background: transparent; border: 1px solid #444; "
-        "border-radius: 3px; color: #777; font-size: 10pt; } "
-        "QPushButton:hover { color: #ccc; border-color: #666; }"
-    )
+    _sil_input_style = f"""
+        QLineEdit {{ background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;
+        border-radius: {config.S(3)}px; padding: {config.S(2)}px {config.S(6)}px; outline: none;
+        font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; }}
+        QLineEdit:focus {{ border: 1px solid #1a7a3e; outline: none; }}
+    """
+    _sil_rst_style = f"""
+        QPushButton {{ background: transparent; border: 1px solid #444;
+        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(10)}pt; }}
+        QPushButton:hover {{ color: #ccc; border-color: #666; }}
+    """
 
     def _sil_row(label_text, widget, rst_btn):
         row = QHBoxLayout()
         lbl = QLabel(label_text)
         row.addWidget(lbl, 1)
         row.addWidget(widget)
-        row.addSpacing(4)
+        row.addSpacing(config.S(4))
         row.addWidget(rst_btn)
         return row
 
@@ -51,10 +52,10 @@ def build_silence_panel(win) -> QFrame:
 
     win.spin_thresh = QLineEdit()
     win.spin_thresh.setText(str(_sil_prefs.get('silence_threshold_db', _sil_prefs.get('ui_spin_thresh', -42.0))))
-    win.spin_thresh.setFixedWidth(68)
+    win.spin_thresh.setFixedWidth(config.S(68))
     win.spin_thresh.setStyleSheet(_sil_input_style)
     _rst_thresh = QPushButton("↺")
-    _rst_thresh.setFixedSize(22, 22)
+    _rst_thresh.setFixedSize(config.S(22), config.S(22))
     _rst_thresh.setCursor(Qt.PointingHandCursor)
     _rst_thresh.setStyleSheet(_sil_rst_style)
     _rst_thresh.clicked.connect(lambda: (
@@ -64,10 +65,10 @@ def build_silence_panel(win) -> QFrame:
 
     win.spin_pad = QLineEdit()
     win.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.05)))
-    win.spin_pad.setFixedWidth(68)
+    win.spin_pad.setFixedWidth(config.S(68))
     win.spin_pad.setStyleSheet(_sil_input_style)
     _rst_pad = QPushButton("↺")
-    _rst_pad.setFixedSize(22, 22)
+    _rst_pad.setFixedSize(config.S(22), config.S(22))
     _rst_pad.setCursor(Qt.PointingHandCursor)
     _rst_pad.setStyleSheet(_sil_rst_style)
     _rst_pad.clicked.connect(lambda: (
@@ -77,14 +78,14 @@ def build_silence_panel(win) -> QFrame:
 
     win.spin_silence_min_dur = QLineEdit()
     win.spin_silence_min_dur.setText(str(_sil_prefs.get('silence_min_dur', 0.2)))
-    win.spin_silence_min_dur.setFixedWidth(68)
+    win.spin_silence_min_dur.setFixedWidth(config.S(68))
     win.spin_silence_min_dur.setStyleSheet(_sil_input_style)
     win.spin_silence_min_dur.setToolTip(
         "Minimum duration (in seconds) for a gap to be classified as silence. "
         "Lower = more sensitive. Applies to both standalone and post-transcript modes."
     )
     _rst_min = QPushButton("↺")
-    _rst_min.setFixedSize(22, 22)
+    _rst_min.setFixedSize(config.S(22), config.S(22))
     _rst_min.setCursor(Qt.PointingHandCursor)
     _rst_min.setStyleSheet(_sil_rst_style)
     _rst_min.clicked.connect(lambda: (
@@ -103,7 +104,7 @@ def build_silence_panel(win) -> QFrame:
     row_silence_cut.addStretch()
     info_silence_cut = win._create_info_icon("tt_detect_and_cut_silence")
     row_silence_cut.addWidget(info_silence_cut)
-    row_silence_cut.addSpacing(6)
+    row_silence_cut.addSpacing(config.S(6))
     win.tgl_silence_cut = ToggleSwitch()
     row_silence_cut.addWidget(win.tgl_silence_cut)
     l_silence.addLayout(row_silence_cut)
@@ -115,7 +116,7 @@ def build_silence_panel(win) -> QFrame:
     row_silence_mark.addStretch()
     info_silence_mark = win._create_info_icon("tt_detect_and_mark_silence")
     row_silence_mark.addWidget(info_silence_mark)
-    row_silence_mark.addSpacing(6)
+    row_silence_mark.addSpacing(config.S(6))
     win.tgl_silence_mark = ToggleSwitch()
     row_silence_mark.addWidget(win.tgl_silence_mark)
     l_silence.addLayout(row_silence_mark)

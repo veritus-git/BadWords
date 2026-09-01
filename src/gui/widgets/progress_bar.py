@@ -31,7 +31,7 @@ class LiquidProgressBar(QWidget):
         self._value = 0.0
         self._indet_offset = 0.0
         self._indeterminate = False
-        self.setFixedHeight(8)
+        self.setFixedHeight(config.S(8))
         
         self._anim = QPropertyAnimation(self, b"value")
         self._anim.setDuration(300)
@@ -80,13 +80,14 @@ class LiquidProgressBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         
+        r = config.S(4)
         rect = self.rect()
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#2b2b2b"))
-        p.drawRoundedRect(rect, 4, 4)
+        p.drawRoundedRect(rect, r, r)
         
         path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 4, 4)
+        path.addRoundedRect(QRectF(rect), r, r)
         p.setClipPath(path)
         
         if self._indeterminate:
