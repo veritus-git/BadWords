@@ -189,13 +189,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 background-color: transparent;
                 color: #888;
                 border: 1px solid #444;
-                border-radius: 4px;
+                border-radius: {config.S(4)}px;
                 font-family: {config.UI_FONT_NAME};
-                font-size: 9pt;
+                font-size: {config.FS(11)}pt;
                 padding: 0px;
                 text-align: center;
             }}
-            QPushButton#btn_ghost_sm:hover {{ background-color: #222; color: #bbb; border-color: #666; }}
+            QPushButton#btn_ghost_sm:hover {{ background-color: #2a2d2e; color: #fff; border-color: #666; }}
+            QPushButton#btn_ghost_sm:pressed {{ background-color: #1a1a1a; color: #aaa; border-color: #444; }}
             QPushButton[class="revert-btn"] {{
                 padding: 0px;
                 text-align: center;
@@ -448,7 +449,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
         btn_rev = QPushButton("↺")
-        btn_rev.setFixedSize(config.S(26), config.S(26))
+        btn_rev.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
         btn_rev.setCursor(Qt.PointingHandCursor)
         btn_rev.setObjectName("btn_ghost_sm")
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -942,7 +943,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             if not is_display:
                 btn_clear = QPushButton("✕")
-                btn_clear.setFixedSize(config.S(26), config.S(26))
+                btn_clear.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
                 btn_clear.setCursor(Qt.PointingHandCursor)
                 btn_clear.setObjectName("btn_ghost_sm")
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
@@ -950,7 +951,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 row.addWidget(btn_clear)
 
             btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(config.S(26), config.S(26))
+            btn_rev.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setObjectName("btn_ghost_sm")
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -1209,7 +1210,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(widget)
             
             btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(config.S(26), config.S(26))
+            btn_rev.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setObjectName("btn_ghost_sm")
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
