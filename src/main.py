@@ -352,10 +352,11 @@ def main():
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
 
-        # Register embedded cross-platform UI font (Ubuntu on Win/Linux) into Qt Font Engine
+        # Register embedded cross-platform UI font (Ubuntu Sans / Ubuntu) into Qt Font Engine
         gui.init_embedded_fonts()
         default_font = QFont(config.UI_FONT_NAME, config.BASE_FONT_PT)
-        default_font.setStyleStrategy(QFont.PreferAntialias | QFont.StyleStrategy.PreferTypoLineMetrics)
+        default_font.setStyleStrategy(QFont.PreferAntialias)
+        default_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
         default_font.setWeight(QFont.Weight.Normal)
         app.setFont(default_font)
 

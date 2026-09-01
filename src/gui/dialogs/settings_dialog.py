@@ -86,7 +86,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowTitle(self.txt("tool_settings"))
         self.frameless_init(is_popup=True)
         self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
-        self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
+        init_w, init_h = config.get_responsive_settings_size()
+        self.setFixedSize(init_w, init_h)
 
         prefs = self.engine.load_preferences() or {}
 
@@ -103,7 +104,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             }}
             QLabel {{
                 color: {config.FG_COLOR};
-                font-family: {config.UI_FONT_NAME};
+                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 font-size: 10pt;
                 background: transparent;
             }}
@@ -116,7 +117,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             }}
             QListWidget::item {{
                 color: {config.NOTE_COL};
-                font-family: {config.UI_FONT_NAME};
+                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 font-size: 10pt;
                 padding: 10px 16px;
                 border-radius: 0px;
@@ -321,6 +322,15 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._build_ui()
 
     # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _get_info_icon(self, info_key):
+        parent = self.parent()
+        if parent and hasattr(parent, '_create_info_icon'):
+            return parent._create_info_icon(info_key)
+        lbl_info = QLabel("ⓘ")
+        lbl_info.setToolTip(self.txt(info_key) if hasattr(self, 'txt') else info_key)
+        lbl_info.setStyleSheet("color: #888; font-size: 11pt;")
+        return lbl_info
 
 
     def _set_view_mode(self, mode):
@@ -942,7 +952,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 lbl_layout = QHBoxLayout(lbl_container)
                 lbl_layout.setContentsMargins(0, 0, 0, 0)
                 lbl_layout.setSpacing(6)
-                info_icon = self.parent()._create_info_icon(info_key)
+                info_icon = self._get_info_icon(info_key)
                 lbl_layout.addWidget(lbl)
                 lbl_layout.addWidget(info_icon)
                 lbl_layout.addStretch()
@@ -980,8 +990,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if key not in MARKER_KEYS or key not in current_shortcuts:
                 continue
             is_disp = key in DISPLAY_ONLY
-            if self._is_basic_mode and is_disp:
-                continue
             value      = current_shortcuts[key]
             i18n_key   = f'shortcut_{key}'
             label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
@@ -1002,6 +1010,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                                                          is_display=is_disp)
             form.addRow(lbl, container)
             self.shortcut_inputs[key] = widget
+            if is_disp:
+                self._advanced_widgets.extend([lbl, container])
 
         # Position where custom marker rows will be inserted (after last marker row)
         self._custom_sc_insert_pos       = form.rowCount()
@@ -1016,8 +1026,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if key not in NAV_KEYS or key not in current_shortcuts:
                 continue
             is_disp = key in DISPLAY_ONLY
-            if self._is_basic_mode and is_disp:
-                continue
             value      = current_shortcuts[key]
             i18n_key   = f'shortcut_{key}'
             label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
@@ -1038,6 +1046,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                                                          is_display=is_disp)
             form.addRow(lbl, container)
             self.shortcut_inputs[key] = widget
+            if is_disp:
+                self._advanced_widgets.extend([lbl, container])
 
         l_shorts.addLayout(form)
         l_shorts.addStretch()
@@ -1131,26 +1141,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_transcript.setContentsMargins(24, 20, 24, 16)
         l_transcript.setSpacing(0)
 
-        if not self._is_basic_mode:
-            form_ontop = QFormLayout()
-            form_ontop.setSpacing(14)
-            form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            
-            self.chk_ontop = ToggleSwitch()
-            self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
-            w_ontop = QWidget()
-            l_ontop = QHBoxLayout(w_ontop)
-            l_ontop.setContentsMargins(0, 0, 0, 0)
-            l_ontop.addStretch()
-            l_ontop.addWidget(self.parent()._create_info_icon("tt_always_on_top"))
-            l_ontop.addSpacing(6)
-            l_ontop.addWidget(self.chk_ontop)
-            
-            self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
-                     False, lambda v: self.chk_ontop.setChecked(v, animated=False))
-            l_transcript.addLayout(form_ontop)
-            
-            l_transcript.addSpacing(14)
+        form_ontop = QFormLayout()
+        form_ontop.setSpacing(14)
+        form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        self.chk_ontop = ToggleSwitch()
+        self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
+        w_ontop = QWidget()
+        l_ontop = QHBoxLayout(w_ontop)
+        l_ontop.setContentsMargins(0, 0, 0, 0)
+        l_ontop.addStretch()
+        l_ontop.addWidget(self._get_info_icon("tt_always_on_top"))
+        l_ontop.addSpacing(6)
+        l_ontop.addWidget(self.chk_ontop)
+        
+        ontop_rows = self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
+                 False, lambda v: self.chk_ontop.setChecked(v, animated=False))
+        self._advanced_widgets.extend(ontop_rows)
+        l_transcript.addLayout(form_ontop)
+        
+        l_transcript.addSpacing(14)
 
         form_transcript = QFormLayout()
         form_transcript.setSpacing(14)
@@ -1165,67 +1175,67 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                  self.txt("opt_segmented_blocks"), self.combo_view.setValue)
 
         self._chunk_widgets = []
-        if not self._is_basic_mode:
-            def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
-                container = QWidget()
-                row = QHBoxLayout(container)
-                row.setContentsMargins(0, 0, 0, 0)
-                row.setSpacing(6)
-                widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                row.addWidget(widget)
-                
-                btn_rev = QPushButton("↺")
-                btn_rev.setFixedSize(26, 26)
-                btn_rev.setCursor(Qt.PointingHandCursor)
-                btn_rev.setObjectName("btn_ghost_sm")
-                btn_rev.setToolTip(self.txt("tt_revert_to_default"))
-                def create_reset_handler(s_func, d_val):
-                    return lambda checked=False: s_func(d_val)
-                btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
-                row.addWidget(btn_rev)
-                
-                lbl_container = QWidget()
-                lbl_container.setMinimumWidth(200)
-                lbl_layout = QHBoxLayout(lbl_container)
-                lbl_layout.setContentsMargins(0, 0, 0, 0)
-                lbl_layout.setSpacing(6)
-                lbl = QLabel(label_text)
-                lbl.setWordWrap(True)
-                lbl_layout.addWidget(lbl)
-                lbl_layout.addWidget(self.parent()._create_info_icon(info_key))
-                lbl_layout.addStretch()
-                
-                form.addRow(lbl_container, container)
-                self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
-                return lbl_container, container
-
-            self.spin_chunk_max = QSpinBox()
-            self.spin_chunk_max.setRange(5, 200)
-            self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
-            lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue, "tt_chunk_max_words")
-            self._chunk_widgets.extend([lbl_max, cnt_max])
-
-            self.spin_chunk_look = QSpinBox()
-            self.spin_chunk_look.setRange(0, 20)
-            self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
-            lbl_look, cnt_look = _add_chunk_row(form_transcript, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, "tt_chunk_lookahead")
-            self._chunk_widgets.extend([lbl_look, cnt_look])
-
-            self.spin_chunk_min = QSpinBox()
-            self.spin_chunk_min.setRange(1, 50)
-            self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
-            lbl_min, cnt_min = _add_chunk_row(form_transcript, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, "tt_chunk_min_chars")
-            self._chunk_widgets.extend([lbl_min, cnt_min])
-
-
-
-            def _update_chunk_state(idx):
-                visible = (idx == 1)
-                for w in self._chunk_widgets:
-                    w.setVisible(visible)
+        def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
+            container = QWidget()
+            row = QHBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row.addWidget(widget)
             
-            self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
-            _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
+            btn_rev = QPushButton("↺")
+            btn_rev.setFixedSize(26, 26)
+            btn_rev.setCursor(Qt.PointingHandCursor)
+            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addWidget(btn_rev)
+            
+            lbl_container = QWidget()
+            lbl_container.setMinimumWidth(200)
+            lbl_layout = QHBoxLayout(lbl_container)
+            lbl_layout.setContentsMargins(0, 0, 0, 0)
+            lbl_layout.setSpacing(6)
+            lbl = QLabel(label_text)
+            lbl.setWordWrap(True)
+            lbl_layout.addWidget(lbl)
+            lbl_layout.addWidget(self._get_info_icon(info_key))
+            lbl_layout.addStretch()
+            
+            form.addRow(lbl_container, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl_container, container
+
+        self.spin_chunk_max = QSpinBox()
+        self.spin_chunk_max.setRange(5, 200)
+        self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
+        lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue, "tt_chunk_max_words")
+        self._chunk_widgets.extend([lbl_max, cnt_max])
+        self._advanced_widgets.extend([lbl_max, cnt_max])
+
+        self.spin_chunk_look = QSpinBox()
+        self.spin_chunk_look.setRange(0, 20)
+        self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
+        lbl_look, cnt_look = _add_chunk_row(form_transcript, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, "tt_chunk_lookahead")
+        self._chunk_widgets.extend([lbl_look, cnt_look])
+        self._advanced_widgets.extend([lbl_look, cnt_look])
+
+        self.spin_chunk_min = QSpinBox()
+        self.spin_chunk_min.setRange(1, 50)
+        self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
+        lbl_min, cnt_min = _add_chunk_row(form_transcript, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, "tt_chunk_min_chars")
+        self._chunk_widgets.extend([lbl_min, cnt_min])
+        self._advanced_widgets.extend([lbl_min, cnt_min])
+
+        def _update_chunk_state(idx):
+            is_seg = (idx == 1)
+            for w in self._chunk_widgets:
+                w.setVisible(is_seg and not self._is_basic_mode)
+        
+        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
+        _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
 
         # Font family, size, line height
         from PySide6.QtGui import QFontDatabase
@@ -1293,7 +1303,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_sync = QHBoxLayout(w_sync)
         l_sync.setContentsMargins(0, 0, 0, 0)
         l_sync.addStretch()
-        l_sync.addWidget(self.parent()._create_info_icon("tt_sync_davinci_chapter"))
+        l_sync.addWidget(self._get_info_icon("tt_sync_davinci_chapter"))
         l_sync.addSpacing(6)
         l_sync.addWidget(self.chk_sync_davinci)
         self._add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
@@ -1315,7 +1325,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_xml_track = QHBoxLayout(w_xml_track)
         l_xml_track.setContentsMargins(0, 0, 0, 0)
         l_xml_track.addStretch()
-        l_xml_track.addWidget(self.parent()._create_info_icon("tt_xml_preserve_track_order"))
+        l_xml_track.addWidget(self._get_info_icon("tt_xml_preserve_track_order"))
         l_xml_track.addSpacing(6)
         l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
         self._add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
@@ -1331,7 +1341,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ts_precise = QHBoxLayout(w_ts_precise)
         l_ts_precise.setContentsMargins(0, 0, 0, 0)
         l_ts_precise.addStretch()
-        l_ts_precise.addWidget(self.parent()._create_info_icon("tt_timestamp_precise"))
+        l_ts_precise.addWidget(self._get_info_icon("tt_timestamp_precise"))
         l_ts_precise.addSpacing(6)
         l_ts_precise.addWidget(self.tgl_timestamp_precise)
         self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,

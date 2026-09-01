@@ -93,8 +93,8 @@ def _resolve_script_dirs():
 
     elif "mac" in PLAT or "darwin" in PLAT:
         bases = [
-            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
-            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
+            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
+            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
         ]
         subs = ["Utility"]
         for b in bases:
@@ -106,15 +106,15 @@ def _resolve_script_dirs():
         # Linux
         bases = [
             os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve"),
-            os.path.join("/", "opt", "resolve", "libs")
+            os.path.join(os.path.expanduser("~"), ".var", "app", "com.blackmagicdesign.resolve", "data", "DaVinciResolve"),
+            os.path.join("/", "opt", "resolve", "libs"),
+            os.path.join("/", "opt", "resolve")
         ]
         subs = ["Utility"]
         for b in bases:
             for s in subs:
-                p_upper = os.path.join(b, "Fusion", "Scripts", s)
-                p_lower = os.path.join(b, "Fusion", "Scripts", s)
-                results.append(p_upper)  # always try uppercase Fusion first
-                results.append(p_lower)
+                p = os.path.join(b, "Fusion", "Scripts", s)
+                results.append(p)
 
     # Remove duplicates while preserving order
     seen, unique = set(), []
@@ -937,37 +937,70 @@ def _clean_legacy_inno_setup(install_dir):
 
 def _create_davinci_wrappers(install_dir, resolve_dirs):
     """Generates and writes the DaVinci Resolve Python wrapper for the given install_dir."""
-    qt_lib_dir   = os.path.join(install_dir, "libs", "PySide6", "Qt", "lib")
-    libs_dir_abs = os.path.join(install_dir, "libs")
-    main_script  = os.path.join(install_dir, "main.py")
+    install_str = install_dir.replace('\\', "/")
+    libs_str    = os.path.join(install_dir, "libs").replace('\\', "/")
+    main_script = os.path.join(install_dir, "main.py").replace('\\', "/")
 
     wrapper_content = f'''\
 import sys, os, traceback
 
-if sys.platform.startswith('linux'):
-    import ctypes
-    _qt_lib_dir = r'{qt_lib_dir}'
-    _qt_preload = [
-        'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-        'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-    ]
-    if os.path.isdir(_qt_lib_dir):
-        for _lib in _qt_preload:
-            _p = os.path.join(_qt_lib_dir, _lib)
-            if os.path.exists(_p):
-                try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                except OSError: pass
-
-INSTALL_DIR = r'{install_dir}'
-LIBS_DIR    = r'{libs_dir_abs}'
+INSTALL_DIR = r'{install_str}'
 MAIN_SCRIPT = r'{main_script}'
 
-if os.path.exists(LIBS_DIR):
-    if LIBS_DIR in sys.path: sys.path.remove(LIBS_DIR)
-    sys.path.insert(0, LIBS_DIR)
+# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
+_candidates = [
+    r'{libs_str}',
+    os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+]
+
+_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
+if os.path.isdir(_v_lib):
+    try:
+        for _entry in os.listdir(_v_lib):
+            _sp = os.path.join(_v_lib, _entry, "site-packages")
+            if os.path.isdir(_sp) and _sp not in _candidates:
+                _candidates.append(_sp)
+    except Exception:
+        pass
+
+for _sp_dir in _candidates:
+    if os.path.isdir(_sp_dir):
+        if _sp_dir in sys.path:
+            sys.path.remove(_sp_dir)
+        sys.path.insert(0, _sp_dir)
+
 if INSTALL_DIR not in sys.path:
     sys.path.append(INSTALL_DIR)
 
+# 2. Windows: register DLL search paths for PySide6 and shiboken6
+if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            for _pkg in ['PySide6', 'shiboken6']:
+                _p = os.path.join(_sp_dir, _pkg)
+                if os.path.isdir(_p):
+                    try: os.add_dll_directory(_p)
+                    except Exception: pass
+
+# 3. Linux: Preload Qt6 shared libraries if needed
+if sys.platform.startswith('linux'):
+    import ctypes
+    for _sp_dir in _candidates:
+        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+        if os.path.isdir(_qt_lib_dir):
+            _qt_preload = [
+                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+            ]
+            for _lib in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib)
+                if os.path.exists(_p):
+                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except OSError: pass
+            break
+
+# 4. Launch main script
 if os.path.exists(MAIN_SCRIPT):
     try:
         with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
@@ -978,32 +1011,22 @@ if os.path.exists(MAIN_SCRIPT):
 else:
     print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
 '''
-    def _resolve_base_exists(d):
-        p = d
-        for _ in range(7):
-            p = os.path.dirname(p)
-            bn = os.path.basename(p)
-            if bn in ("DaVinci Resolve", "DaVinciResolve", "resolve"):
-                return os.path.isdir(p)
-        return False
+    legacy_names = [
+        "BadWords.py", "Badwords.py", "BadWords (Linux).py",
+        "BadWords (Mac).py", "BadWords (macOS).py", "BadWords (Windows).py",
+        "BadWords_Launcher.py", "BadWords.lua"
+    ]
 
-    existing_resolve_dirs = [d for d in resolve_dirs if _resolve_base_exists(d)]
-    targets = existing_resolve_dirs if existing_resolve_dirs else [resolve_dirs[0]]
+    # Clean old wrappers from ALL candidate script locations
+    for rd in resolve_dirs:
+        for leg in legacy_names:
+            p = os.path.join(rd, leg)
+            if os.path.exists(p):
+                try: os.remove(p)
+                except: pass
 
-    # Clean old wrappers from ALL script locations
-    for rd in targets:
-        scripts_dir = os.path.dirname(rd)
-        if os.path.exists(scripts_dir):
-            for root, _, files in os.walk(scripts_dir):
-                for f in files:
-                    if f.startswith("BadWords") and f.endswith(".py"):
-                        p = os.path.join(root, f)
-                        try: os.remove(p)
-                        except: pass
-
-    # Write wrapper to ALL valid targets (not just the first one)
-    wrapper_count = 0
-    for rd in targets:
+    # Write wrapper to exactly ONE valid target (first writable user directory)
+    for rd in resolve_dirs:
         try:
             os.makedirs(rd, exist_ok=True)
             wp = os.path.join(rd, "BadWords.py")
@@ -1011,13 +1034,11 @@ else:
                 f.write(wrapper_content)
             os.chmod(wp, 0o755)
             debug_log(f"Wrapper written to: {wp}")
-            wrapper_count += 1
-            break
-
+            return True
         except Exception as exc:
             debug_log(f"Could not write wrapper to {rd}: {exc}")
 
-    return wrapper_count > 0
+    return False
 
 
 def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):

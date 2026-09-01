@@ -21,14 +21,10 @@ import config
 
 def init_embedded_fonts():
     """
-    Registers embedded Ubuntu font weights (Regular, Light, Bold, Italic)
-    into the Qt Font Database from memory for Windows and Linux.
-    macOS uses native Helvetica Neue.
+    Registers embedded Ubuntu font weights (Classic Bold, Regular, Light, Bold, Medium, Italic)
+    into the Qt Font Database from memory across all platforms (macOS, Windows, Linux).
     """
     try:
-        import platform
-        if platform.system() == "Darwin":
-            return
         import zlib
         import base64
         from .fonts_data import EMBEDDED_FONTS

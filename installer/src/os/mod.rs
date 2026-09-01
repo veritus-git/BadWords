@@ -306,9 +306,29 @@ pub fn get_primary_monitor_center(win_w: f32, win_h: f32) -> Option<(f32, f32)> 
 
     #[cfg(target_os = "macos")]
     {
-        // On macOS, winit natively and cleanly centers the window on the active display in logical points.
-        // Returning None avoids incorrect physical pixel coordinate calculations from system_profiler.
-        return None;
+        #[repr(C)]
+        struct CGPoint { x: f64, y: f64 }
+        #[repr(C)]
+        struct CGSize { width: f64, height: f64 }
+        #[repr(C)]
+        struct CGRect { origin: CGPoint, size: CGSize }
+
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGMainDisplayID() -> u32;
+            fn CGDisplayBounds(display: u32) -> CGRect;
+        }
+
+        unsafe {
+            let bounds = CGDisplayBounds(CGMainDisplayID());
+            let sw = bounds.size.width as f32;
+            let sh = bounds.size.height as f32;
+            if sw > 400.0 && sh > 300.0 {
+                let cx = ((sw - win_w) / 2.0).max(0.0);
+                let cy = ((sh - win_h) / 2.0).max(0.0);
+                return Some((cx, cy));
+            }
+        }
     }
 
     None

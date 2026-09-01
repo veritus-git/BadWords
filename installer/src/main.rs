@@ -435,13 +435,13 @@ impl eframe::App for InstallerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let t = self.language.t();
 
-        // Płynna animacja pasków postępu (lerp)
+        // Płynna animacja pasków postępu (niezależna od klatkażu, ciągły VSync repaint)
         if self.screen == Screen::Progress {
-            let target_p = self.progress;
-            self.displayed_progress += (target_p - self.displayed_progress) * 0.12;
-            let target_sub = self.sub_progress;
-            self.displayed_sub_progress += (target_sub - self.displayed_sub_progress) * 0.15;
-            ctx.request_repaint_after(Duration::from_millis(20));
+            let dt = ctx.input(|i| i.stable_dt).clamp(0.001, 0.1);
+            let factor = 1.0 - (-10.0 * dt).exp();
+            self.displayed_progress += (self.progress - self.displayed_progress) * factor;
+            self.displayed_sub_progress += (self.sub_progress - self.displayed_sub_progress) * factor;
+            ctx.request_repaint();
         }
 
         // ── Obsługa zdarzeń z wątku instalacyjnego ──

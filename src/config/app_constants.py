@@ -26,24 +26,71 @@ POSTHOG_HOST = "https://eu.i.posthog.com"
 # WINDOW & GUI SETTINGS
 # ==========================================
 IS_MAC = platform.system() == "Darwin"
+IS_WIN = platform.system() == "Windows"
 
-# Base dimensions tailored per OS for ideal screen proportions
-CFG_WINDOW_W_BASE = 340 if IS_MAC else 400
-CFG_WINDOW_H_BASE = 620 if IS_MAC else 740
-SETTINGS_WINDOW_W = 640 if IS_MAC else 750
-SETTINGS_WINDOW_H = 490 if IS_MAC else 580
-SIDEBAR_WIDTH = 46 if IS_MAC else 54
-BTN_HEIGHT = 28 if IS_MAC else 34
-INPUT_HEIGHT = 28 if IS_MAC else 32
+# Reference resolution: Full HD 1920x1080 (16:9)
+CFG_WINDOW_W_BASE = 400
+CFG_WINDOW_H_BASE = 740
+SETTINGS_WINDOW_W = 750
+SETTINGS_WINDOW_H = 580
+SIDEBAR_WIDTH = 50
+
+def get_responsive_window_size(screen=None):
+    """
+    Computes optimal window dimensions relative to the available screen workspace,
+    calibrated against a 1920x1080 Full HD baseline with safe clamping bounds.
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            sw, sh = avail.width(), avail.height()
+            # Proportional height (calibrated to ~68.5% of workspace)
+            target_h = int(sh * 0.685)
+            if IS_MAC:
+                target_h -= 28  # Compensate for macOS system title bar
+            # Proportional width based on vertical screen proportion
+            height_scale = max(0.6, min(sh / 1080.0, 1.8))
+            target_w = int(400 * height_scale)
+
+            w = max(340, min(target_w, 500))
+            h = max(420, min(target_h, 920))
+            return w, h
+    except Exception:
+        pass
+    return (360, 640) if IS_MAC else (400, 740)
+
+def get_responsive_settings_size(screen=None):
+    """
+    Computes optimal settings dialog dimensions relative to the available screen workspace.
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            sw, sh = avail.width(), avail.height()
+            height_scale = max(0.6, min(sh / 1080.0, 1.8))
+            target_w = int(750 * height_scale)
+            target_h = int(580 * height_scale)
+            if IS_MAC:
+                target_h -= 28
+
+            w = max(620, min(target_w, 850))
+            h = max(460, min(target_h, 680))
+            return w, h
+    except Exception:
+        pass
+    return (650, 500) if IS_MAC else (750, 580)
 
 def get_system_font_name():
     """
-    Returns the preferred font family depending on the OS:
-    macOS uses native 'Helvetica Neue'.
-    Windows & Linux use 'Ubuntu Sans' (modern Canonical font with native Medium 500 / SemiBold 600).
+    Returns the unified application font family:
+    Ubuntu Sans across all platforms (macOS, Windows, Linux).
     """
-    if IS_MAC:
-        return "Helvetica Neue"
     return "Ubuntu Sans"
 
 UI_FONT_NAME = get_system_font_name()
