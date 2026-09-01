@@ -1168,6 +1168,24 @@ def _launch_badwords(install_dir):
                     close_fds=True
                 )
                 return True
+        elif "darwin" in PLAT or "mac" in PLAT:
+            app_path = os.path.expanduser("~/Applications/BadWords.app")
+            if os.path.isdir(app_path):
+                subprocess.Popen(["open", app_path], close_fds=True)
+                return True
+            py = os.path.join(install_dir, "venv", "bin", "python")
+            main_py = os.path.join(install_dir, "main.py")
+            if os.path.isfile(py) and os.path.isfile(main_py):
+                subprocess.Popen(
+                    [py, main_py],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
         else:
             py = os.path.join(install_dir, "venv", "bin", "python")
             main_py = os.path.join(install_dir, "main.py")

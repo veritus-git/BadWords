@@ -13,7 +13,7 @@ Splash screen loading window displayed during app initialization.
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QFrame, QLabel, QApplication, QGraphicsDropShadowEffect
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog
