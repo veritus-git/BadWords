@@ -104,7 +104,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             QLabel {{
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.SP(10)}pt;
+                font-size: {config.FS(10)}pt;
                 background: transparent;
             }}
             QListWidget {{
@@ -117,7 +117,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             QListWidget::item {{
                 color: {config.NOTE_COL};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.SP(10)}pt;
+                font-size: {config.FS(10)}pt;
                 padding: {config.S(10)}px {config.S(16)}px;
                 border-radius: 0px;
             }}
@@ -285,32 +285,32 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_footer.addWidget(sep)
 
         btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(16, 10, 16, 12)
-        btn_bar.setSpacing(8)
+        btn_bar.setContentsMargins(config.S(16), config.S(10), config.S(16), config.S(12))
+        btn_bar.setSpacing(config.S(8))
 
         btn_bar.addStretch()
 
         # Right: Restore / Close / Apply
         self.btn_restore = QPushButton(self.txt("btn_restore_defaults"))
         self.btn_restore.setObjectName("btn_secondary")
-        self.btn_restore.setMinimumWidth(120)
-        self.btn_restore.setFixedHeight(30)
+        self.btn_restore.setMinimumWidth(config.S(100))
+        self.btn_restore.setFixedHeight(config.S(30))
         self.btn_restore.setCursor(Qt.PointingHandCursor)
         self.btn_restore.clicked.connect(self._restore_all_defaults)
         btn_bar.addWidget(self.btn_restore)
 
         self.btn_close = QPushButton(self.txt("btn_close"))
         self.btn_close.setObjectName("btn_secondary")
-        self.btn_close.setMinimumWidth(120)
-        self.btn_close.setFixedHeight(30)
+        self.btn_close.setMinimumWidth(config.S(100))
+        self.btn_close.setFixedHeight(config.S(30))
         self.btn_close.setCursor(Qt.PointingHandCursor)
         self.btn_close.clicked.connect(self.reject)
         btn_bar.addWidget(self.btn_close)
 
         self.btn_apply = QPushButton(self.txt("btn_apply"))
         self.btn_apply.setObjectName("btn_apply")
-        self.btn_apply.setMinimumWidth(120)
-        self.btn_apply.setFixedHeight(30)
+        self.btn_apply.setMinimumWidth(config.S(100))
+        self.btn_apply.setFixedHeight(config.S(30))
         self.btn_apply.setCursor(Qt.PointingHandCursor)
         self.btn_apply.clicked.connect(self._apply_settings)
         btn_bar.addWidget(self.btn_apply)
@@ -437,11 +437,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setSpacing(config.S(6))
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
         btn_rev = QPushButton("↺")
-        btn_rev.setFixedSize(26, 26)
+        btn_rev.setFixedSize(config.S(26), config.S(26))
         btn_rev.setCursor(Qt.PointingHandCursor)
         btn_rev.setObjectName("btn_ghost_sm")
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -451,7 +451,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         row.addWidget(btn_rev)
         lbl = QLabel(label_text)
         lbl.setWordWrap(True)
-        lbl.setMinimumWidth(200)
+        lbl.setMinimumWidth(config.S(180))
+        lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
         form.addRow(lbl, container)
         self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
         return lbl, container
@@ -483,19 +484,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         page_gen = QWidget()
         page_gen.setStyleSheet("background: transparent;")
         l_gen = QVBoxLayout(page_gen)
-        l_gen.setContentsMargins(24, 20, 24, 16)
+        l_gen.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
 
         # Basic/Advanced view switch
 
         view_btn_row = QHBoxLayout()
-        view_btn_row.setContentsMargins(0, 0, 0, 16)
-        view_btn_row.setSpacing(10)
+        view_btn_row.setContentsMargins(0, 0, 0, config.S(16))
+        view_btn_row.setSpacing(config.S(10))
         
         self.btn_view_basic = QPushButton(self.txt("btn_view_basic"))
-        self.btn_view_basic.setFixedHeight(30)
+        self.btn_view_basic.setFixedHeight(config.S(30))
         self.btn_view_basic.setCursor(Qt.PointingHandCursor)
-        self.active_btn_style = "background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold;"
-        self.inactive_btn_style = "background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal;"
+        self.active_btn_style = f"background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold; font-size: {config.FS(10)}pt;"
+        self.inactive_btn_style = f"background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal; font-size: {config.FS(10)}pt;"
         
         if self._is_basic_mode:
             self.btn_view_basic.setStyleSheet(self.active_btn_style)
@@ -504,7 +505,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.btn_view_basic.clicked.connect(lambda: self._set_view_mode('basic'))
         
         self.btn_view_advanced = QPushButton(self.txt("btn_view_advanced"))
-        self.btn_view_advanced.setFixedHeight(30)
+        self.btn_view_advanced.setFixedHeight(config.S(30))
         self.btn_view_advanced.setCursor(Qt.PointingHandCursor)
         
         if not self._is_basic_mode:
@@ -524,26 +525,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             "QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }"
         )
         ver_card_lay = QVBoxLayout(ver_card)
-        ver_card_lay.setContentsMargins(16, 12, 16, 12)
-        ver_card_lay.setSpacing(10)
+        ver_card_lay.setContentsMargins(config.S(16), config.S(12), config.S(16), config.S(12))
+        ver_card_lay.setSpacing(config.S(10))
 
         # Row 1: version + status + Update Now
         ver_row = QHBoxLayout()
-        ver_row.setSpacing(6)
+        ver_row.setSpacing(config.S(6))
         lbl_ver_key = QLabel(self.txt("lbl_ver_installed") + ":")
-        lbl_ver_key.setStyleSheet("color: #666; font-size: 9pt; background: transparent; border: none;")
+        lbl_ver_key.setStyleSheet(f"color: #666; font-size: {config.FS(9)}pt; background: transparent; border: none;")
         lbl_ver_val = QLabel(config.VERSION)
-        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 11pt; font-weight: bold; background: transparent; border: none;")
+        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent; border: none;")
         self._lbl_ver_status = QLabel("…")
-        self._lbl_ver_status.setStyleSheet("color: #555; font-size: 9pt; background: transparent; border: none;")
+        self._lbl_ver_status.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; background: transparent; border: none;")
         self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"))
         self._btn_ver_update.setObjectName("btn_ghost_sm")
-        self._btn_ver_update.setStyleSheet("padding: 3px 10px; font-size: 9pt;")
+        self._btn_ver_update.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS(9)}pt;")
         self._btn_ver_update.setCursor(Qt.PointingHandCursor)
         self._btn_ver_update.hide()
         ver_row.addWidget(lbl_ver_key)
         ver_row.addWidget(lbl_ver_val)
-        ver_row.addSpacing(12)
+        ver_row.addSpacing(config.S(12))
         ver_row.addWidget(self._lbl_ver_status)
         ver_row.addStretch()
         ver_row.addWidget(self._btn_ver_update)
@@ -1138,7 +1139,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         page_transcript = QWidget()
         page_transcript.setStyleSheet("background: transparent;")
         l_transcript = QVBoxLayout(page_transcript)
-        l_transcript.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        l_transcript.setContentsMargins(24, 20, 24, 16)
         l_transcript.setSpacing(0)
 
         # Always-on-top container (collapses cleanly with 0px gap in basic mode)
@@ -1149,7 +1150,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop_box.setSpacing(0)
 
         form_ontop = QFormLayout()
-        form_ontop.setSpacing(config.S(14))
+        form_ontop.setSpacing(14)
         form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         form_ontop.setContentsMargins(0, 0, 0, 0)
         
@@ -1160,19 +1161,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop.setContentsMargins(0, 0, 0, 0)
         l_ontop.addStretch()
         l_ontop.addWidget(self._get_info_icon("tt_always_on_top"))
-        l_ontop.addSpacing(config.S(6))
+        l_ontop.addSpacing(6)
         l_ontop.addWidget(self.chk_ontop)
         
         self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
                  False, lambda v: self.chk_ontop.setChecked(v, animated=False))
         l_ontop_box.addLayout(form_ontop)
-        l_ontop_box.addSpacing(config.S(14))
+        l_ontop_box.addSpacing(14)
         
         self._advanced_widgets.append(w_ontop_box)
         l_transcript.addWidget(w_ontop_box)
 
         form_transcript = QFormLayout()
-        form_transcript.setSpacing(config.S(14))
+        form_transcript.setSpacing(14)
         form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Display Mode (moved from General)

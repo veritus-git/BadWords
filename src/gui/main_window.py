@@ -292,7 +292,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.SP(10)}pt;
+                font-size: {config.FS(10)}pt;
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{

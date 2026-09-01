@@ -68,14 +68,14 @@ class SplashScreen(FramelessWindowMixin, _BaseDialog):
             }}
             QLabel#title {{
                 color: #ffffff;
-                font-size: {config.SP(18)}pt;
+                font-size: {config.FS(18)}pt;
                 font-weight: bold;
                 font-family: "{config.TITLE_FONT_NAME}", sans-serif;
                 background: transparent;
             }}
             QLabel#loading {{
                 color: {config.NOTE_COL};
-                font-size: {config.SP(12)}pt;
+                font-size: {config.FS(12)}pt;
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 background: transparent;
             }}
@@ -89,7 +89,7 @@ class SplashScreen(FramelessWindowMixin, _BaseDialog):
         lbl_title = QLabel("BadWords", self.inner_frame)
         lbl_title.setObjectName("title")
         lbl_title.setAlignment(Qt.AlignCenter)
-        lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.SP(18), QFont.Weight.Bold))
+        lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.FS(18), QFont.Weight.Bold))
         content_layout.addWidget(lbl_title)
 
         self._lbl_loading = QLabel(self.txt("lbl_loading"), self.inner_frame)
