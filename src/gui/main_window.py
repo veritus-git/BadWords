@@ -278,8 +278,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # --- Window basics ---
         self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
         self.setWindowIcon(_app_icon())
-        self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
-        self.setMinimumSize(config.CFG_WINDOW_W_BASE, 400)
+        init_w, init_h = config.get_responsive_window_size()
+        self.resize(init_w, init_h)
+        self.setMinimumSize(340, 420)
         # NOTE: force_dark_titlebar removed — CSD owns the title bar.
 
         # --- Global QSS ---
@@ -291,7 +292,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             QWidget {{
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
-                font-family: {config.UI_FONT_NAME};
+                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 font-size: 10pt;
             }}
             /* ---- Scrollbars (global) ---- */

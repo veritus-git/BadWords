@@ -1240,36 +1240,68 @@ pub fn run_uninstall(target_dir: PathBuf, sender: EventSender) {
 fn generate_davinci_wrapper(install_dir: &Path) -> String {
     let install_str = install_dir.to_string_lossy().replace('\\', "/");
     let libs_str = install_dir.join("libs").to_string_lossy().replace('\\', "/");
-    let qt_lib_str = install_dir.join("libs").join("PySide6").join("Qt").join("lib").to_string_lossy().replace('\\', "/");
     let main_script_str = install_dir.join("main.py").to_string_lossy().replace('\\', "/");
 
     format!(
 r#"import sys, os, traceback
 
-if sys.platform.startswith('linux'):
-    import ctypes
-    _qt_lib_dir = r"{qt_lib_str}"
-    _qt_preload = [
-        'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-        'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-    ]
-    if os.path.isdir(_qt_lib_dir):
-        for _lib in _qt_preload:
-            _p = os.path.join(_qt_lib_dir, _lib)
-            if os.path.exists(_p):
-                try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                except OSError: pass
-
 INSTALL_DIR = r"{install_str}"
-LIBS_DIR    = r"{libs_str}"
 MAIN_SCRIPT = r"{main_script_str}"
 
-if os.path.exists(LIBS_DIR):
-    if LIBS_DIR in sys.path: sys.path.remove(LIBS_DIR)
-    sys.path.insert(0, LIBS_DIR)
+# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
+_candidates = [
+    r"{libs_str}",
+    os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+]
+
+_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
+if os.path.isdir(_v_lib):
+    try:
+        for _entry in os.listdir(_v_lib):
+            _sp = os.path.join(_v_lib, _entry, "site-packages")
+            if os.path.isdir(_sp) and _sp not in _candidates:
+                _candidates.append(_sp)
+    except Exception:
+        pass
+
+for _sp_dir in _candidates:
+    if os.path.isdir(_sp_dir):
+        if _sp_dir in sys.path:
+            sys.path.remove(_sp_dir)
+        sys.path.insert(0, _sp_dir)
+
 if INSTALL_DIR not in sys.path:
     sys.path.append(INSTALL_DIR)
 
+# 2. Windows: register DLL search paths for PySide6 and shiboken6
+if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            for _pkg in ['PySide6', 'shiboken6']:
+                _p = os.path.join(_sp_dir, _pkg)
+                if os.path.isdir(_p):
+                    try: os.add_dll_directory(_p)
+                    except Exception: pass
+
+# 3. Linux: Preload Qt6 shared libraries if needed
+if sys.platform.startswith('linux'):
+    import ctypes
+    for _sp_dir in _candidates:
+        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+        if os.path.isdir(_qt_lib_dir):
+            _qt_preload = [
+                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+            ]
+            for _lib in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib)
+                if os.path.exists(_p):
+                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except OSError: pass
+            break
+
+# 4. Launch main script
 if os.path.exists(MAIN_SCRIPT):
     try:
         with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
