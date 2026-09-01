@@ -138,7 +138,10 @@ class AppController:
         # Wire clean-shutdown callback
         self.main_win.closeEvent_callback = self._on_close
 
-        self.main_win.show()
+        if getattr(self.main_win, '_is_mac', False):
+            self.main_win.showFullScreen()
+        else:
+            self.main_win.showMaximized()
         self.main_win.raise_()
         self.main_win.activateWindow()
         osdoc.log_info("Main window displayed.")
