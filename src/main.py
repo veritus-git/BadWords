@@ -348,9 +348,41 @@ def main():
             except Exception:
                 pass
 
+        if os_doc.is_mac:
+            try:
+                import ctypes
+                import ctypes.util
+                objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
+                objc.objc_getClass.restype = ctypes.c_void_p
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.objc_msgSend.restype = ctypes.c_void_p
+                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+
+                cls_NSProcessInfo = objc.objc_getClass(b'NSProcessInfo')
+                sel_processInfo = objc.sel_registerName(b'processInfo')
+                processInfo = objc.objc_msgSend(cls_NSProcessInfo, sel_processInfo)
+
+                cls_NSString = objc.objc_getClass(b'NSString')
+                sel_stringWithUTF8String = objc.sel_registerName(b'stringWithUTF8String:')
+                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
+                ns_name = objc.objc_msgSend(cls_NSString, sel_stringWithUTF8String, b'BadWords')
+
+                sel_setProcessName = objc.sel_registerName(b'setProcessName:')
+                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+                objc.objc_msgSend(processInfo, sel_setProcessName, ns_name)
+            except Exception:
+                pass
+            try:
+                import ctypes
+                ctypes.CDLL(None).setprogname(b"BadWords")
+            except Exception:
+                pass
+
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
+        app.setApplicationName(config.APP_NAME)
+        app.setApplicationDisplayName(config.APP_NAME)
 
         # Register embedded cross-platform UI font (Ubuntu Sans / Ubuntu) into Qt Font Engine
         gui.init_embedded_fonts()

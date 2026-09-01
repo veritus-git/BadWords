@@ -582,9 +582,21 @@ impl eframe::App for InstallerApp {
                         }
                         #[cfg(target_os = "macos")]
                         {
-                            let python = target.join("venv").join("bin").join("python3");
-                            let main_py = target.join("main.py");
-                            let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                            let app_path = dirs::home_dir().map(|h| h.join("Applications").join("BadWords.app"));
+                            let launched = if let Some(ref app) = app_path {
+                                if app.exists() {
+                                    std::process::Command::new("open").arg(app).spawn().is_ok()
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+                            if !launched {
+                                let python = target.join("venv").join("bin").join("python3");
+                                let main_py = target.join("main.py");
+                                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                            }
                         }
                         #[cfg(target_os = "linux")]
                         {
@@ -1315,9 +1327,21 @@ impl eframe::App for InstallerApp {
                                                             }
                                                             #[cfg(target_os = "macos")]
                                                             {
-                                                                let python = target.join("venv").join("bin").join("python3");
-                                                                let main_py = target.join("main.py");
-                                                                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                                                                let app_path = dirs::home_dir().map(|h| h.join("Applications").join("BadWords.app"));
+                                                                let launched = if let Some(ref app) = app_path {
+                                                                    if app.exists() {
+                                                                        std::process::Command::new("open").arg(app).spawn().is_ok()
+                                                                    } else {
+                                                                        false
+                                                                    }
+                                                                } else {
+                                                                    false
+                                                                };
+                                                                if !launched {
+                                                                    let python = target.join("venv").join("bin").join("python3");
+                                                                    let main_py = target.join("main.py");
+                                                                    let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+                                                                }
                                                             }
                                                             #[cfg(target_os = "linux")]
                                                             {
