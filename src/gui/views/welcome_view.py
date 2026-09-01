@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
 )
-from PySide6.QtGui import QPixmap, QCursor
+from PySide6.QtGui import QPixmap, QCursor, QFont
 
 import config
 from gui.utils import get_play_icon
@@ -49,18 +49,19 @@ def build_welcome_view(win) -> QWidget:
     lbl_title = QLabel("BadWords", inner)
     lbl_title.setObjectName("welcome_title")
     lbl_title.setAlignment(Qt.AlignCenter)
+    lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.SP(36), QFont.Weight.Bold))
     lbl_title.setStyleSheet(f"""
         QLabel#welcome_title {{
             color: #ffffff;
-            font-size: 36pt;
+            font-size: {config.SP(36)}pt;
             font-weight: bold;
-            font-family: 'Ubuntu';
+            font-family: "{config.TITLE_FONT_NAME}", sans-serif;
             background: transparent;
             letter-spacing: 0.5px;
         }}
     """)
     inner_layout.addWidget(lbl_title)
-    inner_layout.addSpacing(6)
+    inner_layout.addSpacing(config.S(6))
 
     # ── Local stacked widget ──────────────────────────────────────────
     win.welcome_stack = QStackedWidget()

@@ -278,9 +278,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # --- Window basics ---
         self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
         self.setWindowIcon(_app_icon())
-        init_w, init_h = config.get_responsive_window_size()
-        self.resize(init_w, init_h)
-        self.setMinimumSize(340, 420)
+        self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
+        self.setMinimumSize(config.S(330), config.S(400))
         # NOTE: force_dark_titlebar removed — CSD owns the title bar.
 
         # --- Global QSS ---
@@ -293,18 +292,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: 10pt;
+                font-size: {config.SP(10)}pt;
             }}
             /* ---- Scrollbars (global) ---- */
             QScrollBar:vertical {{
                 background: {config.SCROLL_BG};
-                width: 8px;
+                width: {config.S(8)}px;
                 border: none;
             }}
             QScrollBar::handle:vertical {{
                 background: {config.SCROLL_FG};
-                border-radius: 4px;
-                min-height: 20px;
+                border-radius: {config.S(4)}px;
+                min-height: {config.S(20)}px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: {config.SCROLL_ACTIVE};
