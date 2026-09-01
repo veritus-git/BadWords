@@ -751,8 +751,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             target_splitter.show()
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
-                # 14.58% perfectly matches 280px on a 1920px display
-                target_w = max(180, min(300, int(self.width() * (280.0 / 1920.0))))
+                # On narrower screens (< 16:9 aspect ratio or width < 1800 or macOS), open panels ~5% wider
+                # so toggle switches, badges, and buttons in assembly/fillers panels have plenty of breathing room.
+                win_w = max(800, self.width())
+                win_h = max(600, self.height())
+                aspect_ratio = float(win_w) / float(win_h) if win_h > 0 else 1.77
+                
+                is_narrow_or_small = (aspect_ratio < 1.75) or (win_w < 1800) or getattr(self, '_is_mac', False)
+                
+                if is_narrow_or_small:
+                    # ~5% wider ratio (~19.5% vs 14.58%)
+                    target_w = max(config.S(230), min(config.S(330), int(win_w * ((280.0 / 1920.0) + 0.05))))
+                else:
+                    # Standard 16:9 1080p ratio (~14.58%, 280px)
+                    target_w = max(config.S(180), min(config.S(300), int(win_w * (280.0 / 1920.0))))
+
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
                     sizes[0] = target_w
