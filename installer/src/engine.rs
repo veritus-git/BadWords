@@ -1023,27 +1023,7 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
 
         // 7. DaVinci Resolve Wrapper (1:1 with setup.py)
         emit_progress(&sender, 92, 3, "Configuring DaVinci Resolve...", "Writing Fusion utility script wrappers");
-        let resolve_dirs = resolve_script_dirs();
-        let mut wrappers_written = 0;
-
-        for r_dir in &resolve_dirs {
-            let _ = fs::create_dir_all(r_dir);
-            let wrapper_path = r_dir.join("BadWords.py");
-            let wrapper_code = generate_davinci_wrapper(&target_dir);
-            if fs::write(&wrapper_path, wrapper_code).is_ok() {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
-                }
-                emit_log(&sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
-                wrappers_written += 1;
-            }
-        }
-
-        if wrappers_written == 0 {
-            emit_log(&sender, "WARN", "DaVinci Resolve directory not found; please launch DaVinci once to create scripts folder.");
-        }
+        deploy_davinci_wrapper(&target_dir, &sender);
 
         // 8. Copy installer binary as uninstaller / setup inside target_dir
         if let Ok(current_exe) = std::env::current_exe() {
@@ -1140,18 +1120,7 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
 
         // Re-create DaVinci wrapper & shortcuts
         emit_progress(&sender, 90, 2, "Updating integrations...", "Rebuilding DaVinci wrapper and shortcuts");
-        let resolve_dirs = resolve_script_dirs();
-        for r_dir in &resolve_dirs {
-            let wrapper_path = r_dir.join("BadWords.py");
-            let wrapper_code = generate_davinci_wrapper(&target_dir);
-            let _ = fs::write(&wrapper_path, wrapper_code);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
-            }
-        }
-        emit_log(&sender, "OK", "DaVinci Resolve script wrapper updated.");
+        deploy_davinci_wrapper(&target_dir, &sender);
 
         #[cfg(target_os = "windows")]
         {
@@ -1193,17 +1162,7 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
 
         // Step 3: Update DaVinci Resolve wrappers (80% -> 85%)
         emit_progress(&sender, 80, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
-        let resolve_dirs = resolve_script_dirs();
-        for r_dir in &resolve_dirs {
-            let wrapper_path = r_dir.join("BadWords.py");
-            let wrapper_code = generate_davinci_wrapper(&to_dir);
-            let _ = fs::write(&wrapper_path, wrapper_code);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
-            }
-        }
+        deploy_davinci_wrapper(&to_dir, &sender);
 
         // Step 4: Clean old directory progressively (85% -> 98%)
         emit_progress(&sender, 85, 2, "Cleaning old directory...", "Removing old installation files");
@@ -1255,14 +1214,7 @@ pub fn run_uninstall(target_dir: PathBuf, sender: EventSender) {
         }
 
         emit_progress(&sender, 75, 1, "Removing integrations...", "Deleting DaVinci Resolve wrappers");
-        let resolve_dirs = resolve_script_dirs();
-        for r_dir in &resolve_dirs {
-            let wrapper_path = r_dir.join("BadWords.py");
-            if wrapper_path.exists() {
-                let _ = fs::remove_file(&wrapper_path);
-                emit_log(&sender, "OK", &format!("Removed wrapper from: {}", wrapper_path.display()));
-            }
-        }
+        remove_davinci_wrappers(&sender);
 
         emit_progress(&sender, 90, 2, "Cleaning system entries...", "Removing desktop launchers and shortcuts");
         #[cfg(target_os = "windows")]
@@ -1329,4 +1281,63 @@ else:
     print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
 "#
     )
+}
+
+const LEGACY_WRAPPER_NAMES: &[&str] = &[
+    "BadWords.py",
+    "Badwords.py",
+    "BadWords (Linux).py",
+    "BadWords (Mac).py",
+    "BadWords (macOS).py",
+    "BadWords (Windows).py",
+    "BadWords_Launcher.py",
+    "BadWords.lua",
+];
+
+/// Deploys exactly ONE DaVinci Resolve wrapper, prioritizing user-level directories to prevent duplicate menu entries
+pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
+    let resolve_dirs = resolve_script_dirs();
+
+    // 1. Clean up any existing / legacy wrappers across all candidate paths first
+    for r_dir in &resolve_dirs {
+        for leg in LEGACY_WRAPPER_NAMES {
+            let leg_path = r_dir.join(leg);
+            if leg_path.exists() {
+                let _ = fs::remove_file(&leg_path);
+            }
+        }
+    }
+
+    // 2. Write exactly ONE wrapper to the first writable directory (user dir prioritized)
+    let wrapper_code = generate_davinci_wrapper(target_dir);
+    for r_dir in &resolve_dirs {
+        let _ = fs::create_dir_all(r_dir);
+        let wrapper_path = r_dir.join("BadWords.py");
+        if fs::write(&wrapper_path, &wrapper_code).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
+            }
+            emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
+            return true;
+        }
+    }
+
+    emit_log(sender, "WARN", "DaVinci Resolve directory not found; please launch DaVinci once to create scripts folder.");
+    false
+}
+
+/// Removes all BadWords wrappers and legacy variations from all DaVinci Resolve script directories
+pub fn remove_davinci_wrappers(sender: &EventSender) {
+    let resolve_dirs = resolve_script_dirs();
+    for r_dir in &resolve_dirs {
+        for leg in LEGACY_WRAPPER_NAMES {
+            let p = r_dir.join(leg);
+            if p.exists() {
+                let _ = fs::remove_file(&p);
+                emit_log(sender, "OK", &format!("Removed DaVinci wrapper: {}", p.display()));
+            }
+        }
+    }
 }

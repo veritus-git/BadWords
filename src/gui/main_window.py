@@ -531,7 +531,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         Left and right vertical activity frames overlaying the main window.
         """
         self._sidebar_left = QFrame(self)
-        self._sidebar_left.setFixedWidth(50)
+        self._sidebar_left.setFixedWidth(config.SIDEBAR_WIDTH)
         self._sidebar_left.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         left_layout = QVBoxLayout(self._sidebar_left)
         left_layout.setContentsMargins(5, 6, 5, 6)
@@ -560,7 +560,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._sidebar_left.show()
 
         self._sidebar_right = QFrame(self)
-        self._sidebar_right.setFixedWidth(50)
+        self._sidebar_right.setFixedWidth(config.SIDEBAR_WIDTH)
         self._sidebar_right.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         right_layout = QVBoxLayout(self._sidebar_right)
         right_layout.setContentsMargins(5, 6, 5, 6)

@@ -86,13 +86,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowTitle(self.txt("tool_settings"))
         self.frameless_init(is_popup=True)
         self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
-        self.setFixedSize(750, 580)
+        self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
 
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
         self.setStyleSheet(f"""
-            QDialog {{ background-color: transparent; }}
+            QDialog {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #1a1a1a;
@@ -324,41 +324,40 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
 
     def _set_view_mode(self, mode):
-        self.engine.save_preferences({'settings_view_mode': mode})
-        if hasattr(self, '_initial_state'):
-            self._initial_state['settings_view_mode'] = mode
-            for k, def_v in config.DEFAULT_SETTINGS.items():
-                if k not in self._initial_state:
-                    self._initial_state[k] = def_v
+        self.setUpdatesEnabled(False)
+        try:
+            self.engine.save_preferences({'settings_view_mode': mode})
+            if hasattr(self, '_initial_state'):
+                self._initial_state['settings_view_mode'] = mode
+                for k, def_v in config.DEFAULT_SETTINGS.items():
+                    if k not in self._initial_state:
+                        self._initial_state[k] = def_v
+                
+            self._is_basic_mode = (mode == 'basic')
             
-        self._is_basic_mode = (mode == 'basic')
-        
-        item = self.category_list.item(4) # AI Engine
-        if item:
-            item.setHidden(self._is_basic_mode)
-            
-        if self._is_basic_mode and self.category_list.currentRow() == 4:
-            self.category_list.setCurrentRow(0)
-            
-        if hasattr(self, 'btn_view_basic') and hasattr(self, 'btn_view_advanced'):
-            if self._is_basic_mode:
-                self.btn_view_basic.setStyleSheet(self.active_btn_style)
-                self.btn_view_advanced.setStyleSheet(self.inactive_btn_style)
-            else:
-                self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
-                self.btn_view_advanced.setStyleSheet(self.active_btn_style)
+            if hasattr(self, 'category_list') and self.category_list.count() > 4:
+                item = self.category_list.item(4) # AI Engine
+                if item:
+                    item.setHidden(self._is_basic_mode)
+                    
+                if self._is_basic_mode and self.category_list.currentRow() == 4:
+                    self.category_list.setCurrentRow(0)
+                    
+            if hasattr(self, 'btn_view_basic') and hasattr(self, 'btn_view_advanced'):
+                if self._is_basic_mode:
+                    self.btn_view_basic.setStyleSheet(self.active_btn_style)
+                    self.btn_view_advanced.setStyleSheet(self.inactive_btn_style)
+                else:
+                    self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
+                    self.btn_view_advanced.setStyleSheet(self.active_btn_style)
 
-        # Invalidate cached pages so they rebuild dynamically with the updated view mode
-        cur_row = self.category_list.currentRow()
-        if hasattr(self, '_page_built') and hasattr(self, 'stack'):
-            for idx in range(self.stack.count()):
-                self._page_built[idx] = False
-                scroll = self.stack.widget(idx)
-                if scroll and hasattr(scroll, 'takeWidget'):
-                    w = scroll.takeWidget()
+            # Instant visibility toggle for advanced elements across built pages
+            if hasattr(self, '_advanced_widgets'):
+                for w in self._advanced_widgets:
                     if w:
-                        w.deleteLater()
-            self._build_page(cur_row)
+                        w.setVisible(not self._is_basic_mode)
+        finally:
+            self.setUpdatesEnabled(True)
     def showEvent(self, event):
         super().showEvent(event)
         # WORKAROUND: Force OS to refresh the main application icon
@@ -462,6 +461,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             page_widget = method(prefs)
             if page_widget:
                 scroll.setWidget(page_widget)
+            if hasattr(self, '_advanced_widgets'):
+                for w in self._advanced_widgets:
+                    if w:
+                        w.setVisible(not self._is_basic_mode)
             self._page_built[idx] = True
 
     def _build_page_general(self, prefs):

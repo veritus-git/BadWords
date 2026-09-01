@@ -57,11 +57,15 @@ fn main() -> eframe::Result<()> {
         return run_headless_cli(&args);
     }
 
-    // 650x550 okno + 28px marginesu na wielowarstwowy cień Gaussa = 706x606
+    #[cfg(target_os = "macos")]
+    let (total_w, total_h) = (650.0, 550.0);
+    #[cfg(not(target_os = "macos"))]
+    let (total_w, total_h) = (706.0, 606.0);
+
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([706.0, 606.0])
-        .with_min_inner_size([706.0, 606.0])
-        .with_max_inner_size([706.0, 606.0])
+        .with_inner_size([total_w, total_h])
+        .with_min_inner_size([total_w, total_h])
+        .with_max_inner_size([total_w, total_h])
         .with_resizable(false)
         .with_decorations(false)
         .with_transparent(true)
@@ -70,7 +74,7 @@ fn main() -> eframe::Result<()> {
                 .expect("Failed to load icon"),
         );
 
-    if let Some((pos_x, pos_y)) = os::get_primary_monitor_center(706.0, 606.0) {
+    if let Some((pos_x, pos_y)) = os::get_primary_monitor_center(total_w, total_h) {
         viewport = viewport.with_position([pos_x, pos_y]);
     }
 
@@ -594,33 +598,40 @@ impl eframe::App for InstallerApp {
             }
         }
 
-        // ── Główny Panel Aplikacji (Ścisłe, niezmienne wymiary 706x606) ──
+        // ── Główny Panel Aplikacji (Ścisłe wymiary) ──
+        #[cfg(target_os = "macos")]
+        let (win_w, win_h, margin) = (650.0, 550.0, 0.0);
+        #[cfg(not(target_os = "macos"))]
+        let (win_w, win_h, margin) = (706.0, 606.0, 28.0);
+
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT).inner_margin(0.0))
             .show(ctx, |ui| {
-                ui.set_min_size(egui::vec2(706.0, 606.0));
-                ui.set_max_size(egui::vec2(706.0, 606.0));
+                ui.set_min_size(egui::vec2(win_w, win_h));
+                ui.set_max_size(egui::vec2(win_w, win_h));
 
-                let margin = 28.0;
-                let window_rect = egui::Rect::from_min_size(
-                    ui.min_rect().min + egui::vec2(margin, margin),
-                    egui::vec2(650.0, 550.0),
-                );
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let window_rect = egui::Rect::from_min_size(
+                        ui.min_rect().min + egui::vec2(margin, margin),
+                        egui::vec2(650.0, 550.0),
+                    );
 
-                let painter = ui.painter();
+                    let painter = ui.painter();
 
-                // 8-warstwowy, ultra-gładki cień Gaussa wokół okna
-                let shadow_layers = [
-                    egui::epaint::Shadow { offset: egui::vec2(0.0, 1.0), blur: 3.0, spread: 0.0, color: egui::Color32::from_black_alpha(65) },
-                    egui::epaint::Shadow { offset: egui::vec2(0.0, 2.0), blur: 6.0, spread: 0.5, color: egui::Color32::from_black_alpha(55) },
-                    egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 10.0, spread: 1.0, color: egui::Color32::from_black_alpha(45) },
-                    egui::epaint::Shadow { offset: egui::vec2(0.0, 4.0), blur: 18.0, spread: 2.0, color: egui::Color32::from_black_alpha(35) },
-                    egui::epaint::Shadow { offset: egui::vec2(0.0, 6.0), blur: 28.0, spread: 3.0, color: egui::Color32::from_black_alpha(25) },
-                ];
+                    // 8-warstwowy, ultra-gładki cień Gaussa wokół okna
+                    let shadow_layers = [
+                        egui::epaint::Shadow { offset: egui::vec2(0.0, 1.0), blur: 3.0, spread: 0.0, color: egui::Color32::from_black_alpha(65) },
+                        egui::epaint::Shadow { offset: egui::vec2(0.0, 2.0), blur: 6.0, spread: 0.5, color: egui::Color32::from_black_alpha(55) },
+                        egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 10.0, spread: 1.0, color: egui::Color32::from_black_alpha(45) },
+                        egui::epaint::Shadow { offset: egui::vec2(0.0, 4.0), blur: 18.0, spread: 2.0, color: egui::Color32::from_black_alpha(35) },
+                        egui::epaint::Shadow { offset: egui::vec2(0.0, 6.0), blur: 28.0, spread: 3.0, color: egui::Color32::from_black_alpha(25) },
+                    ];
 
-                for shadow in shadow_layers {
-                    let mesh = shadow.tessellate(window_rect, 0.0);
-                    painter.add(egui::Shape::Mesh(mesh));
+                    for shadow in shadow_layers {
+                        let mesh = shadow.tessellate(window_rect, 0.0);
+                        painter.add(egui::Shape::Mesh(mesh));
+                    }
                 }
 
                 // Ciało Okna (Dokładnie 650x550px)
