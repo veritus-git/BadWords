@@ -67,17 +67,7 @@ _HAS_QFRAMELESS = False
 _BaseMainWindow = QMainWindow
 _BaseDialog = QDialog
 
-# ==========================================
-# MACOS FONT SCALING MONKEY PATCH
-# ==========================================
-_orig_set_style_sheet = QWidget.setStyleSheet
-def _scaled_set_style_sheet(self, qss):
-    import platform, re
-    if platform.system() == "Darwin" and qss and isinstance(qss, str):
-        # Scale pt to px using 1.333 ratio
-        qss = re.sub(r'font-size:\s*([\d\.]+)pt;', lambda m: f"font-size: {int(float(m.group(1)) * 1.333)}px;", qss)
-    _orig_set_style_sheet(self, qss)
-QWidget.setStyleSheet = _scaled_set_style_sheet
+
 
 # ==========================================
 # CONSTANTS

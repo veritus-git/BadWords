@@ -465,7 +465,7 @@ try:
             c_idx, c_segs = process_chunk(i, s, e)
             results_dict[c_idx] = c_segs
             completed += 1
-            print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}")
+            print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {{executor.submit(process_chunk, i, s, e): i for i, (s, e) in enumerate(ISLANDS)}}
@@ -473,8 +473,8 @@ try:
                 c_idx, c_segs = future.result()
                 results_dict[c_idx] = c_segs
                 completed += 1
-                print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}")
-            print(f"CHUNK_PROGRESS: {{int(completed/total_chunks*100)}}")
+                print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
+            print(f"CHUNK_PROGRESS: {{int(completed/total_chunks*100)}}", flush=True)
 
     # Assemble in order
     output_segments = []
@@ -602,7 +602,8 @@ except Exception as e:
             f.write(script_content)
 
         python_exec = self._get_python_executable()
-        cmd = [python_exec, runner_script_path]
+        cmd = [python_exec, "-u", runner_script_path]
+        env["PYTHONUNBUFFERED"] = "1"
         
         log_info(f"Running Whisper Runner (Faster-Whisper). Script: {runner_script_path}")
         
@@ -640,7 +641,7 @@ except Exception as e:
                     chunk_match = re.search(r'CHUNK_PROGRESS:\s*(\d+)', line)
                     if chunk_match and progress_callback:
                         progress_callback(int(chunk_match.group(1)))
-                    if "Segment processed:" in line:
+                    if "Segment processed:" in line or "[Chunked] Island " in line:
                         segments_count += 1
                 else:
                     line_stripped = line.strip()
@@ -651,7 +652,7 @@ except Exception as e:
             whisper_sec = int(time.time() - whisper_start)
             w_mins = whisper_sec // 60
             w_secs = whisper_sec % 60
-            log_info(f"[RUNNER] Transcription complete in {w_mins}:{w_secs:02d} min. Total segments processed: {segments_count}")
+            log_info(f"[RUNNER] Transcription complete in {w_mins}:{w_secs:02d} min. Total chunks/segments processed: {segments_count}")
             
             if process.returncode != 0:
                 log_error(f"Subprocess Failed. Return Code: {process.returncode}")

@@ -181,19 +181,43 @@ class AudioExtractionMixin:
             return []
 
     def _get_audio_duration(self, wav_path):
-        """Return audio duration in seconds via ffprobe."""
+        """Return audio duration in seconds via Python wave module, ffprobe, or ffmpeg fallback."""
         try:
-            # FIX KR-05: don't use replace("ffmpeg","ffprobe") — path may contain "ffmpeg" multiple times
+            import wave
+            with wave.open(wav_path, 'rb') as wf:
+                framerate = wf.getframerate()
+                nframes = wf.getnframes()
+                if framerate > 0 and nframes > 0:
+                    return float(nframes) / float(framerate)
+        except Exception:
+            pass
+
+        try:
             _ffmpeg_dir = os.path.dirname(self.ffmpeg_cmd)
             _ffprobe_name = "ffprobe" + (".exe" if self.os_doc.is_win else "")
             ffprobe = os.path.join(_ffmpeg_dir, _ffprobe_name) if _ffmpeg_dir else _ffprobe_name
-            cmd = [ffprobe, "-v", "error", "-show_entries", "format=duration",
-                   "-of", "default=noprint_wrappers=1:nokey=1", wav_path]
+            if os.path.exists(ffprobe):
+                cmd = [ffprobe, "-v", "error", "-show_entries", "format=duration",
+                       "-of", "default=noprint_wrappers=1:nokey=1", wav_path]
+                res = subprocess.run(cmd, capture_output=True, text=True,
+                                     **self.os_doc.get_subprocess_kwargs())
+                return float(res.stdout.strip())
+        except Exception:
+            pass
+
+        try:
+            import re
+            cmd = [self.ffmpeg_cmd, "-i", wav_path]
             res = subprocess.run(cmd, capture_output=True, text=True,
                                  **self.os_doc.get_subprocess_kwargs())
-            return float(res.stdout.strip())
+            match = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', res.stderr)
+            if match:
+                h, m, s = match.groups()
+                return int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:
-            return 9999.0
+            pass
+
+        return 0.0
 
     def _compute_sound_islands(self, silence_ranges, total_duration,
                                min_island_dur=0.3, pad_fixed=0.25, pad_threshold=0.5):

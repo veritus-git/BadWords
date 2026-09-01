@@ -14,8 +14,61 @@ Helper utilities for GUI (e.g., time formatting, icon loading).
 import os
 import platform
 from PySide6.QtWidgets import QApplication, QWidget
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QFontDatabase
+from PySide6.QtCore import QByteArray
 import config
+
+
+def init_embedded_fonts():
+    """
+    Registers embedded Ubuntu font weights (Regular, Light, Bold, Italic)
+    into the Qt Font Database from memory for Windows and Linux.
+    macOS uses native Helvetica Neue.
+    """
+    try:
+        import platform
+        if platform.system() == "Darwin":
+            return
+        import zlib
+        import base64
+        from .fonts_data import EMBEDDED_FONTS
+
+        for b64_font in EMBEDDED_FONTS:
+            raw_data = zlib.decompress(base64.b64decode(b64_font))
+            QFontDatabase.addApplicationFontFromData(QByteArray(raw_data))
+    except Exception:
+        pass
+
+
+def get_svg_icon(svg_str: str, size: int = 12) -> QIcon:
+    """Renders an SVG string into a crisp, HighDPI anti-aliased QIcon."""
+    try:
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QPixmap, QPainter
+        from PySide6.QtCore import QByteArray, Qt
+        renderer = QSvgRenderer(QByteArray(svg_str.encode('utf-8')))
+        pixmap = QPixmap(size * 2, size * 2)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        renderer.render(painter)
+        painter.end()
+        pixmap.setDevicePixelRatio(2.0)
+        return QIcon(pixmap)
+    except Exception:
+        return QIcon()
+
+
+def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2) -> QIcon:
+    """Returns a modern, slender vector play icon for action buttons, optically centered on Y-axis."""
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+      <g transform="translate(0, {y_offset})">
+        <path d="M8 5.14v13.72a1 1 0 001.5.86l11.43-6.86a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z" fill="{color}"/>
+      </g>
+    </svg>'''
+    return get_svg_icon(svg, size)
+
 
 def get_icon_path(icon_name: str = "default") -> str:
     """Returns absolute path to an app icon (.ico on Windows, .png on Unix), checking all possible prod/dev locations."""
@@ -123,3 +176,37 @@ def _qwidget_txt(self, key: str, **kwargs) -> str:
     return _txt("en", key, **kwargs)
 
 QWidget.txt = _qwidget_txt
+
+
+# ==========================================
+# GLOBAL STYLESHEET ENHANCEMENTS
+# ==========================================
+def _apply_global_style_enhancements(qss: str) -> str:
+    """
+    Applies global style enhancements across all Qt widgets:
+    1. Scales pt -> px on macOS (Darwin) for crisp HighDPI rendering.
+    """
+    if not qss or not isinstance(qss, str):
+        return qss
+
+    import re
+
+    # 1. macOS font pt->px scaling
+    if platform.system() == "Darwin":
+        qss = re.sub(r'font-size:\s*([\d\.]+)pt;', lambda m: f"font-size: {int(float(m.group(1)) * 1.333)}px;", qss)
+
+    return qss
+
+
+_orig_widget_set_style_sheet = QWidget.setStyleSheet
+def _enhanced_widget_set_style_sheet(self, qss):
+    _orig_widget_set_style_sheet(self, _apply_global_style_enhancements(qss))
+
+QWidget.setStyleSheet = _enhanced_widget_set_style_sheet
+
+_orig_app_set_style_sheet = QApplication.setStyleSheet
+def _enhanced_app_set_style_sheet(self, qss):
+    _orig_app_set_style_sheet(self, _apply_global_style_enhancements(qss))
+
+QApplication.setStyleSheet = _enhanced_app_set_style_sheet
+

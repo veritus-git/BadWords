@@ -7,13 +7,16 @@ on:
       - 'main'
     paths:
       - 'installer/**'
-      - 'src/**'
       - 'setupfiles/**'
       - '.github/workflows/installer_test.yml'
   pull_request:
     branches:
       - 'dev-v4'
       - 'main'
+    paths:
+      - 'installer/**'
+      - 'setupfiles/**'
+      - '.github/workflows/installer_test.yml'
   workflow_dispatch:
 
 jobs:

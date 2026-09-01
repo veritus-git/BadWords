@@ -7,9 +7,10 @@ on:
       - 'main'
     tags:
       - 'v*'
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    paths:
+      - 'installer/**'
+      - 'setupfiles/**'
+      - '.github/workflows/build-installer.yml'
   release:
     types: [published, created]
   workflow_dispatch:

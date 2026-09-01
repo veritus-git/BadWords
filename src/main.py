@@ -32,9 +32,11 @@ if sys.version_info < (3, 9):
         pass
 
 from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtGui import QFont
 from PySide6.QtCore import QThread, Signal
 
 # Application module imports
+import config
 import osdoc
 import api
 import engine
@@ -352,6 +354,13 @@ def main():
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
+
+        # Register embedded cross-platform UI font (Ubuntu on Win/Linux) into Qt Font Engine
+        gui.init_embedded_fonts()
+        default_font = QFont(config.UI_FONT_NAME, config.BASE_FONT_PT)
+        default_font.setStyleStrategy(QFont.PreferAntialias | QFont.StyleStrategy.PreferTypoLineMetrics)
+        default_font.setWeight(QFont.Weight.Normal)
+        app.setFont(default_font)
 
         if os_doc.is_mac:
             app.setStyle('Fusion')
