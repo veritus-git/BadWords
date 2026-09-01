@@ -409,7 +409,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._page_built = [False] * self.category_list.count()
         for _ in range(self.category_list.count()):
             scroll = QScrollArea()
-            scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+            scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.NoFrame)
@@ -417,6 +417,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.stack.addWidget(scroll)
 
         def _on_tab_changed(idx):
+            self._ensure_page_built(idx)
             self.stack.setCurrentIndex(idx)
             item = self.category_list.item(idx)
             if item and item.text() == self.txt("tab_support"):
@@ -426,18 +427,23 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 
         self.category_list.currentRowChanged.connect(_on_tab_changed)
 
-        # Pre-build ALL pages during init so tab-switching is instant and never creates DWM flicker
-        for i in range(self.category_list.count()):
-            self._build_page(i)
-
+        # Build initial General tab on demand (eliminates background pages sliding across screen)
+        self._ensure_page_built(0)
         self.category_list.setCurrentRow(0)
+
+    def _ensure_page_built(self, idx):
+        if idx < 0 or idx >= len(self._page_built):
+            return
+        if self._page_built[idx]:
+            return
+        self._build_page(idx)
 
     def _add_row(self, form, label_text, widget, default_val, setter_func):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(config.S(8))
-        widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
         btn_rev = QPushButton("↺")
         btn_rev.setFixedSize(config.S(26), config.S(26))
@@ -448,16 +454,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             return lambda checked=False: s_func(d_val)
         btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
         row.addWidget(btn_rev)
-        row.addStretch()
         lbl = QLabel(label_text)
         lbl.setWordWrap(True)
-        lbl.setMinimumWidth(config.S(140))
+        lbl.setMinimumWidth(config.S(160))
         lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
         form.addRow(lbl, container)
         self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
         return lbl, container
 
     def _build_page(self, idx):
+        if idx < 0 or idx >= self.stack.count():
+            return
         scroll = self.stack.widget(idx)
         prefs = self.engine.load_preferences() or {}
         
@@ -760,7 +767,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Language dropdown
         self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
-        self.dropdown_lang.setFixedWidth(config.S(220))
         current_lang_code = prefs.get('gui_lang', 'en')
         self.dropdown_lang.setText(config.SUPPORTED_LANGS.get(current_lang_code, 'English'))
 

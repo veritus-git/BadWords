@@ -28,8 +28,8 @@ POSTHOG_HOST = "https://eu.i.posthog.com"
 IS_MAC = platform.system() == "Darwin"
 IS_WIN = platform.system() == "Windows"
 
-# Global Scale Factor (defaults: 0.92 on macOS, 1.0 on standard 1080p/4K Windows/Linux)
-SCALE_FACTOR = 0.92 if IS_MAC else 1.0
+# Global Scale Factor (defaults: 0.85 on macOS, 1.0 on standard 1080p/4K Windows/Linux)
+SCALE_FACTOR = 0.85 if IS_MAC else 1.0
 
 def init_ui_scaling(app=None):
     """
@@ -43,24 +43,24 @@ def init_ui_scaling(app=None):
         from PySide6.QtGui import QGuiApplication
         screen = QGuiApplication.primaryScreen()
         if platform.system() == "Darwin":
-            # On macOS Retina/MacBook screens, 0.92 gives optimal readable proportions
-            SCALE_FACTOR = 0.92
+            # On macOS Retina/MacBook screens, 0.85 gives compact, balanced layout
+            SCALE_FACTOR = 0.85
         elif screen:
             avail_geo = screen.availableGeometry()
             avail_h = avail_geo.height()
             if avail_h < 850:
                 # Small laptop screens (e.g. 1366x768 or 1080p at 150% scaling where available height is ~720)
-                SCALE_FACTOR = 0.90
+                SCALE_FACTOR = 0.85
             elif avail_h < 1000:
                 # Mid-sized screens (e.g. 1600x900 or 1080p at 125% scaling)
-                SCALE_FACTOR = 0.95
+                SCALE_FACTOR = 0.90
             else:
                 # Full HD 1080p (100%), 1440p, 4K (200%)
                 SCALE_FACTOR = 1.0
         else:
-            SCALE_FACTOR = 0.92 if platform.system() == "Darwin" else 1.0
+            SCALE_FACTOR = 0.85 if platform.system() == "Darwin" else 1.0
     except Exception:
-        SCALE_FACTOR = 0.92 if platform.system() == "Darwin" else 1.0
+        SCALE_FACTOR = 0.85 if platform.system() == "Darwin" else 1.0
 
     CFG_WINDOW_W_BASE = S(400)
     CFG_WINDOW_H_BASE = S(740)
@@ -105,7 +105,9 @@ def S(px: int | float) -> int:
     return max(1, int(round(px * SCALE_FACTOR)))
 
 def FS(pt: int | float) -> int:
-    """Scales font point sizes smoothly with a minimum readability floor."""
+    """Scales font point sizes smoothly while preserving full readability."""
+    if IS_MAC:
+        return int(pt)
     return max(8, int(round(pt * SCALE_FACTOR)))
 
 def SP(pt: int | float) -> int:
