@@ -85,7 +85,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.engine = engine
         self.setWindowTitle(self.txt("tool_settings"))
         self.frameless_init(is_popup=True)
-        self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
         self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
 
         prefs = self.engine.load_preferences() or {}
@@ -437,8 +436,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(config.S(6))
-        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row.setSpacing(config.S(8))
+        widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         row.addWidget(widget)
         btn_rev = QPushButton("↺")
         btn_rev.setFixedSize(config.S(26), config.S(26))
@@ -449,9 +448,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             return lambda checked=False: s_func(d_val)
         btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
         row.addWidget(btn_rev)
+        row.addStretch()
         lbl = QLabel(label_text)
         lbl.setWordWrap(True)
-        lbl.setMinimumWidth(config.S(180))
+        lbl.setMinimumWidth(config.S(140))
         lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
         form.addRow(lbl, container)
         self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
@@ -760,6 +760,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Language dropdown
         self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
+        self.dropdown_lang.setFixedWidth(config.S(220))
         current_lang_code = prefs.get('gui_lang', 'en')
         self.dropdown_lang.setText(config.SUPPORTED_LANGS.get(current_lang_code, 'English'))
 
@@ -797,7 +798,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # App Icon (Visual Selector)
         icon_row = QHBoxLayout()
-        icon_row.setSpacing(10)
+        icon_row.setSpacing(config.S(10))
         self.icon_group = QButtonGroup(self)
         self.icon_group.setExclusive(True)
         
@@ -810,26 +811,37 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         for i, name in enumerate(icon_names):
             btn = QPushButton()
+            btn.setFixedSize(config.S(54), config.S(54))
             icon_path = get_icon_path(name)
             if icon_path and os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
-                btn.setIconSize(QSize(48, 48))
+                btn.setIconSize(QSize(config.S(42), config.S(42)))
             btn.setCheckable(True)
             if name == saved_icon:
                 btn.setChecked(True)
                 
             btn.setProperty("icon_name", name)
+            btn.setCursor(Qt.PointingHandCursor)
             
-            btn.setStyleSheet("""
-                QPushButton { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px; }
-                QPushButton:checked { background: #262626; border: 1px solid #404040; }
-                QPushButton:hover { background: #333333; }
+            btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    background-color: #1a1a1a; 
+                    border: 1px solid #333333; 
+                    border-radius: {config.S(8)}px; 
+                    padding: {config.S(2)}px; 
+                }}
+                QPushButton:hover {{ 
+                    background-color: #262626; 
+                    border: 1px solid #555555; 
+                }}
+                QPushButton:checked {{ 
+                    background-color: #222222; 
+                    border: 2px solid {config.BTN_BG}; 
+                }}
             """)
             self.icon_group.addButton(btn, i)
             icon_row.addWidget(btn)
             
-        icon_row.addStretch()
-        
         icon_container = QWidget()
         icon_container.setLayout(icon_row)
         icon_container.layout().setContentsMargins(0, 0, 0, 0)
