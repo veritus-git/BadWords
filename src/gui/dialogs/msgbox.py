@@ -31,15 +31,16 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         self.setStyleSheet(f"""
             QDialog {{ background-color: transparent; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
-            QLabel {{ color: {config.FG_COLOR}; }}
-            QLabel#lbl_title {{ font-size: 14pt; font-weight: bold; }}
-            QLabel#lbl_msg {{ font-size: 11pt; }}
+            QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
+            QLabel#lbl_title {{ font-size: {config.FS(14)}pt; font-weight: bold; }}
+            QLabel#lbl_msg {{ font-size: {config.FS(10.5)}pt; }}
             QPushButton {{
                 background-color: {config.BTN_GHOST_BG};
                 color: {config.BTN_FG};
-                padding: 6px 16px;
-                border-radius: 4px;
-                min-width: 80px;
+                padding: {config.S(6)}px {config.S(16)}px;
+                border-radius: {config.S(4)}px;
+                min-width: {config.S(80)}px;
+                font-size: {config.FS(10)}pt;
                 font-weight: bold;
             }}
             QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
@@ -48,13 +49,13 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         """)
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
         
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
         
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(config.S(30))
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
@@ -72,8 +73,8 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         root_layout.addWidget(self._tb)
         
         content_layout = QVBoxLayout()
-        content_layout.setContentsMargins(20, 25, 20, 20)
-        content_layout.setSpacing(15)
+        content_layout.setContentsMargins(config.S(20), config.S(25), config.S(20), config.S(20))
+        content_layout.setSpacing(config.S(15))
         root_layout.addLayout(content_layout)
         
         lbl_title = QLabel(title)
@@ -83,7 +84,7 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         lbl_msg = QLabel(message)
         lbl_msg.setObjectName("lbl_msg")
         lbl_msg.setWordWrap(True)
-        lbl_msg.setFixedWidth(380)
+        lbl_msg.setFixedWidth(config.S(380))
         lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         content_layout.addWidget(lbl_msg)
         
@@ -94,13 +95,13 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
             btn_cancel = QPushButton(btn_cancel_text)
             btn_cancel.clicked.connect(lambda: self.done(2))
             btn_layout.addWidget(btn_cancel)
-            btn_layout.addSpacing(10)
+            btn_layout.addSpacing(config.S(10))
             
         if btn_no_text:
             btn_no = QPushButton(btn_no_text)
             btn_no.clicked.connect(self.reject)
             btn_layout.addWidget(btn_no)
-            btn_layout.addSpacing(10)
+            btn_layout.addSpacing(config.S(10))
             
         btn_yes = QPushButton(btn_yes_text)
         btn_yes.setObjectName("btn_yes")

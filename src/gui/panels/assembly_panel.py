@@ -27,17 +27,17 @@ def build_assembly_panel(win) -> QFrame:
     """Build the Assembly activity panel and bind widgets to main window."""
     p_assembly = QWidget()
     l_assembly = QVBoxLayout(p_assembly)
-    l_assembly.setContentsMargins(15, 15, 15, 15)
-    l_assembly.setSpacing(15)
+    l_assembly.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+    l_assembly.setSpacing(config.S(15))
     
     def _pin_btn(fav_id: str):
         btn = QPushButton("★")
-        btn.setFixedSize(20, 20)
+        btn.setFixedSize(config.S(20), config.S(20))
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } "
-            "QPushButton:hover { color: #aaaaaa; }"
-        )
+        btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; color: #555555; font-size: {config.FS(11)}pt; padding: 0; }} 
+            QPushButton:hover {{ color: #aaaaaa; }}
+        """)
         win._pin_buttons[fav_id] = btn
         return btn
     
@@ -85,10 +85,10 @@ def build_assembly_panel(win) -> QFrame:
     win.color_cut_buttons = {}
     
     l_colors_container = QVBoxLayout()
-    l_colors_container.setSpacing(10)
+    l_colors_container.setSpacing(config.S(10))
     
     div_top = QFrame()
-    div_top.setFixedHeight(1)
+    div_top.setFixedHeight(config.S(1))
     div_top.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
     l_colors_container.addWidget(div_top)
     
@@ -110,7 +110,7 @@ def build_assembly_panel(win) -> QFrame:
         
         if not is_unsupported:
             btn_auto = QPushButton()
-            btn_auto.setFixedSize(24, 24)
+            btn_auto.setFixedSize(config.S(24), config.S(24))
             btn_auto.setCursor(Qt.PointingHandCursor)
             btn_auto.setStyleSheet("background: transparent; border: none;")
             btn_auto.setCheckable(True)
@@ -124,18 +124,18 @@ def build_assembly_panel(win) -> QFrame:
             def _update_auto_icon(checked, b=btn_auto):
                 icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
                 b.setIcon(QIcon(get_layout_icon_path(icon_name)))
-                b.setIconSize(QSize(20, 20))
+                b.setIconSize(QSize(config.S(20), config.S(20)))
                 
             _update_auto_icon(is_checked)
             btn_auto.toggled.connect(lambda checked, b=btn_auto, fn=_update_auto_icon: (fn(checked, b), win._save_auto_cut_prefs()))
             win.color_cut_buttons[color_name] = btn_auto
         
         btn_cut_now = QPushButton()
-        btn_cut_now.setFixedSize(24, 24)
+        btn_cut_now.setFixedSize(config.S(24), config.S(24))
         btn_cut_now.setCursor(Qt.PointingHandCursor)
         btn_cut_now.setStyleSheet("background: transparent; border: none;")
         btn_cut_now.setIcon(QIcon(get_layout_icon_path("cut.png")))
-        btn_cut_now.setIconSize(QSize(20, 20))
+        btn_cut_now.setIconSize(QSize(config.S(20), config.S(20)))
         btn_cut_now.setToolTip(win.txt("tooltip_cut_now"))
         btn_cut_now.clicked.connect(lambda _, c=color_name: win._on_cut_now_clicked(c))
         

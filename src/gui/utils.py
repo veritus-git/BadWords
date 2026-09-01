@@ -148,8 +148,9 @@ def apply_dark_title_bar(window: QWidget):
             pass
 
 def _center_on_screen(widget: QWidget, w: int, h: int):
-    """Center *widget* on the primary screen (or active monitor if detectable)."""
-    screen = QApplication.primaryScreen()
+    """Center *widget* on the screen under cursor (or primary screen)."""
+    from PySide6.QtGui import QGuiApplication, QCursor
+    screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
     if screen:
         geo = screen.availableGeometry()
         x = geo.x() + (geo.width()  - w) // 2
@@ -172,37 +173,4 @@ def _qwidget_txt(self, key: str, **kwargs) -> str:
     return _txt("en", key, **kwargs)
 
 QWidget.txt = _qwidget_txt
-
-
-# ==========================================
-# GLOBAL STYLESHEET ENHANCEMENTS
-# ==========================================
-def _apply_global_style_enhancements(qss: str) -> str:
-    """
-    Applies global style enhancements across all Qt widgets:
-    1. Scales pt -> px on macOS (Darwin) for crisp HighDPI rendering.
-    """
-    if not qss or not isinstance(qss, str):
-        return qss
-
-    import re
-
-    # 1. macOS font pt->px scaling
-    if platform.system() == "Darwin":
-        qss = re.sub(r'font-size:\s*([\d\.]+)pt;', lambda m: f"font-size: {int(float(m.group(1)) * 1.333)}px;", qss)
-
-    return qss
-
-
-_orig_widget_set_style_sheet = QWidget.setStyleSheet
-def _enhanced_widget_set_style_sheet(self, qss):
-    _orig_widget_set_style_sheet(self, _apply_global_style_enhancements(qss))
-
-QWidget.setStyleSheet = _enhanced_widget_set_style_sheet
-
-_orig_app_set_style_sheet = QApplication.setStyleSheet
-def _enhanced_app_set_style_sheet(self, qss):
-    _orig_app_set_style_sheet(self, _apply_global_style_enhancements(qss))
-
-QApplication.setStyleSheet = _enhanced_app_set_style_sheet
 

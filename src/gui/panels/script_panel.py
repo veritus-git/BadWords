@@ -26,34 +26,38 @@ def wrap_activity_panel(widget: QWidget) -> QFrame:
     container.setObjectName("ActivityPanel")
     container.setAttribute(Qt.WA_StyledBackground, True)
 
-    container.setStyleSheet("""
-        QFrame#ActivityPanel {
+    container.setStyleSheet(f"""
+        QFrame#ActivityPanel {{
             background-color: #212121;
             border-radius: 0px;
             margin: 0px;
             border: none;
-        }
+        }}
         /* Force all generic children to be transparent so the grey shows through */
-        QFrame#ActivityPanel QWidget {
+        QFrame#ActivityPanel QWidget {{
             background-color: transparent;
-        }
+        }}
         /* Restore specific background for input fields so they don't blend in */
         QFrame#ActivityPanel QTextEdit,
         QFrame#ActivityPanel QDoubleSpinBox,
-        QFrame#ActivityPanel QLineEdit {
+        QFrame#ActivityPanel QLineEdit {{
             background-color: #1e1e1e;
             border: 1px solid #3a3a3a;
             color: #ffffff;
-        }
-        QFrame#ActivityPanel QPushButton {
+            font-family: "{config.UI_FONT_NAME}";
+            font-size: {config.FS(9.5)}pt;
+        }}
+        QFrame#ActivityPanel QPushButton {{
             background-color: #333333;
             border: 1px solid #454545;
-            border-radius: 4px;
-            padding: 5px;
+            border-radius: {config.S(4)}px;
+            padding: {config.S(5)}px;
             color: #d9d9d9;
-        }
-        QFrame#ActivityPanel QPushButton:hover { background-color: #404040; border-color: #555555; }
-        QFrame#ActivityPanel QPushButton:disabled { background-color: #2a2a2a; border-color: #222; color: #555555; }
+            font-family: "{config.UI_FONT_NAME}";
+            font-size: {config.FS(9.5)}pt;
+        }}
+        QFrame#ActivityPanel QPushButton:hover {{ background-color: #404040; border-color: #555555; }}
+        QFrame#ActivityPanel QPushButton:disabled {{ background-color: #2a2a2a; border-color: #222; color: #555555; }}
     """)
     layout = QVBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -65,8 +69,8 @@ def build_script_panel(win) -> QFrame:
     """Build the Script Analysis activity panel and bind widgets to main window."""
     p_script_analysis = QWidget()
     l_script_analysis = QVBoxLayout(p_script_analysis)
-    l_script_analysis.setContentsMargins(15, 15, 15, 15)
-    l_script_analysis.setSpacing(10)
+    l_script_analysis.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+    l_script_analysis.setSpacing(config.S(10))
     
     win.text_script = QTextEdit()
     win.text_script.setAcceptRichText(False)
@@ -84,37 +88,37 @@ def build_script_panel(win) -> QFrame:
     
     win.btn_analyze_standalone = QPushButton(win.txt("btn_analyze_standalone"))
     win.btn_analyze_standalone.setCursor(Qt.CursorShape.PointingHandCursor)
-    win.btn_analyze_standalone.setFixedHeight(35)
-    win.btn_analyze_standalone.setStyleSheet(
-        f"QPushButton {{ background-color: {config.BTN_BG}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }} "
-        f"QPushButton:hover {{ background-color: #1ed760; }}"
-    )
+    win.btn_analyze_standalone.setFixedHeight(config.S(35))
+    win.btn_analyze_standalone.setStyleSheet(f"""
+        QPushButton {{ background-color: {config.BTN_BG}; border: 1px solid #111; border-radius: {config.S(4)}px; color: #fff; font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; padding: {config.S(8)}px; }}
+        QPushButton:hover {{ background-color: #1ed760; }}
+    """)
     l_script_analysis.addWidget(win.btn_analyze_standalone)
 
     win.btn_analyze_compare = QPushButton(win.txt("btn_analyze_compare"))
     win.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
-    win.btn_analyze_compare.setFixedHeight(35)
-    win.btn_analyze_compare.setStyleSheet(
-        f"QPushButton {{ background-color: {config.BTN_BG}; color: white; font-weight: bold; font-size: 12pt; border: none; border-radius: 4px; padding: 10px; }} "
-        f"QPushButton:hover {{ background-color: #1ed760; }}"
-    )
+    win.btn_analyze_compare.setFixedHeight(config.S(35))
+    win.btn_analyze_compare.setStyleSheet(f"""
+        QPushButton {{ background-color: {config.BTN_BG}; color: white; font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10.5)}pt; border: none; border-radius: {config.S(4)}px; padding: {config.S(8)}px; }}
+        QPushButton:hover {{ background-color: #1ed760; }}
+    """)
     l_script_analysis.addWidget(win.btn_analyze_compare)
 
     win.btn_side_by_side_compare = QPushButton(win.txt("btn_side_by_side_compare"))
     win.btn_side_by_side_compare.setCursor(Qt.CursorShape.PointingHandCursor)
-    win.btn_side_by_side_compare.setFixedHeight(32)
+    win.btn_side_by_side_compare.setFixedHeight(config.S(32))
     win.btn_side_by_side_compare.setEnabled(False)
-    win.btn_side_by_side_compare.setStyleSheet(
-        "QPushButton { background-color: #2d3f35; color: #d9d9d9; "
-        "font-weight: bold; border: 1px solid #3d5f4b; border-radius: 4px; padding: 7px; } "
-        "QPushButton:hover { background-color: #36513f; } "
-        "QPushButton:disabled { background-color: #2a2a2a; border-color: #222; color: #555555; }"
-    )
+    win.btn_side_by_side_compare.setStyleSheet(f"""
+        QPushButton {{ background-color: #2d3f35; color: #d9d9d9;
+        font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; border: 1px solid #3d5f4b; border-radius: {config.S(4)}px; padding: {config.S(6)}px; }}
+        QPushButton:hover {{ background-color: #36513f; }}
+        QPushButton:disabled {{ background-color: #2a2a2a; border-color: #222; color: #555555; }}
+    """)
     l_script_analysis.addWidget(win.btn_side_by_side_compare)
     
     win.btn_exit_sbs_text = QPushButton(win.txt("btn_return_normal"))
     win.btn_exit_sbs_text.setCursor(Qt.CursorShape.PointingHandCursor)
-    win.btn_exit_sbs_text.setStyleSheet("QPushButton { background: transparent; color: #888888; border: none; padding: 10px; font-size: 11pt; } QPushButton:hover { color: #ffffff; }")
+    win.btn_exit_sbs_text.setStyleSheet(f"QPushButton {{ background: transparent; color: #888888; border: none; padding: {config.S(8)}px; font-size: {config.FS(10)}pt; }} QPushButton:hover {{ color: #ffffff; }}")
     win.btn_exit_sbs_text.clicked.connect(win._exit_side_by_side)
     win.btn_exit_sbs_text.hide()
     l_script_analysis.addWidget(win.btn_exit_sbs_text)

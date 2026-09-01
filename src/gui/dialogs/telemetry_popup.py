@@ -62,29 +62,29 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
             QFrame#MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #000000;
-                border-radius: 8px;
+                border-radius: {config.S(8)}px;
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
-                font-size: 14pt;
+                font-size: {config.FS(14)}pt;
                 font-weight: bold;
-                font-family: {config.UI_FONT_NAME};
+                font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#lbl_msg {{
                 color: {config.FG_COLOR};
-                font-size: 11pt;
-                font-family: {config.UI_FONT_NAME};
+                font-size: {config.FS(10.5)}pt;
+                font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QPushButton#btn_lang {{
                 color: {config.GEAR_COLOR};
-                font-family: {config.UI_FONT_NAME};
-                font-size: 11pt;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10.5)}pt;
                 font-weight: bold;
                 background: transparent;
                 border: none;
-                padding: 2px 4px;
+                padding: {config.S(2)}px {config.S(4)}px;
             }}
             QPushButton#btn_lang:hover {{
                 color: #ffffff;
@@ -92,12 +92,12 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
             QPushButton#btn_yes {{
                 background-color: {config.BTN_BG};
                 color: #ffffff;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
                 font-weight: bold;
                 border: none;
-                padding: 6px 16px;
-                border-radius: 3px;
+                padding: {config.S(6)}px {config.S(16)}px;
+                border-radius: {config.S(3)}px;
             }}
             QPushButton#btn_yes:hover {{
                 background-color: {config.BTN_ACTIVE};
@@ -105,12 +105,12 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
             QPushButton#btn_no {{
                 background-color: {config.CANCEL_BG};
                 color: #ffffff;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(10)}pt;
                 font-weight: bold;
                 border: none;
-                padding: 6px 16px;
-                border-radius: 3px;
+                padding: {config.S(6)}px {config.S(16)}px;
+                border-radius: {config.S(3)}px;
             }}
             QPushButton#btn_no:hover {{
                 background-color: {config.CANCEL_ACTIVE};
@@ -144,7 +144,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         container = QWidget(self.inner_frame)
         container.setObjectName("container")
         content_layout = QVBoxLayout(container)
-        content_layout.setContentsMargins(20, 15, 20, 20)
+        content_layout.setContentsMargins(config.S(20), config.S(15), config.S(20), config.S(20))
         content_layout.setSpacing(0)
         root_layout.addWidget(container)
 
@@ -164,7 +164,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         header.addWidget(self._btn_lang)
 
         content_layout.addLayout(header)
-        content_layout.addSpacing(15)
+        content_layout.addSpacing(config.S(15))
 
         # Message label
         self._lbl_msg = QLabel("", container)
@@ -172,7 +172,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         self._lbl_msg.setWordWrap(True)
         self._lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         content_layout.addWidget(self._lbl_msg)
-        content_layout.addSpacing(10)
+        content_layout.addSpacing(config.S(10))
 
         # Geo Toggle
         geo_layout = QHBoxLayout()
@@ -182,14 +182,14 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         self._chk_geo.setChecked(True, animated=False)
         
         self._lbl_geo = QLabel("", container)
-        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: {config.UI_FONT_NAME}; font-size: 11pt; background: transparent;")
+        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10.5)}pt; background: transparent;")
         
         geo_layout.addWidget(self._chk_geo)
-        geo_layout.addSpacing(10)
+        geo_layout.addSpacing(config.S(10))
         geo_layout.addWidget(self._lbl_geo)
         geo_layout.addStretch()
         content_layout.addLayout(geo_layout)
-        content_layout.addSpacing(20)
+        content_layout.addSpacing(config.S(20))
 
         # Buttons row (No | Yes)
         btn_row = QHBoxLayout()
@@ -201,7 +201,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         self._btn_no.setCursor(Qt.PointingHandCursor)
         self._btn_no.clicked.connect(self._on_no)
         btn_row.addWidget(self._btn_no)
-        btn_row.addSpacing(10)
+        btn_row.addSpacing(config.S(10))
 
         self._btn_yes = QPushButton("", container)
         self._btn_yes.setObjectName("btn_yes")
@@ -230,8 +230,8 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
             self._tb._lbl_title.setText(self._t("title_telemetry"))
 
-        DIALOG_W      = 580
-        HORIZ_MARGINS = 15 + 15 + 20 + 20
+        DIALOG_W      = config.S(580)
+        HORIZ_MARGINS = config.S(15 + 15 + 20 + 20)
         self._lbl_msg.setMaximumWidth(DIALOG_W - HORIZ_MARGINS)
 
         self.setFixedWidth(DIALOG_W)

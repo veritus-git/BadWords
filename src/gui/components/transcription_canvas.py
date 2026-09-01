@@ -170,10 +170,8 @@ class TranscriptionCanvas(QWidget):
         
         prefs = self.main_window.engine.load_preferences() or {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
-        pref_size = prefs.get('editor_font_size', 12)
-        import platform
-        if platform.system() == "Darwin": pref_size = int(pref_size * 1.333)
-        pref_lh = prefs.get('editor_line_height', 7)
+        pref_size = config.FS(prefs.get('editor_font_size', 12))
+        pref_lh = config.S(prefs.get('editor_line_height', 7))
         view_mode = prefs.get('view_mode', 'continuous')
         
         is_rtl = False
@@ -477,9 +475,7 @@ class TranscriptionCanvas(QWidget):
         
         prefs = self.main_window.engine.load_preferences() or {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
-        pref_size = prefs.get('editor_font_size', 12)
-        import platform
-        if platform.system() == "Darwin": pref_size = int(pref_size * 1.333)
+        pref_size = config.FS(prefs.get('editor_font_size', 12))
         active_font = QFont(pref_family, pref_size)
         
         p = QPainter(self)

@@ -123,25 +123,25 @@ class WorkspaceWarningOverlay(QFrame):
         layout.setAlignment(Qt.AlignCenter)
         
         container = QFrame()
-        container.setFixedWidth(600)
+        container.setFixedWidth(config.S(600))
         c_layout = QVBoxLayout(container)
-        c_layout.setSpacing(20)
+        c_layout.setSpacing(config.S(20))
         
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet("font-size: 24px; font-weight: bold; color: white; background: transparent;")
+        lbl_title.setStyleSheet(f"font-size: {config.FS(18)}pt; font-weight: bold; color: white; background: transparent; font-family: '{config.UI_FONT_NAME}';")
         lbl_title.setAlignment(Qt.AlignCenter)
         c_layout.addWidget(lbl_title)
         
         lbl_desc = QLabel(description)
-        lbl_desc.setStyleSheet("font-size: 14px; color: #cccccc; background: transparent; line-height: 1.5;")
+        lbl_desc.setStyleSheet(f"font-size: {config.FS(10.5)}pt; color: #cccccc; background: transparent; line-height: 1.5; font-family: '{config.UI_FONT_NAME}';")
         lbl_desc.setWordWrap(True)
         lbl_desc.setAlignment(Qt.AlignCenter)
         c_layout.addWidget(lbl_desc)
         
-        c_layout.addSpacing(10)
+        c_layout.addSpacing(config.S(10))
         
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(15)
+        btn_layout.setSpacing(config.S(15))
         btn_layout.setAlignment(Qt.AlignCenter)
         
         if btn_reject_text:
@@ -152,9 +152,10 @@ class WorkspaceWarningOverlay(QFrame):
                     background-color: #404040;
                     color: white;
                     border: 1px solid #555555;
-                    border-radius: 4px;
-                    padding: 8px 16px;
-                    font-size: 13px;
+                    border-radius: {config.S(4)}px;
+                    padding: {config.S(8)}px {config.S(16)}px;
+                    font-size: {config.FS(10)}pt;
+                    font-family: "{config.UI_FONT_NAME}";
                     font-weight: bold;
                 }}
                 QPushButton:hover {{ background-color: #505050; border-color: #666666; }}
@@ -170,9 +171,10 @@ class WorkspaceWarningOverlay(QFrame):
                 background-color: #23a559;
                 color: white;
                 border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-size: 13px;
+                border-radius: {config.S(4)}px;
+                padding: {config.S(8)}px {config.S(16)}px;
+                font-size: {config.FS(10)}pt;
+                font-family: "{config.UI_FONT_NAME}";
                 font-weight: bold;
             }}
             QPushButton:hover {{ background-color: #26b361; }}
@@ -192,8 +194,9 @@ class WorkspaceWarningOverlay(QFrame):
                     color: #a0a0a0;
                     border: none;
                     text-decoration: underline;
-                    padding: 8px 16px;
-                    font-size: 13px;
+                    padding: {config.S(8)}px {config.S(16)}px;
+                    font-size: {config.FS(10)}pt;
+                    font-family: "{config.UI_FONT_NAME}";
                 }}
                 QPushButton:hover {{ color: white; }}
                 QPushButton:pressed {{ color: #808080; }}
@@ -534,28 +537,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._sidebar_left.setFixedWidth(config.SIDEBAR_WIDTH)
         self._sidebar_left.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         left_layout = QVBoxLayout(self._sidebar_left)
-        left_layout.setContentsMargins(5, 6, 5, 6)
-        left_layout.setSpacing(6)
+        left_layout.setContentsMargins(0, config.S(6), 0, config.S(6))
+        left_layout.setSpacing(config.S(6))
+        left_layout.setAlignment(Qt.AlignHCenter)
         
         self._drag_zone_left = SidebarDragZone(self._sidebar_left)
         drag_layout_left = self._drag_zone_left.layout()
+        drag_layout_left.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         left_layout.addWidget(self._drag_zone_left)
         
         self.btn_nav_script = SidebarButton("\U0001f4dd", self.txt("tool_script_analysis"), "script_analysis", tooltip_widget=self.shared_tooltip)
         self.btn_nav_script.clicked.connect(lambda: self._toggle_activity("script_analysis"))
-        drag_layout_left.addWidget(self.btn_nav_script)
+        drag_layout_left.addWidget(self.btn_nav_script, 0, Qt.AlignHCenter)
         
         self.btn_nav_silence = SidebarButton("\U0001f507", self.txt("tool_silence"), "silence", tooltip_widget=self.shared_tooltip)
         self.btn_nav_silence.clicked.connect(lambda: self._toggle_activity("silence"))
-        drag_layout_left.addWidget(self.btn_nav_silence)
+        drag_layout_left.addWidget(self.btn_nav_silence, 0, Qt.AlignHCenter)
 
         self.btn_nav_fillers = SidebarButton("\U0001f4ac", self.txt("tool_filler_words"), "fillers", tooltip_widget=self.shared_tooltip)
         self.btn_nav_fillers.clicked.connect(lambda: self._toggle_activity("fillers"))
-        drag_layout_left.addWidget(self.btn_nav_fillers)
+        drag_layout_left.addWidget(self.btn_nav_fillers, 0, Qt.AlignHCenter)
         
         self.btn_nav_settings = SidebarButton("\u2699", self.txt("tool_settings"), "settings", tooltip_widget=self.shared_tooltip, is_draggable=False)
         self.btn_nav_settings.clicked.connect(lambda: self._on_settings())
-        left_layout.addWidget(self.btn_nav_settings)
+        left_layout.addWidget(self.btn_nav_settings, 0, Qt.AlignHCenter)
         
         self._sidebar_left.show()
 
@@ -563,20 +568,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._sidebar_right.setFixedWidth(config.SIDEBAR_WIDTH)
         self._sidebar_right.setStyleSheet(f"QFrame {{ background-color: {config.SIDEBAR_BG}; border: none; }}")
         right_layout = QVBoxLayout(self._sidebar_right)
-        right_layout.setContentsMargins(5, 6, 5, 6)
-        right_layout.setSpacing(6)
+        right_layout.setContentsMargins(0, config.S(6), 0, config.S(6))
+        right_layout.setSpacing(config.S(6))
+        right_layout.setAlignment(Qt.AlignHCenter)
         
         self._drag_zone_right = SidebarDragZone(self._sidebar_right)
         drag_layout_right = self._drag_zone_right.layout()
+        drag_layout_right.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         right_layout.addWidget(self._drag_zone_right)
         
         self.btn_nav_main = SidebarButton("\U0001f6e0\ufe0f", self.txt("tool_main_panel"), "main_panel", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
-        drag_layout_right.addWidget(self.btn_nav_main)
+        drag_layout_right.addWidget(self.btn_nav_main, 0, Qt.AlignHCenter)
         
         self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", self.txt("tool_assembly"), "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
-        drag_layout_right.addWidget(self.btn_nav_assembly)
+        drag_layout_right.addWidget(self.btn_nav_assembly, 0, Qt.AlignHCenter)
 
         self._restore_sidebar_layout()
         
@@ -640,9 +647,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         # Build Panels
         self._panel_left = QFrame()
-        self._panel_left.setMinimumWidth(150)
+        self._panel_left.setMinimumWidth(config.S(150))
         self._panel_left.setObjectName("leftPanel")
-        self._panel_left.setStyleSheet(f"QFrame#leftPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: 6px; }}")
+        self._panel_left.setStyleSheet(f"QFrame#leftPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: {config.S(6)}px; }}")
         QVBoxLayout(self._panel_left).setContentsMargins(0, 0, 0, 0)
         self._panel_left.hide()
 
@@ -655,9 +662,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._stack.setCurrentIndex(0)
 
         self._panel_right = QFrame()
-        self._panel_right.setMinimumWidth(150)
+        self._panel_right.setMinimumWidth(config.S(150))
         self._panel_right.setObjectName("rightPanel")
-        self._panel_right.setStyleSheet(f"QFrame#rightPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: 6px; }}")
+        self._panel_right.setStyleSheet(f"QFrame#rightPanel {{ background-color: {config.BG_COLOR}; }} QFrame#ActivityPanel {{ background-color: #212121; border-radius: {config.S(6)}px; }}")
         QVBoxLayout(self._panel_right).setContentsMargins(0, 0, 0, 0)
         self._panel_right.hide()
         
@@ -686,7 +693,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._main_h_splitter.setStretchFactor(1, 1)
         self._main_h_splitter.setStretchFactor(2, 0)
 
-        self._main_h_splitter.setHandleWidth(6)
+        self._main_h_splitter.setHandleWidth(config.S(6))
         self._main_h_splitter.setStyleSheet("QSplitter { border: none; background: transparent; }")
 
         # Add everything to main layout in exact order
@@ -795,19 +802,19 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if act_id in btns_map:
                 btn = btns_map.pop(act_id)
                 btn.is_right_side = False
-                self._drag_zone_left.layout().addWidget(btn)
+                self._drag_zone_left.layout().addWidget(btn, 0, Qt.AlignHCenter)
 
         # Odtwórz poprawną kolejność dla prawej strony
         for act_id in right_saved:
             if act_id in btns_map:
                 btn = btns_map.pop(act_id)
                 btn.is_right_side = True
-                self._drag_zone_right.layout().addWidget(btn)
+                self._drag_zone_right.layout().addWidget(btn, 0, Qt.AlignHCenter)
 
         # Resztki (nowe funkcje) lądują domyślnie na lewo
         for btn in btns_map.values():
             btn.is_right_side = False
-            self._drag_zone_left.layout().addWidget(btn)
+            self._drag_zone_left.layout().addWidget(btn, 0, Qt.AlignHCenter)
 
     def _build_activities(self):
         from gui.panels import (
@@ -2606,7 +2613,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
         
         start_w = self.script_container.width()
-        end_w = 350 if checked else 0
+        end_w = config.S(350) if checked else 0
         
         def _on_step(v):
             self.script_container.setFixedWidth(int(start_w + (end_w - start_w) * v))
@@ -3024,30 +3031,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _maximize_on_active_screen(self):
         """
         Move the window to the monitor that currently has the cursor and maximize.
-        DWM / the WM remembers the geometry that was set IMMEDIATELY before
-        showMaximized() as the "restore" size used when drag-to-unmaximizing.
-        We position 580x670 centered on the target screen first, THEN maximize,
-        so the restore size is always 580x670 regardless of previous session state.
         """
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        w, h = config.S(580), config.S(670)
         if screen is None:
-            self.resize(580, 670)
-            if getattr(self, '_is_mac', False):
-                self.showFullScreen()
-            else:
-                self.showMaximized()
+            self.resize(w, h)
+            self.showMaximized()
             return
         sg = screen.availableGeometry()
-        # Center 580x670 on the target screen — this becomes the restore geometry
         self.setGeometry(
-            sg.x() + (sg.width()  - 580) // 2,
-            sg.y() + (sg.height() - 670) // 2,
-            580, 670
+            sg.x() + (sg.width()  - w) // 2,
+            sg.y() + (sg.height() - h) // 2,
+            w, h
         )
-        if getattr(self, '_is_mac', False):
-            self.showFullScreen()
-        else:
-            self.showMaximized()
+        self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)

@@ -26,64 +26,65 @@ from .script_panel import wrap_activity_panel
 
 def build_main_workspace_panel(win) -> QFrame:
     """Build the Main Workspace activity panel and bind widgets to main window."""
+    import config
     p_main = MainPanelWidget()
     l_main = QVBoxLayout(p_main.layer1)
-    l_main.setContentsMargins(15, 15, 15, 15)
-    l_main.setSpacing(10)
+    l_main.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+    l_main.setSpacing(config.S(10))
     
     # Top Section (Markers)
     row_marking_title = QHBoxLayout()
     row_marking_title.addWidget(QLabel(win.txt("lbl_marking_mode")))
     row_marking_title.addStretch()
     win.btn_clear_transcript = QPushButton()
-    win.btn_clear_transcript.setFixedSize(26, 26)
+    win.btn_clear_transcript.setFixedSize(config.S(26), config.S(26))
     win.btn_clear_transcript.setToolTip("")
     win.btn_clear_transcript.setCursor(Qt.CursorShape.PointingHandCursor)
     
     from gui.utils import get_layout_icon_path
     win.btn_clear_transcript.setIcon(QIcon(get_layout_icon_path("clean.png")))
-    win.btn_clear_transcript.setIconSize(QSize(18, 18))
-    win.btn_clear_transcript.setStyleSheet(
-        "QPushButton { background: transparent; border: none; padding: 2px; } "
-        "QPushButton:hover { background-color: rgba(255, 255, 255, 10%); border-radius: 4px; }"
-    )
+    win.btn_clear_transcript.setIconSize(QSize(config.S(18), config.S(18)))
+    win.btn_clear_transcript.setStyleSheet(f"""
+        QPushButton {{ background: transparent; border: none; padding: {config.S(2)}px; }} 
+        QPushButton:hover {{ background-color: rgba(255, 255, 255, 10%); border-radius: {config.S(4)}px; }}
+    """)
     win.btn_clear_transcript.clicked.connect(win._on_clear_transcript)
     row_marking_title.addWidget(win.btn_clear_transcript)
     l_main.addLayout(row_marking_title)
     
     win.markers_layout = QVBoxLayout()
-    win.markers_layout.setSpacing(4)
+    win.markers_layout.setSpacing(config.S(4))
     l_main.addLayout(win.markers_layout)
     
     win.btn_add_custom_marker = QPushButton(win.txt("lbl_add_custom_marker"))
     win.btn_add_custom_marker.setCursor(Qt.CursorShape.PointingHandCursor)
-    win.btn_add_custom_marker.setStyleSheet(
-        "QPushButton { background: transparent; color: #808080; text-decoration: underline; border: none; text-align: left; padding: 5px; } "
-        "QPushButton:hover { color: #ffffff; }"
-    )
+    win.btn_add_custom_marker.setStyleSheet(f"""
+        QPushButton {{ background: transparent; color: #808080; text-decoration: underline; border: none; text-align: left; padding: {config.S(5)}px; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; }} 
+        QPushButton:hover {{ color: #ffffff; }}
+    """)
     win.btn_add_custom_marker.clicked.connect(win._on_add_custom_marker)
     l_main.addWidget(win.btn_add_custom_marker)
     
     l_main.addStretch(1)
     
     l_layer2 = QVBoxLayout(p_main.layer2)
-    l_layer2.setContentsMargins(15, 10, 15, 15)
-    l_layer2.setSpacing(10)
+    l_layer2.setContentsMargins(config.S(15), config.S(10), config.S(15), config.S(15))
+    l_layer2.setSpacing(config.S(10))
     l_layer2.setAlignment(Qt.AlignBottom)
     
     win.lbl_analysis_duration = QLabel("")
-    win.lbl_analysis_duration.setStyleSheet("color: #a0a0a0; font-size: 9pt; font-style: italic;")
+    win.lbl_analysis_duration.setStyleSheet(f"color: #a0a0a0; font-size: {config.FS(9)}pt; font-style: italic;")
     win.lbl_analysis_duration.setAlignment(Qt.AlignCenter)
     win.lbl_analysis_duration.setVisible(False)
     l_layer2.addWidget(win.lbl_analysis_duration)
     
     win.lbl_pinned_favorites = QLabel(win.txt("lbl_pinned_favorites"))
-    win.lbl_pinned_favorites.setStyleSheet("color: #888888; font-size: 8pt; font-weight: bold; text-transform: uppercase;")
+    win.lbl_pinned_favorites.setStyleSheet(f"color: #888888; font-size: {config.FS(8)}pt; font-weight: bold; text-transform: uppercase;")
     win.lbl_pinned_favorites.setVisible(False)
     l_layer2.addWidget(win.lbl_pinned_favorites)
     
     win.layout_favorites = QVBoxLayout()
-    win.layout_favorites.setSpacing(10)
+    win.layout_favorites.setSpacing(config.S(10))
     l_layer2.addLayout(win.layout_favorites)
     
     layout_assemble_group = QVBoxLayout()

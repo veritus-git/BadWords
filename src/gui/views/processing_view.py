@@ -31,24 +31,24 @@ def build_processing_view(win) -> QWidget:
     win.lbl_processing_status = QLabel(win.txt("lbl_initializing"), page)
     win.lbl_processing_status.setAlignment(Qt.AlignCenter)
     win.lbl_processing_status.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: 13pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS(13)}pt;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
     )
     layout.addWidget(win.lbl_processing_status)
-    layout.addSpacing(15)
+    layout.addSpacing(config.S(15))
     
     win.bar_processing = LiquidProgressBar(page)
-    win.bar_processing.setFixedWidth(400)
+    win.bar_processing.setFixedWidth(config.S(400))
     layout.addWidget(win.bar_processing, 0, Qt.AlignCenter)
 
-    layout.addSpacing(20)
+    layout.addSpacing(config.S(20))
     win.lbl_first_run_hint = QLabel("", page)
     win.lbl_first_run_hint.setAlignment(Qt.AlignCenter)
     win.lbl_first_run_hint.setWordWrap(False)
     win.lbl_first_run_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     win.lbl_first_run_hint.setStyleSheet(
-        f"color: #666666; font-size: 10pt; font-style: italic;"
-        f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0 20px;"
+        f"color: #666666; font-size: {config.FS(10)}pt; font-style: italic;"
+        f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0 {config.S(20)}px;"
     )
     
     win._hint_opacity = QGraphicsOpacityEffect(win.lbl_first_run_hint)

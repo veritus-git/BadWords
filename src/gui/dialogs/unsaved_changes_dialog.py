@@ -42,13 +42,13 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         self.rows = {}
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
         
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
         
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(config.S(30))
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
@@ -66,12 +66,12 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         root_layout.addWidget(self._tb)
         
         content_layout = QVBoxLayout()
-        content_layout.setContentsMargins(20, 25, 20, 20)
-        content_layout.setSpacing(15)
+        content_layout.setContentsMargins(config.S(20), config.S(25), config.S(20), config.S(20))
+        content_layout.setSpacing(config.S(15))
         root_layout.addLayout(content_layout)
         
         lbl_title = QLabel(parent.txt('msg_unsaved_title'))
-        lbl_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        lbl_title.setStyleSheet(f"font-size: {config.FS(14)}pt; font-weight: bold;")
         content_layout.addWidget(lbl_title)
         content_layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
         
@@ -79,8 +79,8 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         scroll.setWidgetResizable(True)
         scroll_content = QWidget()
         self.vbox = QVBoxLayout(scroll_content)
-        self.vbox.setContentsMargins(10, 10, 10, 10)
-        self.vbox.setSpacing(10)
+        self.vbox.setContentsMargins(config.S(10), config.S(10), config.S(10), config.S(10))
+        self.vbox.setSpacing(config.S(10))
         
         for k, (old_v, new_v) in diff_dict.items():
             row = QFrame()
@@ -153,8 +153,8 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         bot_layout.addWidget(btn_save_all)
         content_layout.addLayout(bot_layout)
         
-        self.resize(630, 480)
-        _center_on_screen(self, 630, 480)
+        self.resize(config.S(630), config.S(480))
+        _center_on_screen(self, config.S(630), config.S(480))
         
     def _make_decision(self, key, decision):
         self.decisions[key] = decision

@@ -927,7 +927,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             if not is_display:
                 btn_clear = QPushButton("✕")
-                btn_clear.setFixedSize(26, 26)
+                btn_clear.setFixedSize(config.S(26), config.S(26))
                 btn_clear.setCursor(Qt.PointingHandCursor)
                 btn_clear.setObjectName("btn_ghost_sm")
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
@@ -935,7 +935,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 row.addWidget(btn_clear)
 
             btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(26, 26)
+            btn_rev.setFixedSize(config.S(26), config.S(26))
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setObjectName("btn_ghost_sm")
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -1100,26 +1100,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
 
         marker_btn_row = QHBoxLayout()
-        marker_btn_row.setSpacing(8)
+        marker_btn_row.setSpacing(config.S(8))
         btn_add_m = QPushButton(self.txt("btn_add_marker"))
         btn_add_m.setObjectName("btn_secondary")
-        btn_add_m.setFixedHeight(30)
+        btn_add_m.setFixedHeight(config.S(30))
         btn_add_m.setCursor(Qt.PointingHandCursor)
         btn_add_m.clicked.connect(self._on_add_marker)
         marker_btn_row.addWidget(btn_add_m)
 
         btn_export_m = QPushButton(self.txt("btn_export_markers"))
         btn_export_m.setObjectName("btn_ghost_sm")
-        btn_export_m.setStyleSheet("padding: 0 14px;")
-        btn_export_m.setFixedHeight(30)
+        btn_export_m.setStyleSheet(f"padding: 0 {config.S(14)}px;")
+        btn_export_m.setFixedHeight(config.S(30))
         btn_export_m.setCursor(Qt.PointingHandCursor)
         btn_export_m.clicked.connect(self._on_export_markers)
         marker_btn_row.addWidget(btn_export_m)
 
         btn_import_m = QPushButton(self.txt("btn_import_markers"))
         btn_import_m.setObjectName("btn_ghost_sm")
-        btn_import_m.setStyleSheet("padding: 0 14px;")
-        btn_import_m.setFixedHeight(30)
+        btn_import_m.setStyleSheet(f"padding: 0 {config.S(14)}px;")
+        btn_import_m.setFixedHeight(config.S(30))
         btn_import_m.setCursor(Qt.PointingHandCursor)
         btn_import_m.clicked.connect(self._on_import_markers)
         marker_btn_row.addWidget(btn_import_m)
@@ -1194,7 +1194,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(widget)
             
             btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(26, 26)
+            btn_rev.setFixedSize(config.S(26), config.S(26))
             btn_rev.setCursor(Qt.PointingHandCursor)
             btn_rev.setObjectName("btn_ghost_sm")
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -1386,7 +1386,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         # Device
         _device_items = ["Auto", "CPU", "GPU"]
         self.dropdown_device = CustomDropdown(_device_items, parent=page_ai)
-        self.dropdown_device.setFixedHeight(30)
+        self.dropdown_device.setFixedHeight(config.S(30))
         saved_device = prefs.get('device', 'auto').upper()
         if saved_device == 'AUTO': saved_device = 'Auto'
         self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
@@ -1395,7 +1395,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         # Compute type
         _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
         self.dropdown_compute = CustomDropdown(_compute_items, parent=page_ai)
-        self.dropdown_compute.setFixedHeight(30)
+        self.dropdown_compute.setFixedHeight(config.S(30))
         saved_compute = prefs.get('ai_compute_type', 'Auto')
         self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
         self._add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
@@ -1773,9 +1773,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     
                     btn_del = QPushButton("✕")
                     btn_del.setObjectName("btn_ghost_sm")
-                    btn_del.setStyleSheet("color: #e74c3c; border: none; font-weight: bold; font-size: 11pt; padding: 2px;")
+                    btn_del.setStyleSheet(f"color: #e74c3c; border: none; font-weight: bold; font-size: {config.FS(11)}pt; padding: {config.S(2)}px;")
                     btn_del.setCursor(Qt.PointingHandCursor)
-                    btn_del.setFixedSize(24, 24)
+                    btn_del.setFixedSize(config.S(24), config.S(24))
                     
                     def _del(checked=False, path=p):
                         if path in self.support_attachments:
@@ -2041,8 +2041,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             # Color dot indicator
             dot = QLabel("●")
-            dot.setStyleSheet(f"color: {hex_col}; font-size: 14pt; background: transparent;")
-            dot.setFixedWidth(20)
+            dot.setStyleSheet(f"color: {hex_col}; font-size: {config.FS(14)}pt; background: transparent;")
+            dot.setFixedWidth(config.S(20))
             row_layout.addWidget(dot)
 
             # Name + color label
@@ -2051,7 +2051,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row_layout.addWidget(lbl_name, 1)
 
             lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
-            lbl_color.setStyleSheet(f"color: #666666; font-size: 9pt; background: transparent;")
+            lbl_color.setStyleSheet(f"color: #666666; font-size: {config.FS(9)}pt; background: transparent;")
             row_layout.addWidget(lbl_color)
 
             # Edit button
@@ -2064,7 +2064,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 btn_edit.setEnabled(False)
                 btn_edit.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
                 lbl_name.setStyleSheet("color: #666666; font-weight: bold; background: transparent;")
-                dot.setStyleSheet("color: #666666; font-size: 14pt; background: transparent;")
+                dot.setStyleSheet(f"color: #666666; font-size: {config.FS(14)}pt; background: transparent;")
             row_layout.addWidget(btn_edit)
 
             # Delete button
@@ -2073,7 +2073,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             btn_del = QPushButton("✕")
             btn_del.setObjectName("btn_del")
             btn_del.setCursor(Qt.PointingHandCursor)
-            btn_del.setFixedWidth(28)
+            btn_del.setFixedWidth(config.S(28))
             btn_del.clicked.connect(make_del(idx))
             row_layout.addWidget(btn_del)
 

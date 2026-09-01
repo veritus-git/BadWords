@@ -37,7 +37,7 @@ class _LangPickerDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setFixedWidth(180)
+        self.setFixedWidth(config.S(180))
 
         self.setStyleSheet(f"""
             QDialog {{
@@ -48,12 +48,12 @@ class _LangPickerDialog(QDialog):
                 background-color: {config.MENU_BG};
                 color: {config.MENU_FG};
                 font-family: {config.UI_FONT_NAME};
-                font-size: 11pt;
+                font-size: {config.FS(10)}pt;
                 border: none;
                 outline: none;
             }}
             QListWidget::item {{
-                padding: 5px 8px;
+                padding: {config.S(5)}px {config.S(8)}px;
             }}
             QListWidget::item:focus {{ border: none; outline: none; }}
             QListWidget::item:hover, QListWidget::item:selected {{
@@ -62,13 +62,13 @@ class _LangPickerDialog(QDialog):
             }}
             QScrollBar:vertical {{
                 background: {config.MENU_BG};
-                width: 8px;
+                width: {config.S(8)}px;
                 border: none;
             }}
             QScrollBar::handle:vertical {{
                 background: {config.SCROLL_FG};
-                border-radius: 4px;
-                min-height: 20px;
+                border-radius: {config.S(4)}px;
+                min-height: {config.S(20)}px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: {config.SCROLL_ACTIVE};

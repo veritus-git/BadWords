@@ -331,16 +331,6 @@ def main():
     try:
         # 1. System layer — fast, safe on main thread
         os_doc = osdoc.OSDoctor()
-        osdoc.log_info("=== Starting BadWords ===")
-
-        import os
-        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-
-        from PySide6.QtGui import QGuiApplication
-        from PySide6.QtCore import Qt
-        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-
         if os_doc.is_win:
             try:
                 import ctypes
@@ -384,9 +374,12 @@ def main():
         app.setApplicationName(config.APP_NAME)
         app.setApplicationDisplayName(config.APP_NAME)
 
+        # Initialize UI scaling factor dynamically based on screen geometry
+        config.init_ui_scaling(app)
+
         # Register embedded cross-platform UI font (Ubuntu Sans / Ubuntu) into Qt Font Engine
         gui.init_embedded_fonts()
-        default_font = QFont(config.UI_FONT_NAME, config.BASE_FONT_PT)
+        default_font = QFont(config.UI_FONT_NAME, config.FS(config.BASE_FONT_PT))
         default_font.setStyleStrategy(QFont.PreferAntialias)
         default_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
         default_font.setWeight(QFont.Weight.Normal)
