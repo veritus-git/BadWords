@@ -751,20 +751,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             target_splitter.show()
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
-                # On narrower screens (< 16:9 aspect ratio or width < 1800 or macOS), open panels ~5% wider
-                # so toggle switches, badges, and buttons in assembly/fillers panels have plenty of breathing room.
                 win_w = max(800, self.width())
                 win_h = max(600, self.height())
-                aspect_ratio = float(win_w) / float(win_h) if win_h > 0 else 1.77
+                aspect_ratio = float(win_w) / float(win_h) if win_h > 0 else 1.777
                 
-                is_narrow_or_small = (aspect_ratio < 1.75) or (win_w < 1800) or getattr(self, '_is_mac', False)
+                # Base panel width (280px on standard 1920x1080 display)
+                base_w = int(win_w * (280.0 / 1920.0))
                 
-                if is_narrow_or_small:
-                    # ~5% wider ratio (~19.5% vs 14.58%)
-                    target_w = max(config.S(230), min(config.S(330), int(win_w * ((280.0 / 1920.0) + 0.05))))
+                # On 16:9 displays (~1.75 - 1.80 ratio), keep exact standard width.
+                # On non-16:9 / narrower displays (e.g. 16:10 MacBooks, 4:3, 3:2, etc.),
+                # open panel 5% larger than its current area (base_w * 1.05).
+                is_16_9 = 1.74 <= aspect_ratio <= 1.80
+                if is_16_9:
+                    target_w = max(180, min(300, base_w))
                 else:
-                    # Standard 16:9 1080p ratio (~14.58%, 280px)
-                    target_w = max(config.S(180), min(config.S(300), int(win_w * (280.0 / 1920.0))))
+                    target_w = max(190, min(320, int(base_w * 1.05)))
 
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]

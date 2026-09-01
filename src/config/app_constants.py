@@ -70,13 +70,13 @@ def init_ui_scaling(app=None):
     BTN_HEIGHT = S(32)
     INPUT_HEIGHT = S(30)
 
-    FONT_XS = FS(9)
-    FONT_SM = FS(10)
-    FONT_BASE = FS(11)
-    FONT_MD = FS(12)
-    FONT_LG = FS(14)
-    FONT_XL = FS(16)
-    FONT_TITLE = FS(19)
+    FONT_XS = FS(8)
+    FONT_SM = FS(9)
+    FONT_BASE = FS(10)
+    FONT_MD = FS(11)
+    FONT_LG = FS(13)
+    FONT_XL = FS(15)
+    FONT_TITLE = FS(18)
     FONT_DISPLAY = FS(36)
 
     import sys
@@ -105,9 +105,9 @@ def S(px: int | float) -> int:
     return max(1, int(round(px * SCALE_FACTOR)))
 
 def FS(pt: int | float) -> int:
-    """Scales font point sizes smoothly while preserving full readability."""
+    """Scales font point sizes smoothly (+1pt on macOS for enhanced legibility, standard on Windows/Linux)."""
     if IS_MAC:
-        return int(pt)
+        return int(pt) + 1
     return max(8, int(round(pt * SCALE_FACTOR)))
 
 def SP(pt: int | float) -> int:
@@ -126,16 +126,16 @@ INPUT_HEIGHT = S(30)
 # Fonts
 UI_FONT_NAME = "Ubuntu Sans"
 TITLE_FONT_NAME = "Ubuntu"
-BASE_FONT_PT = 11
+BASE_FONT_PT = 10
 
 # Scaled typography tokens
-FONT_XS = FS(9)
-FONT_SM = FS(10)
-FONT_BASE = FS(11)
-FONT_MD = FS(12)
-FONT_LG = FS(14)
-FONT_XL = FS(16)
-FONT_TITLE = FS(19)
+FONT_XS = FS(8)
+FONT_SM = FS(9)
+FONT_BASE = FS(10)
+FONT_MD = FS(11)
+FONT_LG = FS(13)
+FONT_XL = FS(15)
+FONT_TITLE = FS(18)
 FONT_DISPLAY = FS(36)
 
 def get_system_font_name():
