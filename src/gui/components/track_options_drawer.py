@@ -81,7 +81,7 @@ class TrackSquareCheckbox(QWidget):
         self.box.setAlignment(Qt.AlignCenter)
 
         self.lbl = QLabel(text)
-        self.lbl.setStyleSheet(f"color: #d4d4d4; font-size: {config.SP(9.5)}pt; font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;")
+        self.lbl.setStyleSheet(f"color: #d4d4d4; font-size: {config.FS(9.5)}pt; font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;")
 
         lay.addWidget(self.box)
         lay.addWidget(self.lbl)

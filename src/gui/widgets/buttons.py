@@ -289,12 +289,12 @@ class ToggleSwitch(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(36, 20)
+        self.setFixedSize(config.S(36), config.S(20))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._is_checked = False
 
         # Internal animation states
-        self._thumb_x = 2
+        self._thumb_x = float(config.S(2))
         self._bg_color = QColor("#555555")
         
         # Animators
@@ -334,7 +334,8 @@ class ToggleSwitch(QWidget):
             self._update_animation()
         else:
             self._bg_color = QColor("#1ed760") if checked else QColor("#555555")
-            self._thumb_x = self.width() - 20 if checked else 4
+            thumb_size = config.S(16)
+            self._thumb_x = float(self.width() - thumb_size - config.S(2)) if checked else float(config.S(2))
             self.update()
         
         self.toggled.emit(self._is_checked)
@@ -350,7 +351,8 @@ class ToggleSwitch(QWidget):
         self._anim_group.stop()
         self._color_anim.stop()
         
-        end_x = 18 if self._is_checked else 2
+        thumb_size = config.S(16)
+        end_x = float(self.width() - thumb_size - config.S(2)) if self._is_checked else float(config.S(2))
         end_color = QColor("#1ed760") if self._is_checked else QColor("#555555")
         
         self._anim_group.setStartValue(self._thumb_x)
@@ -370,11 +372,12 @@ class ToggleSwitch(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(self._bg_color)
         rect = QRect(0, 0, self.width(), self.height())
-        p.drawRoundedRect(rect, 10, 10)
+        p.drawRoundedRect(rect, config.S(10), config.S(10))
         
         # Draw white thumb
         p.setBrush(QColor("white"))
-        thumb_rect = QRect(int(self._thumb_x), 2, 16, 16)
+        thumb_size = config.S(16)
+        thumb_rect = QRect(int(self._thumb_x), config.S(2), thumb_size, thumb_size)
         p.drawEllipse(thumb_rect)
 
 class ShortcutCaptureButton(QPushButton):
@@ -706,10 +709,10 @@ class SidebarButton(QPushButton):
         
         if icon_path and os.path.exists(icon_path):
             self.setIcon(QIcon(icon_path))
-            self.setIconSize(QSize(24, 24))
+            self.setIconSize(QSize(config.S(24), config.S(24)))
         else:
             self.setText(icon_text)
-        self.setFixedSize(40, 40)
+        self.setFixedSize(config.S(40), config.S(40))
         self.setCursor(Qt.PointingHandCursor)
         self.custom_tooltip_text = label_text
         self.is_right_side = is_right_side

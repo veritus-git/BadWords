@@ -49,11 +49,11 @@ def build_welcome_view(win) -> QWidget:
     lbl_title = QLabel("BadWords", inner)
     lbl_title.setObjectName("welcome_title")
     lbl_title.setAlignment(Qt.AlignCenter)
-    lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.SP(36), QFont.Weight.Bold))
+    lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.FS(36), QFont.Weight.Bold))
     lbl_title.setStyleSheet(f"""
         QLabel#welcome_title {{
             color: #ffffff;
-            font-size: {config.SP(36)}pt;
+            font-size: {config.FS(36)}pt;
             font-weight: bold;
             font-family: "{config.TITLE_FONT_NAME}", sans-serif;
             background: transparent;
@@ -71,11 +71,11 @@ def build_welcome_view(win) -> QWidget:
     def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
         row = QVBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(3)
+        row.setSpacing(config.S(3))
         lbl = QLabel(label_text)
-        lbl.setFixedHeight(16)
+        lbl.setFixedHeight(config.S(16))
         lbl.setStyleSheet(
-            f"color: {config.NOTE_COL}; font-size: 9pt;"
+            f"color: {config.NOTE_COL}; font-size: {config.FS(9)}pt;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
         )
         row.addWidget(lbl)
