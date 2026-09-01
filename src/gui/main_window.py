@@ -3039,16 +3039,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.showMaximized()
             return
         sg = screen.availableGeometry()
-        if getattr(self, '_is_mac', False):
-            self.setGeometry(sg.x(), sg.y(), sg.width(), sg.height())
-            self.show()
-        else:
-            self.setGeometry(
-                sg.x() + (sg.width()  - w) // 2,
-                sg.y() + (sg.height() - h) // 2,
-                w, h
-            )
-            self.showMaximized()
+        self.setGeometry(
+            sg.x() + (sg.width()  - w) // 2,
+            sg.y() + (sg.height() - h) // 2,
+            w, h
+        )
+        self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)

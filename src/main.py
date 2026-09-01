@@ -130,8 +130,12 @@ class AppController:
         self.splash.close()
         self.splash = None  # Allow GC to clean up the splash widget properly
 
+        osdoc.log_info("Loading complete. Building main window.")
+
         # IMPORTANT: store on self, NOT as a local variable.
         self.main_win = gui.BadWordsGUI(audio_engine, resolve)
+
+        # Wire clean-shutdown callback
         self.main_win.closeEvent_callback = self._on_close
 
         self.main_win.show()
