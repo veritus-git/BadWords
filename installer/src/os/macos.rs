@@ -76,8 +76,27 @@ pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std:
             // Launcher script
             let launcher_path = macos.join("BadWords");
             let launcher_content = format!(
-                "#!/bin/bash\nexec \"{}/venv/bin/python\" \"{}/main.py\" \"$@\"\n",
-                install_dir.to_string_lossy(),
+                r#"#!/bin/bash
+DIR="{}"
+if [ -f "$DIR/src/main.py" ]; then
+    MAIN_PY="$DIR/src/main.py"
+    CWD="$DIR/src"
+else
+    MAIN_PY="$DIR/main.py"
+    CWD="$DIR"
+fi
+
+if [ -x "$DIR/venv/bin/python3" ]; then
+    PY="$DIR/venv/bin/python3"
+elif [ -x "$DIR/venv/bin/python" ]; then
+    PY="$DIR/venv/bin/python"
+else
+    PY="python3"
+fi
+
+cd "$CWD"
+exec "$PY" "$MAIN_PY" "$@"
+"#,
                 install_dir.to_string_lossy()
             );
             std::fs::write(&launcher_path, launcher_content)?;
