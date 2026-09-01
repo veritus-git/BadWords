@@ -35,7 +35,7 @@ def build_silence_panel(win) -> QFrame:
     """
     _sil_rst_style = f"""
         QPushButton {{ background: transparent; border: 1px solid #444;
-        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(10)}pt; }}
+        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(11)}pt; }}
         QPushButton:hover {{ color: #ccc; border-color: #666; }}
     """
 
@@ -44,7 +44,6 @@ def build_silence_panel(win) -> QFrame:
         lbl = QLabel(label_text)
         row.addWidget(lbl, 1)
         row.addWidget(widget)
-        row.addSpacing(config.S(4))
         row.addWidget(rst_btn)
         return row
 
@@ -53,9 +52,10 @@ def build_silence_panel(win) -> QFrame:
     win.spin_thresh = QLineEdit()
     win.spin_thresh.setText(str(_sil_prefs.get('silence_threshold_db', _sil_prefs.get('ui_spin_thresh', -42.0))))
     win.spin_thresh.setFixedWidth(config.S(68))
+    win.spin_thresh.setFixedHeight(config.INPUT_HEIGHT)
     win.spin_thresh.setStyleSheet(_sil_input_style)
     _rst_thresh = QPushButton("↺")
-    _rst_thresh.setFixedSize(config.S(22), config.S(22))
+    _rst_thresh.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
     _rst_thresh.setCursor(Qt.PointingHandCursor)
     _rst_thresh.setStyleSheet(_sil_rst_style)
     _rst_thresh.clicked.connect(lambda: (
@@ -66,9 +66,10 @@ def build_silence_panel(win) -> QFrame:
     win.spin_pad = QLineEdit()
     win.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.05)))
     win.spin_pad.setFixedWidth(config.S(68))
+    win.spin_pad.setFixedHeight(config.INPUT_HEIGHT)
     win.spin_pad.setStyleSheet(_sil_input_style)
     _rst_pad = QPushButton("↺")
-    _rst_pad.setFixedSize(config.S(22), config.S(22))
+    _rst_pad.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
     _rst_pad.setCursor(Qt.PointingHandCursor)
     _rst_pad.setStyleSheet(_sil_rst_style)
     _rst_pad.clicked.connect(lambda: (
@@ -79,13 +80,14 @@ def build_silence_panel(win) -> QFrame:
     win.spin_silence_min_dur = QLineEdit()
     win.spin_silence_min_dur.setText(str(_sil_prefs.get('silence_min_dur', 0.2)))
     win.spin_silence_min_dur.setFixedWidth(config.S(68))
+    win.spin_silence_min_dur.setFixedHeight(config.INPUT_HEIGHT)
     win.spin_silence_min_dur.setStyleSheet(_sil_input_style)
     win.spin_silence_min_dur.setToolTip(
         "Minimum duration (in seconds) for a gap to be classified as silence. "
         "Lower = more sensitive. Applies to both standalone and post-transcript modes."
     )
     _rst_min = QPushButton("↺")
-    _rst_min.setFixedSize(config.S(22), config.S(22))
+    _rst_min.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
     _rst_min.setCursor(Qt.PointingHandCursor)
     _rst_min.setStyleSheet(_sil_rst_style)
     _rst_min.clicked.connect(lambda: (
