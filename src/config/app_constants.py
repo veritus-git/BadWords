@@ -31,16 +31,14 @@ CFG_WINDOW_H_BASE = 740
 
 def get_system_font_name():
     """
-    Returns preferred font depending on the operating system.
-    Does not require GUI library (tkinter).
+    Returns the preferred font family depending on the OS:
+    macOS uses native 'Helvetica Neue'.
+    Windows & Linux use 'Ubuntu Sans' (modern Canonical font with native Medium 500 / SemiBold 600).
     """
     system = platform.system()
-    if system == "Windows":
-        return "Segoe UI"
-    if system == "Darwin": # macOS
+    if system == "Darwin":  # macOS
         return "Helvetica Neue"
-    # Linux / Fallback
-    return "Noto Sans"
+    return "Ubuntu Sans"
 
 UI_FONT_NAME = get_system_font_name()
 BASE_FONT_PT = 12 if platform.system() == "Darwin" else 10

@@ -298,6 +298,17 @@ class OSDoctor:
             loaded["ai_initial_prompt"] = ""
             loaded["settings_version"] = current_version
             needs_save = True
+
+        # Force migration for default system fonts when upgrading from v3.x
+        if loaded and version_tuple(saved_version) < version_tuple("4.0.0"):
+            old_font = loaded.get("editor_font_family", "")
+            legacy_default_fonts = {"Segoe UI", "Segoe UI Variable", "Segoe UI Variable Display", "Noto Sans", "Ubuntu", "Helvetica Neue", "Arial", "sans-serif", "Sans"}
+            if old_font in legacy_default_fonts or not old_font:
+                new_font = _cfg.DEFAULT_SETTINGS.get("editor_font_family", "Ubuntu Sans")
+                if old_font != new_font:
+                    log_info(f"Migrating default editor_font_family from '{old_font}' to '{new_font}' (v3 -> v4 upgrade)")
+                    loaded["editor_font_family"] = new_font
+                    needs_save = True
             
         if loaded.get("settings_version") != current_version:
             loaded["settings_version"] = current_version

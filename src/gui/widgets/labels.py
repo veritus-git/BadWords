@@ -156,15 +156,15 @@ class IDETooltip(QLabel):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setStyleSheet("""
-            QLabel {
+        self.setStyleSheet(f"""
+            QLabel {{
                 background-color: #1e1e1e;
                 color: #cccccc;
                 border: 1px solid #454545;
                 padding: 4px 8px;
-                font-family: 'Segoe UI', sans-serif;
+                font-family: '{config.UI_FONT_NAME}', sans-serif;
                 font-size: 10pt;
-            }
+            }}
         """)
         self.hide()
 

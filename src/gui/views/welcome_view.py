@@ -12,7 +12,7 @@ Welcome screen with transcription settings, model chooser, more accurate slide-o
 """
 
 import os
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QCursor
 
 import config
+from gui.utils import get_play_icon
 from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch
 
 
@@ -51,15 +52,15 @@ def build_welcome_view(win) -> QWidget:
     lbl_title.setStyleSheet(f"""
         QLabel#welcome_title {{
             color: #ffffff;
-            font-size: 34pt;
-            font-weight: 900;
-            font-family: {config.UI_FONT_NAME};
+            font-size: 36pt;
+            font-weight: bold;
+            font-family: 'Ubuntu';
             background: transparent;
-            letter-spacing: -2px;
+            letter-spacing: 0.5px;
         }}
     """)
     inner_layout.addWidget(lbl_title)
-    inner_layout.addSpacing(10)
+    inner_layout.addSpacing(6)
 
     # ── Local stacked widget ──────────────────────────────────────────
     win.welcome_stack = QStackedWidget()
@@ -349,15 +350,17 @@ def build_welcome_view(win) -> QWidget:
     btn_import.clicked.connect(win._on_import_project)
     btn_row_t.addWidget(btn_import)
 
-    btn_analyze = QPushButton("▶ " + win.txt("btn_analyze"))
+    btn_analyze = QPushButton(win.txt("btn_analyze"))
     btn_analyze.setObjectName("btn_primary")
+    btn_analyze.setIcon(get_play_icon(12, "#ffffff", 1.5))
+    btn_analyze.setIconSize(QSize(12, 12))
     btn_analyze.setCursor(Qt.PointingHandCursor)
     btn_analyze.setFixedHeight(30)
     btn_analyze.setStyleSheet(f"""
         QPushButton#btn_primary {{
             background-color: {config.BTN_BG}; color: #ffffff;
             font-family: {config.UI_FONT_NAME}; font-size: 10pt; font-weight: bold;
-            border: none; border-radius: 3px; padding: 0 18px;
+            border: none; border-radius: 3px; padding: 0 16px;
         }}
         QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
         QPushButton#btn_primary:pressed {{ background-color: #176e38; }}

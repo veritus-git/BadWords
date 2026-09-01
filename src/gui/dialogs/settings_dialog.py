@@ -2409,7 +2409,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'telemetry_opt_in':   (self._safe_get('chk_telemetry_opt_in', old_prefs.get('telemetry_opt_in'), 'isChecked') if old_prefs.get('telemetry_opt_in') is not None or self._safe_get('chk_telemetry_opt_in', False, 'isChecked') else None),
             'telemetry_geo':      self._safe_get('chk_telemetry_geo', old_prefs.get('telemetry_geo', True), 'isChecked'),
             'view_mode':          view_mode,
-            'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', 'Segoe UI'), 'currentText'),
+            'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', config.UI_FONT_NAME), 'currentText'),
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
@@ -2482,7 +2482,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         view_mode = _g('view_mode', 'segmented')
         self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
-        self._safe_set('combo_font', _g('editor_font_family', 'Segoe UI'), 'setText')
+        self._safe_set('combo_font', _g('editor_font_family', config.UI_FONT_NAME), 'setText')
         self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
         self._safe_set('spin_lheight', _g('editor_line_height', 7), 'setValue')
         

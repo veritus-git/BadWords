@@ -70,6 +70,7 @@ class LiquidProgressBar(QWidget):
                 self._indeterminate = False
                 self._loop_anim.stop()
             self._anim.stop()
+            self._anim.setStartValue(self._value)
             self._anim.setEndValue(float(val))
             self._anim.start()
 
