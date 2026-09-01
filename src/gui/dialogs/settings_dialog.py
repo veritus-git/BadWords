@@ -86,8 +86,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowTitle(self.txt("tool_settings"))
         self.frameless_init(is_popup=True)
         self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
-        init_w, init_h = config.get_responsive_settings_size()
-        self.setFixedSize(init_w, init_h)
+        self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
 
         prefs = self.engine.load_preferences() or {}
 
@@ -99,13 +98,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 border: 1px solid #1a1a1a;
             }}
             QPushButton {{
-                padding: 6px 16px;
+                padding: {config.S(6)}px {config.S(16)}px;
                 outline: none;
             }}
             QLabel {{
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: 10pt;
+                font-size: {config.SP(10)}pt;
                 background: transparent;
             }}
             QListWidget {{
@@ -113,13 +112,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 border: none;
                 border-right: 1px solid {config.SEPARATOR_COL};
                 outline: none;
-                padding: 6px 0;
+                padding: {config.S(6)}px 0;
             }}
             QListWidget::item {{
                 color: {config.NOTE_COL};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: 10pt;
-                padding: 10px 16px;
+                font-size: {config.SP(10)}pt;
+                padding: {config.S(10)}px {config.S(16)}px;
                 border-radius: 0px;
             }}
             QListWidget::item:selected,
@@ -257,7 +256,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # ── LEFT: Category list ───────────────────────────────────────────
         self.category_list = QListWidget()
-        self.category_list.setFixedWidth(155)
+        self.category_list.setFixedWidth(config.S(155))
         self.category_list.setFocusPolicy(Qt.NoFocus)
         # Disable horizontal scrollbar — marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -426,12 +425,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             else:
                 self.w_footer.show()
                 
-            if not self._page_built[idx]:
-                self._build_page(idx)
-                
         self.category_list.currentRowChanged.connect(_on_tab_changed)
+
+        # Pre-build ALL pages during init so tab-switching is instant and never creates DWM flicker
+        for i in range(self.category_list.count()):
+            self._build_page(i)
+
         self.category_list.setCurrentRow(0)
-        self._build_page(0)
 
     def _add_row(self, form, label_text, widget, default_val, setter_func):
         container = QWidget()
@@ -1138,12 +1138,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         page_transcript = QWidget()
         page_transcript.setStyleSheet("background: transparent;")
         l_transcript = QVBoxLayout(page_transcript)
-        l_transcript.setContentsMargins(24, 20, 24, 16)
+        l_transcript.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
         l_transcript.setSpacing(0)
 
+        # Always-on-top container (collapses cleanly with 0px gap in basic mode)
+        w_ontop_box = QWidget()
+        w_ontop_box.setStyleSheet("background: transparent;")
+        l_ontop_box = QVBoxLayout(w_ontop_box)
+        l_ontop_box.setContentsMargins(0, 0, 0, 0)
+        l_ontop_box.setSpacing(0)
+
         form_ontop = QFormLayout()
-        form_ontop.setSpacing(14)
+        form_ontop.setSpacing(config.S(14))
         form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form_ontop.setContentsMargins(0, 0, 0, 0)
         
         self.chk_ontop = ToggleSwitch()
         self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
@@ -1152,18 +1160,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop.setContentsMargins(0, 0, 0, 0)
         l_ontop.addStretch()
         l_ontop.addWidget(self._get_info_icon("tt_always_on_top"))
-        l_ontop.addSpacing(6)
+        l_ontop.addSpacing(config.S(6))
         l_ontop.addWidget(self.chk_ontop)
         
-        ontop_rows = self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
+        self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
                  False, lambda v: self.chk_ontop.setChecked(v, animated=False))
-        self._advanced_widgets.extend(ontop_rows)
-        l_transcript.addLayout(form_ontop)
+        l_ontop_box.addLayout(form_ontop)
+        l_ontop_box.addSpacing(config.S(14))
         
-        l_transcript.addSpacing(14)
+        self._advanced_widgets.append(w_ontop_box)
+        l_transcript.addWidget(w_ontop_box)
 
         form_transcript = QFormLayout()
-        form_transcript.setSpacing(14)
+        form_transcript.setSpacing(config.S(14))
         form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Display Mode (moved from General)

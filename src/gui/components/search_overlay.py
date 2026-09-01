@@ -125,12 +125,12 @@ class SearchOverlayWidget(QFrame):
         _icon_path = get_layout_icon_path("search.png")
         self.btn_open_search = QPushButton()
         self.btn_open_search.setObjectName("BtnOpenSearch")
-        self.btn_open_search.setFixedSize(36, 36)
+        self.btn_open_search.setFixedSize(config.S(36), config.S(36))
         
         pix = QPixmap(_icon_path)
         if not pix.isNull():
             self.btn_open_search.setIcon(QIcon(pix))
-            self.btn_open_search.setIconSize(QSize(18, 18))
+            self.btn_open_search.setIconSize(QSize(config.S(18), config.S(18)))
         else:
             self.btn_open_search.setText("🔍")
             
@@ -139,10 +139,10 @@ class SearchOverlayWidget(QFrame):
         
         self.search_container = QFrame()
         self.search_container.setObjectName("SearchContainer")
-        self.search_container.setFixedSize(300, 36)
+        self.search_container.setFixedSize(config.S(300), config.S(36))
         search_layout = QHBoxLayout(self.search_container)
-        search_layout.setContentsMargins(8, 6, 8, 6)
-        search_layout.setSpacing(4)
+        search_layout.setContentsMargins(config.S(8), config.S(6), config.S(8), config.S(6))
+        search_layout.setSpacing(config.S(4))
         
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.main_window.txt("search_placeholder"))
@@ -151,15 +151,15 @@ class SearchOverlayWidget(QFrame):
         
         self.btn_prev = QPushButton("▲")
         self.btn_prev.setToolTip(self.main_window.txt("search_tooltip_prev"))
-        self.btn_prev.setFixedSize(24, 24)
+        self.btn_prev.setFixedSize(config.S(24), config.S(24))
         
         self.btn_next = QPushButton("▼")
         self.btn_next.setToolTip(self.main_window.txt("search_tooltip_next"))
-        self.btn_next.setFixedSize(24, 24)
+        self.btn_next.setFixedSize(config.S(24), config.S(24))
         
         self.btn_close = QPushButton("✕")
         self.btn_close.setToolTip(self.main_window.txt("search_tooltip_close"))
-        self.btn_close.setFixedSize(24, 24)
+        self.btn_close.setFixedSize(config.S(24), config.S(24))
         
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.counter_label)

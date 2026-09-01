@@ -37,16 +37,16 @@ class SplashScreen(FramelessWindowMixin, _BaseDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
 
-        W, H = 300, 150
-        self.setFixedSize(W + 30, H + 30)
+        W, H = config.S(300), config.S(150)
+        self.setFixedSize(W + config.S(30), H + config.S(30))
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
         self.inner_frame = QFrame()
         self.inner_frame.setObjectName("MainInnerFrame")
         
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(config.S(30))
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
@@ -68,27 +68,28 @@ class SplashScreen(FramelessWindowMixin, _BaseDialog):
             }}
             QLabel#title {{
                 color: #ffffff;
-                font-size: 18pt;
+                font-size: {config.SP(18)}pt;
                 font-weight: bold;
-                font-family: {config.UI_FONT_NAME};
+                font-family: "{config.TITLE_FONT_NAME}", sans-serif;
                 background: transparent;
             }}
             QLabel#loading {{
                 color: {config.NOTE_COL};
-                font-size: 12pt;
-                font-family: {config.UI_FONT_NAME};
+                font-size: {config.SP(12)}pt;
+                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 background: transparent;
             }}
         """)
 
         # --- Layout ---
-        content_layout.setContentsMargins(20, 30, 20, 20)
-        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(config.S(20), config.S(30), config.S(20), config.S(20))
+        content_layout.setSpacing(config.S(8))
         content_layout.setAlignment(Qt.AlignCenter)
 
         lbl_title = QLabel("BadWords", self.inner_frame)
         lbl_title.setObjectName("title")
         lbl_title.setAlignment(Qt.AlignCenter)
+        lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.SP(18), QFont.Weight.Bold))
         content_layout.addWidget(lbl_title)
 
         self._lbl_loading = QLabel(self.txt("lbl_loading"), self.inner_frame)

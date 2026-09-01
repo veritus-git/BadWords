@@ -73,15 +73,15 @@ class TrackSquareCheckbox(QWidget):
         self.setCursor(Qt.PointingHandCursor)
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(4, 2, 4, 2)
-        lay.setSpacing(8)
+        lay.setContentsMargins(config.S(4), config.S(2), config.S(4), config.S(2))
+        lay.setSpacing(config.S(8))
 
         self.box = QLabel()
-        self.box.setFixedSize(15, 15)
+        self.box.setFixedSize(config.S(15), config.S(15))
         self.box.setAlignment(Qt.AlignCenter)
 
         self.lbl = QLabel(text)
-        self.lbl.setStyleSheet("color: #d4d4d4; font-size: 9.5pt; font-family: Inter, sans-serif; background: transparent; border: none;")
+        self.lbl.setStyleSheet(f"color: #d4d4d4; font-size: {config.SP(9.5)}pt; font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;")
 
         lay.addWidget(self.box)
         lay.addWidget(self.lbl)

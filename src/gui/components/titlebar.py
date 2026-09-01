@@ -36,7 +36,7 @@ class AnimatedTitleButton(QPushButton):
         self._press = "#3a3a3d"
         self._cur   = self._bg
 
-        self.setFixedSize(32, 32)
+        self.setFixedSize(config.S(32), config.S(32))
         from ..utils import _txt
         self.setToolTip(_txt(lang, tooltip_key))
         self.setCursor(Qt.ArrowCursor)
@@ -47,7 +47,7 @@ class AnimatedTitleButton(QPushButton):
         pix = QPixmap(icon_path)
         if not pix.isNull():
             self.setIcon(QIcon(pix))
-            self.setIconSize(QSize(12, 12))
+            self.setIconSize(QSize(config.S(12), config.S(12)))
 
         self._anim = QVariantAnimation(self)
         self._anim.setDuration(150)
