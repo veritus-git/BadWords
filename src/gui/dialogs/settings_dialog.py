@@ -380,63 +380,65 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             pass
 
     def _build_ui(self):
-        self._advanced_widgets = []
-        self.category_list.clear()
-        while self.stack.count() > 0:
-            w = self.stack.widget(0)
-            self.stack.removeWidget(w)
-            w.deleteLater()
+        self.setUpdatesEnabled(False)
+        try:
+            self._advanced_widgets = []
+            self.category_list.clear()
+            while self.stack.count() > 0:
+                w = self.stack.widget(0)
+                self.stack.removeWidget(w)
+                w.deleteLater()
 
-        prefs = self.engine.load_preferences() or {}
-        view_mode = prefs.get('settings_view_mode', 'basic')
-        self._is_basic_mode = (view_mode == 'basic')
+            prefs = self.engine.load_preferences() or {}
+            view_mode = prefs.get('settings_view_mode', 'basic')
+            self._is_basic_mode = (view_mode == 'basic')
 
-        self.category_list.addItem(self.txt("tab_general"))
-        self.category_list.addItem(self.txt("tab_transcript"))
-        self.category_list.addItem(self.txt("tab_shortcuts"))
-        self.category_list.addItem(self.txt("tab_custom_markers"))
-        self.category_list.addItem(self.txt("tab_ai_engine"))
-        self.category_list.addItem(self.txt("tab_telemetry"))
-        self.category_list.addItem(self.txt("tab_support"))
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+            self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_ai_engine"))
+            self.category_list.addItem(self.txt("tab_telemetry"))
+            self.category_list.addItem(self.txt("tab_support"))
 
-        if self._is_basic_mode:
-            item = self.category_list.item(4)
-            if item:
-                item.setHidden(True)
+            if self._is_basic_mode:
+                item = self.category_list.item(4)
+                if item:
+                    item.setHidden(True)
 
-        self.revert_funcs = []
-        
-        self._page_built = [False] * self.category_list.count()
-        for _ in range(self.category_list.count()):
-            scroll = QScrollArea()
-            scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-            self.stack.addWidget(scroll)
+            self.revert_funcs = []
+            
+            for _ in range(self.category_list.count()):
+                scroll = QScrollArea()
+                scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                scroll.setWidgetResizable(True)
+                scroll.setFrameShape(QFrame.NoFrame)
+                scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+                self.stack.addWidget(scroll)
 
-        def _on_tab_changed(idx):
-            self._ensure_page_built(idx)
-            self.stack.setCurrentIndex(idx)
-            item = self.category_list.item(idx)
-            if item and item.text() == self.txt("tab_support"):
-                self.w_footer.hide()
-            else:
-                self.w_footer.show()
-                
-        self.category_list.currentRowChanged.connect(_on_tab_changed)
+            def _on_tab_changed(idx):
+                self.stack.setCurrentIndex(idx)
+                item = self.category_list.item(idx)
+                if item and item.text() == self.txt("tab_support"):
+                    self.w_footer.hide()
+                else:
+                    self.w_footer.show()
+                    
+            self.category_list.currentRowChanged.connect(_on_tab_changed)
 
-        # Build initial General tab on demand (eliminates background pages sliding across screen)
-        self._ensure_page_built(0)
-        self.category_list.setCurrentRow(0)
+            # Pre-build all pages cleanly with disabled updates
+            for i in range(self.category_list.count()):
+                self._build_page(i)
 
-    def _ensure_page_built(self, idx):
-        if idx < 0 or idx >= len(self._page_built):
-            return
-        if self._page_built[idx]:
-            return
-        self._build_page(idx)
+            if hasattr(self, '_advanced_widgets'):
+                for w in self._advanced_widgets:
+                    if w:
+                        w.setVisible(not self._is_basic_mode)
+
+            self.category_list.setCurrentRow(0)
+        finally:
+            self.setUpdatesEnabled(True)
 
     def _add_row(self, form, label_text, widget, default_val, setter_func):
         container = QWidget()
@@ -479,11 +481,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             page_widget = method(prefs)
             if page_widget:
                 scroll.setWidget(page_widget)
-            if hasattr(self, '_advanced_widgets'):
-                for w in self._advanced_widgets:
-                    if w:
-                        w.setVisible(not self._is_basic_mode)
-            self._page_built[idx] = True
 
     def _build_page_general(self, prefs):
         # PAGE 0 — GENERAL
