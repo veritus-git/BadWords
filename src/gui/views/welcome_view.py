@@ -49,13 +49,13 @@ def build_welcome_view(win) -> QWidget:
     lbl_title = QLabel("BadWords", inner)
     lbl_title.setObjectName("welcome_title")
     lbl_title.setAlignment(Qt.AlignCenter)
-    lbl_title.setFont(QFont(config.TITLE_FONT_NAME, config.FS(36), QFont.Weight.Bold))
+    lbl_title.setFont(QFont("Ubuntu", config.FS(36), QFont.Weight.Bold))
     lbl_title.setStyleSheet(f"""
         QLabel#welcome_title {{
             color: #ffffff;
             font-size: {config.FS(36)}pt;
             font-weight: bold;
-            font-family: "{config.TITLE_FONT_NAME}", sans-serif;
+            font-family: "Ubuntu", sans-serif;
             background: transparent;
             letter-spacing: 0.5px;
         }}

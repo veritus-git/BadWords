@@ -107,7 +107,7 @@ class FramelessWindowMixin:
 
         self._is_popup = is_popup
 
-        if not self._is_win and not (self._is_mac and self._is_root):
+        if self._is_root and not self._is_win and not self._is_mac and not is_popup:
             self._setup_grips()
 
     def _get_root_frame(self):
@@ -223,7 +223,7 @@ class FramelessWindowMixin:
                     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
             except Exception:
                 pass
-        if hasattr(self, '_grips'):
+        if hasattr(self, '_grips') and getattr(self, '_is_root', False):
             for grip in self._grips:
                 grip.raise_()
 
