@@ -3036,20 +3036,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         w, h = config.S(580), config.S(670)
         if screen is None:
             self.resize(w, h)
-            if getattr(self, '_is_mac', False):
-                self.showFullScreen()
-            else:
-                self.showMaximized()
+            self.showMaximized()
             return
         sg = screen.availableGeometry()
-        self.setGeometry(
-            sg.x() + (sg.width()  - w) // 2,
-            sg.y() + (sg.height() - h) // 2,
-            w, h
-        )
         if getattr(self, '_is_mac', False):
-            self.showFullScreen()
+            self.setGeometry(sg.x(), sg.y(), sg.width(), sg.height())
+            self.show()
         else:
+            self.setGeometry(
+                sg.x() + (sg.width()  - w) // 2,
+                sg.y() + (sg.height() - h) // 2,
+                w, h
+            )
             self.showMaximized()
 
     # ------------------------------------------------------------------
