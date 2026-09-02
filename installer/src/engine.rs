@@ -1007,6 +1007,15 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
         let _ = fs::create_dir_all(&assets_dir);
         emit_log(&sender, "OK", &format!("Destination folder ready: {}", target_dir.display()));
 
+        // Clean user log files on install/update so logs start fresh
+        for log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"] {
+            let log_path = target_dir.join(log_name);
+            if log_path.is_file() {
+                let _ = fs::remove_file(&log_path);
+            }
+        }
+        emit_log(&sender, "OK", "Cleared previous application log files.");
+
         // 4. Sync / Download source files
         emit_progress(&sender, 30, 1, "Deploying application files...", "Copying BadWords source and assets");
         if !deploy_application_files(&target_dir, &sender) {

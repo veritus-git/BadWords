@@ -453,11 +453,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(config.S(8))
+        row.setSpacing(config.S(4))
         row.setAlignment(Qt.AlignVCenter)
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
-        btn_rev = ReloadButton(size=24)
+        btn_rev = ReloadButton(size=30)
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
         def create_reset_handler(s_func, d_val):
             return lambda checked=False: s_func(d_val)
@@ -806,9 +806,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             _on_lang_changed(val)
         self._add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
 
-        # App Icon (Visual Selector)
+        # App Icon (Visual Selector) - Spans full width matching Language dropdown
         icon_row = QHBoxLayout()
-        icon_row.setSpacing(config.S(10))
+        icon_row.setSpacing(config.S(6))
+        icon_row.setContentsMargins(0, 0, 0, 0)
         self.icon_group = QButtonGroup(self)
         self.icon_group.setExclusive(True)
         
@@ -821,11 +822,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         for i, name in enumerate(icon_names):
             btn = QPushButton()
-            btn.setFixedSize(config.S(54), config.S(54))
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.setFixedHeight(config.S(56))
             icon_path = get_icon_path(name)
             if icon_path and os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
-                btn.setIconSize(QSize(config.S(42), config.S(42)))
+                btn.setIconSize(QSize(config.S(44), config.S(44)))
             btn.setCheckable(True)
             if name == saved_icon:
                 btn.setChecked(True)
@@ -837,27 +839,31 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 QPushButton {{ 
                     background-color: #1a1a1a; 
                     border: 1px solid #333333; 
-                    border-radius: {config.S(8)}px; 
+                    border-radius: {config.S(6)}px; 
                     padding: {config.S(2)}px; 
                 }}
                 QPushButton:hover {{ 
                     background-color: #262626; 
-                    border: 1px solid #555555; 
+                    border-color: #484848; 
                 }}
                 QPushButton:checked {{ 
-                    background-color: #222222; 
-                    border: 2px solid {config.BTN_BG}; 
+                    background-color: #383838; 
+                    border: 1px solid #555555; 
+                }}
+                QPushButton:checked:hover {{ 
+                    background-color: #424242; 
+                    border-color: #666666; 
                 }}
             """)
             self.icon_group.addButton(btn, i)
-            icon_row.addWidget(btn)
+            icon_row.addWidget(btn, 1)
             
         icon_container = QWidget()
+        icon_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         icon_container.setLayout(icon_row)
-        icon_container.layout().setContentsMargins(0, 0, 0, 0)
         
         lbl_icon, container_icon = self._add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
-        btn_rev_icon = container_icon.findChild(QPushButton, "btn_ghost_sm")
+        btn_rev_icon = container_icon.findChild(ReloadButton)
         if btn_rev_icon:
             btn_rev_icon.clicked.disconnect()
             def set_icon_default(val="default"):
@@ -942,19 +948,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             container = QWidget()
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(config.S(6))
+            row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter)
             
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row.addWidget(widget)
 
             if not is_display:
-                btn_clear = CloseIconButton(size=24)
+                btn_clear = CloseIconButton(size=30)
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
                 btn_clear.clicked.connect(lambda: setter_func(""))
                 row.addWidget(btn_clear)
 
-            btn_rev = ReloadButton(size=24)
+            btn_rev = ReloadButton(size=30)
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
@@ -1204,12 +1210,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             container = QWidget()
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(config.S(6))
+            row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter)
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row.addWidget(widget)
             
-            btn_rev = ReloadButton(size=24)
+            btn_rev = ReloadButton(size=30)
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
@@ -2077,8 +2083,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             def make_del(i):
                 return lambda checked=False: self._on_remove_marker_inline(i)
-            btn_del = CloseIconButton(size=24)
-            btn_del.setFixedWidth(config.S(28))
+            btn_del = CloseIconButton(size=30)
+            btn_del.setFixedWidth(config.S(30))
             btn_del.setStyleSheet(f"""
                 QPushButton {{
                     background-color: #2b2b2b;
