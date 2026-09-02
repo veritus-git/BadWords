@@ -1272,13 +1272,22 @@ class CustomDropdown(QPushButton):
         self.options_list = list(options_list)
         self.options_getter = options_getter
         self.max_visible_items = 5
-        self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
+        self.setText(self.txt("txt_select"))
+
+    def setText(self, text):
+        super().setText(text)
+        self._update_text_alignment(text)
+
+    def _update_text_alignment(self, text):
+        rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
+        is_rtl = str(text) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(text))
+        align_str = "right" if is_rtl else "left"
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                text-align: left;
+                text-align: {align_str};
                 padding: {config.S(4)}px {config.S(8)}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {config.S(3)}px;
@@ -1311,6 +1320,9 @@ class CustomDropdown(QPushButton):
         btn_h = self.height()
         btn_w = self.width()
 
+        rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
+        is_rtl_hdr = str(self.text()) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(self.text()))
+        hdr_align = "right" if is_rtl_hdr else "left"
         fake_header = QPushButton(self.text())
         fake_header.setFixedHeight(btn_h)
         fake_header.setCursor(Qt.PointingHandCursor)
@@ -1318,7 +1330,7 @@ class CustomDropdown(QPushButton):
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                text-align: left;
+                text-align: {hdr_align};
                 padding: {config.S(4)}px {config.S(8)}px;
                 border: none;
                 border-bottom: 1px solid #3a3a3a;
@@ -1335,7 +1347,7 @@ class CustomDropdown(QPushButton):
         list_widget = QListWidget()
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
         from gui.widgets.delegates import MarqueeItemDelegate
-        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget))
+        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget, padding=config.S(8)))
         items = self.options_getter() if (hasattr(self, 'options_getter') and callable(self.options_getter)) else self.options_list
         list_widget.addItems(items)
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
@@ -1444,7 +1456,7 @@ class TitleDropdown(CustomDropdown):
         list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         from gui.widgets.delegates import MarqueeItemDelegate
-        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget))
+        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget, padding=config.S(8)))
         list_widget.addItems(self.options_list)
         list_widget.setStyleSheet(f"""
             QListWidget {{
@@ -1631,9 +1643,14 @@ class MultiSelectDropdown(QPushButton):
     valueChanged = Signal(list)
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
-        self.options_list = list(options_list)
+        self._options_source = options_list
+        if callable(options_list):
+            self.options_list = []
+        else:
+            self.options_list = list(options_list)
         self.selected_items = set(self.options_list)
-        self.setText(self.txt("txt_all_tracks"))
+        self._popup = None
+        self.setText(self.txt("txt_all_tracks") if self.options_list else self.txt("msg_no_audio_tracks_detected"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -1644,16 +1661,21 @@ class MultiSelectDropdown(QPushButton):
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
+        self.clicked.connect(self.show_popup)
 
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
-        if not self.options_list:
+    def show_popup(self):
+        if callable(self._options_source) and not self.options_list:
+            self.options_list = list(self._options_source())
+
+        if hasattr(self, '_popup') and self._popup and self._popup.isVisible():
+            self._popup.close()
             return
-        popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
-        popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
 
-        layout = QVBoxLayout(popup)
+        self._popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
+        self._popup.setAttribute(Qt.WA_DeleteOnClose)
+        self._popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
+
+        layout = QVBoxLayout(self._popup)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -1666,7 +1688,6 @@ class MultiSelectDropdown(QPushButton):
             QListWidget::item:hover {{ background-color: #2a2d2e; }}
             {_popup_scrollbar_css()}
         """)
-
 
         class CustomCheckItemWidget(QWidget):
             def __init__(self, text, checked=False, parent=None):
@@ -1706,33 +1727,40 @@ class MultiSelectDropdown(QPushButton):
                 self.update_ui()
 
         from PySide6.QtCore import QSize
-        from PySide6.QtWidgets import QSizePolicy
-        for opt in self.options_list:
+        items_to_show = self.options_list if self.options_list else [self.txt("msg_no_audio_tracks_detected")]
+        is_empty = not self.options_list
+
+        for opt in items_to_show:
             item = QListWidgetItem(list_widget)
             item.setSizeHint(QSize(0, config.S(28)))
-            widget = CustomCheckItemWidget(opt, opt in self.selected_items)
-            widget.setCursor(Qt.PointingHandCursor)
-            list_widget.setItemWidget(item, widget)
+            if is_empty:
+                lbl = QLabel(opt)
+                lbl.setStyleSheet(f"color: #777; font-style: italic; padding: 0px {config.S(8)}px; font-size: {config.FS(9)}pt;")
+                list_widget.setItemWidget(item, lbl)
+            else:
+                widget = CustomCheckItemWidget(opt, opt in self.selected_items)
+                widget.setCursor(Qt.PointingHandCursor)
+                list_widget.setItemWidget(item, widget)
 
         layout.addWidget(list_widget)
         
-        # Enable clicking anywhere on the item to toggle the checkbox
-        def _on_item_clicked(it):
-            w = list_widget.itemWidget(it)
-            if w:
-                w.toggle()
-                self._on_toggled(w.opt_text, w.is_checked)
-        list_widget.itemClicked.connect(_on_item_clicked)
-        # PERFECT HEIGHT MATH
-        display_count = min(5, len(self.options_list))
+        if not is_empty:
+            def _on_item_clicked(it):
+                w = list_widget.itemWidget(it)
+                if w and hasattr(w, 'toggle'):
+                    w.toggle()
+                    self._on_toggled(w.opt_text, w.is_checked)
+            list_widget.itemClicked.connect(_on_item_clicked)
+
+        display_count = min(5, len(items_to_show))
         list_height = display_count * config.S(28)
         list_widget.setFixedHeight(list_height)
-        popup.setFixedHeight(list_height + 2)
+        self._popup.setFixedHeight(list_height + 2)
 
         global_pos = self.mapToGlobal(QPoint(0, self.height()))
-        popup.setGeometry(global_pos.x(), global_pos.y(), self.width(), list_height + 2)
-        popup.show()
-        popup.move(global_pos)
+        self._popup.setGeometry(global_pos.x(), global_pos.y(), self.width(), list_height + 2)
+        self._popup.show()
+        self._popup.move(global_pos)
 
     def _on_toggled(self, text, checked):
         if checked: self.selected_items.add(text)
@@ -1753,13 +1781,22 @@ class SearchableDropdown(QPushButton):
             self.options_list = []
         else:
             self.options_list = list(options_list)
-        self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
+        self.setText(self.txt("txt_select"))
+
+    def setText(self, text):
+        super().setText(text)
+        self._update_text_alignment(text)
+
+    def _update_text_alignment(self, text):
+        rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
+        is_rtl = str(text) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(text))
+        align_str = "right" if is_rtl else "left"
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                text-align: left;
+                text-align: {align_str};
                 padding: {config.S(4)}px {config.S(8)}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {config.S(3)}px;
@@ -1795,7 +1832,7 @@ class SearchableDropdown(QPushButton):
         self.list_widget = QListWidget()
         self.list_widget.setFrameShape(QFrame.Shape.NoFrame)
         from gui.widgets.delegates import MarqueeItemDelegate
-        self.list_widget.setItemDelegate(MarqueeItemDelegate(self.list_widget))
+        self.list_widget.setItemDelegate(MarqueeItemDelegate(self.list_widget, padding=config.S(8)))
         self.list_widget.addItems(self.options_list)
         
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]

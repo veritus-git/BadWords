@@ -61,17 +61,12 @@ class MarqueeItemDelegate(QStyledItemDelegate):
     animation on hover when the text is wider than the available column width.
     Completely replaces the default item renderer — no horizontal scrollbar needed.
     """
-    @property
-    def _padding(self):
-        try:
-            import config
-            return config.S(8)
-        except Exception:
-            return 8
+    _PADDING = 16  # default for main views and settings tabs
 
-    def __init__(self, list_widget):
+    def __init__(self, list_widget, padding=None):
         super().__init__(list_widget)
         self._lw = list_widget
+        self._padding = self._PADDING if padding is None else padding
         # State per row index
         self._mq_pos   = {}   # float offset
         self._mq_alpha = {}   # 0.0–1.0 fade
