@@ -2078,6 +2078,23 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             def make_del(i):
                 return lambda checked=False: self._on_remove_marker_inline(i)
             btn_del = CloseIconButton(size=24)
+            btn_del.setFixedWidth(config.S(28))
+            btn_del.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #2b2b2b;
+                    border: 1px solid #3a3a3a;
+                    border-radius: {config.S(3)}px;
+                    padding: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: #7a2020;
+                    border-color: #ed4245;
+                }}
+                QPushButton:pressed {{
+                    background-color: #5a1515;
+                    border-color: #ed4245;
+                }}
+            """)
             btn_del.clicked.connect(make_del(idx))
             row_layout.addWidget(btn_del)
 

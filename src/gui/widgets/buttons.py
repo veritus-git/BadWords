@@ -284,7 +284,8 @@ class ReloadButton(QPushButton):
         super().__init__(parent)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
-        self._icon_size = max(config.S(11), int(self._btn_size * 0.52))
+        # 10% smaller icon inside the same button size
+        self._icon_size = max(config.S(10), int(self._btn_size * 0.44))
         self.setFixedSize(self._btn_size, self._btn_size)
         
         from ..utils import get_layout_icon_path
@@ -320,13 +321,13 @@ class ReloadButton(QPushButton):
 
 
 class StarFavoriteButton(QPushButton):
-    """Button displaying star icons (star-empty, star-checked, star-hover) scaled down ~50%."""
-    def __init__(self, size: int = 22, parent=None):
+    """Button displaying star icons (star-empty, star-checked, star-hover) with NO border box."""
+    def __init__(self, size: int = 20, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
-        self._icon_size = max(config.S(11), int(self._btn_size * 0.52))
+        self._icon_size = max(config.S(11), int(self._btn_size * 0.55))
         self.setFixedSize(self._btn_size, self._btn_size)
         
         from ..utils import get_layout_icon_path
@@ -335,20 +336,20 @@ class StarFavoriteButton(QPushButton):
         self._icon_checked = QIcon(get_layout_icon_path("star-checked.svg"))
         
         self.setIconSize(QSize(self._icon_size, self._icon_size))
-        self.setStyleSheet(f"""
-            QPushButton {{
+        self.setStyleSheet("""
+            QPushButton {
                 background-color: transparent;
-                border: 1px solid #444444;
-                border-radius: {config.S(3)}px;
+                border: none;
                 padding: 0px;
-            }}
-            QPushButton:hover {{
-                background-color: #2a2d2e;
-                border-color: #666666;
-            }}
-            QPushButton:pressed {{
-                background-color: #1a1a1a;
-            }}
+            }
+            QPushButton:hover {
+                background-color: transparent;
+                border: none;
+            }
+            QPushButton:pressed {
+                background-color: transparent;
+                border: none;
+            }
         """)
         self.toggled.connect(self._update_icon)
         self._update_icon()
@@ -370,12 +371,12 @@ class StarFavoriteButton(QPushButton):
 
 
 class CloseIconButton(QPushButton):
-    """Button displaying x.svg with hover effect (x-hover.svg) scaled down ~50%."""
-    def __init__(self, size: int = 20, parent=None):
+    """Button displaying x.svg with hover effect (x-hover.svg) and standard border."""
+    def __init__(self, size: int = 24, parent=None):
         super().__init__(parent)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
-        self._icon_size = max(config.S(9), int(self._btn_size * 0.48))
+        self._icon_size = max(config.S(9), int(self._btn_size * 0.42))
         self.setFixedSize(self._btn_size, self._btn_size)
         
         from ..utils import get_layout_icon_path
@@ -387,15 +388,17 @@ class CloseIconButton(QPushButton):
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
-                border: none;
+                border: 1px solid #444444;
                 border-radius: {config.S(3)}px;
                 padding: 0px;
             }}
             QPushButton:hover {{
                 background-color: #2a2d2e;
+                border-color: #666666;
             }}
             QPushButton:pressed {{
                 background-color: #1a1a1a;
+                border-color: #333333;
             }}
         """)
 
