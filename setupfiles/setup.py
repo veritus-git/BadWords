@@ -1008,10 +1008,10 @@ if os.path.exists(MAIN_SCRIPT):
         gv['__file__'] = MAIN_SCRIPT
         exec(code, gv)
     except Exception as e:
-        print(f'Error: {e}')
+        print("Error:", e)
         traceback.print_exc()
 else:
-    print(f'CRITICAL: {MAIN_SCRIPT} not found')
+    print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
     legacy_names = [
         "BadWords.py", "Badwords.py", "BadWords (Linux).py",
