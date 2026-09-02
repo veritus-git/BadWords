@@ -678,9 +678,19 @@ class OSDoctor:
                 if not x11_path:
                     return False
                 x11 = ctypes.cdll.LoadLibrary(x11_path)
+                x11.XOpenDisplay.restype = ctypes.c_void_p
+                x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
                 display = x11.XOpenDisplay(None)
                 if not display:
                     return False
+
+                x11.XDefaultRootWindow.restype = ctypes.c_ulong
+                x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+                x11.XInternAtom.restype = ctypes.c_ulong
+                x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+                x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+                x11.XFlush.argtypes = [ctypes.c_void_p]
+                x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
 
                 atom_state = x11.XInternAtom(display, b'_NET_WM_STATE', False)
                 atom_above = x11.XInternAtom(display, b'_NET_WM_STATE_ABOVE', False)
