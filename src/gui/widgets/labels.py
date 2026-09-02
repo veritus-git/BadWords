@@ -60,55 +60,22 @@ class QLabel(_QLabel):
         import re as _re
         return _re.sub(r'<[^>]+>', '', t)
 
-    def _is_physically_truncated(self):
-        """
-        Determines whether the text is physically truncated or obscured on screen.
-        Checks:
-        1. Whether sizeHint (with full QSS styles/fonts) or fontMetrics exceeds allocated space.
-        2. Whether the widget is physically clipped or obscured by parent bounds or visibleRegion.
-        3. For word-wrapped labels: only True if height is insufficient to show all lines.
-        """
+    def _mq_active(self):
+        """Only run marquee for single-line, non-wrapping labels with enough text."""
         if self.wordWrap():
-            sh = self.sizeHint()
-            h = self.height()
-            if h <= 0:
-                return False
-            return sh.height() > h + 2
-
+            return False
         t = self._mq_get_text()
-        if not t or len(t.strip()) <= 1 or '\n' in t:
-            return False
-
-        cr = self.contentsRect()
-        avail = cr.width()
-        if avail <= 0:
-            return False
-
-        # Physical on-screen visibility check:
-        # If the widget is clipped by a parent widget, layout or scroll viewport,
-        # visibleRegion().boundingRect() gives the exact visible pixel rectangle.
-        try:
-            vis = self.visibleRegion().boundingRect()
-            if vis.isValid() and 0 < vis.width() < self.width():
-                avail = min(avail, vis.width())
-        except Exception:
-            pass
-
-        p = self.parentWidget()
-        if p and 0 < p.width() < self.width():
-            avail = min(avail, p.width())
-
-        sh_w = self.sizeHint().width()
-        fm_w = self.fontMetrics().horizontalAdvance(t)
-        needed = max(sh_w, fm_w)
-
-        return needed > avail + 2
+        return bool(t) and len(t.strip()) > 3
 
     def enterEvent(self, event):
         super().enterEvent(event)
+        if not self._mq_active():
+            return
         self._mq_hovered = True
         try:
-            if self._is_physically_truncated():
+            fm = self.fontMetrics()
+            avail = self.contentsRect().width()
+            if fm.horizontalAdvance(self._mq_get_text()) > avail:
                 self._mq_is_squeezed = True
                 self._mq_pos = 0.0
                 self._mq_alpha = 1.0
@@ -130,22 +97,10 @@ class QLabel(_QLabel):
         super().leaveEvent(event)
 
     def _mq_scroll(self):
-        cr = self.contentsRect()
-        avail = cr.width()
-        try:
-            vis = self.visibleRegion().boundingRect()
-            if vis.isValid() and 0 < vis.width() < self.width():
-                avail = min(avail, vis.width())
-        except Exception:
-            pass
-        p = self.parentWidget()
-        if p and 0 < p.width() < self.width():
-            avail = min(avail, p.width())
-
-        text = self._mq_get_text()
         fm = self.fontMetrics()
-        text_w = max(self.sizeHint().width(), fm.horizontalAdvance(text))
-        max_scroll = float(max(0, text_w - avail))
+        avail = self.contentsRect().width()
+        text = self._mq_get_text()
+        max_scroll = float(max(0, fm.horizontalAdvance(text) - avail))
 
         if self._mq_state == "START_DELAY":
             self._mq_ticks += 1
@@ -187,22 +142,23 @@ class QLabel(_QLabel):
         cr = self.contentsRect()
         painter.setClipRect(cr)
 
-        color = self._get_text_color()
         if self._mq_alpha < 1.0:
-            color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
+            painter.setOpacity(max(0.0, min(1.0, self._mq_alpha)))
 
         raw_text = super().text()
         if "<" in raw_text and ">" in raw_text:
             from PySide6.QtGui import QTextDocument
             doc = QTextDocument()
             doc.setDefaultFont(self.font())
-            doc.setHtml(f"<div style='color: {color.name()};'>{raw_text}</div>")
+            color_name = self.palette().windowText().color().name()
+            doc.setHtml(f"<div style='color: {color_name};'>{raw_text}</div>")
             doc.setDocumentMargin(0)
             
             y_pos = cr.top() + (cr.height() - doc.size().height()) / 2
             painter.translate(cr.left() - int(self._mq_pos), y_pos)
             doc.drawContents(painter)
         else:
+            color = self.palette().windowText().color()
             painter.setPen(color)
             painter.setFont(self.font())
             text = self._mq_get_text()
@@ -246,7 +202,63 @@ class IDETooltip(QLabel):
         self.show()
 
 class MarqueeLabel(QLabel):
-    """Convenience subclass of QLabel with marquee enabled."""
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
+        self._full_text = text
+        self._mq_timer = QTimer(self)
+        self._mq_timer.setInterval(25)
+        self._mq_timer.timeout.connect(self._scroll_step)
+        self._mq_pos = 0.0
+        self._hovered = False
+        self.setMouseTracking(True)
         self.setStyleSheet("color: #d4d4d4; font-size: 9.5pt;")
+
+    def setText(self, text):
+        self._full_text = text
+        self._mq_pos = 0.0
+        super().setText(text)
+        self.update()
+
+    def text(self):
+        return self._full_text
+
+    def enterEvent(self, event):
+        self._hovered = True
+        if self._is_truncated():
+            self._mq_timer.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self._mq_timer.stop()
+        self._mq_pos = 0.0
+        self.update()
+        super().leaveEvent(event)
+
+    def _is_truncated(self):
+        fm = self.fontMetrics()
+        return fm.horizontalAdvance(self._full_text) > self.width()
+
+    def _scroll_step(self):
+        fm = self.fontMetrics()
+        txt_w = fm.horizontalAdvance(self._full_text)
+        self._mq_pos += 1.2
+        if self._mq_pos > txt_w + 20:
+            self._mq_pos = -self.width()
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtCore import Qt
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        fm = self.fontMetrics()
+
+        if self._hovered and self._is_truncated() and self._mq_timer.isActive():
+            p.setPen(QColor("#ffffff"))
+            p.drawText(int(-self._mq_pos), fm.ascent() + (self.height() - fm.height()) // 2, self._full_text)
+        else:
+            elided = fm.elidedText(self._full_text, Qt.ElideRight, max(1, self.width()))
+            p.setPen(QColor("#d4d4d4"))
+            p.drawText(0, fm.ascent() + (self.height() - fm.height()) // 2, elided)
