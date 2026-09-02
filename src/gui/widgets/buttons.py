@@ -1117,7 +1117,6 @@ class CustomDropdown(QPushButton):
         self.max_visible_items = 5
         self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(config.INPUT_HEIGHT)
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
@@ -1126,7 +1125,7 @@ class CustomDropdown(QPushButton):
                 padding: {config.S(4)}px {config.S(8)}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {config.S(3)}px;
-                min-height: {config.INPUT_HEIGHT}px;
+                min-height: {config.S(20)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
                 font-size: {config.FS(9.5)}pt;
             }}
@@ -1152,7 +1151,7 @@ class CustomDropdown(QPushButton):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        btn_h = max(config.INPUT_HEIGHT, self.height())
+        btn_h = self.height()
         btn_w = self.width()
 
         fake_header = QPushButton(self.text())
@@ -1167,6 +1166,7 @@ class CustomDropdown(QPushButton):
                 border: none;
                 border-bottom: 1px solid #3a3a3a;
                 border-radius: 0px;
+                min-height: {config.S(20)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
                 font-size: {config.FS(9.5)}pt;
             }}
@@ -1212,7 +1212,7 @@ class CustomDropdown(QPushButton):
         popup.setFixedWidth(btn_w)
 
         global_pos = self.mapToGlobal(QPoint(0, 0))
-        popup.setGeometry(global_pos.x(), global_pos.y(), btn_w, total_h)
+        popup.move(global_pos)
         popup.show()
 
     def setValue(self, text):
