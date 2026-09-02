@@ -182,13 +182,31 @@ def main():
 
     source_path = os.path.join(extracted_root, "src")
     assets_path = os.path.join(extracted_root, "assets")
+    setupfiles_path = os.path.join(extracted_root, "setupfiles")
 
     # 3. Sync files
     info("Syncing files...")
-    protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log"}
-    protected_dirs  = {"models", "saves", "venv", "bin", "libs"}
+    protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", "badwords.log", "dev.json", ".python_auto_installed"}
+    protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout", "setupfiles"}
     
-    two_way_sync([source_path, assets_path], install_dir, protected_files, protected_dirs)
+    two_way_sync([source_path], install_dir, protected_files, protected_dirs)
+
+    if os.path.isdir(assets_path):
+        dest_assets = os.path.join(install_dir, "assets")
+        two_way_sync([assets_path], dest_assets, set(), set())
+        for sub in ["icons", "layout"]:
+            src_sub = os.path.join(assets_path, sub)
+            if os.path.isdir(src_sub):
+                dst_sub = os.path.join(install_dir, sub)
+                two_way_sync([src_sub], dst_sub, set(), set())
+
+    if os.path.isdir(setupfiles_path):
+        dst_setupfiles = os.path.join(install_dir, "setupfiles")
+        two_way_sync([setupfiles_path], dst_setupfiles, set(), set())
+        up_py = os.path.join(setupfiles_path, "updater.py")
+        if os.path.isfile(up_py):
+            shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
+
     log("File sync complete.")
 
     # 4. Pip upgrades
@@ -206,7 +224,7 @@ def main():
             subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True)
 
         info("Upgrading pip packages...")
-        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "pypdf"], 
+        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "pypdf", "PySide6"], 
                            capture_output=True, text=True)
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:
@@ -241,10 +259,35 @@ def main():
             try: os.symlink(site_pkgs, libs_link, target_is_directory=True)
             except Exception: pass
 
+    # 6. Update OS shortcuts, Windows launcher, and DaVinci Resolve integrations
+    info("Refreshing desktop shortcuts and DaVinci Resolve integrations...")
+    try:
+        sys.path.insert(0, install_dir)
+        sys.path.insert(0, os.path.join(install_dir, "setupfiles"))
+
+        # Windows: ensure dedicated BadWords.exe launcher exists with app icon
+        if os.name == "nt":
+            try:
+                from setupfiles.pe_patcher import ensure_badwords_exe
+                ensure_badwords_exe(install_dir)
+            except Exception as e:
+                warn(f"BadWords.exe generation notice: {e}")
+
+        try:
+            from setupfiles.setup import _create_os_shortcuts, _create_davinci_wrappers, get_resolve_script_dirs
+            _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True)
+            r_dirs = get_resolve_script_dirs()
+            _create_davinci_wrappers(install_dir, r_dirs)
+            info("Shortcuts and DaVinci integration refreshed successfully.")
+        except Exception as e:
+            warn(f"Shortcuts refresh notice: {e}")
+    except Exception as e:
+        warn(f"Integration refresh failed: {e}")
+
     # Cleanup
     shutil.rmtree(tmp_dir, ignore_errors=True)
     log(f"BadWords updated to {tag} successfully!")
-    log("Please restart BadWords (close and relaunch from DaVinci Resolve).")
+    log("Please restart BadWords (close and relaunch from DaVinci Resolve or Desktop shortcut).")
 
 if __name__ == "__main__":
     main()

@@ -531,7 +531,6 @@ class CustomTitleBar(QWidget):
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
             self._click_pos = event.position().toPoint()
-            self._global_click_pos = event.globalPosition().toPoint()
             event.accept()
             return
 
@@ -545,47 +544,19 @@ class CustomTitleBar(QWidget):
             super().mouseMoveEvent(event)
             return
 
-        if hasattr(self, '_global_click_pos'):
-            dist = (event.globalPosition().toPoint() - self._global_click_pos).manhattanLength()
-            if dist < 4:
-                return
-
         win = self.window()
+        self._is_dragging = False
         
-        # Native system move (Aero Snap, Mutter, KWin, Wayland)
-        # Modern compositors natively unmaximize when startSystemMove is called while maximized,
-        # keeping the cursor proportional and centered on the titlebar.
-        started = False
+        # Native window dragging
+        # Modern Window Managers (DWM, Mutter, KWin, Wayland) natively un-maximize 
+        # the window if startSystemMove is called while maximized, providing seamless 
+        # cursor proportional attachment and edge-snapping (Aero Snap) out of the box.
         if hasattr(win, 'windowHandle') and win.windowHandle():
             try:
-                started = bool(win.windowHandle().startSystemMove())
-            except Exception:
-                started = False
-
-        if not started:
-            # Fallback manual drag for compositors where startSystemMove is not supported
-            if win.isMaximized():
-                max_w = max(1, win.width())
-                click_ratio = max(0.0, min(1.0, event.position().x() / max_w))
-                pre_geo = getattr(win, '_pre_max_geometry', None)
-                restore_w = pre_geo.width() if (pre_geo and pre_geo.isValid()) else config.S(580)
-                restore_h = pre_geo.height() if (pre_geo and pre_geo.isValid()) else config.S(670)
-
-                curr_global_pos = event.globalPosition().toPoint()
-                new_x = int(curr_global_pos.x() - click_ratio * restore_w)
-                local_y = self._click_pos.y() if hasattr(self, '_click_pos') else config.S(16)
-                new_y = int(curr_global_pos.y() - local_y)
-
-                win.showNormal()
-                win.setGeometry(new_x, new_y, restore_w, restore_h)
-                self._click_pos = QPoint(int(click_ratio * restore_w), local_y)
-
-            curr_pos = event.globalPosition().toPoint()
-            local_y = self._click_pos.y() if hasattr(self, '_click_pos') else config.S(16)
-            local_x = self._click_pos.x() if hasattr(self, '_click_pos') else config.S(100)
-            win.move(curr_pos.x() - local_x, curr_pos.y() - local_y)
-        else:
-            self._is_dragging = False
+                win.windowHandle().startSystemMove()
+            except Exception as e:
+                from osdoc import log_info
+                log_info(f"startSystemMove error: {e}")
 
         event.accept()
 

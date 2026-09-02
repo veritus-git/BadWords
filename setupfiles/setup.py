@@ -1535,7 +1535,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         log_step("Syncing application files...")
         protected_files = {"pref.json", "user.json", "settings.json", ".python_auto_installed"}
-        protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout"}
+        protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout", "setupfiles"}
         
         # Clean previous user logs on install/update so logs start fresh
         for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
@@ -1561,6 +1561,9 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 shutil.rmtree(venv_dir, ignore_errors=True)
                 is_update = False
 
+        setup_root_src = local_repo if local_repo else (extracted if 'extracted' in locals() and extracted else None)
+        setupfiles_src = os.path.join(setup_root_src, "setupfiles") if setup_root_src else None
+
         if is_update:
             if source_path and os.path.isdir(source_path):
                 two_way_sync([source_path], install_dir, protected_files, protected_dirs)
@@ -1573,6 +1576,12 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     if os.path.isdir(src_sub):
                         dst_sub = os.path.join(install_dir, sub)
                         two_way_sync([src_sub], dst_sub, set(), set())
+            if setupfiles_src and os.path.isdir(setupfiles_src):
+                dst_setupfiles = os.path.join(install_dir, "setupfiles")
+                two_way_sync([setupfiles_src], dst_setupfiles, set(), set())
+                up_py = os.path.join(setupfiles_src, "updater.py")
+                if os.path.isfile(up_py):
+                    shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
         else:
             if source_path and os.path.isdir(source_path):
                 shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
@@ -1585,6 +1594,12 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     if os.path.isdir(src_sub):
                         dst_sub = os.path.join(install_dir, sub)
                         shutil.copytree(src_sub, dst_sub, dirs_exist_ok=True)
+            if setupfiles_src and os.path.isdir(setupfiles_src):
+                dst_setupfiles = os.path.join(install_dir, "setupfiles")
+                shutil.copytree(setupfiles_src, dst_setupfiles, dirs_exist_ok=True)
+                up_py = os.path.join(setupfiles_src, "updater.py")
+                if os.path.isfile(up_py):
+                    shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
         log_ok("Files synced.")
 
         # ── FFmpeg ────────────────────────────────────────────

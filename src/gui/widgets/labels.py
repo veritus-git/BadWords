@@ -48,9 +48,7 @@ class QLabel(_QLabel):
         return _re.sub(r'<[^>]+>', '', t)
 
     def _mq_active(self):
-        """Only run marquee for single-line, non-wrapping labels with enough text."""
-        if self.wordWrap():
-            return False
+        """Run marquee for any label when its text overflows the available width."""
         t = self._mq_get_text()
         return bool(t) and len(t.strip()) > 3
 
