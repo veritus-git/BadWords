@@ -56,6 +56,19 @@ class QPushButton(_QPushButton):
         derived from the widget's contentsRect (excludes QSS padding/margins)."""
         return self.contentsRect().width()
 
+    def _get_text_color(self):
+        if hasattr(self, '_custom_color') and self._custom_color:
+            return QColor(self._custom_color)
+        ss = self.styleSheet()
+        if 'color:' in ss:
+            import re
+            m = re.search(r'color:\s*([^;]+);', ss)
+            if m:
+                c = QColor(m.group(1).strip())
+                if c.isValid() and c != QColor("#000000"):
+                    return c
+        return QColor("#ffffff")
+
     def enterEvent(self, event):
         super().enterEvent(event)
         orig = self.property("_mq_original_text")
@@ -142,10 +155,11 @@ class QPushButton(_QPushButton):
 
         cr = self.contentsRect()
         painter.setClipRect(cr)
-        color = opt.palette.buttonText().color()
+        color = self._get_text_color()
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
+        painter.setFont(self.font())
         draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
         painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
 
@@ -273,7 +287,7 @@ class MarqueeRadioButton(_QRadioButton):
         tr = self._mq_text_rect()
         painter.setClipRect(tr)
 
-        color = opt.palette.buttonText().color()
+        color = self._get_text_color()
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
@@ -436,22 +450,22 @@ class SquareIconButton(QPushButton):
             
         self.setStyleSheet(f"""
             QPushButton {{ 
-                background-color: #1a1a1a; 
-                border: 1px solid #333333; 
+                background-color: transparent; 
+                border: none; 
                 border-radius: {config.S(6)}px; 
                 padding: {config.S(2)}px; 
             }}
             QPushButton:hover {{ 
                 background-color: #262626; 
-                border-color: #484848; 
+                border: none; 
             }}
             QPushButton:checked {{ 
                 background-color: #383838; 
-                border: 1px solid #555555; 
+                border: none; 
             }}
             QPushButton:checked:hover {{ 
                 background-color: #424242; 
-                border-color: #666666; 
+                border: none; 
             }}
         """)
 
@@ -714,7 +728,8 @@ class ShortcutCaptureButton(QPushButton):
             border: 1px solid {border};
             border-radius: {radius}px;
             padding: 0px {pad_x}px;
-            min-width: {min_w}px;
+            min-width: {w}px;
+            max-width: {w}px;
             min-height: {h}px;
             max-height: {h}px;
             text-align: center;
@@ -734,7 +749,8 @@ class ShortcutCaptureButton(QPushButton):
         self._conflict = False
 
         self.setCursor(Qt.PointingHandCursor if not display_only else Qt.ArrowCursor)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setFixedSize(config.S(220), config.INPUT_HEIGHT)
         self._apply_style()
         self._update_label()
 
@@ -748,15 +764,18 @@ class ShortcutCaptureButton(QPushButton):
             border = "#23a559"
         else:
             border = "#3a3a3a"
+        pad_x = config.S(8)
+        border_w = 2
+        w_content = config.S(220) - (2 * pad_x) - border_w
         self.setStyleSheet(self._BASE_SS.format(
             border=border,
             radius=config.S(3),
-            pad_x=config.S(8),
-            min_w=config.S(80),
+            pad_x=pad_x,
+            w=w_content,
             h=config.INPUT_HEIGHT - 2,
             font_size=config.FS(9.5)
         ))
-        self.setFixedHeight(config.INPUT_HEIGHT)
+        self.setFixedSize(config.S(220), config.INPUT_HEIGHT)
 
     def _update_label(self):
         if self.display_only:
@@ -1156,6 +1175,37 @@ class SidebarButton(QPushButton):
         drag.exec(Qt.MoveAction)
         self.show()
 
+def _popup_scrollbar_css():
+    return f"""
+        QScrollBar:vertical {{
+            background: {config.SCROLL_BG};
+            width: {config.S(6)}px;
+            border: none;
+            margin: 0px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {config.SCROLL_FG};
+            border-radius: {config.S(3)}px;
+            min-height: {config.S(16)}px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {config.SCROLL_ACTIVE};
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0px;
+            background: none;
+            border: none;
+        }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+        QScrollBar:horizontal {{
+            height: 0px;
+            background: none;
+            border: none;
+        }}
+    """
+
 class CustomDropdown(QPushButton):
     valueChanged = Signal(str)
     def __init__(self, options_list, parent=None):
@@ -1247,6 +1297,7 @@ class CustomDropdown(QPushButton):
             QListWidget::item:selected {{ background-color: #333333; color: #ffffff; }}
             QListWidget::item:focus {{ border: none; outline: none; }}
             QListWidget::item:hover {{ background-color: #333333; color: #ffffff; }}
+            {_popup_scrollbar_css()}
         """)
         list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
         layout.addWidget(list_widget)
@@ -1326,6 +1377,8 @@ class TitleDropdown(CustomDropdown):
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
         list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        from gui.widgets.delegates import MarqueeItemDelegate
+        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget))
         list_widget.addItems(self.options_list)
         list_widget.setStyleSheet(f"""
             QListWidget {{
@@ -1359,6 +1412,7 @@ class TitleDropdown(CustomDropdown):
                 background-color: #171717;
                 color: #1ed760;
             }}
+            {_popup_scrollbar_css()}
         """)
         
         cur = self.currentText()
@@ -1539,20 +1593,23 @@ class MultiSelectDropdown(QPushButton):
 
         list_widget = QListWidget()
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
-        list_widget.setStyleSheet("""
-            QListWidget { border: none; outline: none; background: transparent; }
-            QListWidget::item { border: none; outline: none; }
-            QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #2a2d2e; }
+        list_widget.setStyleSheet(f"""
+            QListWidget {{ border: none; outline: none; background: transparent; }}
+            QListWidget::item {{ border: none; outline: none; }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
+            QListWidget::item:hover {{ background-color: #2a2d2e; }}
+            {_popup_scrollbar_css()}
         """)
 
 
         class CustomCheckItemWidget(QWidget):
-            def __init__(self, text, is_checked, parent=None):
-                from PySide6.QtWidgets import QHBoxLayout, QLabel
+            def __init__(self, text, checked=False, parent=None):
+                super().__init__(parent)
+                from PySide6.QtWidgets import QHBoxLayout
+                from gui.widgets.labels import QLabel
                 from PySide6.QtCore import Qt
                 super().__init__(parent)
-                self.is_checked = is_checked
+                self.is_checked = checked
                 self.opt_text = text
                 
                 lay = QHBoxLayout(self)
@@ -1700,6 +1757,7 @@ class SearchableDropdown(QPushButton):
             QListWidget::item:selected {{ background-color: #333333; color: #ffffff; }}
             QListWidget::item:focus {{ border: none; outline: none; }}
             QListWidget::item:hover {{ background-color: #333333; color: #ffffff; }}
+            {_popup_scrollbar_css()}
         """)
         self.list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, self.popup))
         

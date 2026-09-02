@@ -407,5 +407,6 @@
     "resolve_color_tan": "Hellbraun",
     "resolve_color_chocolate": "Schokolade",
     "tooltip_auto_cut": "Schneidet diese Farbe beim Assembly automatisch aus,<br>wenn sie im Text markiert ist.",
-    "tooltip_cut_now": "Schneidet diese Farbe auf der AKTUELL AUSGEWÄHLTEN DaVinci-Timeline aus<br>(nützlich zum massenhaften Löschen nach manuellen Anpassungen)."
+    "tooltip_cut_now": "Schneidet diese Farbe auf der AKTUELL AUSGEWÄHLTEN DaVinci-Timeline aus<br>(nützlich zum massenhaften Löschen nach manuellen Anpassungen).",
+    "hdr_whisper_parameters": "Whisper-Parameter"
 }

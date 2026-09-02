@@ -76,7 +76,7 @@ class AudioPreviewWidget(QFrame):
             vbar = self.main_window.scroll_area.verticalScrollBar()
             vbar.actionTriggered.connect(self._on_user_scroll)
             
-        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QComboBox, QSlider, QLabel, QWidget, QVBoxLayout
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QComboBox, QSlider, QWidget, QVBoxLayout
         from PySide6.QtCore import Qt, QUrl, QTimer, QEvent
         from PySide6.QtGui import QColor, QFont
         from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput

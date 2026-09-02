@@ -112,7 +112,7 @@ class WorkspaceWarningOverlay(QFrame):
         super().__init__()
         self._stack = parent_stack
         from PySide6.QtCore import QEventLoop, Qt
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFrame
         self._loop = QEventLoop()
         self._result = QDialog.Rejected
         
@@ -493,6 +493,26 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         for fav_id in prefs.get('favorites', []):
             if fav_id in self._pin_buttons:
                 self._pin_buttons[fav_id].click()
+
+        self._settings_dialog = None
+        QTimer.singleShot(200, self._preload_settings)
+
+    def _get_settings_dialog(self):
+        if not hasattr(self, '_settings_dialog') or self._settings_dialog is None:
+            self._settings_dialog = SettingsDialog(self.engine, self)
+        else:
+            self._settings_dialog._reload_preferences()
+        return self._settings_dialog
+
+    def _preload_settings(self):
+        try:
+            if not hasattr(self, '_settings_dialog') or self._settings_dialog is None:
+                self._settings_dialog = SettingsDialog(self.engine, self)
+                # Pre-build all pages into RAM so open is 0ms
+                for i in range(self._settings_dialog.category_list.count()):
+                    self._settings_dialog._ensure_page_built(i)
+        except Exception:
+            pass
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -3144,7 +3164,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_add_custom_marker(self):
         from PySide6.QtWidgets import QApplication
-        dlg = SettingsDialog(self.engine, self)
+        dlg = self._get_settings_dialog()
         # Navigate to Custom Markers tab dynamically by matching the translated tab name
         custom_markers_label = dlg.txt("tab_custom_markers")
         for i in range(dlg.category_list.count()):
@@ -3415,7 +3435,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_settings(self):
         """Open settings panel."""
-        dlg = SettingsDialog(self.engine, self)
+        dlg = self._get_settings_dialog()
         dlg.exec()
         
         # WORKAROUND: Restore main window icon after dialog closes

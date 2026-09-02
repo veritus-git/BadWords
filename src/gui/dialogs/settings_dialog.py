@@ -397,6 +397,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.setUpdatesEnabled(True)
     def showEvent(self, event):
         super().showEvent(event)
+        # Ensure all pages are built so all controls exist in RAM
+        if hasattr(self, '_ensure_page_built') and hasattr(self, 'category_list'):
+            for i in range(self.category_list.count()):
+                self._ensure_page_built(i)
+        # Reset title bar buttons to clear any stuck hover/pressed state
+        tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
+        if tb:
+            for btn_name in ('btn_close', 'btn_max', 'btn_min'):
+                btn = getattr(tb, btn_name, None)
+                if btn and hasattr(btn, 'reset_state'):
+                    btn.reset_state()
+
+        # Snapshot the exact state of all widgets as they appear to the user
+        self._initial_state = self._get_current_state_dict()
+
         # WORKAROUND: Force OS to refresh the main application icon
         from PySide6.QtWidgets import QApplication
         try:
@@ -961,7 +976,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.setAlignment(Qt.AlignVCenter)
             row.addStretch()
             
-            widget.setFixedWidth(config.S(220))
+            widget.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            widget.setFixedSize(config.S(220), config.INPUT_HEIGHT)
             row.addWidget(widget)
 
             if not is_display:
@@ -1123,7 +1139,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._markers_layout = self._markers_inner.layout()
         self._markers_layout.setContentsMargins(4, 4, 4, 4)
         self._markers_layout.setSpacing(2)
-        self._markers_layout.addStretch()
         markers_scroll.setWidget(self._markers_inner)
         self._refresh_markers_list()
         # Also refresh Shortcuts tab now that current_custom_markers is populated
@@ -1416,9 +1431,29 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
         self._add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
 
-        l_ai.addSpacing(14)
+        # ── Advanced Whisper Parameters ─────────────────────────
+        w_whisper_hdr_box = QWidget()
+        w_whisper_hdr_box.setStyleSheet("background: transparent;")
+        l_whisper_hdr = QVBoxLayout(w_whisper_hdr_box)
+        l_whisper_hdr.setContentsMargins(0, 0, 0, 0)
+        l_whisper_hdr.setSpacing(0)
 
-        # Initial prompt label + QTextEdit
+        l_whisper_hdr.addSpacing(config.S(24))
+        lbl_hdr_whisper = QLabel(self.txt("hdr_whisper_parameters"))
+        lbl_hdr_whisper.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        l_whisper_hdr.addWidget(lbl_hdr_whisper)
+        l_whisper_hdr.addSpacing(config.S(8))
+
+        sep_whisper = QFrame()
+        sep_whisper.setFrameShape(QFrame.Shape.HLine)
+        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_whisper_hdr.addWidget(sep_whisper)
+        l_whisper_hdr.addSpacing(config.S(14))
+
+        l_ai.addWidget(w_whisper_hdr_box)
+        self._advanced_widgets.append(w_whisper_hdr_box)
+
+        # Initial prompt label + QTextEdit (under Whisper Parameters)
         lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
         lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
         l_ai.addWidget(lbl_prompt)
@@ -1455,15 +1490,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             }}
         """)
         l_ai.addWidget(self.textedit_prompt)
+        self._advanced_widgets.extend([lbl_prompt, self.textedit_prompt])
 
-        # ── Advanced Whisper Parameters ─────────────────────────
-        sep_whisper = QFrame()
-        sep_whisper.setFrameShape(QFrame.Shape.HLine)
-        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
         l_ai.addSpacing(14)
-        l_ai.addWidget(sep_whisper)
-        l_ai.addSpacing(10)
-        self._advanced_widgets.append(sep_whisper)
 
         form_whisper = QFormLayout()
         form_whisper.setSpacing(14)
@@ -1962,12 +1991,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         """Rebuild the custom marker list widget with inline Edit/Delete buttons."""
         if not hasattr(self, '_markers_layout') or self._markers_layout is None:
             return
-        # Clear existing rows (keep the trailing stretch)
+        # Clear existing rows completely
         layout = self._markers_layout
-        while layout.count() > 1:  # keep the stretch at the end
+        while layout.count() > 0:
             item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+
+        if hasattr(self, '_markers_inner') and self._markers_inner:
+            for child in self._markers_inner.findChildren(MarkerRowWidget):
+                child.hide()
+                child.setParent(None)
+                child.deleteLater()
 
         row_ss = f"""
             QWidget#marker_row {{
@@ -2010,6 +2048,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             row_widget = MarkerRowWidget(m, idx)
             row_widget.setObjectName("marker_row")
+            row_widget.setFixedHeight(config.S(34))
             row_widget.setStyleSheet(row_ss)
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(8, 4, 8, 4)
@@ -2084,16 +2123,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             btn_del.clicked.connect(make_del(idx))
             row_layout.addWidget(btn_del)
 
-            # Insert before stretch
-            layout.insertWidget(layout.count() - 1, row_widget)
+            layout.addWidget(row_widget)
+
+        # Stretch at the end so all rows remain tightly pinned to the top
+        layout.addStretch()
+
+        if hasattr(self, '_refresh_custom_marker_shortcuts'):
+            self._refresh_custom_marker_shortcuts()
 
     def _on_markers_reordered(self, source_idx, target_idx):
+        if not self.current_custom_markers:
+            return
+        target_idx = max(0, min(target_idx, len(self.current_custom_markers) - 1))
         if source_idx == target_idx:
             return
         m = self.current_custom_markers.pop(source_idx)
-        # if source_idx < target_idx, target_idx shifted down by 1 due to pop
-        if source_idx < target_idx:
-            target_idx -= 1
         self.current_custom_markers.insert(target_idx, m)
         self._refresh_markers_list()
         self._save_markers_and_refresh_main()
@@ -2436,8 +2480,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'app_icon':           icon_val,
             'shortcuts':          shortcuts_dict,
             'custom_markers':     getattr(self, 'current_custom_markers', old_prefs.get('custom_markers', [])),
-            'telemetry_opt_in':   (self._safe_get('chk_telemetry_opt_in', old_prefs.get('telemetry_opt_in'), 'isChecked') if old_prefs.get('telemetry_opt_in') is not None or self._safe_get('chk_telemetry_opt_in', False, 'isChecked') else None),
-            'telemetry_geo':      self._safe_get('chk_telemetry_geo', old_prefs.get('telemetry_geo', True), 'isChecked'),
+            'telemetry_opt_in':   self._safe_get('chk_telemetry_opt_in', bool(old_prefs.get('telemetry_opt_in', False)), 'isChecked'),
+            'telemetry_geo':      self._safe_get('chk_telemetry_geo', bool(old_prefs.get('telemetry_geo', False)), 'isChecked'),
             'view_mode':          view_mode,
             'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', config.UI_FONT_NAME), 'currentText'),
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
@@ -2488,11 +2532,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         except (RuntimeError, AttributeError):
             pass
 
+    def _reload_preferences(self):
+        try:
+            prefs = self.engine.load_preferences() or {}
+            self._restore_state_dict(prefs)
+            self._initial_state = self._get_current_state_dict()
+        except Exception:
+            pass
+
     def _restore_state_dict(self, state):
         def _g(k, d): v = state.get(k); return v if v is not None else d
         is_basic = _g('settings_view_mode', 'basic') == 'basic'
-        self._safe_set('chk_telemetry_opt_in', _g('telemetry_opt_in', False), 'setChecked')
-        self._safe_set('chk_telemetry_geo', _g('telemetry_geo', False), 'setChecked')
+        self._safe_set('chk_telemetry_opt_in', bool(_g('telemetry_opt_in', False)), 'setChecked')
+        self._safe_set('chk_telemetry_geo', bool(_g('telemetry_geo', False)), 'setChecked')
         
         try:
             if hasattr(self, 'icon_group'):

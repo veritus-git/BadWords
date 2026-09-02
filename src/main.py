@@ -374,6 +374,36 @@ def main():
         if not app_icon.isNull():
             app.setWindowIcon(app_icon)
 
+        app.setStyleSheet(f"""
+            QScrollBar:vertical {{
+                background: {config.SCROLL_BG};
+                width: {config.S(6)}px;
+                border: none;
+                margin: 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {config.SCROLL_FG};
+                border-radius: {config.S(3)}px;
+                min-height: {config.S(16)}px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {config.SCROLL_ACTIVE};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+                background: none;
+                border: none;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                height: 0px;
+                background: none;
+                border: none;
+            }}
+        """)
+
         # 3. Create controller (holds all GUI references → GC-safe)
         _controller = AppController(os_doc)
         _controller.start()  # Shows splash, runs auto-update if needed, starts InitThread

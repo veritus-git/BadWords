@@ -62,16 +62,28 @@ class ResolveHandler:
     def _connect(self):
         """Establishes connection to the running Resolve instance."""
         try:
-            # If imported correctly, get the object
-            if hasattr(self, 'bmd'):
-                self.resolve = self.bmd.scriptapp("Resolve")
+            # 1. If DaVinciResolveScript was imported, request Resolve app object
+            if hasattr(self, 'bmd') and self.bmd:
+                try: self.resolve = self.bmd.scriptapp("Resolve")
+                except Exception: pass
             
-            # Fallback if module import failed but we are inside Resolve's python env
+            # 2. When run via Workspace -> Scripts in DaVinci Free/Studio, Resolve injects
+            #    'resolve' and/or 'bmd' directly into __main__ or builtins.
             if not self.resolve:
-                # Sometimes the object is available globally as 'resolve'
                 import __main__
-                if hasattr(__main__, "resolve"):
+                if hasattr(__main__, "resolve") and __main__.resolve:
                     self.resolve = __main__.resolve
+                elif hasattr(__main__, "bmd") and __main__.bmd:
+                    try: self.resolve = __main__.bmd.scriptapp("Resolve")
+                    except Exception: pass
+
+            if not self.resolve:
+                import builtins
+                if hasattr(builtins, "resolve") and builtins.resolve:
+                    self.resolve = builtins.resolve
+                elif hasattr(builtins, "bmd") and builtins.bmd:
+                    try: self.resolve = builtins.bmd.scriptapp("Resolve")
+                    except Exception: pass
 
             if self.resolve:
                 self.project_manager = self.resolve.GetProjectManager()
@@ -91,6 +103,7 @@ class ResolveHandler:
                     log_error("No project is open in Resolve.")
             else:
                 log_error("Could not connect to Resolve API object.")
+                log_info("[Tip] If running standalone or on macOS, ensure DaVinci Resolve > Preferences > System > General > 'External scripting using' is set to 'Local'.")
         except Exception as e:
             log_error(f"Connection Error: {e}")
 

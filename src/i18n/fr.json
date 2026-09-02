@@ -407,5 +407,6 @@
     "resolve_color_tan": "Hâlé",
     "resolve_color_chocolate": "Chocolat",
     "tooltip_auto_cut": "Coupe automatiquement cette couleur lors de l'assemblage<br>si elle est marquée dans le texte.",
-    "tooltip_cut_now": "Coupe cette couleur sur la timeline DaVinci ACTUELLEMENT SÉLECTIONNÉE<br>(utile pour la suppression en masse après des ajustements manuels)."
+    "tooltip_cut_now": "Coupe cette couleur sur la timeline DaVinci ACTUELLEMENT SÉLECTIONNÉE<br>(utile pour la suppression en masse après des ajustements manuels).",
+    "hdr_whisper_parameters": "Paramètres Whisper"
 }

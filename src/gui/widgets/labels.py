@@ -39,7 +39,20 @@ class QLabel(_QLabel):
         self._mq_hovered = False
         self._mq_is_squeezed = False
         self._mq_state = "START_DELAY"
-        self._mq_ticks = 0
+        self.setMouseTracking(True)
+
+    def _get_text_color(self):
+        if hasattr(self, '_custom_color') and self._custom_color:
+            return QColor(self._custom_color)
+        ss = self.styleSheet()
+        if 'color:' in ss:
+            import re
+            m = re.search(r'color:\s*([^;]+);', ss)
+            if m:
+                c = QColor(m.group(1).strip())
+                if c.isValid() and c != QColor("#000000"):
+                    return c
+        return QColor("#ffffff")
 
     def _mq_get_text(self):
         t = super().text()
@@ -48,9 +61,13 @@ class QLabel(_QLabel):
         return _re.sub(r'<[^>]+>', '', t)
 
     def _mq_active(self):
-        """Run marquee for any label when its text overflows the available width."""
+        """Run marquee ONLY for single-line labels whose text physically overflows the available width."""
+        if self.wordWrap():
+            return False
         t = self._mq_get_text()
-        return bool(t) and len(t.strip()) > 3
+        if not t or len(t.strip()) <= 3 or '\n' in t:
+            return False
+        return True
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -60,7 +77,8 @@ class QLabel(_QLabel):
         try:
             fm = self.fontMetrics()
             avail = self.contentsRect().width()
-            if fm.horizontalAdvance(self._mq_get_text()) > avail:
+            txt = self._mq_get_text()
+            if avail > 0 and fm.horizontalAdvance(txt) > avail:
                 self._mq_is_squeezed = True
                 self._mq_pos = 0.0
                 self._mq_alpha = 1.0
@@ -127,23 +145,22 @@ class QLabel(_QLabel):
         cr = self.contentsRect()
         painter.setClipRect(cr)
 
+        color = self._get_text_color()
         if self._mq_alpha < 1.0:
-            painter.setOpacity(max(0.0, min(1.0, self._mq_alpha)))
+            color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
 
         raw_text = super().text()
         if "<" in raw_text and ">" in raw_text:
             from PySide6.QtGui import QTextDocument
             doc = QTextDocument()
             doc.setDefaultFont(self.font())
-            color_name = self.palette().windowText().color().name()
-            doc.setHtml(f"<div style='color: {color_name};'>{raw_text}</div>")
+            doc.setHtml(f"<div style='color: {color.name()};'>{raw_text}</div>")
             doc.setDocumentMargin(0)
             
             y_pos = cr.top() + (cr.height() - doc.size().height()) / 2
             painter.translate(cr.left() - int(self._mq_pos), y_pos)
             doc.drawContents(painter)
         else:
-            color = self.palette().windowText().color()
             painter.setPen(color)
             painter.setFont(self.font())
             text = self._mq_get_text()

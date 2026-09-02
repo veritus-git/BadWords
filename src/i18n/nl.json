@@ -407,5 +407,6 @@
     "resolve_color_tan": "Lichtbruin",
     "resolve_color_chocolate": "Chocolade",
     "tooltip_auto_cut": "Knipt deze kleur automatisch uit tijdens de montage (assembly)<br>indien gemarkeerd in de tekst.",
-    "tooltip_cut_now": "Knipt deze kleur op de HUIDIG GESELECTEERDE DaVinci-tijdlijn<br>(handig voor massaal verwijderen na handmatige aanpassingen)."
+    "tooltip_cut_now": "Knipt deze kleur op de HUIDIG GESELECTEERDE DaVinci-tijdlijn<br>(handig voor massaal verwijderen na handmatige aanpassingen).",
+    "hdr_whisper_parameters": "Whisper-parameters"
 }

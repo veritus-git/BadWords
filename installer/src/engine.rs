@@ -1320,38 +1320,17 @@ if sys.platform.startswith('linux'):
                     except OSError: pass
             break
 
-# 4. Launch main script
+# 4. Launch main script in-process (preserves DaVinci Resolve Free API connection)
 if os.path.exists(MAIN_SCRIPT):
     try:
-        if sys.platform == 'darwin':
-            import subprocess
-            _home = os.path.expanduser('~')
-            _app_bundle = os.path.join(_home, 'Applications', 'BadWords.app')
-            if os.path.isdir(_app_bundle):
-                subprocess.Popen(['open', _app_bundle])
-            else:
-                _py = os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3')
-                if not os.path.exists(_py): _py = sys.executable
-                subprocess.Popen([_py, MAIN_SCRIPT])
-        elif sys.platform.startswith('win'):
-            import subprocess
-            _bw_exe = os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'BadWords.exe')
-            if not os.path.exists(_bw_exe):
-                _bw_exe = os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe')
-            if os.path.exists(_bw_exe):
-                subprocess.Popen([_bw_exe, MAIN_SCRIPT])
-            else:
-                with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-                gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
-                exec(code, gv)
-        else:
-            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-            gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
-            exec(code, gv)
+        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+        gv = globals().copy()
+        gv['__file__'] = MAIN_SCRIPT
+        exec(code, gv)
     except Exception as e:
-        print(f'Error: {{e}}'); traceback.print_exc()
+        print(f'Error: {e}'); traceback.print_exc()
 else:
-    print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
+    print(f'CRITICAL: {MAIN_SCRIPT} not found')
 "#
     )
 }

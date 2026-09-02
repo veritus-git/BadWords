@@ -407,5 +407,6 @@
     "resolve_color_tan": "Marrone chiaro",
     "resolve_color_chocolate": "Cioccolato",
     "tooltip_auto_cut": "Taglia automaticamente questo colore durante l'assemblaggio<br>se è segnato nel testo.",
-    "tooltip_cut_now": "Taglia questo colore sulla timeline di DaVinci ATTUALMENTE SELEZIONATA<br>(utile per l'eliminazione di massa dopo modifiche manuali)."
+    "tooltip_cut_now": "Taglia questo colore sulla timeline di DaVinci ATTUALMENTE SELEZIONATA<br>(utile per l'eliminazione di massa dopo modifiche manuali).",
+    "hdr_whisper_parameters": "Parametri Whisper"
 }

@@ -245,6 +245,32 @@ class FramelessWindowMixin:
                     QTimer.singleShot(30, self._dwm_uncloak)
             except Exception:
                 pass
+
+        if getattr(self, '_is_mac', False):
+            try:
+                import ctypes
+                import ctypes.util
+                objc_lib = ctypes.util.find_library('objc')
+                if objc_lib:
+                    objc = ctypes.cdll.LoadLibrary(objc_lib)
+                    objc.objc_getClass.restype = ctypes.c_void_p
+                    objc.sel_registerName.restype = ctypes.c_void_p
+                    objc.objc_msgSend.restype = ctypes.c_void_p
+
+                    ns_view_ptr = int(self.winId())
+                    if ns_view_ptr:
+                        sel_window = objc.sel_registerName(b"window")
+                        ns_window = objc.objc_msgSend(ctypes.c_void_p(ns_view_ptr), sel_window)
+                        if ns_window:
+                            sel_setCollection = objc.sel_registerName(b"setCollectionBehavior:")
+                            msgSend_ulong = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong)(objc.objc_msgSend)
+                            # 256 = NSWindowCollectionBehaviorFullScreenAuxiliary (allows dialog over fullscreen parent without leaving space)
+                            # 2   = NSWindowCollectionBehaviorMoveToActiveSpace (stays on active space)
+                            # 1   = NSWindowCollectionBehaviorCanJoinAllSpaces (participates in all spaces)
+                            msgSend_ulong(ctypes.c_void_p(ns_window), sel_setCollection, ctypes.c_ulong(256 | 2 | 1))
+            except Exception:
+                pass
+
         if hasattr(self, '_grips') and getattr(self, '_is_root', False):
             for grip in self._grips:
                 grip.raise_()
