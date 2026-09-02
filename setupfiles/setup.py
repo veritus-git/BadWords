@@ -1508,8 +1508,16 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         os.makedirs(bin_dir, exist_ok=True)
 
         log_step("Syncing application files...")
-        protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", ".python_auto_installed"}
+        protected_files = {"pref.json", "user.json", "settings.json", ".python_auto_installed"}
         protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout"}
+        
+        # Clean previous user logs on install/update so logs start fresh
+        for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
+            _lf = os.path.join(install_dir, _log_name)
+            if os.path.isfile(_lf):
+                try: os.remove(_lf)
+                except Exception: pass
+
         is_update = os.path.isdir(venv_dir)
         
         if is_update:

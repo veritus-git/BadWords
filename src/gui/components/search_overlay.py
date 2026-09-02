@@ -162,6 +162,23 @@ class SearchOverlayWidget(QFrame):
         
         self.btn_close = CloseIconButton(size=24)
         self.btn_close.setToolTip(self.main_window.txt("search_tooltip_close"))
+        self.btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #2a2d2e;
+                border: none;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+                border: none;
+            }
+        """)
+        # 20% larger icon
+        self.btn_close.setIconSize(QSize(config.S(14), config.S(14)))
         
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.counter_label)

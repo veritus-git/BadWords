@@ -280,7 +280,7 @@ class MarqueeRadioButton(_QRadioButton):
         painter.setFont(self.font())
 class ReloadButton(QPushButton):
     """Button displaying reload.svg with hover effect (reload-hover.svg), perfectly centered."""
-    def __init__(self, size: int = 24, parent=None):
+    def __init__(self, size: int = 30, parent=None):
         super().__init__(parent)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
@@ -322,12 +322,12 @@ class ReloadButton(QPushButton):
 
 class StarFavoriteButton(QPushButton):
     """Button displaying star icons (star-empty, star-checked, star-hover) with NO border box."""
-    def __init__(self, size: int = 20, parent=None):
+    def __init__(self, size: int = 16, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
-        self._icon_size = max(config.S(11), int(self._btn_size * 0.55))
+        self._icon_size = max(config.S(9), int(self._btn_size * 0.60))
         self.setFixedSize(self._btn_size, self._btn_size)
         
         from ..utils import get_layout_icon_path
@@ -372,7 +372,7 @@ class StarFavoriteButton(QPushButton):
 
 class CloseIconButton(QPushButton):
     """Button displaying x.svg with hover effect (x-hover.svg) and standard border."""
-    def __init__(self, size: int = 24, parent=None):
+    def __init__(self, size: int = 30, parent=None):
         super().__init__(parent)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
