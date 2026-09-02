@@ -670,31 +670,6 @@ class OSDoctor:
             except Exception:
                 return False
 
-        elif self.is_mac:
-            try:
-                import ctypes
-                import ctypes.util
-                objc_lib = ctypes.util.find_library('objc')
-                if not objc_lib:
-                    return False
-                objc = ctypes.cdll.LoadLibrary(objc_lib)
-                objc.sel_registerName.restype = ctypes.c_void_p
-                objc.objc_msgSend.restype = ctypes.c_void_p
-
-                sel_window = objc.sel_registerName(b"window")
-                ns_window = objc.objc_msgSend(ctypes.c_void_p(window_id), sel_window)
-                if not ns_window:
-                    return False
-
-                # NSFloatingWindowLevel = 3, NSNormalWindowLevel = 0
-                level = 3 if top else 0
-                sel_setLevel = objc.sel_registerName(b"setLevel:")
-                msgSend_long = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(objc.objc_msgSend)
-                msgSend_long(ctypes.c_void_p(ns_window), sel_setLevel, ctypes.c_long(level))
-                return True
-            except Exception:
-                return False
-
         elif self.is_linux:
             try:
                 import ctypes

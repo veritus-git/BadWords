@@ -53,44 +53,8 @@ class QPushButton(_QPushButton):
 
     def _mq_text_area_width(self):
         """Returns the pixel width actually available for text rendering,
-        accounting for contentsRect, visibleRegion clipping, and parent bounds."""
-        cr = self.contentsRect()
-        avail = cr.width()
-        try:
-            vis = self.visibleRegion().boundingRect()
-            if vis.isValid() and 0 < vis.width() < self.width():
-                avail = min(avail, vis.width())
-        except Exception:
-            pass
-        p = self.parentWidget()
-        if p and 0 < p.width() < self.width():
-            avail = min(avail, p.width())
-        return avail
-
-    def _is_truncated(self):
-        orig = self.property("_mq_original_text") or super().text()
-        if not orig or len(orig.strip()) <= 1 or '\n' in orig:
-            return False
-        avail = self._mq_text_area_width()
-        if avail <= 0:
-            return False
-        sh_w = self.sizeHint().width()
-        fm_w = self.fontMetrics().horizontalAdvance(orig)
-        needed = max(sh_w, fm_w)
-        return needed > avail + 2
-
-    def _get_text_color(self):
-        if hasattr(self, '_custom_color') and self._custom_color:
-            return QColor(self._custom_color)
-        ss = self.styleSheet()
-        if 'color:' in ss:
-            import re
-            m = re.search(r'color:\s*([^;]+);', ss)
-            if m:
-                c = QColor(m.group(1).strip())
-                if c.isValid() and c != QColor("#000000"):
-                    return c
-        return QColor("#ffffff")
+        derived from the widget's contentsRect (excludes QSS padding/margins)."""
+        return self.contentsRect().width()
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -101,7 +65,11 @@ class QPushButton(_QPushButton):
 
         self._mq_hovered = True
         try:
-            if self._is_truncated():
+            if not orig or len(orig.strip()) <= 3:
+                self._mq_is_squeezed = False
+                return
+            fm = self.fontMetrics()
+            if fm.horizontalAdvance(orig) > self._mq_text_area_width():
                 self._mq_is_squeezed = True
                 self._mq_pos = 0.0
                 self._mq_alpha = 1.0
@@ -174,11 +142,10 @@ class QPushButton(_QPushButton):
 
         cr = self.contentsRect()
         painter.setClipRect(cr)
-        color = self._get_text_color()
+        color = opt.palette.buttonText().color()
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
-        painter.setFont(self.font())
         draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
         painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
 
@@ -219,47 +186,6 @@ class MarqueeRadioButton(_QRadioButton):
         self.initStyleOption(opt)
         return self.style().subElementRect(QStyle.SE_RadioButtonContents, opt, self)
 
-    def _get_text_color(self):
-        if hasattr(self, '_custom_color') and self._custom_color:
-            return QColor(self._custom_color)
-        ss = self.styleSheet()
-        if 'color:' in ss:
-            import re
-            m = re.search(r'color:\s*([^;]+);', ss)
-            if m:
-                c = QColor(m.group(1).strip())
-                if c.isValid() and c != QColor("#000000"):
-                    return c
-        p_col = self.palette().color(QPalette.WindowText)
-        if p_col.isValid() and p_col != QColor("#000000"):
-            return p_col
-        return QColor("#d4d4d4")
-
-    def _is_truncated(self):
-        orig = self._mq_original_text or super().text()
-        if not orig or len(orig.strip()) <= 1 or '\n' in orig:
-            return False
-
-        tr = self._mq_text_rect()
-        avail = tr.width()
-        if avail <= 0:
-            return False
-
-        try:
-            vis = self.visibleRegion().boundingRect()
-            if vis.isValid() and 0 < vis.width() < self.width():
-                avail = min(avail, max(0, vis.width() - tr.left()))
-        except Exception:
-            pass
-
-        p = self.parentWidget()
-        if p and 0 < p.width() < self.width():
-            avail = min(avail, max(0, p.width() - tr.left()))
-
-        fm = self.fontMetrics()
-        needed = max(self.sizeHint().width() - tr.left(), fm.horizontalAdvance(orig))
-        return needed > avail + 2
-
     def enterEvent(self, event):
         super().enterEvent(event)
         orig = self._mq_original_text
@@ -269,7 +195,11 @@ class MarqueeRadioButton(_QRadioButton):
 
         self._mq_hovered = True
         try:
-            if self._is_truncated():
+            if not orig or len(orig.strip()) <= 3:
+                self._mq_is_squeezed = False
+                return
+            fm = self.fontMetrics()
+            if fm.horizontalAdvance(orig) > self._mq_text_rect().width():
                 self._mq_is_squeezed = True
                 self._mq_pos = 0.0
                 self._mq_alpha = 1.0
@@ -296,19 +226,7 @@ class MarqueeRadioButton(_QRadioButton):
             return
         fm = self.fontMetrics()
         tr = self._mq_text_rect()
-        avail = tr.width()
-        try:
-            vis = self.visibleRegion().boundingRect()
-            if vis.isValid() and 0 < vis.width() < self.width():
-                avail = min(avail, max(0, vis.width() - tr.left()))
-        except Exception:
-            pass
-        p = self.parentWidget()
-        if p and 0 < p.width() < self.width():
-            avail = min(avail, max(0, p.width() - tr.left()))
-
-        needed = max(self.sizeHint().width() - tr.left(), fm.horizontalAdvance(orig))
-        max_scroll = float(max(0, needed - avail))
+        max_scroll = float(max(0, fm.horizontalAdvance(orig) - tr.width()))
 
         if self._mq_state == "START_DELAY":
             self._mq_ticks += 1
@@ -350,20 +268,18 @@ class MarqueeRadioButton(_QRadioButton):
         self.initStyleOption(opt)
         opt.text = ""
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.TextAntialiasing)
         self.style().drawControl(QStyle.CE_RadioButton, opt, painter, self)
 
         tr = self._mq_text_rect()
         painter.setClipRect(tr)
 
-        color = self._get_text_color()
+        color = opt.palette.buttonText().color()
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
         painter.setFont(self.font())
-        orig = getattr(self, '_mq_original_text', '') or self.text()
         draw_rect = QRect(tr.left() - int(self._mq_pos), tr.top(), 9999, tr.height())
-        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, self._mq_original_text or "")
 class ReloadButton(QPushButton):
     """Button displaying reload.svg with hover effect (reload-hover.svg), perfectly centered."""
     def __init__(self, size: int = 30, parent=None):
