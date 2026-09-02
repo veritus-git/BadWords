@@ -1328,9 +1328,9 @@ if os.path.exists(MAIN_SCRIPT):
         gv['__file__'] = MAIN_SCRIPT
         exec(code, gv)
     except Exception as e:
-        print(f'Error: {e}'); traceback.print_exc()
+        print(f'Error: {{e}}'); traceback.print_exc()
 else:
-    print(f'CRITICAL: {MAIN_SCRIPT} not found')
+    print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
 "#
     )
 }
