@@ -736,8 +736,6 @@ class ShortcutCaptureButton(QPushButton):
             border: 1px solid {border};
             border-radius: {radius}px;
             padding: 0px {pad_x}px;
-            min-width: {w}px;
-            max-width: {w}px;
             min-height: {h}px;
             max-height: {h}px;
             text-align: center;
@@ -757,8 +755,10 @@ class ShortcutCaptureButton(QPushButton):
         self._conflict = False
 
         self.setCursor(Qt.PointingHandCursor if not display_only else Qt.ArrowCursor)
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.setFixedSize(config.S(220), config.INPUT_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMaximumWidth(config.S(220))
+        self.setMinimumWidth(config.S(60))
+        self.setFixedHeight(config.INPUT_HEIGHT)
         self._apply_style()
         self._update_label()
 
@@ -773,17 +773,16 @@ class ShortcutCaptureButton(QPushButton):
         else:
             border = "#3a3a3a"
         pad_x = config.S(8)
-        border_w = 2
-        w_content = config.S(220) - (2 * pad_x) - border_w
         self.setStyleSheet(self._BASE_SS.format(
             border=border,
             radius=config.S(3),
             pad_x=pad_x,
-            w=w_content,
             h=config.INPUT_HEIGHT - 2,
             font_size=config.FS(9.5)
         ))
-        self.setFixedSize(config.S(220), config.INPUT_HEIGHT)
+        self.setMaximumWidth(config.S(220))
+        self.setMinimumWidth(config.S(60))
+        self.setFixedHeight(config.INPUT_HEIGHT)
 
     def _update_label(self):
         if self.display_only:
@@ -1216,9 +1215,10 @@ def _popup_scrollbar_css():
 
 class CustomDropdown(QPushButton):
     valueChanged = Signal(str)
-    def __init__(self, options_list, parent=None):
+    def __init__(self, options_list, parent=None, options_getter=None):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
+        self.options_getter = options_getter
         self.max_visible_items = 5
         self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
@@ -1284,7 +1284,8 @@ class CustomDropdown(QPushButton):
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
         from gui.widgets.delegates import MarqueeItemDelegate
         list_widget.setItemDelegate(MarqueeItemDelegate(list_widget))
-        list_widget.addItems(self.options_list)
+        items = self.options_getter() if (hasattr(self, 'options_getter') and callable(self.options_getter)) else self.options_list
+        list_widget.addItems(items)
         list_widget.setStyleSheet(f"""
             QListWidget {{
                 border: none;
