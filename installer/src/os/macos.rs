@@ -94,6 +94,13 @@ else
     PY="python3"
 fi
 
+if [ -f "$PY" ] && [ ! -L "$DIR/venv/bin/BadWords" ]; then
+    ln -sf "$(basename "$PY")" "$DIR/venv/bin/BadWords" 2>/dev/null || true
+fi
+if [ -x "$DIR/venv/bin/BadWords" ]; then
+    PY="$DIR/venv/bin/BadWords"
+fi
+
 cd "$CWD"
 exec "$PY" "$MAIN_PY" "$@"
 "#,

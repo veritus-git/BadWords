@@ -100,9 +100,14 @@ class FramelessWindowMixin:
                 | Qt.WindowCloseButtonHint
                 | Qt.WindowFullscreenButtonHint
             )
+        elif self._is_root:
+            # Linux root window: must always remain Qt.Window (never Qt.Dialog)
+            # to preserve maximize, fullscreen and window manager actions.
+            self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+            self.setAttribute(Qt.WA_TranslucentBackground, True)
         else:
-            # Linux and macOS popups: fully frameless + translucent (rounded corners via QSS).
-            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+            # Linux and macOS popups/dialogs: fully frameless dialogs + translucent
+            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.Dialog | Qt.NoDropShadowWindowHint)
             self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self._is_popup = is_popup

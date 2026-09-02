@@ -464,20 +464,29 @@ class SquareIconButton(QPushButton):
 
 class CustomNumberInput(QWidget):
     """
-    Sleek, unified number input replacing standard QSpinBox.
+    Sleek, unified number input replacing standard QSpinBox and QDoubleSpinBox.
     - Exactly config.INPUT_HEIGHT (30px)
     - Clean typography (Ubuntu Sans)
     - Dark theme (#1e1e1e, border #3a3a3a, focus green border)
+    - Left-aligned text
+    - Supports int and float (with decimals/step)
     - Supports keyboard typing, mouse wheel scrolling, and Up/Down keys
     - No ugly native stepper arrows!
     """
-    valueChanged = Signal(int)
+    valueChanged = Signal(object)
 
-    def __init__(self, val: int = 0, min_val: int = 0, max_val: int = 100, parent=None):
+    def __init__(self, val=0, min_val=0, max_val=100, step=1, decimals=0, suffix="", prefix="", parent=None):
         super().__init__(parent)
-        self._min_val = min_val
-        self._max_val = max_val
-        self._val = max(min_val, min(max_val, int(val)))
+        self._decimals = decimals
+        self._is_float = decimals > 0 or isinstance(val, float) or isinstance(step, float)
+        self._step = float(step) if self._is_float else int(step)
+        self._min_val = float(min_val) if self._is_float else int(min_val)
+        self._max_val = float(max_val) if self._is_float else int(max_val)
+        self._suffix = suffix
+        self._prefix = prefix
+        
+        parsed_val = float(val) if self._is_float else int(val)
+        self._val = max(self._min_val, min(self._max_val, parsed_val))
         
         self.setFixedHeight(config.INPUT_HEIGHT)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -486,8 +495,8 @@ class CustomNumberInput(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        self._edit = QLineEdit(str(self._val), self)
-        self._edit.setAlignment(Qt.AlignCenter)
+        self._edit = QLineEdit(self._format_display(self._val), self)
+        self._edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._edit.setFixedHeight(config.INPUT_HEIGHT)
         self._edit.setStyleSheet(f"""
             QLineEdit {{
@@ -506,46 +515,80 @@ class CustomNumberInput(QWidget):
         self._edit.editingFinished.connect(self._on_editing_finished)
         layout.addWidget(self._edit)
 
-    def _on_editing_finished(self):
-        txt = self._edit.text().strip()
+    def _format_display(self, v) -> str:
+        if self._is_float:
+            dec = self._decimals if self._decimals > 0 else 2
+            formatted = f"{float(v):.{dec}f}"
+        else:
+            formatted = str(int(round(v)))
+        return f"{self._prefix}{formatted}{self._suffix}"
+
+    def _parse_input(self, text: str):
+        cleaned = text.strip()
+        if self._prefix and cleaned.startswith(self._prefix):
+            cleaned = cleaned[len(self._prefix):].strip()
+        if self._suffix and cleaned.endswith(self._suffix):
+            cleaned = cleaned[:-len(self._suffix)].strip()
         try:
-            val = int(txt)
+            return float(cleaned) if self._is_float else int(round(float(cleaned)))
         except ValueError:
-            val = self._val
+            return self._val
+
+    def _on_editing_finished(self):
+        val = self._parse_input(self._edit.text())
         val = max(self._min_val, min(self._max_val, val))
         self.setValue(val)
 
-    def value(self) -> int:
-        return self._val
+    def value(self):
+        return float(self._val) if self._is_float else int(round(self._val))
 
-    def setValue(self, v: int):
-        v = max(self._min_val, min(self._max_val, int(v)))
-        changed = (self._val != v)
+    def setValue(self, v):
+        parsed = float(v) if self._is_float else int(round(float(v)))
+        v = max(self._min_val, min(self._max_val, parsed))
+        changed = (abs(self._val - v) > 1e-6 if self._is_float else self._val != v)
         self._val = v
-        if self._edit.text() != str(v):
-            self._edit.setText(str(v))
+        formatted = self._format_display(v)
+        if self._edit.text() != formatted:
+            self._edit.setText(formatted)
         if changed:
-            self.valueChanged.emit(v)
+            self.valueChanged.emit(self.value())
 
-    def setRange(self, min_v: int, max_v: int):
-        self._min_val = min_v
-        self._max_val = max_v
+    def setRange(self, min_v, max_v):
+        self._min_val = float(min_v) if self._is_float else int(min_v)
+        self._max_val = float(max_v) if self._is_float else int(max_v)
         self.setValue(self._val)
+
+    def setSingleStep(self, step):
+        self._step = float(step) if self._is_float else int(step)
+
+    def setDecimals(self, decimals: int):
+        self._decimals = decimals
+        if decimals > 0:
+            self._is_float = True
+        self.setValue(self._val)
+
+    def setSuffix(self, suffix: str):
+        self._suffix = suffix
+        self._edit.setText(self._format_display(self._val))
+
+    def setPrefix(self, prefix: str):
+        self._prefix = prefix
+        self._edit.setText(self._format_display(self._val))
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
         if delta > 0:
-            self.setValue(self._val + 1)
+            self.setValue(self._val + self._step)
         elif delta < 0:
-            self.setValue(self._val - 1)
+            self.setValue(self._val - self._step)
         event.accept()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Up:
-            self.setValue(self._val + 1)
+            self.setValue(self._val + self._step)
             event.accept()
         elif event.key() == Qt.Key_Down:
-            self.setValue(self._val - 1)
+            self.setValue(self._val - self._step)
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -1462,7 +1505,7 @@ class MultiSelectDropdown(QPushButton):
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
         self.options_list = list(options_list)
-        self.selected_items = set()
+        self.selected_items = set(self.options_list)
         self.setText(self.txt("txt_all_tracks"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
@@ -1574,7 +1617,11 @@ class SearchableDropdown(QPushButton):
     valueChanged = Signal(str)
     def __init__(self, options_list, parent=None):
         super().__init__(parent=parent)
-        self.options_list = list(options_list)
+        self._options_source = options_list
+        if callable(options_list):
+            self.options_list = []
+        else:
+            self.options_list = list(options_list)
         self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
@@ -1582,10 +1629,12 @@ class SearchableDropdown(QPushButton):
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: left;
-                padding: 4px 8px;
+                padding: {config.S(4)}px {config.S(8)}px;
                 border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                min-height: 20px;
+                border-radius: {config.S(3)}px;
+                min-height: {config.S(20)}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -1593,16 +1642,19 @@ class SearchableDropdown(QPushButton):
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
         
+        if callable(self._options_source) and not self.options_list:
+            self.options_list = list(self._options_source())
+
         self.popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         self.popup.setAttribute(Qt.WA_DeleteOnClose)
-        self.popup.setStyleSheet("""
-            QFrame {
+        self.popup.setStyleSheet(f"""
+            QFrame {{
                 background-color: #1e1e1e;
                 border: 1px solid #444;
-                border-radius: 3px;
+                border-radius: {config.S(3)}px;
                 padding: 0px;
                 margin: 0px;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(self.popup)
@@ -1618,12 +1670,25 @@ class SearchableDropdown(QPushButton):
             item = self.list_widget.item(i)
             if item.text() in rtl_names:
                 item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.list_widget.setStyleSheet("""
-            QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
-            QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
-            QListWidget::item:selected { background-color: #333333; color: #ffffff; }
-            QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #333333; color: #ffffff; }
+        self.list_widget.setStyleSheet(f"""
+            QListWidget {{
+                border: none;
+                padding: 0px;
+                margin: 0px;
+                outline: none;
+                background: transparent;
+                color: #d4d4d4;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QListWidget::item {{
+                padding: 0px {config.S(5)}px;
+                min-height: {config.S(26)}px;
+                border: none;
+            }}
+            QListWidget::item:selected {{ background-color: #333333; color: #ffffff; }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
+            QListWidget::item:hover {{ background-color: #333333; color: #ffffff; }}
         """)
         self.list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, self.popup))
         
@@ -1631,15 +1696,20 @@ class SearchableDropdown(QPushButton):
         self.line_edit.setPlaceholderText(self.txt("ph_search"))
         self.line_edit.setFixedHeight(self.height())
         self.line_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.line_edit.setStyleSheet("""
-            QLineEdit {
-                border: none; border-bottom: 1px solid #3a3a3a; padding: 6px;
-                color: #d4d4d4; background: transparent;
+        self.line_edit.setStyleSheet(f"""
+            QLineEdit {{
+                border: none;
+                border-bottom: 1px solid #3a3a3a;
+                padding: {config.S(6)}px;
+                color: #d4d4d4;
+                background: transparent;
                 outline: none;
-            }
-            QLineEdit:focus {
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QLineEdit:focus {{
                 border-bottom: 1px solid #555555;
-            }
+            }}
         """)
         self.line_edit.textChanged.connect(self._on_text_changed)
         self.line_edit.installEventFilter(self)
