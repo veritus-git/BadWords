@@ -13,10 +13,11 @@ Sidebar activity panel for audio silence detection parameters and toggles.
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame
 )
 import config
-from gui.widgets.buttons import ToggleSwitch, ReloadButton
+from gui.widgets.labels import QLabel
+from gui.widgets.buttons import QPushButton, ToggleSwitch, ReloadButton
 from .script_panel import wrap_activity_panel
 
 

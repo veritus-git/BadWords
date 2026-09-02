@@ -14,12 +14,13 @@ Primary sidebar workspace panel for markers, duration stats, favorites, and time
 import os
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+    QVBoxLayout, QHBoxLayout, QFrame
 )
 from PySide6.QtGui import QIcon
 
 from gui.widgets.layouts import MainPanelWidget
-from gui.widgets.buttons import AssembleSplitButton
+from gui.widgets.labels import QLabel
+from gui.widgets.buttons import QPushButton, AssembleSplitButton
 from gui.components.track_options_drawer import TrackOptionsDrawer
 from .script_panel import wrap_activity_panel
 

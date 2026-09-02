@@ -181,6 +181,11 @@ class IDETooltip(QLabel):
         """)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
+    def show_at(self, widget, text, is_right_side=False):
+        self.setText(text)
+        self.adjustSize()
+        self.show_beside(widget, is_right_side=is_right_side)
+
     def show_beside(self, widget, is_right_side=False):
         rect = widget.rect()
         global_pos = widget.mapToGlobal(rect.topLeft())
