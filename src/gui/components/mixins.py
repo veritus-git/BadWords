@@ -148,9 +148,10 @@ class FramelessWindowMixin:
                             val = ctypes.c_int(1)
                             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
                         
+                        insert_after = -1 if getattr(self, '_always_on_top_active', False) else 0
+                        swp_flags = (0x0001 | 0x0002 | 0x0020) | (0 if getattr(self, '_always_on_top_active', False) else 0x0004)
                         ctypes.windll.user32.SetWindowPos(
-                            hwnd, None, 0, 0, 0, 0, 
-                            0x0001 | 0x0002 | 0x0004 | 0x0020  # NOSIZE|NOMOVE|NOZORDER|FRAMECHANGED
+                            hwnd, insert_after, 0, 0, 0, 0, swp_flags
                         )
                         
                         if was_max and not now_max:
@@ -358,14 +359,37 @@ class FramelessWindowMixin:
                 params[0].bottom -= border
             return True, (0x0300 if msg.wParam else 0)  # WVR_REDRAW
 
+        # ── WM_WINDOWPOSCHANGING (0x0046) ─────────────────────────────────────
+        # When always-on-top is active, Windows or external focus changes can attempt
+        # to demote the window's Z-order. Enforce HWND_TOPMOST (-1) in the WINDOWPOS struct.
+        if msg.message == 0x0046:
+            if getattr(self, '_always_on_top_active', False):
+                try:
+                    class WINDOWPOS(ctypes.Structure):
+                        _fields_ = [
+                            ('hwnd', ctypes.c_void_p),
+                            ('hwndInsertAfter', ctypes.c_void_p),
+                            ('x', ctypes.c_int),
+                            ('y', ctypes.c_int),
+                            ('cx', ctypes.c_int),
+                            ('cy', ctypes.c_int),
+                            ('flags', ctypes.c_uint)
+                        ]
+                    wp = ctypes.cast(msg.lParam, ctypes.POINTER(WINDOWPOS)).contents
+                    # HWND_TOPMOST is (HWND)-1
+                    wp.hwndInsertAfter = ctypes.c_void_p(-1)
+                except Exception:
+                    pass
+
         # ── WM_ENTERSIZEMOVE (0x0231) ─────────────────────────────────────────
         # Fires at the start of every drag or resize. Forces DWM to flush our
         # WM_NCCALCSIZE=0 result before NC repaint — eliminates white flash.
         if msg.message == 0x0231:  # WM_ENTERSIZEMOVE
             hwnd = int(self.winId())
             if hwnd:
-                # SWP_FRAMECHANGED(0x20)|SWP_NOZORDER(0x04)|SWP_NOMOVE(0x02)|SWP_NOSIZE(0x01)
-                ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
+                insert_after = -1 if getattr(self, '_always_on_top_active', False) else 0
+                swp_flags = 0x0023 if getattr(self, '_always_on_top_active', False) else 0x0027
+                ctypes.windll.user32.SetWindowPos(hwnd, insert_after, 0, 0, 0, 0, swp_flags)
             return super().nativeEvent(eventType, message)  # don't consume
 
         # ── WM_NCACTIVATE (0x0086) ────────────────────────────────────────────
