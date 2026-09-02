@@ -239,7 +239,12 @@ def build_welcome_view(win) -> QWidget:
     
     info_acc = QLabel()
     if os.path.exists(info_icon_path):
-        info_acc.setPixmap(QPixmap(info_icon_path).scaled(config.S(18), config.S(18), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        pix = QPixmap(info_icon_path)
+        dpr = win.devicePixelRatioF() if hasattr(win, 'devicePixelRatioF') else 1.0
+        s = config.S(18)
+        scaled_pix = pix.scaled(int(s * dpr), int(s * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pix.setDevicePixelRatio(dpr)
+        info_acc.setPixmap(scaled_pix)
     else:
         info_acc.setText("🛈")
         info_acc.setStyleSheet(f"color: #888888; font-size: {config.FS(11)}pt;")
@@ -492,16 +497,9 @@ def build_welcome_view(win) -> QWidget:
         hbox.setAlignment(Qt.AlignVCenter)
         hbox.addWidget(widget, 1)
 
-        rst = QPushButton("↺")
-        rst.setFixedSize(config.S(22), config.S(22))
-        rst.setCursor(Qt.PointingHandCursor)
-        rst.setStyleSheet(f"""
-            QPushButton {{ background: transparent; border: 1px solid #444; 
-            border-radius: {config.S(3)}px; color: #777; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; padding: 0px; text-align: center; }} 
-            QPushButton:hover {{ color: #ccc; border-color: #666; }}
-        """)
-        rst.clicked.connect(lambda: widget.setText(reset_val_str))
+        rst = ReloadButton(size=30)
         rst.setToolTip(win.txt("tt_reset_to_default"))
+        rst.clicked.connect(lambda: widget.setText(reset_val_str))
         hbox.addWidget(rst)
         vbox.addLayout(hbox)
         return vbox
