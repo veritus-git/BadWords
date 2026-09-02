@@ -905,11 +905,14 @@ class MouseShortcutCaptureButton(ShortcutCaptureButton):
             self.clearFocus()
 
 class AnimatedPlayerButton(QPushButton):
-    def __init__(self, icon_name, button_size=32, icon_size=24, parent=None):
+    def __init__(self, icon_name, button_size=32, icon_size=24, is_circle=False, parent=None):
         super().__init__(parent)
         from PySide6.QtCore import QSize, QPropertyAnimation
         
+        self.is_circle = is_circle
         self.base_icon_size = icon_size
+        self._hovered = False
+        self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(button_size, button_size)
         self.setIconSize(QSize(icon_size, icon_size))
         
@@ -917,6 +920,47 @@ class AnimatedPlayerButton(QPushButton):
         self._anim.setDuration(100)
         
         self.update_icon(icon_name)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        if getattr(self, 'is_circle', False):
+            from PySide6.QtGui import QPainter, QColor
+            from PySide6.QtCore import Qt
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            
+            # Draw circle with 1px inset for clean antialiasing
+            if self.isDown():
+                bg = QColor("#cccccc")
+            elif getattr(self, '_hovered', False):
+                bg = QColor("#e0e0e0")
+            else:
+                bg = QColor("#ffffff")
+            painter.setBrush(bg)
+            painter.setPen(Qt.NoPen)
+            r = self.rect().adjusted(1, 1, -1, -1)
+            painter.drawEllipse(r)
+            
+            # Draw icon centered
+            icon = self.icon()
+            if not icon.isNull():
+                sz = self.iconSize()
+                pix = icon.pixmap(sz)
+                x = (self.width() - sz.width()) // 2
+                y = (self.height() - sz.height()) // 2
+                painter.drawPixmap(x, y, pix)
+            return
+        super().paintEvent(event)
 
     def update_icon(self, icon_name):
         from PySide6.QtGui import QIcon
