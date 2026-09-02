@@ -292,7 +292,9 @@ class AudioPreviewWidget(QFrame):
         play_layout.setAlignment(Qt.AlignCenter)
         
         self.btn_prev = AnimatedPlayerButton("player-backward.png", button_size=config.S(32), icon_size=config.S(16))
-        self.btn_play = AnimatedPlayerButton("player-play.png", button_size=config.S(32), icon_size=config.S(16), is_circle=True)
+        play_size = max(32, config.S(36))
+        play_icon = max(16, config.S(18))
+        self.btn_play = AnimatedPlayerButton("player-play.png", button_size=play_size, icon_size=play_icon, is_circle=True)
         self.btn_play.setObjectName("PlayBtn")
         self.btn_play.setStyleSheet("QPushButton#PlayBtn { background: transparent; border: none; outline: none; }")
         self.btn_next = AnimatedPlayerButton("player-forward.png", button_size=config.S(32), icon_size=config.S(16))

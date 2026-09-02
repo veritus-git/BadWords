@@ -186,7 +186,18 @@ def main():
 
     # 3. Sync files
     info("Syncing files...")
-    protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", "badwords.log", "dev.json", ".python_auto_installed"}
+    # Clean previous logs on every update so logs start fresh
+    for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
+        _lf = os.path.join(install_dir, _log_name)
+        if os.path.isfile(_lf):
+            try:
+                with open(_lf, "w") as _f:
+                    pass
+            except Exception:
+                try: os.remove(_lf)
+                except Exception: pass
+
+    protected_files = {"pref.json", "user.json", "settings.json", "dev.json", ".python_auto_installed"}
     protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout", "setupfiles"}
     
     two_way_sync([source_path], install_dir, protected_files, protected_dirs)

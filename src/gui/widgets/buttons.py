@@ -999,8 +999,8 @@ class AudioToggleTab(QPushButton):
         super().__init__(parent)
         self.is_collapsed = False
         self.hovered = False
-        self.setFixedHeight(16)
-        self.setFixedWidth(130)
+        self.setFixedHeight(config.S(16))
+        self.setFixedWidth(config.S(130))
         from PySide6.QtCore import Qt
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
@@ -1031,12 +1031,16 @@ class AudioToggleTab(QPushButton):
         w = float(self.width())
         h = float(self.height())
         
+        c1 = float(config.S(12.0))
+        c2 = float(config.S(15.0))
+        c3 = float(config.S(25.0))
+        
         # Smooth trapezoid path with sloped, curved sides
         path = QPainterPath()
         path.moveTo(0.0, h)
-        path.cubicTo(12.0, h, 15.0, 0.0, 25.0, 0.0)
-        path.lineTo(w - 25.0, 0.0)
-        path.cubicTo(w - 15.0, 0.0, w - 12.0, h, w, h)
+        path.cubicTo(c1, h, c2, 0.0, c3, 0.0)
+        path.lineTo(w - c3, 0.0)
+        path.cubicTo(w - c2, 0.0, w - c1, h, w, h)
         path.closeSubpath()
         
         # Fill matches the player background (#191919) seamlessly! Hover gives subtle highlight.
@@ -1048,9 +1052,9 @@ class AudioToggleTab(QPushButton):
         # Top & side border outline (if collapsed, close bottom edge for floating tab look)
         border_path = QPainterPath()
         border_path.moveTo(0.5, h)
-        border_path.cubicTo(12.0, h - 0.5, 15.0, 0.5, 25.0, 0.5)
-        border_path.lineTo(w - 25.0, 0.5)
-        border_path.cubicTo(w - 15.0, 0.5, w - 12.0, h - 0.5, w - 0.5, h)
+        border_path.cubicTo(c1, h - 0.5, c2, 0.5, c3, 0.5)
+        border_path.lineTo(w - c3, 0.5)
+        border_path.cubicTo(w - c2, 0.5, w - c1, h - 0.5, w - 0.5, h)
         if self.is_collapsed:
             border_path.lineTo(0.5, h)
         
@@ -1064,8 +1068,8 @@ class AudioToggleTab(QPushButton):
         pen_chevron = QPen(chevron_col, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         p.setPen(pen_chevron)
         
-        half_w = 5.0
-        offset_y = 2.5
+        half_w = float(config.S(5.0))
+        offset_y = float(config.S(2.5))
         
         if self.is_collapsed:
             # Arrow pointing UP (▲)
@@ -1334,6 +1338,11 @@ class CustomDropdown(QPushButton):
         list_widget.setItemDelegate(MarqueeItemDelegate(list_widget))
         items = self.options_getter() if (hasattr(self, 'options_getter') and callable(self.options_getter)) else self.options_list
         list_widget.addItems(items)
+        rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            if item.text() in rtl_names:
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         list_widget.setStyleSheet(f"""
             QListWidget {{
                 border: none;
@@ -1665,7 +1674,6 @@ class MultiSelectDropdown(QPushButton):
                 from PySide6.QtWidgets import QHBoxLayout
                 from gui.widgets.labels import QLabel
                 from PySide6.QtCore import Qt
-                super().__init__(parent)
                 self.is_checked = checked
                 self.opt_text = text
                 

@@ -1517,6 +1517,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
             _lf = os.path.join(install_dir, _log_name)
             if os.path.isfile(_lf):
+                try:
+                    with open(_lf, "w") as _f:
+                        pass
+                except Exception: pass
                 try: os.remove(_lf)
                 except Exception: pass
 

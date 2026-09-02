@@ -250,32 +250,62 @@ WHISPER_PROMPTS = {
     "yue": "嗰個, 呢... 嗰個-嗰個-嗰個, 嗰個, 嗰個... 呢 呢... 呢 呢... 嗰個... 嗰個, 嗰個, 嗰個... mhm.",
 }
 
-def get_whisper_prompt_for_lang(lang, user_custom_prompt=None):
+ALL_DEFAULT_PROMPTS = set(WHISPER_PROMPTS.values()) | {GOLDEN_INITIAL_PROMPT, DEFAULT_WHISPER_PROMPT}
+
+def is_default_whisper_prompt(prompt_text):
+    """Returns True if the prompt matches any of the built-in language default prompts or is empty."""
+    if not prompt_text or not str(prompt_text).strip():
+        return True
+    return str(prompt_text).strip() in ALL_DEFAULT_PROMPTS
+
+def get_whisper_prompt_for_lang(lang, user_custom_prompt=None, gui_lang=None):
     """
     Returns the appropriate Whisper initial prompt for a given transcription language.
 
     Priority:
       1. User's custom prompt (ai_initial_prompt from settings) — if set and non-empty.
-      2. Per-language prompt from WHISPER_PROMPTS — if lang is a known ISO code.
-      3. GOLDEN_INITIAL_PROMPT — universal English-based fallback (for Auto or unknown langs).
+      2. Per-language prompt from WHISPER_PROMPTS — if lang is a known ISO code or display name.
+      3. Fallback to gui_lang prompt if lang is 'Auto' or unknown.
+      4. GOLDEN_INITIAL_PROMPT — universal English-based fallback.
 
     Args:
-        lang: Whisper ISO language code (e.g. 'pl', 'en', 'de') or None/'Auto' for auto-detect.
+        lang: Whisper ISO language code (e.g. 'pl', 'en', 'de') or display name or None/'Auto'.
         user_custom_prompt: The user's custom ai_initial_prompt value from settings.
+        gui_lang: Optional UI language code/display name to fall back to when lang is Auto.
 
     Returns:
         str: The resolved initial prompt string.
     """
-    # 1. User has set a non-empty custom prompt — always respect it
-    if user_custom_prompt and user_custom_prompt.strip():
+    # 1. User has set a non-empty custom prompt (that isn't an auto-generated default)
+    if user_custom_prompt and user_custom_prompt.strip() and not is_default_whisper_prompt(user_custom_prompt):
         return user_custom_prompt.strip()
 
-    # 2. Specific language selected — look up per-language prompt
-    if lang and lang not in (None, "Auto", "auto", "None", ""):
-        lang_code = str(lang).lower().strip()
-        if lang_code in WHISPER_PROMPTS:
-            return WHISPER_PROMPTS[lang_code]
+    def _resolve_code(l_val):
+        if not l_val or str(l_val).strip() in ("", "Auto", "auto", "None", "none"):
+            return None
+        code = str(l_val).lower().strip()
+        if code in WHISPER_PROMPTS:
+            return code
+        try:
+            from .languages import SUPPORTED_LANGUAGES
+            for iso, display in SUPPORTED_LANGUAGES.items():
+                if display.lower() == str(l_val).lower() or iso.lower() == code:
+                    return iso
+        except Exception:
+            pass
+        return None
 
-    # 3. Auto-detect or unknown language — use the universal GOLDEN baseline
+    # 2. Specific transcription language selected
+    resolved_lang = _resolve_code(lang)
+    if resolved_lang and resolved_lang in WHISPER_PROMPTS:
+        return WHISPER_PROMPTS[resolved_lang]
+
+    # 3. Fallback to GUI language if recording language is Auto or unknown
+    if gui_lang:
+        resolved_gui = _resolve_code(gui_lang)
+        if resolved_gui and resolved_gui in WHISPER_PROMPTS:
+            return WHISPER_PROMPTS[resolved_gui]
+
+    # 4. Universal GOLDEN baseline
     return GOLDEN_INITIAL_PROMPT
 

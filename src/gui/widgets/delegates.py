@@ -61,7 +61,13 @@ class MarqueeItemDelegate(QStyledItemDelegate):
     animation on hover when the text is wider than the available column width.
     Completely replaces the default item renderer — no horizontal scrollbar needed.
     """
-    _PADDING = 16  # must match QSS padding: 10px 16px
+    @property
+    def _padding(self):
+        try:
+            import config
+            return config.S(8)
+        except Exception:
+            return 8
 
     def __init__(self, list_widget):
         super().__init__(list_widget)
@@ -97,7 +103,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
 
     def _available_width(self):
         """Pixel width available for text inside the list (minus padding)."""
-        return self._lw.viewport().width() - self._PADDING * 2
+        return self._lw.viewport().width() - self._padding * 2
 
     def _text_overflows(self, row):
         item = self._lw.item(row)
@@ -216,8 +222,12 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         painter.setPen(color)
         painter.setFont(option.font)
 
+        # Check alignment for RTL support
+        align = item.textAlignment()
+        is_rtl = bool(align & Qt.AlignRight)
+
         # Clip to the content rect to hide overflow
-        text_rect = option.rect.adjusted(self._PADDING, 0, -self._PADDING, 0)
+        text_rect = option.rect.adjusted(self._padding, 0, -self._padding, 0)
         painter.setClipRect(text_rect)
 
         offset = int(self._mq_pos.get(row, 0.0)) if is_animating else 0
@@ -226,13 +236,19 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         # and draw full text once the marquee animation has started moving.
         scrolling = is_animating and (offset > 0 or self._mq_state.get(row) in ("SCROLL", "END_DELAY", "FADEOUT", "FADEIN"))
         if overflows and not scrolling:
-            # Use Qt's built-in elider to clip+append "…"
-            display_text = fm.elidedText(text, Qt.ElideRight, avail)
+            elide_mode = Qt.ElideLeft if is_rtl else Qt.ElideRight
+            display_text = fm.elidedText(text, elide_mode, avail)
         else:
             display_text = text
 
-        draw_rect = QRect(text_rect.left() - offset, text_rect.top(), 9999, text_rect.height())
-        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, display_text)
+        if is_rtl:
+            # For RTL: right-aligned; marquee offset reveals hidden text on the left
+            text_width = fm.horizontalAdvance(display_text)
+            draw_rect = QRect(text_rect.right() - text_width + offset, text_rect.top(), text_width, text_rect.height())
+            painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, display_text)
+        else:
+            draw_rect = QRect(text_rect.left() - offset, text_rect.top(), 9999, text_rect.height())
+            painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, display_text)
         painter.restore()
 
     def sizeHint(self, option, index):

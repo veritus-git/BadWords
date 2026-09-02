@@ -122,6 +122,10 @@ class FramelessWindowMixin:
     def changeEvent(self, event):
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
+                super().changeEvent(event)
+                return
+
             was_max = getattr(self, '_was_maximized', False)
             now_max = self.isMaximized()
 
@@ -130,8 +134,6 @@ class FramelessWindowMixin:
                     import ctypes
                     hwnd = int(self.winId())
                     if hwnd:
-                        # Reaplikacja stylów! Qt czasem resetuje natywne style podczas
-                        # zmian stanu (szczególnie max -> drag restore -> max na Win10).
                         user32 = ctypes.windll.user32
                         GWL_STYLE = -16
                         style = user32.GetWindowLongW(hwnd, GWL_STYLE)
@@ -142,9 +144,6 @@ class FramelessWindowMixin:
                         user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
                         if was_max and not now_max:
-                            # max→normal: DWM ma stary bufor (full-size) i renderuje go
-                            # w mniejszym oknie → biały flash. DWMWA_CLOAK(13) ukrywa
-                            # okno w DWM na czas przejścia.
                             val = ctypes.c_int(1)
                             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
                         
@@ -313,26 +312,41 @@ class FramelessWindowMixin:
         # ── WM_NCCALCSIZE (0x0083) ────────────────────────────────────────────
         # Returning 0 with wParam=True removes the entire native NC area so
         # Windows draws nothing there — our custom title bar owns that space.
-        # When maximized, Windows adds a hidden "maximized border" (SM_CXFRAME +
-        # SM_CXPADDEDBORDER) that would otherwise push the client area inward.
-        # We compensate by shrinking the rect on all four sides. Left/right/bottom
-        # corrections prevent edge clipping on multi-monitor setups.
+        # When maximized, Windows expands the window outside the monitor bounds
+        # by the invisible resize frame borders. We retrieve the exact work area
+        # (rcWork) from MonitorFromWindow + GetMonitorInfoW, ensuring the client
+        # rect fits the display and taskbar perfectly without clipping.
         if msg.message == 0x0083:  # WM_NCCALCSIZE
-            if msg.wParam and self.isMaximized():
-                hwnd = int(self.winId())
-                user32 = ctypes.windll.user32
-                try:
-                    dpi = user32.GetDpiForWindow(hwnd) or 96
-                    border = (user32.GetSystemMetricsForDpi(32, dpi) +
-                              user32.GetSystemMetricsForDpi(92, dpi))
-                except Exception:
-                    border = user32.GetSystemMetrics(32) + user32.GetSystemMetrics(92)
-                params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
-                params[0].left   += border
-                params[0].top    += border
-                params[0].right  -= border
-                params[0].bottom -= border
-            return True, (0x0300 if msg.wParam else 0)  # WVR_REDRAW
+            if msg.wParam:
+                if self.isMaximized():
+                    hwnd = int(self.winId())
+                    user32 = ctypes.windll.user32
+                    class MONITORINFO(ctypes.Structure):
+                        _fields_ = [
+                            ('cbSize', wintypes.DWORD),
+                            ('rcMonitor', wintypes.RECT),
+                            ('rcWork', wintypes.RECT),
+                            ('dwFlags', wintypes.DWORD)
+                        ]
+                    # MONITOR_DEFAULTTONEAREST = 2
+                    h_mon = user32.MonitorFromWindow(hwnd, 2)
+                    if h_mon:
+                        mi = MONITORINFO()
+                        mi.cbSize = ctypes.sizeof(MONITORINFO)
+                        if user32.GetMonitorInfoW(h_mon, ctypes.byref(mi)):
+                            params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
+                            params[0].left   = mi.rcWork.left
+                            params[0].top    = mi.rcWork.top
+                            params[0].right  = mi.rcWork.right
+                            params[0].bottom = mi.rcWork.bottom
+                return True, 0
+            return True, 0
+
+        # ── WM_NCPAINT (0x0085) ───────────────────────────────────────────────
+        # Suppress native non-client painting on restore from minimize to prevent
+        # Windows DWM from painting the default white caption bar artifact.
+        if msg.message == 0x0085:  # WM_NCPAINT
+            return True, 0
 
         # ── WM_WINDOWPOSCHANGING (0x0046) ─────────────────────────────────────
         # When always-on-top is active, Windows or external focus changes can attempt

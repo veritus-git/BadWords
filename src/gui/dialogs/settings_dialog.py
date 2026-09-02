@@ -115,6 +115,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 self.move(sg.x() + (sg.width() - config.SETTINGS_WINDOW_W) // 2,
                           sg.y() + (sg.height() - config.SETTINGS_WINDOW_H) // 2)
 
+        # Inherit always on top from parent if active
+        if parent and getattr(parent, '_always_on_top_active', False):
+            self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
@@ -422,6 +426,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 parent_window.setWindowIcon(_app_icon())
         except Exception:
             pass
+
+        # Ensure dialog is always above parent window (especially on Windows & macOS)
+        parent_window = self.parentWidget()
+        if parent_window:
+            if getattr(parent_window, '_always_on_top_active', False):
+                self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+                if hasattr(self.engine, 'os_doc'):
+                    try:
+                        self.engine.os_doc.set_always_on_top(int(self.winId()), True)
+                    except Exception:
+                        pass
+            if getattr(self, '_is_win', False):
+                import ctypes
+                try:
+                    GWLP_HWNDPARENT = -8
+                    ctypes.windll.user32.SetWindowLongPtrW(int(self.winId()), GWLP_HWNDPARENT, int(parent_window.winId()))
+                except Exception:
+                    pass
+        self.raise_()
+        self.activateWindow()
 
     def _build_ui(self):
         self.setUpdatesEnabled(False)
@@ -844,8 +868,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             target = config.TRANS.get(code, config.TRANS['en'])
             title   = target.get('msg_title_language_changed', 'Language Changed')
             message = target.get('msg_restart_lang_pending', target.get('msg_restart_lang', 'Language changed. Full changes will apply on restart.'))
-            ok_text = target.get('btn_ok', 'OK')
-            
+            if hasattr(self, 'textedit_prompt') and self.textedit_prompt:
+                new_auto = config.get_whisper_prompt_for_lang(prefs.get('lang', 'Auto'), gui_lang=code)
+                self.textedit_prompt.setPlaceholderText(new_auto)
+                cur_text = self.textedit_prompt.toPlainText().strip()
+                if not cur_text or config.is_default_whisper_prompt(cur_text):
+                    self.textedit_prompt.setPlainText("")
+
             CustomMsgBox(self, title, message, ok_text).exec()
 
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)
@@ -1461,18 +1490,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.textedit_prompt.setMaximumHeight(80)
         saved_prompt = prefs.get('ai_initial_prompt', '').strip()
         
-        # Resolve ISO code from display name in prefs
-        current_lang_display = prefs.get('lang', 'Auto')
-        current_lang_iso = "Auto"
-        for iso, display in config.SUPPORTED_LANGUAGES.items():
-            if display == current_lang_display:
-                current_lang_iso = iso
-                break
-        
-        auto_prompt = config.get_whisper_prompt_for_lang(current_lang_iso)
+        current_lang = prefs.get('lang', 'Auto')
+        gui_lang = prefs.get('gui_lang', 'en')
+        auto_prompt = config.get_whisper_prompt_for_lang(current_lang, gui_lang=gui_lang)
         self.textedit_prompt.setPlaceholderText(auto_prompt)
         
-        if saved_prompt:
+        if saved_prompt and not config.is_default_whisper_prompt(saved_prompt):
             self.textedit_prompt.setPlainText(saved_prompt)
         else:
             self.textedit_prompt.setPlainText("")

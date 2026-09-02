@@ -522,7 +522,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def changeEvent(self, event):
         super().changeEvent(event)
-        if event.type() == QEvent.WindowStateChange:
+        if event.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
             self._enforce_native_always_on_top()
 
     def _enforce_native_always_on_top(self):
@@ -3183,6 +3183,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QApplication
         QApplication.setWindowIcon(_app_icon())
         self.setWindowIcon(_app_icon())
+        self._enforce_native_always_on_top()
         self._build_marker_radio_buttons()
         self.text_canvas.update()
 
@@ -3455,6 +3456,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Explicitly reactivate the main window to ensure ApplicationShortcut context binds properly
         self.activateWindow()
         self.setFocus()
+        self._enforce_native_always_on_top()
 
 
 
