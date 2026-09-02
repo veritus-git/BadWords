@@ -739,6 +739,34 @@ class OSDoctor:
             except Exception:
                 return False
 
+        elif self.is_mac:
+            try:
+                import ctypes
+                import ctypes.util
+                objc_path = ctypes.util.find_library('objc')
+                if not objc_path:
+                    return False
+                objc = ctypes.cdll.LoadLibrary(objc_path)
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+                # In Qt, window_id on macOS is an NSView pointer.
+                view = ctypes.c_void_p(window_id)
+                sel_window = objc.sel_registerName(b"window")
+                msgSend_window = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+                nswindow = msgSend_window(view, sel_window)
+                if not nswindow:
+                    nswindow = view
+
+                sel_setLevel = objc.sel_registerName(b"setLevel:")
+                # NSNormalWindowLevel = 0, NSFloatingWindowLevel = 3
+                level = ctypes.c_long(3 if top else 0)
+                msgSend_setLevel = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long))
+                msgSend_setLevel(nswindow, sel_setLevel, level)
+                return True
+            except Exception:
+                return False
+
         return False
 
     # ==========================
