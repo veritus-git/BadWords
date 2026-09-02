@@ -1015,6 +1015,19 @@ if os.path.exists(MAIN_SCRIPT):
                 _py = os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3')
                 if not os.path.exists(_py): _py = sys.executable
                 subprocess.Popen([_py, MAIN_SCRIPT])
+        elif sys.platform.startswith('win'):
+            # On Windows: Launch via BadWords.exe to run as a dedicated process
+            # with custom name and icon in Task Manager, without blocking Resolve
+            import subprocess
+            _bw_exe = os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'BadWords.exe')
+            if not os.path.exists(_bw_exe):
+                _bw_exe = os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe')
+            if os.path.exists(_bw_exe):
+                subprocess.Popen([_bw_exe, MAIN_SCRIPT])
+            else:
+                with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+                gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
+                exec(code, gv)
         else:
             with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
             gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
@@ -1065,7 +1078,13 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
         icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
 
     if os.name == "nt":
-        pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+        try:
+            from setupfiles.pe_patcher import ensure_badwords_exe
+            pyw_path = ensure_badwords_exe(install_dir)
+        except Exception:
+            pyw_path = ""
+        if not pyw_path:
+            pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
         ps_commands = ["$ws = New-Object -ComObject WScript.Shell;"]
         if create_desktop:
             ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{pyw_path}'; $s1.Arguments = '\"{main_py}\"'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{icon_ico},0'; $s1.Save();")
@@ -2008,6 +2027,13 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     debug_log("Patched PySide6/__init__.py for older Python compatibility.")
             except Exception as e:
                 debug_log(f"Failed to patch PySide6: {e}")
+
+        if os.name == 'nt':
+            try:
+                from setupfiles.pe_patcher import ensure_badwords_exe
+                ensure_badwords_exe(install_dir)
+            except Exception as e:
+                debug_log(f"ensure_badwords_exe error: {e}")
 
         # ── DaVinci Resolve wrapper ───────────────────────────
         console.print()

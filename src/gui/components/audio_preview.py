@@ -297,6 +297,8 @@ class AudioPreviewWidget(QFrame):
         self.btn_play.setStyleSheet(f"""
             QPushButton#PlayBtn {{
                 background-color: #ffffff;
+                border: none;
+                outline: none;
                 border-radius: {config.S(16)}px;
             }}
             QPushButton#PlayBtn:hover {{
@@ -741,7 +743,10 @@ class AudioPreviewWidget(QFrame):
         from PySide6.QtCore import Qt
         pixmap = QPixmap(path)
         if not pixmap.isNull():
-            pixmap = pixmap.scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
+            s = config.S(20)
+            pixmap = pixmap.scaled(int(s * dpr), int(s * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap.setDevicePixelRatio(dpr)
         self.lbl_vol_icon.setPixmap(pixmap)
 
     def change_speed(self, text):
