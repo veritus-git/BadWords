@@ -835,25 +835,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if code == prefs.get('gui_lang'):
                 return
 
-            current_state = self._get_current_state_dict()
-            current_state['gui_lang'] = code
-            
             prefs['gui_lang'] = code
             self.engine.save_preferences(prefs)
 
-            self._build_ui()
-            self._restore_state_dict(current_state)
+            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
+                self._initial_state['gui_lang'] = code
 
             target = config.TRANS.get(code, config.TRANS['en'])
             title   = target.get('msg_title_language_changed', 'Language Changed')
-            message = target.get('msg_restart_lang_pending', 'Language changed. Full changes will apply on restart.')
+            message = target.get('msg_restart_lang_pending', target.get('msg_restart_lang', 'Language changed. Full changes will apply on restart.'))
             ok_text = target.get('btn_ok', 'OK')
             
             CustomMsgBox(self, title, message, ok_text).exec()
-            
-            self.btn_apply.setText(self.txt("btn_apply"))
-            self.btn_close.setText(self.txt("btn_close"))
-            self.btn_restore.setText(self.txt("btn_restore_defaults"))
 
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)
         def _reset_lang(val):
