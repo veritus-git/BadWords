@@ -43,6 +43,7 @@ from PySide6.QtGui import (
 from PySide6.QtCore import QMimeData
 
 import config
+from gui.widgets.buttons import CloseIconButton
 
 # --- INJECTED WIDGET IMPORTS ---
 from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
@@ -159,9 +160,8 @@ class SearchOverlayWidget(QFrame):
         self.btn_next.setToolTip(self.main_window.txt("search_tooltip_next"))
         self.btn_next.setFixedSize(config.S(24), config.S(24))
         
-        self.btn_close = QPushButton("✕")
+        self.btn_close = CloseIconButton(size=24)
         self.btn_close.setToolTip(self.main_window.txt("search_tooltip_close"))
-        self.btn_close.setFixedSize(config.S(24), config.S(24))
         
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.counter_label)

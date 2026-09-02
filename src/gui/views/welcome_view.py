@@ -21,7 +21,7 @@ from PySide6.QtGui import QPixmap, QCursor, QFont
 
 import config
 from gui.utils import get_play_icon
-from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch
+from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch, ReloadButton
 
 
 def build_welcome_view(win) -> QWidget:
@@ -134,15 +134,8 @@ def build_welcome_view(win) -> QWidget:
     _hbox_tl0.setSpacing(config.S(4))
     _hbox_tl0.setAlignment(Qt.AlignVCenter)
     _hbox_tl0.addWidget(win.combo_tl_0, 1)
-    _btn_ref_tl0 = QPushButton("↺")
-    _btn_ref_tl0.setFixedSize(config.S(30), config.S(30))
-    _btn_ref_tl0.setCursor(Qt.PointingHandCursor)
+    _btn_ref_tl0 = ReloadButton(size=30)
     _btn_ref_tl0.setToolTip(win.txt("tt_refresh_timelines"))
-    _btn_ref_tl0.setStyleSheet(f"""
-        QPushButton {{ background: transparent; border: 1px solid #444; 
-        border-radius: {config.S(3)}px; color: #777; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(11)}pt; padding: 0px; text-align: center; }} 
-        QPushButton:hover {{ color: #ccc; border-color: #666; }}
-    """)
     _btn_ref_tl0.clicked.connect(win._populate_timeline_track_combos)
     _hbox_tl0.addWidget(_btn_ref_tl0)
     _vbox_tl0.addWidget(_lbl_tl0)
@@ -451,15 +444,8 @@ def build_welcome_view(win) -> QWidget:
     _hbox_tl1.setSpacing(config.S(4))
     _hbox_tl1.setAlignment(Qt.AlignVCenter)
     _hbox_tl1.addWidget(win.combo_tl_1, 1)
-    _btn_ref_tl1 = QPushButton("↺")
-    _btn_ref_tl1.setFixedSize(config.S(30), config.S(30))
-    _btn_ref_tl1.setCursor(Qt.PointingHandCursor)
+    _btn_ref_tl1 = ReloadButton(size=30)
     _btn_ref_tl1.setToolTip(win.txt("tt_refresh_timelines"))
-    _btn_ref_tl1.setStyleSheet(f"""
-        QPushButton {{ background: transparent; border: 1px solid #444; 
-        border-radius: {config.S(3)}px; color: #777; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(11)}pt; padding: 0px; text-align: center; }} 
-        QPushButton:hover {{ color: #ccc; border-color: #666; }}
-    """)
     _btn_ref_tl1.clicked.connect(win._populate_timeline_track_combos)
     _hbox_tl1.addWidget(_btn_ref_tl1)
     _vbox_tl1.addWidget(_lbl_tl1)

@@ -399,7 +399,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._apply_dynamic_shortcuts()
 
         # --- Maximize on the monitor the cursor is on ---
-        self._maximize_on_active_screen()
+        self._maximize_on_active_screen(show=False)
 
         prefs_init = self.engine.load_preferences() or {}
         if prefs_init.get('always_on_top'):
@@ -517,6 +517,23 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             pass
 
     def _apply_always_on_top(self, enable: bool):
+        if getattr(self, '_is_win', False) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+            try:
+                hwnd = int(self.winId())
+                if hwnd:
+                    self.engine.os_doc.set_always_on_top(hwnd, enable)
+                    return
+            except Exception:
+                pass
+
+        if getattr(self, '_is_mac', False):
+            # On macOS, changing WindowStaysOnTopHint in fullscreen causes Space tearing.
+            # Only apply if windowed.
+            if not self.isFullScreen():
+                self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+                self.show()
+            return
+
         self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
         if self.isMaximized():
             self.showMaximized()
@@ -752,20 +769,33 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
                 win_w = max(800, self.width())
-                win_h = max(600, self.height())
-                aspect_ratio = float(win_w) / float(win_h) if win_h > 0 else 1.777
+                
+                # Check monitor's physical aspect ratio (geometry), NOT window height minus taskbar
+                screen = self.screen() or QGuiApplication.primaryScreen()
+                if screen:
+                    s_geo = screen.geometry()
+                    screen_aspect = float(s_geo.width()) / float(s_geo.height()) if s_geo.height() > 0 else 1.777
+                else:
+                    screen_aspect = float(win_w) / float(max(600, self.height()))
                 
                 # Base panel width (280px on standard 1920x1080 display)
                 base_w = int(win_w * (280.0 / 1920.0))
                 
-                # On 16:9 displays (~1.75 - 1.80 ratio), keep exact standard proportional width (14.58%).
-                # On non-16:9 / narrower displays (e.g. 16:10 MacBooks, 4:3, 3:2, etc.),
-                # open panel 5% larger than its current area (base_w * 1.05).
-                is_16_9 = 1.74 <= aspect_ratio <= 1.80
+                # Standard 16:9 displays: ratio ~1.70 - 1.85
+                is_16_9 = 1.70 <= screen_aspect <= 1.85
+
+                # Dynamic minimum width from content to prevent clipping drawers
+                min_content_w = config.S(270)
+                try:
+                    if activity_widget and activity_widget.layout():
+                        min_content_w = max(min_content_w, activity_widget.layout().minimumSize().width())
+                except Exception:
+                    pass
+
                 if is_16_9:
-                    target_w = max(config.S(180), base_w)
+                    target_w = max(min_content_w, base_w)
                 else:
-                    target_w = max(config.S(190), int(base_w * 1.05))
+                    target_w = max(min_content_w, int(base_w * 1.05))
 
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
@@ -2115,7 +2145,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             proxy_row = entry['row_widget']
             self.layout_favorites.removeWidget(proxy_row)
             proxy_row.deleteLater()
-            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+            if hasattr(pin_btn, 'setChecked'):
+                pin_btn.setChecked(False)
+            else:
+                pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
             # Persist removal
             prefs = self.engine.load_preferences() or {}
             favs = prefs.get('favorites', [])
@@ -2222,7 +2255,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 prx_conn = proxy_toggle.toggled.connect(prx_to_src)
                 src_conn = source_toggle.toggled.connect(src_to_prx)
 
-            pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
+            if hasattr(pin_btn, 'setChecked'):
+                pin_btn.setChecked(True)
+            else:
+                pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
             
             self.layout_favorites.addWidget(row_widget)
 
@@ -3042,7 +3078,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # Positioning
     # ------------------------------------------------------------------
 
-    def _maximize_on_active_screen(self):
+    def _maximize_on_active_screen(self, show: bool = True):
         """
         Move the window to the monitor that currently has the cursor and maximize.
         """
@@ -3050,10 +3086,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         w, h = config.S(580), config.S(670)
         if screen is None:
             self.resize(w, h)
-            if getattr(self, '_is_mac', False):
-                self.showFullScreen()
-            else:
-                self.showMaximized()
+            if show:
+                if getattr(self, '_is_mac', False):
+                    self.showFullScreen()
+                else:
+                    self.showMaximized()
             return
         sg = screen.availableGeometry()
         self.setGeometry(
@@ -3061,10 +3098,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             sg.y() + (sg.height() - h) // 2,
             w, h
         )
-        if getattr(self, '_is_mac', False):
-            self.showFullScreen()
-        else:
-            self.showMaximized()
+        if show:
+            if getattr(self, '_is_mac', False):
+                self.showFullScreen()
+            else:
+                self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs — logic added in later stages)

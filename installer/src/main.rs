@@ -730,7 +730,7 @@ impl eframe::App for InstallerApp {
                                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                                                 ui.add_space(10.0);
                                                 ui.add(
-                                                    egui::Image::new(egui::include_image!("../../assets/icons/icon_monochrome.png"))
+                                                    egui::Image::new(egui::include_image!("../../assets/icons/icon_monochrome_nobg.png"))
                                                         .max_height(16.0)
                                                 );
                                                 ui.add_space(8.0);

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon
 
 import config
-from gui.widgets.buttons import ToggleSwitch
+from gui.widgets.buttons import ToggleSwitch, StarFavoriteButton
 from .script_panel import wrap_activity_panel
 
 
@@ -31,13 +31,7 @@ def build_assembly_panel(win) -> QFrame:
     l_assembly.setSpacing(config.S(15))
     
     def _pin_btn(fav_id: str):
-        btn = QPushButton("★")
-        btn.setFixedSize(config.S(20), config.S(20))
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; border: none; color: #555555; font-size: {config.FS(11)}pt; padding: 0; }} 
-            QPushButton:hover {{ color: #aaaaaa; }}
-        """)
+        btn = StarFavoriteButton(size=20)
         win._pin_buttons[fav_id] = btn
         return btn
     

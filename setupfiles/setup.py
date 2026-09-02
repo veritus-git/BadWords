@@ -1003,9 +1003,22 @@ if sys.platform.startswith('linux'):
 # 4. Launch main script
 if os.path.exists(MAIN_SCRIPT):
     try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
+        if sys.platform == 'darwin':
+            # On macOS: Launch via BadWords.app proxy to ensure Stage Manager
+            # and Menu Bar show BadWords icon and name instead of Python rocket
+            import subprocess
+            _home = os.path.expanduser('~')
+            _app_bin = os.path.join(_home, 'Applications', 'BadWords.app', 'Contents', 'MacOS', 'BadWords')
+            if os.path.exists(_app_bin):
+                subprocess.Popen([_app_bin, MAIN_SCRIPT])
+            else:
+                _py = os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3')
+                if not os.path.exists(_py): _py = sys.executable
+                subprocess.Popen([_py, MAIN_SCRIPT])
+        else:
+            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+            gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
+            exec(code, gv)
     except Exception as e:
         print(f'Error: {{e}}'); traceback.print_exc()
 else:
@@ -1117,6 +1130,96 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
                     pass
 
         subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
+
+    elif sys.platform == "darwin":
+        home = os.path.expanduser("~")
+        app_dir = os.path.join(home, "Applications", "BadWords.app")
+        contents = os.path.join(app_dir, "Contents")
+        macos = os.path.join(contents, "MacOS")
+        resources = os.path.join(contents, "Resources")
+        os.makedirs(macos, exist_ok=True)
+        os.makedirs(resources, exist_ok=True)
+
+        icon_icns = os.path.join(install_dir, "assets", "icons", "icon_default.icns")
+        if not os.path.isfile(icon_icns):
+            icon_icns = os.path.join(install_dir, "icons", "icon_default.icns")
+        if os.path.isfile(icon_icns):
+            import shutil
+            try: shutil.copy2(icon_icns, os.path.join(resources, "icon.icns"))
+            except Exception: pass
+
+        plist_content = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>BadWords</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.veritus.badwords</string>
+    <key>CFBundleName</key>
+    <string>BadWords</string>
+    <key>CFBundleDisplayName</key>
+    <string>BadWords</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>4.0.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>"""
+        try:
+            with open(os.path.join(contents, "Info.plist"), "w", encoding="utf-8") as f:
+                f.write(plist_content)
+        except Exception: pass
+
+        launcher_path = os.path.join(macos, "BadWords")
+        launcher_script = f"""#!/bin/bash
+DIR="{install_dir}"
+if [ -f "$DIR/src/main.py" ]; then
+    MAIN_PY="$DIR/src/main.py"
+    CWD="$DIR/src"
+else
+    MAIN_PY="$DIR/main.py"
+    CWD="$DIR"
+fi
+
+if [ -x "$DIR/venv/bin/python3" ]; then
+    PY="$DIR/venv/bin/python3"
+elif [ -x "$DIR/venv/bin/python" ]; then
+    PY="$DIR/venv/bin/python"
+else
+    PY="python3"
+fi
+
+cd "$CWD"
+exec "$PY" "$MAIN_PY" "$@"
+"""
+        try:
+            with open(launcher_path, "w", encoding="utf-8") as f:
+                f.write(launcher_script)
+            os.chmod(launcher_path, 0o755)
+        except Exception: pass
+
+        if create_desktop:
+            dt_dir = os.path.join(home, "Desktop")
+            if os.path.isdir(dt_dir):
+                dt_link = os.path.join(dt_dir, "BadWords.app")
+                try:
+                    if os.path.islink(dt_link): os.unlink(dt_link)
+                    elif os.path.exists(dt_link):
+                        import shutil; shutil.rmtree(dt_link)
+                    os.symlink(app_dir, dt_link)
+                except Exception: pass
+
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_dir], capture_output=True)
+        subprocess.run(["touch", app_dir], capture_output=True)
 
 def _remove_os_shortcuts(install_dir=None):
     if os.name == "nt":

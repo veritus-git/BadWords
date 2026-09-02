@@ -278,8 +278,135 @@ class MarqueeRadioButton(_QRadioButton):
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
         painter.setFont(self.font())
-        draw_rect = QRect(tr.left() - int(self._mq_pos), tr.top(), 9999, tr.height())
-        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, self._mq_original_text or "")
+class ReloadButton(QPushButton):
+    """Button displaying reload.svg with hover effect (reload-hover.svg), perfectly centered."""
+    def __init__(self, size: int = 24, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self._btn_size = config.S(size)
+        self._icon_size = max(config.S(11), int(self._btn_size * 0.52))
+        self.setFixedSize(self._btn_size, self._btn_size)
+        
+        from ..utils import get_layout_icon_path
+        self._icon_normal = QIcon(get_layout_icon_path("reload.svg"))
+        self._icon_hover = QIcon(get_layout_icon_path("reload-hover.svg"))
+        
+        self.setIcon(self._icon_normal)
+        self.setIconSize(QSize(self._icon_size, self._icon_size))
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: 1px solid #444444;
+                border-radius: {config.S(3)}px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: #2a2d2e;
+                border-color: #666666;
+            }}
+            QPushButton:pressed {{
+                background-color: #1a1a1a;
+                border-color: #333333;
+            }}
+        """)
+
+    def enterEvent(self, event):
+        self.setIcon(self._icon_hover)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setIcon(self._icon_normal)
+        super().leaveEvent(event)
+
+
+class StarFavoriteButton(QPushButton):
+    """Button displaying star icons (star-empty, star-checked, star-hover) scaled down ~50%."""
+    def __init__(self, size: int = 22, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self._btn_size = config.S(size)
+        self._icon_size = max(config.S(11), int(self._btn_size * 0.52))
+        self.setFixedSize(self._btn_size, self._btn_size)
+        
+        from ..utils import get_layout_icon_path
+        self._icon_empty = QIcon(get_layout_icon_path("star-empty.svg"))
+        self._icon_hover = QIcon(get_layout_icon_path("star-hover.svg"))
+        self._icon_checked = QIcon(get_layout_icon_path("star-checked.svg"))
+        
+        self.setIconSize(QSize(self._icon_size, self._icon_size))
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: 1px solid #444444;
+                border-radius: {config.S(3)}px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: #2a2d2e;
+                border-color: #666666;
+            }}
+            QPushButton:pressed {{
+                background-color: #1a1a1a;
+            }}
+        """)
+        self.toggled.connect(self._update_icon)
+        self._update_icon()
+
+    def _update_icon(self):
+        if self.isChecked():
+            self.setIcon(self._icon_checked)
+        else:
+            self.setIcon(self._icon_empty)
+
+    def enterEvent(self, event):
+        if not self.isChecked():
+            self.setIcon(self._icon_hover)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._update_icon()
+        super().leaveEvent(event)
+
+
+class CloseIconButton(QPushButton):
+    """Button displaying x.svg with hover effect (x-hover.svg) scaled down ~50%."""
+    def __init__(self, size: int = 20, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self._btn_size = config.S(size)
+        self._icon_size = max(config.S(9), int(self._btn_size * 0.48))
+        self.setFixedSize(self._btn_size, self._btn_size)
+        
+        from ..utils import get_layout_icon_path
+        self._icon_normal = QIcon(get_layout_icon_path("x.svg"))
+        self._icon_hover = QIcon(get_layout_icon_path("x-hover.svg"))
+        
+        self.setIcon(self._icon_normal)
+        self.setIconSize(QSize(self._icon_size, self._icon_size))
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                border-radius: {config.S(3)}px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: #2a2d2e;
+            }}
+            QPushButton:pressed {{
+                background-color: #1a1a1a;
+            }}
+        """)
+
+    def enterEvent(self, event):
+        self.setIcon(self._icon_hover)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setIcon(self._icon_normal)
+        super().leaveEvent(event)
+
 
 class ToggleSwitch(QWidget):
     """
@@ -852,10 +979,12 @@ class CustomDropdown(QPushButton):
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: left;
-                padding: 4px 8px;
+                padding: {config.S(4)}px {config.S(8)}px;
                 border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                min-height: 20px;
+                border-radius: {config.S(3)}px;
+                min-height: {config.S(20)}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -865,69 +994,81 @@ class CustomDropdown(QPushButton):
         
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
-        popup.setStyleSheet("""
-            QFrame {
+        popup.setStyleSheet(f"""
+            QFrame {{
                 background-color: #1e1e1e;
                 border: 1px solid #444;
-                border-radius: 3px;
+                border-radius: {config.S(3)}px;
                 padding: 0px;
                 margin: 0px;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(popup)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        list_widget = QListWidget()
-        list_widget.setFrameShape(QFrame.Shape.NoFrame)
-        list_widget.addItems(self.options_list)
-        list_widget.setStyleSheet("""
-            QListWidget { border: none; padding: 0px; margin: 0px; outline: none; background: transparent; color: #d4d4d4; }
-            QListWidget::item { padding: 0px 5px; min-height: 26px; border: none; }
-            QListWidget::item:selected { background-color: #333333; color: #ffffff; }
-            QListWidget::item:focus { border: none; outline: none; }
-            QListWidget::item:hover { background-color: #333333; color: #ffffff; }
-        """)
-        list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
-        
+        btn_h = max(config.INPUT_HEIGHT, self.height())
+        btn_w = self.width()
+
         fake_header = QPushButton(self.text())
+        fake_header.setFixedHeight(btn_h)
         fake_header.setCursor(Qt.PointingHandCursor)
         fake_header.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: left;
-                padding: 4px 8px;
+                padding: {config.S(4)}px {config.S(8)}px;
                 border: none;
                 border-bottom: 1px solid #3a3a3a;
                 border-radius: 0px;
-                min-height: 20px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; background-color: #2a2d2e; }}
         """)
         fake_header.clicked.connect(popup.close)
         layout.addWidget(fake_header)
-        
+
+        list_widget = QListWidget()
+        list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        list_widget.addItems(self.options_list)
+        list_widget.setStyleSheet(f"""
+            QListWidget {{
+                border: none;
+                padding: 0px;
+                margin: 0px;
+                outline: none;
+                background: transparent;
+                color: #d4d4d4;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QListWidget::item {{
+                padding: 0px {config.S(8)}px;
+                min-height: {config.S(26)}px;
+                height: {config.S(26)}px;
+                border: none;
+            }}
+            QListWidget::item:selected {{ background-color: #333333; color: #ffffff; }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
+            QListWidget::item:hover {{ background-color: #333333; color: #ffffff; }}
+        """)
+        list_widget.itemClicked.connect(lambda item: self._on_item_clicked(item, popup))
         layout.addWidget(list_widget)
         
-        def _update_height():
-            row_h = 26
-            display_count = min(self.max_visible_items, list_widget.count())
-            list_height = display_count * row_h
-            list_widget.setFixedHeight(list_height)
-            
-            header_height = fake_header.sizeHint().height()
-            popup.setFixedHeight(list_height + header_height)
-            
-        _update_height()
+        row_h = config.S(26)
+        display_count = min(self.max_visible_items, list_widget.count())
+        list_height = display_count * row_h
+        list_widget.setFixedHeight(list_height)
         
+        popup.setFixedHeight(list_height + btn_h + 2)
+        popup.setFixedWidth(btn_w)
+
         global_pos = self.mapToGlobal(QPoint(0, 0))
         popup.move(global_pos)
-        popup.setFixedWidth(self.width())
         popup.show()
-        
-        popup._update_height = _update_height
 
     def setValue(self, text):
         self.setText(text)
@@ -959,7 +1100,9 @@ class TitleDropdown(CustomDropdown):
 
     def setText(self, text):
         # Always append the down arrow for the title drop down
-        clean_text = text.replace("  ▾", "")
+        if text is None:
+            text = ""
+        clean_text = str(text).replace("  ▾", "")
         super().setText(f"{clean_text}  ▾")
         if getattr(self.window(), '_update_mac_chapter_menu', None):
             self.window()._update_mac_chapter_menu()

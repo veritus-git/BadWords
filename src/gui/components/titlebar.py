@@ -19,7 +19,7 @@ from PySide6.QtCore import Qt, QSize, QVariantAnimation, QEasingCurve, Signal, Q
 from PySide6.QtGui import QIcon, QPixmap, QColor
 import config
 from ..widgets.buttons import TitleDropdown
-from ..utils import _app_icon
+from ..utils import _app_icon, _titlebar_icon
 
 class AnimatedTitleButton(QPushButton):
     """
@@ -149,14 +149,12 @@ class CustomTitleBar(QWidget):
         lay.setContentsMargins(config.S(12), 0, 0, 0)
         lay.setSpacing(0)
 
-        # Small app-icon
-        icon_lbl = QLabel()
-        icon_pix = _app_icon().pixmap(QSize(config.S(14), config.S(14)))
-        if not icon_pix.isNull():
-            icon_lbl.setPixmap(icon_pix)
-        icon_lbl.setFixedSize(config.S(18), config.S(32))
-        icon_lbl.setStyleSheet("background: transparent;")
-        lay.addWidget(icon_lbl)
+        # Small app-icon (no background version)
+        self._icon_lbl = QLabel()
+        self._icon_lbl.setFixedSize(config.S(18), config.S(32))
+        self._icon_lbl.setStyleSheet("background: transparent;")
+        self.update_titlebar_icon()
+        lay.addWidget(self._icon_lbl)
         lay.addSpacing(config.S(6))
 
         # ── DEFAULT title label (shown before transcription) ──
@@ -250,6 +248,12 @@ class CustomTitleBar(QWidget):
 
         for btn in (self.btn_min, self.btn_max, self.btn_close):
             lay.addWidget(btn)
+
+    def update_titlebar_icon(self, icon_name: str = None):
+        if hasattr(self, '_icon_lbl'):
+            pix = _titlebar_icon(icon_name).pixmap(QSize(config.S(14), config.S(14)))
+            if not pix.isNull():
+                self._icon_lbl.setPixmap(pix)
 
     # ── Titlebar menu dropdowns ───────────────────────────────────────────────
     def _show_titlebar_popup(self, anchor_btn, items):
