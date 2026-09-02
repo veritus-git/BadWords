@@ -13,6 +13,11 @@ src/temp/
 src/models/
 .fuse_hidden*
 
+# binary executables
+badwords-setup-windows.exe
+badwords-setup-linux
+badwords-setup-macos
+
 # Rust build artifacts
 target/
 **/target/

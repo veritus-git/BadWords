@@ -157,6 +157,11 @@ exec "$PY" "$MAIN_PY" "$@"
                 let _ = std::os::unix::fs::symlink(&app_dir, &dt_link);
             }
 
+            // Ad-hoc code sign bundle for Apple Silicon and macOS Gatekeeper
+            let _ = std::process::Command::new("codesign")
+                .args(["--force", "--deep", "--sign", "-", app_dir.to_string_lossy().as_ref()])
+                .status();
+
             // Touch bundle so LaunchServices immediately updates icon cache
             let _ = std::process::Command::new("touch")
                 .arg(app_dir.to_string_lossy().as_ref())

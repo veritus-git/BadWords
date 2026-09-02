@@ -39,7 +39,8 @@ from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAME
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import (
     QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton,
-    MouseShortcutCaptureButton, CustomDropdown, SearchableDropdown
+    MouseShortcutCaptureButton, CustomDropdown, SearchableDropdown,
+    ReloadButton, CloseIconButton
 )
 from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
@@ -189,10 +190,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 background-color: transparent;
                 color: #888;
                 border: 1px solid #444;
-                border-radius: {config.S(4)}px;
-                font-family: {config.UI_FONT_NAME};
-                font-size: {config.FS(11)}pt;
-                padding: 0px;
+                border-radius: {config.S(3)}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+                padding: {config.S(4)}px {config.S(12)}px;
                 text-align: center;
             }}
             QPushButton#btn_ghost_sm:hover {{ background-color: #2a2d2e; color: #fff; border-color: #666; }}
@@ -418,7 +419,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
                 self.stack.addWidget(scroll)
 
+            self._built_pages = set()
+
+            def _ensure_page_built(idx):
+                if idx not in self._built_pages and 0 <= idx < self.category_list.count():
+                    self._build_page(idx)
+                    self._built_pages.add(idx)
+                    if hasattr(self, '_advanced_widgets'):
+                        for w in self._advanced_widgets:
+                            if w:
+                                w.setVisible(not self._is_basic_mode)
+
+            self._ensure_page_built = _ensure_page_built
+
             def _on_tab_changed(idx):
+                _ensure_page_built(idx)
                 self.stack.setCurrentIndex(idx)
                 item = self.category_list.item(idx)
                 if item and item.text() == self.txt("tab_support"):
@@ -428,15 +443,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     
             self.category_list.currentRowChanged.connect(_on_tab_changed)
 
-            # Pre-build all pages cleanly with disabled updates
-            for i in range(self.category_list.count()):
-                self._build_page(i)
-
-            if hasattr(self, '_advanced_widgets'):
-                for w in self._advanced_widgets:
-                    if w:
-                        w.setVisible(not self._is_basic_mode)
-
+            # Lazy loading: build initially only page 0 (General)
+            _ensure_page_built(0)
             self.category_list.setCurrentRow(0)
         finally:
             self.setUpdatesEnabled(True)
@@ -449,10 +457,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         row.setAlignment(Qt.AlignVCenter)
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
-        btn_rev = QPushButton("↺")
-        btn_rev.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-        btn_rev.setCursor(Qt.PointingHandCursor)
-        btn_rev.setObjectName("btn_ghost_sm")
+        btn_rev = ReloadButton(size=24)
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
         def create_reset_handler(s_func, d_val):
             return lambda checked=False: s_func(d_val)
@@ -874,14 +879,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         btn_import_s = QPushButton(self.txt("btn_import_settings"))
         btn_import_s.setObjectName("btn_ghost_sm")
-        btn_import_s.setStyleSheet("padding: 4px 12px;")
+        btn_import_s.setFixedHeight(config.S(28))
         btn_import_s.setCursor(Qt.PointingHandCursor)
         btn_import_s.clicked.connect(self._on_import_settings)
         io_row.addWidget(btn_import_s)
 
         btn_export_s = QPushButton(self.txt("btn_export_settings"))
         btn_export_s.setObjectName("btn_ghost_sm")
-        btn_export_s.setStyleSheet("padding: 4px 12px;")
+        btn_export_s.setFixedHeight(config.S(28))
         btn_export_s.setCursor(Qt.PointingHandCursor)
         btn_export_s.clicked.connect(self._on_export_settings)
         io_row.addWidget(btn_export_s)
@@ -933,7 +938,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
 
         # Builds label + field container for one shortcut row (used for addRow and insertRow)
-        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None):
+        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None, is_mandatory=False):
             container = QWidget()
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
@@ -944,18 +949,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(widget)
 
             if not is_display:
-                btn_clear = QPushButton("✕")
-                btn_clear.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-                btn_clear.setCursor(Qt.PointingHandCursor)
-                btn_clear.setObjectName("btn_ghost_sm")
+                btn_clear = CloseIconButton(size=24)
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
                 btn_clear.clicked.connect(lambda: setter_func(""))
                 row.addWidget(btn_clear)
 
-            btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-            btn_rev.setCursor(Qt.PointingHandCursor)
-            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev = ReloadButton(size=24)
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
@@ -1128,16 +1127,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         btn_export_m = QPushButton(self.txt("btn_export_markers"))
         btn_export_m.setObjectName("btn_ghost_sm")
-        btn_export_m.setStyleSheet(f"padding: 0 {config.S(14)}px;")
-        btn_export_m.setFixedHeight(config.S(30))
+        btn_export_m.setFixedHeight(config.S(28))
         btn_export_m.setCursor(Qt.PointingHandCursor)
         btn_export_m.clicked.connect(self._on_export_markers)
         marker_btn_row.addWidget(btn_export_m)
 
         btn_import_m = QPushButton(self.txt("btn_import_markers"))
         btn_import_m.setObjectName("btn_ghost_sm")
-        btn_import_m.setStyleSheet(f"padding: 0 {config.S(14)}px;")
-        btn_import_m.setFixedHeight(config.S(30))
+        btn_import_m.setFixedHeight(config.S(28))
         btn_import_m.setCursor(Qt.PointingHandCursor)
         btn_import_m.clicked.connect(self._on_import_markers)
         marker_btn_row.addWidget(btn_import_m)
@@ -1212,10 +1209,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row.addWidget(widget)
             
-            btn_rev = QPushButton("↺")
-            btn_rev.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-            btn_rev.setCursor(Qt.PointingHandCursor)
-            btn_rev.setObjectName("btn_ghost_sm")
+            btn_rev = ReloadButton(size=24)
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
@@ -1717,7 +1711,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         btn_logs = QPushButton(self.txt("btn_open_logs_dir"))
         btn_logs.setObjectName("btn_ghost_sm")
-        btn_logs.setStyleSheet("padding: 4px 12px;")
+        btn_logs.setFixedHeight(config.S(28))
         btn_logs.setCursor(Qt.PointingHandCursor)
         def _open_logs():
             import os
@@ -1790,12 +1784,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     lbl_name = QLabel(p)
                     lbl_name.setStyleSheet("color: #aaa; border: none; font-size: 9pt;")
                     
-                    btn_del = QPushButton("✕")
-                    btn_del.setObjectName("btn_ghost_sm")
-                    btn_del.setStyleSheet(f"color: #e74c3c; border: none; font-weight: bold; font-size: {config.FS(11)}pt; padding: {config.S(2)}px;")
-                    btn_del.setCursor(Qt.PointingHandCursor)
-                    btn_del.setFixedSize(config.S(24), config.S(24))
-                    
+                    btn_del = CloseIconButton(size=20)
                     def _del(checked=False, path=p):
                         if path in self.support_attachments:
                             self.support_attachments.remove(path)
@@ -2086,13 +2075,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 dot.setStyleSheet(f"color: #666666; font-size: {config.FS(14)}pt; background: transparent;")
             row_layout.addWidget(btn_edit)
 
-            # Delete button
             def make_del(i):
                 return lambda checked=False: self._on_remove_marker_inline(i)
-            btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_del")
-            btn_del.setCursor(Qt.PointingHandCursor)
-            btn_del.setFixedWidth(config.S(28))
+            btn_del = CloseIconButton(size=24)
             btn_del.clicked.connect(make_del(idx))
             row_layout.addWidget(btn_del)
 
@@ -2617,6 +2602,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         QTimer.singleShot(1500, restore_btn)
 
         main_win = self.parent()
+        icon_changed = new_prefs.get('app_icon') != old_prefs.get('app_icon')
+        if icon_changed and main_win:
+            new_icon_name = new_prefs.get('app_icon', 'default')
+            if hasattr(main_win, 'titlebar') and hasattr(main_win.titlebar, 'update_titlebar_icon'):
+                main_win.titlebar.update_titlebar_icon(new_icon_name)
+            from gui.utils import update_macos_bundle_icon
+            update_macos_bundle_icon(new_icon_name)
+
         if hasattr(main_win, 'text_canvas'):
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()

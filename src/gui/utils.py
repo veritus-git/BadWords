@@ -137,6 +137,33 @@ def _app_icon() -> QIcon:
     return QIcon()
 
 
+def _titlebar_icon(icon_name: str = None) -> QIcon:
+    """Returns the no-background icon for titlebars, falling back to app_icon if missing."""
+    try:
+        if not icon_name:
+            import json
+            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            icon_name = "default"
+            settings_file = os.path.join(install_dir, "settings.json")
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    icon_name = data.get('app_icon', 'default')
+
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        candidates = [
+            os.path.join(install_dir, "icons", f"icon_{icon_name}_nobg.png"),
+            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}_nobg.png"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}_nobg.png"),
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                return QIcon(p)
+    except Exception:
+        pass
+    return _app_icon()
+
+
 def apply_dark_title_bar(window: QWidget):
     """Forces the native Windows title bar to dark mode."""
     if platform.system() == "Windows":
@@ -169,8 +196,46 @@ def _txt(lang: str, key: str, **kwargs) -> str:
 def _qwidget_txt(self, key: str, **kwargs) -> str:
     w = self.window()
     if hasattr(w, 'txt') and w != self:
-        return w.txt(key, **kwargs)
+        try:
+            res = w.txt(key, **kwargs)
+            if res is not None:
+                return res
+        except Exception:
+            pass
     return _txt("en", key, **kwargs)
 
 QWidget.txt = _qwidget_txt
+
+
+def update_macos_bundle_icon(icon_name: str):
+    """Updates the icon.icns inside ~/Applications/BadWords.app and re-signs ad-hoc."""
+    if platform.system() != "Darwin":
+        return
+    try:
+        import shutil, subprocess
+        home = os.path.expanduser("~")
+        app_bundle = os.path.join(home, "Applications", "BadWords.app")
+        if not os.path.isdir(app_bundle):
+            return
+
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        icns_candidates = [
+            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
+            os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+        ]
+        target_icns = None
+        for c in icns_candidates:
+            if os.path.isfile(c):
+                target_icns = c
+                break
+
+        if target_icns:
+            dest_icns = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
+            shutil.copy2(target_icns, dest_icns)
+            subprocess.run(["touch", app_bundle], capture_output=True)
+            subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
+    except Exception:
+        pass
+
 

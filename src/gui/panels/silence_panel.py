@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame
 )
 import config
-from gui.widgets.buttons import ToggleSwitch
+from gui.widgets.buttons import ToggleSwitch, ReloadButton
 from .script_panel import wrap_activity_panel
 
 
@@ -54,10 +54,7 @@ def build_silence_panel(win) -> QFrame:
     win.spin_thresh.setFixedWidth(config.S(68))
     win.spin_thresh.setFixedHeight(config.INPUT_HEIGHT)
     win.spin_thresh.setStyleSheet(_sil_input_style)
-    _rst_thresh = QPushButton("↺")
-    _rst_thresh.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-    _rst_thresh.setCursor(Qt.PointingHandCursor)
-    _rst_thresh.setStyleSheet(_sil_rst_style)
+    _rst_thresh = ReloadButton(size=30)
     _rst_thresh.clicked.connect(lambda: (
         win.spin_thresh.setText("-42.0"),
         win._save_single_pref('silence_threshold_db', -42.0)
@@ -68,10 +65,7 @@ def build_silence_panel(win) -> QFrame:
     win.spin_pad.setFixedWidth(config.S(68))
     win.spin_pad.setFixedHeight(config.INPUT_HEIGHT)
     win.spin_pad.setStyleSheet(_sil_input_style)
-    _rst_pad = QPushButton("↺")
-    _rst_pad.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-    _rst_pad.setCursor(Qt.PointingHandCursor)
-    _rst_pad.setStyleSheet(_sil_rst_style)
+    _rst_pad = ReloadButton(size=30)
     _rst_pad.clicked.connect(lambda: (
         win.spin_pad.setText("0.05"),
         win._save_single_pref('ui_spin_pad', 0.05)
@@ -86,10 +80,7 @@ def build_silence_panel(win) -> QFrame:
         "Minimum duration (in seconds) for a gap to be classified as silence. "
         "Lower = more sensitive. Applies to both standalone and post-transcript modes."
     )
-    _rst_min = QPushButton("↺")
-    _rst_min.setFixedSize(config.INPUT_HEIGHT, config.INPUT_HEIGHT)
-    _rst_min.setCursor(Qt.PointingHandCursor)
-    _rst_min.setStyleSheet(_sil_rst_style)
+    _rst_min = ReloadButton(size=30)
     _rst_min.clicked.connect(lambda: (
         win.spin_silence_min_dur.setText("0.2"),
         win._save_single_pref('silence_min_dur', 0.2)
