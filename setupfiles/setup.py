@@ -1589,98 +1589,135 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         if is_update and os.path.isfile(ffmpeg_bin):
             log_ok("Portable FFmpeg already present. Skipping download.")
         else:
-            log_step("Downloading portable FFmpeg...")
-            if os.name == "nt":
-                # Windows: use Gyan.dev essentials build (ZIP, native .exe)
-                ffmpeg_url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
-                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_win.zip")
-                sp_ff = Spinner("Downloading FFmpeg (Windows native)").start()
-                dl_ok = download(ffmpeg_url, ffmpeg_arc)
-                sp_ff.done(ok=dl_ok)
-                if dl_ok:
-                    import zipfile
-                    sp_ex2 = Spinner("Extracting FFmpeg").start()
-                    try:
-                        with zipfile.ZipFile(ffmpeg_arc) as zf:
-                            for member in zf.namelist():
-                                fname = os.path.basename(member)
-                                if fname in ("ffmpeg.exe", "ffprobe.exe"):
-                                    data = zf.read(member)
-                                    dest = os.path.join(bin_dir, fname)
-                                    with open(dest, "wb") as out:
-                                        out.write(data)
-                        sp_ex2.done(ok=True)
-                    except Exception as e:
-                        sp_ex2.done(ok=False)
-                        log_warn(f"FFmpeg extraction failed: {e}")
-                    finally:
-                        try: os.remove(ffmpeg_arc)
-                        except Exception: pass
-                else:
-                    log_warn("FFmpeg download failed. App may not work without it.")
-            elif "mac" in PLAT or "darwin" in PLAT:
-                # macOS: use Homebrew and symlink (Legacy behavior)
-                sp_ff = Spinner("Installing FFmpeg via Homebrew").start()
-                if not shutil.which("brew"):
-                    sp_ff.done(ok=False)
-                    log_err("Homebrew is required for macOS installation. Please install brew first.")
-                    raise UserCancelled()
-                
-                # Install ffmpeg using brew (blocks until done)
-                r = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True)
-                sp_ff.done(ok=(r.returncode == 0))
-                
-                if r.returncode == 0 or b"already installed" in r.stdout or b"already installed" in r.stderr:
-                    try:
-                        brew_prefix = subprocess.run(["brew", "--prefix", "ffmpeg"], capture_output=True, text=True).stdout.strip()
-                        brew_ffmpeg = os.path.join(brew_prefix, "bin", "ffmpeg")
-                        brew_ffprobe = os.path.join(brew_prefix, "bin", "ffprobe")
-                        
-                        if os.path.isfile(brew_ffmpeg):
-                            sym_ffmpeg = os.path.join(bin_dir, "ffmpeg")
-                            if os.path.lexists(sym_ffmpeg): os.remove(sym_ffmpeg)
-                            os.symlink(brew_ffmpeg, sym_ffmpeg)
-                            
-                        if os.path.isfile(brew_ffprobe):
-                            sym_ffprobe = os.path.join(bin_dir, "ffprobe")
-                            if os.path.lexists(sym_ffprobe): os.remove(sym_ffprobe)
-                            os.symlink(brew_ffprobe, sym_ffprobe)
-                            
-                        log_ok(f"Symlinked Homebrew FFmpeg into bin/ directory.")
-                    except Exception as e:
-                        log_err(f"Symlink failed: {e}")
-                else:
-                    log_warn("Homebrew FFmpeg installation failed.")
-            else:
-                # Linux: use johnvansickle static build
-                ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
-                sp_ff = Spinner("Downloading FFmpeg (Linux static)").start()
-                dl_ok = download(ffmpeg_url, ffmpeg_arc)
-                sp_ff.done(ok=dl_ok)
-                if dl_ok:
-                    sp_ex2 = Spinner("Extracting FFmpeg").start()
-                    try:
-                        subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
-                        for name in ["ffmpeg", "ffprobe"]:
-                            for root, _, files in os.walk(install_dir):
-                                if name in files and "ffmpeg-" in root:
-                                    dest = os.path.join(bin_dir, name)
-                                    shutil.move(os.path.join(root, name), dest)
-                                    os.chmod(dest, 0o755)
+            # First, check if system FFmpeg is present and copy it if available
+            sys_ffmpeg = shutil.which("ffmpeg")
+            copied_sys = False
+            if sys_ffmpeg and os.path.isfile(sys_ffmpeg):
+                try:
+                    shutil.copy2(sys_ffmpeg, ffmpeg_bin)
+                    if os.name != "nt":
+                        os.chmod(ffmpeg_bin, 0o755)
+                    sys_ffprobe = shutil.which("ffprobe")
+                    if sys_ffprobe and os.path.isfile(sys_ffprobe):
+                        shutil.copy2(sys_ffprobe, os.path.join(bin_dir, "ffprobe.exe" if os.name == "nt" else "ffprobe"))
+                    log_ok(f"Copied system FFmpeg ({sys_ffmpeg}) into bin/ directory.")
+                    copied_sys = True
+                except Exception as e:
+                    log_warn(f"Could not copy system FFmpeg: {e}")
+
+            if not copied_sys and not os.path.isfile(ffmpeg_bin):
+                log_step("Downloading portable FFmpeg...")
+                if os.name == "nt":
+                    # Windows: use Gyan.dev essentials build, fallback to BtbN
+                    win_urls = [
+                        "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+                        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+                    ]
+                    ffmpeg_arc = os.path.join(install_dir, "ffmpeg_win.zip")
+                    dl_ok = False
+                    for w_url in win_urls:
+                        sp_ff = Spinner("Downloading FFmpeg (Windows native)").start()
+                        dl_ok = download(w_url, ffmpeg_arc)
+                        sp_ff.done(ok=dl_ok)
+                        if dl_ok:
+                            break
+                    if dl_ok:
+                        import zipfile
+                        sp_ex2 = Spinner("Extracting FFmpeg").start()
+                        try:
+                            with zipfile.ZipFile(ffmpeg_arc) as zf:
+                                for member in zf.namelist():
+                                    fname = os.path.basename(member)
+                                    if fname in ("ffmpeg.exe", "ffprobe.exe"):
+                                        data = zf.read(member)
+                                        dest = os.path.join(bin_dir, fname)
+                                        with open(dest, "wb") as out:
+                                            out.write(data)
+                            sp_ex2.done(ok=True)
+                        except Exception as e:
+                            sp_ex2.done(ok=False)
+                            log_warn(f"FFmpeg extraction failed: {e}")
+                        finally:
+                            try: os.remove(ffmpeg_arc)
+                            except Exception: pass
+                    else:
+                        log_warn("FFmpeg download failed. App may not work without it.")
+                elif "mac" in PLAT or "darwin" in PLAT:
+                    brew_paths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
+                    found_brew = False
+                    for bp in brew_paths:
+                        if os.path.isfile(bp):
+                            try:
+                                shutil.copy2(bp, ffmpeg_bin)
+                                os.chmod(ffmpeg_bin, 0o755)
+                                log_ok(f"Copied Homebrew FFmpeg ({bp}) into bin/ directory.")
+                                found_brew = True
+                                break
+                            except Exception:
+                                pass
+                    if not found_brew:
+                        sp_ff = Spinner("Installing FFmpeg via Homebrew").start()
+                        if shutil.which("brew"):
+                            r = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True)
+                            sp_ff.done(ok=(r.returncode == 0))
+                            for bp in brew_paths:
+                                if os.path.isfile(bp):
+                                    shutil.copy2(bp, ffmpeg_bin)
+                                    os.chmod(ffmpeg_bin, 0o755)
+                                    log_ok("Copied Homebrew FFmpeg into bin/ directory.")
                                     break
-                        for item in os.listdir(install_dir):
-                            if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
-                                shutil.rmtree(os.path.join(install_dir, item))
-                        sp_ex2.done(ok=True)
-                    except Exception as e:
-                        sp_ex2.done(ok=False)
-                        log_warn(f"FFmpeg install error: {e}")
-                    finally:
-                        try: os.remove(ffmpeg_arc)
-                        except Exception: pass
+                        else:
+                            sp_ff.done(ok=False)
+                            log_warn("Homebrew not found. System FFmpeg will be used if present.")
                 else:
-                    log_warn("FFmpeg download failed. App may not work without it.")
+                    # Linux: try BtbN GitHub release first, fallback to johnvansickle
+                    linux_urls = [
+                        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+                        "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+                    ]
+                    ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
+                    dl_ok = False
+                    for f_url in linux_urls:
+                        sp_ff = Spinner("Downloading FFmpeg (Linux static)").start()
+                        dl_ok = download(f_url, ffmpeg_arc)
+                        sp_ff.done(ok=dl_ok)
+                        if dl_ok:
+                            break
+                    if dl_ok:
+                        sp_ex2 = Spinner("Extracting FFmpeg").start()
+                        try:
+                            subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
+                            for name in ["ffmpeg", "ffprobe"]:
+                                for root, _, files in os.walk(install_dir):
+                                    if name in files and "ffmpeg-" in root:
+                                        dest = os.path.join(bin_dir, name)
+                                        shutil.move(os.path.join(root, name), dest)
+                                        os.chmod(dest, 0o755)
+                                        break
+                            for item in os.listdir(install_dir):
+                                if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
+                                    shutil.rmtree(os.path.join(install_dir, item))
+                            sp_ex2.done(ok=True)
+                        except Exception as e:
+                            sp_ex2.done(ok=False)
+                            log_warn(f"FFmpeg install error: {e}")
+                        finally:
+                            try: os.remove(ffmpeg_arc)
+                            except Exception: pass
+                    else:
+                        log_warn("FFmpeg download failed. App may not work without it.")
+
+            # Final check: if still missing, attempt system copy again
+            if not os.path.isfile(ffmpeg_bin):
+                fallback_sys = shutil.which("ffmpeg")
+                if fallback_sys and os.path.isfile(fallback_sys):
+                    try:
+                        shutil.copy2(fallback_sys, ffmpeg_bin)
+                        if os.name != "nt":
+                            os.chmod(ffmpeg_bin, 0o755)
+                        log_ok(f"Restored FFmpeg binary from system: {fallback_sys}")
+                    except Exception:
+                        pass
 
         # ── System Python Check ───────────────────────────────
         if os.name == "nt":

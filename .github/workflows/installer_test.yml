@@ -56,6 +56,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg xz-utils libxkbcommon-dev libx11-dev libasound2-dev libudev-dev libfontconfig1-dev libdbus-1-dev desktop-file-utils
 
+      - name: Install System Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg || true
+
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -208,6 +213,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg xz-utils desktop-file-utils
+
+      - name: Install System Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg || true
 
       - name: Install Rich for Setup Runner
         run: pip install rich
