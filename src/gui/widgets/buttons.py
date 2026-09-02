@@ -322,12 +322,12 @@ class ReloadButton(QPushButton):
 
 class StarFavoriteButton(QPushButton):
     """Button displaying star icons (star-empty, star-checked, star-hover) with NO border box."""
-    def __init__(self, size: int = 16, parent=None):
+    def __init__(self, size: int = 18, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self._btn_size = config.S(size)
-        self._icon_size = max(config.S(9), int(self._btn_size * 0.60))
+        self._icon_size = max(config.S(10), int(self._btn_size * 0.65))
         self.setFixedSize(self._btn_size, self._btn_size)
         
         from ..utils import get_layout_icon_path
@@ -409,6 +409,146 @@ class CloseIconButton(QPushButton):
     def leaveEvent(self, event):
         self.setIcon(self._icon_normal)
         super().leaveEvent(event)
+
+
+class SquareIconButton(QPushButton):
+    """
+    App icon button in Settings General tab.
+    Maintains a 1:1 aspect ratio on any resolution, filling available space,
+    with no green border and larger icon size.
+    """
+    def __init__(self, name: str, parent=None):
+        super().__init__(parent)
+        self.icon_name = name
+        self.setProperty("icon_name", name)
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        import os
+        from gui.utils import get_icon_path
+        icon_path = get_icon_path(name)
+        if icon_path and os.path.exists(icon_path):
+            self.setIcon(QIcon(icon_path))
+            
+        self.setStyleSheet(f"""
+            QPushButton {{ 
+                background-color: #1a1a1a; 
+                border: 1px solid #333333; 
+                border-radius: {config.S(6)}px; 
+                padding: {config.S(2)}px; 
+            }}
+            QPushButton:hover {{ 
+                background-color: #262626; 
+                border-color: #484848; 
+            }}
+            QPushButton:checked {{ 
+                background-color: #383838; 
+                border: 1px solid #555555; 
+            }}
+            QPushButton:checked:hover {{ 
+                background-color: #424242; 
+                border-color: #666666; 
+            }}
+        """)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        if w > 20:
+            if self.height() != w:
+                self.setFixedHeight(w)
+            icon_s = max(16, w - config.S(12))
+            self.setIconSize(QSize(icon_s, icon_s))
+
+
+class CustomNumberInput(QWidget):
+    """
+    Sleek, unified number input replacing standard QSpinBox.
+    - Exactly config.INPUT_HEIGHT (30px)
+    - Clean typography (Ubuntu Sans)
+    - Dark theme (#1e1e1e, border #3a3a3a, focus green border)
+    - Supports keyboard typing, mouse wheel scrolling, and Up/Down keys
+    - No ugly native stepper arrows!
+    """
+    valueChanged = Signal(int)
+
+    def __init__(self, val: int = 0, min_val: int = 0, max_val: int = 100, parent=None):
+        super().__init__(parent)
+        self._min_val = min_val
+        self._max_val = max_val
+        self._val = max(min_val, min(max_val, int(val)))
+        
+        self.setFixedHeight(config.INPUT_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        self._edit = QLineEdit(str(self._val), self)
+        self._edit.setAlignment(Qt.AlignCenter)
+        self._edit.setFixedHeight(config.INPUT_HEIGHT)
+        self._edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: {config.S(3)}px;
+                padding: 0px {config.S(8)}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QLineEdit:focus {{
+                border-color: {config.BTN_BG};
+            }}
+        """)
+        self._edit.editingFinished.connect(self._on_editing_finished)
+        layout.addWidget(self._edit)
+
+    def _on_editing_finished(self):
+        txt = self._edit.text().strip()
+        try:
+            val = int(txt)
+        except ValueError:
+            val = self._val
+        val = max(self._min_val, min(self._max_val, val))
+        self.setValue(val)
+
+    def value(self) -> int:
+        return self._val
+
+    def setValue(self, v: int):
+        v = max(self._min_val, min(self._max_val, int(v)))
+        changed = (self._val != v)
+        self._val = v
+        if self._edit.text() != str(v):
+            self._edit.setText(str(v))
+        if changed:
+            self.valueChanged.emit(v)
+
+    def setRange(self, min_v: int, max_v: int):
+        self._min_val = min_v
+        self._max_val = max_v
+        self.setValue(self._val)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.setValue(self._val + 1)
+        elif delta < 0:
+            self.setValue(self._val - 1)
+        event.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Up:
+            self.setValue(self._val + 1)
+            event.accept()
+        elif event.key() == Qt.Key_Down:
+            self.setValue(self._val - 1)
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class ToggleSwitch(QWidget):
@@ -977,6 +1117,7 @@ class CustomDropdown(QPushButton):
         self.max_visible_items = 5
         self.setText(self.txt("txt_select"))
         self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(config.INPUT_HEIGHT)
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
@@ -985,7 +1126,7 @@ class CustomDropdown(QPushButton):
                 padding: {config.S(4)}px {config.S(8)}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {config.S(3)}px;
-                min-height: {config.S(20)}px;
+                min-height: {config.INPUT_HEIGHT}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
                 font-size: {config.FS(9.5)}pt;
             }}
@@ -1066,11 +1207,12 @@ class CustomDropdown(QPushButton):
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
         
-        popup.setFixedHeight(list_height + btn_h + 2)
+        total_h = list_height + btn_h + 2
+        popup.setFixedHeight(total_h)
         popup.setFixedWidth(btn_w)
 
         global_pos = self.mapToGlobal(QPoint(0, 0))
-        popup.move(global_pos)
+        popup.setGeometry(global_pos.x(), global_pos.y(), btn_w, total_h)
         popup.show()
 
     def setValue(self, text):

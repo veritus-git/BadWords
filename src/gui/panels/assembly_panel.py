@@ -31,12 +31,12 @@ def build_assembly_panel(win) -> QFrame:
     l_assembly.setSpacing(config.S(15))
     
     def _pin_btn(fav_id: str):
-        btn = StarFavoriteButton(size=16)
+        btn = StarFavoriteButton(size=18)
         win._pin_buttons[fav_id] = btn
         return btn
     
     row_show_inaudible = QHBoxLayout()
-    row_show_inaudible.setSpacing(config.S(4))
+    row_show_inaudible.setSpacing(config.S(8))
     lbl_show_inaud = QLabel(win.txt("lbl_show_inaudible_fragments"))
     lbl_show_inaud.setWordWrap(True)
     row_show_inaudible.addWidget(lbl_show_inaud)
@@ -51,7 +51,7 @@ def build_assembly_panel(win) -> QFrame:
     pin_show_inaud.clicked.connect(lambda checked=False, p=pin_show_inaud: win._toggle_favorite('show_inaudible', win.tgl_show_inaudible, win.txt("tool_show_inaudible"), p))
     
     row_mark_inaudible = QHBoxLayout()
-    row_mark_inaudible.setSpacing(config.S(4))
+    row_mark_inaudible.setSpacing(config.S(8))
     lbl_mark_inaud = QLabel(win.txt("lbl_mark_inaudible_fragments"))
     lbl_mark_inaud.setWordWrap(True)
     row_mark_inaudible.addWidget(lbl_mark_inaud)
@@ -65,7 +65,7 @@ def build_assembly_panel(win) -> QFrame:
     pin_mark_inaud.clicked.connect(lambda checked=False, p=pin_mark_inaud: win._toggle_favorite('mark_inaudible', win.tgl_mark_inaudible, win.txt("tool_mark_inaudible"), p))
     
     row_show_typos = QHBoxLayout()
-    row_show_typos.setSpacing(config.S(4))
+    row_show_typos.setSpacing(config.S(8))
     lbl_show_typos = QLabel(win.txt("lbl_show_detected_typos"))
     lbl_show_typos.setWordWrap(True)
     row_show_typos.addWidget(lbl_show_typos)
@@ -94,7 +94,7 @@ def build_assembly_panel(win) -> QFrame:
     color_idx = 0
     for color_name, color_hex in config.RESOLVE_COLORS_HEX.items():
         row_color = QHBoxLayout()
-        row_color.setSpacing(config.S(4))
+        row_color.setSpacing(config.S(8))
         
         localized_color_name = win.txt(f"resolve_color_{color_name.lower()}")
         lbl_color = QLabel(win.txt("lbl_cut_color_fmt").format(hex=color_hex, color=localized_color_name))

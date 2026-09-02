@@ -367,9 +367,9 @@ def main():
                 sel_sharedApp = objc.sel_registerName(b'sharedApplication')
                 ns_app = objc.objc_msgSend(cls_NSApplication, sel_sharedApp)
 
-                icon_path = os.path.join(os_doc.app_dir, "assets", "icons", "icon_default.png")
+                icon_path = os.path.join(os_doc.install_dir, "assets", "icons", "icon_default.png")
                 if not os.path.exists(icon_path):
-                    icon_path = os.path.join(os_doc.app_dir, "icons", "icon_default.png")
+                    icon_path = os.path.join(os_doc.install_dir, "icons", "icon_default.png")
                 if os.path.exists(icon_path):
                     cls_NSImage = objc.objc_getClass(b'NSImage')
                     sel_alloc = objc.sel_registerName(b'alloc')
@@ -382,6 +382,20 @@ def main():
                         sel_setAppIcon = objc.sel_registerName(b'setApplicationIconImage:')
                         objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
                         objc.objc_msgSend(ns_app, sel_setAppIcon, ns_img)
+
+                # Update Cocoa Menu Bar App item title from "Python" to "BadWords"
+                sel_mainMenu = objc.sel_registerName(b'mainMenu')
+                main_menu = objc.objc_msgSend(ns_app, sel_mainMenu)
+                if main_menu:
+                    sel_itemAtIndex = objc.sel_registerName(b'itemAtIndex:')
+                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+                    objc.objc_msgSend.restype = ctypes.c_void_p
+                    app_menu_item = objc.objc_msgSend(main_menu, sel_itemAtIndex, 0)
+                    if app_menu_item:
+                        sel_setTitle = objc.sel_registerName(b'setTitle:')
+                        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+                        objc.objc_msgSend.restype = None
+                        objc.objc_msgSend(app_menu_item, sel_setTitle, ns_name)
             except Exception:
                 pass
             try:

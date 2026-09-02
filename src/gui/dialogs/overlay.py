@@ -33,17 +33,17 @@ class GlobalAppFilter(QObject):
     def eventFilter(self, obj, event):
         try:
             etype = event.type()
-            # 1. Global Focus Management: clear focus from QLineEdit on click anywhere outside
+            # 1. Global Focus Management: clear focus from input on click anywhere outside
             if etype == QEvent.Type.MouseButtonPress:
                 focused = QApplication.focusWidget()
-                if isinstance(focused, QLineEdit):
+                if focused:
                     global_pos = QCursor.pos()
                     focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
                     if not focused_global_rect.contains(global_pos):
                         focused.clearFocus()
 
-            # 2. Enter/Return removes focus from QLineEdit
-            if etype == QEvent.Type.KeyPress and isinstance(obj, QLineEdit) and obj.hasFocus():
+            # 2. Enter/Return removes focus from focused input
+            if etype == QEvent.Type.KeyPress and obj.hasFocus():
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     obj.clearFocus()
 
