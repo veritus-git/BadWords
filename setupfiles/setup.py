@@ -1004,13 +1004,13 @@ if sys.platform.startswith('linux'):
 if os.path.exists(MAIN_SCRIPT):
     try:
         if sys.platform == 'darwin':
-            # On macOS: Launch via BadWords.app proxy to ensure Stage Manager
-            # and Menu Bar show BadWords icon and name instead of Python rocket
+            # On macOS: Launch via open BadWords.app to ensure LaunchServices,
+            # Stage Manager, Dock and Menu Bar bind to BadWords instead of Python rocket
             import subprocess
             _home = os.path.expanduser('~')
-            _app_bin = os.path.join(_home, 'Applications', 'BadWords.app', 'Contents', 'MacOS', 'BadWords')
-            if os.path.exists(_app_bin):
-                subprocess.Popen([_app_bin, MAIN_SCRIPT])
+            _app_bundle = os.path.join(_home, 'Applications', 'BadWords.app')
+            if os.path.isdir(_app_bundle):
+                subprocess.Popen(['open', _app_bundle])
             else:
                 _py = os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3')
                 if not os.path.exists(_py): _py = sys.executable
@@ -1196,6 +1196,13 @@ elif [ -x "$DIR/venv/bin/python" ]; then
     PY="$DIR/venv/bin/python"
 else
     PY="python3"
+fi
+
+if [ -f "$PY" ] && [ ! -L "$DIR/venv/bin/BadWords" ]; then
+    ln -sf "$(basename "$PY")" "$DIR/venv/bin/BadWords" 2>/dev/null || true
+fi
+if [ -x "$DIR/venv/bin/BadWords" ]; then
+    PY="$DIR/venv/bin/BadWords"
 fi
 
 cd "$CWD"

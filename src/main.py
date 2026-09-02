@@ -353,6 +353,8 @@ def main():
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
         app.setApplicationName(config.APP_NAME)
         app.setApplicationDisplayName(config.APP_NAME)
+        app.setOrganizationName("Veritus")
+        app.setOrganizationDomain("veritus.badwords")
 
         # Initialize UI scaling factor dynamically based on screen geometry
         config.init_ui_scaling(app)
