@@ -43,7 +43,7 @@ class GlobalAppFilter(QObject):
                         focused.clearFocus()
 
             # 2. Enter/Return removes focus from focused input
-            if etype == QEvent.Type.KeyPress and obj.hasFocus():
+            if etype == QEvent.Type.KeyPress and isinstance(obj, QWidget) and obj.hasFocus():
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     obj.clearFocus()
 

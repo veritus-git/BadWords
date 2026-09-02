@@ -51,6 +51,7 @@ from gui.utils import _app_icon, _txt, _center_on_screen, apply_dark_title_bar
 from gui.dialogs.msgbox import CustomMsgBox
 from gui.dialogs.update_dialog import UpdateCheckThread, UpdateNotifyDialog
 from gui.dialogs.marker_dialog import MarkerDialog
+from gui.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from gui.dialogs.overlay import MarkerDragZone, MarkerRowWidget, GlobalAppFilter, AnimatedDimOverlay
 
 _CACHED_FONT_FAMILIES = None
@@ -454,11 +455,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             self._ensure_page_built = _ensure_page_built
 
-            # Pre-build all pages during dialog init: font list is now lazy-loaded,
-            # so pre-building takes < 25ms and eliminates all tab-switching flicker and search gaps!
-            for i in range(self.category_list.count()):
-                self._build_page(i)
-                self._built_pages.add(i)
+            # Lazy-load: build page 0 immediately so dialog opens in < 3ms
+            self._ensure_page_built(0)
+
+            # Build remaining pages asynchronously on the event loop
+            def _build_remaining():
+                for i in range(1, self.category_list.count()):
+                    self._ensure_page_built(i)
+            QTimer.singleShot(10, _build_remaining)
 
             if hasattr(self, '_advanced_widgets'):
                 for w in self._advanced_widgets:
@@ -466,6 +470,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         w.setVisible(not self._is_basic_mode)
 
             def _on_tab_changed(idx):
+                self._ensure_page_built(idx)
                 self.stack.setCurrentIndex(idx)
                 item = self.category_list.item(idx)
                 if item and item.text() == self.txt("tab_support"):
@@ -488,7 +493,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         row.setSpacing(config.S(10) if has_toggle else config.S(4))
         row.setAlignment(Qt.AlignVCenter)
         if not has_toggle:
-            widget.setFixedWidth(config.S(260))
+            row.addStretch()
+            widget.setFixedWidth(config.S(240))
         else:
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
@@ -499,7 +505,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
         row.addWidget(btn_rev)
         lbl = QLabel(label_text)
-        lbl.setWordWrap(True)
         lbl.setMinimumWidth(config.S(160))
         lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
         form.addRow(lbl, container)
@@ -954,8 +959,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter)
+            row.addStretch()
             
-            widget.setFixedWidth(config.S(260))
+            widget.setFixedWidth(config.S(220))
             row.addWidget(widget)
 
             if not is_display:
@@ -972,7 +978,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(btn_rev)
 
             lbl = QLabel(label_text)
-            lbl.setWordWrap(True)
             
             if info_key:
                 lbl_container = QWidget()
@@ -1216,7 +1221,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter)
-            widget.setFixedWidth(config.S(260))
+            row.addStretch()
+            widget.setFixedWidth(config.S(240))
             row.addWidget(widget)
             
             btn_rev = ReloadButton(size=30)
@@ -1232,7 +1238,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             lbl_layout.setContentsMargins(0, 0, 0, 0)
             lbl_layout.setSpacing(6)
             lbl = QLabel(label_text)
-            lbl.setWordWrap(True)
             lbl_layout.addWidget(lbl)
             lbl_layout.addWidget(self._get_info_icon(info_key))
             lbl_layout.addStretch()
@@ -2029,8 +2034,25 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             def make_edit(i):
                 return lambda checked=False: self._on_edit_marker(i)
             btn_edit = QPushButton(self.txt("btn_edit_marker"))
+            btn_edit.setObjectName("btn_edit")
             btn_edit.setCursor(Qt.PointingHandCursor)
             btn_edit.setFixedHeight(config.S(26))
+            btn_edit.setStyleSheet(f"""
+                QPushButton#btn_edit {{
+                    background-color: #2d2d2d;
+                    color: #aaaaaa;
+                    border: 1px solid #3a3a3a;
+                    border-radius: {config.S(3)}px;
+                    padding: 0px {config.S(8)}px;
+                    font-size: {config.FS(9)}pt;
+                    min-height: {config.S(24)}px;
+                    max-height: {config.S(24)}px;
+                }}
+                QPushButton#btn_edit:hover {{
+                    background-color: #383838;
+                    color: #ffffff;
+                }}
+            """)
             btn_edit.clicked.connect(make_edit(idx))
             if color.lower() in ["green", "blue"]:
                 btn_edit.setEnabled(False)

@@ -476,6 +476,11 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
             }
         }
 
+        let setupfiles_dir = repo_dir.join("setupfiles");
+        if setupfiles_dir.is_dir() {
+            let _ = copy_dir_all(&setupfiles_dir, target_dir.join("setupfiles"));
+        }
+
         let updater_src = repo_dir.join("setupfiles").join("updater.py");
         if updater_src.is_file() {
             let _ = fs::copy(updater_src, target_dir.join("updater.py"));
@@ -603,6 +608,11 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
                     if layout_sub.is_dir() {
                         let _ = copy_dir_all(&layout_sub, target_dir.join("layout"));
                     }
+                }
+
+                let setupfiles_sub = p.join("setupfiles");
+                if setupfiles_sub.is_dir() {
+                    let _ = copy_dir_all(&setupfiles_sub, target_dir.join("setupfiles"));
                 }
 
                 let updater_sub = p.join("setupfiles").join("updater.py");
@@ -1313,9 +1323,31 @@ if sys.platform.startswith('linux'):
 # 4. Launch main script
 if os.path.exists(MAIN_SCRIPT):
     try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
+        if sys.platform == 'darwin':
+            import subprocess
+            _home = os.path.expanduser('~')
+            _app_bundle = os.path.join(_home, 'Applications', 'BadWords.app')
+            if os.path.isdir(_app_bundle):
+                subprocess.Popen(['open', _app_bundle])
+            else:
+                _py = os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3')
+                if not os.path.exists(_py): _py = sys.executable
+                subprocess.Popen([_py, MAIN_SCRIPT])
+        elif sys.platform.startswith('win'):
+            import subprocess
+            _bw_exe = os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'BadWords.exe')
+            if not os.path.exists(_bw_exe):
+                _bw_exe = os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe')
+            if os.path.exists(_bw_exe):
+                subprocess.Popen([_bw_exe, MAIN_SCRIPT])
+            else:
+                with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+                gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
+                exec(code, gv)
+        else:
+            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+            gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
+            exec(code, gv)
     except Exception as e:
         print(f'Error: {{e}}'); traceback.print_exc()
 else:

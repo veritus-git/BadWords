@@ -753,7 +753,7 @@ class ShortcutCaptureButton(QPushButton):
             radius=config.S(3),
             pad_x=config.S(8),
             min_w=config.S(80),
-            h=config.INPUT_HEIGHT,
+            h=config.INPUT_HEIGHT - 2,
             font_size=config.FS(9.5)
         ))
         self.setFixedHeight(config.INPUT_HEIGHT)
@@ -1224,6 +1224,8 @@ class CustomDropdown(QPushButton):
 
         list_widget = QListWidget()
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        from gui.widgets.delegates import MarqueeItemDelegate
+        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget))
         list_widget.addItems(self.options_list)
         list_widget.setStyleSheet(f"""
             QListWidget {{
@@ -1670,6 +1672,8 @@ class SearchableDropdown(QPushButton):
         
         self.list_widget = QListWidget()
         self.list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        from gui.widgets.delegates import MarqueeItemDelegate
+        self.list_widget.setItemDelegate(MarqueeItemDelegate(self.list_widget))
         self.list_widget.addItems(self.options_list)
         
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
