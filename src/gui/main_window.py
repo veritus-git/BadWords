@@ -516,11 +516,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        self._enforce_native_always_on_top()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._enforce_native_always_on_top()
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -529,28 +527,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _enforce_native_always_on_top(self):
         try:
-            prefs = self.engine.load_preferences() or {}
-            if prefs.get('always_on_top') and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+            if getattr(self, '_always_on_top_active', False) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
                 self.engine.os_doc.set_always_on_top(int(self.winId()), True)
         except Exception:
             pass
 
     def _apply_always_on_top(self, enable: bool):
-        if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-            try:
-                win_id = int(self.winId())
-                if win_id and self.engine.os_doc.set_always_on_top(win_id, enable):
-                    return
-            except Exception:
-                pass
+        self._always_on_top_active = bool(enable)
 
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
-        if self.isMaximized():
-            self.showMaximized()
-        elif self.isFullScreen():
-            self.showFullScreen()
-        else:
-            self.show()
+        # 1. Update Qt QWindow flag so Qt internal state knows about it
+        try:
+            if hasattr(self, 'windowHandle') and self.windowHandle():
+                self.windowHandle().setFlag(Qt.WindowStaysOnTopHint, enable)
+            else:
+                self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+        except Exception:
+            pass
+
+        # 2. Apply native OS level top-most state without recreating window
+        try:
+            win_id = int(self.winId())
+            if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                self.engine.os_doc.set_always_on_top(win_id, enable)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # UI Construction
