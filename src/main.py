@@ -344,62 +344,6 @@ def main():
         if os_doc.is_mac:
             try:
                 import ctypes
-                import ctypes.util
-                objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
-                objc.objc_getClass.restype = ctypes.c_void_p
-                objc.sel_registerName.restype = ctypes.c_void_p
-                objc.objc_msgSend.restype = ctypes.c_void_p
-
-                cls_NSString = objc.objc_getClass(b'NSString')
-                sel_stringWithUTF8String = objc.sel_registerName(b'stringWithUTF8String:')
-                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
-                ns_name = objc.objc_msgSend(cls_NSString, sel_stringWithUTF8String, b'BadWords')
-
-                cls_NSProcessInfo = objc.objc_getClass(b'NSProcessInfo')
-                sel_processInfo = objc.sel_registerName(b'processInfo')
-                processInfo = objc.objc_msgSend(cls_NSProcessInfo, sel_processInfo)
-                sel_setProcessName = objc.sel_registerName(b'setProcessName:')
-                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-                objc.objc_msgSend(processInfo, sel_setProcessName, ns_name)
-
-                # Set Dock icon image via NSApplication
-                cls_NSApplication = objc.objc_getClass(b'NSApplication')
-                sel_sharedApp = objc.sel_registerName(b'sharedApplication')
-                ns_app = objc.objc_msgSend(cls_NSApplication, sel_sharedApp)
-
-                icon_path = os.path.join(os_doc.install_dir, "assets", "icons", "icon_default.png")
-                if not os.path.exists(icon_path):
-                    icon_path = os.path.join(os_doc.install_dir, "icons", "icon_default.png")
-                if os.path.exists(icon_path):
-                    cls_NSImage = objc.objc_getClass(b'NSImage')
-                    sel_alloc = objc.sel_registerName(b'alloc')
-                    sel_initWithContentsOfFile = objc.sel_registerName(b'initWithContentsOfFile:')
-                    ns_path = objc.objc_msgSend(cls_NSString, sel_stringWithUTF8String, icon_path.encode('utf-8'))
-                    img_alloc = objc.objc_msgSend(cls_NSImage, sel_alloc)
-                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-                    ns_img = objc.objc_msgSend(img_alloc, sel_initWithContentsOfFile, ns_path)
-                    if ns_img:
-                        sel_setAppIcon = objc.sel_registerName(b'setApplicationIconImage:')
-                        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-                        objc.objc_msgSend(ns_app, sel_setAppIcon, ns_img)
-
-                # Update Cocoa Menu Bar App item title from "Python" to "BadWords"
-                sel_mainMenu = objc.sel_registerName(b'mainMenu')
-                main_menu = objc.objc_msgSend(ns_app, sel_mainMenu)
-                if main_menu:
-                    sel_itemAtIndex = objc.sel_registerName(b'itemAtIndex:')
-                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
-                    objc.objc_msgSend.restype = ctypes.c_void_p
-                    app_menu_item = objc.objc_msgSend(main_menu, sel_itemAtIndex, 0)
-                    if app_menu_item:
-                        sel_setTitle = objc.sel_registerName(b'setTitle:')
-                        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-                        objc.objc_msgSend.restype = None
-                        objc.objc_msgSend(app_menu_item, sel_setTitle, ns_name)
-            except Exception:
-                pass
-            try:
-                import ctypes
                 ctypes.CDLL(None).setprogname(b"BadWords")
             except Exception:
                 pass

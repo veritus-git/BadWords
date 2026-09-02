@@ -609,44 +609,16 @@ class OSDoctor:
 
     def set_always_on_top(self, window_id: int, top: bool):
         """Sets the window to always on top using native API if possible, avoiding Qt window reconstruction bugs."""
-        if self.is_win:
-            try:
-                # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
-                # SWP_NOMOVE = 0x0002, SWP_NOSIZE = 0x0001
-                hwnd_insert_after = -1 if top else -2
-                ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, 0x0003)
-                return True
-            except Exception:
-                return False
-        elif self.is_mac:
-            try:
-                import ctypes.util
-                objc_lib = ctypes.util.find_library('objc')
-                if not objc_lib:
-                    return False
-                objc = ctypes.cdll.LoadLibrary(objc_lib)
-                
-                ns_view = ctypes.c_void_p(window_id)
-                sel_window = objc.sel_registerName(b"window")
-                objc_msgSend = objc.objc_msgSend
-                objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-                objc_msgSend.restype = ctypes.c_void_p
-                ns_window = objc_msgSend(ns_view, sel_window)
-                if not ns_window:
-                    ns_window = ns_view
-
-                # NSNormalWindowLevel = 0, NSFloatingWindowLevel = 3
-                sel_setLevel = objc.sel_registerName(b"setLevel:")
-                objc_msgSend_setLevel = objc.objc_msgSend
-                objc_msgSend_setLevel.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
-                objc_msgSend_setLevel.restype = None
-                level = 3 if top else 0
-                objc_msgSend_setLevel(ns_window, sel_setLevel, level)
-                return True
-            except Exception as e:
-                log_info(f"macOS native set_always_on_top error: {e}")
-                return False
-        return False
+        if not self.is_win:
+            return False
+        try:
+            # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
+            # SWP_NOMOVE = 0x0002, SWP_NOSIZE = 0x0001
+            hwnd_insert_after = -1 if top else -2
+            ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, 0x0003)
+            return True
+        except Exception:
+            return False
 
     # ==========================
     # FILE MANAGEMENT

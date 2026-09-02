@@ -1198,7 +1198,6 @@ else
     PY="python3"
 fi
 
-export PYTHONEXECUTABLE="$0"
 cd "$CWD"
 exec "$PY" "$MAIN_PY" "$@"
 """
