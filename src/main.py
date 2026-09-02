@@ -341,13 +341,6 @@ def main():
             except Exception:
                 pass
 
-        if os_doc.is_mac:
-            try:
-                import ctypes
-                ctypes.CDLL(None).setprogname(b"BadWords")
-            except Exception:
-                pass
-
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
