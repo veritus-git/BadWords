@@ -612,13 +612,12 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 
 **Chunk Segmentation Parameters (for Segmented Mode):** <br>
 *(In Segmented Blocks mode, a "chunk" represents a single displayed line/block of dialogue with its own timestamp header).*
-- **Max Chunk Words (default `30`):** Target maximum number of words per block before attempting a line break.
-- **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `33` instead of `30`).
+- **Max Chunk Words (default `15`):** Target maximum number of words per block before attempting a line break.
+- **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `18` instead of `15`).
 - **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
 
 > [!NOTE]  
-> **Known Behavior & Re-analysis Requirement:**  
-> - **Initial Default Value:** In current releases, the backend initializes with an internal default of `15` words per chunk under the hood, even though the UI input box displays `30`. Explicitly changing the value in Settings will properly overwrite and save your custom choice.
+> **Re-analysis Requirement:**  
 > - **Re-analysis Required:** Dialogue segmentation into blocks is computed exclusively during transcription. If you adjust any Chunk Segmentation parameters in Settings, you must **re-run transcription (`Analyze`)** on your audio to see the updated chunk lengths reflected in the transcript canvas.
 
 **Transcript Typography:**

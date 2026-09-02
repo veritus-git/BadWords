@@ -278,6 +278,9 @@ class MarqueeRadioButton(_QRadioButton):
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
         painter.setFont(self.font())
+        orig = getattr(self, '_mq_original_text', '') or self.text()
+        draw_rect = QRect(tr.left() - int(self._mq_pos), tr.top(), 9999, tr.height())
+        painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
 class ReloadButton(QPushButton):
     """Button displaying reload.svg with hover effect (reload-hover.svg), perfectly centered."""
     def __init__(self, size: int = 30, parent=None):
@@ -750,9 +753,10 @@ class ShortcutCaptureButton(QPushButton):
             radius=config.S(3),
             pad_x=config.S(8),
             min_w=config.S(80),
-            h=config.S(26),
+            h=config.INPUT_HEIGHT,
             font_size=config.FS(9.5)
         ))
+        self.setFixedHeight(config.INPUT_HEIGHT)
 
     def _update_label(self):
         if self.display_only:
@@ -1178,7 +1182,7 @@ class CustomDropdown(QPushButton):
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
         
-        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
         popup.setStyleSheet(f"""
             QFrame {{
@@ -1255,8 +1259,9 @@ class CustomDropdown(QPushButton):
         popup.setFixedWidth(btn_w)
 
         global_pos = self.mapToGlobal(QPoint(0, 0))
-        popup.move(global_pos)
+        popup.setGeometry(global_pos.x(), global_pos.y(), btn_w, total_h)
         popup.show()
+        popup.move(global_pos)
 
     def setValue(self, text):
         self.setText(text)
@@ -1520,7 +1525,9 @@ class MultiSelectDropdown(QPushButton):
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        if not self.options_list:
+            return
+        popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
         popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
 
@@ -1594,14 +1601,14 @@ class MultiSelectDropdown(QPushButton):
         list_widget.itemClicked.connect(_on_item_clicked)
         # PERFECT HEIGHT MATH
         display_count = min(5, len(self.options_list))
-        list_height = display_count * 28
+        list_height = display_count * config.S(28)
         list_widget.setFixedHeight(list_height)
         popup.setFixedHeight(list_height + 2)
 
         global_pos = self.mapToGlobal(QPoint(0, self.height()))
-        popup.move(global_pos)
-        popup.setFixedWidth(self.width())
+        popup.setGeometry(global_pos.x(), global_pos.y(), self.width(), list_height + 2)
         popup.show()
+        popup.move(global_pos)
 
     def _on_toggled(self, text, checked):
         if checked: self.selected_items.add(text)
@@ -1645,7 +1652,7 @@ class SearchableDropdown(QPushButton):
         if callable(self._options_source) and not self.options_list:
             self.options_list = list(self._options_source())
 
-        self.popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        self.popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         self.popup.setAttribute(Qt.WA_DeleteOnClose)
         self.popup.setStyleSheet(f"""
             QFrame {{
@@ -1722,8 +1729,9 @@ class SearchableDropdown(QPushButton):
         self.line_edit.setFocus()
         
         global_pos = self.mapToGlobal(QPoint(0, 0))
-        self.popup.move(global_pos)
+        self.popup.setGeometry(global_pos.x(), global_pos.y(), self.width(), self.popup.height())
         self.popup.show()
+        self.popup.move(global_pos)
 
     def _on_text_changed(self, text):
         search_str = text.lower()
@@ -1782,7 +1790,7 @@ class SearchableDropdown(QPushButton):
         self._select_first_visible(popup)
 
     def _update_height(self, visible_count, is_searching):
-        row_h = 26
+        row_h = config.S(26)
         
         if is_searching:
             display_count = max(1, min(5, visible_count))

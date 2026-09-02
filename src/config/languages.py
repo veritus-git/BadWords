@@ -21,7 +21,6 @@ RTL_LANGUAGES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}
 
 # Key: Whisper Code (ISO), Value: Native Name
 SUPPORTED_LANGUAGES = {
-    "Auto": "Auto",
     "af": "Afrikaans",
     "am": "አማርኛ", # Amharic
     "ar": "العربية", # Arabic

@@ -107,10 +107,10 @@ def build_welcome_view(win) -> QWidget:
     win.slider_layout.setAlignment(Qt.AlignTop)
     
     win.settings_container = QWidget()
-    win.settings_container.setFixedWidth(config.S(310))
+    win.settings_container.setFixedWidth(config.S(330))
     win.settings_container.setStyleSheet("background: transparent;")
     win.settings_layout = QVBoxLayout(win.settings_container)
-    win.settings_layout.setContentsMargins(0, 0, 0, 0)
+    win.settings_layout.setContentsMargins(config.S(10), 0, config.S(10), 0)
     win.settings_layout.setSpacing(0)
     win.settings_layout.setAlignment(Qt.AlignTop)
     win.slider_layout.addWidget(win.settings_container)
@@ -186,7 +186,12 @@ def build_welcome_view(win) -> QWidget:
     info_model = QLabel()
     info_icon_path = get_layout_icon_path("information.png")
     if os.path.exists(info_icon_path):
-        info_model.setPixmap(QPixmap(info_icon_path).scaled(config.S(18), config.S(18), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        pix = QPixmap(info_icon_path)
+        dpr = win.devicePixelRatioF() if hasattr(win, 'devicePixelRatioF') else 1.0
+        s = config.S(18)
+        scaled_pix = pix.scaled(int(s * dpr), int(s * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pix.setDevicePixelRatio(dpr)
+        info_model.setPixmap(scaled_pix)
     else:
         info_model.setText("🛈")
         info_model.setStyleSheet(f"color: #888888; font-size: {config.FS(11)}pt;")
@@ -509,10 +514,10 @@ def build_welcome_view(win) -> QWidget:
     l_fast.addSpacing(config.S(10))
 
     win.input_fs_pad = QLineEdit()
-    win.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.05)))
+    win.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.1)))
     win.input_fs_pad.setStyleSheet(input_style)
     win.input_fs_pad.setFixedHeight(config.S(30))
-    l_fast.addLayout(_row_rst(win.txt("lbl_padding_s"), win.input_fs_pad, "0.05"))
+    l_fast.addLayout(_row_rst(win.txt("lbl_padding_s"), win.input_fs_pad, "0.1"))
     l_fast.addSpacing(config.S(10))
 
     win.input_fs_min_dur = QLineEdit()

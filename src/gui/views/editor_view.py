@@ -33,7 +33,7 @@ def build_editor_view(win) -> QWidget:
     win.scroll_area = QScrollArea(page)
     win.scroll_area.setWidgetResizable(True)
     win.scroll_area.setFrameShape(QFrame.NoFrame)
-    win.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+    win.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
     win.scroll_area.setStyleSheet(f"QScrollArea {{ background-color: {config.BG_COLOR}; border: none; }}")
     
     win.text_canvas = TranscriptionCanvas(main_window=win)

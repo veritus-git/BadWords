@@ -224,7 +224,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
 
         # Show elided text with "…" when overflowing but not yet scrolling,
         # and draw full text once the marquee animation has started moving.
-        scrolling = is_animating and offset > 0
+        scrolling = is_animating and (offset > 0 or self._mq_state.get(row) in ("SCROLL", "END_DELAY", "FADEOUT", "FADEIN"))
         if overflows and not scrolling:
             # Use Qt's built-in elider to clip+append "…"
             display_text = fm.elidedText(text, Qt.ElideRight, avail)

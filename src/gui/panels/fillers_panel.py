@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame
 )
 import config
-from gui.widgets.buttons import ToggleSwitch
+from gui.widgets.buttons import ToggleSwitch, ReloadButton
 from .script_panel import wrap_activity_panel
 
 
@@ -48,10 +48,8 @@ def build_fillers_panel(win) -> QFrame:
     filler_tools_layout.addWidget(win.lbl_filler_count)
     filler_tools_layout.addStretch()
     
-    win.btn_reset_fillers = QPushButton("↺")
-    win.btn_reset_fillers.setFixedSize(config.S(24), config.S(24))
-    win.btn_reset_fillers.setCursor(Qt.PointingHandCursor)
-    win.btn_reset_fillers.setStyleSheet(f"background: transparent; border: 1px solid #444; border-radius: {config.S(3)}px; color: #888; font-size: {config.FS(10)}pt;")
+    win.btn_reset_fillers = ReloadButton(size=26)
+    win.btn_reset_fillers.setToolTip(win.txt("tt_revert_to_default"))
     win.btn_reset_fillers.clicked.connect(win._on_reset_inline_fillers)
     filler_tools_layout.addWidget(win.btn_reset_fillers)
     

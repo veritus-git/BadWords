@@ -61,14 +61,14 @@ def build_silence_panel(win) -> QFrame:
     ))
 
     win.spin_pad = QLineEdit()
-    win.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.05)))
+    win.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.1)))
     win.spin_pad.setFixedWidth(config.S(68))
     win.spin_pad.setFixedHeight(config.INPUT_HEIGHT)
     win.spin_pad.setStyleSheet(_sil_input_style)
     _rst_pad = ReloadButton(size=30)
     _rst_pad.clicked.connect(lambda: (
-        win.spin_pad.setText("0.05"),
-        win._save_single_pref('ui_spin_pad', 0.05)
+        win.spin_pad.setText("0.1"),
+        win._save_single_pref('ui_spin_pad', 0.1)
     ))
 
     win.spin_silence_min_dur = QLineEdit()

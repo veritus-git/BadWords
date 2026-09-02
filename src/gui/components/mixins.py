@@ -177,13 +177,13 @@ class FramelessWindowMixin:
             pass
 
     def showEvent(self, event):
-        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
+        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
             try:
                 import ctypes
                 hwnd = int(self.winId())
                 if hwnd and not getattr(self, '_initial_dwm_setup_done', False):
                     # DWMWA_CLOAK (13): Ukryj okno w DWM na czas pierwszej inicjalizacji,
-                    # aby zapobiec mignięciu białego paska systemowego przed nałożeniem stylów i maksymalizacją.
+                    # aby zapobiec mignięciu białego paska systemowego przed nałożeniem stylów i renderem.
                     val = ctypes.c_int(1)
                     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
             except Exception:
@@ -239,10 +239,10 @@ class FramelessWindowMixin:
                     border_color = ctypes.c_uint(0xFFFFFFFE)
                     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
 
-                if getattr(self, '_is_root', False) and not getattr(self, '_initial_dwm_setup_done', False):
+                if not getattr(self, '_initial_dwm_setup_done', False):
                     self._initial_dwm_setup_done = True
                     from PySide6.QtCore import QTimer
-                    QTimer.singleShot(50, self._dwm_uncloak)
+                    QTimer.singleShot(30, self._dwm_uncloak)
             except Exception:
                 pass
         if hasattr(self, '_grips') and getattr(self, '_is_root', False):

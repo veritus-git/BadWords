@@ -492,7 +492,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Restore pinned favorites
         for fav_id in prefs.get('favorites', []):
             if fav_id in self._pin_buttons:
-                self._pin_buttons[fav_id].setStyleSheet("QPushButton { background: transparent; border: none; color: #eebb00; font-size: 11pt; padding: 0; } QPushButton:hover { color: #ffcc00; }")
                 self._pin_buttons[fav_id].click()
 
     def moveEvent(self, event):
@@ -2207,9 +2206,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     proxy_auto.setToolTip(self.txt("tooltip_auto_cut"))
                     proxy_auto.setChecked(source_toggle.isChecked())
                     
-                    def _update_proxy_icon(checked, b=proxy_auto, ad=_assets_dir):
+                    def _update_proxy_icon(checked, b=proxy_auto):
                         icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
-                        b.setIcon(QIcon(os.path.join(ad, icon_name)))
+                        b.setIcon(QIcon(get_layout_icon_path(icon_name)))
                         b.setIconSize(QSize(20, 20))
                     
                     _update_proxy_icon(proxy_auto.isChecked())
@@ -2545,10 +2544,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_assembly_error(self, err_msg):
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
-        
-        is_sbs = getattr(self.text_canvas, 'is_sbs_mode', False)
-        if hasattr(self, '_panel_left') and not is_sbs: self._panel_left.show()
-        if hasattr(self, '_panel_right'): self._panel_right.show()
         dlg = CustomMsgBox(self, self.txt("lbl_error"), err_msg, self.txt("btn_ok"))
         dlg.exec()
 
@@ -2579,7 +2574,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         info = QLabel()
         info_icon_path = get_layout_icon_path("information.png")
         if os.path.exists(info_icon_path):
-            info.setPixmap(QPixmap(info_icon_path).scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            pix = QPixmap(info_icon_path)
+            dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
+            size = config.S(18)
+            scaled_pix = pix.scaled(int(size * dpr), int(size * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pix.setDevicePixelRatio(dpr)
+            info.setPixmap(scaled_pix)
         else:
             info.setText("🛈")
             info.setStyleSheet("color: #888888; font-size: 11pt;")
@@ -2766,7 +2766,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 _QT.singleShot(1250, lambda: self.welcome_script_edit.setStyleSheet(_orig_script_ss))
             return  # Do NOT start analysis
 
-        # 1. Hide side panels
+        # 1. Hide side panels (saving pre-analysis state)
+        self._pre_analysis_panels_state = (
+            getattr(self, '_panel_left', None) is not None and self._panel_left.isVisible(),
+            getattr(self, '_panel_right', None) is not None and self._panel_right.isVisible()
+        )
         if hasattr(self, '_panel_left'): self._panel_left.hide()
         if hasattr(self, '_panel_right'): self._panel_right.hide()
         
@@ -2970,10 +2974,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not words_data:
             dlg = CustomMsgBox(self, self.txt("msg_analysis_failed"), self.txt("msg_the_transcription_process"), self.txt("btn_ok"))
             dlg.exec()
-            # Reset UI to Page 0 and show panels again
+            # Reset UI to Page 0 and restore previous panel state
             self.go_to_page(0)
-            self._panel_left.show()
-            self._panel_right.show()
+            if hasattr(self, '_pre_analysis_panels_state'):
+                l_vis, r_vis = self._pre_analysis_panels_state
+                if hasattr(self, '_panel_left') and l_vis: self._panel_left.show()
+                if hasattr(self, '_panel_right') and r_vis: self._panel_right.show()
             return
             
         self.go_to_page(2)

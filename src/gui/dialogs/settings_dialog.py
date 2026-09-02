@@ -487,7 +487,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         has_toggle = (isinstance(widget, ToggleSwitch) or widget.findChild(ToggleSwitch) is not None)
         row.setSpacing(config.S(10) if has_toggle else config.S(4))
         row.setAlignment(Qt.AlignVCenter)
-        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        if not has_toggle:
+            widget.setFixedWidth(config.S(260))
+        else:
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
         btn_rev = ReloadButton(size=30)
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -952,16 +955,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter)
             
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            widget.setFixedWidth(config.S(260))
             row.addWidget(widget)
 
             if not is_display:
-                btn_clear = CloseIconButton(size=26)
+                btn_clear = CloseIconButton(size=30)
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
                 btn_clear.clicked.connect(lambda: setter_func(""))
                 row.addWidget(btn_clear)
 
-            btn_rev = ReloadButton(size=26)
+            btn_rev = ReloadButton(size=30)
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
@@ -973,7 +976,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             
             if info_key:
                 lbl_container = QWidget()
-                lbl_container.setMinimumWidth(200)
+                lbl_container.setMinimumWidth(config.S(160))
                 lbl_layout = QHBoxLayout(lbl_container)
                 lbl_layout.setContentsMargins(0, 0, 0, 0)
                 lbl_layout.setSpacing(6)
@@ -983,7 +986,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 lbl_layout.addStretch()
                 return lbl_container, container
 
-            lbl.setMinimumWidth(200)
+            lbl.setMinimumWidth(config.S(160))
             return lbl, container
 
         def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
@@ -1213,7 +1216,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter)
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            widget.setFixedWidth(config.S(260))
             row.addWidget(widget)
             
             btn_rev = ReloadButton(size=30)
@@ -1224,7 +1227,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(btn_rev)
             
             lbl_container = QWidget()
-            lbl_container.setMinimumWidth(200)
+            lbl_container.setMinimumWidth(config.S(160))
             lbl_layout = QHBoxLayout(lbl_container)
             lbl_layout.setContentsMargins(0, 0, 0, 0)
             lbl_layout.setSpacing(6)
@@ -1238,8 +1241,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
             return lbl_container, container
 
-        self.spin_chunk_max = CustomNumberInput(int(prefs.get('chunk_max_words', 30)), 5, 200)
-        lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue, "tt_chunk_max_words")
+        self.spin_chunk_max = CustomNumberInput(int(prefs.get('chunk_max_words', 15)), 5, 200)
+        lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 15, self.spin_chunk_max.setValue, "tt_chunk_max_words")
         self._chunk_widgets.extend([lbl_max, cnt_max])
         self._advanced_widgets.extend([lbl_max, cnt_max])
 
@@ -2027,6 +2030,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 return lambda checked=False: self._on_edit_marker(i)
             btn_edit = QPushButton(self.txt("btn_edit_marker"))
             btn_edit.setCursor(Qt.PointingHandCursor)
+            btn_edit.setFixedHeight(config.S(26))
             btn_edit.clicked.connect(make_edit(idx))
             if color.lower() in ["green", "blue"]:
                 btn_edit.setEnabled(False)
@@ -2037,8 +2041,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             def make_del(i):
                 return lambda checked=False: self._on_remove_marker_inline(i)
-            btn_del = CloseIconButton(size=30)
-            btn_del.setFixedWidth(config.S(30))
+            btn_del = CloseIconButton(size=26)
+            btn_del.setFixedSize(config.S(26), config.S(26))
             btn_del.setStyleSheet(f"""
                 QPushButton {{
                     background-color: #2b2b2b;
@@ -2428,7 +2432,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto'), 'currentText').lower(),
                 'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
                 'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
-                'chunk_max_words':    self._safe_get('spin_chunk_max', old_prefs.get('chunk_max_words', 30), 'value'),
+                'chunk_max_words':    self._safe_get('spin_chunk_max', old_prefs.get('chunk_max_words', 15), 'value'),
                 'chunk_lookahead':    self._safe_get('spin_chunk_look', old_prefs.get('chunk_lookahead', 3), 'value'),
                 'chunk_min_chars':    self._safe_get('spin_chunk_min', old_prefs.get('chunk_min_chars', 7), 'value'),
                 'algo_fuzzy_threshold':  self._safe_get('spin_fuzzy', old_prefs.get('algo_fuzzy_threshold', 80), 'value'),
@@ -2519,7 +2523,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._safe_set('dropdown_device', dev_val, 'setText')
             self._safe_set('dropdown_compute', _g('ai_compute_type', 'Auto'), 'setText')
             self._safe_set('textedit_prompt', _g('ai_initial_prompt', ''), 'setPlainText')
-            self._safe_set('spin_chunk_max', _g('chunk_max_words', 30), 'setValue')
+            self._safe_set('spin_chunk_max', _g('chunk_max_words', 15), 'setValue')
             self._safe_set('spin_chunk_look', _g('chunk_lookahead', 3), 'setValue')
             self._safe_set('spin_chunk_min', _g('chunk_min_chars', 7), 'setValue')
             self._safe_set('chk_vad_filter', _g('ai_vad_filter', False), 'setChecked')
@@ -2706,6 +2710,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 return 
         else:
             super().reject()
+
+    def closeEvent(self, event):
+        self.reject()
+        if self.isVisible():
+            event.ignore()
+        else:
+            event.accept()
 
     def mousePressEvent(self, event):
         focused = QApplication.focusWidget()
