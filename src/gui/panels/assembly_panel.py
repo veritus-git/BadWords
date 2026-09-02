@@ -14,12 +14,13 @@ Sidebar activity panel for timeline assembly options, inaudible/typo toggles, cu
 import os
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QFrame
 )
 from PySide6.QtGui import QIcon
 
 import config
-from gui.widgets.buttons import ToggleSwitch, StarFavoriteButton
+from gui.widgets.labels import QLabel
+from gui.widgets.buttons import QPushButton, ToggleSwitch, StarFavoriteButton
 from .script_panel import wrap_activity_panel
 
 

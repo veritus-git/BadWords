@@ -13,10 +13,11 @@ Sidebar activity panel for inline filler words editing, word count, and automati
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QFrame
 )
 import config
-from gui.widgets.buttons import ToggleSwitch, ReloadButton
+from gui.widgets.labels import QLabel
+from gui.widgets.buttons import QPushButton, ToggleSwitch, ReloadButton
 from .script_panel import wrap_activity_panel
 
 
