@@ -765,6 +765,10 @@ class ShortcutCaptureButton(QPushButton):
         if not display_only:
             self.clicked.connect(self.start_capture)
 
+    def sizeHint(self):
+        from PySide6.QtCore import QSize
+        return QSize(config.S(220), config.INPUT_HEIGHT)
+
     def _apply_style(self):
         if self._conflict:
             border = "#ed4245"

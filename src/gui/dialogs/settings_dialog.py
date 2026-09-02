@@ -502,17 +502,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     def _add_row(self, form, label_text, widget, default_val, setter_func):
         container = QWidget()
-        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
         has_toggle = (isinstance(widget, ToggleSwitch) or widget.findChild(ToggleSwitch) is not None)
         row.setSpacing(config.S(10) if has_toggle else config.S(4))
-        row.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        row.setAlignment(Qt.AlignVCenter)
         if not has_toggle:
-            row.addStretch(1)
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            widget.setMaximumWidth(config.S(240))
-            widget.setMinimumWidth(config.S(80))
+            row.addStretch()
+            widget.setFixedWidth(config.S(240))
         else:
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
@@ -971,7 +968,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(config.S(4))
             row.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-            row.addStretch(1)
             
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             widget.setMaximumWidth(config.S(220))
