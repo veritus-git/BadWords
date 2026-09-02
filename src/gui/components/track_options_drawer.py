@@ -137,7 +137,7 @@ class _FlowListWidget(QWidget):
 class TrackOptionsDrawer(QWidget):
     def __init__(self, parent_gui, engine, parent=None):
         super().__init__(parent)
-        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QWidget, QFrame, QGridLayout
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QFrame, QGridLayout
         from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 
         self.parent_gui = parent_gui

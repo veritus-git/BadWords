@@ -78,6 +78,19 @@ class AnimatedTitleButton(QPushButton):
             QPushButton#TitleBarBtn:pressed {{ background-color: {self._press}; }}
         """)
 
+    def reset_state(self):
+        self._anim.stop()
+        self._cur = self._bg
+        self._update_style()
+
+    def hideEvent(self, event):
+        self.reset_state()
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        self.reset_state()
+        super().showEvent(event)
+
     # ── events ────────────────────────────────────────────────────────────────
     def enterEvent(self, event):
         self._anim.stop()

@@ -407,5 +407,6 @@
     "resolve_color_tan": "Śniady",
     "resolve_color_chocolate": "Czekoladowy",
     "tooltip_auto_cut": "Automatycznie wycina ten kolor podczas asemblu,<br>jeśli zaznaczysz nim tekst.",
-    "tooltip_cut_now": "Wycina ten kolor na AKTUALNIE WYBRANEJ osi DaVinci<br>(przydatne do masowego usuwania po ręcznych poprawkach)."
+    "tooltip_cut_now": "Wycina ten kolor na AKTUALNIE WYBRANEJ osi DaVinci<br>(przydatne do masowego usuwania po ręcznych poprawkach).",
+    "hdr_whisper_parameters": "Parametry Whisper"
 }

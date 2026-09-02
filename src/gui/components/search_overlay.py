@@ -66,7 +66,7 @@ class SearchOverlayWidget(QFrame):
     def __init__(self, parent_widget, main_window):
         super().__init__(parent_widget)
         self.main_window = main_window
-        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QLabel, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame, QGraphicsOpacityEffect
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame, QGraphicsOpacityEffect
         from PySide6.QtCore import Qt, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect, QSize
         from PySide6.QtGui import QColor, QAction, QIcon, QPixmap
         import os

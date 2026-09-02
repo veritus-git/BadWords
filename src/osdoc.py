@@ -507,18 +507,51 @@ class OSDoctor:
     # ==========================
 
     def get_resolve_api_path(self) -> str:
-        """Returns the standard path for DaVinci Resolve Scripting API modules."""
+        """Returns the standard path for DaVinci Resolve Scripting API modules and exports env vars."""
         paths = []
         if self.is_mac:
-            paths.append("/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules")
+            paths.extend([
+                "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
+                "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/Modules",
+                "/Applications/DaVinci Resolve Studio/DaVinci Resolve.app/Contents/Libraries/Fusion/Modules",
+                "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/Modules",
+            ])
+            if "RESOLVE_SCRIPT_LIB" not in os.environ:
+                candidates = [
+                    "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+                    "/Applications/DaVinci Resolve Studio/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+                    "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/fusionscript.so",
+                    "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Libraries/fusionscript.so",
+                ]
+                for c in candidates:
+                    if os.path.exists(c):
+                        os.environ["RESOLVE_SCRIPT_LIB"] = c
+                        break
+            if "RESOLVE_SCRIPT_API" not in os.environ:
+                api_dir = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
+                if os.path.isdir(api_dir):
+                    os.environ["RESOLVE_SCRIPT_API"] = api_dir
+
         elif self.is_win:
             paths.append(os.path.join(
                 os.environ.get("PROGRAMDATA", "C:\\ProgramData"),
                 "Blackmagic Design", "DaVinci Resolve", "Support",
                 "Developer", "Scripting", "Modules"
             ))
+            if "RESOLVE_SCRIPT_LIB" not in os.environ:
+                c = "C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\fusionscript.dll"
+                if os.path.exists(c):
+                    os.environ["RESOLVE_SCRIPT_LIB"] = c
+
         elif self.is_linux:
-            paths.append("/opt/resolve/Developer/Scripting/Modules")
+            paths.extend([
+                "/opt/resolve/Developer/Scripting/Modules",
+                "/opt/resolve/libs/Fusion/Modules",
+            ])
+            if "RESOLVE_SCRIPT_LIB" not in os.environ:
+                c = "/opt/resolve/libs/Fusion/fusionscript.so"
+                if os.path.exists(c):
+                    os.environ["RESOLVE_SCRIPT_LIB"] = c
             
         for p in paths:
             if os.path.exists(p):

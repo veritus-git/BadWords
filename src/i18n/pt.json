@@ -407,5 +407,6 @@
     "resolve_color_tan": "Bronzeado",
     "resolve_color_chocolate": "Chocolate",
     "tooltip_auto_cut": "Corta automaticamente esta cor durante a montagem (assembly)<br>se estiver marcada no texto.",
-    "tooltip_cut_now": "Corta esta cor na linha do tempo ATUALMENTE SELECIONADA<br>no DaVinci (útil para exclusão em massa após ajustes manuais)."
+    "tooltip_cut_now": "Corta esta cor na linha do tempo ATUALMENTE SELECIONADA<br>no DaVinci (útil para exclusão em massa após ajustes manuais).",
+    "hdr_whisper_parameters": "Parâmetros do Whisper"
 }
