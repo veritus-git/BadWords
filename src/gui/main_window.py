@@ -534,13 +534,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _apply_always_on_top(self, enable: bool):
         self._always_on_top_active = bool(enable)
+        was_visible = self.isVisible()
 
         # 1. Update Qt QWindow flag so Qt internal state knows about it
         try:
-            if hasattr(self, 'windowHandle') and self.windowHandle():
-                self.windowHandle().setFlag(Qt.WindowStaysOnTopHint, enable)
-            else:
-                self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+            self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+            if was_visible:
+                if getattr(self, '_is_mac', False):
+                    self.showFullScreen()
+                else:
+                    self.showMaximized()
+                self.raise_()
+                self.activateWindow()
         except Exception:
             pass
 
