@@ -656,7 +656,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         return;
     }
 
-    // Check if local repo already has bin/ffmpeg
+    // 1. Check if local repo already has bin/ffmpeg
     if let Some(repo) = find_local_repo() {
         let repo_ffmpeg = repo.join("bin").join(ffmpeg_name);
         if repo_ffmpeg.is_file() && fs::copy(&repo_ffmpeg, &ffmpeg_bin).is_ok() {
@@ -670,29 +670,64 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         }
     }
 
+    // 2. Check if system ffmpeg exists on the machine
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(output) = os::create_hidden_command(which_cmd).arg(ffmpeg_name).output() {
+        if output.status.success() {
+            let sys_ff = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").trim().to_string();
+            if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() && fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("Copied system FFmpeg ({}) as local runtime binary.", sys_ff));
+                return;
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+            let p = Path::new(path);
+            if p.is_file() && fs::copy(p, &ffmpeg_bin).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", &format!("Copied Homebrew FFmpeg ({}) as local runtime binary.", path));
+                return;
+            }
+        }
+    }
+
     emit_log(sender, "INFO", "Downloading portable FFmpeg...");
 
     #[cfg(target_os = "windows")]
     {
-        let url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip";
+        let urls = [
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        ];
         let temp_dir = std::env::temp_dir();
         let archive = temp_dir.join("ffmpeg_win.zip");
         let extract_dir = temp_dir.join("ffmpeg_extracted");
-        let _ = fs::remove_dir_all(&extract_dir);
-        let _ = fs::create_dir_all(&extract_dir);
 
-        if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Windows)", sender).is_ok() {
-            if extract_zip(&archive, &extract_dir).is_ok() {
-                // Search for ffmpeg.exe inside extracted tree
-                if let Ok(entries) = fs::read_dir(&extract_dir) {
-                    for entry in entries.flatten() {
-                        let candidate = entry.path().join("bin").join("ffmpeg.exe");
-                        if candidate.is_file() {
-                            let _ = fs::copy(&candidate, &ffmpeg_bin);
-                            emit_log(sender, "OK", "Portable FFmpeg for Windows installed successfully.");
-                            let _ = fs::remove_file(&archive);
-                            let _ = fs::remove_dir_all(&extract_dir);
-                            return;
+        for url in urls {
+            let _ = fs::remove_dir_all(&extract_dir);
+            let _ = fs::create_dir_all(&extract_dir);
+
+            if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Windows)", sender).is_ok() {
+                if extract_zip(&archive, &extract_dir).is_ok() {
+                    if let Ok(entries) = fs::read_dir(&extract_dir) {
+                        for entry in entries.flatten() {
+                            let candidate = entry.path().join("bin").join("ffmpeg.exe");
+                            if candidate.is_file() {
+                                let _ = fs::copy(&candidate, &ffmpeg_bin);
+                                emit_log(sender, "OK", "Portable FFmpeg for Windows installed successfully.");
+                                let _ = fs::remove_file(&archive);
+                                let _ = fs::remove_dir_all(&extract_dir);
+                                return;
+                            }
                         }
                     }
                 }
@@ -703,8 +738,8 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
     #[cfg(target_os = "linux")]
     {
         let urls = [
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
             "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
         ];
         let parent = bin_dir.parent().unwrap_or(bin_dir);
         let archive = parent.join("ffmpeg_static.tar.xz");
@@ -742,22 +777,6 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
                 }
             }
         }
-
-        // Fallback: Copy system ffmpeg if available on machine
-        if let Ok(output) = os::create_hidden_command("which").arg("ffmpeg").output() {
-            if output.status.success() {
-                let sys_ff = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() && fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
-                    }
-                    emit_log(sender, "OK", "Copied system FFmpeg as local runtime binary.");
-                    return;
-                }
-            }
-        }
     }
 
     #[cfg(target_os = "macos")]
@@ -766,15 +785,49 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
         let temp_dir = std::env::temp_dir();
         let archive = temp_dir.join("ffmpeg_mac.zip");
 
-        if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (macOS)", sender).is_ok() {
+        let dl_ok = download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (macOS)", sender).is_ok()
+            || os::create_hidden_command("curl")
+                .args(["-L", "-f", "-s", "--max-time", "120", url, "-o", &archive.to_string_lossy()])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+        if dl_ok {
             if extract_zip(&archive, bin_dir).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", "Portable FFmpeg for macOS installed successfully.");
+                let _ = fs::remove_file(&archive);
+                return;
+            }
+        }
+    }
+
+    // Secondary fallback: check system ffmpeg on any platform
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(output) = os::create_hidden_command(which_cmd).arg(ffmpeg_name).output() {
+        if output.status.success() {
+            let sys_ff = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").trim().to_string();
+            if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() && fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
                     let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
                 }
-                emit_log(sender, "OK", "Portable FFmpeg for macOS installed successfully.");
-                let _ = fs::remove_file(&archive);
+                emit_log(sender, "OK", &format!("Copied system FFmpeg ({}) as local runtime binary.", sys_ff));
+                return;
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+            let p = Path::new(path);
+            if p.is_file() && fs::copy(p, &ffmpeg_bin).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", &format!("Copied Homebrew FFmpeg ({}) as local runtime binary.", path));
                 return;
             }
         }
