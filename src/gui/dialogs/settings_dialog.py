@@ -40,7 +40,7 @@ from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import (
     QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton,
     MouseShortcutCaptureButton, CustomDropdown, SearchableDropdown,
-    ReloadButton, CloseIconButton
+    ReloadButton, CloseIconButton, SquareIconButton, CustomNumberInput
 )
 from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
@@ -821,40 +821,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         from gui.utils import get_icon_path
         
         for i, name in enumerate(icon_names):
-            btn = QPushButton()
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn.setFixedHeight(config.S(56))
-            icon_path = get_icon_path(name)
-            if icon_path and os.path.exists(icon_path):
-                btn.setIcon(QIcon(icon_path))
-                btn.setIconSize(QSize(config.S(44), config.S(44)))
-            btn.setCheckable(True)
+            btn = SquareIconButton(name)
             if name == saved_icon:
                 btn.setChecked(True)
-                
-            btn.setProperty("icon_name", name)
-            btn.setCursor(Qt.PointingHandCursor)
-            
-            btn.setStyleSheet(f"""
-                QPushButton {{ 
-                    background-color: #1a1a1a; 
-                    border: 1px solid #333333; 
-                    border-radius: {config.S(6)}px; 
-                    padding: {config.S(2)}px; 
-                }}
-                QPushButton:hover {{ 
-                    background-color: #262626; 
-                    border-color: #484848; 
-                }}
-                QPushButton:checked {{ 
-                    background-color: #383838; 
-                    border: 1px solid #555555; 
-                }}
-                QPushButton:checked:hover {{ 
-                    background-color: #424242; 
-                    border-color: #666666; 
-                }}
-            """)
             self.icon_group.addButton(btn, i)
             icon_row.addWidget(btn, 1)
             
@@ -955,12 +924,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(widget)
 
             if not is_display:
-                btn_clear = CloseIconButton(size=30)
+                btn_clear = CloseIconButton(size=26)
                 btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
                 btn_clear.clicked.connect(lambda: setter_func(""))
                 row.addWidget(btn_clear)
 
-            btn_rev = ReloadButton(size=30)
+            btn_rev = ReloadButton(size=26)
             btn_rev.setToolTip(self.txt("tt_revert_to_default"))
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
@@ -1237,23 +1206,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
             return lbl_container, container
 
-        self.spin_chunk_max = QSpinBox()
-        self.spin_chunk_max.setRange(5, 200)
-        self.spin_chunk_max.setValue(int(prefs.get('chunk_max_words', 30)))
+        self.spin_chunk_max = CustomNumberInput(int(prefs.get('chunk_max_words', 30)), 5, 200)
         lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 30, self.spin_chunk_max.setValue, "tt_chunk_max_words")
         self._chunk_widgets.extend([lbl_max, cnt_max])
         self._advanced_widgets.extend([lbl_max, cnt_max])
 
-        self.spin_chunk_look = QSpinBox()
-        self.spin_chunk_look.setRange(0, 20)
-        self.spin_chunk_look.setValue(int(prefs.get('chunk_lookahead', 3)))
+        self.spin_chunk_look = CustomNumberInput(int(prefs.get('chunk_lookahead', 3)), 0, 20)
         lbl_look, cnt_look = _add_chunk_row(form_transcript, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, "tt_chunk_lookahead")
         self._chunk_widgets.extend([lbl_look, cnt_look])
         self._advanced_widgets.extend([lbl_look, cnt_look])
 
-        self.spin_chunk_min = QSpinBox()
-        self.spin_chunk_min.setRange(1, 50)
-        self.spin_chunk_min.setValue(int(prefs.get('chunk_min_chars', 7)))
+        self.spin_chunk_min = CustomNumberInput(int(prefs.get('chunk_min_chars', 7)), 1, 50)
         lbl_min, cnt_min = _add_chunk_row(form_transcript, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, "tt_chunk_min_chars")
         self._chunk_widgets.extend([lbl_min, cnt_min])
         self._advanced_widgets.extend([lbl_min, cnt_min])
@@ -1271,13 +1234,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.combo_font = SearchableDropdown(QFontDatabase.families())
         self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
 
-        self.spin_fsize = QSpinBox()
-        self.spin_fsize.setRange(8, 48)
-        self.spin_fsize.setValue(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])))
-
-        self.spin_lheight = QSpinBox()
-        self.spin_lheight.setRange(0, 40)
-        self.spin_lheight.setValue(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])))
+        self.spin_fsize = CustomNumberInput(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])), 8, 48)
+        self.spin_lheight = CustomNumberInput(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])), 0, 40)
 
         self._add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
                  self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
@@ -2747,4 +2705,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         else:
             super().reject()
 
-
+    def mousePressEvent(self, event):
+        focused = QApplication.focusWidget()
+        if focused and focused is not self:
+            focused.clearFocus()
+        super().mousePressEvent(event)

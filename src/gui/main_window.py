@@ -517,22 +517,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             pass
 
     def _apply_always_on_top(self, enable: bool):
-        if getattr(self, '_is_win', False) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+        if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
             try:
-                hwnd = int(self.winId())
-                if hwnd:
-                    self.engine.os_doc.set_always_on_top(hwnd, enable)
+                win_id = int(self.winId())
+                if win_id and self.engine.os_doc.set_always_on_top(win_id, enable):
                     return
             except Exception:
                 pass
-
-        if getattr(self, '_is_mac', False):
-            # On macOS, changing WindowStaysOnTopHint in fullscreen causes Space tearing.
-            # Only apply if windowed.
-            if not self.isFullScreen():
-                self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
-                self.show()
-            return
 
         self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
         if self.isMaximized():
