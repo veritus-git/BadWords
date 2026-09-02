@@ -54,7 +54,10 @@ class QPushButton(_QPushButton):
     def _mq_text_area_width(self):
         """Returns the pixel width actually available for text rendering,
         derived from the widget's contentsRect (excludes QSS padding/margins)."""
-        return self.contentsRect().width()
+        w = self.contentsRect().width()
+        if not self.icon().isNull():
+            w = max(0, w - self.iconSize().width() - 4)
+        return w
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -65,11 +68,12 @@ class QPushButton(_QPushButton):
 
         self._mq_hovered = True
         try:
-            if not orig or len(orig.strip()) <= 3:
+            if not orig or len(orig.strip()) <= 1:
                 self._mq_is_squeezed = False
                 return
             fm = self.fontMetrics()
-            if fm.horizontalAdvance(orig) > self._mq_text_area_width():
+            avail = self._mq_text_area_width()
+            if avail > 0 and fm.horizontalAdvance(orig) > avail:
                 self._mq_is_squeezed = True
                 self._mq_pos = 0.0
                 self._mq_alpha = 1.0
@@ -135,17 +139,34 @@ class QPushButton(_QPushButton):
         from PySide6.QtWidgets import QStyleOptionButton, QStyle
         opt = QStyleOptionButton()
         self.initStyleOption(opt)
-        orig = self.property("_mq_original_text") or ""
+        orig = self.property("_mq_original_text") or super().text() or ""
         opt.text = ""  # Hide native text to draw our own
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing)
         self.style().drawControl(QStyle.CE_PushButton, opt, painter, self)
 
         cr = self.contentsRect()
+        if not self.icon().isNull():
+            icon_w = self.iconSize().width()
+            cr.setLeft(cr.left() + icon_w + 4)
         painter.setClipRect(cr)
+
         color = opt.palette.buttonText().color()
+        ss = self.styleSheet() or ""
+        if "color:" in ss:
+            import re
+            m = re.search(r'(?:^|[;{])\s*color:\s*([^;!}]+)', ss)
+            if m:
+                qc = QColor(m.group(1).strip())
+                if qc.isValid():
+                    color = qc
+        if color.name() == "#000000" or color.lightness() < 40:
+            color = QColor(config.FG_COLOR)
+
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
+        painter.setFont(self.font())
         draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())
         painter.drawText(draw_rect, Qt.AlignLeft | Qt.AlignVCenter, orig)
 
@@ -274,6 +295,8 @@ class MarqueeRadioButton(_QRadioButton):
         painter.setClipRect(tr)
 
         color = opt.palette.buttonText().color()
+        if color.name() == "#000000" or color.lightness() < 40:
+            color = QColor(config.FG_COLOR)
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
