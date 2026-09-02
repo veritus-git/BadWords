@@ -502,14 +502,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     def _add_row(self, form, label_text, widget, default_val, setter_func):
         container = QWidget()
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
         has_toggle = (isinstance(widget, ToggleSwitch) or widget.findChild(ToggleSwitch) is not None)
         row.setSpacing(config.S(10) if has_toggle else config.S(4))
-        row.setAlignment(Qt.AlignVCenter)
+        row.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         if not has_toggle:
-            row.addStretch()
-            widget.setFixedWidth(config.S(240))
+            row.addStretch(1)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            widget.setMaximumWidth(config.S(240))
+            widget.setMinimumWidth(config.S(80))
         else:
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.addWidget(widget)
@@ -963,14 +966,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         # Builds label + field container for one shortcut row (used for addRow and insertRow)
         def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None, is_mandatory=False):
             container = QWidget()
+            container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             row = QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(config.S(4))
-            row.setAlignment(Qt.AlignVCenter)
-            row.addStretch()
+            row.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+            row.addStretch(1)
             
-            widget.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            widget.setFixedSize(config.S(220), config.INPUT_HEIGHT)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            widget.setMaximumWidth(config.S(220))
+            widget.setMinimumWidth(config.S(60))
+            widget.setFixedHeight(config.INPUT_HEIGHT)
             row.addWidget(widget)
 
             if not is_display:
@@ -990,7 +996,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             
             if info_key:
                 lbl_container = QWidget()
-                lbl_container.setMinimumWidth(config.S(160))
+                lbl_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
                 lbl_layout = QHBoxLayout(lbl_container)
                 lbl_layout.setContentsMargins(0, 0, 0, 0)
                 lbl_layout.setSpacing(6)
@@ -1000,7 +1006,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 lbl_layout.addStretch()
                 return lbl_container, container
 
-            lbl.setMinimumWidth(config.S(160))
             return lbl, container
 
         def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
@@ -1026,6 +1031,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         form = QFormLayout()
         form.setSpacing(14)
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         # Marker shortcuts (red … eraser)
         for key in KEY_ORDER:
@@ -1216,7 +1222,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Display Mode (moved from General)
         view_items = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
-        self.combo_view = CustomDropdown(view_items)
+        self.combo_view = CustomDropdown(
+            view_items,
+            options_getter=lambda: [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+        )
         is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
         self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
         self._add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
@@ -2556,6 +2565,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             pass
         
         view_mode = _g('view_mode', 'segmented')
+        if hasattr(self, 'combo_view') and self.combo_view is not None:
+            self.combo_view.options_list = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
         self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
         self._safe_set('combo_font', _g('editor_font_family', config.UI_FONT_NAME), 'setText')
         self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
