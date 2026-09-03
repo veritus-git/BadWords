@@ -27,36 +27,58 @@ from gui.utils import get_play_icon, get_layout_icon_path
 from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch, ReloadButton
 
 
-class WelcomeWorkspaceArea(QWidget):
-    """Container for workspaces with QStackedLayout in StackAll mode for true zero-blink crossfade."""
+class _WorkspaceTransitionOverlay(QWidget):
+    """
+    Renders a hardware-accelerated snapshot crossfade between workspace pages.
+    Eliminates all layout squashing, element reflow ('rozpychanie sie'), and font rasterization flicker.
+    """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background: transparent;")
-        self._layout = QStackedLayout(self)
-        self._layout.setStackingMode(QStackedLayout.StackAll)
-        self._current_idx = 0
-        self.pages = []
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.pix_from = None
+        self.pix_to = None
+        self.progress = 0.0
+        self.hide()
 
-    def addWidget(self, w: QWidget):
-        self.pages.append(w)
-        self._layout.addWidget(w)
-        if len(self.pages) > 1:
-            w.setVisible(False)
+    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap):
+        self.pix_from = pix_from
+        self.pix_to = pix_to
+        self.progress = 0.0
+        if self.parentWidget():
+            self.resize(self.parentWidget().size())
+        self.show()
+        self.raise_()
 
-    def currentIndex(self) -> int:
-        return self._current_idx
+    def set_progress(self, p: float):
+        self.progress = p
+        if self.parentWidget():
+            self.resize(self.parentWidget().size())
+        self.update()
 
-    def currentWidget(self) -> QWidget:
-        return self.pages[self._current_idx] if self.pages else None
+    def finish(self):
+        self.pix_from = None
+        self.pix_to = None
+        self.hide()
 
-    def widget(self, idx: int) -> QWidget:
-        return self.pages[idx] if 0 <= idx < len(self.pages) else None
+    def paintEvent(self, event):
+        if not self.pix_from or not self.pix_to:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-    def count(self) -> int:
-        return len(self.pages)
+        p = self.progress
 
-    def setCurrentIndex(self, idx: int):
-        self._current_idx = idx
+        # Draw source snapshot (fading out)
+        painter.setOpacity(max(0.0, min(1.0, 1.0 - p)))
+        x_from = (self.width() - self.pix_from.width()) // 2
+        painter.drawPixmap(x_from, 0, self.pix_from)
+
+        # Draw target snapshot (fading in)
+        painter.setOpacity(max(0.0, min(1.0, p)))
+        x_to = (self.width() - self.pix_to.width()) // 2
+        painter.drawPixmap(x_to, 0, self.pix_to)
+        painter.end()
 
 
 class WelcomeBrandingWidget(QWidget):
@@ -263,23 +285,66 @@ def build_welcome_view(win) -> QWidget:
     win.welcome_stack.setFixedHeight(H_TRANS)
     inner_layout.addWidget(win.welcome_stack, 0, Qt.AlignCenter)
 
+    win._workspace_overlay = _WorkspaceTransitionOverlay(win.welcome_stack)
+
     def _switch_workspace(target_idx: int):
         if win.welcome_stack.currentIndex() == target_idx:
             return
 
-        # 1. Smooth 350ms green indicator animation
-        duration = 350
+        duration = 320
         win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
 
-        # 2. Instant, crisp page swap without QGraphicsOpacityEffect -> 0 BLINK, 0 FLICKER
-        win.welcome_stack.setCurrentIndex(target_idx)
+        current_w = win.welcome_stack.currentWidget()
+        target_w = win.welcome_stack.widget(target_idx)
 
-        # 3. Exact target height immediately -> 0 ROZPYCHANIE / 0 REFLOW
+        if current_w is None or target_w is None:
+            win.welcome_stack.setCurrentIndex(target_idx)
+            win.welcome_stack.setFixedHeight(H_TRANS if target_idx == 0 else H_SILENCE)
+            inner.updateGeometry()
+            if inner.parentWidget() and inner.parentWidget().layout():
+                inner.parentWidget().layout().activate()
+            return
+
+        start_h = win.welcome_stack.height()
         target_h = H_TRANS if target_idx == 0 else H_SILENCE
-        win.welcome_stack.setFixedHeight(target_h)
-        inner.updateGeometry()
-        if inner.parentWidget() and inner.parentWidget().layout():
-            inner.parentWidget().layout().activate()
+
+        # 1. Grab snapshot of current workspace
+        pix_from = current_w.grab()
+
+        # 2. Grab snapshot of target workspace
+        target_w.resize(current_w.width(), target_h)
+        pix_to = target_w.grab()
+
+        # 3. Setup overlay for seamless hardware-rendered crossfade
+        win._workspace_overlay.set_transition(pix_from, pix_to)
+
+        # 4. Animate height and progress smoothly in lockstep
+        anim = QVariantAnimation(win.welcome_stack)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def _step(v: float):
+            cur_h = int(start_h + (target_h - start_h) * v)
+            win.welcome_stack.setFixedHeight(cur_h)
+            win._workspace_overlay.set_progress(v)
+            inner.updateGeometry()
+            if inner.parentWidget() and inner.parentWidget().layout():
+                inner.parentWidget().layout().activate()
+
+        def _done():
+            win.welcome_stack.setCurrentIndex(target_idx)
+            win.welcome_stack.setFixedHeight(target_h)
+            inner.updateGeometry()
+            if inner.parentWidget() and inner.parentWidget().layout():
+                inner.parentWidget().layout().activate()
+            win._workspace_overlay.finish()
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        win.welcome_stack._switch_anim = anim
+        anim.start()
 
     win.welcome_mode_switch.on_change = _switch_workspace
 
