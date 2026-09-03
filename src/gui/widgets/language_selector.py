@@ -60,25 +60,7 @@ class _LangPickerDialog(QDialog):
                 background-color: #4a4e56;
                 color: #ffffff;
             }}
-            QScrollBar:vertical {{
-                background: {config.MENU_BG};
-                width: {config.S(8)}px;
-                border: none;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {config.SCROLL_FG};
-                border-radius: {config.S(4)}px;
-                min-height: {config.S(20)}px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {config.SCROLL_ACTIVE};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: none;
-            }}
+            {config.scrollbar_qss(8, bg=config.MENU_BG)}
         """)
 
         layout = QVBoxLayout(self)

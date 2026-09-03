@@ -1235,35 +1235,7 @@ class SidebarButton(QPushButton):
         self.show()
 
 def _popup_scrollbar_css():
-    return f"""
-        QScrollBar:vertical {{
-            background: {config.SCROLL_BG};
-            width: {config.S(6)}px;
-            border: none;
-            margin: 0px;
-        }}
-        QScrollBar::handle:vertical {{
-            background: {config.SCROLL_FG};
-            border-radius: {config.S(3)}px;
-            min-height: {config.S(16)}px;
-        }}
-        QScrollBar::handle:vertical:hover {{
-            background: {config.SCROLL_ACTIVE};
-        }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-            height: 0px;
-            background: none;
-            border: none;
-        }}
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-            background: none;
-        }}
-        QScrollBar:horizontal {{
-            height: 0px;
-            background: none;
-            border: none;
-        }}
-    """
+    return config.scrollbar_qss(6)
 
 class CustomDropdown(QPushButton):
     valueChanged = Signal(str)
@@ -1667,12 +1639,18 @@ class MultiSelectDropdown(QPushButton):
         if callable(self._options_source) and not self.options_list:
             self.options_list = list(self._options_source())
 
-        if hasattr(self, '_popup') and self._popup and self._popup.isVisible():
-            self._popup.close()
-            return
+        try:
+            from shiboken6 import isValid
+            if getattr(self, '_popup', None) is not None and isValid(self._popup) and self._popup.isVisible():
+                self._popup.close()
+                self._popup = None
+                return
+        except Exception:
+            self._popup = None
 
         self._popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         self._popup.setAttribute(Qt.WA_DeleteOnClose)
+        self._popup.destroyed.connect(lambda *_: setattr(self, '_popup', None))
         self._popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
 
         layout = QVBoxLayout(self._popup)
@@ -1852,7 +1830,7 @@ class SearchableDropdown(QPushButton):
                 font-size: {config.FS(9.5)}pt;
             }}
             QListWidget::item {{
-                padding: 0px {config.S(5)}px;
+                padding: 0px {config.S(8)}px;
                 min-height: {config.S(26)}px;
                 border: none;
             }}
@@ -1871,7 +1849,7 @@ class SearchableDropdown(QPushButton):
             QLineEdit {{
                 border: none;
                 border-bottom: 1px solid #3a3a3a;
-                padding: {config.S(6)}px;
+                padding: {config.S(6)}px {config.S(8)}px;
                 color: #d4d4d4;
                 background: transparent;
                 outline: none;
