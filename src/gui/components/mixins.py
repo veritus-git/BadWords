@@ -147,10 +147,9 @@ class FramelessWindowMixin:
                             val = ctypes.c_int(1)
                             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
                         
-                        insert_after = -1 if getattr(self, '_always_on_top_active', False) else 0
-                        swp_flags = (0x0001 | 0x0002 | 0x0020) | (0 if getattr(self, '_always_on_top_active', False) else 0x0004)
                         ctypes.windll.user32.SetWindowPos(
-                            hwnd, insert_after, 0, 0, 0, 0, swp_flags
+                            hwnd, None, 0, 0, 0, 0, 
+                            0x0001 | 0x0002 | 0x0004 | 0x0020  # NOSIZE|NOMOVE|NOZORDER|FRAMECHANGED
                         )
                         
                         if was_max and not now_max:
@@ -177,18 +176,6 @@ class FramelessWindowMixin:
             pass
 
     def showEvent(self, event):
-        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
-            try:
-                import ctypes
-                hwnd = int(self.winId())
-                if hwnd and not getattr(self, '_initial_dwm_setup_done', False):
-                    # DWMWA_CLOAK (13): Ukryj okno w DWM na czas pierwszej inicjalizacji,
-                    # aby zapobiec mignięciu białego paska systemowego przed nałożeniem stylów i renderem.
-                    val = ctypes.c_int(1)
-                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
-            except Exception:
-                pass
-
         super().showEvent(event)
         if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
             try:
@@ -211,7 +198,9 @@ class FramelessWindowMixin:
                     style |= 0x00C00000  # WS_CAPTION
                     style |= 0x00020000  # WS_MINIMIZEBOX
                     style |= 0x00010000  # WS_MAXIMIZEBOX
-                # 2. Wymuszenie renderowania NC przez DWM (shadow)
+                    user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+
+                    # 2. Wymuszenie renderowania NC przez DWM (shadow)
                     # DWMWA_NCRENDERING_POLICY=2, DWMNCRP_ENABLED=2
                     nc_policy = ctypes.c_int(2)
                     dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
@@ -238,11 +227,6 @@ class FramelessWindowMixin:
                     # Remove Windows 11 1px accent border completely (DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE)
                     border_color = ctypes.c_uint(0xFFFFFFFE)
                     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
-
-                if not getattr(self, '_initial_dwm_setup_done', False):
-                    self._initial_dwm_setup_done = True
-                    from PySide6.QtCore import QTimer
-                    QTimer.singleShot(30, self._dwm_uncloak)
             except Exception:
                 pass
 
@@ -312,63 +296,26 @@ class FramelessWindowMixin:
         # ── WM_NCCALCSIZE (0x0083) ────────────────────────────────────────────
         # Returning 0 with wParam=True removes the entire native NC area so
         # Windows draws nothing there — our custom title bar owns that space.
-        # When maximized, Windows expands the window outside the monitor bounds
-        # by the invisible resize frame borders. We retrieve the exact work area
-        # (rcWork) from MonitorFromWindow + GetMonitorInfoW, ensuring the client
-        # rect fits the display and taskbar perfectly without clipping.
+        # When maximized, Windows adds a hidden "maximized border" (SM_CXFRAME +
+        # SM_CXPADDEDBORDER) that would otherwise push the client area inward.
+        # We compensate by shrinking the rect on all four sides. Left/right/bottom
+        # corrections prevent edge clipping on multi-monitor setups.
         if msg.message == 0x0083:  # WM_NCCALCSIZE
-            if msg.wParam:
-                if self.isMaximized():
-                    hwnd = int(self.winId())
-                    user32 = ctypes.windll.user32
-                    class MONITORINFO(ctypes.Structure):
-                        _fields_ = [
-                            ('cbSize', wintypes.DWORD),
-                            ('rcMonitor', wintypes.RECT),
-                            ('rcWork', wintypes.RECT),
-                            ('dwFlags', wintypes.DWORD)
-                        ]
-                    # MONITOR_DEFAULTTONEAREST = 2
-                    h_mon = user32.MonitorFromWindow(hwnd, 2)
-                    if h_mon:
-                        mi = MONITORINFO()
-                        mi.cbSize = ctypes.sizeof(MONITORINFO)
-                        if user32.GetMonitorInfoW(h_mon, ctypes.byref(mi)):
-                            params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
-                            params[0].left   = mi.rcWork.left
-                            params[0].top    = mi.rcWork.top
-                            params[0].right  = mi.rcWork.right
-                            params[0].bottom = mi.rcWork.bottom
-                return True, 0
-            return True, 0
-
-        # ── WM_NCPAINT (0x0085) ───────────────────────────────────────────────
-        # Suppress native non-client painting on restore from minimize to prevent
-        # Windows DWM from painting the default white caption bar artifact.
-        if msg.message == 0x0085:  # WM_NCPAINT
-            return True, 0
-
-        # ── WM_WINDOWPOSCHANGING (0x0046) ─────────────────────────────────────
-        # When always-on-top is active, Windows or external focus changes can attempt
-        # to demote the window's Z-order. Enforce HWND_TOPMOST (-1) in the WINDOWPOS struct.
-        if msg.message == 0x0046:
-            if getattr(self, '_always_on_top_active', False):
+            if msg.wParam and self.isMaximized():
+                hwnd = int(self.winId())
+                user32 = ctypes.windll.user32
                 try:
-                    class WINDOWPOS(ctypes.Structure):
-                        _fields_ = [
-                            ('hwnd', ctypes.c_void_p),
-                            ('hwndInsertAfter', ctypes.c_void_p),
-                            ('x', ctypes.c_int),
-                            ('y', ctypes.c_int),
-                            ('cx', ctypes.c_int),
-                            ('cy', ctypes.c_int),
-                            ('flags', ctypes.c_uint)
-                        ]
-                    wp = ctypes.cast(msg.lParam, ctypes.POINTER(WINDOWPOS)).contents
-                    # HWND_TOPMOST is (HWND)-1
-                    wp.hwndInsertAfter = ctypes.c_void_p(-1)
+                    dpi = user32.GetDpiForWindow(hwnd) or 96
+                    border = (user32.GetSystemMetricsForDpi(32, dpi) +
+                              user32.GetSystemMetricsForDpi(92, dpi))
                 except Exception:
-                    pass
+                    border = user32.GetSystemMetrics(32) + user32.GetSystemMetrics(92)
+                params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
+                params[0].left   += border
+                params[0].top    += border
+                params[0].right  -= border
+                params[0].bottom -= border
+            return True, (0x0300 if msg.wParam else 0)  # WVR_REDRAW
 
         # ── WM_ENTERSIZEMOVE (0x0231) ─────────────────────────────────────────
         # Fires at the start of every drag or resize. Forces DWM to flush our
@@ -376,9 +323,8 @@ class FramelessWindowMixin:
         if msg.message == 0x0231:  # WM_ENTERSIZEMOVE
             hwnd = int(self.winId())
             if hwnd:
-                insert_after = -1 if getattr(self, '_always_on_top_active', False) else 0
-                swp_flags = 0x0023 if getattr(self, '_always_on_top_active', False) else 0x0027
-                ctypes.windll.user32.SetWindowPos(hwnd, insert_after, 0, 0, 0, 0, swp_flags)
+                # SWP_FRAMECHANGED(0x20)|SWP_NOZORDER(0x04)|SWP_NOMOVE(0x02)|SWP_NOSIZE(0x01)
+                ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
             return super().nativeEvent(eventType, message)  # don't consume
 
         # ── WM_NCACTIVATE (0x0086) ────────────────────────────────────────────

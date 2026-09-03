@@ -100,3 +100,65 @@ WORD_MISSING_FG   = "#000000"
 WORD_INAUDIBLE_BG = "#8B4513" # Brown (Inaudible)
 WORD_INAUDIBLE_FG = "#ffffff"
 
+
+def scrollbar_qss(size=8, bg=None, fg=None, active=None):
+    from .app_constants import S
+    w = S(size)
+    r = S(size // 2)
+    s_bg = bg or globals().get("SCROLL_BG", "#2b2b2b")
+    s_fg = fg or globals().get("SCROLL_FG", "#555555")
+    s_active = active or globals().get("SCROLL_ACTIVE", "#777777")
+    return f"""
+        /* Vertical Scrollbar */
+        QScrollBar:vertical {{
+            background: {s_bg};
+            width: {w}px;
+            border: none;
+            margin: 0px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {s_fg};
+            border-radius: {r}px;
+            min-height: {S(16)}px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {s_active};
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0px;
+            background: none;
+            border: none;
+        }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+        /* Horizontal Scrollbar */
+        QScrollBar:horizontal {{
+            background: {s_bg};
+            height: {w}px;
+            border: none;
+            margin: 0px;
+        }}
+        QScrollBar::handle:horizontal {{
+            background: {s_fg};
+            border-radius: {r}px;
+            min-width: {S(16)}px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background: {s_active};
+        }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+            width: 0px;
+            background: none;
+            border: none;
+        }}
+        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+            background: none;
+        }}
+        /* Corner junction */
+        QScrollBar::corner {{
+            background: transparent;
+        }}
+    """
+
+

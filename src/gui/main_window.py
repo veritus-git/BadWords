@@ -297,26 +297,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 font-size: {config.FS(10)}pt;
             }}
-            /* ---- Scrollbars (global) ---- */
-            QScrollBar:vertical {{
-                background: {config.SCROLL_BG};
-                width: {config.S(8)}px;
-                border: none;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {config.SCROLL_FG};
-                border-radius: {config.S(4)}px;
-                min-height: {config.S(20)}px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {config.SCROLL_ACTIVE};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: none;
-            }}
+            {config.scrollbar_qss(8)}
         """)
 
         # ── CSD: root frame (wraps title bar + content, owns border-radius) ──
@@ -502,6 +483,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._settings_dialog = SettingsDialog(self.engine, self)
         else:
             self._settings_dialog._reload_preferences()
+        is_top = getattr(self, '_always_on_top_active', False) or bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+        if bool(self._settings_dialog.windowFlags() & Qt.WindowStaysOnTopHint) != is_top:
+            self._settings_dialog.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
         return self._settings_dialog
 
     def _preload_settings(self):
@@ -522,34 +506,26 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def changeEvent(self, event):
         super().changeEvent(event)
-        if event.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
+        if event.type() == QEvent.WindowStateChange:
             self._enforce_native_always_on_top()
 
     def _enforce_native_always_on_top(self):
         try:
-            if getattr(self, '_always_on_top_active', False) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+            prefs = self.engine.load_preferences() or {}
+            if (getattr(self, '_always_on_top_active', False) or prefs.get('always_on_top')) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
                 self.engine.os_doc.set_always_on_top(int(self.winId()), True)
         except Exception:
             pass
 
     def _apply_always_on_top(self, enable: bool):
         self._always_on_top_active = bool(enable)
-        was_visible = self.isVisible()
-
-        # 1. Update Qt QWindow flag so Qt internal state knows about it
-        try:
-            self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
-            if was_visible:
-                if getattr(self, '_is_mac', False):
-                    self.showFullScreen()
-                else:
-                    self.showMaximized()
-                self.raise_()
-                self.activateWindow()
-        except Exception:
-            pass
-
-        # 2. Apply native OS level top-most state without recreating window
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+        if self.isMaximized():
+            self.showMaximized()
+        elif self.isFullScreen():
+            self.showFullScreen()
+        else:
+            self.show()
         try:
             win_id = int(self.winId())
             if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
@@ -3183,7 +3159,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QApplication
         QApplication.setWindowIcon(_app_icon())
         self.setWindowIcon(_app_icon())
-        self._enforce_native_always_on_top()
         self._build_marker_radio_buttons()
         self.text_canvas.update()
 
@@ -3456,7 +3431,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Explicitly reactivate the main window to ensure ApplicationShortcut context binds properly
         self.activateWindow()
         self.setFocus()
-        self._enforce_native_always_on_top()
 
 
 

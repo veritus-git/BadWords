@@ -28,7 +28,7 @@ def build_assembly_panel(win) -> QFrame:
     """Build the Assembly activity panel and bind widgets to main window."""
     p_assembly = QWidget()
     l_assembly = QVBoxLayout(p_assembly)
-    l_assembly.setContentsMargins(config.S(8), config.S(12), config.S(8), config.S(12))
+    l_assembly.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
     l_assembly.setSpacing(config.S(15))
     
     def _pin_btn(fav_id: str):

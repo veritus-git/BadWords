@@ -99,6 +99,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.engine = engine
         self.setWindowTitle(self.txt("tool_settings"))
         self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
         self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
 
         # Center over active main window or active screen
@@ -116,7 +117,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                           sg.y() + (sg.height() - config.SETTINGS_WINDOW_H) // 2)
 
         # Inherit always on top from parent if active
-        if parent and getattr(parent, '_always_on_top_active', False):
+        if parent and (getattr(parent, '_always_on_top_active', False) or bool(parent.windowFlags() & Qt.WindowStaysOnTopHint)):
             self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
 
         prefs = self.engine.load_preferences() or {}
@@ -239,6 +240,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 font-size: 12pt;
                 font-weight: bold;
             }}
+            {config.scrollbar_qss(8)}
         """)
 
         # ─────────────────────────────────────────────────────────────────
@@ -427,23 +429,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         except Exception:
             pass
 
-        # Ensure dialog is always above parent window (especially on Windows & macOS)
-        parent_window = self.parentWidget()
-        if parent_window:
-            if getattr(parent_window, '_always_on_top_active', False):
-                self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-                if hasattr(self.engine, 'os_doc'):
-                    try:
-                        self.engine.os_doc.set_always_on_top(int(self.winId()), True)
-                    except Exception:
-                        pass
-            if getattr(self, '_is_win', False):
-                import ctypes
-                try:
-                    GWLP_HWNDPARENT = -8
-                    ctypes.windll.user32.SetWindowLongPtrW(int(self.winId()), GWLP_HWNDPARENT, int(parent_window.winId()))
-                except Exception:
-                    pass
         self.raise_()
         self.activateWindow()
 
