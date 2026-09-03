@@ -2658,14 +2658,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
         
         start_w = self.script_container.width()
-        end_w = config.S(350) if checked else 0
+        base_w = self.settings_container.width() if hasattr(self, 'settings_container') else config.S(380)
+        end_w = base_w if checked else 0
         has_slider = hasattr(self, 'slider_widget')
         
         def _on_step(v):
             cur_w = int(start_w + (end_w - start_w) * v)
             self.script_container.setFixedWidth(cur_w)
             if has_slider:
-                self.slider_widget.setFixedWidth(config.S(330) + cur_w)
+                self.slider_widget.setFixedWidth(base_w + cur_w)
             if has_btn:
                 self.btn_import_wrapper.setMaximumWidth(int(start_btn_w + (end_btn_w - start_btn_w) * v))
                 
@@ -2673,7 +2674,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if not checked:
                 self.script_container.setVisible(False)
                 if has_slider:
-                    self.slider_widget.setFixedWidth(config.S(330))
+                    self.slider_widget.setFixedWidth(base_w)
             if has_btn:
                 if not checked:
                     self.btn_import_wrapper.setVisible(False)

@@ -1255,17 +1255,22 @@ class CustomDropdown(QPushButton):
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
         is_rtl = str(text) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(text))
         align_str = "right" if is_rtl else "left"
+        is_large = bool(self.property("large_input"))
+        fs = config.FS(10.5) if is_large else config.FS(9.5)
+        pad_y = config.S(5) if is_large else config.S(4)
+        pad_x = config.S(10) if is_large else config.S(8)
+        rad = config.S(4) if is_large else config.S(3)
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: {align_str};
-                padding: {config.S(4)}px {config.S(8)}px;
+                padding: {pad_y}px {pad_x}px;
                 border: 1px solid #3a3a3a;
-                border-radius: {config.S(3)}px;
+                border-radius: {rad}px;
                 min-height: {config.S(20)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {fs}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -1624,16 +1629,24 @@ class MultiSelectDropdown(QPushButton):
         self._popup = None
         self.setText(self.txt("txt_all_tracks") if self.options_list else self.txt("msg_no_audio_tracks_detected"))
         self.setCursor(Qt.PointingHandCursor)
+        self.update_style()
+        self.clicked.connect(self.show_popup)
+
+    def update_style(self):
+        is_large = bool(self.property("large_input"))
+        fs = config.FS(10.5) if is_large else config.FS(9.5)
+        pad_y = config.S(5) if is_large else config.S(4)
+        pad_x = config.S(10) if is_large else config.S(8)
+        rad = config.S(4) if is_large else config.S(3)
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e; color: #d4d4d4; text-align: left;
-                padding: {config.S(4)}px {config.S(8)}px; border: 1px solid #3a3a3a;
-                border-radius: {config.S(3)}px; min-height: {config.S(20)}px;
-                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt;
+                padding: {pad_y}px {pad_x}px; border: 1px solid #3a3a3a;
+                border-radius: {rad}px; min-height: {config.S(20)}px;
+                font-family: "{config.UI_FONT_NAME}"; font-size: {fs}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
-        self.clicked.connect(self.show_popup)
 
     def show_popup(self):
         if callable(self._options_source) and not self.options_list:
@@ -1770,17 +1783,22 @@ class SearchableDropdown(QPushButton):
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
         is_rtl = str(text) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(text))
         align_str = "right" if is_rtl else "left"
+        is_large = bool(self.property("large_input"))
+        fs = config.FS(10.5) if is_large else config.FS(9.5)
+        pad_y = config.S(5) if is_large else config.S(4)
+        pad_x = config.S(10) if is_large else config.S(8)
+        rad = config.S(4) if is_large else config.S(3)
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: {align_str};
-                padding: {config.S(4)}px {config.S(8)}px;
+                padding: {pad_y}px {pad_x}px;
                 border: 1px solid #3a3a3a;
-                border-radius: {config.S(3)}px;
+                border-radius: {rad}px;
                 min-height: {config.S(20)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {fs}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
