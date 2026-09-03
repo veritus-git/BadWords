@@ -17,11 +17,40 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
 )
-from PySide6.QtGui import QPixmap, QCursor, QFont
+from PySide6.QtGui import QPixmap, QCursor, QFont, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
 import config
-from gui.utils import get_play_icon
+from gui.utils import get_play_icon, get_layout_icon_path
 from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch, ReloadButton
+
+
+class WelcomeBrandingWidget(QWidget):
+    """
+    Renders the authentic vector 'BadWords' branding logo in Helvetica Neue
+    consistently across all platforms from badwords-welcome-branding.svg.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("welcome_title")
+        svg_path = get_layout_icon_path("badwords-welcome-branding.svg")
+        self.renderer = QSvgRenderer(svg_path, self)
+        s = self.renderer.defaultSize()
+        self.aspect = float(s.width()) / float(max(1, s.height())) if not s.isEmpty() else 6.046
+        target_h = config.S(44)
+        target_w = int(target_h * self.aspect)
+        self.setFixedSize(target_w, target_h)
+
+    def sizeHint(self) -> QSize:
+        h = config.S(44)
+        return QSize(int(h * self.aspect), h)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        if self.renderer.isValid():
+            self.renderer.render(p, self.rect())
 
 
 def build_welcome_view(win) -> QWidget:
@@ -46,23 +75,10 @@ def build_welcome_view(win) -> QWidget:
     inner_layout.setSpacing(0)
     inner_layout.setAlignment(Qt.AlignTop)
 
-    # ── Shared Title ─────────────────────────────────────────────────
-    lbl_title = QLabel("BadWords", inner)
-    lbl_title.setObjectName("welcome_title")
-    lbl_title.setAlignment(Qt.AlignCenter)
-    lbl_title.setFont(QFont("Ubuntu", config.FS(36), QFont.Weight.Bold))
-    lbl_title.setStyleSheet(f"""
-        QLabel#welcome_title {{
-            color: #ffffff;
-            font-size: {config.FS(36)}pt;
-            font-weight: bold;
-            font-family: "Ubuntu", sans-serif;
-            background: transparent;
-            letter-spacing: 0.5px;
-        }}
-    """)
-    inner_layout.addWidget(lbl_title)
-    inner_layout.addSpacing(config.S(6))
+    # ── Shared Title (Vector Branding in Helvetica Neue) ─────────────
+    win.welcome_title = WelcomeBrandingWidget(inner)
+    inner_layout.addWidget(win.welcome_title, 0, Qt.AlignCenter)
+    inner_layout.addSpacing(config.S(8))
 
     # ── Local stacked widget ──────────────────────────────────────────
     win.welcome_stack = QStackedWidget()
