@@ -2636,6 +2636,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         from PySide6.QtCore import QVariantAnimation, QEasingCurve
         
+        if checked:
+            self.script_container.setVisible(True)
+
         has_btn = hasattr(self, 'btn_import_wrapper')
         if has_btn:
             # Temporarily un-restrict to measure natural width
@@ -2656,13 +2659,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         start_w = self.script_container.width()
         end_w = config.S(350) if checked else 0
+        has_slider = hasattr(self, 'slider_widget')
         
         def _on_step(v):
-            self.script_container.setFixedWidth(int(start_w + (end_w - start_w) * v))
+            cur_w = int(start_w + (end_w - start_w) * v)
+            self.script_container.setFixedWidth(cur_w)
+            if has_slider:
+                self.slider_widget.setFixedWidth(config.S(330) + cur_w)
             if has_btn:
                 self.btn_import_wrapper.setMaximumWidth(int(start_btn_w + (end_btn_w - start_btn_w) * v))
                 
         def _on_finish():
+            if not checked:
+                self.script_container.setVisible(False)
+                if has_slider:
+                    self.slider_widget.setFixedWidth(config.S(330))
             if has_btn:
                 if not checked:
                     self.btn_import_wrapper.setVisible(False)

@@ -860,6 +860,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 if not cur_text or config.is_default_whisper_prompt(cur_text):
                     self.textedit_prompt.setPlainText("")
 
+            ok_text = target.get('btn_ok', 'OK')
             CustomMsgBox(self, title, message, ok_text).exec()
 
         self.dropdown_lang.valueChanged.connect(_on_lang_changed)

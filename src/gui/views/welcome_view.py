@@ -27,6 +27,7 @@ from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectD
 def build_welcome_view(win) -> QWidget:
     """Build Page 0 of the main stack: Welcome / Configuration screen."""
     prefs = win.engine.load_preferences() or {}
+    is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
     page = QWidget()
     page.setObjectName("page_welcome")
     page.setStyleSheet(f"QWidget#page_welcome {{ background-color: {config.BG_COLOR}; }}")
@@ -101,6 +102,7 @@ def build_welcome_view(win) -> QWidget:
 
     win.slider_widget = QWidget()
     win.slider_widget.setStyleSheet("background: transparent;")
+    win.slider_widget.setFixedWidth(config.S(330) + (config.S(350) if is_more_accurate else 0))
     win.slider_layout = QHBoxLayout(win.slider_widget)
     win.slider_layout.setContentsMargins(0, 0, 0, 0)
     win.slider_layout.setSpacing(0)
@@ -272,6 +274,7 @@ def build_welcome_view(win) -> QWidget:
     # Script Container
     win.script_container = QWidget()
     win.script_container.setFixedWidth(config.S(350) if is_more_accurate else 0)
+    win.script_container.setVisible(bool(is_more_accurate))
     win.script_container.setStyleSheet("background: transparent;")
     
     win.script_container_layout = QHBoxLayout(win.script_container)
