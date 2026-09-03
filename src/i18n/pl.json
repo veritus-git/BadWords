@@ -176,6 +176,7 @@
     "lbl_chunk_punct_count": "Znaki interpunkcyjne na blok",
     "msg_restore_title": "Resetuj Wszystkie Ustawienia",
     "msg_restore_desc": "To przywróci WSZYSTKIE ustawienia do wartości fabrycznych. Jesteś pewien?",
+    "chk_delete_custom_markers": "Usuń także własne markery",
     "msg_clear_title": "Wyczyść Transkrypcję",
     "msg_clear_desc": "Czy na pewno chcesz usunąć wszystkie oznaczenia?",
     "status_render": "Renderowanie dźwięku...",

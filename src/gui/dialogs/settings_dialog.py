@@ -1220,7 +1220,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop.addWidget(self.chk_ontop)
         
         self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
-                 False, lambda v: self.chk_ontop.setChecked(v, animated=False))
+                 False, lambda v: self.chk_ontop.setChecked(v, animated=True))
         l_ontop_box.addLayout(form_ontop)
         l_ontop_box.addSpacing(14)
         
@@ -1361,7 +1361,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_sync.addSpacing(config.S(8))
         l_sync.addWidget(self.chk_sync_davinci)
         self._add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
-                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=False))
+                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=True))
 
         # Track order toggle — directly below sync davinci
         import config as _cfg_bot
@@ -1383,7 +1383,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_xml_track.addSpacing(config.S(8))
         l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
         self._add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
-                 False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=False))
+                 False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=True))
 
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
         self.tgl_timestamp_precise = ToggleSwitch()
@@ -1399,7 +1399,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ts_precise.addSpacing(config.S(8))
         l_ts_precise.addWidget(self.tgl_timestamp_precise)
         self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
-                 False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=False))
+                 False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=True))
 
         l_transcript.addLayout(form_bottom)
         l_transcript.addSpacing(14)
@@ -1509,12 +1509,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.chk_vad_filter = ToggleSwitch(parent=page_ai)
         self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
         w_vad = QWidget(page_ai); l_vad = QHBoxLayout(w_vad); l_vad.setContentsMargins(0, 0, 0, 0); l_vad.addStretch(); l_vad.addWidget(self.chk_vad_filter)
-        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_vad_filter"), w_vad, False, lambda v: self.chk_vad_filter.setChecked(v, animated=False)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_vad_filter"), w_vad, False, lambda v: self.chk_vad_filter.setChecked(v, animated=True)))
 
         self.chk_condition_prev = ToggleSwitch(parent=page_ai)
         self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
         w_cond = QWidget(page_ai); l_cond = QHBoxLayout(w_cond); l_cond.setContentsMargins(0, 0, 0, 0); l_cond.addStretch(); l_cond.addWidget(self.chk_condition_prev)
-        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_condition_prev"), w_cond, False, lambda v: self.chk_condition_prev.setChecked(v, animated=False)))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_condition_prev"), w_cond, False, lambda v: self.chk_condition_prev.setChecked(v, animated=True)))
 
         def_beam = config.DEFAULT_SETTINGS.get('ai_beam_size', 1)
         self.spin_beam_size = CustomNumberInput(int(prefs.get('ai_beam_size', def_beam)), 1, 10, step=1, parent=page_ai)
@@ -1591,7 +1591,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l1.addStretch()
         l1.addWidget(self.chk_telemetry_opt_in)
         self._add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
-                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=False))
+                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=True))
 
         self.chk_telemetry_geo = ToggleSwitch()
         self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
@@ -1601,7 +1601,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l2.addStretch()
         l2.addWidget(self.chk_telemetry_geo)
         self._add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
-                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=False))
+                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=True))
 
         l_telem.addLayout(form_telem)
         l_telem.addStretch()
@@ -1969,23 +1969,32 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.txt('msg_restore_title'), 
             self.txt('msg_restore_desc'), 
             self.txt('btn_yes'), 
-            self.txt('btn_no')
+            self.txt('btn_no'),
+            checkbox_text=self.txt('chk_delete_custom_markers'),
+            checkbox_checked=False
         )
         if msg_box.exec() == QDialog.Accepted:
             import config
             old_prefs = self.engine.load_preferences() or {}
+            delete_markers = msg_box.is_checkbox_checked()
             # Build a full default state — start with DEFAULT_SETTINGS then keep
             # lang and settings_view_mode so the UI doesn't switch language/mode.
             default_state = config.DEFAULT_SETTINGS.copy()
             default_state['gui_lang'] = old_prefs.get('gui_lang', 'en')
             default_state['settings_view_mode'] = old_prefs.get('settings_view_mode', 'basic')
+            
+            # Custom markers preserved unless user explicitly checked the box
+            if not delete_markers:
+                default_state['custom_markers'] = old_prefs.get('custom_markers', [])
+            else:
+                default_state['custom_markers'] = []
+                self.current_custom_markers = []
+
             # Save to disk first so subsequent load_preferences() returns defaults
             self.engine.save_preferences(default_state)
             self.initial_prefs = self.engine.load_preferences() or {}
             # Reset all visible widgets to their default values
             self._restore_state_dict(default_state)
-            # Clear custom markers
-            self.current_custom_markers = []
             CustomMsgBox(self, self.txt('msg_title_settings'), self.txt('msg_restart_required'), self.txt('btn_ok')).exec()
             try:
                 self._refresh_markers_list()
@@ -2494,6 +2503,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
+            'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
             'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
             'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
             'auto_update_on_start':   self._safe_get('tgl_auto_update_on_start', old_prefs.get('auto_update_on_start', False), 'isChecked'),
@@ -2594,6 +2604,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             pass
                 
         self._safe_set('chk_sync_davinci', _g('sync_davinci_chapter', True), 'setChecked')
+        self._safe_set('tgl_xml_preserve_track_order', _g('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'setChecked')
         self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
         self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')
         self._safe_set('tgl_auto_update_on_start', _g('auto_update_on_start', False), 'setChecked')

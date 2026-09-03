@@ -38,9 +38,18 @@ class GlobalAppFilter(QObject):
                 focused = QApplication.focusWidget()
                 if focused:
                     global_pos = QCursor.pos()
-                    focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
-                    if not focused_global_rect.contains(global_pos):
-                        focused.clearFocus()
+                    try:
+                        focused_global_rect = QRect(focused.mapToGlobal(QPoint(0, 0)), focused.size())
+                        if not focused_global_rect.contains(global_pos):
+                            focused.clearFocus()
+                            if hasattr(focused, 'setDown'):
+                                focused.setDown(False)
+                            focused.setAttribute(Qt.WA_UnderMouse, False)
+                            focused.style().unpolish(focused)
+                            focused.style().polish(focused)
+                            focused.update()
+                    except Exception:
+                        pass
 
             # 2. Enter/Return removes focus from focused input
             if etype == QEvent.Type.KeyPress and isinstance(obj, QWidget) and obj.hasFocus():

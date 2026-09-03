@@ -176,6 +176,7 @@
     "lbl_chunk_punct_count": "Sinais de pontuação por bloco",
     "msg_restore_title": "Redefinir Todas as Configurações",
     "msg_restore_desc": "Isso redefinirá TODAS as configurações para os padrões de fábrica. Tem certeza?",
+    "chk_delete_custom_markers": "Excluir também marcadores personalizados",
     "msg_clear_title": "Limpar Transcrição",
     "msg_clear_desc": "Tem certeza de que deseja limpar todas as marcações?",
     "status_render": "Renderizando áudio...",

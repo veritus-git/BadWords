@@ -1257,18 +1257,20 @@ class CustomDropdown(QPushButton):
         align_str = "right" if is_rtl else "left"
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
-        pad_y = config.S(5) if is_large else config.S(4)
         pad_x = config.S(10) if is_large else config.S(8)
         rad = config.S(4) if is_large else config.S(3)
+        h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: {align_str};
-                padding: {pad_y}px {pad_x}px;
+                padding: 0px {pad_x}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {rad}px;
-                min-height: {config.S(20)}px;
+                min-height: {h}px;
+                max-height: {h}px;
+                height: {h}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
                 font-size: {fs}pt;
             }}
@@ -1280,6 +1282,22 @@ class CustomDropdown(QPushButton):
         
         popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         popup.setAttribute(Qt.WA_DeleteOnClose)
+
+        def _on_popup_closed():
+            self.setDown(False)
+            self.clearFocus()
+            self.setAttribute(Qt.WA_UnderMouse, False)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+
+        popup.destroyed.connect(lambda *_: _on_popup_closed())
+        orig_hide = popup.hideEvent
+        def _popup_hide(ev):
+            _on_popup_closed()
+            if orig_hide:
+                orig_hide(ev)
+        popup.hideEvent = _popup_hide
         popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1e1e1e;
@@ -1609,12 +1627,58 @@ class SpeedDropdown(QPushButton):
         
         popup_w = max(self.width(), config.S(64))
         
-        global_pos = self.mapToGlobal(QPoint(0, 0))
-        popup_x = global_pos.x() + (self.width() - popup_w) // 2
-        popup_y = global_pos.y() - (list_height + 2)
-        
         popup.setGeometry(popup_x, popup_y, popup_w, list_height + 2)
         popup.show()
+
+class CustomCheckBox(QWidget):
+    toggled = Signal(bool)
+    def __init__(self, text: str, checked: bool = False, parent=None):
+        super().__init__(parent)
+        self.is_checked = checked
+        self.opt_text = text
+        self.setCursor(Qt.PointingHandCursor)
+        
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(config.S(8))
+        
+        self.tick_box = QLabel()
+        self.tick_box.setFixedSize(config.S(14), config.S(14))
+        self.tick_box.setAlignment(Qt.AlignCenter)
+        
+        self.lbl = QLabel(text)
+        self.lbl.setStyleSheet(f"border: none; outline: none; color: #d4d4d4; font-size: {config.FS(9.5)}pt; background: transparent;")
+        
+        lay.addWidget(self.tick_box)
+        lay.addWidget(self.lbl)
+        lay.addStretch()
+        self.update_ui()
+
+    def update_ui(self):
+        if self.is_checked:
+            self.tick_box.setText("✔")
+            self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: {config.S(10)}px; border-radius: {config.S(2)}px;")
+        else:
+            self.tick_box.setText("")
+            self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #333; border-radius: {config.S(2)}px;")
+
+    def setChecked(self, checked: bool):
+        if self.is_checked != checked:
+            self.is_checked = checked
+            self.update_ui()
+            self.toggled.emit(self.is_checked)
+
+    def isChecked(self) -> bool:
+        return self.is_checked
+
+    def toggle(self):
+        self.setChecked(not self.is_checked)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.toggle()
+        super().mousePressEvent(event)
+
 
 class MultiSelectDropdown(QPushButton):
     valueChanged = Signal(list)
@@ -1626,23 +1690,22 @@ class MultiSelectDropdown(QPushButton):
         else:
             self.options_list = list(options_list)
         self.selected_items = set(self.options_list)
-        self._popup = None
-        self.setText(self.txt("txt_all_tracks") if self.options_list else self.txt("msg_no_audio_tracks_detected"))
         self.setCursor(Qt.PointingHandCursor)
+        self.setText(self.txt("txt_all_tracks"))
         self.update_style()
-        self.clicked.connect(self.show_popup)
 
     def update_style(self):
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
-        pad_y = config.S(5) if is_large else config.S(4)
         pad_x = config.S(10) if is_large else config.S(8)
         rad = config.S(4) if is_large else config.S(3)
+        h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e; color: #d4d4d4; text-align: left;
-                padding: {pad_y}px {pad_x}px; border: 1px solid #3a3a3a;
-                border-radius: {rad}px; min-height: {config.S(20)}px;
+                padding: 0px {pad_x}px; border: 1px solid #3a3a3a;
+                border-radius: {rad}px;
+                min-height: {h}px; max-height: {h}px; height: {h}px;
                 font-family: "{config.UI_FONT_NAME}"; font-size: {fs}pt;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
@@ -1663,7 +1726,23 @@ class MultiSelectDropdown(QPushButton):
 
         self._popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         self._popup.setAttribute(Qt.WA_DeleteOnClose)
-        self._popup.destroyed.connect(lambda *_: setattr(self, '_popup', None))
+
+        def _on_popup_closed():
+            setattr(self, '_popup', None)
+            self.setDown(False)
+            self.clearFocus()
+            self.setAttribute(Qt.WA_UnderMouse, False)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+
+        self._popup.destroyed.connect(lambda *_: _on_popup_closed())
+        orig_hide = self._popup.hideEvent
+        def _popup_hide(ev):
+            _on_popup_closed()
+            if orig_hide:
+                orig_hide(ev)
+        self._popup.hideEvent = _popup_hide
         self._popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
 
         layout = QVBoxLayout(self._popup)
@@ -1673,49 +1752,25 @@ class MultiSelectDropdown(QPushButton):
         list_widget = QListWidget()
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
         list_widget.setStyleSheet(f"""
-            QListWidget {{ border: none; outline: none; background: transparent; }}
-            QListWidget::item {{ border: none; outline: none; }}
-            QListWidget::item:focus {{ border: none; outline: none; }}
-            QListWidget::item:hover {{ background-color: #2a2d2e; }}
+            QListWidget {{
+                background-color: transparent; border: none; padding: 0px; margin: 0px; outline: none;
+            }}
+            QListWidget::item {{
+                background: transparent; border: none; padding: 0px; margin: 0px; outline: none;
+            }}
+            QListWidget::item:hover {{
+                background-color: #2a2d2e;
+            }}
+            QListWidget::item:selected {{
+                background-color: #2a2d2e;
+            }}
             {_popup_scrollbar_css()}
         """)
 
-        class CustomCheckItemWidget(QWidget):
+        class CustomCheckItemWidget(CustomCheckBox):
             def __init__(self, text, checked=False, parent=None):
-                super().__init__(parent)
-                from PySide6.QtWidgets import QHBoxLayout
-                from gui.widgets.labels import QLabel
-                from PySide6.QtCore import Qt
-                self.is_checked = checked
-                self.opt_text = text
-                
-                lay = QHBoxLayout(self)
-                lay.setContentsMargins(config.S(8), 0, config.S(8), 0)
-                lay.setSpacing(config.S(8))
-                
-                self.tick_box = QLabel()
-                self.tick_box.setFixedSize(config.S(14), config.S(14))
-                self.tick_box.setAlignment(Qt.AlignCenter)
-                
-                self.lbl = QLabel(text)
-                self.lbl.setStyleSheet(f"border: none; outline: none; color: #d4d4d4; font-size: {config.FS(9.5)}pt; background: transparent;")
-                
-                lay.addWidget(self.tick_box)
-                lay.addWidget(self.lbl)
-                lay.addStretch()
-                self.update_ui()
-                
-            def update_ui(self):
-                if self.is_checked:
-                    self.tick_box.setText("✔")
-                    self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: {config.S(10)}px; border-radius: {config.S(2)}px;")
-                else:
-                    self.tick_box.setText("")
-                    self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #333; border-radius: {config.S(2)}px;")
-                    
-            def toggle(self):
-                self.is_checked = not self.is_checked
-                self.update_ui()
+                super().__init__(text, checked=checked, parent=parent)
+                self.layout().setContentsMargins(config.S(8), 0, config.S(8), 0)
 
         from PySide6.QtCore import QSize
         items_to_show = self.options_list if self.options_list else [self.txt("msg_no_audio_tracks_detected")]
@@ -1730,7 +1785,6 @@ class MultiSelectDropdown(QPushButton):
                 list_widget.setItemWidget(item, lbl)
             else:
                 widget = CustomCheckItemWidget(opt, opt in self.selected_items)
-                widget.setCursor(Qt.PointingHandCursor)
                 list_widget.setItemWidget(item, widget)
 
         layout.addWidget(list_widget)
@@ -1740,7 +1794,7 @@ class MultiSelectDropdown(QPushButton):
                 w = list_widget.itemWidget(it)
                 if w and hasattr(w, 'toggle'):
                     w.toggle()
-                    self._on_toggled(w.opt_text, w.is_checked)
+                    self._on_toggled(w.opt_text, w.isChecked())
             list_widget.itemClicked.connect(_on_item_clicked)
 
         display_count = min(5, len(items_to_show))
@@ -1785,18 +1839,20 @@ class SearchableDropdown(QPushButton):
         align_str = "right" if is_rtl else "left"
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
-        pad_y = config.S(5) if is_large else config.S(4)
         pad_x = config.S(10) if is_large else config.S(8)
         rad = config.S(4) if is_large else config.S(3)
+        h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: {align_str};
-                padding: {pad_y}px {pad_x}px;
+                padding: 0px {pad_x}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {rad}px;
-                min-height: {config.S(20)}px;
+                min-height: {h}px;
+                max-height: {h}px;
+                height: {h}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
                 font-size: {fs}pt;
             }}
@@ -1811,6 +1867,22 @@ class SearchableDropdown(QPushButton):
 
         self.popup = QFrame(None, Qt.Popup | Qt.FramelessWindowHint)
         self.popup.setAttribute(Qt.WA_DeleteOnClose)
+
+        def _on_popup_closed():
+            self.setDown(False)
+            self.clearFocus()
+            self.setAttribute(Qt.WA_UnderMouse, False)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+
+        self.popup.destroyed.connect(lambda *_: _on_popup_closed())
+        orig_hide = self.popup.hideEvent
+        def _popup_hide(ev):
+            _on_popup_closed()
+            if orig_hide:
+                orig_hide(ev)
+        self.popup.hideEvent = _popup_hide
         self.popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1e1e1e;

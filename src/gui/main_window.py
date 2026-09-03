@@ -281,7 +281,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # --- Window basics ---
         self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
         self.setWindowIcon(_app_icon())
-        self.resize(config.CFG_WINDOW_W_BASE, config.CFG_WINDOW_H_BASE)
+        is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
+        init_w = config.S(780) if is_more_accurate else config.CFG_WINDOW_W_BASE
+        self.resize(init_w, config.CFG_WINDOW_H_BASE)
         self.setMinimumSize(config.S(330), config.S(400))
         # NOTE: force_dark_titlebar removed — CSD owns the title bar.
 
@@ -2630,51 +2632,43 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """Navigate to the Analysis / Processing page."""
         self.go_to_page(1)
 
-    def _on_more_accurate_toggled(self, checked):
+    def _on_more_accurate_toggled(self, checked: bool):
         self.engine.save_preferences({"ai_more_accurate": checked})
-        if not hasattr(self, 'script_container'): return
-        
-        from PySide6.QtCore import QVariantAnimation, QEasingCurve
-        
+        if not hasattr(self, 'script_container'):
+            return
+
         if checked:
             self.script_container.setVisible(True)
 
         has_btn = hasattr(self, 'btn_import_wrapper')
         if has_btn:
-            # Temporarily un-restrict to measure natural width
             self.btn_import_wrapper.setMaximumWidth(16777215)
             btn_full_w = self.btn_import_wrapper.sizeHint().width()
             start_btn_w = self.btn_import_wrapper.width() if self.btn_import_wrapper.isVisible() else 0
             end_btn_w = btn_full_w if checked else 0
-            
             if checked:
                 self.btn_import_wrapper.setMaximumWidth(start_btn_w)
                 self.btn_import_wrapper.setVisible(True)
 
         self._script_anim = QVariantAnimation(self)
-        self._script_anim.setDuration(500)
+        self._script_anim.setDuration(350)
         self._script_anim.setStartValue(0.0)
         self._script_anim.setEndValue(1.0)
         self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
         
         start_w = self.script_container.width()
-        base_w = self.settings_container.width() if hasattr(self, 'settings_container') else config.S(380)
-        end_w = base_w if checked else 0
-        has_slider = hasattr(self, 'slider_widget')
+        pad = config.S(10)
+        end_w = (config.S(16) + config.S(325) + pad) if checked else 0
         
         def _on_step(v):
-            cur_w = int(start_w + (end_w - start_w) * v)
-            self.script_container.setFixedWidth(cur_w)
-            if has_slider:
-                self.slider_widget.setFixedWidth(base_w + cur_w)
+            self.script_container.setFixedWidth(int(start_w + (end_w - start_w) * v))
             if has_btn:
                 self.btn_import_wrapper.setMaximumWidth(int(start_btn_w + (end_btn_w - start_btn_w) * v))
                 
         def _on_finish():
+            self.script_container.setFixedWidth(end_w)
             if not checked:
                 self.script_container.setVisible(False)
-                if has_slider:
-                    self.slider_widget.setFixedWidth(base_w)
             if has_btn:
                 if not checked:
                     self.btn_import_wrapper.setVisible(False)
@@ -2692,48 +2686,48 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not _lang_is_valid:
             # Flash red border on the language dropdown
             if hasattr(self, '_combo_lang'):
-                _orig_ss = (
+                _err_ss = (
                     f"QPushButton {{"
                     f" background-color: #1e1e1e;"
                     f" color: #d4d4d4;"
                     f" text-align: left;"
-                    f" padding: 4px 8px;"
-                    f" border: 1px solid #3a3a3a;"
-                    f" border-radius: 3px;"
-                    f" min-height: 20px;"
+                    f" padding: 0px {config.S(8)}px;"
+                    f" border: 1px solid #ed4245;"
+                    f" border-radius: {config.S(3)}px;"
+                    f" min-height: {config.S(20)}px;"
+                    f" max-height: {config.S(30)}px;"
+                    f" height: {config.S(30)}px;"
+                    f" font-family: '{config.UI_FONT_NAME}', sans-serif;"
+                    f" font-size: {config.FS(9.5)}pt;"
                     f"}}"
-                    f"QPushButton:hover {{ border-color: {config.BTN_BG}; }}"
-                )
-                _err_ss = (
-                    "QPushButton {"
-                    " background-color: #1e1e1e;"
-                    " color: #d4d4d4;"
-                    " text-align: left;"
-                    " padding: 4px 8px;"
-                    " border: 1px solid #ed4245;"
-                    " border-radius: 3px;"
-                    " min-height: 20px;"
-                    "}"
-                    "QPushButton:hover { border-color: #ed4245; }"
+                    f"QPushButton:hover {{ border-color: #ed4245; }}"
                 )
                 self._combo_lang.setStyleSheet(_err_ss)
                 
                 # Add a little shake animation
                 from PySide6.QtCore import QPropertyAnimation as _QPA, QPoint as _QP
+                if not hasattr(self._combo_lang, '_orig_pos') or self._combo_lang._orig_pos is None:
+                    self._combo_lang._orig_pos = self._combo_lang.pos()
+                pos = self._combo_lang._orig_pos
+                delta = config.S(6)
                 anim = _QPA(self._combo_lang, b"pos", self)
                 anim.setDuration(300)
-                pos = self._combo_lang.pos()
                 anim.setKeyValueAt(0, pos)
-                anim.setKeyValueAt(0.2, pos + _QP(5, 0))
-                anim.setKeyValueAt(0.4, pos - _QP(5, 0))
-                anim.setKeyValueAt(0.6, pos + _QP(5, 0))
-                anim.setKeyValueAt(0.8, pos - _QP(5, 0))
+                anim.setKeyValueAt(0.2, pos + _QP(delta, 0))
+                anim.setKeyValueAt(0.4, pos - _QP(delta, 0))
+                anim.setKeyValueAt(0.6, pos + _QP(delta, 0))
+                anim.setKeyValueAt(0.8, pos - _QP(delta, 0))
                 anim.setKeyValueAt(1, pos)
+                def _on_lang_shake_done():
+                    if hasattr(self._combo_lang, '_orig_pos') and self._combo_lang._orig_pos is not None:
+                        self._combo_lang.move(self._combo_lang._orig_pos)
+                        self._combo_lang._orig_pos = None
+                anim.finished.connect(_on_lang_shake_done)
                 anim.start()
                 self._lang_shake_anim = anim # keep ref
                 
                 from PySide6.QtCore import QTimer as _QT
-                _QT.singleShot(1250, lambda: self._combo_lang.setStyleSheet(_orig_ss))
+                _QT.singleShot(1250, lambda: self._combo_lang._update_text_alignment(self._combo_lang.text()))
             return  # Do NOT start analysis
 
         # ── Script / Scenario validation ────────────────────────────────────────
@@ -2763,15 +2757,23 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 parent_widget = self.script_container if hasattr(self, 'script_container') else self
                 
                 from PySide6.QtCore import QPropertyAnimation as _QPA, QPoint as _QP
+                if not hasattr(target_widget, '_orig_pos') or target_widget._orig_pos is None:
+                    target_widget._orig_pos = target_widget.pos()
+                pos = target_widget._orig_pos
+                delta = config.S(6)
                 anim = _QPA(target_widget, b"pos", parent_widget)
                 anim.setDuration(300)
-                pos = target_widget.pos()
                 anim.setKeyValueAt(0, pos)
-                anim.setKeyValueAt(0.2, pos + _QP(5, 0))
-                anim.setKeyValueAt(0.4, pos - _QP(5, 0))
-                anim.setKeyValueAt(0.6, pos + _QP(5, 0))
-                anim.setKeyValueAt(0.8, pos - _QP(5, 0))
+                anim.setKeyValueAt(0.2, pos + _QP(delta, 0))
+                anim.setKeyValueAt(0.4, pos - _QP(delta, 0))
+                anim.setKeyValueAt(0.6, pos + _QP(delta, 0))
+                anim.setKeyValueAt(0.8, pos - _QP(delta, 0))
                 anim.setKeyValueAt(1, pos)
+                def _on_script_shake_done():
+                    if hasattr(target_widget, '_orig_pos') and target_widget._orig_pos is not None:
+                        target_widget.move(target_widget._orig_pos)
+                        target_widget._orig_pos = None
+                anim.finished.connect(_on_script_shake_done)
                 anim.start()
                 self._script_shake_anim = anim # keep ref
                 
