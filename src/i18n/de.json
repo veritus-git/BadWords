@@ -176,6 +176,7 @@
     "lbl_chunk_punct_count": "Satzzeichen pro Block",
     "msg_restore_title": "Alle Einstellungen zurücksetzen",
     "msg_restore_desc": "Dadurch werden ALLE Einstellungen auf die Werkseinstellungen zurückgesetzt. Sind Sie sicher?",
+    "chk_delete_custom_markers": "Eigene Marker ebenfalls löschen",
     "msg_clear_title": "Transkript löschen",
     "msg_clear_desc": "Möchten Sie wirklich alle Markierungen löschen?",
     "status_render": "Audio wird gerendert...",

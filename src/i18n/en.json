@@ -176,6 +176,7 @@
     "lbl_chunk_punct_count": "Punctuation marks per block",
     "msg_restore_title": "Reset All Settings",
     "msg_restore_desc": "This will reset ALL settings to their factory defaults. Are you sure?",
+    "chk_delete_custom_markers": "Also delete custom markers",
     "msg_clear_title": "Clear Transcript",
     "msg_clear_desc": "Are you sure you want to clear all markings?",
     "status_render": "Rendering audio...",

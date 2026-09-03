@@ -19,10 +19,11 @@ import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
 from gui.utils import _center_on_screen
+from gui.widgets.buttons import CustomCheckBox
 
 
 class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
-    def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None, btn_cancel_text: str = None):
+    def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None, btn_cancel_text: str = None, checkbox_text: str = None, checkbox_checked: bool = False):
         super().__init__(parent)
         self.frameless_init(is_popup=True)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -87,6 +88,12 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         lbl_msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         content_layout.addWidget(lbl_msg)
         
+        self.chk_box = None
+        if checkbox_text:
+            self.chk_box = CustomCheckBox(checkbox_text, checked=checkbox_checked, parent=self.inner_frame)
+            content_layout.addWidget(self.chk_box)
+            content_layout.addSpacing(config.S(5))
+
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
@@ -118,6 +125,9 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
             self.move(x, y)
         else:
             _center_on_screen(self, self.width(), self.height())
+
+    def is_checkbox_checked(self) -> bool:
+        return self.chk_box.isChecked() if getattr(self, 'chk_box', None) is not None else False
 
     def showEvent(self, event):
         super().showEvent(event)

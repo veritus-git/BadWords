@@ -176,6 +176,7 @@
     "lbl_chunk_punct_count": "Signes de ponctuation par bloc",
     "msg_restore_title": "Réinitialiser tous les paramètres",
     "msg_restore_desc": "Ceci réinitialisera TOUS les paramètres à leurs valeurs d'usine. Êtes-vous sûr ?",
+    "chk_delete_custom_markers": "Supprimer également les marqueurs personnalisés",
     "msg_clear_title": "Effacer la transcription",
     "msg_clear_desc": "Êtes-vous sûr de vouloir effacer tous les marqueurs ?",
     "status_render": "Rendu audio...",
