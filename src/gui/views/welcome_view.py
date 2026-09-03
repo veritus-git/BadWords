@@ -69,15 +69,18 @@ class _WorkspaceTransitionOverlay(QWidget):
 
         p = self.progress
 
-        # Draw source snapshot (fading out)
-        painter.setOpacity(max(0.0, min(1.0, 1.0 - p)))
-        x_from = (self.width() - self.pix_from.width()) // 2
-        painter.drawPixmap(x_from, 0, self.pix_from)
-
-        # Draw target snapshot (fading in)
-        painter.setOpacity(max(0.0, min(1.0, p)))
-        x_to = (self.width() - self.pix_to.width()) // 2
-        painter.drawPixmap(x_to, 0, self.pix_to)
+        if p < 0.5:
+            # Phase 1: Pure fade OUT of old view (1.0 -> 0.0). No overlap!
+            alpha = max(0.0, min(1.0, 1.0 - (p / 0.5)))
+            painter.setOpacity(alpha)
+            x_from = (self.width() - self.pix_from.width()) // 2
+            painter.drawPixmap(x_from, 0, self.pix_from)
+        else:
+            # Phase 2: Pure fade IN of new view (0.0 -> 1.0). No overlap!
+            alpha = max(0.0, min(1.0, (p - 0.5) / 0.5))
+            painter.setOpacity(alpha)
+            x_to = (self.width() - self.pix_to.width()) // 2
+            painter.drawPixmap(x_to, 0, self.pix_to)
         painter.end()
 
 
@@ -278,7 +281,7 @@ def build_welcome_view(win) -> QWidget:
 
     # ── 3. WORKSPACE STACK ───────────────────────────────────────────────────
     H_TRANS = config.S(338)
-    H_SILENCE = config.S(432)
+    H_SILENCE = config.S(416)
 
     win.welcome_stack = QStackedWidget(inner)
     win.welcome_stack.setStyleSheet("background: transparent;")
@@ -748,7 +751,7 @@ def build_welcome_view(win) -> QWidget:
 
     # 6. Mode Toggles
     w_fs_cut = QWidget()
-    w_fs_cut.setFixedHeight(config.S(30))
+    w_fs_cut.setFixedHeight(config.S(22))
     row_fs_cut = QHBoxLayout(w_fs_cut)
     row_fs_cut.setContentsMargins(0, 0, 0, 0)
     lbl_fs_cut = QLabel(win.txt("lbl_cut_silence_directly"))
@@ -765,7 +768,7 @@ def build_welcome_view(win) -> QWidget:
     l_fast.addSpacing(config.S(8))
 
     w_fs_mark = QWidget()
-    w_fs_mark.setFixedHeight(config.S(30))
+    w_fs_mark.setFixedHeight(config.S(22))
     row_fs_mark = QHBoxLayout(w_fs_mark)
     row_fs_mark.setContentsMargins(0, 0, 0, 0)
     lbl_fs_mark = QLabel(win.txt("lbl_mark_silence_with_color"))
