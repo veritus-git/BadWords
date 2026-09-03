@@ -29,8 +29,11 @@ from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectD
 
 class _WorkspaceTransitionOverlay(QWidget):
     """
-    Renders a hardware-accelerated snapshot crossfade between workspace pages.
-    Eliminates all layout squashing, element reflow ('rozpychanie sie'), and font rasterization flicker.
+    Renders a hardware-accelerated sequential Fade Out -> Fade In transition for the dynamic lower section.
+    Stationary upper section (Timeline & Tracks) remains live and completely immobile.
+    Phase 1 (0.0 -> 0.5): The outgoing lower controls fade out to 0.0 opacity.
+    Phase 2 (0.5 -> 1.0): The incoming lower controls fade in from 0.0 to 1.0 opacity.
+    The two sets of controls NEVER overlap or mix together.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,21 +41,23 @@ class _WorkspaceTransitionOverlay(QWidget):
         self.pix_from = None
         self.pix_to = None
         self.progress = 0.0
+        self.y_offset = 0
         self.hide()
 
-    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap):
+    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap, y_offset: int = 0):
         self.pix_from = pix_from
         self.pix_to = pix_to
         self.progress = 0.0
+        self.y_offset = y_offset
         if self.parentWidget():
-            self.resize(self.parentWidget().size())
+            p_w = self.parentWidget().width()
+            p_h = self.parentWidget().height()
+            self.setGeometry(0, y_offset, p_w, max(0, p_h - y_offset))
         self.show()
         self.raise_()
 
     def set_progress(self, p: float):
         self.progress = p
-        if self.parentWidget():
-            self.resize(self.parentWidget().size())
         self.update()
 
     def finish(self):
@@ -70,13 +75,13 @@ class _WorkspaceTransitionOverlay(QWidget):
         p = self.progress
 
         if p < 0.5:
-            # Phase 1: Pure fade OUT of old view (1.0 -> 0.0). No overlap!
+            # Phase 1: Pure fade OUT of outgoing lower controls (1.0 -> 0.0)
             alpha = max(0.0, min(1.0, 1.0 - (p / 0.5)))
             painter.setOpacity(alpha)
             x_from = (self.width() - self.pix_from.width()) // 2
             painter.drawPixmap(x_from, 0, self.pix_from)
         else:
-            # Phase 2: Pure fade IN of new view (0.0 -> 1.0). No overlap!
+            # Phase 2: Pure fade IN of incoming lower controls (0.0 -> 1.0)
             alpha = max(0.0, min(1.0, (p - 0.5) / 0.5))
             painter.setOpacity(alpha)
             x_to = (self.width() - self.pix_to.width()) // 2
@@ -279,13 +284,12 @@ def build_welcome_view(win) -> QWidget:
         row_l.addWidget(widget)
         return row_l
 
-    # ── 3. WORKSPACE STACK ───────────────────────────────────────────────────
-    H_TRANS = config.S(338)
-    H_SILENCE = config.S(416)
+    # ── 3. WORKSPACE STACK (Stationary, zero Y-movement) ─────────────────────
+    H_CONTENT = config.S(416)
 
     win.welcome_stack = QStackedWidget(inner)
     win.welcome_stack.setStyleSheet("background: transparent;")
-    win.welcome_stack.setFixedHeight(H_TRANS)
+    win.welcome_stack.setFixedHeight(H_CONTENT)
     inner_layout.addWidget(win.welcome_stack, 0, Qt.AlignCenter)
 
     win._workspace_overlay = _WorkspaceTransitionOverlay(win.welcome_stack)
@@ -294,7 +298,12 @@ def build_welcome_view(win) -> QWidget:
         if win.welcome_stack.currentIndex() == target_idx:
             return
 
-        duration = 320
+        # Stop previous animation if still running
+        if hasattr(win.welcome_stack, '_switch_anim') and win.welcome_stack._switch_anim:
+            win.welcome_stack._switch_anim.stop()
+            win._workspace_overlay.finish()
+
+        duration = 260
         win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
 
         current_w = win.welcome_stack.currentWidget()
@@ -302,26 +311,31 @@ def build_welcome_view(win) -> QWidget:
 
         if current_w is None or target_w is None:
             win.welcome_stack.setCurrentIndex(target_idx)
-            win.welcome_stack.setFixedHeight(H_TRANS if target_idx == 0 else H_SILENCE)
-            inner.updateGeometry()
-            if inner.parentWidget() and inner.parentWidget().layout():
-                inner.parentWidget().layout().activate()
             return
 
-        start_h = win.welcome_stack.height()
-        target_h = H_TRANS if target_idx == 0 else H_SILENCE
+        y_lower = config.S(124)
+        w = win.welcome_stack.width()
+        h = win.welcome_stack.height()
 
-        # 1. Grab snapshot of current workspace
-        pix_from = current_w.grab()
+        # 1. Grab snapshot of current lower dynamic section
+        pix_curr_full = current_w.grab()
+        if pix_curr_full.height() > y_lower:
+            pix_from = pix_curr_full.copy(0, y_lower, pix_curr_full.width(), pix_curr_full.height() - y_lower)
+        else:
+            pix_from = QPixmap()
 
-        # 2. Grab snapshot of target workspace
-        target_w.resize(current_w.width(), target_h)
-        pix_to = target_w.grab()
+        # 2. Grab snapshot of target lower dynamic section
+        target_w.resize(w, h)
+        pix_targ_full = target_w.grab()
+        if pix_targ_full.height() > y_lower:
+            pix_to = pix_targ_full.copy(0, y_lower, pix_targ_full.width(), pix_targ_full.height() - y_lower)
+        else:
+            pix_to = QPixmap()
 
-        # 3. Setup overlay for seamless hardware-rendered crossfade
-        win._workspace_overlay.set_transition(pix_from, pix_to)
+        # 3. Setup overlay covering strictly the lower area below stationary Tracks
+        win._workspace_overlay.set_transition(pix_from, pix_to, y_offset=y_lower)
 
-        # 4. Animate height and progress smoothly in lockstep
+        # 4. Pure sequential Fade Out (0.0 -> 0.5) then Fade In (0.5 -> 1.0)
         anim = QVariantAnimation(win.welcome_stack)
         anim.setDuration(duration)
         anim.setStartValue(0.0)
@@ -329,19 +343,12 @@ def build_welcome_view(win) -> QWidget:
         anim.setEasingCurve(QEasingCurve.InOutCubic)
 
         def _step(v: float):
-            cur_h = int(start_h + (target_h - start_h) * v)
-            win.welcome_stack.setFixedHeight(cur_h)
             win._workspace_overlay.set_progress(v)
-            inner.updateGeometry()
-            if inner.parentWidget() and inner.parentWidget().layout():
-                inner.parentWidget().layout().activate()
+            if v >= 0.5 and win.welcome_stack.currentIndex() != target_idx:
+                win.welcome_stack.setCurrentIndex(target_idx)
 
         def _done():
             win.welcome_stack.setCurrentIndex(target_idx)
-            win.welcome_stack.setFixedHeight(target_h)
-            inner.updateGeometry()
-            if inner.parentWidget() and inner.parentWidget().layout():
-                inner.parentWidget().layout().activate()
             win._workspace_overlay.finish()
 
         anim.valueChanged.connect(_step)
