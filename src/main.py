@@ -31,9 +31,10 @@ if sys.version_info < (3, 9):
     except Exception:
         pass
 
+import time
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QFont
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QTimer
 
 # Application module imports
 import config
@@ -109,6 +110,7 @@ class AppController:
 
     def start(self):
         """Create the splash and kick off background initialization."""
+        self._splash_start_time = time.time()
         self.splash = gui.SplashScreen()
         self.splash.show()
         QApplication.processEvents()  # Paint splash before heavy loading starts
@@ -123,13 +125,10 @@ class AppController:
     # ------------------------------------------------------------------
 
     def on_loaded(self, resolve, audio_engine):
-        """
-        Called on the main thread when InitThread finishes successfully.
-        Build the main window and store it on self so GC cannot destroy it.
-        """
-        self.splash.close()
-        self.splash = None  # Allow GC to clean up the splash widget properly
+        """Called on the main thread when InitThread finishes successfully."""
+        self._finish_startup(resolve, audio_engine)
 
+    def _finish_startup(self, resolve, audio_engine):
         osdoc.log_info("Loading complete. Building main window.")
 
         # IMPORTANT: store on self, NOT as a local variable.
@@ -144,6 +143,11 @@ class AppController:
             self.main_win.showMaximized()
         self.main_win.raise_()
         self.main_win.activateWindow()
+
+        # Close splash only after main window is displayed
+        if self.splash:
+            self.splash.close()
+            self.splash = None
         osdoc.log_info("Main window displayed.")
 
     def on_error(self, message: str):
