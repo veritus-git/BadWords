@@ -1,4 +1,4 @@
-# <img src="repo/banner.png" alt="BadWords Logo" height="52" valign="middle" />&nbsp;
+# <img src="repo/banner.svg" alt="BadWords Logo" height="52" valign="middle" />&nbsp;
 **Cleaner Timelines, Faster. Simpler Rough-Cutting for DaVinci Resolve.**
 
 <br>
