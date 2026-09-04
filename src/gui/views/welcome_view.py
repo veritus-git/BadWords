@@ -532,7 +532,7 @@ def build_welcome_view(win) -> QWidget:
 
     win._combo_model.valueChanged.connect(lambda v: win.engine.save_preferences({"model": v}))
 
-    info_model = win._create_info_icon("tt_model_info")
+    info_model = win._create_info_icon("tt_model_size_info")
 
     row_model_lbl = QHBoxLayout()
     row_model_lbl.setContentsMargins(0, 0, 0, 0)
