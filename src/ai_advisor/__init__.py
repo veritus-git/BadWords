@@ -10,5 +10,5 @@ __version__ = "0.1.0"
 
 def open_panel(main_window):
     """Open the AI Advisor panel. Called from gui.py, exception-guarded there."""
-    from .panel import AIPanel
+    from .panel_ui import AIPanel
     return AIPanel(main_window)
