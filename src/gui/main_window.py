@@ -2651,7 +2651,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.btn_import_wrapper.setVisible(True)
 
         self._script_anim = QVariantAnimation(self)
-        self._script_anim.setDuration(480)
+        self._script_anim.setDuration(440)
         self._script_anim.setStartValue(0.0)
         self._script_anim.setEndValue(1.0)
         self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
