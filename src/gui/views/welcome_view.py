@@ -257,7 +257,7 @@ class WelcomePageView(QWidget):
         # Transcript visual height = 328px (total = 438px)
         # Silence visual height = 398px (total = 508px)
         self.H_HEADER = config.S(110)
-        self.H_TRANS_VISUAL = config.S(438)
+        self.H_TRANS_VISUAL = config.S(444)
         self.H_SILENCE_VISUAL = config.S(508)
         self.H_MAX_CONTENT = config.S(398)
 
@@ -341,7 +341,7 @@ class WelcomePageView(QWidget):
             self._y_anim.stop()
             self.fade_canvas.finish()
 
-        duration = 400
+        duration = 350
         self.win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
 
         current_w = self.win.welcome_stack.widget(self._current_idx)
@@ -607,8 +607,8 @@ def build_welcome_view(win) -> QWidget:
     win.script_layout.addSpacing(config.S(4))
 
     win.welcome_script_edit = QTextEdit()
-    # Matches top of Timeline down to bottom of More Accurate toggle: 262px.
-    win.welcome_script_edit.setFixedHeight(config.S(262))
+    # Matches top of Timeline flush with bottom of More Accurate toggle: 256px.
+    win.welcome_script_edit.setFixedHeight(config.S(256))
     win.welcome_script_edit.setAcceptRichText(False)
     win.welcome_script_edit.setStyleSheet(f"""
         QTextEdit {{
@@ -635,7 +635,7 @@ def build_welcome_view(win) -> QWidget:
     l_trans.addLayout(h_slider)
 
     # ── Action Buttons (STATIONARY IN THE CENTER BELOW SLIDER) ────────────────
-    l_trans.addSpacing(config.S(14))
+    l_trans.addSpacing(config.S(20))
 
     btn_row_t = QHBoxLayout()
     btn_row_t.setContentsMargins(0, 0, 0, 0)
