@@ -1948,7 +1948,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 track_combo.setText(no_track_label)
             else:
                 track_combo.options_list = list(tracks)
-                track_combo.selected_items = set()
+                track_combo.selected_items = set(tracks)
                 track_combo.setText(self.txt("txt_all_tracks"))
 
             # Mirror the timeline selection to the other page's dropdown

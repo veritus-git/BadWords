@@ -1690,8 +1690,9 @@ class MultiSelectDropdown(QPushButton):
         else:
             self.options_list = list(options_list)
         self.selected_items = set(self.options_list)
+        self._popup = None
         self.setCursor(Qt.PointingHandCursor)
-        self.setText(self.txt("txt_all_tracks"))
+        self.setText(self.txt("txt_all_tracks") if self.options_list else self.txt("msg_no_audio_tracks_detected"))
         self.update_style()
 
     def update_style(self):
@@ -1711,6 +1712,17 @@ class MultiSelectDropdown(QPushButton):
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
 
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if event.button() == Qt.LeftButton:
+            self.show_popup()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+            self.show_popup()
+            return
+        super().keyPressEvent(event)
+
     def show_popup(self):
         if callable(self._options_source) and not self.options_list:
             self.options_list = list(self._options_source())
@@ -1728,13 +1740,22 @@ class MultiSelectDropdown(QPushButton):
         self._popup.setAttribute(Qt.WA_DeleteOnClose)
 
         def _on_popup_closed():
+            try:
+                from shiboken6 import isValid
+                if not isValid(self):
+                    return
+            except Exception:
+                pass
             setattr(self, '_popup', None)
-            self.setDown(False)
-            self.clearFocus()
-            self.setAttribute(Qt.WA_UnderMouse, False)
-            self.style().unpolish(self)
-            self.style().polish(self)
-            self.update()
+            try:
+                self.setDown(False)
+                self.clearFocus()
+                self.setAttribute(Qt.WA_UnderMouse, False)
+                self.style().unpolish(self)
+                self.style().polish(self)
+                self.update()
+            except Exception:
+                pass
 
         self._popup.destroyed.connect(lambda *_: _on_popup_closed())
         orig_hide = self._popup.hideEvent
@@ -1771,6 +1792,12 @@ class MultiSelectDropdown(QPushButton):
             def __init__(self, text, checked=False, parent=None):
                 super().__init__(text, checked=checked, parent=parent)
                 self.layout().setContentsMargins(config.S(8), 0, config.S(8), 0)
+
+            def mousePressEvent(self, event):
+                event.ignore()
+
+        if not self.selected_items and self.options_list:
+            self.selected_items = set(self.options_list)
 
         from PySide6.QtCore import QSize
         items_to_show = self.options_list if self.options_list else [self.txt("msg_no_audio_tracks_detected")]
