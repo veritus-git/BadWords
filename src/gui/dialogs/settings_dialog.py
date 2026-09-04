@@ -292,9 +292,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.category_list = QListWidget()
         self.category_list.setFixedWidth(config.S(155))
         self.category_list.setFocusPolicy(Qt.NoFocus)
+        self.category_list.setFont(QFont(config.UI_FONT_NAME, config.FS(10)))
         # Disable horizontal scrollbar — marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._marquee_delegate = MarqueeItemDelegate(self.category_list)
+        self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
         self.category_list.setItemDelegate(self._marquee_delegate)
         root.addWidget(self.category_list)
 
