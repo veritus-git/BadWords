@@ -11,7 +11,7 @@ DESCRIPTION:
 Python package initialization file.
 """
 
-from .buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
+from .buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton, TrackSquareCheckbox
 from .labels import QLabel, IDETooltip, MarqueeLabel
 from .layouts import FlowLayout, MainPanelWidget
 from .progress_bar import LiquidProgressBar

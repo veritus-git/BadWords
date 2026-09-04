@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
-from gui.widgets.buttons import ToggleSwitch
+from gui.widgets.buttons import TrackSquareCheckbox
 from gui.widgets.language_selector import _LangPickerDialog
 from gui.utils import _app_icon, _txt, _center_on_screen
 
@@ -174,19 +174,13 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         content_layout.addWidget(self._lbl_msg)
         content_layout.addSpacing(config.S(10))
 
-        # Geo Toggle
+        # Geo Checkbox
         geo_layout = QHBoxLayout()
         geo_layout.setContentsMargins(0, 0, 0, 0)
         
-        self._chk_geo = ToggleSwitch(container)
-        self._chk_geo.setChecked(True, animated=False)
-        
-        self._lbl_geo = QLabel("", container)
-        self._lbl_geo.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10.5)}pt; background: transparent;")
+        self._chk_geo = TrackSquareCheckbox("", is_checked=True, font_size=config.FS(10.5), parent=container)
         
         geo_layout.addWidget(self._chk_geo)
-        geo_layout.addSpacing(config.S(10))
-        geo_layout.addWidget(self._lbl_geo)
         geo_layout.addStretch()
         content_layout.addLayout(geo_layout)
         content_layout.addSpacing(config.S(20))
@@ -226,7 +220,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         self._btn_yes.setText(self._t("btn_telemetry_yes"))
         self._btn_no.setText(self._t("btn_telemetry_no"))
         self._btn_lang.setText(self._lang.upper())
-        self._lbl_geo.setText(self._t("chk_telemetry_geo"))
+        self._chk_geo.setText(self._t("chk_telemetry_geo"))
         if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
             self._tb._lbl_title.setText(self._t("title_telemetry"))
 

@@ -78,26 +78,36 @@ class FlowLayout(QLayout):
             lineHeight = max(lineHeight, item.sizeHint().height())
         return y + lineHeight - rect.y()
 
+class Layer2Overlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Layer2Overlay")
+        self._is_overlapping = False
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+    def set_overlapping(self, overlap: bool):
+        if self._is_overlapping != overlap:
+            self._is_overlapping = overlap
+            self.update()
+
+    def paintEvent(self, event):
+        if self._is_overlapping:
+            p = QPainter(self)
+            p.fillRect(self.rect(), QColor("#212121"))
+            p.setPen(QColor("#2e2e2e"))
+            p.drawLine(0, 0, self.width(), 0)
+
+
 class MainPanelWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.layer1 = QWidget(self)
-        self.layer2 = QWidget(self)
-        self.layer2.setObjectName("Layer2Overlay")
-        self.layer2.setStyleSheet("QWidget#Layer2Overlay { background-color: transparent; border: none; }")
-        
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
-        self._shadow = QGraphicsDropShadowEffect(self.layer2)
-        self._shadow.setBlurRadius(15)
-        self._shadow.setColor(QColor(0, 0, 0, 0))
-        self._shadow.setOffset(0, -2)
-        self.layer2.setGraphicsEffect(self._shadow)
-        self._is_overlapping = False
-        
+        self.layer2 = Layer2Overlay(self)
+
     def resizeEvent(self, event):
         if event is not None:
             super().resizeEvent(event)
-        self.layer1.setGeometry(0, 0, self.width(), self.height())
+            self.layer1.setGeometry(0, 0, self.width(), self.height())
         hint = self.layer2.sizeHint()
         if self.layer2.layout():
             hint = self.layer2.layout().sizeHint()
@@ -111,14 +121,7 @@ class MainPanelWidget(QWidget):
             self._last_l1_hint = l1_hint
             
         overlap = (l1_hint + hint.height() + 20) > self.height()
-        if overlap != getattr(self, '_is_overlapping', False):
-            self._is_overlapping = overlap
-            if overlap:
-                self.layer2.setStyleSheet("QWidget#Layer2Overlay { background-color: #212121; border-top: 1px solid #2e2e2e; }")
-                self._shadow.setColor(QColor(0, 0, 0, 90))
-            else:
-                self.layer2.setStyleSheet("QWidget#Layer2Overlay { background-color: transparent; border: none; }")
-                self._shadow.setColor(QColor(0, 0, 0, 0))
+        self.layer2.set_overlapping(overlap)
 
     def showEvent(self, event):
         super().showEvent(event)

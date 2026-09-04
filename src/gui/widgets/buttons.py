@@ -2253,3 +2253,81 @@ class AssembleSplitButton(QFrame):
                 }}
             """)
 
+
+class TrackSquareCheckbox(QWidget):
+    toggled = Signal(bool)
+
+    def __init__(self, text="", is_checked=True, font_size=None, parent=None):
+        super().__init__(parent)
+        self.is_checked = bool(is_checked)
+        self.text_label = str(text)
+        self.setCursor(Qt.PointingHandCursor)
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(config.S(4), config.S(2), config.S(4), config.S(2))
+        lay.setSpacing(config.S(8))
+
+        self.box = QLabel()
+        self.box.setFixedSize(config.S(15), config.S(15))
+        self.box.setAlignment(Qt.AlignCenter)
+        self.box.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+        fs = font_size if font_size is not None else config.FS(9.5)
+        self.lbl = QLabel(self.text_label)
+        self.lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl.setStyleSheet(
+            f"color: #d4d4d4; font-size: {fs}pt; "
+            f"font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;"
+        )
+
+        lay.addWidget(self.box)
+        lay.addWidget(self.lbl)
+        lay.addStretch()
+
+        self._style_checked = f"""
+            background-color: #111111;
+            border: 1px solid #1a7a3e;
+            color: #1a7a3e;
+            font-weight: bold;
+            font-size: {config.S(10)}px;
+            border-radius: {config.S(2)}px;
+        """
+        self._style_unchecked = f"""
+            background-color: #111111;
+            border: 1px solid #3a3a3a;
+            border-radius: {config.S(2)}px;
+        """
+
+        self.update_ui()
+
+    def update_ui(self):
+        if self.is_checked:
+            self.box.setText("✔")
+            self.box.setStyleSheet(self._style_checked)
+        else:
+            self.box.setText("")
+            self.box.setStyleSheet(self._style_unchecked)
+
+    def setText(self, text: str):
+        self.text_label = str(text)
+        self.lbl.setText(self.text_label)
+
+    def text(self) -> str:
+        return self.text_label
+
+    def setChecked(self, checked: bool):
+        checked = bool(checked)
+        if self.is_checked == checked:
+            return
+        self.is_checked = checked
+        self.update_ui()
+
+    def isChecked(self) -> bool:
+        return self.is_checked
+
+    def mousePressEvent(self, event):
+        self.is_checked = not self.is_checked
+        self.update_ui()
+        self.toggled.emit(self.is_checked)
+        super().mousePressEvent(event)
+
