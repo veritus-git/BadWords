@@ -14,4 +14,5 @@ Python package initialization file.
 from .main_window import BadWordsGUI
 from .components.dialogs import SplashScreen
 from .utils import _app_icon, init_embedded_fonts, get_play_icon, get_svg_icon, setup_macos_standalone_identity, set_macos_runtime_icon
+from .vsync import init_high_refresh_sync, get_refresh_interval_ms, track_window_screen
 

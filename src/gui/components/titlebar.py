@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget, QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QFrame, QListWidget
 )
 from PySide6.QtCore import Qt, QSize, QVariantAnimation, QEasingCurve, Signal, QPoint
-from PySide6.QtGui import QIcon, QPixmap, QColor
+from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter
 import config
 from ..widgets.buttons import TitleDropdown
 from ..utils import _app_icon, _titlebar_icon
@@ -26,6 +26,7 @@ class AnimatedTitleButton(QPushButton):
     Title-bar control button with a 150ms QVariantAnimation colour transition
     on hover. The close button uses a red hover (#c42b1c) to match Discord/
     Spotify conventions; all other buttons use HOVER from config.
+    Optimized with direct QPainter painting to eliminate Qt stylesheet parsing latency.
     """
 
     def __init__(self, icon_path: str, tooltip_key: str, lang: str, parent=None):
@@ -36,7 +37,8 @@ class AnimatedTitleButton(QPushButton):
         self._press = "#3a3a3d"
         self._cur   = self._bg
 
-        self.setFixedSize(config.S(32), config.S(32))
+        s_sz = config.S(32)
+        self.setFixedSize(s_sz, s_sz)
         from ..utils import _txt
         self.setToolTip(_txt(lang, tooltip_key))
         self.setCursor(Qt.ArrowCursor)
@@ -51,11 +53,18 @@ class AnimatedTitleButton(QPushButton):
 
         self._anim = QVariantAnimation(self)
         self._anim.setDuration(150)
-        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._anim.setEasingCurve(QEasingCurve.OutQuad)
         self._anim.valueChanged.connect(self._on_color_changed)
         self._icon_path = icon_path
 
-        self._update_style()
+        self.setStyleSheet(f"""
+            QPushButton#TitleBarBtn {{
+                border: none; border-radius: 0px;
+                min-width: {s_sz}px; max-width: {s_sz}px; min-height: {s_sz}px; max-height: {s_sz}px;
+                margin: 0px; padding: 0px;
+                background: transparent;
+            }}
+        """)
 
     def change_base_icon(self, new_icon_path):
         self._icon_path = new_icon_path
@@ -65,23 +74,23 @@ class AnimatedTitleButton(QPushButton):
     # ── internal ─────────────────────────────────────────────────────────────
     def _on_color_changed(self, color):
         self._cur = color.name() if hasattr(color, 'name') else str(color)
-        self._update_style()
-
-    def _update_style(self):
-        s_sz = config.S(32)
-        self.setStyleSheet(f"""
-            QPushButton#TitleBarBtn {{
-                background-color: {self._cur}; border: none; border-radius: 0px;
-                min-width: {s_sz}px; max-width: {s_sz}px; min-height: {s_sz}px; max-height: {s_sz}px;
-                margin: 0px; padding: 0px;
-            }}
-            QPushButton#TitleBarBtn:pressed {{ background-color: {self._press}; }}
-        """)
+        self.update()
 
     def reset_state(self):
         self._anim.stop()
         self._cur = self._bg
-        self._update_style()
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        bg = QColor(self._press if self.isDown() else self._cur)
+        painter.fillRect(self.rect(), bg)
+        icon = self.icon()
+        if not icon.isNull():
+            sz = self.iconSize()
+            x = (self.width() - sz.width()) // 2
+            y = (self.height() - sz.height()) // 2
+            icon.paint(painter, x, y, sz.width(), sz.height())
 
     def hideEvent(self, event):
         self.reset_state()

@@ -70,9 +70,13 @@ class LiquidProgressBar(QWidget):
                 self._indeterminate = False
                 self._loop_anim.stop()
             target_val = float(val)
-            if abs(target_val - self._value) < 0.2:
+            diff = abs(target_val - self._value)
+            if diff < 0.1:
                 return
+            # Dynamic duration: rapid small updates finish quickly without stalling the easing curve
+            duration = int(max(60, min(250, diff * 12)))
             self._anim.stop()
+            self._anim.setDuration(duration)
             self._anim.setStartValue(self._value)
             self._anim.setEndValue(target_val)
             self._anim.start()

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
 from i18n import get_trans
+from gui.vsync import get_refresh_interval_ms
 import sys
 import os
 
@@ -33,7 +34,7 @@ class QLabel(_QLabel):
         super().__init__(*args, **kwargs)
         self._mq_timer = QTimer(self)
         self._mq_timer.timeout.connect(self._mq_scroll)
-        self._mq_timer.setInterval(16)
+        self._mq_timer.setInterval(get_refresh_interval_ms())
         self._mq_pos = 0.0
         self._mq_alpha = 1.0
         self._mq_hovered = False
@@ -102,30 +103,35 @@ class QLabel(_QLabel):
         text = self._mq_get_text()
         max_scroll = float(max(0, fm.horizontalAdvance(text) - avail))
 
+        iv = max(1, self._mq_timer.interval())
+        delay_threshold = int(round(640 / iv))
+        scroll_step = 31.25 * (iv / 1000.0)
+        fade_step = 0.05 * (iv / 16.0)
+
         if self._mq_state == "START_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:
+            if self._mq_ticks > delay_threshold:
                 self._mq_state = "SCROLL"
                 self._mq_ticks = 0
         elif self._mq_state == "SCROLL":
-            self._mq_pos += 0.5
+            self._mq_pos += scroll_step
             if self._mq_pos >= max_scroll:
                 self._mq_pos = max_scroll
                 self._mq_state = "END_DELAY"
                 self._mq_ticks = 0
         elif self._mq_state == "END_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:
+            if self._mq_ticks > delay_threshold:
                 self._mq_state = "FADEOUT"
                 self._mq_ticks = 0
         elif self._mq_state == "FADEOUT":
-            self._mq_alpha -= 0.05
+            self._mq_alpha -= fade_step
             if self._mq_alpha <= 0.0:
                 self._mq_alpha = 0.0
                 self._mq_pos = 0.0
                 self._mq_state = "FADEIN"
         elif self._mq_state == "FADEIN":
-            self._mq_alpha += 0.05
+            self._mq_alpha += fade_step
             if self._mq_alpha >= 1.0:
                 self._mq_alpha = 1.0
                 self._mq_state = "START_DELAY"
@@ -211,7 +217,7 @@ class MarqueeLabel(QLabel):
         super().__init__(text, parent)
         self._full_text = text
         self._mq_timer = QTimer(self)
-        self._mq_timer.setInterval(25)
+        self._mq_timer.setInterval(get_refresh_interval_ms())
         self._mq_timer.timeout.connect(self._scroll_step)
         self._mq_pos = 0.0
         self._hovered = False
@@ -230,6 +236,7 @@ class MarqueeLabel(QLabel):
     def enterEvent(self, event):
         self._hovered = True
         if self._is_truncated():
+            self._mq_timer.setInterval(get_refresh_interval_ms())
             self._mq_timer.start()
         super().enterEvent(event)
 
@@ -247,7 +254,9 @@ class MarqueeLabel(QLabel):
     def _scroll_step(self):
         fm = self.fontMetrics()
         txt_w = fm.horizontalAdvance(self._full_text)
-        self._mq_pos += 1.2
+        iv = max(1, self._mq_timer.interval())
+        step = 48.0 * (iv / 1000.0)
+        self._mq_pos += step
         if self._mq_pos > txt_w + 20:
             self._mq_pos = -self.width()
         self.update()

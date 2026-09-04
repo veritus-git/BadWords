@@ -28,12 +28,13 @@ _QRadioButton = QRadioButton
 class GripHandle(QSplitterHandle):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
-        from PySide6.QtCore import QVariantAnimation
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
         self.setAttribute(Qt.WA_Hover)
         self._pressed = False
         self._anim_val = 0.0
         self._anim = QVariantAnimation(self)
         self._anim.setDuration(150)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self._anim.valueChanged.connect(self._on_anim_value)
         
     def _on_anim_value(self, val):

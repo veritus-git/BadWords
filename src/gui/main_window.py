@@ -516,6 +516,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         except Exception:
             pass
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._enforce_native_always_on_top()
+
     def moveEvent(self, event):
         super().moveEvent(event)
 
@@ -524,13 +528,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def changeEvent(self, event):
         super().changeEvent(event)
-        if event.type() == QEvent.WindowStateChange:
+        if event.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
             self._enforce_native_always_on_top()
 
     def _enforce_native_always_on_top(self):
         try:
             prefs = self.engine.load_preferences() or {}
-            if (getattr(self, '_always_on_top_active', False) or prefs.get('always_on_top')) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+            is_top = getattr(self, '_always_on_top_active', False) or prefs.get('always_on_top', False)
+            if is_top and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
                 self.engine.os_doc.set_always_on_top(int(self.winId()), True)
         except Exception:
             pass
@@ -2672,11 +2677,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.btn_import_wrapper.setMaximumWidth(start_btn_w)
                 self.btn_import_wrapper.setVisible(True)
 
+        if getattr(self, '_script_anim', None) and self._script_anim.state() == QVariantAnimation.Running:
+            self._script_anim.stop()
+
         self._script_anim = QVariantAnimation(self)
-        self._script_anim.setDuration(440)
+        self._script_anim.setDuration(280)
         self._script_anim.setStartValue(0.0)
         self._script_anim.setEndValue(1.0)
-        self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._script_anim.setEasingCurve(QEasingCurve.OutCubic)
         
         start_w = self.script_container.width()
         pad = config.S(10)

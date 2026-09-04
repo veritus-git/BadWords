@@ -344,6 +344,7 @@ class TrackOptionsDrawer(QWidget):
         if getattr(self, '_anim_group', None) and self._anim_group.state() == QPropertyAnimation.Running:
             self._anim_group.stop()
 
+        self.setMinimumHeight(0)
         self._anim_group = QParallelAnimationGroup(self)
         
         def _update_overlay():
@@ -352,34 +353,26 @@ class TrackOptionsDrawer(QWidget):
 
         if drawer_start != drawer_target:
             anim_drawer_max = QPropertyAnimation(self, b"maximumHeight", self)
-            anim_drawer_max.setDuration(350)
+            anim_drawer_max.setDuration(280)
             anim_drawer_max.setStartValue(drawer_start)
             anim_drawer_max.setEndValue(drawer_target)
-            anim_drawer_max.setEasingCurve(QEasingCurve.InOutCubic)
-            anim_drawer_max.valueChanged.connect(lambda _: _update_overlay())
+            anim_drawer_max.setEasingCurve(QEasingCurve.OutCubic)
             self._anim_group.addAnimation(anim_drawer_max)
-
-            anim_drawer_min = QPropertyAnimation(self, b"minimumHeight", self)
-            anim_drawer_min.setDuration(350)
-            anim_drawer_min.setStartValue(drawer_start)
-            anim_drawer_min.setEndValue(drawer_target)
-            anim_drawer_min.setEasingCurve(QEasingCurve.InOutCubic)
-            self._anim_group.addAnimation(anim_drawer_min)
 
         if a_cust_start != a_cust_target:
             anim_a_max = QPropertyAnimation(self.w_a_cust_list, b"maximumHeight", self)
-            anim_a_max.setDuration(350)
+            anim_a_max.setDuration(280)
             anim_a_max.setStartValue(a_cust_start)
             anim_a_max.setEndValue(a_cust_target)
-            anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_a_max.setEasingCurve(QEasingCurve.OutCubic)
             self._anim_group.addAnimation(anim_a_max)
 
         if v_cust_start != v_cust_target:
             anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
-            anim_v_max.setDuration(350)
+            anim_v_max.setDuration(280)
             anim_v_max.setStartValue(v_cust_start)
             anim_v_max.setEndValue(v_cust_target)
-            anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_v_max.setEasingCurve(QEasingCurve.OutCubic)
             self._anim_group.addAnimation(anim_v_max)
 
         self._is_animating = True
@@ -389,6 +382,9 @@ class TrackOptionsDrawer(QWidget):
             self._is_animating = False
             if self.is_expanded:
                 self.setMaximumHeight(16777215)
+                self.setMinimumHeight(0)
+            else:
+                self.setMaximumHeight(0)
                 self.setMinimumHeight(0)
             if a_cust_visible:
                 self.w_a_cust_list._bypass_min_height = False

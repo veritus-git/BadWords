@@ -397,9 +397,12 @@ class SearchOverlayWidget(QFrame):
         self.setProperty("expanded", False)
         
         from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
+        if getattr(self, '_anim', None) and self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+
         self._anim = QPropertyAnimation(self, b"geometry")
-        self._anim.setDuration(250)
-        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._anim.setDuration(200)
+        self._anim.setEasingCurve(QEasingCurve.InCubic)
         start_geom = self.geometry()
         self._anim.setStartValue(start_geom)
         
@@ -431,9 +434,12 @@ class SearchOverlayWidget(QFrame):
         self.setProperty("expanded", True)
         
         from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QRect
+        if getattr(self, '_anim', None) and self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+
         self._anim = QPropertyAnimation(self, b"geometry")
-        self._anim.setDuration(300)
-        self._anim.setEasingCurve(QEasingCurve.OutBack)
+        self._anim.setDuration(240)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
         
         start_geom = self.geometry()
         self._anim.setStartValue(start_geom)

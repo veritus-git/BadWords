@@ -370,8 +370,9 @@ class AudioPreviewWidget(QFrame):
         
         self._on_volume_changed(100)
 
+        from gui.vsync import get_refresh_interval_ms
         self.update_timer = QTimer(self)
-        self.update_timer.setInterval(16)
+        self.update_timer.setInterval(get_refresh_interval_ms())
         self.update_timer.timeout.connect(self.sync_playback)
 
         self.player.playbackStateChanged.connect(self.on_state_changed)
@@ -405,8 +406,9 @@ class AudioPreviewWidget(QFrame):
         target_y = self.y() - th
         
         self.toggle_tab.move(target_x, target_y)
-        self.toggle_tab.raise_()
-        self.toggle_tab.show()
+        if not self.toggle_tab.isVisible():
+            self.toggle_tab.show()
+            self.toggle_tab.raise_()
 
     def eventFilter(self, watched, event):
         from PySide6.QtCore import QEvent
@@ -456,8 +458,8 @@ class AudioPreviewWidget(QFrame):
             if start_h <= 0:
                 start_h = target_h
             self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
-            self._anim.setDuration(320)
-            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim.setDuration(260)
+            self._anim.setEasingCurve(QEasingCurve.InCubic)
             self._anim.setStartValue(start_h)
             self._anim.setEndValue(0)
             self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
@@ -480,8 +482,8 @@ class AudioPreviewWidget(QFrame):
             self.sync_playback()
             
             self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
-            self._anim.setDuration(320)
-            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim.setDuration(280)
+            self._anim.setEasingCurve(QEasingCurve.OutCubic)
             self._anim.setStartValue(0)
             self._anim.setEndValue(target_h)
             self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
