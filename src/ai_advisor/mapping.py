@@ -103,3 +103,57 @@ def map_clips(clips, sentences):
         out.append(c)
     return sorted(out, key=lambda x: x.get("score", 0.0), reverse=True)
 
+
+# ── Applying accepted edits (mirrors the paint path, gui.py:3584-3627) ──────
+
+UNDO_KEYS = ("status", "manual_status", "algo_status", "is_auto", "selected")
+
+
+def build_undo_changes(words_data, word_ids):
+    """Snapshot the UndoManager-restorable keys for the given word ids."""
+    id_map = {w["id"]: w for w in words_data}
+    changes = {}
+    for wid in word_ids:
+        w = id_map.get(wid)
+        if w is None:
+            continue
+        changes[wid] = {k: w.get(k) for k in UNDO_KEYS}
+    return changes
+
+
+def apply_accepted_edits(main_window, items):
+    """Apply every mapped+accepted suggestion exactly like a manual paint.
+
+    One UndoManager action for the whole batch. Returns touched word count.
+    """
+    canvas = main_window.text_canvas
+    words_data = canvas.words_data
+    accepted = [s for s in items if s.get("mapped") and s.get("accepted") and s.get("word_ids")]
+    if not accepted:
+        return 0
+
+    id_map = {w["id"]: w for w in words_data}
+    changes = {}
+    for s in accepted:
+        for wid, snap in build_undo_changes(words_data, s["word_ids"]).items():
+            changes.setdefault(wid, snap)  # first observed state wins
+    main_window.undo_manager.push({"type": "paint", "changes": changes})
+
+    touched = set()
+    for s in accepted:
+        for wid in s["word_ids"]:
+            if wid in touched:
+                continue
+            updates = algorithms.propagate_status_change(words_data, wid, s["status"])
+            for u_wid, _raw in updates:
+                w = id_map.get(u_wid)
+                if w is None:
+                    continue
+                w["overlay_suppressed"] = True
+                w.pop("is_assembled_cut", None)
+                main_window._calculate_visual_layer(w)
+                touched.add(u_wid)
+
+    canvas.update()
+    return len(touched)
+
