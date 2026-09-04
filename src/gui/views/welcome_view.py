@@ -161,7 +161,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         if trigger_callback and self.on_change:
             self.on_change(idx)
 
-    def animate_indicator(self, idx: int, duration: int = 240):
+    def animate_indicator(self, idx: int, duration: int = 280):
         target_pos = float(idx)
         if self._anim is not None:
             self._anim.stop()
@@ -175,7 +175,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         anim.setDuration(duration)
         anim.setStartValue(self._anim_pos)
         anim.setEndValue(target_pos)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
 
         def _on_val(v):
             self._anim_pos = v
@@ -334,6 +334,13 @@ class WelcomePageView(QWidget):
         root_h = self.H_HEADER + self.H_MAX_CONTENT
         self.welcome_root.setFixedWidth(w)
         self.workspace_container.setFixedWidth(w)
+        if hasattr(self.win, 'welcome_stack') and self.win.welcome_stack:
+            self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
+            cw = self.win.welcome_stack.currentWidget()
+            if cw:
+                cw.resize(w, self.H_MAX_CONTENT)
+                if cw.layout():
+                    cw.layout().activate()
         self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
         if not self._is_animating:
             cur_y = self._target_y(self._current_idx)
@@ -347,8 +354,8 @@ class WelcomePageView(QWidget):
             self._y_anim.stop()
             self.fade_canvas.finish()
 
-        duration = 280
-        self.win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
+        duration = 350
+        self.win.welcome_mode_switch.animate_indicator(target_idx, duration=280)
 
         current_w = self.win.welcome_stack.widget(self._current_idx)
         target_w = self.win.welcome_stack.widget(target_idx)
@@ -384,7 +391,7 @@ class WelcomePageView(QWidget):
         anim.setDuration(duration)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
 
         def _step(v: float):
             cur_y = int(start_y + (end_y - start_y) * v)
@@ -396,6 +403,11 @@ class WelcomePageView(QWidget):
             self._current_idx = target_idx
             self.win.welcome_stack.setCurrentIndex(target_idx)
             self.fade_canvas.finish()
+            cur_w = self.width()
+            self.win.welcome_stack.setFixedSize(cur_w, self.H_MAX_CONTENT)
+            target_w.resize(cur_w, self.H_MAX_CONTENT)
+            if target_w.layout():
+                target_w.layout().activate()
             target_w.show()
             target_w.raise_()
             self._is_animating = False
@@ -411,10 +423,18 @@ class WelcomePageView(QWidget):
         self.fade_canvas.finish()
         self._current_idx = target_idx
         self.win.welcome_stack.setCurrentIndex(target_idx)
-        w = self.win.welcome_stack.widget(target_idx)
-        if w:
-            w.show()
-            w.raise_()
+        w = self.width()
+        self.welcome_root.setFixedWidth(w)
+        self.workspace_container.setFixedWidth(w)
+        if hasattr(self.win, 'welcome_stack') and self.win.welcome_stack:
+            self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
+            target_w = self.win.welcome_stack.widget(target_idx)
+            if target_w:
+                target_w.resize(w, self.H_MAX_CONTENT)
+                if target_w.layout():
+                    target_w.layout().activate()
+                target_w.show()
+                target_w.raise_()
         self.win.welcome_mode_switch.set_index(target_idx, trigger_callback=False)
         self.win.welcome_mode_switch.animate_indicator(target_idx, duration=0)
         y = self._target_y(target_idx)

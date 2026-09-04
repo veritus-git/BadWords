@@ -648,12 +648,12 @@ class ToggleSwitch(QWidget):
         
         # Animators
         self._anim_group = QPropertyAnimation(self, b"thumb_x", self)
-        self._anim_group.setDuration(160)
-        self._anim_group.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim_group.setDuration(180)
+        self._anim_group.setEasingCurve(QEasingCurve.InOutQuad)
         
         self._color_anim = QPropertyAnimation(self, b"bg_color", self)
-        self._color_anim.setDuration(160)
-        self._color_anim.setEasingCurve(QEasingCurve.OutQuad)
+        self._color_anim.setDuration(180)
+        self._color_anim.setEasingCurve(QEasingCurve.InOutQuad)
 
     @Property(float)
     def thumb_x(self):
@@ -706,13 +706,13 @@ class ToggleSwitch(QWidget):
         end_x = float(self.width() - thumb_size - config.S(2)) if self._is_checked else float(config.S(2))
         end_color = QColor("#1ed760") if self._is_checked else QColor("#555555")
         
-        self._anim_group.setDuration(160)
-        self._anim_group.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim_group.setDuration(180)
+        self._anim_group.setEasingCurve(QEasingCurve.InOutQuad)
         self._anim_group.setStartValue(self._thumb_x)
         self._anim_group.setEndValue(float(end_x))
         
-        self._color_anim.setDuration(160)
-        self._color_anim.setEasingCurve(QEasingCurve.OutQuad)
+        self._color_anim.setDuration(180)
+        self._color_anim.setEasingCurve(QEasingCurve.InOutQuad)
         self._color_anim.setStartValue(self._bg_color)
         self._color_anim.setEndValue(end_color)
         

@@ -458,8 +458,8 @@ class AudioPreviewWidget(QFrame):
             if start_h <= 0:
                 start_h = target_h
             self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
-            self._anim.setDuration(260)
-            self._anim.setEasingCurve(QEasingCurve.InCubic)
+            self._anim.setDuration(320)
+            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
             self._anim.setStartValue(start_h)
             self._anim.setEndValue(0)
             self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
@@ -482,8 +482,8 @@ class AudioPreviewWidget(QFrame):
             self.sync_playback()
             
             self._anim = QPropertyAnimation(self.content_widget, b"maximumHeight")
-            self._anim.setDuration(280)
-            self._anim.setEasingCurve(QEasingCurve.OutCubic)
+            self._anim.setDuration(320)
+            self._anim.setEasingCurve(QEasingCurve.InOutCubic)
             self._anim.setStartValue(0)
             self._anim.setEndValue(target_h)
             self._anim.valueChanged.connect(lambda _v: self.update_tab_position())
