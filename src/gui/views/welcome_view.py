@@ -8,18 +8,18 @@
 MODULE: welcome_view.py
 ROLE: GUI View
 DESCRIPTION:
-Welcome screen with unified shared Timeline/Track controls in the upper block,
-smooth cubic Bezier vertical gliding, and optimized wave cross-fade on the lower dynamic section.
+Welcome screen with smooth Y-axis vertical centering of both workspaces,
+hardware-accelerated sequential fade transition (zero flash / double-blending),
+and rock-solid horizontal centering without jitter during scenario expansion.
 """
 
 import os
-from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QVariantAnimation, QRectF
+from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QRectF, QRect
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
-    QLineEdit, QTextEdit, QSpacerItem, QSizePolicy, QGraphicsOpacityEffect, QLayout,
-    QStackedLayout
+    QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
 )
-from PySide6.QtGui import QPixmap, QCursor, QFont, QPainter, QColor, QPen, QLinearGradient
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QLinearGradient
 from PySide6.QtSvg import QSvgRenderer
 
 import config
@@ -27,13 +27,14 @@ from gui.utils import get_play_icon, get_layout_icon_path
 from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch, ReloadButton
 
 
-class _WorkspaceTransitionOverlay(QWidget):
+class _WorkspaceFadeCanvas(QWidget):
     """
-    Renders a hardware-accelerated sequential Fade Out -> Fade In transition for the dynamic lower section.
-    Stationary upper section (Timeline & Tracks) remains live and completely immobile.
-    Phase 1 (0.0 -> 0.5): The outgoing lower controls fade out to 0.0 opacity.
-    Phase 2 (0.5 -> 1.0): The incoming lower controls fade in from 0.0 to 1.0 opacity.
-    The two sets of controls NEVER overlap or mix together.
+    Renders a hardware-accelerated sequential Fade Out -> Fade In transition.
+    Renders on a solid background matching config.BG_COLOR to completely eliminate
+    double alpha-blending, brightness flashes, and color glitches.
+    Phase 1 (0.0 -> 0.45): Pure fade OUT of outgoing workspace (1.0 -> 0.0).
+    Phase 2 (0.45 -> 0.55): Clean darkness buffer with zero overlapping controls.
+    Phase 3 (0.55 -> 1.0): Pure fade IN of incoming workspace (0.0 -> 1.0).
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -41,18 +42,12 @@ class _WorkspaceTransitionOverlay(QWidget):
         self.pix_from = None
         self.pix_to = None
         self.progress = 0.0
-        self.y_offset = 0
         self.hide()
 
-    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap, y_offset: int = 0):
+    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap):
         self.pix_from = pix_from
         self.pix_to = pix_to
         self.progress = 0.0
-        self.y_offset = y_offset
-        if self.parentWidget():
-            p_w = self.parentWidget().width()
-            p_h = self.parentWidget().height()
-            self.setGeometry(0, y_offset, p_w, max(0, p_h - y_offset))
         self.show()
         self.raise_()
 
@@ -63,29 +58,33 @@ class _WorkspaceTransitionOverlay(QWidget):
     def finish(self):
         self.pix_from = None
         self.pix_to = None
+        self.progress = 0.0
         self.hide()
 
     def paintEvent(self, event):
-        if not self.pix_from or not self.pix_to:
+        if not self.pix_from and not self.pix_to:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        p = self.progress
+        # Solid background ensures underlying live widgets or parent widgets cannot bleed through
+        painter.fillRect(self.rect(), QColor(config.BG_COLOR))
 
-        if p < 0.5:
-            # Phase 1: Pure fade OUT of outgoing lower controls (1.0 -> 0.0)
-            alpha = max(0.0, min(1.0, 1.0 - (p / 0.5)))
+        p = self.progress
+        w = self.width()
+
+        if p < 0.40 and self.pix_from:
+            alpha = max(0.0, min(1.0, 1.0 - (p / 0.40)))
             painter.setOpacity(alpha)
-            x_from = (self.width() - self.pix_from.width()) // 2
+            x_from = (w - self.pix_from.width()) // 2
             painter.drawPixmap(x_from, 0, self.pix_from)
-        else:
-            # Phase 2: Pure fade IN of incoming lower controls (0.0 -> 1.0)
-            alpha = max(0.0, min(1.0, (p - 0.5) / 0.5))
+        elif p > 0.55 and self.pix_to:
+            alpha = max(0.0, min(1.0, (p - 0.55) / 0.45))
             painter.setOpacity(alpha)
-            x_to = (self.width() - self.pix_to.width()) // 2
+            x_to = (w - self.pix_to.width()) // 2
             painter.drawPixmap(x_to, 0, self.pix_to)
+
         painter.end()
 
 
@@ -161,6 +160,11 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         if self._anim is not None:
             self._anim.stop()
 
+        if duration <= 0:
+            self._anim_pos = target_pos
+            self.update()
+            return
+
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
         anim.setStartValue(self._anim_pos)
@@ -232,43 +236,189 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         p.drawLine(int(active_rect.left()), int(h - 1), int(active_rect.right()), int(h - 1))
 
 
+class WelcomePageView(QWidget):
+    """
+    Welcome / Configuration screen (Page 0 of the main stack).
+    Manages smooth Y-axis vertical centering of both workspaces,
+    zero-jitter horizontal positioning during scenario expansion,
+    and glitch-free sequential fade transitions.
+    """
+    def __init__(self, win, parent=None):
+        super().__init__(parent)
+        self.win = win
+        self.setObjectName("page_welcome")
+        self.setStyleSheet(f"QWidget#page_welcome {{ background-color: {config.BG_COLOR}; }}")
+        self._current_idx = 0
+        self._is_animating = False
+        self._y_anim = None
+
+        # Content height metrics:
+        # Header = Logo (36) + Spacing (24) + Switch (30) + Spacing (20) = 110px
+        # Transcript visual height = 328px (total = 438px)
+        # Silence visual height = 398px (total = 508px)
+        self.H_HEADER = config.S(110)
+        self.H_TRANS_VISUAL = config.S(438)
+        self.H_SILENCE_VISUAL = config.S(508)
+        self.H_MAX_CONTENT = config.S(398)
+
+        # Full-width root container ensuring 100% stable horizontal centering
+        self.welcome_root = QWidget(self)
+        self.welcome_root.setObjectName("welcome_root")
+        self.welcome_root.setStyleSheet("QWidget#welcome_root { background: transparent; }")
+
+        self.root_layout = QVBoxLayout(self.welcome_root)
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
+        self.root_layout.setSpacing(0)
+        self.root_layout.setAlignment(Qt.AlignTop)
+
+        # ── 1. Branding Logo (BadWords) ───────────────────────────────────────
+        win.welcome_title = WelcomeBrandingWidget(self.welcome_root)
+        self.root_layout.addWidget(win.welcome_title, 0, Qt.AlignCenter)
+        self.root_layout.addSpacing(config.S(24))
+
+        # ── 2. Mode Switcher (Transcript | Silence Detection) ─────────────────
+        win.welcome_mode_switch = AnimatedUnderlineGlowModeSwitch(
+            win.txt("titlebar_transcript"),
+            win.txt("msg_standalone_silence"),
+            self.welcome_root
+        )
+        win.welcome_mode_switch.setFixedWidth(config.S(325))
+        self.root_layout.addWidget(win.welcome_mode_switch, 0, Qt.AlignCenter)
+        self.root_layout.addSpacing(config.S(20))
+
+        # ── 3. Workspace Stack Area ───────────────────────────────────────────
+        self.workspace_container = QWidget(self.welcome_root)
+        self.workspace_container.setFixedHeight(self.H_MAX_CONTENT)
+        self.workspace_container.setStyleSheet("background: transparent;")
+
+        ws_layout = QVBoxLayout(self.workspace_container)
+        ws_layout.setContentsMargins(0, 0, 0, 0)
+        ws_layout.setSpacing(0)
+
+        win.welcome_stack = QStackedWidget(self.workspace_container)
+        win.welcome_stack.setStyleSheet("background: transparent;")
+        win.welcome_stack.setFixedHeight(self.H_MAX_CONTENT)
+        ws_layout.addWidget(win.welcome_stack)
+
+        self.fade_canvas = _WorkspaceFadeCanvas(self.workspace_container)
+        self.fade_canvas.setGeometry(0, 0, self.width(), self.H_MAX_CONTENT)
+
+        self.root_layout.addWidget(self.workspace_container)
+
+        win.welcome_mode_switch.on_change = self.switch_workspace_animated
+
+        # Hook setCurrentIndex on welcome_stack for external programmatic calls
+        orig_set_current_index = win.welcome_stack.setCurrentIndex
+        def _on_stack_set_index(idx: int):
+            orig_set_current_index(idx)
+            if self._current_idx != idx and not self._is_animating:
+                self.switch_workspace_instant(idx)
+        win.welcome_stack.setCurrentIndex = _on_stack_set_index
+
+    def _target_y(self, idx: int) -> int:
+        h_visual = self.H_TRANS_VISUAL if idx == 0 else self.H_SILENCE_VISUAL
+        avail_h = self.height()
+        if avail_h <= 0:
+            avail_h = config.S(600)
+        return max(config.S(10), (avail_h - h_visual) // 2)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        root_h = self.H_HEADER + self.H_MAX_CONTENT
+        self.welcome_root.setFixedWidth(w)
+        self.workspace_container.setFixedWidth(w)
+        self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
+        if not self._is_animating:
+            cur_y = self._target_y(self._current_idx)
+            self.welcome_root.move(0, cur_y)
+
+    def switch_workspace_animated(self, target_idx: int):
+        if self._current_idx == target_idx and not self._is_animating:
+            return
+
+        if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
+            self._y_anim.stop()
+            self.fade_canvas.finish()
+
+        duration = 400
+        self.win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
+
+        current_w = self.win.welcome_stack.widget(self._current_idx)
+        target_w = self.win.welcome_stack.widget(target_idx)
+
+        if current_w is None or target_w is None:
+            self.switch_workspace_instant(target_idx)
+            return
+
+        w = self.width()
+        self.welcome_root.setFixedWidth(w)
+        self.workspace_container.setFixedWidth(w)
+        self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
+
+        # 1. Grab snapshot of current outgoing workspace
+        pix_from = current_w.grab()
+
+        # 2. Prepare target incoming workspace and grab snapshot
+        target_w.resize(self.win.welcome_stack.size())
+        pix_to = target_w.grab()
+
+        # 3. Setup canvas & hide live widgets to prevent double-render/flash
+        self.fade_canvas.set_transition(pix_from, pix_to)
+        current_w.hide()
+
+        start_y = self.welcome_root.y()
+        end_y = self._target_y(target_idx)
+
+        self._is_animating = True
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def _step(v: float):
+            cur_y = int(start_y + (end_y - start_y) * v)
+            self.welcome_root.move(0, cur_y)
+            self.fade_canvas.set_progress(v)
+
+        def _done():
+            self.welcome_root.move(0, end_y)
+            self._current_idx = target_idx
+            self.win.welcome_stack.setCurrentIndex(target_idx)
+            self.fade_canvas.finish()
+            target_w.show()
+            target_w.raise_()
+            self._is_animating = False
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        self._y_anim = anim
+        anim.start()
+
+    def switch_workspace_instant(self, target_idx: int):
+        if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
+            self._y_anim.stop()
+        self.fade_canvas.finish()
+        self._current_idx = target_idx
+        self.win.welcome_stack.setCurrentIndex(target_idx)
+        w = self.win.welcome_stack.widget(target_idx)
+        if w:
+            w.show()
+            w.raise_()
+        self.win.welcome_mode_switch.set_index(target_idx, trigger_callback=False)
+        self.win.welcome_mode_switch.animate_indicator(target_idx, duration=0)
+        y = self._target_y(target_idx)
+        self.welcome_root.move(0, y)
+        self._is_animating = False
+
 
 def build_welcome_view(win) -> QWidget:
     """Build Page 0 of the main stack: Welcome / Configuration screen."""
     prefs = win.engine.load_preferences() or {}
     is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
-    page = QWidget()
-    page.setObjectName("page_welcome")
-    page.setStyleSheet(f"QWidget#page_welcome {{ background-color: {config.BG_COLOR}; }}")
-
-    outer = QVBoxLayout(page)
-    outer.setContentsMargins(0, 0, 0, 0)
-    outer.setSpacing(0)
-    outer.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
-
-    inner = QWidget()
-    inner.setObjectName("welcome_inner")
-    inner.setStyleSheet("QWidget#welcome_inner { background: transparent; }")
-
-    inner_layout = QVBoxLayout(inner)
-    inner_layout.setContentsMargins(0, 0, 0, 0)
-    inner_layout.setSpacing(0)
-    inner_layout.setAlignment(Qt.AlignTop)
-
-    # ── 1. Branding Logo (BadWords) ───────────────────────────────────────────
-    win.welcome_title = WelcomeBrandingWidget(inner)
-    inner_layout.addWidget(win.welcome_title, 0, Qt.AlignCenter)
-    inner_layout.addSpacing(config.S(24))
-
-    # ── 2. Mode Switcher (Transcript | Silence Detection) ─────────────────────
-    win.welcome_mode_switch = AnimatedUnderlineGlowModeSwitch(
-        win.txt("titlebar_transcript"),
-        win.txt("msg_standalone_silence"),
-        inner
-    )
-    win.welcome_mode_switch.setFixedWidth(config.S(325))
-    inner_layout.addWidget(win.welcome_mode_switch, 0, Qt.AlignCenter)
-    inner_layout.addSpacing(config.S(20))
+    
+    page = WelcomePageView(win)
 
     def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
         row_l = QVBoxLayout()
@@ -283,80 +433,6 @@ def build_welcome_view(win) -> QWidget:
         row_l.addWidget(lbl)
         row_l.addWidget(widget)
         return row_l
-
-    # ── 3. WORKSPACE STACK (Stationary, zero Y-movement) ─────────────────────
-    H_CONTENT = config.S(416)
-
-    win.welcome_stack = QStackedWidget(inner)
-    win.welcome_stack.setStyleSheet("background: transparent;")
-    win.welcome_stack.setFixedHeight(H_CONTENT)
-    inner_layout.addWidget(win.welcome_stack, 0, Qt.AlignCenter)
-
-    win._workspace_overlay = _WorkspaceTransitionOverlay(win.welcome_stack)
-
-    def _switch_workspace(target_idx: int):
-        if win.welcome_stack.currentIndex() == target_idx:
-            return
-
-        # Stop previous animation if still running
-        if hasattr(win.welcome_stack, '_switch_anim') and win.welcome_stack._switch_anim:
-            win.welcome_stack._switch_anim.stop()
-            win._workspace_overlay.finish()
-
-        duration = 260
-        win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
-
-        current_w = win.welcome_stack.currentWidget()
-        target_w = win.welcome_stack.widget(target_idx)
-
-        if current_w is None or target_w is None:
-            win.welcome_stack.setCurrentIndex(target_idx)
-            return
-
-        y_lower = config.S(124)
-        w = win.welcome_stack.width()
-        h = win.welcome_stack.height()
-
-        # 1. Grab snapshot of current lower dynamic section
-        pix_curr_full = current_w.grab()
-        if pix_curr_full.height() > y_lower:
-            pix_from = pix_curr_full.copy(0, y_lower, pix_curr_full.width(), pix_curr_full.height() - y_lower)
-        else:
-            pix_from = QPixmap()
-
-        # 2. Grab snapshot of target lower dynamic section
-        target_w.resize(w, h)
-        pix_targ_full = target_w.grab()
-        if pix_targ_full.height() > y_lower:
-            pix_to = pix_targ_full.copy(0, y_lower, pix_targ_full.width(), pix_targ_full.height() - y_lower)
-        else:
-            pix_to = QPixmap()
-
-        # 3. Setup overlay covering strictly the lower area below stationary Tracks
-        win._workspace_overlay.set_transition(pix_from, pix_to, y_offset=y_lower)
-
-        # 4. Pure sequential Fade Out (0.0 -> 0.5) then Fade In (0.5 -> 1.0)
-        anim = QVariantAnimation(win.welcome_stack)
-        anim.setDuration(duration)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.InOutCubic)
-
-        def _step(v: float):
-            win._workspace_overlay.set_progress(v)
-            if v >= 0.5 and win.welcome_stack.currentIndex() != target_idx:
-                win.welcome_stack.setCurrentIndex(target_idx)
-
-        def _done():
-            win.welcome_stack.setCurrentIndex(target_idx)
-            win._workspace_overlay.finish()
-
-        anim.valueChanged.connect(_step)
-        anim.finished.connect(_done)
-        win.welcome_stack._switch_anim = anim
-        anim.start()
-
-    win.welcome_mode_switch.on_change = _switch_workspace
 
     # ═══════════════════════════════════════════════════════════════
     # PAGE 0: TRANSCRIPTION WORKSPACE
@@ -447,7 +523,6 @@ def build_welcome_view(win) -> QWidget:
     win._combo_model = CustomDropdown(model_items)
     win._combo_model.max_visible_items = 6
     win._combo_model.setFixedHeight(config.S(30))
-
     saved_model = prefs.get("model", "")
     if saved_model in model_items:
         win._combo_model.setText(saved_model)
@@ -532,9 +607,7 @@ def build_welcome_view(win) -> QWidget:
     win.script_layout.addSpacing(config.S(4))
 
     win.welcome_script_edit = QTextEdit()
-    # Matches top of Timeline down to bottom of More Accurate toggle:
-    # 52 + 10 + 52 + 10 + 52 + 10 + 52 + 16 + 30 = 284px.
-    # 284 - 18 (label) - 4 (spacing) = 262px.
+    # Matches top of Timeline down to bottom of More Accurate toggle: 262px.
     win.welcome_script_edit.setFixedHeight(config.S(262))
     win.welcome_script_edit.setAcceptRichText(False)
     win.welcome_script_edit.setStyleSheet(f"""
@@ -549,6 +622,10 @@ def build_welcome_view(win) -> QWidget:
     win.script_layout.addWidget(win.welcome_script_edit)
     win.script_container_layout.addWidget(win.script_content_widget)
     win.slider_layout.addWidget(win.script_container)
+
+    w_settings = config.S(325) + 2 * pad
+    w_initial_slider = (w_settings + target_script_w) if is_more_accurate else w_settings
+    win.slider_widget.setFixedWidth(w_initial_slider)
 
     h_slider = QHBoxLayout()
     h_slider.setContentsMargins(0, 0, 0, 0)
@@ -804,11 +881,13 @@ def build_welcome_view(win) -> QWidget:
     win.btn_run_fs = QPushButton(win.txt("btn_run_standalone_silence"))
     win.btn_run_fs.setCursor(Qt.PointingHandCursor)
     win.btn_run_fs.setFixedHeight(config.S(30))
+    win.btn_run_fs.setMinimumWidth(config.S(110))
+    win.btn_run_fs.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
     win.btn_run_fs.setStyleSheet(f"""
         QPushButton {{
             background-color: {config.BTN_BG}; color: #ffffff;
             font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
-            border: none; border-radius: {config.S(4)}px; padding: 0 {config.S(24)}px;
+            border: none; border-radius: {config.S(4)}px; padding: 0 {config.S(14)}px;
         }}
         QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
         QPushButton:pressed {{ background-color: #176e38; }}
@@ -822,13 +901,4 @@ def build_welcome_view(win) -> QWidget:
 
     win.welcome_stack.addWidget(p_silence_outer)
 
-    # Centre horizontally
-    h = QHBoxLayout()
-    h.setContentsMargins(0, 0, 0, 0)
-    h.addStretch()
-    h.addWidget(inner)
-    h.addStretch()
-    outer.addLayout(h)
-
-    outer.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
     return page
