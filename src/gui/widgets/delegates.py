@@ -97,14 +97,30 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         self._mq_ticks[row] = 0
 
     def _available_width(self):
-        """Pixel width available for text inside the list (minus padding)."""
-        return self._lw.viewport().width() - self._padding * 2
+        """Pixel width available for text inside the list (minus padding and margins)."""
+        vp_w = self._lw.viewport().width()
+        padding = self._padding if self._padding is not None else 16
+        border_pad = config.S(2) if hasattr(config, 'S') else 2
+        buffer = config.S(6) if hasattr(config, 'S') else 6
+        return max(10, vp_w - padding * 2 - border_pad - buffer)
+
+    def _font_for_row(self, row):
+        """Return the effective QFont for a specific row, falling back to list font."""
+        from PySide6.QtWidgets import QStyleOptionViewItem
+        opt = QStyleOptionViewItem()
+        opt.font = self._lw.font()
+        idx = self._lw.model().index(row, 0)
+        self.initStyleOption(opt, idx)
+        f = getattr(opt, 'font', None)
+        if f is not None and hasattr(f, 'pointSize') and f.pointSize() > 0:
+            return QFont(f)
+        return QFont(self._lw.font())
 
     def _text_overflows(self, row):
         item = self._lw.item(row)
         if item is None:
             return False
-        fm = self._lw.fontMetrics()
+        fm = QFontMetrics(self._font_for_row(row))
         return fm.horizontalAdvance(item.text()) > self._available_width()
 
     def eventFilter(self, obj, event):
@@ -113,8 +129,8 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         except RuntimeError:
             return False
         if obj is lw_vp:
-            if event.type() == QEvent.Type.MouseMove:
-                pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
+            if event.type() in (QEvent.Type.MouseMove, QEvent.Type.Enter):
+                pos = event.position().toPoint() if hasattr(event, 'position') else (event.pos() if hasattr(event, 'pos') else self._lw.viewport().mapFromGlobal(QCursor.pos()))
                 idx = self._lw.indexAt(pos)
                 new_row = idx.row() if idx.isValid() else -1
                 if new_row != self._hovered_row:
@@ -147,7 +163,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
             return
 
         item = self._lw.item(row)
-        fm = self._lw.fontMetrics()
+        fm = QFontMetrics(self._font_for_row(row))
         avail = self._available_width()
         max_scroll = float(max(0, fm.horizontalAdvance(item.text()) - avail))
 
@@ -198,7 +214,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
             return
 
         text = item.text()
-        fm = painter.fontMetrics()
+        fm = QFontMetrics(option.font) if hasattr(option, 'font') else painter.fontMetrics()
         avail = self._available_width()
         overflows = fm.horizontalAdvance(text) > avail
 
@@ -221,8 +237,11 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         align = item.textAlignment()
         is_rtl = bool(align & Qt.AlignRight)
 
-        # Clip to the content rect to hide overflow
+        # Clip to the content rect to hide overflow, clamped to viewport width
+        vp_w = self._lw.viewport().width()
         text_rect = option.rect.adjusted(self._padding, 0, -self._padding, 0)
+        if text_rect.right() > vp_w - self._padding:
+            text_rect.setRight(vp_w - self._padding)
         painter.setClipRect(text_rect)
 
         offset = int(self._mq_pos.get(row, 0.0)) if is_animating else 0
@@ -248,6 +267,13 @@ class MarqueeItemDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         hint = super().sizeHint(option, index)
+        # Prevent item width from exceeding viewport width so horizontal layout stays clean
+        try:
+            vp_w = self._lw.viewport().width()
+            if vp_w > 0 and hint.width() > vp_w:
+                hint.setWidth(vp_w)
+        except Exception:
+            pass
         return hint
 
 
