@@ -44,8 +44,12 @@ from PySide6.QtCore import QMimeData
 
 import config
 
-# --- INJECTED WIDGET IMPORTS ---
-from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
+from gui.widgets.buttons import (
+    QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton,
+    MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton,
+    CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown,
+    SearchableDropdown, AssembleArrowButton, AssembleSplitButton, TrackSquareCheckbox
+)
 from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
 from gui.widgets.layouts import FlowLayout, MainPanelWidget
 from gui.widgets.progress_bar import LiquidProgressBar
@@ -59,67 +63,6 @@ from ..utils import _app_icon, _txt
 
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 from PySide6.QtCore import QModelIndex
-from .mixins import FramelessWindowMixin, _BaseDialog
-from ..utils import _app_icon, _txt
-
-
-class TrackSquareCheckbox(QWidget):
-    toggled = Signal(bool)
-
-    def __init__(self, text, is_checked=True, parent=None):
-        super().__init__(parent)
-        self.is_checked = is_checked
-        self.text_label = text
-        self.setCursor(Qt.PointingHandCursor)
-
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(config.S(4), config.S(2), config.S(4), config.S(2))
-        lay.setSpacing(config.S(8))
-
-        self.box = QLabel()
-        self.box.setFixedSize(config.S(15), config.S(15))
-        self.box.setAlignment(Qt.AlignCenter)
-
-        self.lbl = QLabel(text)
-        self.lbl.setStyleSheet(f"color: #d4d4d4; font-size: {config.FS(9.5)}pt; font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;")
-
-        lay.addWidget(self.box)
-        lay.addWidget(self.lbl)
-        lay.addStretch()
-
-        self.update_ui()
-
-    def update_ui(self):
-        if self.is_checked:
-            self.box.setText("✔")
-            self.box.setStyleSheet(f"""
-                background-color: #111111;
-                border: 1px solid #1a7a3e;
-                color: #1a7a3e;
-                font-weight: bold;
-                font-size: {config.S(10)}px;
-                border-radius: {config.S(2)}px;
-            """)
-        else:
-            self.box.setText("")
-            self.box.setStyleSheet(f"""
-                background-color: #111111;
-                border: 1px solid #3a3a3a;
-                border-radius: {config.S(2)}px;
-            """)
-
-    def setChecked(self, checked):
-        self.is_checked = bool(checked)
-        self.update_ui()
-
-    def isChecked(self):
-        return self.is_checked
-
-    def mousePressEvent(self, event):
-        self.is_checked = not self.is_checked
-        self.update_ui()
-        self.toggled.emit(self.is_checked)
-        super().mousePressEvent(event)
 
 
 class _FlowListWidget(QWidget):
@@ -181,21 +124,12 @@ class TrackOptionsDrawer(QWidget):
                 background: transparent;
                 border: none;
             }
-            QFrame#TrackOptionsInnerFrame QWidget {
-                border: none;
-                background: transparent;
-            }
-            QFrame#TrackOptionsInnerFrame QLabel {
-                border: none;
-                background: transparent;
-            }
         """)
         self.scroll_area.setWidget(self.inner_frame)
-        self.scroll_area.setAlignment(Qt.AlignBottom)
+        self.scroll_area.setAlignment(Qt.AlignTop)
 
         inner_layout = QVBoxLayout(self.inner_frame)
-        inner_layout.setSizeConstraint(QVBoxLayout.SetMinAndMaxSize)
-        inner_layout.setAlignment(Qt.AlignBottom)
+        inner_layout.setAlignment(Qt.AlignTop)
         inner_layout.setContentsMargins(config.S(10), config.S(6), config.S(10), config.S(8))
         inner_layout.setSpacing(config.S(4))
 
@@ -296,10 +230,53 @@ class TrackOptionsDrawer(QWidget):
 
         self.load_config()
 
+    def get_drawer_height(self) -> int:
+        return self.height()
+
+    def set_drawer_height(self, h: int):
+        self.setFixedHeight(h)
+
+    drawerHeight = Property(int, get_drawer_height, set_drawer_height)
+
+    def warmup(self):
+        """
+        Pre-polish, layout, and render the drawer offscreen once at startup.
+        This completely eliminates the frame 0 lag spike (270+ polish/layout events)
+        on the first expansion.
+        """
+        if getattr(self, '_warmed_up', False):
+            return
+        self._warmed_up = True
+        try:
+            prev_max = self.maximumHeight()
+            prev_min = self.minimumHeight()
+            self.inner_frame.layout().activate()
+            h = self.inner_frame.sizeHint().height() + 2
+            if h <= 2:
+                h = config.S(240)
+            self.setFixedHeight(h)
+            self.ensurePolished()
+            self.inner_frame.ensurePolished()
+            for child in self.findChildren(QWidget):
+                child.ensurePolished()
+            _ = self.grab()
+            self.setMinimumHeight(prev_min)
+            self.setMaximumHeight(prev_max)
+        except Exception:
+            pass
+
     def sizeHint(self):
         from PySide6.QtCore import QSize
         if getattr(self, '_is_animating', False):
-            return QSize(self.width(), self.maximumHeight())
+            return QSize(self.width(), self.height())
+        if not self.is_expanded:
+            return QSize(self.width(), 0)
+        return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
+
+    def minimumSizeHint(self):
+        from PySide6.QtCore import QSize
+        if getattr(self, '_is_animating', False):
+            return QSize(self.width(), self.height())
         if not self.is_expanded:
             return QSize(self.width(), 0)
         return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
@@ -341,33 +318,26 @@ class TrackOptionsDrawer(QWidget):
         self.w_a_cust_list.setMaximumHeight(a_cust_start)
         self.w_v_cust_list.setMaximumHeight(v_cust_start)
 
-        if getattr(self, '_anim_group', None) and self._anim_group.state() == QPropertyAnimation.Running:
+        if getattr(self, '_anim_group', None) and self._anim_group.state() == QAbstractAnimation.Running:
             self._anim_group.stop()
 
-        self.setMinimumHeight(drawer_start)
         self._anim_group = QParallelAnimationGroup(self)
         
         def _update_overlay():
-            if hasattr(self.parent_gui, 'p_main'):
+            if hasattr(self.parent_gui, 'p_main') and self.parent_gui.p_main:
                 self.parent_gui.p_main.resizeEvent(None)
 
         duration = 350
+        primary_anim = None
 
         if drawer_start != drawer_target:
-            anim_drawer_max = QPropertyAnimation(self, b"maximumHeight", self)
-            anim_drawer_max.setDuration(duration)
-            anim_drawer_max.setStartValue(drawer_start)
-            anim_drawer_max.setEndValue(drawer_target)
-            anim_drawer_max.setEasingCurve(QEasingCurve.InOutCubic)
-            anim_drawer_max.valueChanged.connect(lambda _: _update_overlay())
-            self._anim_group.addAnimation(anim_drawer_max)
-
-            anim_drawer_min = QPropertyAnimation(self, b"minimumHeight", self)
-            anim_drawer_min.setDuration(duration)
-            anim_drawer_min.setStartValue(drawer_start)
-            anim_drawer_min.setEndValue(drawer_target)
-            anim_drawer_min.setEasingCurve(QEasingCurve.InOutCubic)
-            self._anim_group.addAnimation(anim_drawer_min)
+            anim_drawer = QPropertyAnimation(self, b"drawerHeight", self)
+            anim_drawer.setDuration(duration)
+            anim_drawer.setStartValue(drawer_start)
+            anim_drawer.setEndValue(drawer_target)
+            anim_drawer.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_drawer)
+            primary_anim = anim_drawer
 
         if a_cust_start != a_cust_target:
             anim_a_max = QPropertyAnimation(self.w_a_cust_list, b"maximumHeight", self)
@@ -375,8 +345,9 @@ class TrackOptionsDrawer(QWidget):
             anim_a_max.setStartValue(a_cust_start)
             anim_a_max.setEndValue(a_cust_target)
             anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
-            anim_a_max.valueChanged.connect(lambda _: _update_overlay())
             self._anim_group.addAnimation(anim_a_max)
+            if not primary_anim:
+                primary_anim = anim_a_max
 
         if v_cust_start != v_cust_target:
             anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
@@ -384,8 +355,12 @@ class TrackOptionsDrawer(QWidget):
             anim_v_max.setStartValue(v_cust_start)
             anim_v_max.setEndValue(v_cust_target)
             anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
-            anim_v_max.valueChanged.connect(lambda _: _update_overlay())
             self._anim_group.addAnimation(anim_v_max)
+            if not primary_anim:
+                primary_anim = anim_v_max
+
+        if primary_anim:
+            primary_anim.valueChanged.connect(lambda _: _update_overlay())
 
         self._is_animating = True
         self._anim_group.start()
@@ -393,19 +368,23 @@ class TrackOptionsDrawer(QWidget):
         def _on_finish():
             self._is_animating = False
             if self.is_expanded:
-                self.setMaximumHeight(16777215)
-                self.setMinimumHeight(0)
+                self.setFixedHeight(drawer_target)
             else:
-                self.setMaximumHeight(0)
-                self.setMinimumHeight(0)
+                self.setFixedHeight(0)
             if a_cust_visible:
                 self.w_a_cust_list._bypass_min_height = False
                 self.w_a_cust_list.setMaximumHeight(16777215)
                 self.w_a_cust_list.resizeEvent(None)
+            else:
+                self.w_a_cust_list.setMaximumHeight(0)
+                self.w_a_cust_list.setMinimumHeight(0)
             if v_cust_visible:
                 self.w_v_cust_list._bypass_min_height = False
                 self.w_v_cust_list.setMaximumHeight(16777215)
                 self.w_v_cust_list.resizeEvent(None)
+            else:
+                self.w_v_cust_list.setMaximumHeight(0)
+                self.w_v_cust_list.setMinimumHeight(0)
             _update_overlay()
             
         self._anim_group.finished.connect(_on_finish)
@@ -427,17 +406,15 @@ class TrackOptionsDrawer(QWidget):
 
             saved_a_custom = conf.get('audio_custom', [])
             for i, cb in self.a_track_checkboxes.items():
-                if saved_a_custom:
-                    cb.setChecked(i in saved_a_custom)
-                else:
-                    cb.setChecked(True)
+                chk = (i in saved_a_custom) if saved_a_custom else True
+                if cb.isChecked() != chk:
+                    cb.setChecked(chk)
 
             saved_v_custom = conf.get('video_custom', [])
             for i, cb in self.v_track_checkboxes.items():
-                if saved_v_custom:
-                    cb.setChecked(i in saved_v_custom)
-                else:
-                    cb.setChecked(True)
+                chk = (i in saved_v_custom) if saved_v_custom else True
+                if cb.isChecked() != chk:
+                    cb.setChecked(chk)
 
             if amode == 'cust':
                 self.w_a_cust_list.setMaximumHeight(16777215)

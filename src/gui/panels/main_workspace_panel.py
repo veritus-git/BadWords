@@ -12,7 +12,7 @@ Primary sidebar workspace panel for markers, duration stats, favorites, and time
 """
 
 import os
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFrame
 )
@@ -97,6 +97,7 @@ def build_main_workspace_panel(win) -> QFrame:
 
     win.w_track_options = TrackOptionsDrawer(win, win.engine)
     layout_assemble_group.addWidget(win.w_track_options)
+    QTimer.singleShot(60, win.w_track_options.warmup)
     win.btn_assemble.toggleDrawerClicked.connect(lambda: [win.w_track_options.toggle_expand(), p_main.resizeEvent(None)])
 
     l_layer2.addLayout(layout_assemble_group)
