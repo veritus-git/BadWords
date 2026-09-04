@@ -11,11 +11,13 @@ DESCRIPTION:
 MVC delegates responsible for custom drawing of list items.
 """
 
-from PySide6 import QtCore
-import re
-import math
-import platform
-import subprocess
+from PySide6.QtGui import *
+from PySide6.QtWidgets import *
+from PySide6.QtMultimedia import *
+import config
+from i18n import get_trans
+from gui.vsync import get_refresh_interval_ms
+import sys
 import os
 import time
 import traceback
@@ -75,7 +77,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         self._hovered_row = -1
 
         self._timer = QTimer(self)
-        self._timer.setInterval(16)  # ~60fps
+        self._timer.setInterval(get_refresh_interval_ms())
         self._timer.timeout.connect(self._tick)
 
         # Install event filter on the viewport to catch mouse moves
@@ -168,31 +170,35 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         max_scroll = float(max(0, fm.horizontalAdvance(item.text()) - avail))
 
         state = self._row_state(row)
+        iv = max(1, self._timer.interval())
+        delay_threshold = int(round(640 / iv))
+        scroll_step = 31.25 * (iv / 1000.0)
+        fade_step = 0.05 * (iv / 16.0)
 
         if state == "START_DELAY":
             self._mq_ticks[row] += 1
-            if self._mq_ticks[row] > 40:
+            if self._mq_ticks[row] > delay_threshold:
                 self._mq_state[row] = "SCROLL"
                 self._mq_ticks[row] = 0
         elif state == "SCROLL":
-            self._mq_pos[row] += 0.5
+            self._mq_pos[row] += scroll_step
             if self._mq_pos[row] >= max_scroll:
                 self._mq_pos[row] = max_scroll
                 self._mq_state[row] = "END_DELAY"
                 self._mq_ticks[row] = 0
         elif state == "END_DELAY":
             self._mq_ticks[row] += 1
-            if self._mq_ticks[row] > 40:
+            if self._mq_ticks[row] > delay_threshold:
                 self._mq_state[row] = "FADEOUT"
                 self._mq_ticks[row] = 0
         elif state == "FADEOUT":
-            self._mq_alpha[row] -= 0.05
+            self._mq_alpha[row] -= fade_step
             if self._mq_alpha[row] <= 0.0:
                 self._mq_alpha[row] = 0.0
                 self._mq_pos[row] = 0.0
                 self._mq_state[row] = "FADEIN"
         elif state == "FADEIN":
-            self._mq_alpha[row] += 0.05
+            self._mq_alpha[row] += fade_step
             if self._mq_alpha[row] >= 1.0:
                 self._mq_alpha[row] = 1.0
                 self._mq_state[row] = "START_DELAY"

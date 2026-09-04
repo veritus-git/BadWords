@@ -17,6 +17,7 @@ from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
 from i18n import get_trans
+from gui.vsync import get_refresh_interval_ms
 import sys
 import os
 
@@ -31,7 +32,7 @@ class QPushButton(_QPushButton):
         super().__init__(*args, **kwargs)
         self._mq_timer = QTimer(self)
         self._mq_timer.timeout.connect(self._mq_scroll)
-        self._mq_timer.setInterval(16)  # ~60fps smooth scroll
+        self._mq_timer.setInterval(get_refresh_interval_ms())
         self._mq_pos = 0.0
         self._mq_alpha = 1.0
         self._mq_hovered = False
@@ -101,30 +102,35 @@ class QPushButton(_QPushButton):
         clip_w = self._mq_text_area_width()
         max_scroll = float(max(0, fm.horizontalAdvance(orig) - clip_w))
 
+        iv = max(1, self._mq_timer.interval())
+        delay_threshold = int(round(640 / iv))
+        scroll_step = 31.25 * (iv / 1000.0)
+        fade_step = 0.05 * (iv / 16.0)
+
         if self._mq_state == "START_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:  # ~640ms
+            if self._mq_ticks > delay_threshold:
                 self._mq_state = "SCROLL"
                 self._mq_ticks = 0
         elif self._mq_state == "SCROLL":
-            self._mq_pos += 0.5
+            self._mq_pos += scroll_step
             if self._mq_pos >= max_scroll:
                 self._mq_pos = max_scroll
                 self._mq_state = "END_DELAY"
                 self._mq_ticks = 0
         elif self._mq_state == "END_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:
+            if self._mq_ticks > delay_threshold:
                 self._mq_state = "FADEOUT"
                 self._mq_ticks = 0
         elif self._mq_state == "FADEOUT":
-            self._mq_alpha -= 0.05
+            self._mq_alpha -= fade_step
             if self._mq_alpha <= 0.0:
                 self._mq_alpha = 0.0
                 self._mq_pos = 0.0
                 self._mq_state = "FADEIN"
         elif self._mq_state == "FADEIN":
-            self._mq_alpha += 0.05
+            self._mq_alpha += fade_step
             if self._mq_alpha >= 1.0:
                 self._mq_alpha = 1.0
                 self._mq_state = "START_DELAY"
@@ -178,7 +184,7 @@ class MarqueeRadioButton(_QRadioButton):
         super().__init__(*args, **kwargs)
         self._mq_timer = QTimer(self)
         self._mq_timer.timeout.connect(self._mq_scroll)
-        self._mq_timer.setInterval(16)
+        self._mq_timer.setInterval(get_refresh_interval_ms())
         self._mq_pos = 0.0
         self._mq_alpha = 1.0
         self._mq_hovered = False
@@ -249,30 +255,35 @@ class MarqueeRadioButton(_QRadioButton):
         tr = self._mq_text_rect()
         max_scroll = float(max(0, fm.horizontalAdvance(orig) - tr.width()))
 
+        iv = max(1, self._mq_timer.interval())
+        delay_threshold = int(round(640 / iv))
+        scroll_step = 31.25 * (iv / 1000.0)
+        fade_step = 0.05 * (iv / 16.0)
+
         if self._mq_state == "START_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:
+            if self._mq_ticks > delay_threshold:
                 self._mq_state = "SCROLL"
                 self._mq_ticks = 0
         elif self._mq_state == "SCROLL":
-            self._mq_pos += 0.5
+            self._mq_pos += scroll_step
             if self._mq_pos >= max_scroll:
                 self._mq_pos = max_scroll
                 self._mq_state = "END_DELAY"
                 self._mq_ticks = 0
         elif self._mq_state == "END_DELAY":
             self._mq_ticks += 1
-            if self._mq_ticks > 40:
+            if self._mq_ticks > delay_threshold:
                 self._mq_state = "FADEOUT"
                 self._mq_ticks = 0
         elif self._mq_state == "FADEOUT":
-            self._mq_alpha -= 0.05
+            self._mq_alpha -= fade_step
             if self._mq_alpha <= 0.0:
                 self._mq_alpha = 0.0
                 self._mq_pos = 0.0
                 self._mq_state = "FADEIN"
         elif self._mq_state == "FADEIN":
-            self._mq_alpha += 0.05
+            self._mq_alpha += fade_step
             if self._mq_alpha >= 1.0:
                 self._mq_alpha = 1.0
                 self._mq_state = "START_DELAY"
@@ -637,10 +648,12 @@ class ToggleSwitch(QWidget):
         
         # Animators
         self._anim_group = QPropertyAnimation(self, b"thumb_x", self)
-        self._anim_group.setDuration(150)
+        self._anim_group.setDuration(160)
+        self._anim_group.setEasingCurve(QEasingCurve.OutCubic)
         
         self._color_anim = QPropertyAnimation(self, b"bg_color", self)
-        self._color_anim.setDuration(150)
+        self._color_anim.setDuration(160)
+        self._color_anim.setEasingCurve(QEasingCurve.OutQuad)
 
     @Property(float)
     def thumb_x(self):
@@ -693,9 +706,13 @@ class ToggleSwitch(QWidget):
         end_x = float(self.width() - thumb_size - config.S(2)) if self._is_checked else float(config.S(2))
         end_color = QColor("#1ed760") if self._is_checked else QColor("#555555")
         
+        self._anim_group.setDuration(160)
+        self._anim_group.setEasingCurve(QEasingCurve.OutCubic)
         self._anim_group.setStartValue(self._thumb_x)
         self._anim_group.setEndValue(float(end_x))
         
+        self._color_anim.setDuration(160)
+        self._color_anim.setEasingCurve(QEasingCurve.OutQuad)
         self._color_anim.setStartValue(self._bg_color)
         self._color_anim.setEndValue(end_color)
         
@@ -983,6 +1000,8 @@ class AnimatedPlayerButton(QPushButton):
     def mousePressEvent(self, e):
         from PySide6.QtCore import QSize
         self._anim.stop()
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.setStartValue(self.iconSize())
         self._anim.setEndValue(QSize(int(self.base_icon_size * 0.75), int(self.base_icon_size * 0.75)))
         self._anim.start()
         super().mousePressEvent(e)
@@ -990,6 +1009,8 @@ class AnimatedPlayerButton(QPushButton):
     def mouseReleaseEvent(self, e):
         from PySide6.QtCore import QSize
         self._anim.stop()
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.setStartValue(self.iconSize())
         self._anim.setEndValue(QSize(self.base_icon_size, self.base_icon_size))
         self._anim.start()
         super().mouseReleaseEvent(e)

@@ -144,6 +144,9 @@ class AppController:
         self.main_win.raise_()
         self.main_win.activateWindow()
 
+        # Track window screen to dynamically sync animation interval when moved across monitors
+        gui.track_window_screen(self.main_win)
+
         # Close splash only after main window is displayed
         if self.splash:
             self.splash.close()
@@ -367,6 +370,9 @@ def main():
         app.setApplicationDisplayName(config.APP_NAME)
         app.setOrganizationName("Veritus")
         app.setOrganizationDomain("veritus.badwords")
+
+        # Initialize hardware VSync / high-refresh rate synchronization dynamically
+        gui.init_high_refresh_sync(app)
 
         # Initialize UI scaling factor dynamically based on screen geometry
         config.init_ui_scaling(app)

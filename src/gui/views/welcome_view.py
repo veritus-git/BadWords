@@ -74,14 +74,16 @@ class _WorkspaceFadeCanvas(QWidget):
         p = self.progress
         w = self.width()
 
-        if p < 0.40 and self.pix_from:
-            alpha = max(0.0, min(1.0, 1.0 - (p / 0.40)))
-            painter.setOpacity(alpha)
+        # Seamless overlapping cross-fade without dead black frames
+        if self.pix_from and p < 0.65:
+            alpha_from = max(0.0, min(1.0, (0.65 - p) / 0.65))
+            painter.setOpacity(alpha_from)
             x_from = (w - self.pix_from.width()) // 2
             painter.drawPixmap(x_from, 0, self.pix_from)
-        elif p > 0.55 and self.pix_to:
-            alpha = max(0.0, min(1.0, (p - 0.55) / 0.45))
-            painter.setOpacity(alpha)
+
+        if self.pix_to and p > 0.35:
+            alpha_to = max(0.0, min(1.0, (p - 0.35) / 0.65))
+            painter.setOpacity(alpha_to)
             x_to = (w - self.pix_to.width()) // 2
             painter.drawPixmap(x_to, 0, self.pix_to)
 
@@ -155,7 +157,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         if trigger_callback and self.on_change:
             self.on_change(idx)
 
-    def animate_indicator(self, idx: int, duration: int = 280):
+    def animate_indicator(self, idx: int, duration: int = 240):
         target_pos = float(idx)
         if self._anim is not None:
             self._anim.stop()
@@ -169,7 +171,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         anim.setDuration(duration)
         anim.setStartValue(self._anim_pos)
         anim.setEndValue(target_pos)
-        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
 
         def _on_val(v):
             self._anim_pos = v
@@ -341,7 +343,7 @@ class WelcomePageView(QWidget):
             self._y_anim.stop()
             self.fade_canvas.finish()
 
-        duration = 350
+        duration = 280
         self.win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
 
         current_w = self.win.welcome_stack.widget(self._current_idx)
@@ -375,7 +377,7 @@ class WelcomePageView(QWidget):
         anim.setDuration(duration)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
 
         def _step(v: float):
             cur_y = int(start_y + (end_y - start_y) * v)

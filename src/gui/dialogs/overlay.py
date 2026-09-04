@@ -346,7 +346,6 @@ class AnimatedDimOverlay(QWidget):
             self.setGeometry(0, 0, p.width(), p.height())
         self.show()
         self.raise_()
-        QApplication.processEvents()
         self.anim_in.start()
 
     def fade_out(self):
