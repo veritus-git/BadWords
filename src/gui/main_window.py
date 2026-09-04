@@ -2651,7 +2651,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.btn_import_wrapper.setVisible(True)
 
         self._script_anim = QVariantAnimation(self)
-        self._script_anim.setDuration(350)
+        self._script_anim.setDuration(480)
         self._script_anim.setStartValue(0.0)
         self._script_anim.setEndValue(1.0)
         self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
@@ -2659,14 +2659,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         start_w = self.script_container.width()
         pad = config.S(10)
         end_w = (config.S(16) + config.S(325) + pad) if checked else 0
+        w_settings = config.S(325) + 2 * pad
         
         def _on_step(v):
-            self.script_container.setFixedWidth(int(start_w + (end_w - start_w) * v))
+            cur_script_w = int(start_w + (end_w - start_w) * v)
+            self.script_container.setFixedWidth(cur_script_w)
+            if hasattr(self, 'slider_widget'):
+                self.slider_widget.setFixedWidth(w_settings + cur_script_w)
             if has_btn:
                 self.btn_import_wrapper.setMaximumWidth(int(start_btn_w + (end_btn_w - start_btn_w) * v))
                 
         def _on_finish():
             self.script_container.setFixedWidth(end_w)
+            if hasattr(self, 'slider_widget'):
+                self.slider_widget.setFixedWidth(w_settings + end_w)
             if not checked:
                 self.script_container.setVisible(False)
             if has_btn:
