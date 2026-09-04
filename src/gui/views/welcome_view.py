@@ -78,13 +78,17 @@ class _WorkspaceFadeCanvas(QWidget):
         if self.pix_from and p < 0.65:
             alpha_from = max(0.0, min(1.0, (0.65 - p) / 0.65))
             painter.setOpacity(alpha_from)
-            x_from = (w - self.pix_from.width()) // 2
+            dpr_from = self.pix_from.devicePixelRatio() if hasattr(self.pix_from, 'devicePixelRatio') and self.pix_from.devicePixelRatio() > 0 else 1.0
+            log_w_from = self.pix_from.width() / dpr_from
+            x_from = int(round((w - log_w_from) / 2.0))
             painter.drawPixmap(x_from, 0, self.pix_from)
 
         if self.pix_to and p > 0.35:
             alpha_to = max(0.0, min(1.0, (p - 0.35) / 0.65))
             painter.setOpacity(alpha_to)
-            x_to = (w - self.pix_to.width()) // 2
+            dpr_to = self.pix_to.devicePixelRatio() if hasattr(self.pix_to, 'devicePixelRatio') and self.pix_to.devicePixelRatio() > 0 else 1.0
+            log_w_to = self.pix_to.width() / dpr_to
+            x_to = int(round((w - log_w_to) / 2.0))
             painter.drawPixmap(x_to, 0, self.pix_to)
 
         painter.end()
@@ -356,13 +360,16 @@ class WelcomePageView(QWidget):
         w = self.width()
         self.welcome_root.setFixedWidth(w)
         self.workspace_container.setFixedWidth(w)
+        self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
         self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
 
         # 1. Grab snapshot of current outgoing workspace
         pix_from = current_w.grab()
 
         # 2. Prepare target incoming workspace and grab snapshot
-        target_w.resize(self.win.welcome_stack.size())
+        target_w.resize(w, self.H_MAX_CONTENT)
+        if target_w.layout():
+            target_w.layout().activate()
         pix_to = target_w.grab()
 
         # 3. Setup canvas & hide live widgets to prevent double-render/flash

@@ -11,7 +11,7 @@ DESCRIPTION:
 Sidebar activity panel for pasting, importing, and comparing script text with audio transcription.
 """
 
-from PySide6.QtCore import Qt, QVariantAnimation
+from PySide6.QtCore import Qt, QVariantAnimation, QEasingCurve
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QFrame
 )
