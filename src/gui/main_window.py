@@ -364,6 +364,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._mac_menu_edits.menuAction().setVisible(False)
             
             self._mac_menu_bar.setNativeMenuBar(True)
+            try:
+                import sys
+                is_standalone = not (
+                    hasattr(sys.modules.get('__main__'), 'resolve') or
+                    hasattr(sys.modules.get('builtins'), 'resolve') or
+                    hasattr(sys.modules.get('__main__'), 'bmd') or
+                    hasattr(sys.modules.get('builtins'), 'bmd') or
+                    'fscript' in sys.executable.lower() or
+                    os.environ.get('RESOLVE_SCRIPT_API') is not None
+                )
+                if is_standalone:
+                    from .utils import setup_macos_standalone_identity
+                    setup_macos_standalone_identity(config.APP_NAME)
+            except Exception:
+                pass
+
 
         # --- Build UI --- (sidebars + central workspace sit below title bar)
         self._build_sidebars()         # left + right activity frames
@@ -521,19 +537,25 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _apply_always_on_top(self, enable: bool):
         self._always_on_top_active = bool(enable)
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
-        if self.isMaximized():
-            self.showMaximized()
-        elif self.isFullScreen():
-            self.showFullScreen()
-        else:
-            self.show()
+        native_ok = False
         try:
             win_id = int(self.winId())
             if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-                self.engine.os_doc.set_always_on_top(win_id, enable)
+                native_ok = self.engine.os_doc.set_always_on_top(win_id, enable)
         except Exception:
-            pass
+            native_ok = False
+
+        # If native method was not supported (e.g. Wayland) or window isn't created/visible yet, use Qt window flags
+        if not native_ok or not self.isVisible():
+            self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+            if self.isVisible():
+                if self.isMaximized():
+                    self.showMaximized()
+                elif self.isFullScreen():
+                    self.showFullScreen()
+                else:
+                    self.show()
+
 
     # ------------------------------------------------------------------
     # UI Construction

@@ -2698,6 +2698,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             else:
                 main_win.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
                 main_win.show()
+            try:
+                if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                    self.engine.os_doc.set_always_on_top(int(self.winId()), is_top)
+            except Exception:
+                pass
+
 
         if restart_needed:
             lang = old_prefs.get('gui_lang', 'en')

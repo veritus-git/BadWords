@@ -69,45 +69,52 @@ class LiquidProgressBar(QWidget):
             if self._indeterminate:
                 self._indeterminate = False
                 self._loop_anim.stop()
+            target_val = float(val)
+            if abs(target_val - self._value) < 0.2:
+                return
             self._anim.stop()
             self._anim.setStartValue(self._value)
-            self._anim.setEndValue(float(val))
+            self._anim.setEndValue(target_val)
             self._anim.start()
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath
+        from PySide6.QtGui import QPainter, QColor, QLinearGradient
         from PySide6.QtCore import QRectF
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        
-        r = config.S(4)
+
+        r = float(config.S(4))
         rect = self.rect()
+        w = float(rect.width())
+        h = float(rect.height())
+
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#2b2b2b"))
         p.drawRoundedRect(rect, r, r)
-        
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), r, r)
-        p.setClipPath(path)
-        
+
+        # Use fast rectangular clipping to avoid CPU-intensive QPainterPath vector clipping
+        p.setClipRect(rect)
+
         if self._indeterminate:
-            pill_width = rect.width() * 0.25
-            x_pos = self._indet_offset * (rect.width() + pill_width) - pill_width
-            
+            pill_width = w * 0.25
+            x_pos = self._indet_offset * (w + pill_width) - pill_width
+
             grad = QLinearGradient(x_pos, 0, x_pos + pill_width, 0)
             grad.setColorAt(0.0, QColor("#1a7a3e"))
             grad.setColorAt(1.0, QColor("#b8d035"))
-            
+
             p.setBrush(grad)
-            p.drawRoundedRect(QRectF(x_pos, 0, pill_width, rect.height()), 4, 4)
+            p.drawRoundedRect(QRectF(x_pos, 0, pill_width, h), r, r)
         elif self._value > 0:
-            fill_width = (self._value / 100.0) * rect.width()
-            fill_rect = QRectF(0, 0, fill_width, rect.height())
-            
-            grad = QLinearGradient(0, 0, fill_width, 0)
-            grad.setColorAt(0.0, QColor("#1a7a3e"))
-            grad.setColorAt(1.0, QColor("#b8d035"))
-            
-            p.setBrush(grad)
-            p.drawRoundedRect(fill_rect, 4, 4)
+            fill_width = (self._value / 100.0) * w
+            if fill_width > 0:
+                fill_rect = QRectF(0, 0, fill_width, h)
+
+                grad = QLinearGradient(0, 0, fill_width, 0)
+                grad.setColorAt(0.0, QColor("#1a7a3e"))
+                grad.setColorAt(1.0, QColor("#b8d035"))
+
+                p.setBrush(grad)
+                p.drawRoundedRect(fill_rect, r, r)
+
 

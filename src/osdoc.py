@@ -640,18 +640,149 @@ class OSDoctor:
         except Exception:
             pass
 
-    def set_always_on_top(self, window_id: int, top: bool):
-        """Sets the window to always on top using native API if possible, avoiding Qt window reconstruction bugs."""
-        if not self.is_win:
-            return False
-        try:
-            # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
-            # SWP_NOMOVE = 0x0002, SWP_NOSIZE = 0x0001
-            hwnd_insert_after = -1 if top else -2
-            ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, 0x0003)
-            return True
-        except Exception:
-            return False
+    def set_always_on_top(self, window_id: int, top: bool) -> bool:
+        """
+        Sets the window to always on top using native OS API without recreating the Qt window.
+        - Windows: SetWindowPos with HWND_TOPMOST / HWND_NOTOPMOST
+        - macOS: NSWindow setLevel: NSFloatingWindowLevel (3) & collection behavior
+        - Linux (X11): _NET_WM_STATE_ABOVE via XClientMessageEvent
+        """
+        if self.is_win:
+            try:
+                import ctypes
+                # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
+                # SWP_NOSIZE(1) | SWP_NOMOVE(2) | SWP_NOACTIVATE(0x10) | SWP_FRAMECHANGED(0x20) = 0x0033
+                hwnd_insert_after = -1 if top else -2
+                flags = 0x0001 | 0x0002 | 0x0010 | 0x0020
+                ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, flags)
+                return True
+            except Exception:
+                return False
+
+        elif self.is_mac:
+            try:
+                import ctypes, ctypes.util
+                objc_path = ctypes.util.find_library('objc')
+                if not objc_path:
+                    return False
+                objc = ctypes.cdll.LoadLibrary(objc_path)
+                objc.objc_getClass.restype = ctypes.c_void_p
+                objc.objc_getClass.argtypes = [ctypes.c_char_p]
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+                # In Qt on macOS, window_id is an NSView pointer.
+                view = ctypes.c_void_p(window_id)
+                sel_window = objc.sel_registerName(b"window")
+                msgSend_window = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+                nswindow = msgSend_window(view, sel_window)
+                if not nswindow:
+                    nswindow = view
+
+                # NSNormalWindowLevel = 0, NSFloatingWindowLevel = 3
+                sel_setLevel = objc.sel_registerName(b"setLevel:")
+                msgSend_setLevel = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long))
+                level = ctypes.c_long(3 if top else 0)
+                msgSend_setLevel(nswindow, sel_setLevel, level)
+
+                # Ensure collection behavior allows floating across desktop spaces
+                sel_setBehavior = objc.sel_registerName(b"setCollectionBehavior:")
+                msgSend_setBehavior = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong))
+                # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0, NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
+                behavior = ctypes.c_ulong((1 << 0) | (1 << 8) if top else 0)
+                msgSend_setBehavior(nswindow, sel_setBehavior, behavior)
+                return True
+            except Exception:
+                return False
+
+        elif self.is_linux:
+            # 1. Try wmctrl if available (works 100% reliably in Mutter/Cinnamon/KWin/XFCE)
+            try:
+                import subprocess, shutil
+                if shutil.which('wmctrl'):
+                    action = "add" if top else "remove"
+                    res = subprocess.run(
+                        ['wmctrl', '-i', '-r', hex(window_id), '-b', f'{action},above'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    if res.returncode == 0:
+                        return True
+            except Exception:
+                pass
+
+            # 2. Direct X11 ClientMessage fallback via XSendEvent
+            try:
+                from PySide6.QtGui import QGuiApplication
+                if QGuiApplication.platformName() == 'wayland':
+                    return False
+
+                import ctypes, ctypes.util
+                x11_path = ctypes.util.find_library('X11')
+                if not x11_path:
+                    return False
+                x11 = ctypes.cdll.LoadLibrary(x11_path)
+                x11.XOpenDisplay.restype = ctypes.c_void_p
+                x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+                display = x11.XOpenDisplay(None)
+                if not display:
+                    return False
+
+                x11.XDefaultRootWindow.restype = ctypes.c_ulong
+                x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+                x11.XInternAtom.restype = ctypes.c_ulong
+                x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+                x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+                x11.XFlush.argtypes = [ctypes.c_void_p]
+                x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
+
+                atom_state = x11.XInternAtom(display, b'_NET_WM_STATE', False)
+                atom_above = x11.XInternAtom(display, b'_NET_WM_STATE_ABOVE', False)
+                root = x11.XDefaultRootWindow(display)
+
+                class XClientMessageEvent(ctypes.Structure):
+                    _fields_ = [
+                        ('type', ctypes.c_int),
+                        ('serial', ctypes.c_ulong),
+                        ('send_event', ctypes.c_int),
+                        ('display', ctypes.c_void_p),
+                        ('window', ctypes.c_ulong),
+                        ('message_type', ctypes.c_ulong),
+                        ('format', ctypes.c_int),
+                        ('data', ctypes.c_long * 5)
+                    ]
+
+                class XEvent(ctypes.Union):
+                    _fields_ = [
+                        ('type', ctypes.c_int),
+                        ('xclient', XClientMessageEvent),
+                        ('pad', ctypes.c_long * 24)
+                    ]
+
+                event = XEvent()
+                event.type = 33  # ClientMessage
+                event.xclient.type = 33
+                event.xclient.serial = 0
+                event.xclient.send_event = 1
+                event.xclient.display = display
+                event.xclient.window = window_id
+                event.xclient.message_type = atom_state
+                event.xclient.format = 32
+                event.xclient.data[0] = 1 if top else 0  # 1 = _NET_WM_STATE_ADD, 0 = _NET_WM_STATE_REMOVE
+                event.xclient.data[1] = atom_above
+                event.xclient.data[2] = 0
+                event.xclient.data[3] = 1
+                event.xclient.data[4] = 0
+
+                mask = 0x00180000  # SubstructureRedirectMask | SubstructureNotifyMask
+                x11.XSendEvent(display, root, False, mask, ctypes.byref(event))
+                x11.XFlush(display)
+                x11.XCloseDisplay(display)
+                return True
+            except Exception:
+                return False
+
+        return False
 
     # ==========================
     # FILE MANAGEMENT

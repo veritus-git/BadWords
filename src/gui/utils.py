@@ -207,35 +207,147 @@ def _qwidget_txt(self, key: str, **kwargs) -> str:
 QWidget.txt = _qwidget_txt
 
 
+def set_macos_runtime_icon(icon_name: str = "default"):
+    """Dynamically updates the running application icon in macOS Dock and Stage Manager."""
+    if platform.system() != "Darwin":
+        return
+    try:
+        import ctypes, ctypes.util
+        objc_path = ctypes.util.find_library('objc')
+        if not objc_path:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_path)
+
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+        msgSend = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_ptr = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_str = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p))
+
+        icon_path = get_icon_path(icon_name)
+        if not icon_path or not os.path.exists(icon_path):
+            icon_path = get_icon_path("default")
+        if not icon_path or not os.path.exists(icon_path):
+            return
+
+        cls_NSString = objc.objc_getClass(b"NSString")
+        sel_stringWithUTF8 = objc.sel_registerName(b"stringWithUTF8String:")
+        ns_path = msgSend_str(cls_NSString, sel_stringWithUTF8, icon_path.encode('utf-8'))
+
+        cls_NSImage = objc.objc_getClass(b"NSImage")
+        sel_alloc = objc.sel_registerName(b"alloc")
+        sel_initWithContents = objc.sel_registerName(b"initWithContentsOfFile:")
+        msgSend_init = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+
+        img_alloc = msgSend(cls_NSImage, sel_alloc)
+        img = msgSend_init(img_alloc, sel_initWithContents, ns_path)
+
+        if img:
+            cls_NSApp = objc.objc_getClass(b"NSApplication")
+            sel_sharedApp = objc.sel_registerName(b"sharedApplication")
+            sel_setIcon = objc.sel_registerName(b"setApplicationIconImage:")
+            app = msgSend(cls_NSApp, sel_sharedApp)
+            if app:
+                msgSend_ptr(app, sel_setIcon, img)
+    except Exception:
+        pass
+
+
+def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str = "default"):
+    """
+    Ensures macOS Menu Bar displays app_name and Stage Manager/Dock show the BadWords icon
+    instead of Python and the python rocket icon in standalone mode.
+    """
+    if platform.system() != "Darwin":
+        return
+    try:
+        import ctypes, ctypes.util
+        objc_path = ctypes.util.find_library('objc')
+        if not objc_path:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_path)
+
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+        msgSend = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_ptr = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_str = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p))
+        msgSend_idx = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long))
+
+        cls_NSString = objc.objc_getClass(b"NSString")
+        sel_stringWithUTF8 = objc.sel_registerName(b"stringWithUTF8String:")
+        ns_name = msgSend_str(cls_NSString, sel_stringWithUTF8, app_name.encode('utf-8'))
+
+        # 1. Update [NSProcessInfo processInfo] setProcessName:
+        cls_NSProcessInfo = objc.objc_getClass(b"NSProcessInfo")
+        sel_processInfo = objc.sel_registerName(b"processInfo")
+        sel_setProcessName = objc.sel_registerName(b"setProcessName:")
+        p_info = msgSend(cls_NSProcessInfo, sel_processInfo)
+        if p_info and ns_name:
+            msgSend_ptr(p_info, sel_setProcessName, ns_name)
+
+        # 2. Update Application Menu title in NSApp.mainMenu
+        cls_NSApp = objc.objc_getClass(b"NSApplication")
+        sel_sharedApp = objc.sel_registerName(b"sharedApplication")
+        sel_mainMenu = objc.sel_registerName(b"mainMenu")
+        sel_itemAtIndex = objc.sel_registerName(b"itemAtIndex:")
+        sel_submenu = objc.sel_registerName(b"submenu")
+        sel_setTitle = objc.sel_registerName(b"setTitle:")
+
+        app = msgSend(cls_NSApp, sel_sharedApp)
+        if app and ns_name:
+            main_menu = msgSend(app, sel_mainMenu)
+            if main_menu:
+                first_item = msgSend_idx(main_menu, sel_itemAtIndex, 0)
+                if first_item:
+                    msgSend_ptr(first_item, sel_setTitle, ns_name)
+                    submenu = msgSend(first_item, sel_submenu)
+                    if submenu:
+                        msgSend_ptr(submenu, sel_setTitle, ns_name)
+
+        # 3. Set application icon image in Dock and Stage Manager
+        set_macos_runtime_icon(icon_name)
+    except Exception:
+        pass
+
+
 def update_macos_bundle_icon(icon_name: str):
-    """Updates the icon.icns inside ~/Applications/BadWords.app and re-signs ad-hoc."""
+    """Updates the icon.icns inside ~/Applications/BadWords.app, re-signs ad-hoc, and updates runtime icon."""
     if platform.system() != "Darwin":
         return
     try:
         import shutil, subprocess
         home = os.path.expanduser("~")
         app_bundle = os.path.join(home, "Applications", "BadWords.app")
-        if not os.path.isdir(app_bundle):
-            return
+        if os.path.isdir(app_bundle):
+            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            icns_candidates = [
+                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
+                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+            ]
+            target_icns = None
+            for c in icns_candidates:
+                if os.path.isfile(c):
+                    target_icns = c
+                    break
 
-        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        icns_candidates = [
-            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
-            os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
-            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
-        ]
-        target_icns = None
-        for c in icns_candidates:
-            if os.path.isfile(c):
-                target_icns = c
-                break
+            if target_icns:
+                dest_icns = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
+                shutil.copy2(target_icns, dest_icns)
+                subprocess.run(["touch", app_bundle], capture_output=True)
+                subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
 
-        if target_icns:
-            dest_icns = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
-            shutil.copy2(target_icns, dest_icns)
-            subprocess.run(["touch", app_bundle], capture_output=True)
-            subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
+        # Also update running process icon immediately in Dock & Stage Manager
+        set_macos_runtime_icon(icon_name)
     except Exception:
         pass
+
 
 
