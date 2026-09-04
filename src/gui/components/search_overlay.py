@@ -401,8 +401,8 @@ class SearchOverlayWidget(QFrame):
             self._anim.stop()
 
         self._anim = QPropertyAnimation(self, b"geometry")
-        self._anim.setDuration(200)
-        self._anim.setEasingCurve(QEasingCurve.InCubic)
+        self._anim.setDuration(250)
+        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
         start_geom = self.geometry()
         self._anim.setStartValue(start_geom)
         
@@ -438,8 +438,8 @@ class SearchOverlayWidget(QFrame):
             self._anim.stop()
 
         self._anim = QPropertyAnimation(self, b"geometry")
-        self._anim.setDuration(240)
-        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.setDuration(300)
+        self._anim.setEasingCurve(QEasingCurve.InOutQuad)
         
         start_geom = self.geometry()
         self._anim.setStartValue(start_geom)

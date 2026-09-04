@@ -298,10 +298,10 @@ class TrackOptionsDrawer(QWidget):
 
     def sizeHint(self):
         from PySide6.QtCore import QSize
-        if not self.is_expanded:
-            return QSize(self.width(), 0)
         if getattr(self, '_is_animating', False):
             return QSize(self.width(), self.maximumHeight())
+        if not self.is_expanded:
+            return QSize(self.width(), 0)
         return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
 
     def toggle_expand(self):
@@ -344,35 +344,47 @@ class TrackOptionsDrawer(QWidget):
         if getattr(self, '_anim_group', None) and self._anim_group.state() == QPropertyAnimation.Running:
             self._anim_group.stop()
 
-        self.setMinimumHeight(0)
+        self.setMinimumHeight(drawer_start)
         self._anim_group = QParallelAnimationGroup(self)
         
         def _update_overlay():
             if hasattr(self.parent_gui, 'p_main'):
                 self.parent_gui.p_main.resizeEvent(None)
 
+        duration = 350
+
         if drawer_start != drawer_target:
             anim_drawer_max = QPropertyAnimation(self, b"maximumHeight", self)
-            anim_drawer_max.setDuration(280)
+            anim_drawer_max.setDuration(duration)
             anim_drawer_max.setStartValue(drawer_start)
             anim_drawer_max.setEndValue(drawer_target)
-            anim_drawer_max.setEasingCurve(QEasingCurve.OutCubic)
+            anim_drawer_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_drawer_max.valueChanged.connect(lambda _: _update_overlay())
             self._anim_group.addAnimation(anim_drawer_max)
+
+            anim_drawer_min = QPropertyAnimation(self, b"minimumHeight", self)
+            anim_drawer_min.setDuration(duration)
+            anim_drawer_min.setStartValue(drawer_start)
+            anim_drawer_min.setEndValue(drawer_target)
+            anim_drawer_min.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_drawer_min)
 
         if a_cust_start != a_cust_target:
             anim_a_max = QPropertyAnimation(self.w_a_cust_list, b"maximumHeight", self)
-            anim_a_max.setDuration(280)
+            anim_a_max.setDuration(duration)
             anim_a_max.setStartValue(a_cust_start)
             anim_a_max.setEndValue(a_cust_target)
-            anim_a_max.setEasingCurve(QEasingCurve.OutCubic)
+            anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_a_max.valueChanged.connect(lambda _: _update_overlay())
             self._anim_group.addAnimation(anim_a_max)
 
         if v_cust_start != v_cust_target:
             anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
-            anim_v_max.setDuration(280)
+            anim_v_max.setDuration(duration)
             anim_v_max.setStartValue(v_cust_start)
             anim_v_max.setEndValue(v_cust_target)
-            anim_v_max.setEasingCurve(QEasingCurve.OutCubic)
+            anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
+            anim_v_max.valueChanged.connect(lambda _: _update_overlay())
             self._anim_group.addAnimation(anim_v_max)
 
         self._is_animating = True

@@ -124,8 +124,8 @@ def build_script_panel(win) -> QFrame:
     l_script_analysis.addWidget(win.btn_exit_sbs_text)
     
     win._analyze_color_anim = QVariantAnimation(win)
-    win._analyze_color_anim.setDuration(200)
-    win._analyze_color_anim.setEasingCurve(QEasingCurve.OutQuad)
+    win._analyze_color_anim.setDuration(250)
+    win._analyze_color_anim.setEasingCurve(QEasingCurve.InOutQuad)
 
     def update_btn_style(color):
         style = f"QPushButton {{ background-color: {color.name()}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }}"

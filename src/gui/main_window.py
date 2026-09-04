@@ -2681,10 +2681,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._script_anim.stop()
 
         self._script_anim = QVariantAnimation(self)
-        self._script_anim.setDuration(280)
+        self._script_anim.setDuration(440)
         self._script_anim.setStartValue(0.0)
         self._script_anim.setEndValue(1.0)
-        self._script_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._script_anim.setEasingCurve(QEasingCurve.InOutCubic)
         
         start_w = self.script_container.width()
         pad = config.S(10)
