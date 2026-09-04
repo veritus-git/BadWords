@@ -171,9 +171,16 @@ class AppController:
 
     def _on_close(self):
         """Called when the user closes the main window."""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.winmm.timeEndPeriod(1)
+            except Exception:
+                pass
         if self.os_doc:
             self.os_doc.cleanup_temp()
         QApplication.instance().quit()
+
 
 
 # ==========================================
@@ -342,8 +349,16 @@ def main():
             try:
                 import ctypes
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+                # WinMM high-resolution timer (1ms) eliminates animation frame-pacing stutter
+                ctypes.windll.winmm.timeBeginPeriod(1)
             except Exception:
                 pass
+
+        # Hardware VSync surface format
+        from PySide6.QtGui import QSurfaceFormat
+        fmt = QSurfaceFormat()
+        fmt.setSwapInterval(1)  # Hardware VSync
+        QSurfaceFormat.setDefaultFormat(fmt)
 
         # 2. QApplication must exist before any QWidget
         app = QApplication(sys.argv)
@@ -366,10 +381,24 @@ def main():
 
         if os_doc.is_mac:
             app.setStyle('Fusion')
+            try:
+                is_standalone = not (
+                    hasattr(sys.modules.get('__main__'), 'resolve') or
+                    hasattr(sys.modules.get('builtins'), 'resolve') or
+                    hasattr(sys.modules.get('__main__'), 'bmd') or
+                    hasattr(sys.modules.get('builtins'), 'bmd') or
+                    'fscript' in sys.executable.lower() or
+                    os.environ.get('RESOLVE_SCRIPT_API') is not None
+                )
+                if is_standalone:
+                    gui.setup_macos_standalone_identity(config.APP_NAME)
+            except Exception:
+                pass
 
         app_icon = gui._app_icon()
         if not app_icon.isNull():
             app.setWindowIcon(app_icon)
+
 
         app.setStyleSheet(config.scrollbar_qss(8))
 

@@ -104,7 +104,8 @@ class FramelessWindowMixin:
             # Linux root window: must always remain Qt.Window (never Qt.Dialog)
             # to preserve maximize, fullscreen and window manager actions.
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-            self.setAttribute(Qt.WA_TranslucentBackground, True)
+            # Opaque root window uses fast native 24-bit RGB blitting without CPU alpha overhead
+
         else:
             # Linux and macOS popups/dialogs: fully frameless dialogs + translucent
             self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.Dialog | Qt.NoDropShadowWindowHint)
