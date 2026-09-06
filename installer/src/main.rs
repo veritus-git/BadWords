@@ -21,6 +21,7 @@ use std::time::Duration;
 enum Screen {
     Welcome,
     Menu,
+    SelectBranch,
     SelectPath,
     ConfirmAction,
     Progress,
@@ -283,6 +284,11 @@ struct InstallerApp {
     launch_on_finish: bool,
     logs: Vec<LogEntry>,
     terminal_child: Option<std::process::Child>,
+    is_dev_mode: bool,
+    selected_branch: Option<String>,
+    branches: Vec<String>,
+    branch_selected_index: usize,
+    branch_fetching: bool,
     tx: Sender<IpcEvent>,
     rx: Receiver<IpcEvent>,
 }
@@ -343,6 +349,11 @@ impl InstallerApp {
             launch_on_finish: true,
             logs: vec![],
             terminal_child: None,
+            is_dev_mode: false,
+            selected_branch: None,
+            branches: vec![],
+            branch_selected_index: 0,
+            branch_fetching: false,
             tx,
             rx,
         }
@@ -379,6 +390,28 @@ impl InstallerApp {
         }
     }
 
+    fn trigger_developer_mode(&mut self) {
+        if engine::find_local_repo().is_some() {
+            self.is_dev_mode = true;
+            self.selected_branch = None;
+            self.select_menu_option(0);
+        } else {
+            self.is_dev_mode = true;
+            self.screen = Screen::SelectBranch;
+            self.branches = vec![];
+            self.branch_selected_index = 0;
+            self.branch_fetching = true;
+            let tx_br = self.tx.clone();
+            std::thread::spawn(move || {
+                let list = engine::fetch_git_branches();
+                let _ = tx_br.send(IpcEvent {
+                    event: "branches_loaded".to_string(),
+                    data: serde_json::json!({ "branches": list }),
+                });
+            });
+        }
+    }
+
     fn start_action(&mut self) {
         self.screen = Screen::Progress;
         self.progress = 0.0;
@@ -393,7 +426,11 @@ impl InstallerApp {
 
         match self.action {
             Some(InstallAction::InstallUpdate) => {
-                engine::run_install(target, self.create_desktop_shortcut, self.create_start_menu_shortcut, tx);
+                if self.is_dev_mode {
+                    engine::run_dev_install(target, self.create_desktop_shortcut, self.create_start_menu_shortcut, self.selected_branch.clone(), tx);
+                } else {
+                    engine::run_install(target, self.create_desktop_shortcut, self.create_start_menu_shortcut, tx);
+                }
             }
             Some(InstallAction::Repair) => {
                 engine::run_repair(target, tx);
@@ -439,6 +476,83 @@ impl InstallerApp {
     }
 }
 
+/// Launches the installed BadWords application using its dedicated native launcher
+fn launch_installed_badwords(target: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    {
+        let launcher_exe = target.join("BadWords.exe");
+        if launcher_exe.is_file() {
+            let _ = std::process::Command::new(&launcher_exe).spawn();
+        } else {
+            let pythonw = target.join("venv").join("Scripts").join("pythonw.exe");
+            let main_py = if target.join("main.py").is_file() {
+                target.join("main.py")
+            } else {
+                target.join("src").join("main.py")
+            };
+            let _ = os::create_hidden_command(&pythonw).arg(&main_py).spawn();
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let app_path = dirs::home_dir().map(|h| h.join("Applications").join("BadWords.app"));
+        let launched = if let Some(ref app) = app_path {
+            if app.exists() {
+                std::process::Command::new("open").arg(app).spawn().is_ok()
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if !launched {
+            let mach_launcher = target.join("BadWords");
+            if mach_launcher.is_file() {
+                let _ = std::process::Command::new(&mach_launcher).spawn();
+            } else {
+                let python = target.join("venv").join("bin").join("python3");
+                let main_py = if target.join("main.py").is_file() {
+                    target.join("main.py")
+                } else {
+                    target.join("src").join("main.py")
+                };
+                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let elf_launcher = target.join("BadWords");
+        if elf_launcher.is_file() {
+            let _ = std::process::Command::new(&elf_launcher).spawn();
+        } else {
+            let local_bin = dirs::home_dir().map(|h| h.join(".local").join("bin").join("badwords"));
+            let launched_symlink = if let Some(ref lb) = local_bin {
+                if lb.is_file() {
+                    std::process::Command::new(lb).spawn().is_ok()
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if !launched_symlink {
+                let python = if target.join("venv").join("bin").join("python3").is_file() {
+                    target.join("venv").join("bin").join("python3")
+                } else {
+                    target.join("venv").join("bin").join("python")
+                };
+                let main_py = if target.join("main.py").is_file() {
+                    target.join("main.py")
+                } else {
+                    target.join("src").join("main.py")
+                };
+                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
+            }
+        }
+    }
+}
+
 impl eframe::App for InstallerApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0, 0.0, 0.0, 0.0]
@@ -463,6 +577,11 @@ impl eframe::App for InstallerApp {
             if event.event == "release_detected" {
                 if let Some(tag) = event.data.get("tag").and_then(|v| v.as_str()) {
                     self.detected_version = tag.trim_start_matches('v').to_string();
+                }
+            } else if event.event == "branches_loaded" {
+                if let Some(arr) = event.data.get("branches").and_then(|v| v.as_array()) {
+                    self.branches = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                    self.branch_fetching = false;
                 }
             } else if event.event == "log" {
                 let level = event.data.get("level").and_then(|v| v.as_str()).unwrap_or("INFO").to_string();
@@ -563,15 +682,44 @@ impl eframe::App for InstallerApp {
                 } else if ctx.input(|i| i.key_pressed(egui::Key::Num5)) {
                     self.keyboard_navigation_active = true;
                     self.select_menu_option(4);
+                } else if ctx.input(|i| i.key_pressed(egui::Key::D)) {
+                    self.keyboard_navigation_active = true;
+                    self.trigger_developer_mode();
                 } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft)) {
                     self.screen = Screen::Welcome;
+                }
+            }
+            Screen::SelectBranch => {
+                if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                    self.keyboard_navigation_active = true;
+                    if !self.branches.is_empty() {
+                        self.branch_selected_index = (self.branch_selected_index + self.branches.len() - 1) % self.branches.len();
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                    self.keyboard_navigation_active = true;
+                    if !self.branches.is_empty() {
+                        self.branch_selected_index = (self.branch_selected_index + 1) % self.branches.len();
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::Space)) {
+                    if !self.branches.is_empty() {
+                        self.selected_branch = self.branches.get(self.branch_selected_index).cloned();
+                        self.select_menu_option(0);
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
+                    self.screen = Screen::Menu;
+                    self.is_dev_mode = false;
                 }
             }
             Screen::SelectPath => {
                 if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight)) {
                     self.start_action();
                 } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
-                    self.screen = Screen::Menu;
+                    if self.is_dev_mode && self.selected_branch.is_some() {
+                        self.screen = Screen::SelectBranch;
+                    } else {
+                        self.screen = Screen::Menu;
+                        self.is_dev_mode = false;
+                    }
                 }
             }
             Screen::ConfirmAction => {
@@ -585,37 +733,7 @@ impl eframe::App for InstallerApp {
             Screen::Complete => {
                 if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::Space)) {
                     if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
-                        let target = self.current_target_path();
-                        #[cfg(target_os = "windows")]
-                        {
-                            let pythonw = target.join("venv").join("Scripts").join("pythonw.exe");
-                            let main_py = target.join("main.py");
-                            let _ = os::create_hidden_command(&pythonw).arg(&main_py).spawn();
-                        }
-                        #[cfg(target_os = "macos")]
-                        {
-                            let app_path = dirs::home_dir().map(|h| h.join("Applications").join("BadWords.app"));
-                            let launched = if let Some(ref app) = app_path {
-                                if app.exists() {
-                                    std::process::Command::new("open").arg(app).spawn().is_ok()
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-                            if !launched {
-                                let python = target.join("venv").join("bin").join("python3");
-                                let main_py = target.join("main.py");
-                                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
-                            }
-                        }
-                        #[cfg(target_os = "linux")]
-                        {
-                            let python = target.join("venv").join("bin").join("python");
-                            let main_py = target.join("main.py");
-                            let _ = std::process::Command::new(&python).arg(&main_py).spawn();
-                        }
+                        launch_installed_badwords(&self.current_target_path());
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -946,10 +1064,120 @@ impl eframe::App for InstallerApp {
                                                                 }
                                                             }
 
+                                                            Screen::SelectBranch => {
+                                                                ui.heading(
+                                                                    egui::RichText::new("Developer Mode: Select Branch")
+                                                                        .size(20.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::from_rgb(147, 197, 253))
+                                                                );
+                                                                ui.add_space(4.0);
+                                                                ui.label(
+                                                                    egui::RichText::new("Select a Git branch to install. A .no_self_upgrade flag will be set to prevent automatic updater self-upgrades.")
+                                                                        .size(12.0)
+                                                                        .color(egui::Color32::from_gray(180))
+                                                                );
+                                                                ui.add_space(10.0);
+
+                                                                if self.branch_fetching {
+                                                                    ui.horizontal(|ui| {
+                                                                        ui.spinner();
+                                                                        ui.add_space(8.0);
+                                                                        ui.label(
+                                                                            egui::RichText::new("Fetching branch list from GitHub...")
+                                                                                .size(13.0)
+                                                                                .color(egui::Color32::WHITE)
+                                                                        );
+                                                                    });
+                                                                } else if self.branches.is_empty() {
+                                                                    ui.label(
+                                                                        egui::RichText::new("Could not fetch branches from repository. Check your internet connection.")
+                                                                            .size(13.0)
+                                                                            .color(egui::Color32::from_rgb(248, 113, 113))
+                                                                    );
+                                                                    ui.add_space(8.0);
+                                                                    if custom_button(ui, ctx, [120.0, 30.0], "Retry") {
+                                                                        self.trigger_developer_mode();
+                                                                    }
+                                                                    let mut clicked_idx = None;
+                                                                    egui::ScrollArea::vertical()
+                                                                        .max_height(240.0)
+                                                                        .auto_shrink([false, false])
+                                                                        .show(ui, |ui| {
+                                                                            for (idx, branch) in self.branches.iter().enumerate() {
+                                                                                let is_selected = idx == self.branch_selected_index;
+                                                                                let (rect, resp) = ui.allocate_exact_size(
+                                                                                    egui::vec2(380.0, 32.0),
+                                                                                    egui::Sense::click(),
+                                                                                );
+                                                                                let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
+
+                                                                                let bg_color = if is_selected {
+                                                                                    egui::Color32::from_rgb(45, 55, 72)
+                                                                                } else if is_hovered {
+                                                                                    egui::Color32::from_rgb(38, 38, 38)
+                                                                                } else {
+                                                                                    egui::Color32::from_rgb(28, 28, 28)
+                                                                                };
+
+                                                                                let border_stroke = if is_selected {
+                                                                                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(147, 197, 253))
+                                                                                } else {
+                                                                                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(50, 50, 50))
+                                                                                };
+
+                                                                                ui.painter().rect(rect, 4.0, bg_color, border_stroke);
+
+                                                                                let text_color = if is_selected {
+                                                                                    egui::Color32::WHITE
+                                                                                } else if is_hovered {
+                                                                                    egui::Color32::from_gray(240)
+                                                                                } else {
+                                                                                    egui::Color32::from_gray(200)
+                                                                                };
+
+                                                                                let icon_text = if branch == "main" || branch == "master" { "⭐ " } else { "🌿 " };
+                                                                                let display_text = format!("{}{}", icon_text, branch);
+
+                                                                                ui.painter().text(
+                                                                                    egui::pos2(rect.min.x + 12.0, rect.center().y),
+                                                                                    egui::Align2::LEFT_CENTER,
+                                                                                    display_text,
+                                                                                    egui::FontId::proportional(13.0),
+                                                                                    text_color,
+                                                                                );
+
+                                                                                if resp.clicked() {
+                                                                                    clicked_idx = Some(idx);
+                                                                                }
+
+                                                                                ui.add_space(4.0);
+                                                                            }
+                                                                        });
+
+                                                                    if let Some(idx) = clicked_idx {
+                                                                        self.branch_selected_index = idx;
+                                                                        self.selected_branch = self.branches.get(idx).cloned();
+                                                                        self.select_menu_option(0);
+                                                                    }
+                                                                }
+                                                            }
+
                                                             Screen::SelectPath => {
                                                                 let is_move = self.action == Some(InstallAction::Move);
+                                                                let heading_title = if self.is_dev_mode {
+                                                                    if let Some(ref br) = self.selected_branch {
+                                                                        format!("Developer Install ({})", br)
+                                                                    } else {
+                                                                        "Developer Install (Local)".to_string()
+                                                                    }
+                                                                } else if is_move {
+                                                                    t.opt_move_title.to_string()
+                                                                } else {
+                                                                    t.select_path_title.to_string()
+                                                                };
                                                                 ui.heading(
-                                                                    egui::RichText::new(if is_move { t.opt_move_title } else { t.select_path_title })
+                                                                    egui::RichText::new(heading_title)
                                                                         .size(20.0)
                                                                         .strong()
                                                                         .color(egui::Color32::WHITE)
@@ -957,7 +1185,11 @@ impl eframe::App for InstallerApp {
                                                                 ui.add_space(6.0);
                                                                 
                                                                 ui.label(
-                                                                    egui::RichText::new(t.select_path_label)
+                                                                    egui::RichText::new(if self.is_dev_mode {
+                                                                        "Choose the destination folder. Updater self-upgrade will be disabled."
+                                                                    } else {
+                                                                        t.select_path_label
+                                                                    })
                                                                         .size(13.0)
                                                                         .color(egui::Color32::from_gray(215))
                                                                 );
@@ -1290,6 +1522,24 @@ impl eframe::App for InstallerApp {
                                                     }
                                                 }
 
+                                                Screen::SelectBranch => {
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_cancel) {
+                                                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                                    }
+                                                    ui.add_space(10.0);
+                                                    if !self.branches.is_empty() {
+                                                        if custom_button(ui, ctx, [100.0, 32.0], t.btn_next) {
+                                                            self.selected_branch = self.branches.get(self.branch_selected_index).cloned();
+                                                            self.select_menu_option(0);
+                                                        }
+                                                        ui.add_space(10.0);
+                                                    }
+                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
+                                                        self.screen = Screen::Menu;
+                                                        self.is_dev_mode = false;
+                                                    }
+                                                }
+
                                                 Screen::SelectPath => {
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_cancel) {
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1301,7 +1551,12 @@ impl eframe::App for InstallerApp {
                                                     }
                                                     ui.add_space(10.0);
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
-                                                        self.screen = Screen::Menu;
+                                                        if self.is_dev_mode && self.selected_branch.is_some() {
+                                                            self.screen = Screen::SelectBranch;
+                                                        } else {
+                                                            self.screen = Screen::Menu;
+                                                            self.is_dev_mode = false;
+                                                        }
                                                     }
                                                 }
 
@@ -1330,37 +1585,7 @@ impl eframe::App for InstallerApp {
                                                 Screen::Complete => {
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_finish) {
                                                         if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
-                                                            let target = self.current_target_path();
-                                                            #[cfg(target_os = "windows")]
-                                                            {
-                                                                let pythonw = target.join("venv").join("Scripts").join("pythonw.exe");
-                                                                let main_py = target.join("main.py");
-                                                                let _ = os::create_hidden_command(&pythonw).arg(&main_py).spawn();
-                                                            }
-                                                            #[cfg(target_os = "macos")]
-                                                            {
-                                                                let app_path = dirs::home_dir().map(|h| h.join("Applications").join("BadWords.app"));
-                                                                let launched = if let Some(ref app) = app_path {
-                                                                    if app.exists() {
-                                                                        std::process::Command::new("open").arg(app).spawn().is_ok()
-                                                                    } else {
-                                                                        false
-                                                                    }
-                                                                } else {
-                                                                    false
-                                                                };
-                                                                if !launched {
-                                                                    let python = target.join("venv").join("bin").join("python3");
-                                                                    let main_py = target.join("main.py");
-                                                                    let _ = std::process::Command::new(&python).arg(&main_py).spawn();
-                                                                }
-                                                            }
-                                                            #[cfg(target_os = "linux")]
-                                                            {
-                                                                let python = target.join("venv").join("bin").join("python");
-                                                                let main_py = target.join("main.py");
-                                                                let _ = std::process::Command::new(&python).arg(&main_py).spawn();
-                                                            }
+                                                            launch_installed_badwords(&self.current_target_path());
                                                         }
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                                     }

@@ -482,6 +482,7 @@ fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
         "pref.json",
         "dev.json",
         ".python_auto_installed",
+        ".no_self_upgrade",
         "models",
         "saves",
         "venv",
@@ -707,6 +708,154 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
     let _ = fs::remove_file(&zip_dest);
     let _ = fs::remove_dir_all(&extract_dest);
     false
+}
+
+/// Downloads and deploys BadWords from a specific git branch
+fn deploy_branch_files(target_dir: &Path, branch: &str, sender: &EventSender) -> bool {
+    let temp_dir = std::env::temp_dir();
+    let zip_dest = temp_dir.join(format!("badwords_branch_{}.zip", branch));
+    let extract_dest = temp_dir.join(format!("badwords_branch_{}_extracted", branch));
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    let _ = fs::create_dir_all(&extract_dest);
+
+    let mut downloaded = false;
+    let candidate_urls = vec![
+        format!("https://github.com/veritus-git/BadWords/archive/refs/heads/{}.zip", branch),
+        format!("https://gitlab.com/badwords/BadWords/-/archive/{}/BadWords-{}.zip", branch, branch),
+    ];
+
+    for url in candidate_urls {
+        emit_log(sender, "INFO", &format!("Fetching branch source from: {}", url));
+        if download_file_with_progress(&url, &zip_dest, 30, "Deploying branch files...", &format!("Downloading branch '{}'", branch), sender).is_ok() {
+            downloaded = true;
+            break;
+        }
+    }
+
+    if !downloaded {
+        emit_log(sender, "ERROR", &format!("Failed to download branch '{}'. Check internet connection.", branch));
+        return false;
+    }
+
+    emit_log(sender, "INFO", "Extracting BadWords branch files...");
+    if extract_zip(&zip_dest, &extract_dest).is_err() {
+        emit_log(sender, "ERROR", "Failed to extract downloaded branch archive.");
+        return false;
+    }
+
+    if let Ok(entries) = fs::read_dir(&extract_dest) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file()) {
+                let src_sub = if p.join("src").is_dir() { p.join("src") } else { p.clone() };
+                let _ = copy_dir_all(&src_sub, target_dir);
+
+                let assets_sub = p.join("assets");
+                if assets_sub.is_dir() {
+                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
+                }
+
+                let setup_sub = p.join("setupfiles");
+                if setup_sub.is_dir() {
+                    let _ = copy_dir_all(&setup_sub, target_dir.join("setupfiles"));
+                    let up_py = setup_sub.join("updater.py");
+                    if up_py.is_file() {
+                        let _ = fs::copy(up_py, target_dir.join("updater.py"));
+                    }
+                }
+
+                let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+                if let Ok(cur_exe) = std::env::current_exe() {
+                    let dest_bin = target_dir.join(installer_dest_name);
+                    if cur_exe != dest_bin {
+                        let _ = fs::copy(&cur_exe, &dest_bin);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                        }
+                    }
+                }
+
+                emit_log(sender, "OK", &format!("Branch '{}' deployed successfully.", branch));
+                let _ = fs::remove_file(&zip_dest);
+                let _ = fs::remove_dir_all(&extract_dest);
+                return true;
+            }
+        }
+    }
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    false
+}
+
+/// Fetches the list of git branch names from GitHub or GitLab API
+pub fn fetch_git_branches() -> Vec<String> {
+    if let Ok(resp) = ureq::get("https://api.github.com/repos/veritus-git/BadWords/branches")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(6))
+        .call()
+    {
+        if let Ok(json) = resp.into_json::<serde_json::Value>() {
+            if let Some(arr) = json.as_array() {
+                let branches: Vec<String> = arr
+                    .iter()
+                    .filter_map(|b| b.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                if !branches.is_empty() {
+                    return branches;
+                }
+            }
+        }
+    }
+
+    // GitLab fallback
+    if let Ok(resp) = ureq::get("https://gitlab.com/api/v4/projects/badwords%2FBadWords/repository/branches")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(6))
+        .call()
+    {
+        if let Ok(json) = resp.into_json::<serde_json::Value>() {
+            if let Some(arr) = json.as_array() {
+                let branches: Vec<String> = arr
+                    .iter()
+                    .filter_map(|b| b.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                if !branches.is_empty() {
+                    return branches;
+                }
+            }
+        }
+    }
+
+    vec!["main".to_string(), "dev-v4".to_string()]
+}
+
+/// Configures developer mode marker and settings.json flag
+pub fn configure_no_self_upgrade(target_dir: &Path, sender: &EventSender) {
+    let marker = target_dir.join(".no_self_upgrade");
+    let _ = fs::write(marker, "1");
+
+    let settings_file = target_dir.join("settings.json");
+    let mut json_obj: serde_json::Value = if settings_file.is_file() {
+        fs::read_to_string(&settings_file)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if let Some(map) = json_obj.as_object_mut() {
+        map.insert("no_self_upgrade".to_string(), serde_json::Value::Bool(true));
+        if let Ok(formatted) = serde_json::to_string_pretty(&json_obj) {
+            let _ = fs::write(&settings_file, formatted);
+        }
+    }
+    emit_log(sender, "OK", "Developer mode configured: Updater self-upgrade disabled.");
 }
 
 /// Ensures portable FFmpeg is present in bin/
@@ -1083,8 +1232,15 @@ fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender)
     setup_python_environment(to_dir, None, has_nvidia, sender)
 }
 
-/// Executes the full installation or update process
-pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, sender: EventSender) {
+/// Internal core installation engine supporting standard and developer installs
+fn run_install_core(
+    target_dir: PathBuf,
+    create_desktop: bool,
+    #[allow(unused_variables)] create_menu: bool,
+    is_dev: bool,
+    branch: Option<String>,
+    sender: EventSender,
+) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Starting BadWords {} installation...", APP_VERSION));
         emit_progress(&sender, 5, 0, "Checking environment...", "Detecting Python runtime & GPU hardware");
@@ -1138,10 +1294,27 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
         clean_wipe_target_dir(&target_dir, &sender);
 
         // 5. Sync / Download source files
-        emit_progress(&sender, 30, 1, "Deploying application files...", "Copying BadWords source and assets");
-        if !deploy_application_files(&target_dir, &sender) {
-            emit_complete(&sender, "install", false, "Failed to deploy BadWords application files.");
-            return;
+        if is_dev {
+            if let Some(ref br) = branch {
+                emit_progress(&sender, 30, 1, &format!("Deploying branch '{}'...", br), "Downloading branch archive");
+                if !deploy_branch_files(&target_dir, br, &sender) {
+                    emit_complete(&sender, "install", false, "Failed to deploy BadWords branch package.");
+                    return;
+                }
+            } else {
+                emit_progress(&sender, 30, 1, "Deploying local files...", "Copying local repository");
+                if !deploy_application_files(&target_dir, &sender) {
+                    emit_complete(&sender, "install", false, "Failed to deploy BadWords application files.");
+                    return;
+                }
+            }
+            configure_no_self_upgrade(&target_dir, &sender);
+        } else {
+            emit_progress(&sender, 30, 1, "Deploying application files...", "Copying BadWords source and assets");
+            if !deploy_application_files(&target_dir, &sender) {
+                emit_complete(&sender, "install", false, "Failed to deploy BadWords application files.");
+                return;
+            }
         }
 
         // 5. Ensure portable FFmpeg
@@ -1202,6 +1375,16 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
         emit_log(&sender, "OK", "BadWords installation completed successfully.");
         emit_complete(&sender, "install", true, "BadWords has been successfully installed and configured!");
     });
+}
+
+/// Executes standard installation or update
+pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, sender: EventSender) {
+    run_install_core(target_dir, create_desktop, create_menu, false, None, sender);
+}
+
+/// Executes developer installation (local repo or branch archive, disabling updater self-upgrade)
+pub fn run_dev_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, branch: Option<String>, sender: EventSender) {
+    run_install_core(target_dir, create_desktop, create_menu, true, branch, sender);
 }
 
 /// Executes file verification and repair
