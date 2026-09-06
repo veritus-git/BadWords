@@ -11,51 +11,18 @@ DESCRIPTION:
 GUI component for audio track preview and waveform visualization.
 """
 
-from PySide6 import QtCore
-import re
-import math
-import platform
-import subprocess
-import os
-import time
-import traceback
-import ctypes
-import threading
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout
+    QLabel, QFrame
 )
-from PySide6.QtCore import (
-    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
-    QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property, QThread
-)
-from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
-)
-from PySide6.QtCore import QMimeData
 
 import config
 
 # --- INJECTED WIDGET IMPORTS ---
-from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
-from gui.widgets.layouts import FlowLayout, MainPanelWidget
-from gui.widgets.progress_bar import LiquidProgressBar
-from gui.widgets.language_selector import _LangPickerDialog
-from gui.widgets.splitters import GripHandle, GripSplitter
-from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
+from gui.widgets.buttons import ToggleSwitch, AnimatedPlayerButton, AudioToggleTab, SpeedDropdown
+from gui.widgets.labels import QLabel
 from gui.widgets.sliders import JumpSlider
 # -------------------------------
-from .mixins import FramelessWindowMixin, _BaseDialog
-from ..utils import _app_icon, _txt
 
 class AudioPreviewWidget(QFrame):
     def __init__(self, parent_widget, main_window):
@@ -76,9 +43,8 @@ class AudioPreviewWidget(QFrame):
             vbar = self.main_window.scroll_area.verticalScrollBar()
             vbar.actionTriggered.connect(self._on_user_scroll)
             
-        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QComboBox, QSlider, QWidget, QVBoxLayout
-        from PySide6.QtCore import Qt, QUrl, QTimer, QEvent
-        from PySide6.QtGui import QColor, QFont
+        from PySide6.QtWidgets import QHBoxLayout, QWidget, QVBoxLayout
+        from PySide6.QtCore import Qt, QTimer
         from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
         import os
 

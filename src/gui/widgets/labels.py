@@ -16,10 +16,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
-from i18n import get_trans
 from gui.vsync import get_refresh_interval_ms
-import sys
-import os
 
 # Aliases for original standard classes we override
 _QPushButton = QPushButton

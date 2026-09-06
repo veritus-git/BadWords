@@ -11,21 +11,27 @@ DESCRIPTION:
 Configuration parameters and weights for analysis algorithms.
 """
 
-import platform
-
 # ==========================================
 DEFAULT_BAD_WORDS = [
-    "yyy", "eee", "aaa", "umm", "uh", "ah", "mhm",
-    "uhm", "hmm", "hm", "mm", "mmm",
-    "eh", "ehm", "uhh", "ahh", 
-    "yy", "ee", "aa", 
-    "ummm", "uhhh", "ahhh", "ehhh", "hmmm", "mmmm", 
-    "mhmm", "yhm", "yhy"
+    # Universal / English
+    "um", "umm", "ummm", "uh", "uhh", "uhhh", "er", "err",
+    "ah", "ahh", "ahhh", "eh", "ehm", "ehh", "ehhh",
+    "mhm", "mhmm", "uhm", "hmm", "hmmm", "hm", "mm", "mmm", "mmmm",
+    # Polish
+    "yyy", "eee", "aaa", "yy", "ee", "aa", "yyyy", "eeee", "aaaa", 
+    "yhm", "yhy", "aha", "em",
+    # German
+    "äh", "äääh", "ähh", "öh", "öööh", "öhm", "ähm",
+    # French
+    "euh", "euuh", "euhh", "bah",
+    # Spanish / Portuguese / Italian
+    "este", "ehmm",
+    # Russian / Ukrainian
+    "эээ", "ммм", "гм", "ну-у", "ээ", "эм", "хм", "ага", "угу"
 ]
-SIMILARITY_THRESHOLD = 0.45
 
 # Default filler/hesitation initial prompt for Whisper transcription
-DEFAULT_WHISPER_PROMPT = "yyy, eee, uuu, yhm, yyyy, eeee, aaaa, mhm, aha, umm, uh, ah"
+DEFAULT_WHISPER_PROMPT = "um, uh, yyy, eee, uuu, yhm, yyyy, eeee, aaaa, mhm, aha, umm, uh, ah, euh, ehm, äh"
 
 # GOLDEN Verbatim Initial Prompt — DO NOT CHANGE.
 # This is the exact prompt from the validated src_old that forces Whisper into

@@ -345,7 +345,6 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
             fw_compute = "int8"  # universal CPU fallback
             if "GPU" in device_mode.upper():
-                fw_device_str = "cuda"
                 if saved_compute and saved_compute.lower() not in ("auto", ""):
                     # User explicitly chose float16 or float32 — respect it unconditionally
                     fw_compute = saved_compute
@@ -354,22 +353,12 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     fw_compute = self._get_optimal_compute_type(device="cuda")
                     log_info(f"[Compute] Auto-detected (GPU cc-based): {fw_compute}")
             else:
-                fw_device_str = "cpu"
                 if saved_compute and saved_compute.lower() not in ("auto", ""):
                     fw_compute = saved_compute
                     log_info(f"[Compute] User override (CPU): {fw_compute}")
                 else:
-                    ram_gb = self._get_system_ram_gb()
-                    if hasattr(self, 'os_doc') and getattr(self.os_doc, 'is_mac', False):
-                        if ram_gb >= 14.0:
-                            fw_compute = "float32"
-                            log_info(f"[Compute] Auto (CPU/Mac): {fw_compute} (Plenty of RAM detected: {ram_gb:.1f}GB)")
-                        else:
-                            fw_compute = "int8"
-                            log_info(f"[Compute] Auto (CPU/Mac): {fw_compute} (Conserving RAM on {ram_gb:.1f}GB system)")
-                    else:
-                        fw_compute = "int8"
-                        log_info(f"[Compute] Auto (CPU): {fw_compute}")
+                    fw_compute = "int8"
+                    log_info(f"[Compute] Auto (CPU): {fw_compute}")
 
             # --- OOM PROTECTION ---
             try:
@@ -653,9 +642,12 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                               expected_script=None, audio_duration=None):
         prefs = self.os_doc.get_all_prefs()
         temp_words = []
-        dynamic_bad = [w.lower().strip() for w in filler_words]
-        
-        def clean_word(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
+        def clean_word(txt):
+            # Strips leading and trailing punctuation, hyphens, and whitespace so e.g. 'mhm-', '...um...' normalize cleanly
+            t = txt.strip().lower()
+            return re.sub(r'^[^\w]+|[^\w]+$', '', t)
+
+        dynamic_bad = {clean_word(w) for w in filler_words if clean_word(w)}
         def clean_for_match(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
 
         # --- PASS 1: N-GRAM HALLUCINATION COMPRESSOR ---
@@ -707,19 +699,15 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         c_look = int(prefs.get('chunk_lookahead', 3))
         # GOLDEN fix: use chunk_min_words (word count) not chunk_min_chars (char count)
         c_min = int(prefs.get('chunk_min_words', prefs.get('chunk_min_chars', 7)))
-        c_punct_target = int(prefs.get('chunk_punct_count', 1))
         c_hard_limit = c_max + c_look
 
         chunks = []
         curr_chunk = []
-        punct_seen = 0
         for i, w in enumerate(compressed_words):
             curr_chunk.append(w)
             
             last_word_text = w['word'].strip()
             has_punct = last_word_text.endswith(('.', '?', '!'))
-            if has_punct:
-                punct_seen += 1
             should_break = False
             
             # Absolute maximum hard limit to prevent infinite run-ons
@@ -753,7 +741,6 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             if should_break:
                 chunks.append(curr_chunk)
                 curr_chunk = []
-                punct_seen = 0
                 
         if curr_chunk:
             chunks.append(curr_chunk)

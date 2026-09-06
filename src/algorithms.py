@@ -943,7 +943,6 @@ class CompareEngine(CompareEngineBase):
         if self.algo_settings and self.algo_settings.get('run_phase_g', False):
             self._phase_g_merge_combos(match_pairs)
 
-        end_time = time.time()
         result = AnalysisResult(self.words_data)
         result.missing_indices = self.missing_script_indices
         return result
@@ -1912,17 +1911,6 @@ def _script_lines_for_side_by_side(script_text):
         return [script_text.strip()] if script_text.strip() else []
         
     return final_rows
-
-
-def _tokens_from_script_lines(lines):
-    tokens = []
-    for row_idx, line in enumerate(lines):
-        for match in re.finditer(r"\S+", line):
-            raw = match.group(0)
-            clean = super_clean(raw)
-            if clean:
-                tokens.append({"text": raw, "clean": clean, "row": row_idx})
-    return tokens
 
 
 def _tokens_from_words_data(words_data):

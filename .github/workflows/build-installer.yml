@@ -10,6 +10,7 @@ on:
     paths:
       - 'installer/**'
       - 'setupfiles/**'
+      - 'src/config/app_constants.py'
       - '.github/workflows/build-installer.yml'
   release:
     types: [published, created]

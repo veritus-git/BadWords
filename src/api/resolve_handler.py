@@ -1222,13 +1222,6 @@ class ResolveHandler:
                 acc += (op['e'] - op['s'])
             total_dest_frames = acc
 
-            def src_to_dest(src_0based):
-                """Map a 0-based source frame to dest frame. Returns -1 if in a cut zone."""
-                for i, op in enumerate(sorted_ops):
-                    if op['s'] <= src_0based < op['e']:
-                        return dest_offsets[i] + (src_0based - op['s'])
-                return -1
-
             def op_color_for_src(src_0based):
                 """Return the color string for the op containing src_0based, or None."""
                 for op in sorted_ops:

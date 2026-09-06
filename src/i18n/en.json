@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Automatically cuts this color during Assembly<br>if marked in the text.",
     "tooltip_cut_now": "Cuts this color directly on the CURRENTLY SELECTED<br>DaVinci timeline (useful for mass deletion after manual tweaks).",
     "hdr_whisper_parameters": "Whisper Parameters",
-    "lbl_always_on_top_restart_hint": "* On Windows, changing this setting may require restarting the application."
+    "lbl_always_on_top_restart_hint": "* On Windows, changing this setting may require restarting the application.",
+    "dlg_no_tracks": "No tracks",
+    "lbl_length_penalty": "Length Penalty",
+    "lbl_repetition_penalty": "Repetition Penalty",
+    "tt_clear_shortcut": "Clear shortcut"
 }

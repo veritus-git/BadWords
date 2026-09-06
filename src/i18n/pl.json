@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Automatycznie wycina ten kolor podczas asemblu,<br>jeśli zaznaczysz nim tekst.",
     "tooltip_cut_now": "Wycina ten kolor na AKTUALNIE WYBRANEJ osi DaVinci<br>(przydatne do masowego usuwania po ręcznych poprawkach).",
     "hdr_whisper_parameters": "Parametry Whisper",
-    "lbl_always_on_top_restart_hint": "* Na systemie Windows zmiana tej opcji może wymagać restartu aplikacji."
+    "lbl_always_on_top_restart_hint": "* Na systemie Windows zmiana tej opcji może wymagać restartu aplikacji.",
+    "dlg_no_tracks": "Brak ścieżek",
+    "lbl_length_penalty": "Kara za długość",
+    "lbl_repetition_penalty": "Kara za powtórzenia",
+    "tt_clear_shortcut": "Wyczyść skrót"
 }

@@ -11,51 +11,18 @@ DESCRIPTION:
 Main canvas displaying analyzed word segments.
 """
 
-from PySide6 import QtCore
-import re
-import math
-import platform
-import subprocess
-import os
-import time
-import traceback
-import ctypes
-import threading
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout
+    QWidget
 )
 from PySide6.QtCore import (
-    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
-    QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property, QThread
+    Qt, QRect
 )
-from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
-)
-from PySide6.QtCore import QMimeData
 
 import config
 
 # --- INJECTED WIDGET IMPORTS ---
-from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
-from gui.widgets.layouts import FlowLayout, MainPanelWidget
-from gui.widgets.progress_bar import LiquidProgressBar
-from gui.widgets.language_selector import _LangPickerDialog
-from gui.widgets.splitters import GripHandle, GripSplitter
-from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
-from gui.widgets.sliders import JumpSlider
 # -------------------------------
-from .mixins import FramelessWindowMixin, _BaseDialog
-from ..utils import _app_icon, _txt
 
 class TranscriptionCanvas(QWidget):
     def __init__(self, main_window, parent=None):
@@ -164,9 +131,8 @@ class TranscriptionCanvas(QWidget):
             w.pop('_ts_text', None)
             w.pop('_separator_y', None)
 
-        from PySide6.QtGui import QFontMetrics, QFont, QTextOption, QTextBlockFormat, QTextCursor
-        from PySide6.QtCore import Qt, QRect
-        from PySide6.QtWidgets import QFrame, QTextEdit
+        from PySide6.QtGui import QFontMetrics, QFont
+        from PySide6.QtCore import QRect
         
         prefs = self.main_window.engine.load_preferences() or {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
@@ -470,7 +436,7 @@ class TranscriptionCanvas(QWidget):
 
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter, QColor, QFont, QPen, QLinearGradient
+        from PySide6.QtGui import QPainter, QColor, QFont, QPen
         from PySide6.QtCore import QRectF, Qt
         
         prefs = self.main_window.engine.load_preferences() or {}

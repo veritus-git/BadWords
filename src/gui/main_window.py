@@ -11,51 +11,28 @@ DESCRIPTION:
 Main application window managing the entire GUI composition.
 """
 
-from PySide6 import QtCore
-import re
-import math
 import platform
-import subprocess
 import os
-import time
-import traceback
-import ctypes
-import threading
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout
+    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget, QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import (
-    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
-    QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property, QThread
+    Qt, QTimer, Signal, QObject, QEvent, QVariantAnimation, QEasingCurve, QPropertyAnimation
 )
 from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
+    QPixmap, QGuiApplication, 
+    QCursor
 )
-from PySide6.QtCore import QMimeData
 
 import config
 
 # --- INJECTED WIDGET IMPORTS ---
-from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
-from gui.widgets.layouts import FlowLayout, MainPanelWidget
-from gui.widgets.progress_bar import LiquidProgressBar
-from gui.widgets.language_selector import _LangPickerDialog
-from gui.widgets.splitters import GripHandle, GripSplitter
-from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
-from gui.widgets.sliders import JumpSlider
+from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, SidebarButton
+from gui.widgets.labels import QLabel, IDETooltip
+from gui.widgets.splitters import GripSplitter
 # -------------------------------
 
-import osdoc
 
 # ==========================================
 # QFRAMELESSWINDOW — NATIVE CSD LIBRARY
@@ -86,15 +63,11 @@ _QPushButton = QPushButton
 
 _QRadioButton = QRadioButton
 
-from .utils import _app_icon, apply_dark_title_bar, _center_on_screen, _txt, _qwidget_txt, get_layout_icon_path, get_layout_dir, get_icon_path
-from .components.dialogs import SplashScreen, TelemetryPopup, MarkerDragZone, MarkerRowWidget, CustomMsgBox, UpdateNotifyDialog, MarkerDialog, UnsavedChangesDialog, SettingsDialog, GlobalAppFilter, SidebarDragZone, UpdateCheckThread
-from .components.audio_preview import AudioPreviewWidget
-from .components.transcription_canvas import TranscriptionCanvas
+from .utils import _app_icon, _txt, get_layout_icon_path
+from .components.dialogs import TelemetryPopup, CustomMsgBox, UpdateNotifyDialog, SettingsDialog, GlobalAppFilter, SidebarDragZone, UpdateCheckThread
 from .components.search_overlay import SearchOverlayWidget
-from .components.mixins import FramelessWindowMixin, ResizeGrip, _HAS_QFRAMELESS, _BaseMainWindow, _BaseDialog
-from .components.titlebar import CustomTitleBar, AnimatedTitleButton
-from .components.track_options_drawer import TrackOptionsDrawer
-from .widgets.delegates import MarqueeItemDelegate
+from .components.mixins import FramelessWindowMixin, _HAS_QFRAMELESS, _BaseMainWindow
+from .components.titlebar import CustomTitleBar
 from handlers.analysis_worker import AnalysisWorker
 from handlers.autosave_manager import AutoSaveManager
 from handlers.undo_manager import UndoManager
@@ -949,7 +922,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 pass
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtCore import QEvent
         from PySide6.QtWidgets import QApplication
         
         if event.type() == QEvent.Type.KeyPress:
@@ -1388,7 +1361,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         packet = self._build_data_packet()
         if not packet: return
         from PySide6.QtWidgets import QFileDialog
-        import time, os
+        import os
         
         saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
         os.makedirs(saves_dir, exist_ok=True)
@@ -1578,7 +1551,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_import_project(self, override_path=None):
         try:
-            from PySide6.QtWidgets import QFileDialog, QApplication, QDialog
+            from PySide6.QtWidgets import QFileDialog, QDialog
             import os, time
             
             path = override_path
@@ -1601,7 +1574,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             else:
                 state, _ = self.engine.load_project_state(path)
 
-            from PySide6.QtCore import QTimer
 
             from_main_window = False
             if hasattr(self, '_stack') and self._stack.currentIndex() != 2:
@@ -2093,7 +2065,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_fs_finished(self, words_data, segments_data):
         """Called when run_fast_silence_pipeline completes. Directly assembles the timeline."""
-        from PySide6.QtWidgets import QApplication
 
         if not words_data:
             dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_no_silence_segments_detec"), self.txt("btn_ok"))
@@ -2212,8 +2183,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             proxy_toggle = None
 
             if target_id.startswith('cut_'):
-                import os
-                from PySide6.QtGui import QIcon, QCursor
+                from PySide6.QtGui import QIcon
                 from PySide6.QtCore import QSize, Qt
                 
                 color_name_lower = target_id[4:]
@@ -2490,7 +2460,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     if ffmpeg_cmd and os.path.exists(audio_path):
                         assembled_audio_path = audio_path.replace(".wav", "_assembled.wav")
                         from PySide6.QtCore import QThread, Signal
-                        import tempfile
                         
                         class WavAssemblyThread(QThread):
                             finished = Signal(str, list)
@@ -2665,18 +2634,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.show_hidden_start = True
             self.text_canvas.load_data(words_data)
             self._show_transcript_view()
-
-    # ------------------------------------------------------------------
-    # Sidebar navigation stubs
-    # ------------------------------------------------------------------
-
-    def _on_nav_script(self):
-        """Navigate to the Script / Welcome page."""
-        self.go_to_page(0)
-
-    def _on_nav_analysis(self):
-        """Navigate to the Analysis / Processing page."""
-        self.go_to_page(1)
 
     def _on_more_accurate_toggled(self, checked: bool):
         self.engine.save_preferences({"ai_more_accurate": checked})
@@ -3137,10 +3094,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.lbl_analysis_duration.setVisible(True)
 
 
-    def _on_nav_markers(self):
-        """Toggle the right panel (placeholder)."""
-        print("[BadWordsGUI] Tools toggled (Stage 4 TODO)")
-
     # ------------------------------------------------------------------
     # Positioning
     # ------------------------------------------------------------------
@@ -3408,7 +3361,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         if app and not getattr(self, '_focus_signal_connected', False):
-            app.focusChanged.connect(lambda old_w, new_w: self._update_shortcut_enabled_states())
+            app.focusChanged.connect(lambda _old_w, _new_w: self._update_shortcut_enabled_states())
             self._focus_signal_connected = True
 
         def safe_toggle_play():
@@ -3620,7 +3573,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         On success: show a small non-modal notice asking user to restart.
         On failure: log only (no popup spam).
         """
-        import threading, subprocess, tempfile, os, urllib.request, ssl
+        import threading, subprocess, tempfile, urllib.request, ssl
         from osdoc import log_info, log_error
 
         log_info(f"[AutoUpdate] Silent auto-update to {latest_ver} starting in background...")

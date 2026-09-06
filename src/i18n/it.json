@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Taglia automaticamente questo colore durante l'assemblaggio<br>se è segnato nel testo.",
     "tooltip_cut_now": "Taglia questo colore sulla timeline di DaVinci ATTUALMENTE SELEZIONATA<br>(utile per l'eliminazione di massa dopo modifiche manuali).",
     "hdr_whisper_parameters": "Parametri Whisper",
-    "lbl_always_on_top_restart_hint": "* Su Windows, la modifica di questa opzione potrebbe richiedere il riavvio dell'applicazione."
+    "lbl_always_on_top_restart_hint": "* Su Windows, la modifica di questa opzione potrebbe richiedere il riavvio dell'applicazione.",
+    "dlg_no_tracks": "Nessuna traccia",
+    "lbl_length_penalty": "Penalità di lunghezza",
+    "lbl_repetition_penalty": "Penalità di ripetizione",
+    "tt_clear_shortcut": "Cancella scorciatoia"
 }

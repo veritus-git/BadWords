@@ -229,12 +229,8 @@ def _run_auto_update_if_needed(os_doc, splash=None):
     # ── 1. Fetch latest tag ─────────────────────────────────────────────
     GH_API = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
     GL_API = "https://gitlab.com/api/v4/projects/veritus-git%2FBadWords/releases/permalink/latest"
-    GH_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-linux.sh"
-    GL_SCRIPT = "https://gitlab.com/veritus-git/BadWords/-/raw/main/updaters/update-linux.sh"
-    WIN_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/legacy/update-windows.bat"
-    WIN_SCRIPT_GL = "https://gitlab.com/veritus-git/BadWords/-/raw/main/setupfiles/legacy/update-windows.bat"
-    MAC_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/updaters/update-mac.sh"
-    MAC_SCRIPT_GL = "https://gitlab.com/veritus-git/BadWords/-/raw/main/updaters/update-mac.sh"
+    GH_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/updater.py"
+    GL_SCRIPT = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/updater.py"
 
     def _fetch_json(url):
         import certifi
@@ -269,24 +265,11 @@ def _run_auto_update_if_needed(os_doc, splash=None):
     _set_splash(f'Updating to {latest_tag}…')
     osdoc.log_info(f"[AutoUpdate] New version {latest_tag} found — downloading update script...")
 
-    # ── 2. Choose script URLs ────────────────────────────────────────────
-    is_win = os_doc.is_win
-    is_mac = getattr(os_doc, 'is_mac', False)
-    if is_win:
-        urls = [WIN_SCRIPT, WIN_SCRIPT_GL]
-        suffix = '.bat'
-    elif is_mac:
-        urls = [MAC_SCRIPT, MAC_SCRIPT_GL]
-        suffix = '.sh'
-    else:
-        urls = [GH_SCRIPT, GL_SCRIPT]
-        suffix = '.sh'
-
-    # ── 3. Download update script ───────────────────────────────────────────
+    # ── 2. Download updater.py ───────────────────────────────────────────
     import certifi
     ctx = ssl.create_default_context(cafile=certifi.where())
     content = None
-    for url in urls:
+    for url in (GH_SCRIPT, GL_SCRIPT):
         try:
             with urllib.request.urlopen(url, timeout=20, context=ctx) as r:
                 content = r.read()
@@ -298,22 +281,25 @@ def _run_auto_update_if_needed(os_doc, splash=None):
         osdoc.log_info("[AutoUpdate] Could not download update script. Skipping.")
         return
 
-    # ── 4. Run update script (blocking; splash stays visible) ────────────
-    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix='bw_autoupd_')
+    # ── 3. Run updater.py via Python (blocking; splash stays visible) ───
+    fd, tmp_path = tempfile.mkstemp(suffix='.py', prefix='bw_autoupd_')
     try:
         with os.fdopen(fd, 'wb') as fh:
             fh.write(content)
-        if not is_win:
-            os.chmod(tmp_path, 0o755)
-        cmd = ['cmd.exe', '/c', tmp_path] if is_win else ['/bin/bash', tmp_path]
-        osdoc.log_info("[AutoUpdate] Running update script (blocking)...")
+        
+        venv_py = os_doc.get_venv_python_path() if hasattr(os_doc, 'get_venv_python_path') else sys.executable
+        cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+        cmd = [venv_py, tmp_path, '--install-dir', os_doc.install_dir]
+
+        osdoc.log_info("[AutoUpdate] Running update script via Python (blocking)...")
         result = subprocess.run(
             cmd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=600
+            timeout=600,
+            creationflags=cf
         )
         if result.returncode == 0:
             osdoc.log_info("[AutoUpdate] Update script completed successfully.")

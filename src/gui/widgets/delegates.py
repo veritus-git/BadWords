@@ -15,47 +15,19 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
-from i18n import get_trans
 from gui.vsync import get_refresh_interval_ms
-import sys
-import os
-import time
-import traceback
-import ctypes
-import threading
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout
-)
 from PySide6.QtCore import (
-    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
-    QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property, QThread
+    Qt, QTimer, QEvent, QRect
 )
 from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
+    QFont, QCursor, QFontMetrics
 )
-from PySide6.QtCore import QMimeData
 
 import config
 
 # --- INJECTED WIDGET IMPORTS ---
-from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
-from gui.widgets.layouts import FlowLayout, MainPanelWidget
-from gui.widgets.progress_bar import LiquidProgressBar
-from gui.widgets.language_selector import _LangPickerDialog
-from gui.widgets.splitters import GripHandle, GripSplitter
-from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
-from gui.widgets.sliders import JumpSlider
 # -------------------------------
 
 class MarqueeItemDelegate(QStyledItemDelegate):

@@ -11,52 +11,17 @@ DESCRIPTION:
 GUI component for transcription search and filtering.
 """
 
-from PySide6 import QtCore
-import re
-import math
-import platform
-import subprocess
-import os
-import time
-import traceback
-import ctypes
-import threading
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout
+    QLabel, QFrame
 )
-from PySide6.QtCore import (
-    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
-    QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property, QThread
-)
-from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
-)
-from PySide6.QtCore import QMimeData
 
 import config
 from gui.widgets.buttons import CloseIconButton
 
 # --- INJECTED WIDGET IMPORTS ---
-from gui.widgets.buttons import QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton, MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton, CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown, SearchableDropdown, AssembleArrowButton, AssembleSplitButton
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
-from gui.widgets.layouts import FlowLayout, MainPanelWidget
-from gui.widgets.progress_bar import LiquidProgressBar
-from gui.widgets.language_selector import _LangPickerDialog
-from gui.widgets.splitters import GripHandle, GripSplitter
-from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
-from gui.widgets.sliders import JumpSlider
+from gui.widgets.labels import QLabel
 # -------------------------------
-from .mixins import FramelessWindowMixin, _BaseDialog
-from ..utils import _app_icon, _txt
 
 # ==========================================
 
@@ -66,10 +31,9 @@ class SearchOverlayWidget(QFrame):
     def __init__(self, parent_widget, main_window):
         super().__init__(parent_widget)
         self.main_window = main_window
-        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QGraphicsDropShadowEffect, QWidget, QFrame, QGraphicsOpacityEffect
-        from PySide6.QtCore import Qt, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QRect, QSize
-        from PySide6.QtGui import QColor, QAction, QIcon, QPixmap
-        import os
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QFrame, QGraphicsOpacityEffect
+        from PySide6.QtCore import Qt, QTimer, QSize
+        from PySide6.QtGui import QIcon, QPixmap
         
         self.setObjectName("SearchOverlay")
         self.setProperty("expanded", False)
@@ -472,4 +436,3 @@ class SearchOverlayWidget(QFrame):
             osdoc.log_error(f"Search positioning error: {str(e)}")
 
 
-from PySide6.QtWidgets import QPushButton, QSlider

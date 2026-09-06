@@ -68,9 +68,6 @@ class TranscriptionMixin:
         directly without calling this function.
         """
         if device != "cuda":
-            ram_gb = self._get_system_ram_gb()
-            if hasattr(self, 'os_doc') and getattr(self.os_doc, 'is_mac', False):
-                return "float32" if ram_gb >= 14.0 else "int8"
             return "int8"
         try:
             result = subprocess.run(
