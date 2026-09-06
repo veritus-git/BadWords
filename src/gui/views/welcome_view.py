@@ -279,7 +279,13 @@ class WelcomePageView(QWidget):
 
         # ── 1. Branding Logo (BadWords) ───────────────────────────────────────
         win.welcome_title = WelcomeBrandingWidget(self.welcome_root)
-        self.root_layout.addWidget(win.welcome_title, 0, Qt.AlignCenter)
+        h_title = QHBoxLayout()
+        h_title.setContentsMargins(0, 0, 0, 0)
+        h_title.setSpacing(0)
+        h_title.addStretch()
+        h_title.addWidget(win.welcome_title)
+        h_title.addStretch()
+        self.root_layout.addLayout(h_title)
         self.root_layout.addSpacing(config.S(24))
 
         # ── 2. Mode Switcher (Transcript | Silence Detection) ─────────────────
@@ -289,7 +295,13 @@ class WelcomePageView(QWidget):
             self.welcome_root
         )
         win.welcome_mode_switch.setFixedWidth(config.S(325))
-        self.root_layout.addWidget(win.welcome_mode_switch, 0, Qt.AlignCenter)
+        h_mode = QHBoxLayout()
+        h_mode.setContentsMargins(0, 0, 0, 0)
+        h_mode.setSpacing(0)
+        h_mode.addStretch()
+        h_mode.addWidget(win.welcome_mode_switch)
+        h_mode.addStretch()
+        self.root_layout.addLayout(h_mode)
         self.root_layout.addSpacing(config.S(20))
 
         # ── 3. Workspace Stack Area ───────────────────────────────────────────
@@ -321,6 +333,30 @@ class WelcomePageView(QWidget):
                 self.switch_workspace_instant(idx)
         win.welcome_stack.setCurrentIndex = _on_stack_set_index
 
+    def preload(self, target_w: int = 0, target_h: int = 0):
+        """
+        Preloads and pre-renders the welcome screen layout to match target screen size.
+        Pre-calculates all stretches, widget sizes, fonts, and offscreen snapshots.
+        Completely eliminates any visual jumping or hitching on startup and DPI changes.
+        """
+        if target_w <= 0 or target_h <= 0:
+            from PySide6.QtGui import QGuiApplication
+            screen = QGuiApplication.primaryScreen()
+            if screen:
+                avail = screen.availableGeometry()
+                sb_w = getattr(config, 'SIDEBAR_WIDTH', config.S(50))
+                target_w = max(config.S(600), avail.width() - 2 * sb_w)
+                target_h = max(config.S(400), avail.height() - config.S(36))
+            else:
+                target_w = config.S(1280)
+                target_h = config.S(800)
+        self.resize(target_w, target_h)
+        self.resizeEvent(None)
+        self.ensurePolished()
+        self.welcome_root.ensurePolished()
+        for child in self.welcome_root.findChildren(QWidget):
+            child.ensurePolished()
+
     def _target_y(self, idx: int) -> int:
         h_visual = self.H_TRANS_VISUAL if idx == 0 else self.H_SILENCE_VISUAL
         avail_h = self.height()
@@ -329,22 +365,28 @@ class WelcomePageView(QWidget):
         return max(config.S(10), (avail_h - h_visual) // 2)
 
     def resizeEvent(self, event):
-        super().resizeEvent(event)
+        if event is not None:
+            super().resizeEvent(event)
         w = self.width()
+        if w <= 0:
+            return
         root_h = self.H_HEADER + self.H_MAX_CONTENT
         self.welcome_root.setFixedWidth(w)
+        self.welcome_root.setFixedHeight(root_h)
         self.workspace_container.setFixedWidth(w)
         if hasattr(self.win, 'welcome_stack') and self.win.welcome_stack:
             self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
-            cw = self.win.welcome_stack.currentWidget()
-            if cw:
-                cw.resize(w, self.H_MAX_CONTENT)
-                if cw.layout():
-                    cw.layout().activate()
+            for i in range(self.win.welcome_stack.count()):
+                widget = self.win.welcome_stack.widget(i)
+                if widget:
+                    widget.resize(w, self.H_MAX_CONTENT)
+                    if widget.layout():
+                        widget.layout().activate()
         self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
         if not self._is_animating:
             cur_y = self._target_y(self._current_idx)
             self.welcome_root.move(0, cur_y)
+        self.root_layout.activate()
 
     def switch_workspace_animated(self, target_idx: int):
         if self._current_idx == target_idx and not self._is_animating:

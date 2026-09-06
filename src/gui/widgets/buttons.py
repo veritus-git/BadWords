@@ -1644,11 +1644,28 @@ class SpeedDropdown(QPushButton):
         display_count = list_widget.count()
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
-        popup.setFixedHeight(list_height + 2)
-        
         popup_w = max(self.width(), config.S(64))
+        popup_h = list_height + 2
+        popup.setFixedHeight(popup_h)
         
-        popup.setGeometry(popup_x, popup_y, popup_w, list_height + 2)
+        global_pos = self.mapToGlobal(QPoint(0, 0))
+        popup_x = global_pos.x() + (self.width() - popup_w) // 2
+        popup_y = global_pos.y() + self.height() + 2
+
+        # If opening downwards overflows the screen, open upwards
+        screen = self.screen() if hasattr(self, 'screen') else None
+        if not screen:
+            screen = QGuiApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            if popup_y + popup_h > avail.bottom() - 4:
+                popup_y = global_pos.y() - popup_h - 2
+            if popup_x + popup_w > avail.right() - 4:
+                popup_x = avail.right() - popup_w - 4
+            if popup_x < avail.left() + 4:
+                popup_x = avail.left() + 4
+
+        popup.setGeometry(popup_x, popup_y, popup_w, popup_h)
         popup.show()
 
 class CustomCheckBox(QWidget):

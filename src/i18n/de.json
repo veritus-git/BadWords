@@ -227,7 +227,7 @@
     "chk_telemetry_geo": "Teilen Sie Ihren ungefähren Standort (Land/Stadt)",
     "tab_interface": "Benutzeroberfläche",
     "lbl_always_on_top": "Immer im Vordergrund",
-    "tt_always_on_top": "Hält das Anwendungsfenster immer im Vordergrund\n(selbst wenn Sie außerhalb klicken).",
+    "tt_always_on_top": "Hält das Anwendungsfenster immer im Vordergrund\n(selbst wenn Sie außerhalb klicken).\n\nHinweis: Unter Windows erfordert diese Option möglicherweise einen Neustart der Anwendung, um wirksam zu werden.",
     "lbl_hidden_panels": "Versteckte Panels",
     "btn_export_settings": "Einstellungen exportieren",
     "btn_import_settings": "Einstellungen importieren",
@@ -409,5 +409,6 @@
     "resolve_color_chocolate": "Schokolade",
     "tooltip_auto_cut": "Schneidet diese Farbe beim Assembly automatisch aus,<br>wenn sie im Text markiert ist.",
     "tooltip_cut_now": "Schneidet diese Farbe auf der AKTUELL AUSGEWÄHLTEN DaVinci-Timeline aus<br>(nützlich zum massenhaften Löschen nach manuellen Anpassungen).",
-    "hdr_whisper_parameters": "Whisper-Parameter"
+    "hdr_whisper_parameters": "Whisper-Parameter",
+    "lbl_always_on_top_restart_hint": "* Unter Windows erfordert das Ändern dieser Option möglicherweise einen Neustart der Anwendung."
 }

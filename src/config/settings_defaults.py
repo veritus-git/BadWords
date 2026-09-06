@@ -123,6 +123,9 @@ DEFAULT_SETTINGS = {
 }
 
 
+import sys
 # Keys in DEFAULT_SETTINGS whose change requires an application restart.
 RESTART_REQUIRED_KEYS = ["compute_type", "device", "gui_lang", "ai_compute_type", "app_icon"]
+if sys.platform.startswith("win"):
+    RESTART_REQUIRED_KEYS.append("always_on_top")
 

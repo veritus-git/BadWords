@@ -281,9 +281,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # --- Window basics ---
         self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
         self.setWindowIcon(_app_icon())
-        is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
-        init_w = config.S(780) if is_more_accurate else config.CFG_WINDOW_W_BASE
-        self.resize(init_w, config.CFG_WINDOW_H_BASE)
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            init_w = avail.width()
+            init_h = avail.height()
+        else:
+            is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
+            init_w = config.S(780) if is_more_accurate else config.CFG_WINDOW_W_BASE
+            init_h = config.CFG_WINDOW_H_BASE
+        self.resize(init_w, init_h)
         self.setMinimumSize(config.S(330), config.S(400))
         # NOTE: force_dark_titlebar removed — CSD owns the title bar.
 
@@ -767,6 +774,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if is_already_active:
             target_splitter.hide()
             target_btn.set_active(False)
+            current_page = self._stack.currentWidget()
+            if current_page and hasattr(current_page, 'resizeEvent'):
+                current_page.resizeEvent(None)
         else:
             for widget in self.findChildren(SidebarButton):
                 if widget.is_right_side == target_btn.is_right_side:
@@ -826,6 +836,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     sizes[2] = target_w
                     sizes[1] = max(0, sizes[1] - diff)
                 self._main_h_splitter.setSizes(sizes)
+                current_page = self._stack.currentWidget()
+                if current_page and hasattr(current_page, 'resizeEvent'):
+                    current_page.resizeEvent(None)
 
     def _save_sidebar_layout(self):
         prefs = self.engine.load_preferences() or {}
@@ -2580,7 +2593,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _build_welcome_screen(self) -> QWidget:
         """Page 0 of the main stack: Welcome / Config screen."""
         from gui.views import build_welcome_view
-        return build_welcome_view(self)
+        view = build_welcome_view(self)
+        if hasattr(view, 'preload'):
+            sb_w = getattr(config, 'SIDEBAR_WIDTH', config.S(50))
+            target_w = max(config.S(600), self.width() - 2 * sb_w)
+            target_h = max(config.S(400), self.height() - config.S(36))
+            view.preload(target_w, target_h)
+        return view
 
     def _build_page_processing(self) -> QWidget:
         """Page 1 of the main stack: Processing / Progress screen."""

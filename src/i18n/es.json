@@ -227,7 +227,7 @@
     "chk_telemetry_geo": "Compartir tu ubicación general (país/ciudad)",
     "tab_interface": "Interfaz",
     "lbl_always_on_top": "Siempre visible",
-    "tt_always_on_top": "Mantiene la ventana de la aplicación siempre por encima de otras\n(incluso si haces clic fuera de ella).",
+    "tt_always_on_top": "Mantiene la ventana de la aplicación siempre por encima de otras\n(incluso si haces clic fuera de ella).\n\nNota: En Windows, cambiar esta opción puede requerir reiniciar la aplicación para que surta efecto completo.",
     "lbl_hidden_panels": "Paneles ocultos",
     "btn_export_settings": "Exportar Ajustes",
     "btn_import_settings": "Importar Ajustes",
@@ -409,5 +409,6 @@
     "resolve_color_chocolate": "Chocolate",
     "tooltip_auto_cut": "Corta automáticamente este color durante el ensamblaje<br>si está marcado en el texto.",
     "tooltip_cut_now": "Corta este color en la línea de tiempo ACTUALMENTE SELECCIONADA<br>en DaVinci (útil para eliminación masiva después de ajustes manuales).",
-    "hdr_whisper_parameters": "Parámetros de Whisper"
+    "hdr_whisper_parameters": "Parámetros de Whisper",
+    "lbl_always_on_top_restart_hint": "* En Windows, cambiar esta opción puede requerir reiniciar la aplicación."
 }

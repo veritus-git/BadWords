@@ -227,7 +227,7 @@
     "chk_telemetry_geo": "Deel uw algemene locatie (land/stad)",
     "tab_interface": "Interface",
     "lbl_always_on_top": "Altijd op de voorgrond",
-    "tt_always_on_top": "Houdt het applicatievenster altijd boven andere vensters\n(zelfs als u erbuiten klikt).",
+    "tt_always_on_top": "Houdt het applicatievenster altijd boven andere vensters\n(zelfs als u erbuiten klikt).\n\nOpmerking: Op Windows kan het wijzigen van deze optie een herstart van de applicatie vereisen om volledig van kracht te worden.",
     "lbl_hidden_panels": "Verborgen panelen",
     "btn_export_settings": "Instellingen exporteren",
     "btn_import_settings": "Instellingen importeren",
@@ -409,5 +409,6 @@
     "resolve_color_chocolate": "Chocolade",
     "tooltip_auto_cut": "Knipt deze kleur automatisch uit tijdens de montage (assembly)<br>indien gemarkeerd in de tekst.",
     "tooltip_cut_now": "Knipt deze kleur op de HUIDIG GESELECTEERDE DaVinci-tijdlijn<br>(handig voor massaal verwijderen na handmatige aanpassingen).",
-    "hdr_whisper_parameters": "Whisper-parameters"
+    "hdr_whisper_parameters": "Whisper-parameters",
+    "lbl_always_on_top_restart_hint": "* Op Windows kan het wijzigen van deze optie een herstart van de applicatie vereisen."
 }
