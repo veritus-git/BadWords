@@ -181,6 +181,19 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             }
         };
         let launcher_exe = install_dir.join("BadWords.exe");
+        if !launcher_exe.is_file() {
+            let setup_cand = install_dir.join("setupfiles").join("windows").join("BadWords.exe");
+            if setup_cand.is_file() {
+                let _ = std::fs::copy(&setup_cand, &launcher_exe);
+            } else if let Ok(cur_exe) = std::env::current_exe() {
+                if let Some(p) = cur_exe.parent() {
+                    let cand = p.join("BadWords.exe");
+                    if cand.is_file() {
+                        let _ = std::fs::copy(&cand, &launcher_exe);
+                    }
+                }
+            }
+        }
         let (target_path, arguments, shortcut_icon) = if launcher_exe.is_file() {
             (
                 launcher_exe.to_string_lossy().to_string(),

@@ -59,13 +59,18 @@ jobs:
       - name: Build Installer Binary
         run: cargo build --release --manifest-path installer/Cargo.toml
 
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Build Windows Standalone Launcher (BadWords.exe)
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-          rc /fo setupfiles\windows\launcher.res setupfiles\windows\launcher.rc
-          cl /O2 /Fe:setupfiles\windows\BadWords.exe setupfiles\windows\launcher.c setupfiles\windows\launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
+          cd setupfiles\windows
+          rc /fo launcher.res launcher.rc
+          cl /O2 /Fe:BadWords.exe launcher.c launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
+          cd ..\..
 
       - name: Prepare Artifact
         shell: bash
@@ -85,13 +90,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output_name }}
-          path: dist/${{ matrix.output_name }}
+          path: dist/*
           retention-days: 90
 
       - name: Publish Public Release Asset
         if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.output_name }}
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
