@@ -120,6 +120,11 @@ DEFAULT_SETTINGS = {
     # Dict mapping model name → True if it was ever successfully run this install.
     # Used to show "first run" hints when loading a model for the first time.
     "models_run_history": {},
+    # ── Assembly & Silence Options ───────────────────────────────────────────
+    "mark_inaudible":       False,
+    "show_inaudible":       True,
+    "silence_cut":          False,
+    "silence_mark":         False,
 }
 
 

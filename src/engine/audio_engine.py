@@ -957,9 +957,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         do_silence_cut = settings.get('silence_cut', False)
         do_silence_mark = settings.get('silence_mark', False)
         do_show_inaudible = settings.get('show_inaudible', True)
+        do_mark_inaudible = settings.get('mark_inaudible', False)
         do_show_typos = settings.get('show_typos', True)
         auto_cut_colors = [c.lower() for c in settings.get('auto_cut_colors', [])]
-        do_show_typos = settings.get('show_typos', True)
 
         def t2f(t): return int(round(t * fps))
         
@@ -1021,6 +1021,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             status = w.get('status', 'normal')
             if status is None: status = 'normal'
             if status == 'typo' and w.get('is_auto') and not do_show_typos:
+                status = 'normal'
+            if status == 'inaudible' and not do_mark_inaudible:
                 status = 'normal'
             
             if current_chunk is None:

@@ -2373,7 +2373,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # SANITIZE EXPORT DATA (prevents C++ QRect deepcopy memory leaks)
         export_data    = self._get_clean_words_data()
         show_typos     = prefs.get('show_typos', True)
-        mark_inaudible = prefs.get('mark_inaudible', True)
+        mark_inaudible = prefs.get('mark_inaudible', False)
         for w in export_data:
             if w.get('status') == 'typo' and not show_typos:
                 if w.get('manual_status') != 'typo' or w.get('is_auto', False):

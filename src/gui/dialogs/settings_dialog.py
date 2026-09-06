@@ -1223,11 +1223,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
                  False, lambda v: self.chk_ontop.setChecked(v, animated=True))
         l_ontop_box.addLayout(form_ontop)
-
-        lbl_ontop_hint = QLabel(self.txt("lbl_always_on_top_restart_hint"))
-        lbl_ontop_hint.setStyleSheet(f"color: #888888; font-size: {config.FS(8.5)}pt; font-style: italic; background: transparent; border: none; padding-top: {config.S(2)}px;")
-        lbl_ontop_hint.setWordWrap(True)
-        l_ontop_box.addWidget(lbl_ontop_hint)
         l_ontop_box.addSpacing(14)
         
         self._advanced_widgets.append(w_ontop_box)
