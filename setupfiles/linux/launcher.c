@@ -59,13 +59,20 @@ int main(int argc, char *argv[]) {
     // 1. Immediately set thread and process name in Linux kernel
     prctl(PR_SET_NAME, "BadWords", 0, 0, 0);
 
-    // Also overwrite argv[0] in place if space permits
-    if (argv && argv[0]) {
-        size_t len = strlen(argv[0]);
-        if (len >= 8) {
-            memset(argv[0], 0, len);
-            strncpy(argv[0], "BadWords", len);
-        }
+    // Save copy of original arguments before wiping argv memory
+    char **saved_argv = (char **)malloc((argc + 1) * sizeof(char *));
+    for (int i = 0; i < argc; i++) {
+        saved_argv[i] = strdup(argv[i] ? argv[i] : "");
+    }
+    saved_argv[argc] = NULL;
+
+    // Overwrite the entire argv memory space so /proc/self/cmdline displays cleanly as "BadWords" in htop/top/ps
+    if (argc > 0 && argv && argv[0]) {
+        char *arg_start = argv[0];
+        char *arg_end = argv[argc - 1] + strlen(argv[argc - 1]);
+        size_t total_len = (size_t)(arg_end - arg_start);
+        memset(arg_start, 0, total_len);
+        strncpy(arg_start, "BadWords", total_len);
     }
 
     // 2. Resolve real path of this launcher binary (/proc/self/exe)
@@ -74,8 +81,8 @@ int main(int argc, char *argv[]) {
     if (r > 0) {
         real_exe[r] = '\0';
     } else {
-        if (realpath(argv[0], real_exe) == NULL) {
-            strncpy(real_exe, argv[0], sizeof(real_exe) - 1);
+        if (saved_argv[0] && realpath(saved_argv[0], real_exe) == NULL) {
+            strncpy(real_exe, saved_argv[0], sizeof(real_exe) - 1);
         }
     }
 
@@ -319,7 +326,7 @@ int main(int argc, char *argv[]) {
     new_argv[0] = (python_bin[0] != '\0') ? python_bin : "python3";
     new_argv[1] = main_py;
     for (int i = 1; i < argc; i++) {
-        new_argv[i + 1] = argv[i];
+        new_argv[i + 1] = saved_argv[i];
     }
     new_argv[new_argc] = NULL;
 
@@ -337,6 +344,8 @@ int main(int argc, char *argv[]) {
                 prctl(PR_SET_NAME, "BadWords", 0, 0, 0);
                 int ret = Py_BytesMain(new_argc, new_argv);
                 fprintf(stderr, "[LAUNCHER] In-process execution finished with code %d\n", ret);
+                for (int i = 0; i < argc; i++) { if (saved_argv[i]) free(saved_argv[i]); }
+                free(saved_argv);
                 free(new_argv);
                 return ret;
             } else {
@@ -359,6 +368,8 @@ int main(int argc, char *argv[]) {
     execvp("python3", new_argv);
     fprintf(stderr, "[LAUNCHER] execvp failed: %s (errno %d)\n", strerror(errno), errno);
 
+    for (int i = 0; i < argc; i++) { if (saved_argv[i]) free(saved_argv[i]); }
+    free(saved_argv);
     free(new_argv);
     return 1;
 }
