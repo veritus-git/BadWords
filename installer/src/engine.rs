@@ -1182,8 +1182,9 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
         {
             os::unblock_file(&target_dir.join("BadWords.exe"));
             let _ = os::windows::register_uninstall_entry(&target_dir, &dynamic_version);
-            let _ = os::windows::create_windows_shortcuts(&target_dir, create_desktop, create_menu);
+            let _ = os::windows::create_windows_shortcuts(&target_dir, create_desktop, create_menu, Some(&dynamic_version));
             os::unblock_file(&target_dir.join("BadWords.exe"));
+            os::unblock_dir(&target_dir);
             emit_log(&sender, "OK", "Windows shortcuts & uninstaller registered.");
         }
         #[cfg(target_os = "macos")]
@@ -1268,7 +1269,8 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "windows")]
         {
             let _ = os::windows::register_uninstall_entry(&target_dir, &dynamic_version);
-            let _ = os::windows::create_windows_shortcuts(&target_dir, true, true);
+            let _ = os::windows::create_windows_shortcuts(&target_dir, true, true, Some(&dynamic_version));
+            os::unblock_dir(&target_dir);
         }
         #[cfg(target_os = "macos")]
         let _ = os::macos::create_macos_app_bundle(&target_dir, &dynamic_version, true);
@@ -1319,7 +1321,8 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "windows")]
         {
             let _ = os::windows::register_uninstall_entry(&to_dir, &dynamic_version);
-            let _ = os::windows::create_windows_shortcuts(&to_dir, true, true);
+            let _ = os::windows::create_windows_shortcuts(&to_dir, true, true, Some(&dynamic_version));
+            os::unblock_dir(&to_dir);
         }
         #[cfg(target_os = "macos")]
         let _ = os::macos::create_macos_app_bundle(&to_dir, &dynamic_version, true);

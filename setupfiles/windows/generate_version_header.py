@@ -44,6 +44,17 @@ def main():
         f.write(content)
     print(f"Generated {HEADER_PATH} with VERSION={ver} ({commas})")
 
+    # Keep installer/Cargo.toml synchronized with app_constants.py
+    cargo_toml = os.path.join(ROOT_DIR, "installer", "Cargo.toml")
+    if os.path.isfile(cargo_toml):
+        with open(cargo_toml, "r", encoding="utf-8") as f:
+            c_text = f.read()
+        new_c_text = re.sub(r'(?m)^version\s*=\s*"[^"]+"', f'version = "{ver}"', c_text, count=1)
+        if new_c_text != c_text:
+            with open(cargo_toml, "w", encoding="utf-8") as f:
+                f.write(new_c_text)
+            print(f"Synchronized {cargo_toml} to version = \"{ver}\"")
+
 
 if __name__ == "__main__":
     main()

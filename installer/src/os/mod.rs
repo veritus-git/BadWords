@@ -76,6 +76,15 @@ pub fn unblock_file(path: &std::path::Path) {
     let _ = path;
 }
 
+#[allow(dead_code)]
+/// Strips Mark-of-the-Web (Zone.Identifier) recursively on Windows
+pub fn unblock_dir(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    windows::unblock_dir(path);
+    #[cfg(not(target_os = "windows"))]
+    let _ = path;
+}
+
 /// Automatically installs official System Python for current OS
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "windows")]

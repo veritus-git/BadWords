@@ -1097,6 +1097,20 @@ def _unblock_file_windows(path):
         pass
 
 
+def _unblock_tree_windows(dir_path):
+    if os.name != 'nt' or not dir_path or not os.path.exists(dir_path):
+        return
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+             f"Get-ChildItem -LiteralPath '{dir_path}' -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue; Remove-Item -LiteralPath \"$($_.FullName):Zone.Identifier\" -Force -ErrorAction SilentlyContinue }}"],
+            capture_output=True,
+            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
+    except Exception:
+        pass
+
+
 def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
     install_dir = os.path.abspath(install_dir)
     main_py = os.path.join(install_dir, "main.py")
@@ -1114,20 +1128,25 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             bootstrap_cand = os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe")
             repo_cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "BadWords.exe")
             if os.path.isfile(setup_cand):
+                _unblock_file_windows(setup_cand)
                 try: shutil.copy2(setup_cand, badwords_exe)
                 except Exception: pass
             elif os.path.isfile(repo_cand):
+                _unblock_file_windows(repo_cand)
                 try: shutil.copy2(repo_cand, badwords_exe)
                 except Exception: pass
             elif os.path.isfile(bootstrap_cand):
+                _unblock_file_windows(bootstrap_cand)
                 try: shutil.copy2(bootstrap_cand, badwords_exe)
                 except Exception: pass
             else:
                 try:
                     import urllib.request
+                    app_ver = _get_app_version(install_dir)
                     urls = [
                         "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
-                        "https://github.com/veritus-git/BadWords/releases/download/v4.0.0/BadWords.exe",
+                        f"https://github.com/veritus-git/BadWords/releases/download/v{app_ver}/BadWords.exe",
+                        f"https://github.com/veritus-git/BadWords/releases/download/{app_ver}/BadWords.exe",
                     ]
                     for url in urls:
                         try:
@@ -1160,12 +1179,13 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
 
         ps_commands = ["$ws = New-Object -ComObject WScript.Shell;"]
         if create_desktop:
-            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{target_path}'; $s1.Arguments = '{args_str}'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{shortcut_icon}'; $s1.Save();")
+            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{target_path}'; $s1.Arguments = '{args_str}'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{shortcut_icon}'; $s1.Description = 'BadWords'; $s1.Save();")
         if create_menu:
-            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Save();")
+            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Description = 'BadWords'; $s2.Save();")
         
         full_script = " ".join(ps_commands)
         subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True)
+        _unblock_tree_windows(install_dir)
 
         # Register in Windows Add/Remove Programs (HKCU)
         try:
@@ -3147,6 +3167,20 @@ def option_reset(preset_path=None):
 
 # ── Main loop ─────────────────────────────────────────────────
 def main():
+    if os.name == 'nt':
+        # Proactively clear Zone.Identifier / SmartScreen block from any adjacent binaries
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_dir = os.path.dirname(script_dir)
+        for cand in [
+            os.path.join(script_dir, "windows", "BadWords.exe"),
+            os.path.join(repo_dir, "BadWords.exe"),
+            os.path.join(repo_dir, "badwords-setup-windows.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords-Setup.exe"),
+        ]:
+            if os.path.isfile(cand):
+                _unblock_file_windows(cand)
+
     if ARGS.uninstall:
         target = ARGS.install or _default_install_dir()
         _do_uninstall(_resolve_script_dirs(), [target])
