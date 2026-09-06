@@ -125,7 +125,10 @@ DEFAULT_SETTINGS = {
     "show_inaudible":       True,
     "silence_cut":          False,
     "silence_mark":         False,
+    # ── Milestone / Migration Notices ─────────────────────────────────────────
+    "v4_migration_notified": True,
 }
+
 
 
 import sys

@@ -18,6 +18,7 @@ from .update_dialog import UpdateCheckThread, UpdateNotifyDialog
 from .marker_dialog import MarkerDialog
 from .unsaved_changes_dialog import UnsavedChangesDialog
 from .settings_dialog import SettingsDialog
+from .v4_migration_dialog import V4MigrationDialog
 from .overlay import (
     GlobalAppFilter, SidebarDragZone, MarkerDragZone, MarkerRowWidget, AnimatedDimOverlay
 )
@@ -31,9 +32,11 @@ __all__ = [
     "MarkerDialog",
     "UnsavedChangesDialog",
     "SettingsDialog",
+    "V4MigrationDialog",
     "GlobalAppFilter",
     "SidebarDragZone",
     "MarkerDragZone",
     "MarkerRowWidget",
     "AnimatedDimOverlay",
 ]
+

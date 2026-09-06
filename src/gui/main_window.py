@@ -3547,6 +3547,37 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         elif opt_in is True:
             self.engine.send_telemetry_ping("app_started")
 
+        # Check if one-time milestone notice for 3.x -> 4.x migration is needed
+        self.check_v4_migration_notice()
+
+    def check_v4_migration_notice(self):
+        """Show V4MigrationDialog once if upgrading from 3.x to 4.0.0."""
+        try:
+            prefs = self.engine.load_preferences() or {}
+            if prefs.get("v4_migration_notified", True):
+                return
+
+            marker = os.path.join(self.engine.os_doc.install_dir, ".v4_migration_notified")
+            if os.path.isfile(marker):
+                self.engine.save_preferences({"v4_migration_notified": True})
+                return
+
+            from gui.dialogs.v4_migration_dialog import V4MigrationDialog
+            lang = prefs.get("gui_lang", "en")
+            dlg = V4MigrationDialog(lang=lang, parent=self)
+            dlg.exec()
+
+            # Record that notice was shown and handled
+            self.engine.save_preferences({"v4_migration_notified": True})
+            try:
+                with open(marker, "w", encoding="utf-8") as f:
+                    f.write("1\n")
+            except Exception:
+                pass
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"check_v4_migration_notice failed: {e}")
+
     def _open_update_dialog(self, latest_ver: str, gh_url: str, gl_url: str):
         """Open UpdateNotifyDialog manually (e.g. from settings version card)."""
         self._show_update_dialog(latest_ver, gh_url, gl_url)

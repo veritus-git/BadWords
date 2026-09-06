@@ -214,6 +214,11 @@ class OSDoctor:
                 # Everything else (layout prefs, offsets, model choices, etc.) → settings
                 settings[resolved] = value
 
+        # Upgrading from 3.x requires a one-time milestone notice if not already shown
+        marker = os.path.join(self.install_dir, '.v4_migration_notified')
+        if not os.path.isfile(marker):
+            settings['v4_migration_notified'] = False
+
         # --- Save both new files ---
         try:
             with open(self.user_file, 'w', encoding='utf-8') as f:

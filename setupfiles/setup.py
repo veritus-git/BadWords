@@ -55,6 +55,10 @@ def _get_app_version():
     candidates = [
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "config", "app_constants.py"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "config", "app_constants.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "app_constants.py"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "app_constants.py"),
+        os.path.join(os.getcwd(), "src", "config", "app_constants.py"),
+        os.path.join(os.getcwd(), "config", "app_constants.py"),
     ]
     for c in candidates:
         if os.path.isfile(c):
@@ -809,6 +813,51 @@ def get_latest_tag(force_main=False):
 
     return "main", "", ""
 
+def fetch_git_branches():
+    """Fetches list of git branch names from GitHub / GitLab."""
+    UA = "BadWords-Installer/2.0 (https://github.com/veritus-git/BadWords)"
+    GH_BRANCHES = "https://api.github.com/repos/veritus-git/BadWords/branches"
+    import json, urllib.request
+
+    try:
+        req = urllib.request.Request(GH_BRANCHES, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+            if isinstance(data, list):
+                branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                if branches:
+                    return branches
+    except Exception:
+        pass
+
+    if shutil.which("curl"):
+        try:
+            r = subprocess.run(["curl", "-fsSL", "--max-time", "10", "-H", f"User-Agent: {UA}", GH_BRANCHES],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout:
+                data = json.loads(r.stdout)
+                if isinstance(data, list):
+                    branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                    if branches:
+                        return branches
+        except Exception:
+            pass
+
+    # GitLab fallback
+    try:
+        GL_BRANCHES = "https://gitlab.com/api/v4/projects/badwords%2FBadWords/repository/branches"
+        req = urllib.request.Request(GL_BRANCHES, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+            if isinstance(data, list):
+                branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                if branches:
+                    return branches
+    except Exception:
+        pass
+
+    return ["main", "dev-v4"]
+
 def detect_existing_install(default_dir, resolve_script_dirs):
     """Detect existing installation via system registration (Registry/.desktop), Resolve wrappers, or default dir."""
     # 1. Windows Registry check
@@ -1451,8 +1500,24 @@ def _remove_os_shortcuts(install_dir=None):
 def _launch_badwords(install_dir):
     try:
         if os.name == "nt":
+            badwords_exe = os.path.join(install_dir, "BadWords.exe")
+            if os.path.isfile(badwords_exe):
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                DETACHED_PROCESS = 0x00000008
+                subprocess.Popen(
+                    [badwords_exe],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True
+                )
+                return True
             pyw = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
             main_py = os.path.join(install_dir, "main.py")
+            if not os.path.isfile(main_py):
+                main_py = os.path.join(install_dir, "src", "main.py")
             if os.path.isfile(pyw) and os.path.isfile(main_py):
                 CREATE_NEW_PROCESS_GROUP = 0x00000200
                 DETACHED_PROCESS = 0x00000008
@@ -1471,8 +1536,16 @@ def _launch_badwords(install_dir):
             if os.path.isdir(app_path):
                 subprocess.Popen(["open", app_path], close_fds=True)
                 return True
-            py = os.path.join(install_dir, "venv", "bin", "python")
+            mach_launcher = os.path.join(install_dir, "BadWords")
+            if os.path.isfile(mach_launcher) and os.access(mach_launcher, os.X_OK):
+                subprocess.Popen([mach_launcher], cwd=install_dir, start_new_session=True, close_fds=True)
+                return True
+            py = os.path.join(install_dir, "venv", "bin", "python3")
+            if not os.path.isfile(py):
+                py = os.path.join(install_dir, "venv", "bin", "python")
             main_py = os.path.join(install_dir, "main.py")
+            if not os.path.isfile(main_py):
+                main_py = os.path.join(install_dir, "src", "main.py")
             if os.path.isfile(py) and os.path.isfile(main_py):
                 subprocess.Popen(
                     [py, main_py],
@@ -1485,8 +1558,36 @@ def _launch_badwords(install_dir):
                 )
                 return True
         else:
-            py = os.path.join(install_dir, "venv", "bin", "python")
+            elf_launcher = os.path.join(install_dir, "BadWords")
+            if os.path.isfile(elf_launcher) and os.access(elf_launcher, os.X_OK):
+                subprocess.Popen(
+                    [elf_launcher],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+            local_bin = os.path.expanduser("~/.local/bin/badwords")
+            if os.path.isfile(local_bin) and os.access(local_bin, os.X_OK):
+                subprocess.Popen(
+                    [local_bin],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+            py = os.path.join(install_dir, "venv", "bin", "python3")
+            if not os.path.isfile(py):
+                py = os.path.join(install_dir, "venv", "bin", "python")
             main_py = os.path.join(install_dir, "main.py")
+            if not os.path.isfile(main_py):
+                main_py = os.path.join(install_dir, "src", "main.py")
             if os.path.isfile(py) and os.path.isfile(main_py):
                 subprocess.Popen(
                     [py, main_py],
@@ -1503,10 +1604,37 @@ def _launch_badwords(install_dir):
     return False
 
 
+def _configure_no_self_upgrade(install_dir):
+    """Configures developer mode flag and setting to disable updater self-upgrade."""
+    import json
+    try:
+        marker = os.path.join(install_dir, ".no_self_upgrade")
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write("1")
+    except Exception as e:
+        debug_log(f"Warning writing .no_self_upgrade: {e}")
+
+    settings_path = os.path.join(install_dir, "settings.json")
+    try:
+        data = {}
+        if os.path.isfile(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        data["no_self_upgrade"] = True
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        debug_log(f"Warning updating settings.json for no_self_upgrade: {e}")
+    log_ok("Developer mode configured: Updater self-upgrade disabled.")
+
+
 # ── Option 1 — Standard Install / Update ─────────────────────
-def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green"):
+def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green", is_dev=False, branch_url=None, branch_name=None):
     header()
-    if force_main:
+    if is_dev:
+        lbl = f"── Developer Installation ({branch_name or 'local repository'}) ──"
+        console.print(Text(f"{PAD}{lbl}", style="bold magenta"), no_wrap=True)
+    elif force_main:
         console.print(Text(f"{PAD}── Dev Install (main) ──", style="bold magenta"), no_wrap=True)
     else:
         console.print(Text(f"{PAD}{title}", style=f"bold {title_color}"), no_wrap=True)
@@ -1606,12 +1734,17 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
     source_path = assets_path = None
     tmp_dl = None
 
-    if os.path.isfile(local_main):
+    if is_dev and branch_url:
+        tag = branch_name or "dev"
+        zip_url = branch_url
+        source_repo = f"GitHub (branch: {tag})"
+        tmp_dl = tempfile.mkdtemp()
+    elif os.path.isfile(local_main):
         log_ok("Local source repository detected. Using local files.")
         source_path = local_src
         assets_path = local_assets if os.path.isdir(local_assets) else None
 
-    if not source_path:
+    if not source_path and not tmp_dl:
         tag, zip_url, source_repo = get_latest_tag(force_main)
         tmp_dl = tempfile.mkdtemp()
 
@@ -1705,7 +1838,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         log_step("Performing clean application reset (preserving user settings, models, saves & venv)...")
         protected_names = {
             "settings.json", "user.json", "pref.json", "dev.json", ".python_auto_installed",
-            "models", "saves", "venv", "bin", "libs"
+            ".no_self_upgrade", "models", "saves", "venv", "bin", "libs"
         }
         cur_script = os.path.abspath(__file__)
         if os.path.isdir(install_dir):
@@ -2159,7 +2292,11 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         _pip_run("install", "--upgrade", "pip", "-q", label="Upgrading pip", spinner=False)
 
-        torch_ok = subprocess.run([venv_pip, "show", "torch"], capture_output=True).returncode == 0
+        torch_ok = False
+        try:
+            torch_ok = subprocess.run([venv_py, "-m", "pip", "show", "torch"], capture_output=True).returncode == 0
+        except Exception:
+            pass
         if torch_ok:
             log_info("Legacy PyTorch installation detected. Uninstalling to save disk space...")
             _pip_run("uninstall", "-y", "torch", "torchaudio", "-q", label="Uninstalling PyTorch")
@@ -2277,7 +2414,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         except Exception:
             pass  # Protected directory — can't write log file, not fatal
 
-        if force_main:
+        if force_main or is_dev:
             try:
                 import json
                 dev_path = os.path.join(install_dir, "dev.json")
@@ -2286,6 +2423,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 log_ok("Created dev.json for dev installation.")
             except Exception as e:
                 log_warn(f"Failed to create dev.json: {e}")
+            _configure_no_self_upgrade(install_dir)
 
         # ── OS Shortcuts & Registry Integration ───────────────
         _create_os_shortcuts(install_dir, create_desktop=create_desktop, create_menu=create_menu)
@@ -2400,7 +2538,7 @@ def option_repair(preset_path=None):
     log_step(f"Cleaning core files in: {install_dir}")
     
     # Files/folders to KEEP
-    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json", "venv", ".python_auto_installed"}
+    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json", "venv", ".python_auto_installed", ".no_self_upgrade"}
     
     sp_rm = Spinner("Removing core components").start()
     errors = []
@@ -2766,10 +2904,11 @@ def option_move():
 # Signature files unique to a BadWords installation.
 # If a directory contains at least _BW_MATCH_MIN of these, it's ours.
 _BW_SIGNATURES = frozenset({
-    "main.py", "engine.py", "api.py",
-    "algorythms.py", "gui.py", "osdoc.py", "config.py"
+    "main.py", "engine.py", "api.py", "algorithms.py", "algorythms.py",
+    "assembler.py", "gui.py", "osdoc.py", "config.py",
+    "engine", "api", "gui", "config", "i18n", "handlers", "BadWords.exe", "BadWords"
 })
-_BW_MATCH_MIN = 3   # >=3 of 7 files = confirmed BadWords dir
+_BW_MATCH_MIN = 3   # >=3 of signatures = confirmed BadWords dir
 
 
 def _is_badwords_dir(d):
@@ -3212,7 +3351,41 @@ def main():
             elif choice == "1":
                 option_install_update()
             elif choice.lower() == "d":
-                option_install_update(force_main=True)
+                repo_root = ARGS.local_repo if ARGS.local_repo else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                local_main = os.path.join(repo_root, "src", "main.py")
+                if os.path.isfile(local_main):
+                    option_install_update(is_dev=True)
+                else:
+                    header()
+                    console.print(Text(f"{PAD}── Developer Installation (Select Git Branch) ──", style="bold magenta"), no_wrap=True)
+                    console.print()
+                    sp_b = Spinner("Fetching branch list from repository").start()
+                    branches = fetch_git_branches()
+                    sp_b.done(ok=True)
+
+                    console.print(Text(f"{PAD}Available branches:", style="bold white"), no_wrap=True)
+                    console.print()
+                    for idx, br in enumerate(branches, 1):
+                        console.print(Text(f"{PAD}[{idx}] {br}", style="cyan"), no_wrap=True)
+                    console.print()
+                    console.print(Text(f"{PAD}[0] Cancel and return to menu", style="white"), no_wrap=True)
+                    console.print()
+                    console.print(Text(f"{PAD}Select branch [1-{len(branches)}, 0 to cancel]: ", style="green"), end="", no_wrap=True)
+                    sys.stdout.flush()
+                    try:
+                        br_input = readline_with_esc().strip()
+                        if not br_input or br_input in ("0", "ESC"):
+                            continue
+                        br_idx = int(br_input) - 1
+                        if 0 <= br_idx < len(branches):
+                            chosen_branch = branches[br_idx]
+                            br_url = f"https://github.com/veritus-git/BadWords/archive/refs/heads/{chosen_branch}.zip"
+                            option_install_update(is_dev=True, branch_url=br_url, branch_name=chosen_branch)
+                        else:
+                            console.print(Text(f"{PAD}Invalid choice. Returning to menu.", style="red"), no_wrap=True)
+                            time.sleep(1)
+                    except (ValueError, UserCancelled):
+                        continue
             elif choice == "2":
                 option_repair()
             elif choice == "3":
