@@ -96,7 +96,7 @@ jobs:
           retention-days: 90
 
       - name: Publish Public Release Asset
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
