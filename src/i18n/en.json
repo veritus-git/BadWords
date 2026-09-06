@@ -227,7 +227,7 @@
     "chk_telemetry_geo": "Share your general location (country/city)",
     "tab_interface": "Interface",
     "lbl_always_on_top": "Always on top",
-    "tt_always_on_top": "Keeps the application window always on top of other windows\n(even if you click outside of it).",
+    "tt_always_on_top": "Keeps the application window always on top of other windows\n(even if you click outside of it).\n\nNote: On Windows, changing this setting may require restarting the application to take full effect.",
     "lbl_hidden_panels": "Hidden panels",
     "btn_export_settings": "Export Settings",
     "btn_import_settings": "Import Settings",
@@ -409,5 +409,6 @@
     "resolve_color_chocolate": "Chocolate",
     "tooltip_auto_cut": "Automatically cuts this color during Assembly<br>if marked in the text.",
     "tooltip_cut_now": "Cuts this color directly on the CURRENTLY SELECTED<br>DaVinci timeline (useful for mass deletion after manual tweaks).",
-    "hdr_whisper_parameters": "Whisper Parameters"
+    "hdr_whisper_parameters": "Whisper Parameters",
+    "lbl_always_on_top_restart_hint": "* On Windows, changing this setting may require restarting the application."
 }

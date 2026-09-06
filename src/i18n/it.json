@@ -227,7 +227,7 @@
     "chk_telemetry_geo": "Condividi la tua posizione generale (paese/città)",
     "tab_interface": "Interfaccia",
     "lbl_always_on_top": "Sempre in primo piano",
-    "tt_always_on_top": "Mantiene la finestra dell'applicazione sempre in primo piano\n(anche se fai clic fuori).",
+    "tt_always_on_top": "Mantiene la finestra dell'applicazione sempre in primo piano\n(anche se fai clic fuori).\n\nNota: Su Windows, la modifica di questa opzione potrebbe richiedere il riavvio dell'applicazione per avere pieno effetto.",
     "lbl_hidden_panels": "Pannelli nascosti",
     "btn_export_settings": "Esporta Impostazioni",
     "btn_import_settings": "Importa Impostazioni",
@@ -409,5 +409,6 @@
     "resolve_color_chocolate": "Cioccolato",
     "tooltip_auto_cut": "Taglia automaticamente questo colore durante l'assemblaggio<br>se è segnato nel testo.",
     "tooltip_cut_now": "Taglia questo colore sulla timeline di DaVinci ATTUALMENTE SELEZIONATA<br>(utile per l'eliminazione di massa dopo modifiche manuali).",
-    "hdr_whisper_parameters": "Parametri Whisper"
+    "hdr_whisper_parameters": "Parametri Whisper",
+    "lbl_always_on_top_restart_hint": "* Su Windows, la modifica di questa opzione potrebbe richiedere il riavvio dell'applicazione."
 }
