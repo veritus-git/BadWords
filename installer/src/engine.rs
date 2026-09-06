@@ -533,6 +533,21 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
             }
         }
 
+        let bw_cand = repo_dir.join("BadWords.exe");
+        if bw_cand.is_file() {
+            let _ = fs::copy(&bw_cand, target_dir.join("BadWords.exe"));
+        }
+        let bw_linux_cand = repo_dir.join("BadWords");
+        if bw_linux_cand.is_file() {
+            let dest_bw = target_dir.join("BadWords");
+            let _ = fs::copy(&bw_linux_cand, &dest_bw);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&dest_bw, fs::Permissions::from_mode(0o755));
+            }
+        }
+
         let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
         if let Ok(cur_exe) = std::env::current_exe() {
             let dest_bin = target_dir.join(installer_dest_name);

@@ -17,6 +17,11 @@ src/models/
 badwords-setup-windows.exe
 badwords-setup-linux
 badwords-setup-macos
+BadWords.exe
+*.exe
+*.res
+*.obj
+*.o
 
 # Rust build artifacts
 target/

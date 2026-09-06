@@ -153,6 +153,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         search_dirs[sc++] = venv_home;
     }
 
+    wchar_t forwarder_dll[MAX_PATH_LEN] = {0};
     for (int d = 0; d < sc && python_dll[0] == L'\0'; d++) {
         wchar_t mask[MAX_PATH_LEN];
         _snwprintf(mask, MAX_PATH_LEN, L"%s\\python3*.dll", search_dirs[d]);
@@ -161,15 +162,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         if (hFind != INVALID_HANDLE_VALUE) {
             do {
                 if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                    // Skip python3.dll (forwarder) if specific version exists
+                    // Prefer specific version DLL (e.g. python312.dll)
                     if (_wcsicmp(fd.cFileName, L"python3.dll") != 0) {
                         _snwprintf(python_dll, MAX_PATH_LEN, L"%s\\%s", search_dirs[d], fd.cFileName);
                         break;
+                    } else if (forwarder_dll[0] == L'\0') {
+                        _snwprintf(forwarder_dll, MAX_PATH_LEN, L"%s\\%s", search_dirs[d], fd.cFileName);
                     }
                 }
             } while (FindNextFileW(hFind, &fd));
             FindClose(hFind);
         }
+    }
+    if (python_dll[0] == L'\0' && forwarder_dll[0] != L'\0') {
+        wcsncpy(python_dll, forwarder_dll, MAX_PATH_LEN - 1);
     }
     fwprintf(stderr, L"[LAUNCHER] Python DLL:    %s\n", python_dll[0] ? python_dll : L"(none)");
 
@@ -190,7 +196,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     wchar_t cur_path[MAX_ENV_LEN] = {0};
     GetEnvironmentVariableW(L"PATH", cur_path, MAX_ENV_LEN - 1);
     wchar_t new_path[MAX_ENV_LEN];
-    _snwprintf(new_path, MAX_ENV_LEN, L"%s\\venv\\Scripts;%s\\bin;%s", install_dir, install_dir, cur_path);
+    if (venv_home[0] != L'\0') {
+        SetDllDirectoryW(venv_home);
+        _snwprintf(new_path, MAX_ENV_LEN, L"%s;%s\\venv\\Scripts;%s\\bin;%s", venv_home, install_dir, install_dir, cur_path);
+    } else {
+        _snwprintf(new_path, MAX_ENV_LEN, L"%s\\venv\\Scripts;%s\\bin;%s", install_dir, install_dir, cur_path);
+    }
     SetEnvironmentVariableW(L"PATH", new_path);
 
     wchar_t cur_pypath[MAX_ENV_LEN] = {0};
@@ -223,6 +234,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     // 10. Strategy A: In-Process Execution via python3xx.dll
     if (python_dll[0] != L'\0' && file_exists_w(python_dll)) {
         fwprintf(stderr, L"[LAUNCHER] Attempting in-process execution via LoadLibraryW(%s)...\n", python_dll);
+        wchar_t dll_dir[MAX_PATH_LEN] = {0};
+        wcsncpy(dll_dir, python_dll, MAX_PATH_LEN - 1);
+        wchar_t *last_p = wcsrchr(dll_dir, L'\\');
+        if (last_p) {
+            *last_p = L'\0';
+            SetDllDirectoryW(dll_dir);
+        }
         HMODULE hPy = LoadLibraryW(python_dll);
         if (hPy) {
             int (*Py_BytesMain)(int, char **) = (int (*)(int, char **))GetProcAddress(hPy, "Py_BytesMain");
