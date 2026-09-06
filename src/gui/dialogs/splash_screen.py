@@ -23,16 +23,16 @@ from gui.utils import _app_icon, _center_on_screen, _txt, get_layout_icon_path, 
 
 
 def _find_splash_path() -> str:
-    """Find splashscreen.png across development repository and installed environments."""
+    """Find splashscreen.png in assets/layout across development and installed environments."""
     candidates = [
         get_layout_icon_path("splashscreen.png"),
         os.path.join(get_layout_dir(), "splashscreen.png"),
-        # Dev repo layout
+        # Dev repo layout: <repo_root>/assets/layout/splashscreen.png
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "assets", "layout", "splashscreen.png")),
-        # Unpacked flat install layout
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "layout", "splashscreen.png")),
+        # Production install layout: <install_dir>/assets/layout/splashscreen.png
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "layout", "splashscreen.png")),
-        "/mnt/dump/BadWords/assets/layout/splashscreen.png",
+        # Legacy unpacked fallback
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "layout", "splashscreen.png")),
     ]
     for p in candidates:
         if os.path.isfile(p):

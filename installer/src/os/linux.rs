@@ -154,11 +154,11 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
             let desktop_file = apps_dir.join("badwords.desktop");
             let uninstall_desktop_file = apps_dir.join("badwords-uninstall.desktop");
             let src_icon = {
-                let direct = install_dir.join("icons").join("icon_default.png");
-                if direct.is_file() {
-                    direct
+                let asset = install_dir.join("assets").join("icons").join("icon_default.png");
+                if asset.is_file() {
+                    asset
                 } else {
-                    install_dir.join("assets").join("icons").join("icon_default.png")
+                    install_dir.join("icons").join("icon_default.png")
                 }
             };
             

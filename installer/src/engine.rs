@@ -453,6 +453,54 @@ pub fn detect_local_version() -> Option<String> {
     None
 }
 
+/// Cleanly wipes obsolete code, scripts, assets and temporary files from target_dir,
+/// while strictly preserving personal user settings, models, saves, venv and binaries (whitelist).
+fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
+    if !target_dir.is_dir() {
+        return;
+    }
+
+    emit_log(sender, "INFO", "Performing clean application reset (preserving user settings, models, saves & venv)...");
+
+    let protected_names = [
+        "settings.json",
+        "user.json",
+        "pref.json",
+        "dev.json",
+        ".python_auto_installed",
+        "models",
+        "saves",
+        "venv",
+        "bin",
+        "libs",
+    ];
+
+    if let Ok(entries) = fs::read_dir(target_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+
+            if protected_names.iter().any(|&prot| prot.eq_ignore_ascii_case(&file_name)) {
+                continue;
+            }
+
+            // Do not delete current running installer exe if it's placed in target_dir
+            if let Ok(cur_exe) = std::env::current_exe() {
+                if cur_exe == p {
+                    continue;
+                }
+            }
+
+            if p.is_dir() {
+                let _ = fs::remove_dir_all(&p);
+            } else if p.is_file() || p.is_symlink() {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
+    emit_log(sender, "OK", "Target directory reset to clean state.");
+}
+
 /// Deploys BadWords application files (from local repo or online GitHub/GitLab zip)
 fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
     if let Some(repo_dir) = find_local_repo() {
@@ -466,14 +514,6 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
         let src_assets = repo_dir.join("assets");
         if src_assets.is_dir() {
             let _ = copy_dir_all(&src_assets, target_dir.join("assets"));
-            let icons_sub = src_assets.join("icons");
-            if icons_sub.is_dir() {
-                let _ = copy_dir_all(&icons_sub, target_dir.join("icons"));
-            }
-            let layout_sub = src_assets.join("layout");
-            if layout_sub.is_dir() {
-                let _ = copy_dir_all(&layout_sub, target_dir.join("layout"));
-            }
         }
 
         let setupfiles_dir = repo_dir.join("setupfiles");
@@ -600,14 +640,6 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
                 let assets_sub = p.join("assets");
                 if assets_sub.is_dir() {
                     let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
-                    let icons_sub = assets_sub.join("icons");
-                    if icons_sub.is_dir() {
-                        let _ = copy_dir_all(&icons_sub, target_dir.join("icons"));
-                    }
-                    let layout_sub = assets_sub.join("layout");
-                    if layout_sub.is_dir() {
-                        let _ = copy_dir_all(&layout_sub, target_dir.join("layout"));
-                    }
                 }
 
                 let setupfiles_sub = p.join("setupfiles");
@@ -1070,16 +1102,10 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
         let _ = fs::create_dir_all(&assets_dir);
         emit_log(&sender, "OK", &format!("Destination folder ready: {}", target_dir.display()));
 
-        // Clean user log files on install/update so logs start fresh
-        for log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"] {
-            let log_path = target_dir.join(log_name);
-            if log_path.is_file() {
-                let _ = fs::remove_file(&log_path);
-            }
-        }
-        emit_log(&sender, "OK", "Cleared previous application log files.");
+        // 4. Clean Wipe & Replace (Option 4 style, preserving user personal info and heavy assets)
+        clean_wipe_target_dir(&target_dir, &sender);
 
-        // 4. Sync / Download source files
+        // 5. Sync / Download source files
         emit_progress(&sender, 30, 1, "Deploying application files...", "Copying BadWords source and assets");
         if !deploy_application_files(&target_dir, &sender) {
             emit_complete(&sender, "install", false, "Failed to deploy BadWords application files.");

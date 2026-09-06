@@ -1046,12 +1046,12 @@ else:
 def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
     install_dir = os.path.abspath(install_dir)
     main_py = os.path.join(install_dir, "main.py")
-    icon_ico = os.path.join(install_dir, "icons", "icon_default.ico")
+    icon_ico = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
     if not os.path.isfile(icon_ico):
-        icon_ico = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
-    icon_png = os.path.join(install_dir, "icons", "icon_default.png")
+        icon_ico = os.path.join(install_dir, "icons", "icon_default.ico")
+    icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
     if not os.path.isfile(icon_png):
-        icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
+        icon_png = os.path.join(install_dir, "icons", "icon_default.png")
 
     if os.name == "nt":
         try:
@@ -1174,8 +1174,51 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
                 f.write(plist_content)
         except Exception: pass
 
+        # Write BadWords.cfg in Resources
+        python_bin = os.path.join(install_dir, "venv", "bin", "python3")
+        python_lib = ""
+        try:
+            import sysconfig
+            libdir = sysconfig.get_config_var('LIBDIR') or ""
+            ldlibrary = sysconfig.get_config_var('LDLIBRARY') or ""
+            if libdir and ldlibrary and os.path.isfile(os.path.join(libdir, ldlibrary)):
+                python_lib = os.path.join(libdir, ldlibrary)
+        except Exception:
+            pass
+
+        cfg_path = os.path.join(resources, "BadWords.cfg")
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(f"INSTALL_DIR={install_dir}\n")
+                f.write(f"PYTHON_BIN={python_bin}\n")
+                if python_lib:
+                    f.write(f"PYTHON_LIB={python_lib}\n")
+                f.write(f"MAIN_PY={os.path.join(install_dir, 'src', 'main.py')}\n")
+        except Exception:
+            pass
+
+        # Build / Compile native Mach-O launcher
         launcher_path = os.path.join(macos, "BadWords")
-        launcher_script = f"""#!/bin/bash
+        launcher_c = os.path.join(install_dir, "setupfiles", "macos", "launcher.c")
+        if not os.path.isfile(launcher_c) and 'repo_root' in locals() and repo_root:
+            launcher_c = os.path.join(repo_root, "setupfiles", "macos", "launcher.c")
+
+        compiled = False
+        cc = shutil.which("clang") or shutil.which("cc") or shutil.which("gcc")
+        if cc and os.path.isfile(launcher_c):
+            try:
+                cmd = [cc, "-O2", "-fobjc-arc", "-framework", "Foundation", "-framework", "AppKit",
+                       "-o", launcher_path, launcher_c]
+                res = subprocess.run(cmd, capture_output=True)
+                if res.returncode == 0 and os.path.isfile(launcher_path):
+                    compiled = True
+                    os.chmod(launcher_path, 0o755)
+            except Exception:
+                compiled = False
+
+        if not compiled:
+            # Fallback shell script launcher if compilation unavailable
+            launcher_script = f"""#!/bin/bash
 DIR="{install_dir}"
 if [ -f "$DIR/src/main.py" ]; then
     MAIN_PY="$DIR/src/main.py"
@@ -1193,21 +1236,15 @@ else
     PY="python3"
 fi
 
-if [ -f "$PY" ] && [ ! -L "$DIR/venv/bin/BadWords" ]; then
-    ln -sf "$(basename "$PY")" "$DIR/venv/bin/BadWords" 2>/dev/null || true
-fi
-if [ -x "$DIR/venv/bin/BadWords" ]; then
-    PY="$DIR/venv/bin/BadWords"
-fi
-
 cd "$CWD"
 exec "$PY" "$MAIN_PY" "$@"
 """
-        try:
-            with open(launcher_path, "w", encoding="utf-8") as f:
-                f.write(launcher_script)
-            os.chmod(launcher_path, 0o755)
-        except Exception: pass
+            try:
+                with open(launcher_path, "w", encoding="utf-8") as f:
+                    f.write(launcher_script)
+                os.chmod(launcher_path, 0o755)
+            except Exception:
+                pass
 
         if create_desktop:
             dt_dir = os.path.join(home, "Desktop")
@@ -1509,18 +1546,32 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         os.makedirs(models_dir, exist_ok=True)
         os.makedirs(bin_dir, exist_ok=True)
 
-        log_step("Syncing application files...")
-        protected_files = {"pref.json", "user.json", "settings.json", ".python_auto_installed"}
-        protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout", "setupfiles"}
-        
+        log_step("Performing clean application reset (preserving user settings, models, saves & venv)...")
+        protected_names = {
+            "settings.json", "user.json", "pref.json", "dev.json", ".python_auto_installed",
+            "models", "saves", "venv", "bin", "libs"
+        }
+        cur_script = os.path.abspath(__file__)
+        if os.path.isdir(install_dir):
+            for item in os.listdir(install_dir):
+                if item.lower() in {p.lower() for p in protected_names}:
+                    continue
+                full_path = os.path.join(install_dir, item)
+                if os.path.abspath(full_path) == cur_script:
+                    continue
+                try:
+                    if os.path.isdir(full_path) and not os.path.islink(full_path):
+                        shutil.rmtree(full_path, ignore_errors=True)
+                    else:
+                        os.remove(full_path)
+                except Exception as e:
+                    debug_log(f"clean_wipe error on {full_path}: {e}")
+        log_ok("Target directory reset to clean state.")
+
         # Clean previous user logs on install/update so logs start fresh
         for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
             _lf = os.path.join(install_dir, _log_name)
             if os.path.isfile(_lf):
-                try:
-                    with open(_lf, "w") as _f:
-                        pass
-                except Exception: pass
                 try: os.remove(_lf)
                 except Exception: pass
 
@@ -1544,43 +1595,20 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         setup_root_src = repo_root if ('repo_root' in locals() and repo_root) else (extracted if 'extracted' in locals() and extracted else None)
         setupfiles_src = os.path.join(setup_root_src, "setupfiles") if setup_root_src else None
 
-        if is_update:
-            if source_path and os.path.isdir(source_path):
-                two_way_sync([source_path], install_dir, protected_files, protected_dirs)
-            if assets_path and os.path.isdir(assets_path):
-                dest_assets = os.path.join(install_dir, "assets")
-                two_way_sync([assets_path], dest_assets, set(), set())
-                # Unpack assets subdirectories directly into install_dir for layout/icons access
-                for sub in ["icons", "layout"]:
-                    src_sub = os.path.join(assets_path, sub)
-                    if os.path.isdir(src_sub):
-                        dst_sub = os.path.join(install_dir, sub)
-                        two_way_sync([src_sub], dst_sub, set(), set())
-            if setupfiles_src and os.path.isdir(setupfiles_src):
-                dst_setupfiles = os.path.join(install_dir, "setupfiles")
-                two_way_sync([setupfiles_src], dst_setupfiles, set(), set())
-                up_py = os.path.join(setupfiles_src, "updater.py")
-                if os.path.isfile(up_py):
-                    shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
-        else:
-            if source_path and os.path.isdir(source_path):
-                shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
-            if assets_path and os.path.isdir(assets_path):
-                dest_assets = os.path.join(install_dir, "assets")
-                shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
-                # Unpack assets subdirectories directly into install_dir for layout/icons access
-                for sub in ["icons", "layout"]:
-                    src_sub = os.path.join(assets_path, sub)
-                    if os.path.isdir(src_sub):
-                        dst_sub = os.path.join(install_dir, sub)
-                        shutil.copytree(src_sub, dst_sub, dirs_exist_ok=True)
-            if setupfiles_src and os.path.isdir(setupfiles_src):
-                dst_setupfiles = os.path.join(install_dir, "setupfiles")
-                shutil.copytree(setupfiles_src, dst_setupfiles, dirs_exist_ok=True)
-                up_py = os.path.join(setupfiles_src, "updater.py")
-                if os.path.isfile(up_py):
-                    shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
-        log_ok("Files synced.")
+        # Fresh deployment of code and assets
+        log_step("Deploying fresh application files...")
+        if source_path and os.path.isdir(source_path):
+            shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
+        if assets_path and os.path.isdir(assets_path):
+            dest_assets = os.path.join(install_dir, "assets")
+            shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
+        if setupfiles_src and os.path.isdir(setupfiles_src):
+            dst_setupfiles = os.path.join(install_dir, "setupfiles")
+            shutil.copytree(setupfiles_src, dst_setupfiles, dirs_exist_ok=True)
+            up_py = os.path.join(setupfiles_src, "updater.py")
+            if os.path.isfile(up_py):
+                shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
+        log_ok("Application files cleanly deployed.")
 
         # ── FFmpeg ────────────────────────────────────────────
         console.print()

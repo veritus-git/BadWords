@@ -101,11 +101,11 @@ pub fn register_uninstall_entry(install_dir: &Path, version: &str) -> std::io::R
 
         let install_str = install_dir.to_string_lossy().to_string();
         let icon_path = {
-            let direct = install_dir.join("icons").join("icon_default.ico");
-            if direct.is_file() {
-                direct
+            let asset = install_dir.join("assets").join("icons").join("icon_default.ico");
+            if asset.is_file() {
+                asset
             } else {
-                install_dir.join("assets").join("icons").join("icon_default.ico")
+                install_dir.join("icons").join("icon_default.ico")
             }
         };
         let uninstall_exe = install_dir.join("uninstall.exe");
@@ -175,11 +175,11 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
         let pythonw_path = install_dir.join("venv").join("Scripts").join("pythonw.exe");
         let main_py = install_dir.join("main.py");
         let icon_path = {
-            let direct = install_dir.join("icons").join("icon_default.ico");
-            if direct.is_file() {
-                direct
+            let asset = install_dir.join("assets").join("icons").join("icon_default.ico");
+            if asset.is_file() {
+                asset
             } else {
-                install_dir.join("assets").join("icons").join("icon_default.ico")
+                install_dir.join("icons").join("icon_default.ico")
             }
         };
 
