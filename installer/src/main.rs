@@ -126,6 +126,18 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
     let create_dt = !args.iter().any(|a| a == "--no-desktop-shortcut");
     let create_menu = !args.iter().any(|a| a == "--no-menu-shortcut");
 
+    let dev_branch = if let Some(idx) = args.iter().position(|a| a == "--branch") {
+        if idx + 1 < args.len() {
+            Some(args[idx + 1].clone())
+        } else {
+            None
+        }
+    } else if args.iter().any(|a| a == "--dev") {
+        Some("dev-v4".to_string())
+    } else {
+        None
+    };
+
     if args.iter().any(|a| a == "--uninstall") {
         println!("[CLI] Running headless uninstall on: {}", target_dir.display());
         engine::run_uninstall(target_dir, tx);
@@ -135,6 +147,9 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
     } else if args.iter().any(|a| a == "--reset") {
         println!("[CLI] Running headless reset on: {}", target_dir.display());
         engine::run_reset(target_dir, tx);
+    } else if let Some(br) = dev_branch {
+        println!("[CLI] Running headless developer install (branch: {}) to: {}", br, target_dir.display());
+        engine::run_dev_install(target_dir, create_dt, create_menu, Some(br), tx);
     } else {
         println!("[CLI] Running headless install to: {}", target_dir.display());
         engine::run_install(target_dir, create_dt, create_menu, tx);
@@ -391,25 +406,23 @@ impl InstallerApp {
     }
 
     fn trigger_developer_mode(&mut self) {
-        if engine::find_local_repo().is_some() {
-            self.is_dev_mode = true;
-            self.selected_branch = None;
-            self.select_menu_option(0);
-        } else {
-            self.is_dev_mode = true;
-            self.screen = Screen::SelectBranch;
-            self.branches = vec![];
-            self.branch_selected_index = 0;
-            self.branch_fetching = true;
-            let tx_br = self.tx.clone();
-            std::thread::spawn(move || {
-                let list = engine::fetch_git_branches();
-                let _ = tx_br.send(IpcEvent {
-                    event: "branches_loaded".to_string(),
-                    data: serde_json::json!({ "branches": list }),
-                });
+        self.is_dev_mode = true;
+        self.screen = Screen::SelectBranch;
+        self.branches = vec![];
+        self.branch_selected_index = 0;
+        self.branch_fetching = true;
+        let has_local = engine::find_local_repo().is_some();
+        let tx_br = self.tx.clone();
+        std::thread::spawn(move || {
+            let mut list = engine::fetch_git_branches();
+            if has_local {
+                list.insert(0, "local (current repository)".to_string());
+            }
+            let _ = tx_br.send(IpcEvent {
+                event: "branches_loaded".to_string(),
+                data: serde_json::json!({ "branches": list }),
             });
-        }
+        });
     }
 
     fn start_action(&mut self) {
@@ -582,6 +595,13 @@ impl eframe::App for InstallerApp {
                 if let Some(arr) = event.data.get("branches").and_then(|v| v.as_array()) {
                     self.branches = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
                     self.branch_fetching = false;
+                    if let Some(pos) = self.branches.iter().position(|b| b == "dev-v4" || b == "main") {
+                        self.branch_selected_index = pos;
+                        self.selected_branch = Some(self.branches[pos].clone());
+                    } else if !self.branches.is_empty() {
+                        self.branch_selected_index = 0;
+                        self.selected_branch = self.branches.get(0).cloned();
+                    }
                 }
             } else if event.event == "log" {
                 let level = event.data.get("level").and_then(|v| v.as_str()).unwrap_or("INFO").to_string();
@@ -1099,7 +1119,9 @@ impl eframe::App for InstallerApp {
                                                                     if custom_button(ui, ctx, [120.0, 30.0], "Retry") {
                                                                         self.trigger_developer_mode();
                                                                     }
+                                                                } else {
                                                                     let mut clicked_idx = None;
+                                                                    let mut double_clicked_idx = None;
                                                                     egui::ScrollArea::vertical()
                                                                         .max_height(240.0)
                                                                         .auto_shrink([false, false])
@@ -1136,7 +1158,13 @@ impl eframe::App for InstallerApp {
                                                                                     egui::Color32::from_gray(200)
                                                                                 };
 
-                                                                                let icon_text = if branch == "main" || branch == "master" { "⭐ " } else { "🌿 " };
+                                                                                let icon_text = if branch.contains("local") {
+                                                                                    "💻 "
+                                                                                } else if branch == "main" || branch == "master" {
+                                                                                    "⭐ "
+                                                                                } else {
+                                                                                    "🌿 "
+                                                                                };
                                                                                 let display_text = format!("{}{}", icon_text, branch);
 
                                                                                 ui.painter().text(
@@ -1147,7 +1175,9 @@ impl eframe::App for InstallerApp {
                                                                                     text_color,
                                                                                 );
 
-                                                                                if resp.clicked() {
+                                                                                if resp.double_clicked() {
+                                                                                    double_clicked_idx = Some(idx);
+                                                                                } else if resp.clicked() {
                                                                                     clicked_idx = Some(idx);
                                                                                 }
 
@@ -1155,10 +1185,13 @@ impl eframe::App for InstallerApp {
                                                                             }
                                                                         });
 
-                                                                    if let Some(idx) = clicked_idx {
+                                                                    if let Some(idx) = double_clicked_idx {
                                                                         self.branch_selected_index = idx;
                                                                         self.selected_branch = self.branches.get(idx).cloned();
                                                                         self.select_menu_option(0);
+                                                                    } else if let Some(idx) = clicked_idx {
+                                                                        self.branch_selected_index = idx;
+                                                                        self.selected_branch = self.branches.get(idx).cloned();
                                                                     }
                                                                 }
                                                             }

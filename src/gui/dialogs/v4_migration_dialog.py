@@ -168,8 +168,9 @@ class V4MigrationDialog(QDialog):
         self.setFixedWidth(680)
 
         self.setStyleSheet("""
-            QDialog {
+            QDialog, QFrame, QWidget {
                 background: transparent;
+                background-color: transparent;
                 color: #e6e6e6;
                 font-family: 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
             }
@@ -177,6 +178,10 @@ class V4MigrationDialog(QDialog):
                 background-color: #181818;
                 border: 1px solid #282828;
                 border-radius: 12px;
+            }
+            QLabel {
+                background: transparent;
+                background-color: transparent;
             }
             #BadgeLabel {
                 background-color: #0d2e18;
@@ -188,11 +193,15 @@ class V4MigrationDialog(QDialog):
                 font-weight: bold;
             }
             #HeadingLabel {
+                background: transparent;
+                background-color: transparent;
                 color: #ffffff;
                 font-size: 13.5pt;
                 font-weight: bold;
             }
             #BodyLabel {
+                background: transparent;
+                background-color: transparent;
                 color: #cccccc;
                 font-size: 10pt;
                 line-height: 1.5;
@@ -258,11 +267,13 @@ class V4MigrationDialog(QDialog):
 
         heading = QLabel(t["heading"])
         heading.setObjectName("HeadingLabel")
+        heading.setAttribute(Qt.WA_TranslucentBackground, True)
         heading.setWordWrap(True)
         card_layout.addWidget(heading)
 
         body = QLabel(t["body"])
         body.setObjectName("BodyLabel")
+        body.setAttribute(Qt.WA_TranslucentBackground, True)
         body.setWordWrap(True)
         card_layout.addWidget(body)
 

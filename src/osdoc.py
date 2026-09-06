@@ -176,6 +176,35 @@ class OSDoctor:
         except Exception:
             return "unknown_" + str(uuid.getnode())
 
+    def is_legacy_updater_migration(self) -> bool:
+        """Check if this is an upgrade that occurred via legacy 3.x updater.py,
+        meaning native launchers, desktop integration, or the new installer are missing.
+        Returns False if running from source/git, or if installed via the new installer."""
+        marker = os.path.join(self.install_dir, '.v4_migration_notified')
+        if os.path.isfile(marker):
+            return False
+
+        # If running from a git clone/repo, this is manual/developer setup - never show notice
+        if (os.path.isdir(os.path.join(self.install_dir, '.git')) or
+            os.path.isdir(os.path.join(os.path.dirname(self.install_dir), '.git'))):
+            return False
+
+        # Check if the new installer or native desktop launchers exist
+        if self.is_win:
+            has_launcher = os.path.isfile(os.path.join(self.install_dir, 'BadWords.exe'))
+            has_installer = os.path.isfile(os.path.join(self.install_dir, 'uninstall.exe'))
+        elif getattr(self, 'is_mac', False) or self.os_type == 'Darwin':
+            has_launcher = os.path.isdir(os.path.join(self.install_dir, 'BadWords.app'))
+            has_installer = os.path.isfile(os.path.join(self.install_dir, 'badwords-installer'))
+        else:
+            has_launcher = os.path.isfile(os.path.join(self.install_dir, 'BadWords'))
+            has_installer = os.path.isfile(os.path.join(self.install_dir, 'badwords-installer'))
+
+        if has_launcher or has_installer:
+            return False
+
+        return True
+
     # ==========================
     # CONFIG MIGRATION & LOADERS
     # ==========================
@@ -214,10 +243,11 @@ class OSDoctor:
                 # Everything else (layout prefs, offsets, model choices, etc.) → settings
                 settings[resolved] = value
 
-        # Upgrading from 3.x requires a one-time milestone notice if not already shown
-        marker = os.path.join(self.install_dir, '.v4_migration_notified')
-        if not os.path.isfile(marker):
+        # Upgrading from 3.x requires a one-time milestone notice ONLY if updated via legacy updater
+        if self.is_legacy_updater_migration():
             settings['v4_migration_notified'] = False
+        else:
+            settings['v4_migration_notified'] = True
 
         # --- Save both new files ---
         try:
@@ -315,10 +345,11 @@ class OSDoctor:
                     loaded["editor_font_family"] = new_font
                     needs_save = True
 
-            marker = os.path.join(self.install_dir, '.v4_migration_notified')
-            if not os.path.isfile(marker):
+            if self.is_legacy_updater_migration():
                 loaded["v4_migration_notified"] = False
                 needs_save = True
+            else:
+                loaded["v4_migration_notified"] = True
             
         if loaded.get("settings_version") != current_version:
             loaded["settings_version"] = current_version
