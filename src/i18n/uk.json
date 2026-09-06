@@ -257,7 +257,7 @@
     "btn_attach_screenshots": "Додати скріншоти",
     "btn_send_report": "Надіслати звіт",
     "lbl_logs_path": "Розташування журналів:",
-    "btn_open_logs_dir": "Open Folder",
+    "btn_open_logs_dir": "Відкрити папку",
     "msg_support_info": "Надішліть звіт про помилку безпосередньо розробнику. Журнали будуть додані автоматично.",
     "msg_support_success": "Звіт додано до черги на відправку.",
     "btn_add_marker": "Додати маркер",
@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Автоматично вирізає цей колір під час збірки,<br>якщо він позначений у тексті.",
     "tooltip_cut_now": "Вирізає цей колір на ПОТОЧНОМУ ОБРАНОМУ таймлайні DaVinci<br>(корисно для масового видалення після ручних налаштувань).",
     "hdr_whisper_parameters": "Параметри Whisper",
-    "lbl_always_on_top_restart_hint": "* У Windows зміна цієї опції може вимагати перезапуску програми."
+    "lbl_always_on_top_restart_hint": "* У Windows зміна цієї опції може вимагати перезапуску програми.",
+    "dlg_no_tracks": "Без доріжок",
+    "lbl_length_penalty": "Штраф за довжину",
+    "lbl_repetition_penalty": "Штраф за повторення",
+    "tt_clear_shortcut": "Очистити комбінацію клавіш"
 }

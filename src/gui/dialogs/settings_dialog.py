@@ -11,48 +11,35 @@ DESCRIPTION:
 Settings dialog with multi-tab layout and real-time preferences management.
 """
 
-import os
 import sys
-import platform
-import subprocess
-import shutil
-import json
-import time
 
-from PySide6.QtCore import Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint, QMimeData, QThread
+from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication,
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
+    QFont
 )
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout, QFileDialog, QGraphicsDropShadowEffect
+    QApplication, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QSizePolicy, QFrame, QScrollArea,
+    QStackedWidget, QFormLayout, QLineEdit, QButtonGroup
 )
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import (
-    QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton,
+    QPushButton, ToggleSwitch, ShortcutCaptureButton,
     MouseShortcutCaptureButton, CustomDropdown, SearchableDropdown,
     ReloadButton, CloseIconButton, SquareIconButton, CustomNumberInput
 )
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
+from gui.widgets.labels import QLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
-from gui.widgets.language_selector import _LangPickerDialog
 from gui.widgets.delegates import MarqueeItemDelegate
-from gui.utils import _app_icon, _txt, _center_on_screen, apply_dark_title_bar
+from gui.utils import _txt
 
 from gui.dialogs.msgbox import CustomMsgBox
-from gui.dialogs.update_dialog import UpdateCheckThread, UpdateNotifyDialog
+from gui.dialogs.update_dialog import UpdateCheckThread
 from gui.dialogs.marker_dialog import MarkerDialog
 from gui.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
-from gui.dialogs.overlay import MarkerDragZone, MarkerRowWidget, GlobalAppFilter, AnimatedDimOverlay
+from gui.dialogs.overlay import MarkerDragZone, MarkerRowWidget
 
 _CACHED_FONT_FAMILIES = None
 
@@ -697,7 +684,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._btn_ver_update.show()
 
             def _do_inline_update():
-                import threading, subprocess, tempfile, os, urllib.request, ssl
+                import threading, subprocess, tempfile, urllib.request, ssl
                 from osdoc import log_info, log_error
 
                 is_win  = _card_engine.os_doc.is_win
@@ -880,9 +867,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         icon_names = ["default", "monochrome", "whiteb", "white"]
         saved_icon = prefs.get('app_icon', 'default')
         
-        from PySide6.QtGui import QIcon
-        from PySide6.QtCore import QSize
-        from gui.utils import get_icon_path
         
         for i, name in enumerate(icon_names):
             btn = SquareIconButton(name)
@@ -977,7 +961,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
 
         # Builds label + field container for one shortcut row (used for addRow and insertRow)
-        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None, is_mandatory=False):
+        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None):
             container = QWidget()
             container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             row = QHBoxLayout(container)
@@ -993,7 +977,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             if not is_display:
                 btn_clear = CloseIconButton(size=30)
-                btn_clear.setToolTip(self.txt("tt_clear_shortcut") if self.txt("tt_clear_shortcut") != "tt_clear_shortcut" else "Clear shortcut")
+                btn_clear.setToolTip(self.txt("tt_clear_shortcut"))
                 btn_clear.clicked.connect(lambda: setter_func(""))
                 row.addWidget(btn_clear)
 
@@ -1078,7 +1062,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._custom_sc_unified          = form
         self._make_shortcut_widgets_fn   = _make_shortcut_widgets
         self._check_shortcut_conflicts_fn = _check_shortcut_conflicts
-        self._add_shortcut_row_fn         = _add_shortcut_row
         self.custom_marker_shortcut_inputs = {}
 
         # Nav shortcuts (search, open_settings, jump_to_word)
@@ -1546,10 +1529,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, def_no_rep, self.spin_no_repeat.setValue))
 
         self.spin_length_penalty = CustomNumberInput(float(prefs.get('ai_length_penalty', 1.0)), 0.0, 10.0, step=0.1, decimals=2, parent=page_ai)
-        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_length_penalty") if self.txt("lbl_length_penalty") != "lbl_length_penalty" else "Length Penalty", self.spin_length_penalty, 1.0, self.spin_length_penalty.setValue))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_length_penalty"), self.spin_length_penalty, 1.0, self.spin_length_penalty.setValue))
 
         self.spin_repetition_penalty = CustomNumberInput(float(prefs.get('ai_repetition_penalty', 1.0)), 1.0, 10.0, step=0.1, decimals=2, parent=page_ai)
-        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_repetition_penalty") if self.txt("lbl_repetition_penalty") != "lbl_repetition_penalty" else "Repetition Penalty", self.spin_repetition_penalty, 1.0, self.spin_repetition_penalty.setValue))
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_repetition_penalty"), self.spin_repetition_penalty, 1.0, self.spin_repetition_penalty.setValue))
         
         l_ai.addStretch()
 
@@ -2596,7 +2579,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             pass
         
         try:
-            from PySide6.QtGui import QKeySequence
             if hasattr(self, 'shortcut_inputs'):
                 for k, v in _g('shortcuts', {}).items():
                     if k in self.shortcut_inputs:

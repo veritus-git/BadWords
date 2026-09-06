@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Schneidet diese Farbe beim Assembly automatisch aus,<br>wenn sie im Text markiert ist.",
     "tooltip_cut_now": "Schneidet diese Farbe auf der AKTUELL AUSGEWÄHLTEN DaVinci-Timeline aus<br>(nützlich zum massenhaften Löschen nach manuellen Anpassungen).",
     "hdr_whisper_parameters": "Whisper-Parameter",
-    "lbl_always_on_top_restart_hint": "* Unter Windows erfordert das Ändern dieser Option möglicherweise einen Neustart der Anwendung."
+    "lbl_always_on_top_restart_hint": "* Unter Windows erfordert das Ändern dieser Option möglicherweise einen Neustart der Anwendung.",
+    "dlg_no_tracks": "Keine Spuren",
+    "lbl_length_penalty": "Längenstrafe",
+    "lbl_repetition_penalty": "Wiederholungsstrafe",
+    "tt_clear_shortcut": "Tastenkürzel löschen"
 }

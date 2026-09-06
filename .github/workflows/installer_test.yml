@@ -8,6 +8,7 @@ on:
     paths:
       - 'installer/**'
       - 'setupfiles/**'
+      - 'src/config/app_constants.py'
       - '.github/workflows/installer_test.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - 'installer/**'
       - 'setupfiles/**'
+      - 'src/config/app_constants.py'
       - '.github/workflows/installer_test.yml'
   workflow_dispatch:
 

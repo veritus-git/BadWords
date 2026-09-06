@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Corta automaticamente esta cor durante a montagem (assembly)<br>se estiver marcada no texto.",
     "tooltip_cut_now": "Corta esta cor na linha do tempo ATUALMENTE SELECIONADA<br>no DaVinci (útil para exclusão em massa após ajustes manuais).",
     "hdr_whisper_parameters": "Parâmetros do Whisper",
-    "lbl_always_on_top_restart_hint": "* No Windows, alterar esta opção pode exigir a reinicialização do aplicativo."
+    "lbl_always_on_top_restart_hint": "* No Windows, alterar esta opção pode exigir a reinicialização do aplicativo.",
+    "dlg_no_tracks": "Nenhuma faixa",
+    "lbl_length_penalty": "Penalidade de comprimento",
+    "lbl_repetition_penalty": "Penalidade de repetição",
+    "tt_clear_shortcut": "Limpar atalho"
 }

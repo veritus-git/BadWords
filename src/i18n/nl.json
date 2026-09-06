@@ -410,5 +410,9 @@
     "tooltip_auto_cut": "Knipt deze kleur automatisch uit tijdens de montage (assembly)<br>indien gemarkeerd in de tekst.",
     "tooltip_cut_now": "Knipt deze kleur op de HUIDIG GESELECTEERDE DaVinci-tijdlijn<br>(handig voor massaal verwijderen na handmatige aanpassingen).",
     "hdr_whisper_parameters": "Whisper-parameters",
-    "lbl_always_on_top_restart_hint": "* Op Windows kan het wijzigen van deze optie een herstart van de applicatie vereisen."
+    "lbl_always_on_top_restart_hint": "* Op Windows kan het wijzigen van deze optie een herstart van de applicatie vereisen.",
+    "dlg_no_tracks": "Geen tracks",
+    "lbl_length_penalty": "Lengteboete",
+    "lbl_repetition_penalty": "Herhalingsboete",
+    "tt_clear_shortcut": "Snelkoppeling wissen"
 }

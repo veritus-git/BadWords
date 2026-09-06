@@ -11,58 +11,24 @@ DESCRIPTION:
 Slide-out side panel for individual track options.
 """
 
-from PySide6 import QtCore
-import re
-import math
-import platform
-import subprocess
-import os
-import time
-import traceback
-import ctypes
-import threading
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QCheckBox,
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QFrame, QScrollArea,
-    QDockWidget, QToolBar, QStackedWidget, QFormLayout, QComboBox,
-    QSpacerItem, QCompleter, QLineEdit, QWidgetAction, QToolTip,
-    QTextEdit, QRadioButton, QDoubleSpinBox, QSplitter, QSplitterHandle,
-    QTabWidget, QSpinBox, QButtonGroup, QLayout
+    QLabel, QWidget, QScrollArea
 )
 from PySide6.QtCore import (
-    Qt, QTimer, Signal, QSize, QObject, QEvent, QRect, QPoint,
-    QVariantAnimation, QEasingCurve, QAbstractAnimation,
-    QPropertyAnimation, Property, QThread
+    QAbstractAnimation,
+    Property
 )
-from PySide6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPixmap, QColor, QAction, QGuiApplication, 
-    QCursor, QDrag, QPainter, QPen, QFontMetrics, QLinearGradient
-)
-from PySide6.QtCore import QMimeData
 
 import config
 
 from gui.widgets.buttons import (
-    QPushButton, MarqueeRadioButton, ToggleSwitch, ShortcutCaptureButton,
-    MouseShortcutCaptureButton, AnimatedPlayerButton, AudioToggleTab, SidebarButton,
-    CustomDropdown, TitleDropdown, SpeedDropdown, MultiSelectDropdown,
-    SearchableDropdown, AssembleArrowButton, AssembleSplitButton, TrackSquareCheckbox
+    ToggleSwitch, TrackSquareCheckbox
 )
-from gui.widgets.labels import QLabel, IDETooltip, MarqueeLabel
-from gui.widgets.layouts import FlowLayout, MainPanelWidget
-from gui.widgets.progress_bar import LiquidProgressBar
-from gui.widgets.language_selector import _LangPickerDialog
-from gui.widgets.splitters import GripHandle, GripSplitter
-from gui.widgets.text_edits import WrappingPlaceholderTextEdit, SBSTextEdit
-from gui.widgets.sliders import JumpSlider
+from gui.widgets.labels import QLabel, MarqueeLabel
+from gui.widgets.layouts import FlowLayout
 # -------------------------------
-from .mixins import FramelessWindowMixin, _BaseDialog
-from ..utils import _app_icon, _txt
 
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle
-from PySide6.QtCore import QModelIndex
 
 
 class _FlowListWidget(QWidget):
@@ -80,8 +46,8 @@ class _FlowListWidget(QWidget):
 class TrackOptionsDrawer(QWidget):
     def __init__(self, parent_gui, engine, parent=None):
         super().__init__(parent)
-        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QFrame, QGridLayout
-        from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QFrame
+        from PySide6.QtCore import Qt
 
         self.parent_gui = parent_gui
         self.engine = engine
@@ -203,7 +169,7 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_v_cust = ToggleSwitch()
 
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
-        inner_layout.addWidget(make_toggle_row("No tracks", self.tgl_v_none))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_no_tracks"), self.tgl_v_none))
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
 
         self.w_v_cust_list = _FlowListWidget()
