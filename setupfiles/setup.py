@@ -825,6 +825,18 @@ def detect_existing_install(default_dir, resolve_script_dirs):
     if "darwin" in PLAT or "mac" in PLAT:
         home = os.path.expanduser("~")
         for app_dir in [os.path.join(home, "Applications", "BadWords.app"), "/Applications/BadWords.app"]:
+            cfg = os.path.join(app_dir, "Contents", "Resources", "BadWords.cfg")
+            if os.path.isfile(cfg):
+                try:
+                    with open(cfg, encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("INSTALL_DIR="):
+                                p = line.split("=", 1)[1].strip()
+                                if os.path.isdir(p) and (os.path.isfile(os.path.join(p, "main.py")) or os.path.isfile(os.path.join(p, "src", "main.py"))):
+                                    return os.path.abspath(p)
+                except Exception:
+                    pass
             launcher = os.path.join(app_dir, "Contents", "MacOS", "BadWords")
             if os.path.isfile(launcher):
                 try:
@@ -1176,13 +1188,19 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
 
         # Write BadWords.cfg in Resources
         python_bin = os.path.join(install_dir, "venv", "bin", "python3")
+        if not os.path.isfile(python_bin):
+            python_bin = os.path.join(install_dir, "venv", "bin", "python")
         python_lib = ""
         try:
-            import sysconfig
-            libdir = sysconfig.get_config_var('LIBDIR') or ""
-            ldlibrary = sysconfig.get_config_var('LDLIBRARY') or ""
-            if libdir and ldlibrary and os.path.isfile(os.path.join(libdir, ldlibrary)):
-                python_lib = os.path.join(libdir, ldlibrary)
+            p_fw = os.path.join(sys.base_prefix, "Python")
+            if os.path.isfile(p_fw):
+                python_lib = p_fw
+            else:
+                import sysconfig
+                libdir = sysconfig.get_config_var('LIBDIR') or ""
+                ldlibrary = sysconfig.get_config_var('LDLIBRARY') or ""
+                if libdir and ldlibrary and os.path.isfile(os.path.join(libdir, ldlibrary)):
+                    python_lib = os.path.join(libdir, ldlibrary)
         except Exception:
             pass
 

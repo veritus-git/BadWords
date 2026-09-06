@@ -218,6 +218,7 @@ pub fn detect_existing_install() -> Option<PathBuf> {
 }
 
 /// Parses an xrandr output line to extract monitor geometry (w, h, offset_x, offset_y) and returns the centered position
+#[cfg(target_os = "linux")]
 fn parse_xrandr_geometry(line: &str, win_w: f32, win_h: f32) -> Option<(f32, f32)> {
     for part in line.split_whitespace() {
         if part.contains('x') && part.contains('+') {

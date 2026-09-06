@@ -74,14 +74,40 @@ pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std:
             std::fs::create_dir_all(&resources)?;
 
             // BadWords.cfg in Resources
-            let venv_py = install_dir.join("venv").join("bin").join("python3");
-            let main_py = install_dir.join("src").join("main.py");
-            let cfg_content = format!(
+            let venv_py = if install_dir.join("venv").join("bin").join("python3").is_file() {
+                install_dir.join("venv").join("bin").join("python3")
+            } else if install_dir.join("venv").join("bin").join("python").is_file() {
+                install_dir.join("venv").join("bin").join("python")
+            } else {
+                install_dir.join("venv").join("bin").join("python3")
+            };
+            let main_py = if install_dir.join("src").join("main.py").is_file() {
+                install_dir.join("src").join("main.py")
+            } else {
+                install_dir.join("main.py")
+            };
+
+            let mut python_lib = String::new();
+            if venv_py.is_file() {
+                if let Ok(out) = std::process::Command::new(&venv_py)
+                    .args(["-c", "import sys, os, sysconfig; p = os.path.join(sys.base_prefix, 'Python'); print(p if os.path.isfile(p) else ((os.path.join(sysconfig.get_config_var('LIBDIR') or '', sysconfig.get_config_var('LDLIBRARY') or '')) if (sysconfig.get_config_var('LIBDIR') and sysconfig.get_config_var('LDLIBRARY') and os.path.isfile(os.path.join(sysconfig.get_config_var('LIBDIR') or '', sysconfig.get_config_var('LDLIBRARY') or ''))) else ''))"])
+                    .output()
+                {
+                    if out.status.success() {
+                        python_lib = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    }
+                }
+            }
+
+            let mut cfg_content = format!(
                 "INSTALL_DIR={}\nPYTHON_BIN={}\nMAIN_PY={}\n",
                 install_dir.to_string_lossy(),
                 venv_py.to_string_lossy(),
                 main_py.to_string_lossy()
             );
+            if !python_lib.is_empty() {
+                cfg_content.push_str(&format!("PYTHON_LIB={}\n", python_lib));
+            }
             let _ = std::fs::write(resources.join("BadWords.cfg"), cfg_content);
 
             // Native Mach-O launcher binary
@@ -259,6 +285,24 @@ pub fn detect_installed_location() -> Option<PathBuf> {
             ];
 
             for app_dir in app_dirs {
+                // 1. Check BadWords.cfg in Resources
+                let cfg = app_dir.join("Contents").join("Resources").join("BadWords.cfg");
+                if cfg.is_file() {
+                    if let Ok(content) = std::fs::read_to_string(&cfg) {
+                        for line in content.lines() {
+                            let line = line.trim();
+                            if line.starts_with("INSTALL_DIR=") {
+                                let dir_str = line.trim_start_matches("INSTALL_DIR=").trim();
+                                let p = PathBuf::from(dir_str);
+                                if (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) && p.exists() {
+                                    return Some(p);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Legacy fallback: check shell script launcher
                 let launcher = app_dir.join("Contents").join("MacOS").join("BadWords");
                 if launcher.is_file() {
                     if let Ok(content) = std::fs::read_to_string(&launcher) {
