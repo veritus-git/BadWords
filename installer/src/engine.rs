@@ -430,23 +430,37 @@ pub fn find_local_repo() -> Option<PathBuf> {
     None
 }
 
-/// Detects version from local files if running from repo/source directory
-pub fn detect_local_version() -> Option<String> {
-    if let Some(repo_dir) = find_local_repo() {
-        for config_path in [repo_dir.join("src").join("config.py"), repo_dir.join("config.py")] {
-            if let Ok(content) = fs::read_to_string(&config_path) {
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("APP_VERSION") || trimmed.starts_with("VERSION") {
-                        if let Some((_, val)) = trimmed.split_once('=') {
-                            let clean = val.trim().trim_matches(|c| c == '"' || c == '\'').trim();
-                            if !clean.is_empty() {
-                                return Some(clean.to_string());
-                            }
+/// Reads the version string from app_constants.py in a directory or fallback
+pub fn read_app_version_from_dir(dir: &Path) -> Option<String> {
+    let candidates = [
+        dir.join("src").join("config").join("app_constants.py"),
+        dir.join("config").join("app_constants.py"),
+        dir.join("src").join("config.py"),
+        dir.join("config.py"),
+    ];
+    for config_path in candidates {
+        if let Ok(content) = fs::read_to_string(&config_path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("VERSION") || trimmed.starts_with("APP_VERSION") {
+                    if let Some((_, val)) = trimmed.split_once('=') {
+                        let clean = val.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+                        if !clean.is_empty() {
+                            return Some(clean.to_string());
                         }
                     }
                 }
             }
+        }
+    }
+    None
+}
+
+/// Detects version from local files if running from repo/source directory
+pub fn detect_local_version() -> Option<String> {
+    if let Some(repo_dir) = find_local_repo() {
+        if let Some(v) = read_app_version_from_dir(&repo_dir) {
+            return Some(v);
         }
         return Some(APP_VERSION.to_string());
     }
@@ -535,7 +549,9 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
 
         let bw_cand = repo_dir.join("BadWords.exe");
         if bw_cand.is_file() {
-            let _ = fs::copy(&bw_cand, target_dir.join("BadWords.exe"));
+            let dest_bw = target_dir.join("BadWords.exe");
+            let _ = fs::copy(&bw_cand, &dest_bw);
+            os::unblock_file(&dest_bw);
         }
         let bw_linux_cand = repo_dir.join("BadWords");
         if bw_linux_cand.is_file() {
@@ -770,6 +786,7 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
                             let candidate = entry.path().join("bin").join("ffmpeg.exe");
                             if candidate.is_file() {
                                 let _ = fs::copy(&candidate, &ffmpeg_bin);
+                                os::unblock_file(&ffmpeg_bin);
                                 emit_log(sender, "OK", "Portable FFmpeg for Windows installed successfully.");
                                 let _ = fs::remove_file(&archive);
                                 let _ = fs::remove_dir_all(&extract_dir);
@@ -1146,6 +1163,7 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
                 target_dir.join("badwords-installer")
             };
             let _ = fs::copy(&current_exe, &uninstaller_dest);
+            os::unblock_file(&uninstaller_dest);
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -1153,17 +1171,24 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
             }
         }
 
+        #[allow(unused_variables)]
+        let dynamic_version = read_app_version_from_dir(&target_dir)
+            .or_else(detect_local_version)
+            .unwrap_or_else(|| APP_VERSION.to_string());
+
         // 9. System Shortcuts & Registry (Full Standalone Integration)
         emit_progress(&sender, 96, 3, "Creating shortcuts...", "Registering application in OS");
         #[cfg(target_os = "windows")]
         {
-            let _ = os::windows::register_uninstall_entry(&target_dir, APP_VERSION);
+            os::unblock_file(&target_dir.join("BadWords.exe"));
+            let _ = os::windows::register_uninstall_entry(&target_dir, &dynamic_version);
             let _ = os::windows::create_windows_shortcuts(&target_dir, create_desktop, create_menu);
+            os::unblock_file(&target_dir.join("BadWords.exe"));
             emit_log(&sender, "OK", "Windows shortcuts & uninstaller registered.");
         }
         #[cfg(target_os = "macos")]
         {
-            let _ = os::macos::create_macos_app_bundle(&target_dir, create_desktop);
+            let _ = os::macos::create_macos_app_bundle(&target_dir, &dynamic_version, create_desktop);
             emit_log(&sender, "OK", "macOS application bundle (.app) registered.");
         }
         #[cfg(target_os = "linux")]
@@ -1235,13 +1260,18 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         emit_progress(&sender, 90, 2, "Updating integrations...", "Rebuilding DaVinci wrapper and shortcuts");
         deploy_davinci_wrapper(&target_dir, &sender);
 
+        #[allow(unused_variables)]
+        let dynamic_version = read_app_version_from_dir(&target_dir)
+            .or_else(detect_local_version)
+            .unwrap_or_else(|| APP_VERSION.to_string());
+
         #[cfg(target_os = "windows")]
         {
-            let _ = os::windows::register_uninstall_entry(&target_dir, APP_VERSION);
+            let _ = os::windows::register_uninstall_entry(&target_dir, &dynamic_version);
             let _ = os::windows::create_windows_shortcuts(&target_dir, true, true);
         }
         #[cfg(target_os = "macos")]
-        let _ = os::macos::create_macos_app_bundle(&target_dir, true);
+        let _ = os::macos::create_macos_app_bundle(&target_dir, &dynamic_version, true);
         #[cfg(target_os = "linux")]
         let _ = os::linux::create_linux_desktop_entry(&target_dir, true, true);
 
@@ -1281,13 +1311,18 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
         emit_progress(&sender, 85, 2, "Cleaning old directory...", "Removing old installation files");
         delete_dir_with_progress(&from_dir, 85, 98, "Cleaning old directory...", &sender);
 
+        #[allow(unused_variables)]
+        let dynamic_version = read_app_version_from_dir(&to_dir)
+            .or_else(detect_local_version)
+            .unwrap_or_else(|| APP_VERSION.to_string());
+
         #[cfg(target_os = "windows")]
         {
-            let _ = os::windows::register_uninstall_entry(&to_dir, APP_VERSION);
+            let _ = os::windows::register_uninstall_entry(&to_dir, &dynamic_version);
             let _ = os::windows::create_windows_shortcuts(&to_dir, true, true);
         }
         #[cfg(target_os = "macos")]
-        let _ = os::macos::create_macos_app_bundle(&to_dir, true);
+        let _ = os::macos::create_macos_app_bundle(&to_dir, &dynamic_version, true);
         #[cfg(target_os = "linux")]
         let _ = os::linux::create_linux_desktop_entry(&to_dir, true, true);
 

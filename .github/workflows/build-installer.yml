@@ -67,6 +67,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
+          python setupfiles\windows\generate_version_header.py
           cd setupfiles\windows
           rc /fo launcher.res launcher.rc
           cl /O2 /Fe:BadWords.exe launcher.c launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib

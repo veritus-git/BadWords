@@ -68,6 +68,14 @@ pub fn has_system_python() -> bool {
     false
 }
 
+/// Strips Mark-of-the-Web (Zone.Identifier) on Windows
+pub fn unblock_file(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    windows::unblock_file(path);
+    #[cfg(not(target_os = "windows"))]
+    let _ = path;
+}
+
 /// Automatically installs official System Python for current OS
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "windows")]

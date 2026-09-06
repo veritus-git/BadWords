@@ -10,6 +10,36 @@ use winreg::enums::*;
 #[cfg(target_os = "windows")]
 use winreg::RegKey;
 
+/// Strips the Windows Mark-of-the-Web (Zone.Identifier NTFS stream) from a file or binary
+pub fn unblock_file(path: &Path) {
+    #[cfg(target_os = "windows")]
+    {
+        if !path.exists() {
+            return;
+        }
+        // 1. Direct deletion of NTFS Alternate Data Stream Zone.Identifier
+        let ads_path = format!("{}:Zone.Identifier", path.to_string_lossy());
+        let _ = std::fs::remove_file(&ads_path);
+
+        // 2. PowerShell Unblock-File invocation
+        let path_str = path.to_string_lossy();
+        let _ = crate::os::create_hidden_command("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &format!("Unblock-File -LiteralPath '{}' -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '{}:Zone.Identifier' -Force -ErrorAction SilentlyContinue", path_str, path_str),
+            ])
+            .status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+    }
+}
+
 /// Checks whether an official System Python (3.10+) is installed and registered in Windows Registry or PATH
 #[allow(dead_code)]
 pub fn has_system_python() -> bool {
@@ -201,14 +231,33 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             }
         }
         if !launcher_exe.is_file() {
-            // Attempt to download pre-built BadWords.exe launcher from latest GitHub release
-            let dl_url = "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe";
-            if let Ok(resp) = ureq::get(dl_url).timeout(std::time::Duration::from_secs(10)).call() {
-                let mut reader = resp.into_reader();
-                if let Ok(mut out) = std::fs::File::create(&launcher_exe) {
-                    let _ = std::io::copy(&mut reader, &mut out);
+            // Attempt to download pre-built BadWords.exe launcher from GitHub releases
+            let candidate_urls = [
+                "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
+                "https://github.com/veritus-git/BadWords/releases/download/v4.0.0/BadWords.exe",
+            ];
+            for dl_url in candidate_urls {
+                if let Ok(resp) = ureq::get(dl_url)
+                    .timeout(std::time::Duration::from_secs(10))
+                    .redirects(10)
+                    .call()
+                {
+                    let mut reader = resp.into_reader();
+                    if let Ok(mut out) = std::fs::File::create(&launcher_exe) {
+                        if std::io::copy(&mut reader, &mut out).is_ok() {
+                            if launcher_exe.metadata().map(|m| m.len()).unwrap_or(0) > 10000 {
+                                break;
+                            } else {
+                                let _ = std::fs::remove_file(&launcher_exe);
+                            }
+                        }
+                    }
                 }
             }
+        }
+
+        if launcher_exe.is_file() {
+            unblock_file(&launcher_exe);
         }
         let (target_path, arguments, shortcut_icon) = if launcher_exe.is_file() {
             (

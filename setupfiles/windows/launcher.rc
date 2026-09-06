@@ -1,10 +1,19 @@
 #include <windows.h>
+#include "version.h"
+
+#ifndef BW_VERSION_STR
+#define BW_VERSION_STR "4.0.0"
+#endif
+
+#ifndef BW_VERSION_COMMAS
+#define BW_VERSION_COMMAS 4,0,0,0
+#endif
 
 101 ICON "../../assets/icons/icon_default.ico"
 
 1 VERSIONINFO
-FILEVERSION     4,0,0,0
-PRODUCTVERSION  4,0,0,0
+FILEVERSION     BW_VERSION_COMMAS
+PRODUCTVERSION  BW_VERSION_COMMAS
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0x0L
 FILEOS          VOS_NT_WINDOWS32
@@ -16,13 +25,13 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName",      "Szymon Wolarz"
-            VALUE "FileDescription",  "BadWords - AI Rough Cutting Assistant"
-            VALUE "FileVersion",      "4.0.0.0"
+            VALUE "FileDescription",  "BadWords"
+            VALUE "FileVersion",      BW_VERSION_STR
             VALUE "InternalName",     "BadWords"
             VALUE "LegalCopyright",   "Copyright (c) 2026 Szymon Wolarz"
             VALUE "OriginalFilename", "BadWords.exe"
             VALUE "ProductName",      "BadWords"
-            VALUE "ProductVersion",   "4.0.0.0"
+            VALUE "ProductVersion",   BW_VERSION_STR
         END
     END
     BLOCK "VarFileInfo"

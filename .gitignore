@@ -8,6 +8,8 @@ __pycache__/
 src/settings.json
 src/user.json
 src/badwords_debug.log
+badwords_debug.log
+*.log
 src/saves/
 src/temp/
 src/models/
