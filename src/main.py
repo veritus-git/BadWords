@@ -400,6 +400,15 @@ def main():
                     gui.setup_macos_standalone_identity(config.APP_NAME)
             except Exception:
                 pass
+        elif os_doc.is_linux:
+            try:
+                import ctypes, ctypes.util
+                libc_name = ctypes.util.find_library("c") or "libc.so.6"
+                libc = ctypes.CDLL(libc_name)
+                PR_SET_NAME = 15
+                libc.prctl(PR_SET_NAME, b"BadWords\0", 0, 0, 0)
+            except Exception:
+                pass
 
         app_icon = gui._app_icon()
         if not app_icon.isNull():

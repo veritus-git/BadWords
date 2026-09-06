@@ -168,8 +168,67 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
                 let _ = std::fs::copy(&src_icon, icons_root.join("badwords.png"));
             }
 
-            let python_bin = install_dir.join("venv").join("bin").join("python");
-            let main_script = install_dir.join("main.py");
+            // Native ELF launcher binary
+            let launcher_bin = install_dir.join("BadWords");
+            let mut launcher_ready = false;
+            let launcher_c_src = include_str!("../../../setupfiles/linux/launcher.c");
+            let temp_c = std::env::temp_dir().join("badwords_linux_launcher_tmp.c");
+
+            if std::fs::write(&temp_c, launcher_c_src).is_ok() {
+                for compiler in ["cc", "gcc", "clang"] {
+                    if let Ok(st) = std::process::Command::new(compiler)
+                        .args([
+                            "-O2",
+                            temp_c.to_string_lossy().as_ref(),
+                            "-ldl",
+                            "-o",
+                            launcher_bin.to_string_lossy().as_ref(),
+                        ])
+                        .status()
+                    {
+                        if st.success() && launcher_bin.is_file() {
+                            launcher_ready = true;
+                            break;
+                        }
+                    }
+                }
+                let _ = std::fs::remove_file(&temp_c);
+            }
+
+            if launcher_ready {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&launcher_bin, std::fs::Permissions::from_mode(0o755));
+                }
+
+                let local_bin = home.join(".local").join("bin");
+                if local_bin.is_dir() {
+                    let bin_link = local_bin.join("badwords");
+                    if bin_link.exists() || bin_link.is_symlink() {
+                        let _ = std::fs::remove_file(&bin_link);
+                    }
+                    #[cfg(unix)]
+                    let _ = std::os::unix::fs::symlink(&launcher_bin, &bin_link);
+                }
+            }
+
+            let exec_cmd = if launcher_ready {
+                format!("\"{}\" %U", launcher_bin.to_string_lossy())
+            } else {
+                let python_bin = if install_dir.join("venv").join("bin").join("python3").is_file() {
+                    install_dir.join("venv").join("bin").join("python3")
+                } else {
+                    install_dir.join("venv").join("bin").join("python")
+                };
+                let main_script = if install_dir.join("src").join("main.py").is_file() {
+                    install_dir.join("src").join("main.py")
+                } else {
+                    install_dir.join("main.py")
+                };
+                format!("\"{}\" \"{}\" %U", python_bin.to_string_lossy(), main_script.to_string_lossy())
+            };
+
             let installer_bin = install_dir.join("badwords-installer");
 
             let content = format!(
@@ -179,15 +238,14 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
                  Name=BadWords\n\
                  GenericName=Text-based Rough Cutting Assistant\n\
                  Comment=AI-powered video editing and rough cutting assistant for DaVinci Resolve\n\
-                 Exec=\"{py}\" \"{main}\" %U\n\
+                 Exec={exec}\n\
                  Path={dir}\n\
                  Icon={icon}\n\
                  Terminal=false\n\
                  Categories=AudioVideo;AudioVideoEditing;Video;\n\
                  Keywords=BadWords;badwords;davinci;resolve;video;editor;cut;whisper;\n\
                  StartupWMClass=BadWords\n",
-                py = python_bin.to_string_lossy(),
-                main = main_script.to_string_lossy(),
+                exec = exec_cmd,
                 dir = install_dir.to_string_lossy(),
                 icon = src_icon.to_string_lossy()
             );
@@ -290,6 +348,11 @@ pub fn remove_linux_desktop_entry() -> std::io::Result<()> {
                 if dt_shortcut.exists() {
                     let _ = std::fs::remove_file(dt_shortcut);
                 }
+            }
+
+            let local_bin = home.join(".local").join("bin").join("badwords");
+            if local_bin.exists() || local_bin.is_symlink() {
+                let _ = std::fs::remove_file(local_bin);
             }
 
             let _ = std::process::Command::new("update-desktop-database")

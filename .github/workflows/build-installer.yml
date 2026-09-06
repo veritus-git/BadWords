@@ -59,12 +59,23 @@ jobs:
       - name: Build Installer Binary
         run: cargo build --release --manifest-path installer/Cargo.toml
 
+      - name: Build Windows Standalone Launcher (BadWords.exe)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          rc /fo setupfiles\windows\launcher.res setupfiles\windows\launcher.rc
+          cl /O2 /Fe:setupfiles\windows\BadWords.exe setupfiles\windows\launcher.c setupfiles\windows\launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
+
       - name: Prepare Artifact
         shell: bash
         run: |
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp installer/target/release/${{ matrix.binary_name }} dist/${{ matrix.output_name }}
+            if [ -f "setupfiles/windows/BadWords.exe" ]; then
+              cp setupfiles/windows/BadWords.exe dist/BadWords.exe
+            fi
           else
             cp installer/target/release/${{ matrix.binary_name }} dist/${{ matrix.output_name }}
             chmod +x dist/${{ matrix.output_name }}

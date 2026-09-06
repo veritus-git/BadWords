@@ -1066,18 +1066,28 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
         icon_png = os.path.join(install_dir, "icons", "icon_default.png")
 
     if os.name == "nt":
-        try:
-            from setupfiles.pe_patcher import ensure_badwords_exe
-            pyw_path = ensure_badwords_exe(install_dir)
-        except Exception:
-            pyw_path = ""
-        if not pyw_path:
-            pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+        badwords_exe = os.path.join(install_dir, "BadWords.exe")
+        if os.path.isfile(badwords_exe):
+            target_path = badwords_exe
+            args_str = ""
+            shortcut_icon = f"{badwords_exe},0"
+        else:
+            try:
+                from setupfiles.pe_patcher import ensure_badwords_exe
+                pyw_path = ensure_badwords_exe(install_dir)
+            except Exception:
+                pyw_path = ""
+            if not pyw_path:
+                pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+            target_path = pyw_path
+            args_str = f'"{main_py}"'
+            shortcut_icon = f"{icon_ico},0"
+
         ps_commands = ["$ws = New-Object -ComObject WScript.Shell;"]
         if create_desktop:
-            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{pyw_path}'; $s1.Arguments = '\"{main_py}\"'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{icon_ico},0'; $s1.Save();")
+            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{target_path}'; $s1.Arguments = '{args_str}'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{shortcut_icon}'; $s1.Save();")
         if create_menu:
-            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{pyw_path}'; $s2.Arguments = '\"{main_py}\"'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{icon_ico},0'; $s2.Save();")
+            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Save();")
         
         full_script = " ".join(ps_commands)
         subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True)
@@ -1102,12 +1112,45 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             debug_log(f"Registry registration error: {e}")
 
     elif sys.platform.startswith("linux"):
-        py_bin = os.path.join(install_dir, "venv", "bin", "python")
+        launcher_bin = os.path.join(install_dir, "BadWords")
+        launcher_c = os.path.join(install_dir, "setupfiles", "linux", "launcher.c")
+        if not os.path.isfile(launcher_c) and 'repo_root' in locals() and repo_root:
+            launcher_c = os.path.join(repo_root, "setupfiles", "linux", "launcher.c")
+
+        compiled = False
+        cc = shutil.which("gcc") or shutil.which("cc") or shutil.which("clang")
+        if cc and os.path.isfile(launcher_c):
+            try:
+                res = subprocess.run([cc, "-O2", launcher_c, "-ldl", "-o", launcher_bin], capture_output=True)
+                if res.returncode == 0 and os.path.isfile(launcher_bin):
+                    compiled = True
+                    os.chmod(launcher_bin, 0o755)
+            except Exception:
+                compiled = False
+
+        home = os.path.expanduser("~")
+        if compiled:
+            exec_line = f'Exec="{launcher_bin}" %U'
+            local_bin = os.path.join(home, ".local", "bin")
+            if os.path.isdir(local_bin):
+                bin_link = os.path.join(local_bin, "badwords")
+                try:
+                    if os.path.islink(bin_link) or os.path.exists(bin_link):
+                        os.unlink(bin_link)
+                    os.symlink(launcher_bin, bin_link)
+                except Exception:
+                    pass
+        else:
+            py_bin = os.path.join(install_dir, "venv", "bin", "python")
+            if not os.path.isfile(py_bin):
+                py_bin = os.path.join(install_dir, "venv", "bin", "python3")
+            exec_line = f'Exec="{py_bin}" "{main_py}" %U'
+
         desktop_content = f"""[Desktop Entry]
 Type=Application
 Name=BadWords
 Comment=AI Automated Profanity & Silence Detection for DaVinci Resolve
-Exec="{py_bin}" "{main_py}"
+{exec_line}
 Path={install_dir}
 Icon={icon_png}
 Terminal=false
@@ -1115,7 +1158,6 @@ Categories=AudioVideo;AudioVideoEditing;
 StartupWMClass=BadWords
 Keywords=davinci;resolve;subtitles;ai;whisper;
 """
-        home = os.path.expanduser("~")
         apps_dir = os.path.join(home, ".local", "share", "applications")
         os.makedirs(apps_dir, exist_ok=True)
         try:
