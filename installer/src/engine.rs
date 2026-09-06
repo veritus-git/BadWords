@@ -122,6 +122,24 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
     Ok(())
 }
 
+/// Marks v4 migration complete so the one-time milestone notice is not shown for setups performed by the official installer
+fn mark_v4_complete(target_dir: &Path) {
+    let _ = fs::write(target_dir.join(".v4_migration_notified"), "1\n");
+    let settings_path = target_dir.join("settings.json");
+    if settings_path.is_file() {
+        if let Ok(content) = fs::read_to_string(&settings_path) {
+            if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = json_val.as_object_mut() {
+                    obj.insert("v4_migration_notified".to_string(), serde_json::Value::Bool(true));
+                    if let Ok(serialized) = serde_json::to_string_pretty(&json_val) {
+                        let _ = fs::write(&settings_path, serialized);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Downloads a file over HTTP(S) to the specified destination with live byte progress
 fn download_file_with_progress(
     url: &str,
@@ -1371,6 +1389,8 @@ fn run_install_core(
             emit_log(&sender, "OK", "Linux desktop launcher (.desktop) created.");
         }
 
+        mark_v4_complete(&target_dir);
+
         emit_progress(&sender, 100, 3, "Installation complete!", "BadWords is ready to use");
         emit_log(&sender, "OK", "BadWords installation completed successfully.");
         emit_complete(&sender, "install", true, "BadWords has been successfully installed and configured!");
@@ -1384,7 +1404,11 @@ pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_var
 
 /// Executes developer installation (local repo or branch archive, disabling updater self-upgrade)
 pub fn run_dev_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, branch: Option<String>, sender: EventSender) {
-    run_install_core(target_dir, create_desktop, create_menu, true, branch, sender);
+    let clean_branch = match branch {
+        Some(ref b) if b.contains("local") => None,
+        other => other,
+    };
+    run_install_core(target_dir, create_desktop, create_menu, true, clean_branch, sender);
 }
 
 /// Executes file verification and repair
@@ -1460,6 +1484,8 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "linux")]
         let _ = os::linux::create_linux_desktop_entry(&target_dir, true, true);
 
+        mark_v4_complete(&target_dir);
+
         emit_progress(&sender, 100, 3, "Repair complete!", "All files and integrations restored");
         emit_complete(&sender, "repair", true, "BadWords has been successfully verified and repaired!");
     });
@@ -1511,6 +1537,8 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
         let _ = os::macos::create_macos_app_bundle(&to_dir, &dynamic_version, true);
         #[cfg(target_os = "linux")]
         let _ = os::linux::create_linux_desktop_entry(&to_dir, true, true);
+
+        mark_v4_complete(&to_dir);
 
         emit_progress(&sender, 100, 3, "Move complete!", "Relocation finished successfully");
         emit_complete(&sender, "move", true, "BadWords has been successfully relocated!");

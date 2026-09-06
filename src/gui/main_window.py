@@ -3504,10 +3504,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.check_v4_migration_notice()
 
     def check_v4_migration_notice(self):
-        """Show V4MigrationDialog once if upgrading from 3.x to 4.0.0."""
+        """Show V4MigrationDialog once if upgrading from 3.x to 4.0.0 via legacy updater."""
         try:
             prefs = self.engine.load_preferences() or {}
             if prefs.get("v4_migration_notified", True):
+                return
+
+            if not self.engine.os_doc.is_legacy_updater_migration():
+                self.engine.save_preferences({"v4_migration_notified": True})
                 return
 
             marker = os.path.join(self.engine.os_doc.install_dir, ".v4_migration_notified")
