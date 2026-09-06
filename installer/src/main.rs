@@ -49,6 +49,18 @@ fn main() -> eframe::Result<()> {
         return run_standalone_terminal();
     }
 
+    // Proactively unblock installer and adjacent binaries on Windows (stripping Zone.Identifier)
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(cur_exe) = std::env::current_exe() {
+            os::unblock_file(&cur_exe);
+            if let Some(p) = cur_exe.parent() {
+                os::unblock_file(&p.join("BadWords.exe"));
+                os::unblock_file(&p.join("badwords-setup-windows.exe"));
+            }
+        }
+    }
+
     // Reset log file for fresh session
     let _ = std::fs::write(state::log_file_path(), "=== BadWords Setup Session Log ===\n");
 

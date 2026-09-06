@@ -40,6 +40,32 @@ pub fn unblock_file(path: &Path) {
     }
 }
 
+#[allow(dead_code)]
+/// Strips Mark-of-the-Web (Zone.Identifier) recursively from an entire directory tree
+pub fn unblock_dir(dir: &Path) {
+    #[cfg(target_os = "windows")]
+    {
+        if !dir.exists() {
+            return;
+        }
+        let dir_str = dir.to_string_lossy();
+        let _ = crate::os::create_hidden_command("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &format!("Get-ChildItem -LiteralPath '{}' -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue; Remove-Item -LiteralPath \"$($_.FullName):Zone.Identifier\" -Force -ErrorAction SilentlyContinue }}", dir_str),
+            ])
+            .status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = dir;
+    }
+}
+
 /// Checks whether an official System Python (3.10+) is installed and registered in Windows Registry or PATH
 #[allow(dead_code)]
 pub fn has_system_python() -> bool {
@@ -198,8 +224,13 @@ pub fn detect_installed_location() -> Option<PathBuf> {
 }
 
 #[allow(dead_code)]
-/// Creates Desktop and Start Menu shortcuts on Windows launching pythonw without console
-pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create_menu: bool) -> std::io::Result<()> {
+/// Creates Desktop and Start Menu shortcuts on Windows launching BadWords.exe without console
+pub fn create_windows_shortcuts(
+    install_dir: &Path,
+    create_desktop: bool,
+    create_menu: bool,
+    version: Option<&str>,
+) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         let icon_path = {
@@ -218,13 +249,16 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
                 .unwrap_or_default();
 
             if setup_cand.is_file() {
+                unblock_file(&setup_cand);
                 let _ = std::fs::copy(&setup_cand, &launcher_exe);
             } else if bootstrap_cand.is_file() {
+                unblock_file(&bootstrap_cand);
                 let _ = std::fs::copy(&bootstrap_cand, &launcher_exe);
             } else if let Ok(cur_exe) = std::env::current_exe() {
                 if let Some(p) = cur_exe.parent() {
                     let cand = p.join("BadWords.exe");
                     if cand.is_file() {
+                        unblock_file(&cand);
                         let _ = std::fs::copy(&cand, &launcher_exe);
                     }
                 }
@@ -232,16 +266,19 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
         }
         if !launcher_exe.is_file() {
             // Attempt to download pre-built BadWords.exe launcher from GitHub releases
-            let candidate_urls = [
-                "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
-                "https://github.com/veritus-git/BadWords/releases/download/v4.0.0/BadWords.exe",
+            let mut candidate_urls = vec![
+                "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe".to_string(),
             ];
+            if let Some(ver) = version {
+                candidate_urls.push(format!("https://github.com/veritus-git/BadWords/releases/download/v{}/BadWords.exe", ver));
+                candidate_urls.push(format!("https://github.com/veritus-git/BadWords/releases/download/{}/BadWords.exe", ver));
+            }
+            let agent = ureq::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .redirects(10)
+                .build();
             for dl_url in candidate_urls {
-                if let Ok(resp) = ureq::get(dl_url)
-                    .timeout(std::time::Duration::from_secs(10))
-                    .redirects(10)
-                    .call()
-                {
+                if let Ok(resp) = agent.get(&dl_url).call() {
                     let mut reader = resp.into_reader();
                     if let Ok(mut out) = std::fs::File::create(&launcher_exe) {
                         if std::io::copy(&mut reader, &mut out).is_ok() {
@@ -263,7 +300,7 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             (
                 launcher_exe.to_string_lossy().to_string(),
                 String::new(),
-                launcher_exe.to_string_lossy().to_string()
+                launcher_exe.to_string_lossy().to_string(),
             )
         } else {
             let pythonw_path = install_dir.join("venv").join("Scripts").join("pythonw.exe");
@@ -275,7 +312,7 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             (
                 pythonw_path.to_string_lossy().to_string(),
                 format!("\"{}\"", main_py.to_string_lossy()),
-                icon_path.to_string_lossy().to_string()
+                icon_path.to_string_lossy().to_string(),
             )
         };
 
@@ -291,6 +328,7 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
                  $s1.Arguments = '{args}'; \
                  $s1.WorkingDirectory = '{dir}'; \
                  $s1.IconLocation = '{ico},0'; \
+                 $s1.Description = 'BadWords'; \
                  $s1.Save();",
                 target = target_path,
                 args = arguments,
@@ -307,6 +345,7 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
                  $s2.Arguments = '{args}'; \
                  $s2.WorkingDirectory = '{dir}'; \
                  $s2.IconLocation = '{ico},0'; \
+                 $s2.Description = 'BadWords'; \
                  $s2.Save();",
                 target = target_path,
                 args = arguments,
@@ -319,11 +358,31 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
         let _ = crate::os::create_hidden_command("powershell")
             .args(&["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &full_script])
             .output();
+
+        // Proactively unblock shortcuts and installation directory
+        if create_desktop {
+            if let Some(user_home) = dirs::home_dir() {
+                unblock_file(&user_home.join("Desktop").join("BadWords.lnk"));
+            }
+        }
+        if create_menu {
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                unblock_file(
+                    &Path::new(&appdata)
+                        .join("Microsoft")
+                        .join("Windows")
+                        .join("Start Menu")
+                        .join("Programs")
+                        .join("BadWords.lnk"),
+                );
+            }
+        }
+        unblock_dir(install_dir);
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (install_dir, create_desktop, create_menu);
+        let _ = (install_dir, create_desktop, create_menu, version);
     }
 
     Ok(())

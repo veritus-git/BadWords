@@ -146,7 +146,7 @@ impl Language {
                 
                 confirm_title: "Potwierdzenie operacji",
                 confirm_uninstall_warn: "Ta operacja całkowicie usunie BadWords z systemu, w tym venv i integracje DaVinci Resolve.",
-                confirm_reset_warn: "Ta operacja wyczyści obecną instalację i pobierze/zainstaluje czystą wersję 4.0.0.",
+                confirm_reset_warn: "Ta operacja wyczyści obecną instalację i pobierze/zainstaluje czystą wersję aplikacji.",
                 confirm_repair_info: "Instalator zweryfikuje wszystkie pliki aplikacji, zależności i naprawi uszkodzone elementy.",
                 
                 complete_title: "Operacja zakończona",
@@ -193,7 +193,7 @@ impl Language {
                 
                 confirm_title: "Aktion bestätigen",
                 confirm_uninstall_warn: "Dieser Vorgang entfernt BadWords, venv und DaVinci Resolve Integrationen vollständig vom System.",
-                confirm_reset_warn: "Dieser Vorgang löscht die aktuelle Installation und installiert die Version 4.0.0 neu.",
+                confirm_reset_warn: "Dieser Vorgang löscht die aktuelle Installation und installiert eine saubere Version der Anwendung neu.",
                 confirm_repair_info: "Das Setup überprüft alle Anwendungsdateien und repariert beschädigte Komponenten.",
                 
                 complete_title: "Vorgang abgeschlossen",
@@ -240,7 +240,7 @@ impl Language {
                 
                 confirm_title: "Confirmar acción",
                 confirm_uninstall_warn: "Esta operación eliminará completamente BadWords, el venv y las integraciones de DaVinci Resolve.",
-                confirm_reset_warn: "Esta operación borrará la instalación actual e instalará una copia limpia de la versión 4.0.0.",
+                confirm_reset_warn: "Esta operación borrará la instalación actual e instalará una copia limpia de la aplicación.",
                 confirm_repair_info: "El instalador verificará los archivos de la aplicación y reparará los componentes dañados.",
                 
                 complete_title: "Operación completada",
@@ -287,7 +287,7 @@ impl Language {
                 
                 confirm_title: "Confirmer l'action",
                 confirm_uninstall_warn: "Cette action supprimera complètement BadWords, le venv et les intégrations DaVinci Resolve.",
-                confirm_reset_warn: "Cette action effacera l'installation actuelle et réinstallera la version 4.0.0.",
+                confirm_reset_warn: "Cette action effacera l'installation actuelle et réinstallera une version propre de l'application.",
                 confirm_repair_info: "L'assistant vérifiera tous les fichiers de l'application et réparera les composants endommagés.",
                 
                 complete_title: "Opération terminée",
@@ -334,7 +334,7 @@ impl Language {
                 
                 confirm_title: "Conferma azione",
                 confirm_uninstall_warn: "Questa operazione rimuoverà completamente BadWords, il venv e le integrazioni DaVinci Resolve.",
-                confirm_reset_warn: "Questa operazione cancellerà l'installazione corrente e installerà la versione 4.0.0.",
+                confirm_reset_warn: "Questa operazione cancellerà l'installazione corrente e installerà una versione pulita dell'applicazione.",
                 confirm_repair_info: "Il programma di installazione verificherà i file e riparerà i componenti danneggiati.",
                 
                 complete_title: "Operazione completata",
@@ -381,7 +381,7 @@ impl Language {
                 
                 confirm_title: "Actie bevestigen",
                 confirm_uninstall_warn: "Hiermee verwijdert u BadWords, venv en DaVinci Resolve integraties volledig van het systeem.",
-                confirm_reset_warn: "Hiermee wist u de huidige installatie en installeert u een schone versie 4.0.0.",
+                confirm_reset_warn: "Hiermee wist u de huidige installatie en installeert u een schone versie van de applicatie.",
                 confirm_repair_info: "Setup controleert de bestanden en herstelt beschadigde componenten.",
                 
                 complete_title: "Bewerking voltooid",
@@ -428,7 +428,7 @@ impl Language {
                 
                 confirm_title: "Confirmar Ação",
                 confirm_uninstall_warn: "Esta operação irá remover completamente o BadWords, venv e integrações do DaVinci Resolve.",
-                confirm_reset_warn: "Esta operação irá limpar a instalação atual e instalar uma cópia limpa da versão 4.0.0.",
+                confirm_reset_warn: "Esta operação irá limpar a instalação atual e instalar uma cópia limpa da aplicação.",
                 confirm_repair_info: "O instalador verificará os ficheiros e reparará os componentes danificados.",
                 
                 complete_title: "Operação Concluída",
@@ -475,7 +475,7 @@ impl Language {
                 
                 confirm_title: "Подтверждение действия",
                 confirm_uninstall_warn: "Эта операция полностью удалит BadWords, venv и интеграции с DaVinci Resolve.",
-                confirm_reset_warn: "Эта операция очистит текущую установку и установит чистую версию 4.0.0.",
+                confirm_reset_warn: "Эта операция очистит текущую установку и установит чистую версию приложения.",
                 confirm_repair_info: "Установщик проверит файлы приложения и восстановит поврежденные компоненты.",
                 
                 complete_title: "Операция завершена",
@@ -522,7 +522,7 @@ impl Language {
                 
                 confirm_title: "Підтвердження дії",
                 confirm_uninstall_warn: "Ця дія повністю видалить BadWords, venv та інтеграції з DaVinci Resolve.",
-                confirm_reset_warn: "Ця дія очистить поточне встановлення та встановить чисту копію версії 4.0.0.",
+                confirm_reset_warn: "Ця дія очистить поточне встановлення та встановить чисту копію програми.",
                 confirm_repair_info: "Установник перевірить файли програми та відновить пошкоджені компоненти.",
                 
                 complete_title: "Операцію завершено",
@@ -569,7 +569,7 @@ impl Language {
                 
                 confirm_title: "Confirm Action",
                 confirm_uninstall_warn: "This operation will completely remove BadWords from your system, including its venv and DaVinci Resolve integrations.",
-                confirm_reset_warn: "This operation will wipe your current installation and download/install a fresh copy of version 4.0.0.",
+                confirm_reset_warn: "This operation will wipe your current installation and download/install a fresh copy of the application.",
                 confirm_repair_info: "Setup will verify all application files, dependencies, and repair any damaged components.",
                 
                 complete_title: "Operation Completed",

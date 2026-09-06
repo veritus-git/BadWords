@@ -173,6 +173,7 @@ function Start-NativeExecutable($exePath, $arguments) {
     $parent = Split-Path -Parent $exePath
     if ($parent) {
         Clear-FileZoneIdentifier (Join-Path $parent "BadWords.exe")
+        Clear-FileZoneIdentifier (Join-Path $parent "badwords-setup-windows.exe")
     }
     try {
         if ($arguments -and $arguments.Count -gt 0) {
@@ -193,10 +194,14 @@ if ($env:BADWORDS_FORCE_FALLBACK -or ($args -and ($args -contains "--fallback" -
     Invoke-PythonFallback
 }
 
-# 1. Try local compiled or placed binary first (if inside repo clone)
+# 1. Try local compiled or placed binary first (if inside repo clone or working dir)
 $LocalRootBin = if ($ScriptDir) { Join-Path $ScriptDir "..\badwords-setup-windows.exe" } else { "" }
 if ($LocalRootBin -and (Test-Path $LocalRootBin)) {
     Start-NativeExecutable $LocalRootBin $args
+}
+$CwdBin = Join-Path (Get-Location).Path "badwords-setup-windows.exe"
+if ($CwdBin -and (Test-Path $CwdBin)) {
+    Start-NativeExecutable $CwdBin $args
 }
 if ($LocalBin -and (Test-Path $LocalBin)) {
     Start-NativeExecutable $LocalBin $args
