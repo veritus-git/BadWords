@@ -179,29 +179,27 @@ class OSDoctor:
     def is_legacy_updater_migration(self) -> bool:
         """Check if this is an upgrade that occurred via legacy 3.x updater.py,
         meaning native launchers, desktop integration, or the new installer are missing.
-        Returns False if running from source/git, or if installed via the new installer."""
-        marker = os.path.join(self.install_dir, '.v4_migration_notified')
-        if os.path.isfile(marker):
-            return False
-
-        # If running from a git clone/repo, this is manual/developer setup - never show notice
-        if (os.path.isdir(os.path.join(self.install_dir, '.git')) or
-            os.path.isdir(os.path.join(os.path.dirname(self.install_dir), '.git'))):
-            return False
+        Returns False if installed via the new installer or marker exists."""
+        dirs_to_check = [self.install_dir, os.path.dirname(self.install_dir)]
+        for d in dirs_to_check:
+            marker = os.path.join(d, '.v4_migration_notified')
+            if os.path.isfile(marker):
+                return False
 
         # Check if the new installer or native desktop launchers exist
-        if self.is_win:
-            has_launcher = os.path.isfile(os.path.join(self.install_dir, 'BadWords.exe'))
-            has_installer = os.path.isfile(os.path.join(self.install_dir, 'uninstall.exe'))
-        elif getattr(self, 'is_mac', False) or self.os_type == 'Darwin':
-            has_launcher = os.path.isdir(os.path.join(self.install_dir, 'BadWords.app'))
-            has_installer = os.path.isfile(os.path.join(self.install_dir, 'badwords-installer'))
-        else:
-            has_launcher = os.path.isfile(os.path.join(self.install_dir, 'BadWords'))
-            has_installer = os.path.isfile(os.path.join(self.install_dir, 'badwords-installer'))
+        for d in dirs_to_check:
+            if self.is_win:
+                has_launcher = os.path.isfile(os.path.join(d, 'BadWords.exe'))
+                has_installer = os.path.isfile(os.path.join(d, 'uninstall.exe'))
+            elif getattr(self, 'is_mac', False) or self.os_type == 'Darwin':
+                has_launcher = os.path.isdir(os.path.join(d, 'BadWords.app'))
+                has_installer = os.path.isfile(os.path.join(d, 'badwords-installer'))
+            else:
+                has_launcher = os.path.isfile(os.path.join(d, 'BadWords'))
+                has_installer = os.path.isfile(os.path.join(d, 'badwords-installer'))
 
-        if has_launcher or has_installer:
-            return False
+            if has_launcher or has_installer:
+                return False
 
         return True
 

@@ -3510,14 +3510,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if prefs.get("v4_migration_notified", True):
                 return
 
-            if not self.engine.os_doc.is_legacy_updater_migration():
-                self.engine.save_preferences({"v4_migration_notified": True})
-                return
-
-            marker = os.path.join(self.engine.os_doc.install_dir, ".v4_migration_notified")
-            if os.path.isfile(marker):
-                self.engine.save_preferences({"v4_migration_notified": True})
-                return
+            dirs_to_check = [self.engine.os_doc.install_dir, os.path.dirname(self.engine.os_doc.install_dir)]
+            for d in dirs_to_check:
+                marker = os.path.join(d, ".v4_migration_notified")
+                if os.path.isfile(marker):
+                    self.engine.save_preferences({"v4_migration_notified": True})
+                    return
 
             from gui.dialogs.v4_migration_dialog import V4MigrationDialog
             lang = prefs.get("gui_lang", "en")
@@ -3526,11 +3524,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
             # Record that notice was shown and handled
             self.engine.save_preferences({"v4_migration_notified": True})
-            try:
-                with open(marker, "w", encoding="utf-8") as f:
-                    f.write("1\n")
-            except Exception:
-                pass
+            for d in dirs_to_check:
+                try:
+                    with open(os.path.join(d, ".v4_migration_notified"), "w", encoding="utf-8") as f:
+                        f.write("1\n")
+                except Exception:
+                    pass
         except Exception as e:
             from osdoc import log_error
             log_error(f"check_v4_migration_notice failed: {e}")

@@ -125,14 +125,16 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
 /// Marks v4 migration complete so the one-time milestone notice is not shown for setups performed by the official installer
 fn mark_v4_complete(target_dir: &Path) {
     let _ = fs::write(target_dir.join(".v4_migration_notified"), "1\n");
-    let settings_path = target_dir.join("settings.json");
-    if settings_path.is_file() {
-        if let Ok(content) = fs::read_to_string(&settings_path) {
-            if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(obj) = json_val.as_object_mut() {
-                    obj.insert("v4_migration_notified".to_string(), serde_json::Value::Bool(true));
-                    if let Ok(serialized) = serde_json::to_string_pretty(&json_val) {
-                        let _ = fs::write(&settings_path, serialized);
+    let _ = fs::write(target_dir.join("src").join(".v4_migration_notified"), "1\n");
+    for settings_path in [target_dir.join("settings.json"), target_dir.join("src").join("settings.json")] {
+        if settings_path.is_file() {
+            if let Ok(content) = fs::read_to_string(&settings_path) {
+                if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(obj) = json_val.as_object_mut() {
+                        obj.insert("v4_migration_notified".to_string(), serde_json::Value::Bool(true));
+                        if let Ok(serialized) = serde_json::to_string_pretty(&json_val) {
+                            let _ = fs::write(&settings_path, serialized);
+                        }
                     }
                 }
             }
