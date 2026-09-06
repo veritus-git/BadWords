@@ -183,14 +183,30 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
         let launcher_exe = install_dir.join("BadWords.exe");
         if !launcher_exe.is_file() {
             let setup_cand = install_dir.join("setupfiles").join("windows").join("BadWords.exe");
+            let bootstrap_cand = std::env::var("LOCALAPPDATA")
+                .map(|l| PathBuf::from(l).join("BadWords-bootstrap").join("BadWords.exe"))
+                .unwrap_or_default();
+
             if setup_cand.is_file() {
                 let _ = std::fs::copy(&setup_cand, &launcher_exe);
+            } else if bootstrap_cand.is_file() {
+                let _ = std::fs::copy(&bootstrap_cand, &launcher_exe);
             } else if let Ok(cur_exe) = std::env::current_exe() {
                 if let Some(p) = cur_exe.parent() {
                     let cand = p.join("BadWords.exe");
                     if cand.is_file() {
                         let _ = std::fs::copy(&cand, &launcher_exe);
                     }
+                }
+            }
+        }
+        if !launcher_exe.is_file() {
+            // Attempt to download pre-built BadWords.exe launcher from latest GitHub release
+            let dl_url = "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe";
+            if let Ok(resp) = ureq::get(dl_url).timeout(std::time::Duration::from_secs(10)).call() {
+                let mut reader = resp.into_reader();
+                if let Ok(mut out) = std::fs::File::create(&launcher_exe) {
+                    let _ = std::io::copy(&mut reader, &mut out);
                 }
             }
         }

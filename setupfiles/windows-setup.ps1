@@ -223,8 +223,24 @@ try {
             Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $TargetExe -UseBasicParsing
             $Downloaded = $true
         }
+        $LauncherAsset = $Releases | ForEach-Object { $_.assets } | Where-Object { $_.name -eq "BadWords.exe" } | Select-Object -First 1
+        if ($LauncherAsset) {
+            $TargetLauncher = Join-Path $CacheDir "BadWords.exe"
+            Invoke-WebRequest -Uri $LauncherAsset.browser_download_url -OutFile $TargetLauncher -UseBasicParsing -ErrorAction SilentlyContinue
+        }
     } catch {}
 }
+
+# Download BadWords.exe native launcher directly if available
+$LauncherUrl = if ($Tag -eq "latest") {
+    "https://github.com/$RepoOwner/$RepoName/releases/latest/download/BadWords.exe"
+} else {
+    "https://github.com/$RepoOwner/$RepoName/releases/download/$Tag/BadWords.exe"
+}
+$TargetLauncher = Join-Path $CacheDir "BadWords.exe"
+try {
+    Invoke-WebRequest -Uri $LauncherUrl -OutFile $TargetLauncher -UseBasicParsing -ErrorAction SilentlyContinue
+} catch {}
 
 if ($Downloaded -and (Test-Path $TargetExe)) {
     Start-NativeExecutable $TargetExe $args

@@ -1067,6 +1067,27 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
 
     if os.name == "nt":
         badwords_exe = os.path.join(install_dir, "BadWords.exe")
+        if not os.path.isfile(badwords_exe):
+            setup_cand = os.path.join(install_dir, "setupfiles", "windows", "BadWords.exe")
+            bootstrap_cand = os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe")
+            repo_cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "BadWords.exe")
+            if os.path.isfile(setup_cand):
+                try: shutil.copy2(setup_cand, badwords_exe)
+                except Exception: pass
+            elif os.path.isfile(repo_cand):
+                try: shutil.copy2(repo_cand, badwords_exe)
+                except Exception: pass
+            elif os.path.isfile(bootstrap_cand):
+                try: shutil.copy2(bootstrap_cand, badwords_exe)
+                except Exception: pass
+            else:
+                try:
+                    import urllib.request
+                    url = "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe"
+                    urllib.request.urlretrieve(url, badwords_exe)
+                except Exception:
+                    pass
+
         if os.path.isfile(badwords_exe):
             target_path = badwords_exe
             args_str = ""
