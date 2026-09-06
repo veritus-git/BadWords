@@ -1193,7 +1193,6 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
         if not os.path.isfile(icon_icns):
             icon_icns = os.path.join(install_dir, "icons", "icon_default.icns")
         if os.path.isfile(icon_icns):
-            import shutil
             try: shutil.copy2(icon_icns, os.path.join(resources, "icon.icns"))
             except Exception: pass
 
@@ -1313,7 +1312,7 @@ exec "$PY" "$MAIN_PY" "$@"
                 try:
                     if os.path.islink(dt_link): os.unlink(dt_link)
                     elif os.path.exists(dt_link):
-                        import shutil; shutil.rmtree(dt_link)
+                        shutil.rmtree(dt_link)
                     os.symlink(app_dir, dt_link)
                 except Exception: pass
 
