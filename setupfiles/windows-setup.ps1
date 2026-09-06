@@ -161,8 +161,19 @@ function Invoke-PythonFallback() {
 }
 
 # ── Helper: Start Native Executable Safely ─────────────────────
+function Clear-FileZoneIdentifier($path) {
+    if (-not $path -or -not (Test-Path $path)) { return }
+    try { Unblock-File -LiteralPath $path -ErrorAction SilentlyContinue } catch {}
+    try { Unblock-File -Path $path -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Item -LiteralPath "$path:Zone.Identifier" -Force -ErrorAction SilentlyContinue } catch {}
+}
+
 function Start-NativeExecutable($exePath, $arguments) {
-    Unblock-File -Path $exePath -ErrorAction SilentlyContinue
+    Clear-FileZoneIdentifier $exePath
+    $parent = Split-Path -Parent $exePath
+    if ($parent) {
+        Clear-FileZoneIdentifier (Join-Path $parent "BadWords.exe")
+    }
     try {
         if ($arguments -and $arguments.Count -gt 0) {
             $p = Start-Process -FilePath $exePath -ArgumentList $arguments -PassThru -ErrorAction Stop
@@ -182,7 +193,11 @@ if ($env:BADWORDS_FORCE_FALLBACK -or ($args -and ($args -contains "--fallback" -
     Invoke-PythonFallback
 }
 
-# 1. Try local compiled binary first (if inside repo clone)
+# 1. Try local compiled or placed binary first (if inside repo clone)
+$LocalRootBin = if ($ScriptDir) { Join-Path $ScriptDir "..\badwords-setup-windows.exe" } else { "" }
+if ($LocalRootBin -and (Test-Path $LocalRootBin)) {
+    Start-NativeExecutable $LocalRootBin $args
+}
 if ($LocalBin -and (Test-Path $LocalBin)) {
     Start-NativeExecutable $LocalBin $args
 }
@@ -241,6 +256,8 @@ $TargetLauncher = Join-Path $CacheDir "BadWords.exe"
 try {
     Invoke-WebRequest -Uri $LauncherUrl -OutFile $TargetLauncher -UseBasicParsing -ErrorAction SilentlyContinue
 } catch {}
+Clear-FileZoneIdentifier $TargetExe
+Clear-FileZoneIdentifier $TargetLauncher
 
 if ($Downloaded -and (Test-Path $TargetExe)) {
     Start-NativeExecutable $TargetExe $args

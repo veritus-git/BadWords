@@ -61,7 +61,7 @@ pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
 }
 
 #[allow(dead_code)]
-pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std::io::Result<()> {
+pub fn create_macos_app_bundle(install_dir: &Path, version: &str, create_desktop: bool) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = dirs::home_dir() {
@@ -180,9 +180,10 @@ exec "$PY" "$MAIN_PY" "$@"
                 let _ = std::fs::write(&icon_dest, embedded_icon);
             }
 
-            // Info.plist
+            // Info.plist with dynamic version from app_constants
             let plist_path = contents.join("Info.plist");
-            let plist_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+            let plist_content = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -199,7 +200,9 @@ exec "$PY" "$MAIN_PY" "$@"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>4.0.0</string>
+    <string>{version}</string>
+    <key>CFBundleVersion</key>
+    <string>{version}</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
@@ -207,7 +210,9 @@ exec "$PY" "$MAIN_PY" "$@"
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
-</plist>"#;
+</plist>"#,
+                version = version
+            );
             std::fs::write(&plist_path, plist_content)?;
 
             if create_desktop {
@@ -234,7 +239,7 @@ exec "$PY" "$MAIN_PY" "$@"
 
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (install_dir, create_desktop);
+        let _ = (install_dir, version, create_desktop);
     }
 
     Ok(())

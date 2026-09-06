@@ -51,6 +51,28 @@ _IS_WINDOWS_TERMINAL = bool(os.environ.get("WT_SESSION", ""))
 # ── Platform helpers ─────────────────────────────────────────
 APP_NAME = "BadWords"
 
+def _get_app_version():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "config", "app_constants.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "config", "app_constants.py"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            try:
+                with open(c, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("VERSION"):
+                            parts = line.split("=")
+                            if len(parts) >= 2:
+                                ver = parts[1].strip().strip('"').strip("'")
+                                if ver:
+                                    return ver
+            except Exception:
+                pass
+    return "4.0.0"
+
+APP_VERSION = _get_app_version()
+
 def _default_install_dir():
     if PLAT.startswith("win"):
         return os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), APP_NAME)
@@ -1055,6 +1077,26 @@ else:
     return False
 
 
+def _unblock_file_windows(path):
+    if os.name != 'nt' or not path or not os.path.exists(path):
+        return
+    try:
+        ads = f"{path}:Zone.Identifier"
+        if os.path.exists(ads):
+            os.remove(ads)
+    except Exception:
+        pass
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+             f"Unblock-File -LiteralPath '{path}' -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '{path}:Zone.Identifier' -Force -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
+    except Exception:
+        pass
+
+
 def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
     install_dir = os.path.abspath(install_dir)
     main_py = os.path.join(install_dir, "main.py")
@@ -1083,12 +1125,24 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             else:
                 try:
                     import urllib.request
-                    url = "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe"
-                    urllib.request.urlretrieve(url, badwords_exe)
+                    urls = [
+                        "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
+                        "https://github.com/veritus-git/BadWords/releases/download/v4.0.0/BadWords.exe",
+                    ]
+                    for url in urls:
+                        try:
+                            urllib.request.urlretrieve(url, badwords_exe)
+                            if os.path.isfile(badwords_exe) and os.path.getsize(badwords_exe) > 10000:
+                                break
+                            else:
+                                if os.path.isfile(badwords_exe): os.remove(badwords_exe)
+                        except Exception:
+                            if os.path.isfile(badwords_exe): os.remove(badwords_exe)
                 except Exception:
                     pass
 
         if os.path.isfile(badwords_exe):
+            _unblock_file_windows(badwords_exe)
             target_path = badwords_exe
             args_str = ""
             shortcut_icon = f"{badwords_exe},0"
@@ -1120,7 +1174,7 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords"
             key = winreg.CreateKey(hkcu, key_path)
             winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "BadWords")
-            winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, "4.0.0")
+            winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, APP_VERSION)
             winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Szymon Wolarz")
             winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, str(install_dir))
             winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, str(icon_ico))
@@ -1217,7 +1271,7 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
             try: shutil.copy2(icon_icns, os.path.join(resources, "icon.icns"))
             except Exception: pass
 
-        plist_content = """<?xml version="1.0" encoding="UTF-8"?>
+        plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -1234,7 +1288,9 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>4.0.0</string>
+    <string>{APP_VERSION}</string>
+    <key>CFBundleVersion</key>
+    <string>{APP_VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
