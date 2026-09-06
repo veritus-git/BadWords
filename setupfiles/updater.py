@@ -184,41 +184,48 @@ def main():
     assets_path = os.path.join(extracted_root, "assets")
     setupfiles_path = os.path.join(extracted_root, "setupfiles")
 
-    # 3. Sync files
-    info("Syncing files...")
+    info("Resetting application files to clean state (preserving user data)...")
+    protected_names = {
+        "settings.json", "user.json", "pref.json", "dev.json", ".python_auto_installed",
+        "models", "saves", "venv", "bin", "libs"
+    }
+    cur_script = os.path.abspath(__file__)
+    if os.path.isdir(install_dir):
+        for item in os.listdir(install_dir):
+            if item.lower() in {p.lower() for p in protected_names}:
+                continue
+            full_path = os.path.join(install_dir, item)
+            if os.path.abspath(full_path) == cur_script:
+                continue
+            try:
+                if os.path.isdir(full_path) and not os.path.islink(full_path):
+                    shutil.rmtree(full_path, ignore_errors=True)
+                else:
+                    os.remove(full_path)
+            except Exception as e:
+                log(f"Clean wipe warning: {e}")
+
     # Clean previous logs on every update so logs start fresh
     for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
         _lf = os.path.join(install_dir, _log_name)
         if os.path.isfile(_lf):
-            try:
-                with open(_lf, "w") as _f:
-                    pass
-            except Exception:
-                try: os.remove(_lf)
-                except Exception: pass
+            try: os.remove(_lf)
+            except Exception: pass
 
-    protected_files = {"pref.json", "user.json", "settings.json", "dev.json", ".python_auto_installed"}
-    protected_dirs  = {"models", "saves", "venv", "bin", "libs", "assets", "icons", "layout", "setupfiles"}
-    
-    two_way_sync([source_path], install_dir, protected_files, protected_dirs)
-
+    info("Deploying fresh application files...")
+    if os.path.isdir(source_path):
+        shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
     if os.path.isdir(assets_path):
         dest_assets = os.path.join(install_dir, "assets")
-        two_way_sync([assets_path], dest_assets, set(), set())
-        for sub in ["icons", "layout"]:
-            src_sub = os.path.join(assets_path, sub)
-            if os.path.isdir(src_sub):
-                dst_sub = os.path.join(install_dir, sub)
-                two_way_sync([src_sub], dst_sub, set(), set())
-
+        shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
     if os.path.isdir(setupfiles_path):
         dst_setupfiles = os.path.join(install_dir, "setupfiles")
-        two_way_sync([setupfiles_path], dst_setupfiles, set(), set())
+        shutil.copytree(setupfiles_path, dst_setupfiles, dirs_exist_ok=True)
         up_py = os.path.join(setupfiles_path, "updater.py")
         if os.path.isfile(up_py):
             shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
 
-    log("File sync complete.")
+    log("Application files deployed cleanly.")
 
     # 4. Pip upgrades
     venv_dir = os.path.join(install_dir, "venv")

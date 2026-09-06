@@ -73,10 +73,46 @@ pub fn create_macos_app_bundle(install_dir: &Path, create_desktop: bool) -> std:
             std::fs::create_dir_all(&macos)?;
             std::fs::create_dir_all(&resources)?;
 
-            // Launcher script
+            // BadWords.cfg in Resources
+            let venv_py = install_dir.join("venv").join("bin").join("python3");
+            let main_py = install_dir.join("src").join("main.py");
+            let cfg_content = format!(
+                "INSTALL_DIR={}\nPYTHON_BIN={}\nMAIN_PY={}\n",
+                install_dir.to_string_lossy(),
+                venv_py.to_string_lossy(),
+                main_py.to_string_lossy()
+            );
+            let _ = std::fs::write(resources.join("BadWords.cfg"), cfg_content);
+
+            // Native Mach-O launcher binary
             let launcher_path = macos.join("BadWords");
-            let launcher_content = format!(
-                r#"#!/bin/bash
+            let mut compiled = false;
+            let launcher_c_src = include_str!("../../../setupfiles/macos/launcher.c");
+            let temp_c = std::env::temp_dir().join("badwords_launcher_tmp.c");
+
+            if std::fs::write(&temp_c, launcher_c_src).is_ok() {
+                let st = std::process::Command::new("clang")
+                    .args([
+                        "-O2",
+                        "-fobjc-arc",
+                        "-framework", "Foundation",
+                        "-framework", "AppKit",
+                        "-o", launcher_path.to_string_lossy().as_ref(),
+                        temp_c.to_string_lossy().as_ref(),
+                    ])
+                    .status();
+                let _ = std::fs::remove_file(&temp_c);
+                if let Ok(s) = st {
+                    if s.success() && launcher_path.is_file() {
+                        compiled = true;
+                    }
+                }
+            }
+
+            if !compiled {
+                // Fallback shell script launcher if clang is unavailable
+                let launcher_content = format!(
+                    r#"#!/bin/bash
 DIR="{}"
 if [ -f "$DIR/src/main.py" ]; then
     MAIN_PY="$DIR/src/main.py"
@@ -94,19 +130,13 @@ else
     PY="python3"
 fi
 
-if [ -f "$PY" ] && [ ! -L "$DIR/venv/bin/BadWords" ]; then
-    ln -sf "$(basename "$PY")" "$DIR/venv/bin/BadWords" 2>/dev/null || true
-fi
-if [ -x "$DIR/venv/bin/BadWords" ]; then
-    PY="$DIR/venv/bin/BadWords"
-fi
-
 cd "$CWD"
 exec "$PY" "$MAIN_PY" "$@"
 "#,
-                install_dir.to_string_lossy()
-            );
-            std::fs::write(&launcher_path, launcher_content)?;
+                    install_dir.to_string_lossy()
+                );
+                let _ = std::fs::write(&launcher_path, launcher_content);
+            }
 
             #[cfg(unix)]
             {

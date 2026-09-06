@@ -67,23 +67,29 @@ def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2)
 
 
 def get_icon_path(icon_name: str = "default") -> str:
-    """Returns absolute path to an app icon (.ico on Windows, .png on Unix), checking all possible prod/dev locations."""
+    """Returns absolute path to an app icon (.ico on Windows, .png/.icns on Unix), checking assets/icons."""
     try:
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         is_win = platform.system() == "Windows"
         ext = ".ico" if is_win else ".png"
 
         candidates = [
-            os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}"),
             os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}{ext}"),
             os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}{ext}"),
+            os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}"),
         ]
 
         if is_win:
             candidates.extend([
-                os.path.join(install_dir, "icons", f"icon_{icon_name}.png"),
                 os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.png"),
                 os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.png"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.png"),
+            ])
+        elif platform.system() == "Darwin":
+            candidates.extend([
+                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
             ])
 
         for p in candidates:
@@ -98,18 +104,18 @@ def get_icon_path(icon_name: str = "default") -> str:
 
 
 def get_layout_dir() -> str:
-    """Returns absolute path to layout icons folder, supporting both flat install, nested assets, and dev layout."""
+    """Returns absolute path to layout icons folder, looking directly in assets/layout."""
     src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    prod_layout = os.path.join(src_dir, "layout")
-    if os.path.isdir(prod_layout):
-        return prod_layout
     prod_nested = os.path.join(src_dir, "assets", "layout")
     if os.path.isdir(prod_nested):
         return prod_nested
     dev_layout = os.path.join(os.path.dirname(src_dir), "assets", "layout")
     if os.path.isdir(dev_layout):
         return dev_layout
-    return prod_layout
+    prod_layout = os.path.join(src_dir, "layout")
+    if os.path.isdir(prod_layout):
+        return prod_layout
+    return prod_nested
 
 
 def get_layout_icon_path(icon_name: str) -> str:
@@ -152,9 +158,9 @@ def _titlebar_icon(icon_name: str = None) -> QIcon:
 
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         candidates = [
-            os.path.join(install_dir, "icons", f"icon_{icon_name}_nobg.png"),
             os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}_nobg.png"),
             os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}_nobg.png"),
+            os.path.join(install_dir, "icons", f"icon_{icon_name}_nobg.png"),
         ]
         for p in candidates:
             if os.path.isfile(p):
@@ -208,10 +214,23 @@ QWidget.txt = _qwidget_txt
 
 
 def set_macos_runtime_icon(icon_name: str = "default"):
-    """Dynamically updates the running application icon in macOS Dock and Stage Manager."""
+    """Dynamically updates the running application icon in macOS Dock and WindowServer."""
     if platform.system() != "Darwin":
         return
     try:
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QIcon
+        icon_path = get_icon_path(icon_name)
+        if not icon_path or not os.path.exists(icon_path):
+            icon_path = get_icon_path("default")
+        if not icon_path or not os.path.exists(icon_path):
+            return
+
+        q_app = QApplication.instance()
+        if q_app:
+            q_app.setWindowIcon(QIcon(icon_path))
+
+        # Native AppKit dock tile icon update
         import ctypes, ctypes.util
         objc_path = ctypes.util.find_library('objc')
         if not objc_path:
@@ -226,12 +245,6 @@ def set_macos_runtime_icon(icon_name: str = "default"):
         msgSend = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
         msgSend_ptr = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
         msgSend_str = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p))
-
-        icon_path = get_icon_path(icon_name)
-        if not icon_path or not os.path.exists(icon_path):
-            icon_path = get_icon_path("default")
-        if not icon_path or not os.path.exists(icon_path):
-            return
 
         cls_NSString = objc.objc_getClass(b"NSString")
         sel_stringWithUTF8 = objc.sel_registerName(b"stringWithUTF8String:")
@@ -263,6 +276,25 @@ def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str =
     """
     if platform.system() != "Darwin":
         return
+
+    # If icon_name was not explicitly specified, load user choice from settings.json
+    if icon_name == "default":
+        try:
+            import json
+            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            for cand_settings in [
+                os.path.join(install_dir, "settings.json"),
+                os.path.join(os.path.dirname(install_dir), "settings.json"),
+                os.path.join(os.path.expanduser("~"), "Library", "Application Support", "BadWords", "settings.json"),
+            ]:
+                if os.path.isfile(cand_settings):
+                    with open(cand_settings, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        icon_name = data.get('app_icon', 'default')
+                        break
+        except Exception:
+            pass
+
     try:
         import ctypes, ctypes.util
         objc_path = ctypes.util.find_library('objc')
@@ -292,7 +324,7 @@ def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str =
         if p_info and ns_name:
             msgSend_ptr(p_info, sel_setProcessName, ns_name)
 
-        # 2. Update Application Menu title in NSApp.mainMenu
+        # 2. Update Application Menu title in NSApp.mainMenu if available
         cls_NSApp = objc.objc_getClass(b"NSApplication")
         sel_sharedApp = objc.sel_registerName(b"sharedApplication")
         sel_mainMenu = objc.sel_registerName(b"mainMenu")
@@ -311,7 +343,7 @@ def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str =
                     if submenu:
                         msgSend_ptr(submenu, sel_setTitle, ns_name)
 
-        # 3. Set application icon image in Dock and Stage Manager
+        # 3. Set application icon image in Dock
         set_macos_runtime_icon(icon_name)
     except Exception:
         pass
@@ -329,8 +361,8 @@ def update_macos_bundle_icon(icon_name: str):
             install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             icns_candidates = [
                 os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
-                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
                 os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
             ]
             target_icns = None
             for c in icns_candidates:
@@ -344,7 +376,7 @@ def update_macos_bundle_icon(icon_name: str):
                 subprocess.run(["touch", app_bundle], capture_output=True)
                 subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
 
-        # Also update running process icon immediately in Dock & Stage Manager
+        # Also update running process icon immediately in Dock & WindowServer
         set_macos_runtime_icon(icon_name)
     except Exception:
         pass
