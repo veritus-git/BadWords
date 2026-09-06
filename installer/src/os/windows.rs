@@ -172,8 +172,6 @@ pub fn detect_installed_location() -> Option<PathBuf> {
 pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create_menu: bool) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
-        let pythonw_path = install_dir.join("venv").join("Scripts").join("pythonw.exe");
-        let main_py = install_dir.join("main.py");
         let icon_path = {
             let asset = install_dir.join("assets").join("icons").join("icon_default.ico");
             if asset.is_file() {
@@ -181,6 +179,26 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             } else {
                 install_dir.join("icons").join("icon_default.ico")
             }
+        };
+        let launcher_exe = install_dir.join("BadWords.exe");
+        let (target_path, arguments, shortcut_icon) = if launcher_exe.is_file() {
+            (
+                launcher_exe.to_string_lossy().to_string(),
+                String::new(),
+                launcher_exe.to_string_lossy().to_string()
+            )
+        } else {
+            let pythonw_path = install_dir.join("venv").join("Scripts").join("pythonw.exe");
+            let main_py = if install_dir.join("src").join("main.py").is_file() {
+                install_dir.join("src").join("main.py")
+            } else {
+                install_dir.join("main.py")
+            };
+            (
+                pythonw_path.to_string_lossy().to_string(),
+                format!("\"{}\"", main_py.to_string_lossy()),
+                icon_path.to_string_lossy().to_string()
+            )
         };
 
         let mut script_parts = vec![
@@ -191,15 +209,15 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             script_parts.push(format!(
                 "$desktop = [Environment]::GetFolderPath('Desktop'); \
                  $s1 = $ws.CreateShortcut(\"$desktop\\BadWords.lnk\"); \
-                 $s1.TargetPath = '{py}'; \
-                 $s1.Arguments = '\"{main}\"'; \
+                 $s1.TargetPath = '{target}'; \
+                 $s1.Arguments = '{args}'; \
                  $s1.WorkingDirectory = '{dir}'; \
                  $s1.IconLocation = '{ico},0'; \
                  $s1.Save();",
-                py = pythonw_path.to_string_lossy(),
-                main = main_py.to_string_lossy(),
+                target = target_path,
+                args = arguments,
                 dir = install_dir.to_string_lossy(),
-                ico = icon_path.to_string_lossy()
+                ico = shortcut_icon
             ));
         }
 
@@ -207,15 +225,15 @@ pub fn create_windows_shortcuts(install_dir: &Path, create_desktop: bool, create
             script_parts.push(format!(
                 "$programs = [Environment]::GetFolderPath('Programs'); \
                  $s2 = $ws.CreateShortcut(\"$programs\\BadWords.lnk\"); \
-                 $s2.TargetPath = '{py}'; \
-                 $s2.Arguments = '\"{main}\"'; \
+                 $s2.TargetPath = '{target}'; \
+                 $s2.Arguments = '{args}'; \
                  $s2.WorkingDirectory = '{dir}'; \
                  $s2.IconLocation = '{ico},0'; \
                  $s2.Save();",
-                py = pythonw_path.to_string_lossy(),
-                main = main_py.to_string_lossy(),
+                target = target_path,
+                args = arguments,
                 dir = install_dir.to_string_lossy(),
-                ico = icon_path.to_string_lossy()
+                ico = shortcut_icon
             ));
         }
 
