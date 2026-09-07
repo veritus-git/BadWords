@@ -305,6 +305,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._title_bar.projectImportRequested.connect(self._on_import_project)
         self._title_bar.transcriptExportTxtRequested.connect(self._on_export_transcript_txt)
         self._title_bar.transcriptCopyRequested.connect(self._on_copy_transcript_clipboard)
+        self._title_bar.aiPanelRequested.connect(self._show_ai_panel)
         self._root_layout.addWidget(self._title_bar)
 
         # On macOS: hide custom CSD title bar — native title bar handles close/min/max/fullscreen.
@@ -1802,6 +1803,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'text_canvas') and getattr(self.text_canvas, 'words_data', None):
             self.text_canvas._calculate_layout()
             self.text_canvas.update()
+
+    def _show_ai_panel(self):
+        """Open the AI Advisor addon panel. Any failure stays contained here."""
+        try:
+            from ai_advisor import open_panel
+            open_panel(self)
+        except Exception as e:
+            try:
+                from osdoc import log_error
+                log_error(f"[ai_advisor] panel failed to open: {e}")
+            except Exception:
+                pass
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "BadWords",
+                                "AI Advisor failed to open. See the BadWords log.")
 
     def _calculate_visual_layer(self, word_obj: dict) -> str:
         """

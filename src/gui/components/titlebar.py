@@ -153,6 +153,7 @@ class CustomTitleBar(QWidget):
     projectImportRequested = Signal()
     transcriptExportTxtRequested = Signal()
     transcriptCopyRequested = Signal()
+    aiPanelRequested = Signal()
 
     def __init__(self, window: QWidget, lang: str, parent=None):
         super().__init__(parent)
@@ -227,6 +228,13 @@ class CustomTitleBar(QWidget):
         self.btn_menu_edit.setCursor(Qt.PointingHandCursor)
         self.btn_menu_edit.clicked.connect(self._show_edit_menu)
         menu_lay.addWidget(self.btn_menu_edit)
+
+        # AI Advisor addon — signal-only here; main_window owns the lazy import
+        self.btn_menu_ai = QPushButton("AI")
+        self.btn_menu_ai.setStyleSheet(_btn_qss)
+        self.btn_menu_ai.setCursor(Qt.PointingHandCursor)
+        self.btn_menu_ai.clicked.connect(self.aiPanelRequested.emit)
+        menu_lay.addWidget(self.btn_menu_ai)
 
         self._menu_container.hide()  # hidden until transcription
 
