@@ -1168,10 +1168,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         # Always fetch the currently active timeline from DaVinci before cutting
         rh = getattr(self.engine, 'resolve_handler', None)
-        if rh and rh.project:
-            current_tl = rh.project.GetCurrentTimeline()
-            if current_tl:
-                rh.timeline = current_tl
+        if rh:
+            rh.get_current_timeline_name()
                 
         localized_color_name = self.txt(f"resolve_color_{color_name.lower()}")
         title = self.txt("msg_cut_color_title").format(color=localized_color_name)
@@ -1631,7 +1629,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                             return
                 
                 # Check timeline fingerprint
-                if bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.project:
+                if bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.is_connected():
                     found_tl, is_exact = self.resolve_handler.find_timeline_by_fingerprint(bws_extras["timeline_fingerprint"])
                     
                     # Target name from snapshot
@@ -1664,13 +1662,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                 return
                             if res != QDialog.Accepted:
                                 if self._extracted_drt_path:
-                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(self._extracted_drt_path)
-                                    if new_tl:
-                                        new_name = f"imported '{target_name}'"
-                                        new_tl.SetName(new_name)
-                                        self._transcription_source["timeline_name"] = new_name
+                                    new_name = f"imported '{target_name}'"
+                                    imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
+                                    if imp_ok:
+                                        final_name = actual_name or new_name
+                                        self._transcription_source["timeline_name"] = final_name
                                         if hasattr(self, '_title_bar'):
-                                            self._title_bar.set_source_info(new_name, tracks_str)
+                                            self._title_bar.set_source_info(final_name, tracks_str)
                                 else:
                                     return
                         else:
@@ -1690,13 +1688,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                     if hasattr(self, '_panel_right'): self._panel_right.hide()
                                     return
                                 if res == QDialog.Accepted:
-                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(self._extracted_drt_path)
-                                    if new_tl:
-                                        new_name = f"imported '{target_name}'"
-                                        new_tl.SetName(new_name)
-                                        self._transcription_source["timeline_name"] = new_name
+                                    new_name = f"imported '{target_name}'"
+                                    imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
+                                    if imp_ok:
+                                        final_name = actual_name or new_name
+                                        self._transcription_source["timeline_name"] = final_name
                                         if hasattr(self, '_title_bar'):
-                                            self._title_bar.set_source_info(new_name, tracks_str)
+                                            self._title_bar.set_source_info(final_name, tracks_str)
 
                 # Recreate assembled audio if needed
                 if self._assembly_recipe and bws_extras.get("audio_path"):
@@ -1935,13 +1933,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         try:
             rh = self.engine.resolve_handler
             timelines = rh.get_all_timelines()
-
-            current_tl_name = ""
-            if rh.timeline:
-                try:
-                    current_tl_name = rh.timeline.GetName()
-                except Exception:
-                    pass
+            current_tl_name = rh.get_current_timeline_name()
 
             no_tl_label = self.txt("msg_no_timelines_detected")
 
@@ -1963,14 +1955,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self.badge_resolve_1.update_status()
                 return
 
+            # Order timelines so that currently active timeline in DaVinci is FIRST
+            if current_tl_name and current_tl_name in timelines:
+                ordered_timelines = [current_tl_name] + [t for t in timelines if t != current_tl_name]
+            else:
+                ordered_timelines = list(timelines)
+
             # Populate timeline dropdowns
             for combo in (self.combo_tl_0, self.combo_tl_1):
-                combo.options_list = list(timelines)
-                display = current_tl_name if current_tl_name in timelines else timelines[0]
+                combo.options_list = list(ordered_timelines)
+                display = ordered_timelines[0]
                 combo.setText(display)
 
             # Populate track dropdowns for the default timeline
-            init_tl = current_tl_name if current_tl_name in timelines else timelines[0]
+            init_tl = ordered_timelines[0]
             self._on_timeline_selected(init_tl, self.combo_tr_0)
             self._on_timeline_selected(init_tl, self.combo_tr_1)
 
@@ -2199,9 +2197,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         curr_tl_name = selected_tl_name
         if not curr_tl_name:
             rh = getattr(self.engine, 'resolve_handler', None)
-            if rh and rh.timeline:
-                try: curr_tl_name = rh.timeline.GetName()
-                except Exception: curr_tl_name = ""
+            if rh:
+                curr_tl_name = rh.get_current_timeline_name()
 
         fs_prefs["source_snapshot"] = {
             "source_file": None,

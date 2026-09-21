@@ -205,6 +205,43 @@ class ResolveHandler:
             return self.bridge_project_name or ""
         return ""
 
+    def get_current_timeline_name(self) -> str:
+        """Returns the name of the currently active timeline in DaVinci Resolve."""
+        if self.backend == 'bridge':
+            if not self.bridge_timeline_name:
+                self.get_all_timelines()
+            return self.bridge_timeline_name or ""
+        elif self.backend == 'native' and self.project:
+            try:
+                tl = self.project.GetCurrentTimeline()
+                if tl:
+                    self.timeline = tl
+                    return tl.GetName() or ""
+            except Exception:
+                pass
+            if self.timeline:
+                try:
+                    return self.timeline.GetName() or ""
+                except Exception:
+                    pass
+        return ""
+
+    def open_page(self, page_name: str = "edit") -> bool:
+        """Opens the specified page in DaVinci Resolve (e.g. 'edit', 'cut', 'media')."""
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("OpenPage", {"page_name": page_name}, timeout_secs=2.0)
+                return bool(res and res.get("ok"))
+            except Exception:
+                return False
+        if self.resolve:
+            try:
+                self.resolve.OpenPage(page_name)
+                return True
+            except Exception:
+                return False
+        return False
+
     def get_timeline_start_frame(self):
         """Gets the starting timecode of the timeline in frames."""
         if self.backend == 'bridge':
@@ -575,6 +612,20 @@ class ResolveHandler:
         return target_file if render_ok else None
 
     def delete_clips_by_color(self, color_name, new_timeline=True):
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("DeleteClipsByColor", {
+                    "color_name": color_name,
+                    "new_timeline": new_timeline
+                }, timeout_secs=15.0)
+                if res and res.get("ok"):
+                    self.bridge_timeline_name = res.get("timeline_name", self.bridge_timeline_name)
+                    return True
+                return False
+            except Exception as e:
+                log_error(f"delete_clips_by_color (bridge) error: {e}")
+                return False
+
         if not self.project or not self.timeline: return False
         
         target_tl = self.timeline
@@ -906,7 +957,7 @@ class ResolveHandler:
                     if not raw_clips:
                         return None
                     fps = float(self.fps or 24.0)
-                    start_frame = int(self.bridge_start_frame or 0)
+                    start_frame = int(res.get("start_frame") if res.get("start_frame") is not None else (self.bridge_start_frame or 0))
                     max_rel_frame = 0
                     for c in raw_clips:
                         abs_end = int(c.get("end_frame", 0))
@@ -1172,6 +1223,25 @@ class ResolveHandler:
         """
         import hashlib
 
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetTimelineStructure", {
+                    "timeline_name": timeline_name
+                }, timeout_secs=10.0)
+                if res and res.get("ok"):
+                    fp_data = {
+                        "fps": float(res.get("fps") or self.fps or 24.0),
+                        "start_frame": int(res.get("start_frame") or 0),
+                        "tracks": res.get("tracks", [])
+                    }
+                    canonical = json.dumps(fp_data, sort_keys=True, separators=(',', ':'))
+                    fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
+                    log_info(f"compute_timeline_fingerprint (bridge): '{timeline_name}' → {fingerprint[:16]}...")
+                    return fingerprint
+            except Exception as e:
+                log_error(f"compute_timeline_fingerprint (bridge) error: {e}")
+            return None
+
         try:
             target_tl = None
             count = self.project.GetTimelineCount()
@@ -1245,16 +1315,12 @@ class ResolveHandler:
 
         Returns (timeline_name, exact_match) or (None, False).
         """
-        if not target_fingerprint or not self.project:
+        if not target_fingerprint or not self.is_connected():
             return None, False
 
         try:
-            count = self.project.GetTimelineCount()
-            for i in range(1, count + 1):
-                tl = self.project.GetTimelineByIndex(i)
-                if not tl:
-                    continue
-                tl_name = tl.GetName()
+            tls = self.get_all_timelines()
+            for tl_name in tls:
                 fp = self.compute_timeline_fingerprint(tl_name)
                 if fp and fp == target_fingerprint:
                     log_info(f"find_timeline_by_fingerprint: match found → '{tl_name}'")
@@ -1264,10 +1330,11 @@ class ResolveHandler:
 
         return None, False
 
-
     def timeline_exists(self, timeline_name):
         """Returns True if a timeline with the given name exists in the current project."""
         if self.backend == 'bridge':
+            if not self.bridge_timelines:
+                self.get_all_timelines()
             return timeline_name in (self.bridge_timelines or [])
         try:
             if not self.project: return False
@@ -1279,6 +1346,33 @@ class ResolveHandler:
             return False
         except Exception:
             return False
+
+    def delete_timeline_by_name(self, timeline_name: str) -> bool:
+        """Deletes a timeline by name from the media pool."""
+        if not timeline_name:
+            return False
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("DeleteTimelineByName", {"timeline_name": timeline_name}, timeout_secs=5.0)
+                if res and res.get("ok"):
+                    if timeline_name in self.bridge_timelines:
+                        self.bridge_timelines.remove(timeline_name)
+                    return True
+                return False
+            except Exception as e:
+                log_error(f"delete_timeline_by_name (bridge) error: {e}")
+                return False
+        if not self.project or not self.media_pool:
+            return False
+        try:
+            count = self.project.GetTimelineCount() or 0
+            for i in range(count, 0, -1):
+                t = self.project.GetTimelineByIndex(i)
+                if t and t.GetName() == timeline_name:
+                    return bool(self.media_pool.DeleteTimelines([t]))
+        except Exception as e:
+            log_error(f"delete_timeline_by_name error: {e}")
+        return False
 
     def get_next_xml_index(self, source_tl_name):
         """

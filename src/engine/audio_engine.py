@@ -1707,14 +1707,14 @@ except Exception as e:
             # ── SOURCE TIMELINE INSPECTION (single pass) ──────────────────────
             # Determine: audio_only_mode, a_track_count, for later use.
             context_type  = "video"  # default
-            a_track_count = 0
+            a_tracks, v_tracks = self.resolve_handler.get_timeline_tracks(original_tl_name)
+            a_track_count = len(a_tracks)
             if self.resolve_handler.project:
                 try:
                     count = self.resolve_handler.project.GetTimelineCount()
                     for i in range(1, count + 1):
                         tl = self.resolve_handler.project.GetTimelineByIndex(i)
                         if tl and tl.GetName() == original_tl_name:
-                            a_track_count = tl.GetTrackCount("audio")
                             v_count       = tl.GetTrackCount("video")
                             v_has_clips   = False
                             for vi in range(1, v_count + 1):
@@ -1726,6 +1726,8 @@ except Exception as e:
                             break
                 except Exception:
                     pass
+            elif len(v_tracks) == 0:
+                context_type = "audio"
             audio_only_mode = (context_type == "audio")
 
             # ── AUDIO CAP: determine true end of selected tracks ──────────────
