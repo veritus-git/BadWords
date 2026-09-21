@@ -364,8 +364,20 @@ class SourceHeaderWidget(QWidget):
                 f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
-            ed_info = rh.get_resolve_edition_info() if rh else {}
-            if ed_info.get("edition") == "Studio":
+            is_studio = False
+            if rh:
+                ed_info = rh.get_resolve_edition_info() if hasattr(rh, 'get_resolve_edition_info') else {}
+                if ed_info.get("edition") == "Studio":
+                    is_studio = True
+                elif ed_info.get("edition") != "Free":
+                    if hasattr(rh, 'os_doc') and rh.os_doc:
+                        util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
+                        has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
+                        has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
+                        if has_py and not has_lua:
+                            is_studio = True
+
+            if is_studio:
                 tip = self.win.txt("tt_resolve_connection_studio") if hasattr(self.win, 'txt') else "DaVinci Resolve Studio: Upewnij się, że DaVinci Resolve > Preferences > System > General > 'External scripting using' jest ustawione na 'Local'."
             else:
                 tip = self.win.txt("tt_resolve_connection_free") if hasattr(self.win, 'txt') else "DaVinci Resolve Free: W DaVinci Resolve uruchom: Workspace → Scripts → BadWords Bridge."
@@ -376,8 +388,19 @@ class SourceHeaderWidget(QWidget):
         for tip_lbl in (getattr(self.win, 'lbl_resolve_tip_0', None), getattr(self.win, 'lbl_resolve_tip_1', None)):
             if tip_lbl:
                 if is_resolve_mode and not is_conn:
-                    ed_info = rh.get_resolve_edition_info() if rh else {}
-                    tip = (self.win.txt("tt_resolve_connection_studio") if ed_info.get("edition") == "Studio"
+                    is_studio = False
+                    if rh:
+                        ed_info = rh.get_resolve_edition_info() if hasattr(rh, 'get_resolve_edition_info') else {}
+                        if ed_info.get("edition") == "Studio":
+                            is_studio = True
+                        elif ed_info.get("edition") != "Free":
+                            if hasattr(rh, 'os_doc') and rh.os_doc:
+                                util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
+                                has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
+                                has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
+                                if has_py and not has_lua:
+                                    is_studio = True
+                    tip = (self.win.txt("tt_resolve_connection_studio") if is_studio
                            else self.win.txt("tt_resolve_connection_free"))
                     tip_lbl.setText(tip)
                     tip_lbl.show()

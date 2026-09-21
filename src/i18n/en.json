@@ -435,7 +435,7 @@
     "msg_seamless_cut_success": "Lossless cut completed successfully!\nSaved to: {path}",
     "msg_unsupported_file_format": "Unsupported file format. Please select a valid video or audio file.",
     "status_resolve_bridge_connected": "Connected (Bridge): {project}",
-    "tt_resolve_connection_studio": "Ensure Preferences > System > General > 'External scripting using' is set to 'Local'.",
+    "tt_resolve_connection_studio": "DaVinci Resolve Studio: Ensure Preferences > System > General > 'External scripting using' is set to 'Local'.",
     "tt_resolve_connection_free": "Open DaVinci Resolve and run Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Stop Bridge",
     "tt_stop_bridge": "Stop BadWords Bridge running inside DaVinci Resolve"
