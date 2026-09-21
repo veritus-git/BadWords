@@ -753,12 +753,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         fd, tmp = tempfile.mkstemp(suffix='.py', prefix='bw_upd_')
                         with os.fdopen(fd, 'wb') as fh:
                             fh.write(content)
-                        cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-                        
                         install_dir = getattr(_card_engine.os_doc, 'install_dir', '')
                         
-                        if is_win:
-                            venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
+                        if hasattr(_card_engine.os_doc, 'get_venv_python_path'):
+                            venv_py = _card_engine.os_doc.get_venv_python_path()
+                        elif is_win:
+                            venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'pythonw.exe')
+                            if not os.path.isfile(venv_py):
+                                venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
                         else:
                             venv_py = os.path.join(install_dir, 'venv', 'bin', 'python3')
                         
@@ -769,10 +771,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         if install_dir:
                             cmd.extend(['--install-dir', install_dir])
 
+                        sp_kwargs = _card_engine.os_doc.get_subprocess_kwargs() if hasattr(_card_engine, 'os_doc') else {}
+                        if not sp_kwargs and is_win:
+                            sp_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+                            si = subprocess.STARTUPINFO()
+                            si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+                            si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+                            sp_kwargs['startupinfo'] = si
+
                         result = subprocess.run(
                             cmd, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            encoding='utf-8', errors='replace', timeout=600, creationflags=cf
+                            encoding='utf-8', errors='replace', timeout=600, **sp_kwargs
                         )
                         for line in (result.stdout or '').splitlines():
                             log_info(f'[Updater] {line}')

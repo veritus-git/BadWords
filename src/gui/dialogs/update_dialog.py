@@ -335,10 +335,16 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
                 with os.fdopen(fd, 'wb') as f:
                     f.write(script_content)
 
-                cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-
+                sp_kwargs = {}
                 if self._is_win:
-                    venv_py = os.path.join(self._install_dir, 'venv', 'Scripts', 'python.exe')
+                    sp_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+                    si = subprocess.STARTUPINFO()
+                    si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+                    si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+                    sp_kwargs['startupinfo'] = si
+                    venv_py = os.path.join(self._install_dir, 'venv', 'Scripts', 'pythonw.exe')
+                    if not os.path.isfile(venv_py):
+                        venv_py = os.path.join(self._install_dir, 'venv', 'Scripts', 'python.exe')
                 else:
                     venv_py = os.path.join(self._install_dir, 'venv', 'bin', 'python3')
 
@@ -352,7 +358,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
                     stderr=subprocess.STDOUT,
                     encoding='utf-8', errors='replace',
                     timeout=600,
-                    creationflags=cf,
+                    **sp_kwargs
                 )
 
                 from osdoc import log_info

@@ -48,6 +48,17 @@ PLAT = ARGS.platform.lower()
 # Detect Windows Terminal (ConPTY) — Win32 console API calls break its pipe
 _IS_WINDOWS_TERMINAL = bool(os.environ.get("WT_SESSION", ""))
 
+def _sp_hidden_kwargs():
+    """Returns kwargs to ensure child processes never flash console windows on Windows."""
+    kwargs = {}
+    if os.name == 'nt':
+        kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+        si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+        kwargs['startupinfo'] = si
+    return kwargs
+
 # ── Platform helpers ─────────────────────────────────────────
 APP_NAME = "BadWords"
 
@@ -325,7 +336,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     try:
         r = subprocess.run(
             [venv_py, "-c", "import PySide6; import PySide6.QtCore; import PySide6.QtWidgets"],
-            capture_output=True, timeout=12
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
         )
         if r.returncode != 0:
             missing.append("PySide6")
@@ -336,7 +347,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     try:
         r = subprocess.run(
             [venv_py, "-c", "import faster_whisper"],
-            capture_output=True, timeout=12
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
         )
         if r.returncode != 0:
             missing.append("faster-whisper")
@@ -347,7 +358,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     try:
         r = subprocess.run(
             [venv_py, "-c", "import pypdf"],
-            capture_output=True, timeout=12
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
         )
         if r.returncode != 0:
             missing.append("pypdf")
@@ -359,7 +370,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
         try:
             r = subprocess.run(
                 [venv_py, "-c", "import ctranslate2"],
-                capture_output=True, timeout=12
+                capture_output=True, timeout=12, **_sp_hidden_kwargs()
             )
             if r.returncode != 0:
                 for npkg in nvidia_pkgs.split():
@@ -1346,7 +1357,7 @@ def _unblock_file_windows(path):
             ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
              f"Unblock-File -LiteralPath '{path}' -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '{path}:Zone.Identifier' -Force -ErrorAction SilentlyContinue"],
             capture_output=True,
-            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            **_sp_hidden_kwargs()
         )
     except Exception:
         pass
@@ -1360,7 +1371,7 @@ def _unblock_tree_windows(dir_path):
             ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
              f"Get-ChildItem -LiteralPath '{dir_path}' -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue; Remove-Item -LiteralPath \"$($_.FullName):Zone.Identifier\" -Force -ErrorAction SilentlyContinue }}"],
             capture_output=True,
-            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            **_sp_hidden_kwargs()
         )
     except Exception:
         pass
@@ -1439,7 +1450,7 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Description = 'BadWords'; $s2.Save();")
         
         full_script = " ".join(ps_commands)
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True)
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True, **_sp_hidden_kwargs())
         _unblock_tree_windows(install_dir)
 
         # Register in Windows Add/Remove Programs (HKCU)
@@ -1707,16 +1718,17 @@ def _launch_badwords(install_dir):
     try:
         if os.name == "nt":
             badwords_exe = os.path.join(install_dir, "BadWords.exe")
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
             if os.path.isfile(badwords_exe):
-                CREATE_NEW_PROCESS_GROUP = 0x00000200
-                DETACHED_PROCESS = 0x00000008
                 subprocess.Popen(
                     [badwords_exe],
                     cwd=install_dir,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
                     close_fds=True
                 )
                 return True
@@ -1725,15 +1737,13 @@ def _launch_badwords(install_dir):
             if not os.path.isfile(main_py):
                 main_py = os.path.join(install_dir, "src", "main.py")
             if os.path.isfile(pyw) and os.path.isfile(main_py):
-                CREATE_NEW_PROCESS_GROUP = 0x00000200
-                DETACHED_PROCESS = 0x00000008
                 subprocess.Popen(
                     [pyw, main_py],
                     cwd=install_dir,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
                     close_fds=True
                 )
                 return True
@@ -2383,7 +2393,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             log_step(f"Creating virtual environment ({target_py})...")
             _venv_ok = False
             try:
-                subprocess.run([target_py, "-m", "venv", venv_dir], check=True, capture_output=True)
+                subprocess.run([target_py, "-m", "venv", venv_dir], check=True, capture_output=True, **_sp_hidden_kwargs())
                 _venv_ok = True
             except (subprocess.CalledProcessError, FileNotFoundError, OSError):
                 pass
@@ -2393,12 +2403,12 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 try:
                     # Install virtualenv — try normal install first, then --user
                     _vi = subprocess.run([target_py, "-m", "pip", "install", "virtualenv", "--quiet"],
-                                         capture_output=True)
+                                         capture_output=True, **_sp_hidden_kwargs())
                     if _vi.returncode != 0:
                         subprocess.run([target_py, "-m", "pip", "install", "virtualenv", "--user", "--quiet"],
-                                       capture_output=True)
+                                       capture_output=True, **_sp_hidden_kwargs())
                     subprocess.run([target_py, "-m", "virtualenv", venv_dir],
-                                   check=True, capture_output=True)
+                                   check=True, capture_output=True, **_sp_hidden_kwargs())
                     _venv_ok = True
                 except Exception as e:
                     debug_log(f"virtualenv fallback also failed: {e}")
@@ -2432,7 +2442,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 sp = Spinner(label).start()
             r = subprocess.run(
                 [venv_py, "-m", "pip", "--no-cache-dir"] + list(args),
-                capture_output=True, text=True
+                capture_output=True, text=True, **_sp_hidden_kwargs()
             )
             ok = r.returncode == 0
             if sp:
@@ -2447,7 +2457,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         torch_ok = False
         try:
-            torch_ok = subprocess.run([venv_py, "-m", "pip", "show", "torch"], capture_output=True).returncode == 0
+            torch_ok = subprocess.run([venv_py, "-m", "pip", "show", "torch"], capture_output=True, **_sp_hidden_kwargs()).returncode == 0
         except Exception:
             pass
         if torch_ok:
@@ -2465,7 +2475,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             _pip_run("install", *pkg_list, "-q",
                      label="Installing Faster-Whisper + Dependencies")
 
-        pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
+        pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True, **_sp_hidden_kwargs()).returncode == 0
         if not pyside_ok:
             _pip_run("install", "PySide6", "-q", label="Installing PySide6 GUI library")
         else:
@@ -2739,7 +2749,7 @@ def option_repair(preset_path=None):
                             shutil.rmtree(p, onerror=_make_writable)  # noqa: deprecated
                         if os.path.exists(p):
                             if os.name == "nt":
-                                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", p], capture_output=True)
+                                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", p], capture_output=True, **_sp_hidden_kwargs())
                             else:
                                 subprocess.run(["rm", "-rf", p], capture_output=True)
                     else:
@@ -2912,15 +2922,15 @@ def option_move():
 
     log_step(f"Creating fresh venv ({target_py})...")
     try:
-        subprocess.run([target_py, "-m", "venv", new_venv], check=True, capture_output=True)
+        subprocess.run([target_py, "-m", "venv", new_venv], check=True, capture_output=True, **_sp_hidden_kwargs())
         log_ok("Virtual environment created.")
     except Exception:
         try:
             log_step("Built-in venv failed, trying virtualenv...")
             subprocess.run([target_py, "-m", "pip", "install", "virtualenv", "--quiet"],
-                           check=True, capture_output=True)
+                           check=True, capture_output=True, **_sp_hidden_kwargs())
             subprocess.run([target_py, "-m", "virtualenv", new_venv],
-                           check=True, capture_output=True)
+                           check=True, capture_output=True, **_sp_hidden_kwargs())
             log_ok("Virtual environment created.")
         except Exception as e:
             log_err(f"Failed to create venv: {e}")
@@ -2980,7 +2990,7 @@ def option_move():
         def _pip(label, *args):
             sp = Spinner(label).start()
             r = subprocess.run([venv_py, "-m", "pip"] + list(args),
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, **_sp_hidden_kwargs())
             sp.done(ok=r.returncode == 0)
             if r.returncode != 0:
                 for ln in (r.stderr or "").splitlines()[-8:]:
@@ -2991,7 +3001,7 @@ def option_move():
         _pip("Upgrading pip", "install", "--upgrade", "pip", "-q")
         has_nvidia = False
         try:
-            has_nvidia = subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0
+            has_nvidia = subprocess.run(["nvidia-smi"], capture_output=True, **_sp_hidden_kwargs()).returncode == 0
         except Exception:
             pass
         if not has_nvidia:
@@ -3009,14 +3019,14 @@ def option_move():
                      "--index-url", "https://download.pytorch.org/whl/cpu", "-q")
         _pip("Installing Faster-Whisper + Stable-TS + PyPDF",
              "install", "faster-whisper", "stable-ts", "pypdf", "-q")
-        if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode != 0:
+        if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True, **_sp_hidden_kwargs()).returncode != 0:
             _pip("Installing PySide6", "install", "PySide6", "-q")
 
         # ── Verify dependencies ──
         missing_repair = _check_missing_dependencies(venv_py)
         if missing_repair:
             log_warn(f"Missing packages detected during repair: {', '.join(missing_repair)}. Retrying installation...")
-            r = subprocess.run([venv_py, "-m", "pip", "install"] + missing_repair + ["-q"], capture_output=True)
+            r = subprocess.run([venv_py, "-m", "pip", "install"] + missing_repair + ["-q"], capture_output=True, **_sp_hidden_kwargs())
             missing_repair = _check_missing_dependencies(venv_py)
 
         if missing_repair:
@@ -3041,7 +3051,7 @@ def option_move():
         linked = False
         if os.name == "nt":
             r = subprocess.run(f'mklink /J "{new_libs}" "{final_site_pkgs}"',
-                               shell=True, capture_output=True)
+                               shell=True, capture_output=True, **_sp_hidden_kwargs())
             linked = (r.returncode == 0)
         else:
             try:
@@ -3266,7 +3276,7 @@ def option_uninstall():
                         py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
                         py_exe = os.path.join(tempfile.gettempdir(), "python_uninstaller.exe")
                         if download(py_url, py_exe):
-                            res = subprocess.run([py_exe, "/uninstall", "/quiet"])
+                            res = subprocess.run([py_exe, "/uninstall", "/quiet"], **_sp_hidden_kwargs())
                             sp_py_un.done(ok=(res.returncode in (0, 1641, 3010)))
                         else:
                             sp_py_un.done(ok=False)
@@ -3368,7 +3378,7 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
             # Robust OS-level fallback if Python's rmtree fails on tricky symlinks/permissions
             if os.path.exists(install_dir):
                 if os.name == "nt":
-                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", install_dir], capture_output=True)
+                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", install_dir], capture_output=True, **_sp_hidden_kwargs())
                 else:
                     subprocess.run(["rm", "-rf", install_dir], capture_output=True)
             

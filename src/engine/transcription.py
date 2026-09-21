@@ -43,7 +43,38 @@ class TranscriptionMixin:
                 res = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
                 return int(res.stdout.strip()) / (1024**3)
             elif platform.system() == "Windows":
-                res = subprocess.run(["wmic", "computersystem", "get", "TotalPhysicalMemory"], capture_output=True, text=True)
+                # Prefer in-process Win32 API to avoid any console window flash
+                try:
+                    import ctypes
+                    class MEMORYSTATUSEX(ctypes.Structure):
+                        _fields_ = [
+                            ("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                        ]
+                    stat = MEMORYSTATUSEX()
+                    stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                        return int(stat.ullTotalPhys) / (1024**3)
+                except Exception:
+                    pass
+
+                # Hidden subprocess fallback in case ctypes fails
+                sp_kwargs = getattr(self.os_doc, 'get_subprocess_kwargs', lambda: {})() if hasattr(self, 'os_doc') else {}
+                if not sp_kwargs and os.name == 'nt':
+                    sp_kwargs = {
+                        "creationflags": getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000),
+                        "startupinfo": subprocess.STARTUPINFO()
+                    }
+                    sp_kwargs["startupinfo"].dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+                    sp_kwargs["startupinfo"].wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+                res = subprocess.run(["wmic", "computersystem", "get", "TotalPhysicalMemory"], capture_output=True, text=True, **sp_kwargs)
                 lines = res.stdout.strip().split('\n')
                 if len(lines) > 1:
                     return int(lines[1].strip()) / (1024**3)
@@ -121,6 +152,13 @@ class TranscriptionMixin:
             kwargs = {}
             if hasattr(self.os_doc, 'get_subprocess_kwargs'):
                 kwargs = self.os_doc.get_subprocess_kwargs()
+            if not kwargs and os.name == 'nt':
+                kwargs = {
+                    "creationflags": getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000),
+                    "startupinfo": subprocess.STARTUPINFO()
+                }
+                kwargs["startupinfo"].dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+                kwargs["startupinfo"].wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
             result = subprocess.run(
                 [python_exe, "-c", probe_script],
                 capture_output=True, text=True, timeout=15,
@@ -149,15 +187,20 @@ class FakeTTY:
     def __init__(self, stream):
         self.stream = stream
     def __getattr__(self, attr):
-        return getattr(self.stream, attr)
+        if self.stream is not None:
+            return getattr(self.stream, attr)
+        return lambda *args, **kwargs: None
     def isatty(self):
         return True
     def write(self, *args, **kwargs):
-        self.stream.write(*args, **kwargs)
-        self.stream.flush()
+        if self.stream is not None:
+            self.stream.write(*args, **kwargs)
+            self.stream.flush()
 
-sys.stderr = FakeTTY(sys.stderr)
-sys.stdout = FakeTTY(sys.stdout)
+if sys.stderr is not None:
+    sys.stderr = FakeTTY(sys.stderr)
+if sys.stdout is not None:
+    sys.stdout = FakeTTY(sys.stdout)
 os.environ["PYTHONUNBUFFERED"] = "1"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
 os.environ["TQDM_DISABLE"] = "0"

@@ -20,6 +20,18 @@ import ssl
 import webbrowser
 import re
 
+def _sp_hidden_kwargs():
+    """Returns kwargs to ensure child processes never flash console windows on Windows."""
+    kwargs = {}
+    if os.name == 'nt':
+        kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+        si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+        kwargs['startupinfo'] = si
+    return kwargs
+
+
 def load_app_version(install_dir=None):
     """
     Dynamically loads the application version from src/config/app_constants.py
@@ -485,7 +497,7 @@ def self_upgrade_if_needed(tag: str, install_dir: str = None) -> bool:
     new_env["_BW_UPDATER_SELF_UPGRADED"] = "1"
 
     if os.name == "nt":
-        r = subprocess.run([sys.executable, current_script] + sys.argv[1:], env=new_env)
+        r = subprocess.run([sys.executable, current_script] + sys.argv[1:], env=new_env, **_sp_hidden_kwargs())
         sys.exit(r.returncode)
     else:
         os.execve(sys.executable, [sys.executable, current_script] + sys.argv[1:], new_env)
@@ -494,18 +506,19 @@ def self_upgrade_if_needed(tag: str, install_dir: str = None) -> bool:
 
 def download(url, dest):
     if shutil.which("curl"):
-        r = subprocess.run(["curl", "-fsSL", "--retry", "3", url, "-o", dest], capture_output=True)
+        r = subprocess.run(["curl", "-fsSL", "--retry", "3", url, "-o", dest], capture_output=True, **_sp_hidden_kwargs())
         if r.returncode == 0 and os.path.isfile(dest):
             return True
     if shutil.which("wget"):
-        r = subprocess.run(["wget", "-qO", dest, url], capture_output=True)
+        r = subprocess.run(["wget", "-qO", dest, url], capture_output=True, **_sp_hidden_kwargs())
         if r.returncode == 0 and os.path.isfile(dest):
             return True
     if os.name == "nt":
         r = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"Invoke-WebRequest -Uri '{url}' -OutFile '{dest}' -UseBasicParsing"],
-            capture_output=True
+            capture_output=True,
+            **_sp_hidden_kwargs()
         )
         if r.returncode == 0 and os.path.isfile(dest):
             return True
@@ -818,7 +831,8 @@ def detect_nvidia_gpu():
                  "try{$g=Get-WmiObject Win32_VideoController -EA Stop "
                  "| Where-Object {$_.Name -like '*NVIDIA*'} "
                  "| Select-Object -First 1; if($g){'1'}else{'0'}}catch{'0'}"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10,
+                **_sp_hidden_kwargs()
             )
             return r.stdout.strip() == "1"
         except Exception:
@@ -1138,17 +1152,17 @@ def main():
 
     if os.path.isfile(venv_pip):
         info("Upgrading pip, setuptools & wheel...")
-        subprocess.run([venv_pip, "install", "--upgrade", "pip", "setuptools", "wheel", "--quiet"], capture_output=True)
+        subprocess.run([venv_pip, "install", "--upgrade", "pip", "setuptools", "wheel", "--quiet"], capture_output=True, **_sp_hidden_kwargs())
 
         info("Checking for legacy PyTorch installation...")
-        torch_check = subprocess.run([venv_pip, "show", "torch"], capture_output=True)
+        torch_check = subprocess.run([venv_pip, "show", "torch"], capture_output=True, **_sp_hidden_kwargs())
         if torch_check.returncode == 0:
             info("Uninstalling legacy PyTorch to save disk space...")
-            subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True)
+            subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True, **_sp_hidden_kwargs())
 
         info("Upgrading core dependencies (faster-whisper, pypdf, PySide6)...")
         r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "pypdf", "PySide6"], 
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, **_sp_hidden_kwargs())
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:
                 info(line)
@@ -1160,7 +1174,7 @@ def main():
         # Hardware acceleration packages (NVIDIA CUDA 12)
         if detect_nvidia_gpu():
             info("NVIDIA GPU detected. Installing/upgrading CUDA 12 packages...")
-            subprocess.run([venv_pip, "install", "--upgrade", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"], capture_output=True)
+            subprocess.run([venv_pip, "install", "--upgrade", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"], capture_output=True, **_sp_hidden_kwargs())
             info("CUDA 12 acceleration libraries ready.")
 
         log("Python packages upgraded.")
@@ -1189,7 +1203,7 @@ def main():
             except Exception: shutil.rmtree(libs_link, ignore_errors=True)
 
         if os.name == "nt":
-            subprocess.run(f'mklink /J "{libs_link}" "{site_pkgs}"', shell=True, capture_output=True)
+            subprocess.run(f'mklink /J "{libs_link}" "{site_pkgs}"', shell=True, capture_output=True, **_sp_hidden_kwargs())
         else:
             try: os.symlink(site_pkgs, libs_link, target_is_directory=True)
             except Exception: pass

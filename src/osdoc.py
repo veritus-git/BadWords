@@ -610,7 +610,7 @@ class OSDoctor:
     def _test_executable(self, cmd_path):
         try:
             # -version exits cleanly if the binary is valid
-            subprocess.run([cmd_path, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            subprocess.run([cmd_path, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, **self.get_subprocess_kwargs())
             return True
         except Exception:
             return False
@@ -656,12 +656,13 @@ class OSDoctor:
     def get_subprocess_kwargs(self) -> dict:
         """
         Returns cross-platform subprocess kwargs, abstracting Windows startupinfo.
+        Strictly suppresses console window creation on Windows (CREATE_NO_WINDOW + SW_HIDE).
         """
-        if self.is_win:
+        if self.is_win or os.name == 'nt':
             si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = subprocess.SW_HIDE
-            cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 0x00000001)
+            si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+            cf = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
             return {"startupinfo": si, "creationflags": cf}
         return {}
 
@@ -865,18 +866,28 @@ class OSDoctor:
     # VENV & DEPENDENCY CHECKING
     # ==========================
 
-    def get_venv_python_path(self):
+    def get_venv_python_path(self, prefer_windowless: bool = True):
         """
         Returns the path to the Isolated VENV Python executable.
+        On Windows, prefers pythonw.exe (windowless GUI subsystem) when prefer_windowless is True
+        to guarantee zero console windows or flashes.
         """
         # --- WINDOWS VENV FIX ---
         if self.is_win:
-            # Check for standard venv structure on Windows: venv\Scripts\python.exe
-            venv_python = os.path.join(self.install_dir, "venv", "Scripts", "python.exe")
+            venv_scripts = os.path.join(self.install_dir, "venv", "Scripts")
+            venv_pythonw = os.path.join(venv_scripts, "pythonw.exe")
+            venv_python = os.path.join(venv_scripts, "python.exe")
+
+            if prefer_windowless and os.path.exists(venv_pythonw):
+                return venv_pythonw
             if os.path.exists(venv_python):
                 return venv_python
+            if os.path.exists(venv_pythonw):
+                return venv_pythonw
             
             # Fallback (Should typically not be reached if installed correctly)
+            if prefer_windowless and shutil.which("pythonw"):
+                return "pythonw"
             return "python"
         
         # --- LINUX VENV FIX ---

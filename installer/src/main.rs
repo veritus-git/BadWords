@@ -507,7 +507,7 @@ fn launch_installed_badwords(target: &std::path::Path) {
     {
         let launcher_exe = target.join("BadWords.exe");
         if launcher_exe.is_file() {
-            let _ = std::process::Command::new(&launcher_exe).spawn();
+            let _ = os::create_hidden_command(&launcher_exe).spawn();
         } else {
             let pythonw = target.join("venv").join("Scripts").join("pythonw.exe");
             let main_py = if target.join("main.py").is_file() {
