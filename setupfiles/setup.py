@@ -329,13 +329,14 @@ def _find_compatible_system_python():
 
 def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     """Check if critical BadWords dependencies can be imported cleanly in the venv.
-    Returns a list of missing package names for pip."""
+    Uses importlib.util.find_spec to be 100% robust against headless Linux / CI environments
+    where GUI display libraries (e.g. libGL) may not be present for QtWidgets."""
     missing = []
 
     # 1. PySide6
     try:
         r = subprocess.run(
-            [venv_py, "-c", "import PySide6; import PySide6.QtCore; import PySide6.QtWidgets"],
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"],
             capture_output=True, timeout=12, **_sp_hidden_kwargs()
         )
         if r.returncode != 0:
@@ -346,7 +347,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     # 2. faster-whisper
     try:
         r = subprocess.run(
-            [venv_py, "-c", "import faster_whisper"],
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('faster_whisper') is not None else 1)"],
             capture_output=True, timeout=12, **_sp_hidden_kwargs()
         )
         if r.returncode != 0:
@@ -357,7 +358,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     # 3. pypdf
     try:
         r = subprocess.run(
-            [venv_py, "-c", "import pypdf"],
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('pypdf') is not None else 1)"],
             capture_output=True, timeout=12, **_sp_hidden_kwargs()
         )
         if r.returncode != 0:
@@ -369,7 +370,7 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     if check_nvidia and nvidia_pkgs:
         try:
             r = subprocess.run(
-                [venv_py, "-c", "import ctranslate2"],
+                [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('ctranslate2') is not None else 1)"],
                 capture_output=True, timeout=12, **_sp_hidden_kwargs()
             )
             if r.returncode != 0:
@@ -2475,7 +2476,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             _pip_run("install", *pkg_list, "-q",
                      label="Installing Faster-Whisper + Dependencies")
 
-        pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True, **_sp_hidden_kwargs()).returncode == 0
+        pyside_ok = subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"],
+            capture_output=True, **_sp_hidden_kwargs()
+        ).returncode == 0
         if not pyside_ok:
             _pip_run("install", "PySide6", "-q", label="Installing PySide6 GUI library")
         else:
@@ -3019,7 +3023,10 @@ def option_move():
                      "--index-url", "https://download.pytorch.org/whl/cpu", "-q")
         _pip("Installing Faster-Whisper + Stable-TS + PyPDF",
              "install", "faster-whisper", "stable-ts", "pypdf", "-q")
-        if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True, **_sp_hidden_kwargs()).returncode != 0:
+        if subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"],
+            capture_output=True, **_sp_hidden_kwargs()
+        ).returncode != 0:
             _pip("Installing PySide6", "install", "PySide6", "-q")
 
         # ── Verify dependencies ──
