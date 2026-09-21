@@ -595,6 +595,10 @@ class OSDoctor:
                 c = "/opt/resolve/libs/Fusion/fusionscript.so"
                 if os.path.exists(c):
                     os.environ["RESOLVE_SCRIPT_LIB"] = c
+            if "RESOLVE_SCRIPT_API" not in os.environ:
+                api_dir = "/opt/resolve/Developer/Scripting"
+                if os.path.isdir(api_dir):
+                    os.environ["RESOLVE_SCRIPT_API"] = api_dir
             
         for p in paths:
             if os.path.exists(p):
@@ -697,17 +701,19 @@ class OSDoctor:
                         pass
 
         elif self.is_mac:
-            studio_app = "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app"
-            free_app = "/Applications/DaVinci Resolve/DaVinci Resolve.app"
+            candidate_apps = [
+                ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Free"),
+                ("/Applications/DaVinci Resolve.app", "Free"),
+            ]
             chosen_app = None
-            if os.path.isdir(studio_app):
-                info["installed"] = True
-                info["edition"] = "Studio"
-                chosen_app = studio_app
-            elif os.path.isdir(free_app):
-                info["installed"] = True
-                info["edition"] = "Free"
-                chosen_app = free_app
+            for app_path, ed in candidate_apps:
+                if os.path.isdir(app_path):
+                    info["installed"] = True
+                    info["edition"] = ed
+                    chosen_app = app_path
+                    break
 
             if chosen_app:
                 plist_path = os.path.join(chosen_app, "Contents", "Info.plist")
@@ -724,42 +730,122 @@ class OSDoctor:
             resolve_bin = "/opt/resolve/bin/resolve"
             if os.path.isfile(resolve_bin):
                 info["installed"] = True
-                # Fast path: check /opt/resolve/docs/ReadMe.html directly (0.1ms vs 3000ms)
-                readme_path = "/opt/resolve/docs/ReadMe.html"
-                if os.path.isfile(readme_path):
-                    try:
-                        with open(readme_path, "r", encoding="utf-8", errors="ignore") as f:
-                            content = f.read(2048)
-                        import re
-                        m = re.search(r"<title>DaVinci Resolve (Studio )?(\d+(\.\d+)+)</title>", content)
-                        if m:
-                            info["edition"] = "Studio" if m.group(1) else "Free"
-                            info["version"] = m.group(2)
-                    except Exception:
-                        pass
 
-                # If edition still unknown, check package manager
-                if info["edition"] == "Unknown":
-                    try:
-                        res = subprocess.run(["dpkg", "-l", "davinci-resolve-studio"], capture_output=True, text=True, **self.get_subprocess_kwargs())
-                        if res.returncode == 0 and "davinci-resolve-studio" in res.stdout:
-                            info["edition"] = "Studio"
-                        else:
-                            info["edition"] = "Free"
-                    except Exception:
-                        info["edition"] = "Free"
+                # 1. Check documentation files in /opt/resolve/docs/
+                for doc_name in ("ReadMe.html", "Welcome.txt", "License.html"):
+                    doc_path = os.path.join("/opt/resolve/docs", doc_name)
+                    if os.path.isfile(doc_path):
+                        try:
+                            with open(doc_path, "r", encoding="utf-8", errors="ignore") as f:
+                                doc_content = f.read(65536)
+                            import re
+                            if re.search(r"DaVinci\s+Resolve\s+Studio", doc_content, re.IGNORECASE):
+                                info["edition"] = "Studio"
+                            elif info["edition"] == "Unknown" and re.search(r"DaVinci\s+Resolve", doc_content, re.IGNORECASE):
+                                info["edition"] = "Free"
 
-                # If version still unknown, fallback to resolve -v
-                if not info["version"]:
+                            if not info["version"]:
+                                vm = re.search(r"DaVinci\s+Resolve(?:\s+Studio)?\s+(?:Version\s+)?(\d+(?:\.\d+)+)", doc_content, re.IGNORECASE)
+                                if vm:
+                                    info["version"] = vm.group(1)
+                        except Exception:
+                            pass
+                        if info["edition"] == "Studio" and info["version"]:
+                            break
+
+                # 2. Check desktop application files (.desktop)
+                if info["edition"] != "Studio":
+                    desktop_dirs = [
+                        "/usr/share/applications",
+                        "/usr/local/share/applications",
+                        os.path.expanduser("~/.local/share/applications"),
+                    ]
+                    for d_dir in desktop_dirs:
+                        if not os.path.isdir(d_dir):
+                            continue
+                        try:
+                            for fname in os.listdir(d_dir):
+                                if "resolve" in fname.lower() or "davinci" in fname.lower():
+                                    fpath = os.path.join(d_dir, fname)
+                                    if os.path.isfile(fpath):
+                                        try:
+                                            with open(fpath, "r", encoding="utf-8", errors="ignore") as df:
+                                                df_content = df.read(16384)
+                                            import re
+                                            if re.search(r"Name=.*DaVinci\s+Resolve\s+Studio", df_content, re.IGNORECASE) or "resolve-studio" in fname.lower() or "studio" in fname.lower():
+                                                info["edition"] = "Studio"
+                                                break
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
+                        if info["edition"] == "Studio":
+                            break
+
+                # 3. Check native Linux package managers (RPM on Fedora/RHEL/openSUSE, Pacman on Arch, DPKG on Debian/Ubuntu)
+                if info["edition"] != "Studio":
+                    if shutil.which("rpm"):
+                        try:
+                            res = subprocess.run(["rpm", "-qa", "*resolve*", "*davinci*"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                            if "studio" in (res.stdout or "").lower():
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                    if info["edition"] != "Studio" and shutil.which("pacman"):
+                        try:
+                            res = subprocess.run(["pacman", "-Qs", "resolve"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                            if res.returncode == 0 and "studio" in (res.stdout or "").lower():
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                    if info["edition"] != "Studio" and shutil.which("dpkg"):
+                        try:
+                            res = subprocess.run(["dpkg", "-l", "*resolve*", "*davinci*"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                            if res.returncode == 0 and "studio" in (res.stdout or "").lower():
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                # 4. Check resolve -v output (definitive CLI inspection)
+                if info["edition"] != "Studio" or not info["version"]:
                     try:
                         res = subprocess.run([resolve_bin, "-v"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
-                        out = res.stdout + res.stderr
-                        import re
-                        m = re.search(r"(\d+\.\d+(\.\d+)?)", out)
-                        if m:
-                            info["version"] = m.group(1)
+                        out = (res.stdout or "") + " " + (res.stderr or "")
+                        if "studio" in out.lower():
+                            info["edition"] = "Studio"
+                        elif info["edition"] == "Unknown" and "davinci resolve" in out.lower():
+                            info["edition"] = "Free"
+
+                        if not info["version"]:
+                            import re
+                            m = re.search(r"(\d+\.\d+(?:\.\d+)?)", out)
+                            if m:
+                                info["version"] = m.group(1)
                     except Exception:
                         pass
+
+                # 5. Check license directory (.license with files)
+                if info["edition"] != "Studio":
+                    lic_dir = "/opt/resolve/.license"
+                    if os.path.isdir(lic_dir):
+                        try:
+                            if any(not f.startswith('.') for f in os.listdir(lic_dir)):
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                # 6. Fallback: check installed utility scripts:
+                # If BadWords.py exists and BadWords Bridge.lua does not, it's Studio
+                if info["edition"] == "Unknown":
+                    util_dirs = self.get_resolve_script_utility_dirs()
+                    has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
+                    has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
+                    if has_py and not has_lua:
+                        info["edition"] = "Studio"
+                    else:
+                        info["edition"] = "Free"
 
         # Parse version tuple
         if info["version"]:
@@ -815,6 +901,19 @@ class OSDoctor:
             lua_src = os.path.join(repo_root, "setupfiles", "BadWords Bridge.lua")
             if not os.path.isfile(lua_src) and hasattr(self, 'resources_dir'):
                 lua_src = os.path.join(self.resources_dir, "setupfiles", "BadWords Bridge.lua")
+
+            if info["edition"] == "Studio":
+                # For Studio, native external scripting via BadWords.py is used.
+                # Remove BadWords Bridge.lua if present so only BadWords.py remains in Workspace -> Scripts
+                for ud in util_dirs:
+                    lua_file = os.path.join(ud, "BadWords Bridge.lua")
+                    if os.path.isfile(lua_file):
+                        try:
+                            os.remove(lua_file)
+                            log_info(f"[Auto-Healing] Removed BadWords Bridge.lua for Resolve Studio: {lua_file}")
+                        except Exception:
+                            pass
+                return
 
             is_free_21_1 = (info["edition"] == "Free" and info["is_21_1_or_newer"])
 
