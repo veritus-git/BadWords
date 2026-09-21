@@ -984,11 +984,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             tl_name = self._chapters[self._current_chapter_idx].get("tl_name")
         elif getattr(self, '_transcription_source', None):
             tl_name = self._transcription_source.get("timeline_name")
-            
-        if tl_name:
-            rh.set_current_timeline(tl_name)
         
-        rh.jump_to_seconds(timestamp_s, timeline_name=tl_name)
+        rh.jump_to_seconds(timestamp_s, timeline_name=tl_name, async_exec=True)
 
     def _on_import_script(self):
         from PySide6.QtWidgets import QFileDialog
@@ -1221,7 +1218,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             tl_name = ch.get("tl_name")
             if tl_name and self.resolve_handler:
                 try:
-                    self.resolve_handler.set_current_timeline(tl_name)
+                    self.resolve_handler.set_current_timeline(tl_name, async_exec=True)
                 except Exception:
                     pass
 

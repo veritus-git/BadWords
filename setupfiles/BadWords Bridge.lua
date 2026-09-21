@@ -769,6 +769,11 @@ handlers.SetCurrentTimeline = function(req)
         return { error = "Timeline name required" }
     end
 
+    local cur = proj:GetCurrentTimeline()
+    if cur and cur:GetName() == tl_name then
+        return { ok = true, timeline_name = tl_name }
+    end
+
     local count = proj:GetTimelineCount() or 0
     for i = 1, count do
         local tl = proj:GetTimelineByIndex(i)
@@ -787,27 +792,30 @@ end
 handlers.JumpToSeconds = function(req)
     if not res_app then return { error = "Resolve API object not available" } end
     local secs = tonumber(req and req.seconds) or 0
-    pcall(function() res_app:OpenPage("edit") end)
 
     local pm = res_app:GetProjectManager()
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
     local tl = nil
+    local curr_tl = proj:GetCurrentTimeline()
     if req and req.timeline_name and req.timeline_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == req.timeline_name then
-                tl = t
-                break
+        if curr_tl and curr_tl:GetName() == req.timeline_name then
+            tl = curr_tl
+        else
+            local count = proj:GetTimelineCount() or 0
+            for i = 1, count do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t:GetName() == req.timeline_name then
+                    tl = t
+                    pcall(function() proj:SetCurrentTimeline(tl) end)
+                    break
+                end
             end
         end
     end
-    if not tl then tl = proj:GetCurrentTimeline() end
+    if not tl then tl = curr_tl end
     if not tl then return { error = "No timeline active" } end
-
-    pcall(function() proj:SetCurrentTimeline(tl) end)
 
     local fps = tonumber(req and req.fps)
     if not fps or fps <= 0 then
@@ -983,7 +991,7 @@ local quitServer = false
 local last_request_id = ""
 
 while not quitServer do
-    bmd.wait(0.1)
+    bmd.wait(0.025)
 
     if bmd.fileexists(request_file) then
         local chunk = loadfile(request_file)
@@ -994,8 +1002,8 @@ while not quitServer do
 
         if ok and type(req) == "table" and type(req.id) == "string" then
             if req.id == last_request_id then
-                -- Request has already been processed; wait for client to delete request_file
-                bmd.wait(0.2)
+                -- Request has already been processed; wait for next request
+                bmd.wait(0.025)
             else
                 last_request_id = req.id
                 bridge_ack(req.id)
@@ -1023,6 +1031,7 @@ while not quitServer do
                 end
 
                 bridge_respond(req.id, result)
+                pcall(function() os.remove(request_file) end)
 
                 if control and control.quit then
                     quitServer = true

@@ -16,6 +16,7 @@ import time
 import os
 import re
 import threading
+import queue
 import json
 import hashlib
 
@@ -53,6 +54,11 @@ class ResolveHandler:
         self.bridge_timeline_name = ""
         self.bridge_start_frame = 0
         self.bridge_timelines = []
+
+        # Dedicated async queue and worker to execute UI playhead/timeline requests without blocking Qt GUI
+        self._async_queue = queue.Queue()
+        self._async_thread = threading.Thread(target=self._async_worker, daemon=True, name="ResolveAsyncWorker")
+        self._async_thread.start()
         
         # Attempt to load script module
         self._load_resolve_script_module()
@@ -210,17 +216,59 @@ class ResolveHandler:
             log_error(f"get_timeline_start_frame: {e}")
             return 86400  # Fallback 01:00:00:00 at 24fps
 
-    def set_current_timeline(self, timeline_name: str) -> bool:
+    def _async_worker(self):
+        """Background thread worker to process UI jump/timeline sync without blocking Qt main thread."""
+        while True:
+            cmd = self._async_queue.get()
+            if cmd is None:
+                break
+            cmd_type, args, kwargs = cmd
+
+            # Coalesce consecutive jump commands to jump directly to latest position
+            if cmd_type == 'jump':
+                while not self._async_queue.empty():
+                    try:
+                        peek = self._async_queue.get_nowait()
+                        if peek[0] == 'jump':
+                            cmd = peek
+                            cmd_type, args, kwargs = cmd
+                        else:
+                            self._async_queue.put(peek)
+                            break
+                    except queue.Empty:
+                        break
+
+            try:
+                if cmd_type == 'jump':
+                    self._do_jump_to_seconds(*args, **kwargs)
+                elif cmd_type == 'set_timeline':
+                    self._do_set_current_timeline(*args, **kwargs)
+            except Exception as e:
+                log_error(f"Async resolve worker error ({cmd_type}): {e}")
+            finally:
+                self._async_queue.task_done()
+
+    def set_current_timeline(self, timeline_name: str, async_exec: bool = False) -> bool:
         """
         Sets the active timeline in Resolve by name.
-        Supports both direct API and bridge backends.
+        If async_exec is True, dispatches to background worker immediately without blocking UI.
         """
+        if not timeline_name:
+            return False
+
+        if async_exec:
+            self._async_queue.put(('set_timeline', (timeline_name,), {}))
+            return True
+
+        return self._do_set_current_timeline(timeline_name)
+
+    def _do_set_current_timeline(self, timeline_name: str) -> bool:
         if not timeline_name:
             return False
 
         if self.backend == 'bridge':
             try:
-                res = self.bridge_client.call("SetCurrentTimeline", {"timeline_name": timeline_name}, timeout_secs=5.0)
+                res = self.bridge_client.call("SetCurrentTimeline", {"timeline_name": timeline_name}, timeout_secs=3.0)
                 if res and res.get("ok"):
                     self.bridge_timeline_name = timeline_name
                     return True
@@ -249,27 +297,45 @@ class ResolveHandler:
             log_error(f"set_current_timeline error: {e}")
         return False
 
-    def jump_to_seconds(self, seconds, timeline_name: str = None):
-        """Moves playhead to a specific second in the timeline."""
+    def jump_to_seconds(self, seconds, timeline_name: str = None, async_exec: bool = True):
+        """
+        Moves playhead to a specific second in the timeline.
+        By default executes asynchronously so it NEVER blocks the Qt UI.
+        """
+        if async_exec:
+            self._async_queue.put(('jump', (seconds,), {'timeline_name': timeline_name}))
+            return
+
+        self._do_jump_to_seconds(seconds, timeline_name)
+
+    def _do_jump_to_seconds(self, seconds, timeline_name: str = None):
         if self.backend == 'bridge':
             try:
                 payload = {"seconds": seconds, "fps": self.fps}
                 if timeline_name:
                     payload["timeline_name"] = timeline_name
-                self.bridge_client.call("JumpToSeconds", payload, timeout_secs=5.0)
+                self.bridge_client.call("JumpToSeconds", payload, timeout_secs=2.0)
             except Exception as e:
                 log_error(f"jump_to_seconds (bridge) error: {e}")
             return
 
         if not self.resolve or not self.timeline: return
         
-        # Open Edit Page first
-        self.resolve.OpenPage("edit")
-        
-        start_tc = self.get_timeline_start_frame()
-        target_frame = start_tc + round(seconds * self.fps)
-        
-        self.timeline.SetCurrentTimecode(self._frames_to_tc(target_frame))
+        try:
+            if timeline_name and self.project:
+                curr_tl = self.timeline
+                if not curr_tl or curr_tl.GetName() != timeline_name:
+                    self._do_set_current_timeline(timeline_name)
+
+            # Open Edit Page first
+            self.resolve.OpenPage("edit")
+            
+            start_tc = self.get_timeline_start_frame()
+            target_frame = start_tc + round(seconds * self.fps)
+            
+            self.timeline.SetCurrentTimecode(self._frames_to_tc(target_frame))
+        except Exception as e:
+            log_error(f"jump_to_seconds error: {e}")
 
     def _frames_to_tc(self, frames):
         """Helper to convert frames to SMPTE Timecode string."""
