@@ -2050,6 +2050,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 dlg = CustomMsgBox(self, "BadWords", self.txt("msg_file_not_selected"), self.txt("btn_ok"))
                 dlg.exec()
                 return
+            from gui.widgets.file_drop_zone import FileDropZone
+            if not FileDropZone.is_supported_file(source_file_path):
+                if hasattr(self, 'drop_zone_1'):
+                    self.drop_zone_1.shake()
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_unsupported_file_format"), self.txt("btn_ok"))
+                dlg.exec()
+                return
         else:
             rh = getattr(self.engine, 'resolve_handler', None)
             if not rh or not rh.is_connected():
@@ -2825,6 +2832,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 if hasattr(self, 'drop_zone_0'):
                     self.drop_zone_0.shake()
                 dlg = CustomMsgBox(self, "BadWords", self.txt("msg_file_not_selected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+            from gui.widgets.file_drop_zone import FileDropZone
+            if not FileDropZone.is_supported_file(source_file_path):
+                if hasattr(self, 'drop_zone_0'):
+                    self.drop_zone_0.shake()
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_unsupported_file_format"), self.txt("btn_ok"))
                 dlg.exec()
                 return
         else:
