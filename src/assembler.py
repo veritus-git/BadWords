@@ -137,7 +137,7 @@ def _filter_tracks(track_vec, keep_indices, preserve_order=False):
     """Remove track Elements not in keep_indices (1-based), or clear them if preserve_order is True."""
     if keep_indices is None:
         return
-    elements = track_vec.findall('Element')
+    elements = list(track_vec.findall('Element'))
     for i, el in enumerate(elements):
         if (i + 1) not in keep_indices:
             # If preserve_order is True, or if we are deleting ALL tracks, keep the first one but empty
@@ -313,6 +313,38 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
 
                             # Record color schedule
                             color_schedule[new_dest_rel] = _op_color(op)
+
+        # ── 3b. Track Packing (when preserve_track_order is False) ─────────────
+        # If preserve_track_order is False: remove all empty tracks (tracks with no clips),
+        # so remaining tracks are packed sequentially starting at Track 1.
+        if not preserve_track_order:
+            for track_vec_name in ('VideoTrackVec', 'AudioTrackVec'):
+                track_vec = root.find(track_vec_name)
+                if track_vec is None:
+                    continue
+
+                if audio_only_mode and track_vec_name == 'VideoTrackVec':
+                    # In audio-only mode, ensure exactly 1 empty video track remains
+                    v_elements = list(track_vec.findall('Element'))
+                    for el in v_elements[1:]:
+                        track_vec.remove(el)
+                    continue
+
+                elements = list(track_vec.findall('Element'))
+                non_empty = []
+                for el in elements:
+                    items_el = el.find('.//Items')
+                    if items_el is not None and len(items_el.findall('Element')) > 0:
+                        non_empty.append(el)
+
+                if non_empty:
+                    for el in elements:
+                        if el not in non_empty:
+                            track_vec.remove(el)
+                elif len(elements) > 1:
+                    # All tracks empty: keep only the first one
+                    for el in elements[1:]:
+                        track_vec.remove(el)
 
         # ── 4. Write modified XML back ────────────────────────────────────────
         # Preserve XML declaration and comment from original

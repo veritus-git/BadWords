@@ -317,18 +317,20 @@ class AudioExtractionMixin:
         track_indices = settings.get('track_indices') or None
         expected_source_files = settings.get('source_files') or []
 
-        if not self.resolve_handler or not getattr(self.resolve_handler, 'project', None):
+        if not self.resolve_handler or not self.resolve_handler.is_connected():
             log_error("[PreviewAudio] DaVinci Resolve is not connected.")
             return None
 
         # ── 1. VALIDATE TIMELINE EXISTENCE & MATCHING ────────────────────────
         matching_tl = None
-        if tl_name and self.resolve_handler.project and hasattr(self.resolve_handler.project, "GetTimelineCount"):
+        inspect_tl_name = tl_name or self.resolve_handler.get_current_timeline_name()
+
+        if self.resolve_handler.project and hasattr(self.resolve_handler.project, "GetTimelineCount"):
             try:
                 count = int(self.resolve_handler.project.GetTimelineCount())
                 for i in range(1, count + 1):
                     t = self.resolve_handler.project.GetTimelineByIndex(i)
-                    if t and t.GetName() == tl_name:
+                    if t and t.GetName() == inspect_tl_name:
                         matching_tl = t
                         break
             except Exception as e:
@@ -336,14 +338,16 @@ class AudioExtractionMixin:
 
         if not matching_tl:
             curr_tl = getattr(self.resolve_handler, 'timeline', None)
-            if curr_tl and (not tl_name or curr_tl.GetName() == tl_name):
+            if curr_tl and (not inspect_tl_name or curr_tl.GetName() == inspect_tl_name):
                 matching_tl = curr_tl
 
-        if not matching_tl:
-            log_error(f"[PreviewAudio] Target timeline '{tl_name}' not found in DaVinci Resolve.")
+        if not matching_tl and self.resolve_handler.backend != 'bridge':
+            log_error(f"[PreviewAudio] Target timeline '{inspect_tl_name}' not found in DaVinci Resolve.")
             return None
-
-        inspect_tl_name = matching_tl.GetName()
+        elif self.resolve_handler.backend == 'bridge':
+            if not self.resolve_handler.timeline_exists(inspect_tl_name):
+                log_error(f"[PreviewAudio] Target timeline '{inspect_tl_name}' not found in DaVinci Resolve.")
+                return None
 
         # ── 2. VALIDATE SOURCE CLIPS MATCHING ──────────────────────────────
         direct_info = None
@@ -362,14 +366,15 @@ class AudioExtractionMixin:
                 actual_basenames = {os.path.basename(c['file_path']).lower() for c in direct_info['clips'] if c.get('file_path')}
             else:
                 try:
-                    for i in range(1, matching_tl.GetTrackCount("audio") + 1):
-                        items = matching_tl.GetItemListInTrack("audio", i) or []
-                        for item in items:
-                            pi = item.GetMediaPoolItem()
-                            if pi:
-                                fp = pi.GetClipProperty("File Path") or ""
-                                if fp:
-                                    actual_basenames.add(os.path.basename(fp).lower())
+                    if matching_tl:
+                        for i in range(1, matching_tl.GetTrackCount("audio") + 1):
+                            items = matching_tl.GetItemListInTrack("audio", i) or []
+                            for item in items:
+                                pi = item.GetMediaPoolItem()
+                                if pi:
+                                    fp = pi.GetClipProperty("File Path") or ""
+                                    if fp:
+                                        actual_basenames.add(os.path.basename(fp).lower())
                 except Exception:
                     pass
 

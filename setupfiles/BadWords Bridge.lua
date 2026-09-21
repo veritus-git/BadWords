@@ -496,7 +496,9 @@ handlers.GetDirectAudioInfo = function(req)
         end
     end
 
-    return { ok = true, clips = clips }
+    local start_f = 0
+    pcall(function() start_f = tl:GetStartFrame() or 0 end)
+    return { ok = true, clips = clips, start_frame = start_f }
 end
 
 handlers.RenderAudio = function(req)
@@ -509,16 +511,49 @@ handlers.RenderAudio = function(req)
     local unique_id = req.unique_id or "badwords_render"
     local tl_name = req.timeline_name
     local track_indices = req.track_indices
+    local end_frame_override = req.end_frame_override
 
     local current_tl = proj:GetCurrentTimeline()
-    if tl_name and tl_name ~= "" and current_tl:GetName() ~= tl_name then
+    if tl_name and tl_name ~= "" and (not current_tl or current_tl:GetName() ~= tl_name) then
         local count = proj:GetTimelineCount() or 0
         for i = 1, count do
             local t = proj:GetTimelineByIndex(i)
             if t and t:GetName() == tl_name then
-                proj:SetCurrentTimeline(t)
+                pcall(function() proj:SetCurrentTimeline(t) end)
                 current_tl = t
                 break
+            end
+        end
+    end
+    if not current_tl then return { error = "Timeline not found" } end
+
+    -- Ensure we are on edit page for reliable track controls
+    pcall(function() res_app:OpenPage("edit") end)
+
+    -- Track isolation if specific tracks were selected
+    local muted_tracks = {}
+    if track_indices and #track_indices > 0 then
+        local a_count = current_tl:GetTrackCount("audio") or 0
+        if #track_indices < a_count then
+            local selected_set = {}
+            for _, idx in ipairs(track_indices) do selected_set[idx] = true end
+            for i = 1, a_count do
+                if not selected_set[i] then
+                    local is_enabled = true
+                    pcall(function()
+                        if current_tl.GetTrackEnable then is_enabled = current_tl:GetTrackEnable("audio", i)
+                        elseif current_tl.GetIsTrackEnabled then is_enabled = current_tl:GetIsTrackEnabled("audio", i)
+                        end
+                    end)
+                    if is_enabled then
+                        pcall(function()
+                            if current_tl.SetTrackEnable then current_tl:SetTrackEnable("audio", i, false)
+                            elseif current_tl.SetTrackEnabled then current_tl:SetTrackEnabled("audio", i, false)
+                            end
+                        end)
+                        table.insert(muted_tracks, i)
+                    end
+                end
             end
         end
     end
@@ -526,21 +561,41 @@ handlers.RenderAudio = function(req)
     -- Configure Render Settings for WAV Audio
     proj:DeleteAllRenderJobs()
     proj:SetCurrentRenderFormatAndCodec("wav", "LinearPCM")
-    proj:SetRenderSettings({
+    local r_settings = {
         TargetDir = export_path,
         CustomName = unique_id,
         ExportAudio = true,
         ExportVideo = false
-    })
+    }
+
+    local tl_start_frame = tonumber(current_tl:GetStartFrame()) or 0
+    if end_frame_override and tonumber(end_frame_override) and tonumber(end_frame_override) > 0 then
+        r_settings.SelectAllFrames = 0
+        r_settings.MarkIn = tl_start_frame
+        r_settings.MarkOut = tl_start_frame + tonumber(end_frame_override)
+    else
+        r_settings.SelectAllFrames = 1
+    end
+
+    proj:SetRenderSettings(r_settings)
 
     local job_id = proj:AddRenderJob()
     if not job_id or job_id == "" then
+        -- Restore tracks
+        for _, mi in ipairs(muted_tracks) do
+            pcall(function()
+                if current_tl.SetTrackEnable then current_tl:SetTrackEnable("audio", mi, true)
+                elseif current_tl.SetTrackEnabled then current_tl:SetTrackEnabled("audio", mi, true)
+                end
+            end)
+        end
         return { error = "Failed to add render job" }
     end
 
     proj:StartRendering(job_id)
 
     -- Wait for completion
+    local render_error = nil
     while true do
         bmd.wait(0.25)
         local status = proj:GetRenderJobStatus(job_id)
@@ -549,11 +604,29 @@ handlers.RenderAudio = function(req)
             if s_job == "Complete" then
                 break
             elseif s_job == "Cancelled" or s_job == "Failed" then
-                return { error = "Render job " .. s_job }
+                render_error = "Render job " .. s_job
+                break
             end
         else
             break
         end
+    end
+
+    -- Restore render range and return to edit page
+    pcall(function() proj:SetRenderSettings({ SelectAllFrames = 1 }) end)
+    pcall(function() res_app:OpenPage("edit") end)
+
+    -- Restore muted tracks
+    for _, mi in ipairs(muted_tracks) do
+        pcall(function()
+            if current_tl.SetTrackEnable then current_tl:SetTrackEnable("audio", mi, true)
+            elseif current_tl.SetTrackEnabled then current_tl:SetTrackEnabled("audio", mi, true)
+            end
+        end)
+    end
+
+    if render_error then
+        return { error = render_error }
     end
 
     local final_file = export_path .. sep .. unique_id .. ".wav"
@@ -791,6 +864,7 @@ end
 
 handlers.JumpToSeconds = function(req)
     if not res_app then return { error = "Resolve API object not available" } end
+    pcall(function() res_app:OpenPage("edit") end)
     local secs = tonumber(req and req.seconds) or 0
 
     local pm = res_app:GetProjectManager()
@@ -971,6 +1045,128 @@ handlers.ReapplyClipColors = function(req)
     end
 
     return { ok = true, applied = applied_count }
+end
+
+handlers.OpenPage = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local p = (req and req.page_name) or "edit"
+    local ok = pcall(function() res_app:OpenPage(p) end)
+    return { ok = ok }
+end
+
+handlers.DeleteTimelineByName = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+    local name = req and req.timeline_name
+    if not name or name == "" then return { error = "timeline_name missing" } end
+    local count = proj:GetTimelineCount() or 0
+    for i = count, 1, -1 do
+        local t = proj:GetTimelineByIndex(i)
+        if t and t:GetName() == name then
+            local ok = pcall(function() mp:DeleteTimelines({ t }) end)
+            return { ok = ok }
+        end
+    end
+    return { error = "Timeline not found" }
+end
+
+handlers.DeleteClipsByColor = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local color_name = req and req.color_name
+    if not color_name or color_name == "" then return { error = "color_name missing" } end
+    local new_timeline = (req and req.new_timeline == true)
+    local target_tl = proj:GetCurrentTimeline()
+    if not target_tl then return { error = "No active timeline" } end
+
+    if new_timeline then
+        local base_name = target_tl:GetName() or "Timeline"
+        local new_name = base_name .. " - Cut " .. color_name
+        local dup_tl = nil
+        pcall(function() dup_tl = target_tl:DuplicateTimeline(new_name) end)
+        if not dup_tl then
+            pcall(function()
+                dup_tl = target_tl:DuplicateTimeline()
+                if dup_tl then dup_tl:SetName(new_name) end
+            end)
+        end
+        if dup_tl then
+            target_tl = dup_tl
+            pcall(function() proj:SetCurrentTimeline(target_tl) end)
+        end
+    end
+
+    local clips_to_delete = {}
+    for _, tt in ipairs({"video", "audio"}) do
+        local tc = target_tl:GetTrackCount(tt) or 0
+        for i = 1, tc do
+            local items = target_tl:GetItemListInTrack(tt, i) or {}
+            for _, item in ipairs(items) do
+                local c = item:GetClipColor()
+                if c and string.lower(c) == string.lower(color_name) then
+                    table.insert(clips_to_delete, item)
+                end
+            end
+        end
+    end
+
+    local deleted = 0
+    if #clips_to_delete > 0 then
+        local ok = pcall(function() return target_tl:DeleteClips(clips_to_delete, true) end)
+        if not ok then
+            pcall(function() return target_tl:DeleteClips(clips_to_delete, false) end)
+        end
+        deleted = #clips_to_delete
+    end
+    return { ok = true, deleted = deleted, timeline_name = target_tl:GetName() }
+end
+
+handlers.GetTimelineStructure = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local tl_name = req and req.timeline_name
+    local tl = proj:GetCurrentTimeline()
+    if tl_name and tl_name ~= "" then
+        local count = proj:GetTimelineCount() or 0
+        for i = 1, count do
+            local t = proj:GetTimelineByIndex(i)
+            if t and t:GetName() == tl_name then
+                tl = t
+                break
+            end
+        end
+    end
+    if not tl then return { error = "Timeline not found" } end
+
+    local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
+    local tl_start_frame = tonumber(tl:GetStartFrame()) or 0
+    local tracks = {}
+    for _, tt in ipairs({"video", "audio"}) do
+        local tc = tl:GetTrackCount(tt) or 0
+        for idx = 1, tc do
+            local items = tl:GetItemListInTrack(tt, idx) or {}
+            local track_clips = {}
+            for _, item in ipairs(items) do
+                local s = (tonumber(item:GetStart()) or 0) - tl_start_frame
+                local d = tonumber(item:GetDuration()) or 0
+                local lo = 0
+                pcall(function() lo = tonumber(item:GetLeftOffset()) or 0 end)
+                table.insert(track_clips, { start = s, duration = d, left_offset = lo })
+            end
+            if #track_clips > 0 then
+                table.insert(tracks, { type = tt, index = idx, clips = track_clips })
+            end
+        end
+    end
+    return { ok = true, fps = fps, start_frame = tl_start_frame, tracks = tracks }
 end
 
 handlers.Exit = function()
