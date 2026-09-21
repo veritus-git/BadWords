@@ -128,6 +128,7 @@ class TrackOptionsDrawer(QWidget):
             lbl = MarqueeLabel(lbl_text)
             l.addWidget(lbl, 1)
             l.addWidget(tgl)
+            w._lbl = lbl
             return w
 
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
@@ -149,13 +150,13 @@ class TrackOptionsDrawer(QWidget):
         self.w_a_cust_list.setMaximumHeight(0)
         self.w_a_cust_list.setStyleSheet("background: transparent; border: none;")
         
-        grid_a = FlowLayout(self.w_a_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
+        self.grid_a = FlowLayout(self.w_a_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
         self.a_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(audio_tracks):
             cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
             cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
-            grid_a.addWidget(cb)
+            self.grid_a.addWidget(cb)
             self.a_track_checkboxes[idx] = cb
         inner_layout.addWidget(self.w_a_cust_list)
 
@@ -176,13 +177,13 @@ class TrackOptionsDrawer(QWidget):
         self.w_v_cust_list.setMaximumHeight(0)
         self.w_v_cust_list.setStyleSheet("background: transparent; border: none;")
         
-        grid_v = FlowLayout(self.w_v_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
+        self.grid_v = FlowLayout(self.w_v_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
         self.v_track_checkboxes = {}
 
         for i, (idx, tname) in enumerate(video_tracks):
             cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
             cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
-            grid_v.addWidget(cb)
+            self.grid_v.addWidget(cb)
             self.v_track_checkboxes[idx] = cb
         inner_layout.addWidget(self.w_v_cust_list)
 
@@ -250,7 +251,7 @@ class TrackOptionsDrawer(QWidget):
     def toggle_expand(self):
         self.is_expanded = not self.is_expanded
         if self.is_expanded:
-            self.load_config()
+            self.refresh_tracks()
         self._animate_to_size()
 
     def _animate_to_size(self):
@@ -368,6 +369,7 @@ class TrackOptionsDrawer(QWidget):
             self.tgl_a_cust.setChecked(amode == 'cust', animated=False)
 
             self.tgl_v_all.setChecked(vmode == 'all', animated=False)
+            self.tgl_v_none.setChecked(vmode == 'none', animated=False)
             self.tgl_v_cust.setChecked(vmode == 'cust', animated=False)
 
             saved_a_custom = conf.get('audio_custom', [])
@@ -421,51 +423,22 @@ class TrackOptionsDrawer(QWidget):
     def _get_project_tracks(self):
         audio_tracks = []
         video_tracks = []
+        tracks_loaded = False
 
         rh = getattr(self.engine, 'resolve_handler', None)
-        target_tl = None
-        if rh and rh.project:
+        if rh:
             src = getattr(self.parent_gui, '_transcription_source', None) or {}
             tl_name = src.get('timeline_name')
-            if tl_name:
-                try:
-                    cnt = rh.project.GetTimelineCount()
-                    for i in range(1, cnt + 1):
-                        tl = rh.project.GetTimelineByIndex(i)
-                        if tl and tl.GetName() == tl_name:
-                            target_tl = tl
-                            break
-                except Exception:
-                    pass
-            if not target_tl and rh.timeline:
-                target_tl = rh.timeline
-
-        if target_tl:
             try:
-                ac = target_tl.GetTrackCount("audio")
-                _get_a_name = getattr(target_tl, "GetTrackName", None)
-                for i in range(1, ac + 1):
-                    tname = ""
-                    if callable(_get_a_name):
-                        try: tname = _get_a_name("audio", i)
-                        except Exception: pass
-                    if not tname: tname = f"Audio {i}"
-                    audio_tracks.append((i, tname))
-            except Exception: pass
+                a_tr, v_tr = rh.get_timeline_tracks(tl_name)
+                if a_tr or v_tr:
+                    audio_tracks = a_tr
+                    video_tracks = v_tr
+                    tracks_loaded = True
+            except Exception:
+                pass
 
-            try:
-                vc = target_tl.GetTrackCount("video")
-                _get_v_name = getattr(target_tl, "GetTrackName", None)
-                for i in range(1, vc + 1):
-                    tname = ""
-                    if callable(_get_v_name):
-                        try: tname = _get_v_name("video", i)
-                        except Exception: pass
-                    if not tname: tname = f"Video {i}"
-                    video_tracks.append((i, tname))
-            except Exception: pass
-
-        if not audio_tracks:
+        if not tracks_loaded:
             max_a = 4
             src = getattr(self.parent_gui, '_transcription_source', None) or {}
             tr_indices = src.get('track_indices', [])
@@ -474,11 +447,55 @@ class TrackOptionsDrawer(QWidget):
             for i in range(1, max_a + 1):
                 audio_tracks.append((i, f"Audio {i}"))
 
-        if not video_tracks:
             for i in range(1, 5):
                 video_tracks.append((i, f"Video {i}"))
 
         return audio_tracks, video_tracks
+
+    def refresh_tracks(self):
+        """Re-query timeline audio/video tracks and dynamically rebuild checkboxes."""
+        audio_tracks, video_tracks = self._get_project_tracks()
+
+        # Update transcription tracks label
+        src = getattr(self.parent_gui, '_transcription_source', None) or {}
+        tr_indices = src.get('track_indices', [])
+        tr_label_text = self.parent_gui.txt("dlg_transcription_tracks")
+        if tr_indices:
+            tr_label_text += f" (A{', A'.join(str(i) for i in tr_indices)})"
+        if hasattr(self, 'w_a_tr') and hasattr(self.w_a_tr, '_lbl'):
+            self.w_a_tr._lbl.setText(tr_label_text)
+
+        # Rebuild Audio checkboxes if changed
+        current_a_keys = list(self.a_track_checkboxes.keys())
+        new_a_keys = [idx for idx, _ in audio_tracks]
+        if current_a_keys != new_a_keys and hasattr(self, 'grid_a'):
+            for cb in list(self.a_track_checkboxes.values()):
+                self.grid_a.removeWidget(cb)
+                cb.deleteLater()
+            self.a_track_checkboxes.clear()
+
+            for idx, tname in audio_tracks:
+                cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
+                cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
+                self.grid_a.addWidget(cb)
+                self.a_track_checkboxes[idx] = cb
+
+        # Rebuild Video checkboxes if changed
+        current_v_keys = list(self.v_track_checkboxes.keys())
+        new_v_keys = [idx for idx, _ in video_tracks]
+        if current_v_keys != new_v_keys and hasattr(self, 'grid_v'):
+            for cb in list(self.v_track_checkboxes.values()):
+                self.grid_v.removeWidget(cb)
+                cb.deleteLater()
+            self.v_track_checkboxes.clear()
+
+            for idx, tname in video_tracks:
+                cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
+                cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
+                self.grid_v.addWidget(cb)
+                self.v_track_checkboxes[idx] = cb
+
+        self.load_config()
 
     def _update_a_radios(self, src, checked):
         if getattr(self, '_block_signals', False):

@@ -129,6 +129,8 @@ def _op_color(op):
         parts = op['type'].split('_', 1)
         if len(parts) > 1:
             c = parts[1]
+    if c:
+        c = c.capitalize()
     return c
 
 def _filter_tracks(track_vec, keep_indices, preserve_order=False):

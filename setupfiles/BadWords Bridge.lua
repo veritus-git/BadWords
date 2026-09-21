@@ -403,6 +403,43 @@ handlers.GetAudioTracks = function(req)
     return { ok = true, tracks = tracks }
 end
 
+handlers.GetTimelineTracks = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = proj:GetCurrentTimeline()
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        local count = proj:GetTimelineCount() or 0
+        for i = 1, count do
+            local t = proj:GetTimelineByIndex(i)
+            if t and t:GetName() == req.timeline_name then
+                tl = t
+                break
+            end
+        end
+    end
+
+    if not tl then return { error = "Timeline not found" } end
+
+    local a_count = tl:GetTrackCount("audio") or 0
+    local a_tracks = {}
+    for i = 1, a_count do
+        local t_name = tl:GetTrackName("audio", i) or ("Audio " .. tostring(i))
+        a_tracks[#a_tracks + 1] = { index = i, name = t_name }
+    end
+
+    local v_count = tl:GetTrackCount("video") or 0
+    local v_tracks = {}
+    for i = 1, v_count do
+        local t_name = tl:GetTrackName("video", i) or ("Video " .. tostring(i))
+        v_tracks[#v_tracks + 1] = { index = i, name = t_name }
+    end
+
+    return { ok = true, audio_tracks = a_tracks, video_tracks = v_tracks }
+end
+
 handlers.GetDirectAudioInfo = function(req)
     if not res_app then return { error = "Resolve API object not available" } end
     local pm = res_app:GetProjectManager()
@@ -704,36 +741,102 @@ handlers.ReapplyClipColors = function(req)
     if not res_app then return { error = "Resolve API object not available" } end
     local pm = res_app:GetProjectManager()
     local proj = pm and pm:GetCurrentProject()
-    local tl = proj and proj:GetCurrentTimeline()
+    if not proj then return { error = "No project open" } end
+
+    local tl = nil
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        local count = proj:GetTimelineCount() or 0
+        for i = 1, count do
+            local t = proj:GetTimelineByIndex(i)
+            if t and t:GetName() == req.timeline_name then
+                tl = t
+                break
+            end
+        end
+    end
+    if not tl then tl = proj:GetCurrentTimeline() end
     if not tl then return { error = "No timeline active" } end
 
+    -- Activate timeline so SetClipColor succeeds
+    pcall(function() proj:SetCurrentTimeline(tl) end)
+
     local schedule = req and req.color_schedule or {}
-    local sched_by_start = {}
+    local sched = {}
+    local has_any_color = false
     for _, item in ipairs(schedule) do
-        if item.start_frame and item.color then
-            sched_by_start[tostring(item.start_frame)] = item.color
+        local sf = tonumber(item.start_frame)
+        local col = item.color
+        if sf and col and col ~= "" and col ~= "null" then
+            col = tostring(col)
+            col = col:sub(1, 1):upper() .. col:sub(2):lower()
+            sched[sf] = col
+            has_any_color = true
         end
     end
 
-    local function apply_to_tracks(track_type)
+    if not has_any_color then
+        return { ok = true, applied = 0 }
+    end
+
+    local tl_start = tl:GetStartFrame() or 0
+    local min_clip_start = nil
+
+    -- Find earliest clip start frame
+    for _, track_type in ipairs({"video", "audio"}) do
         local count = tl:GetTrackCount(track_type) or 0
         for tr = 1, count do
             local items = tl:GetItemListInTrack(track_type, tr)
             if items then
                 for _, clip in ipairs(items) do
-                    local sf = tostring(clip:GetStart())
-                    if sched_by_start[sf] then
-                        pcall(function() clip:SetClipColor(sched_by_start[sf]) end)
+                    local s = tonumber(clip:GetStart())
+                    if s then
+                        if not min_clip_start or s < min_clip_start then
+                            min_clip_start = s
+                        end
                     end
                 end
             end
         end
     end
 
-    apply_to_tracks("video")
-    apply_to_tracks("audio")
+    local candidate_offsets = { tl_start }
+    if min_clip_start and min_clip_start ~= tl_start then
+        candidate_offsets[#candidate_offsets + 1] = min_clip_start
+    end
+    candidate_offsets[#candidate_offsets + 1] = 0
 
-    return { ok = true }
+    local function get_color_for_start(item_start)
+        for _, off in ipairs(candidate_offsets) do
+            local rel = item_start - off
+            for _, delta in ipairs({0, -1, 1, -2, 2}) do
+                local c = sched[rel + delta]
+                if c then return c end
+            end
+        end
+        return nil
+    end
+
+    local applied_count = 0
+    for _, track_type in ipairs({"video", "audio"}) do
+        local count = tl:GetTrackCount(track_type) or 0
+        for tr = 1, count do
+            local items = tl:GetItemListInTrack(track_type, tr)
+            if items then
+                for _, clip in ipairs(items) do
+                    local s = tonumber(clip:GetStart())
+                    if s then
+                        local col = get_color_for_start(s)
+                        if col then
+                            local ok = pcall(function() clip:SetClipColor(col) end)
+                            if ok then applied_count = applied_count + 1 end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return { ok = true, applied = applied_count }
 end
 
 handlers.Exit = function()
