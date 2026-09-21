@@ -1086,8 +1086,10 @@ fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
     let mut missing = Vec::new();
 
     // 1. PySide6
+    // Headless-safe verification: check package presence via importlib.util to avoid false failures
+    // on Linux CI / headless systems lacking libGL / X11 display libraries
     let pyside_ok = os::create_hidden_command(v_py)
-        .args(["-c", "import PySide6; import PySide6.QtCore; import PySide6.QtWidgets"])
+        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"])
         .output()
         .is_ok_and(|o| o.status.success());
     if !pyside_ok {
@@ -1096,7 +1098,7 @@ fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
 
     // 2. faster-whisper
     let whisper_ok = os::create_hidden_command(v_py)
-        .args(["-c", "import faster_whisper"])
+        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('faster_whisper') is not None else 1)"])
         .output()
         .is_ok_and(|o| o.status.success());
     if !whisper_ok {
@@ -1105,7 +1107,7 @@ fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
 
     // 3. pypdf
     let pypdf_ok = os::create_hidden_command(v_py)
-        .args(["-c", "import pypdf"])
+        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('pypdf') is not None else 1)"])
         .output()
         .is_ok_and(|o| o.status.success());
     if !pypdf_ok {
@@ -1115,7 +1117,7 @@ fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
     // 4. NVIDIA CUDA acceleration modules (if applicable)
     if check_nvidia {
         let ct2_ok = os::create_hidden_command(v_py)
-            .args(["-c", "import ctranslate2"])
+            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('ctranslate2') is not None else 1)"])
             .output()
             .is_ok_and(|o| o.status.success());
         if !ct2_ok {
@@ -1196,7 +1198,10 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
         emit_log(sender, "OK", "Package manager tools updated.");
 
         // Sub-step: PySide6
-        let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().is_ok_and(|o| o.status.success());
+        let pyside_check = os::create_hidden_command(&v_py)
+            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"])
+            .output()
+            .is_ok_and(|o| o.status.success());
         if !pyside_check {
             emit_log(sender, "INFO", "Installing PySide6 framework...");
             run_pip_install_streaming(
@@ -1380,7 +1385,7 @@ fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender)
 
     if v_py.is_file() {
         let test_ok = os::create_hidden_command(&v_py)
-            .args(["-c", "import PySide6; import faster_whisper"])
+            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None and importlib.util.find_spec('faster_whisper') is not None else 1)"])
             .output()
             .is_ok_and(|o| o.status.success());
         if test_ok {
