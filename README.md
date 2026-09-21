@@ -116,9 +116,6 @@ In version 4.0, BadWords features a **brand new Graphical User Interface** for e
 
 > As you can see on the screenshot above, the installer menu gives you **5** other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, *Reinstall* or completely *Uninstall* BadWords!
 
-> [!WARNING]
-> If you want BadWords' full functionality with **Davinci Resolve** and you have only ***FREE*** version of it, you NEED to launch it directly from Davinci Resolve as external scripting is not supported in free version (If you have Studio version you can launch it normally).
-
 > [!NOTE]
 > ### 🛡️ Security Notice (Windows SAC & macOS Gatekeeper)
 > BadWords is a **100% free and open-source project created by an independent solo developer**. Since I don't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** may flag the newly compiled graphical binary.
@@ -220,8 +217,18 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 
 ## <img src="repo/icons/launch.svg" alt="Launching" width="30" height="30" valign="text-bottom"> Launching in DaVinci Resolve
 
-1. Open DaVinci Resolve and navigate to a project timeline.
-2. At the very top menu bar, click on **Workspace** → **Scripts** → **BadWords**.
+* **DaVinci Resolve Studio (Any version):**
+  * **Option A:** Launch BadWords from your Desktop / Start Menu. It connects automatically.
+  * **Option B:** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords**.
+
+* **DaVinci Resolve Free (v21.1+):**
+  1. Open DaVinci Resolve and navigate to a project timeline.
+  2. Click **Workspace** → **Scripts** → **BadWords Bridge** (once per Resolve session).
+  3. Launch BadWords from your Desktop / Start Menu. It will connect automatically via the Bridge!
+
+* **DaVinci Resolve Free (older than v21.1):**
+  * Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords** (launches embedded).
+  * *Or launch from your Desktop using `BadWords Bridge`.*
 
 > **Important:** Your *first launch*, *first transcription*, and *first analysis* will take considerably longer than usual as the AI model completes its initial setup for your hardware. **All subsequent transcriptions are much faster.** <br>
 > **Note:** Whisper models perform best with English and major European languages. Other languages are supported but might yield lower precision.

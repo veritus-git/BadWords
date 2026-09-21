@@ -150,8 +150,8 @@ class AudioExtractionMixin:
                 log_error(f"[DirectAudio] FFmpeg failed (rc={result.returncode}): {result.stderr[-400:]}")
                 return False
 
-            if not os.path.exists(output_wav_path) or os.path.getsize(output_wav_path) == 0:
-                log_error("[DirectAudio] Output WAV is missing or empty.")
+            if not os.path.exists(output_wav_path) or os.path.getsize(output_wav_path) <= 1024:
+                log_error(f"[DirectAudio] Output WAV is missing or empty ({os.path.getsize(output_wav_path) if os.path.exists(output_wav_path) else 0} bytes).")
                 return False
 
             log_info(f"[DirectAudio] Success → {output_wav_path}")
@@ -214,6 +214,14 @@ class AudioExtractionMixin:
             if match:
                 h, m, s = match.groups()
                 return int(h) * 3600 + int(m) * 60 + float(s)
+        except Exception:
+            pass
+
+        # Fallback: estimate from file size if PCM 16-bit 48kHz mono (96000 bytes/sec)
+        try:
+            sz = os.path.getsize(wav_path)
+            if sz > 44:
+                return float(sz - 44) / 96000.0
         except Exception:
             pass
 

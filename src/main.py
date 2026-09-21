@@ -72,6 +72,11 @@ class InitThread(QThread):
 
     def run(self):
         try:
+            try:
+                self.os_doc.sync_resolve_scripts()
+            except Exception as se:
+                osdoc.log_warn(f"sync_resolve_scripts error during startup: {se}")
+
             resolve      = api.ResolveHandler(self.os_doc)
             audio_engine = engine.AudioEngine(self.os_doc, resolve)
             self.loaded.emit(resolve, audio_engine)

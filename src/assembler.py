@@ -497,31 +497,38 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
     try:
         # ── Step 1: Export source timeline as .drt ────────────────────────────
         log_info(f"drt_assemble: exporting '{original_tl_name}' as .drt...")
-        target_tl = None
-        count = resolve_handler.project.GetTimelineCount()
-        for i in range(1, count + 1):
-            tl = resolve_handler.project.GetTimelineByIndex(i)
-            if tl.GetName() == original_tl_name:
-                target_tl = tl
-                break
+        if resolve_handler.backend == 'bridge':
+            export_ok, base_offset = resolve_handler.export_timeline_drt(original_tl_name, src_drt_path)
+            fps = resolve_handler.fps
+            if not export_ok or not os.path.exists(src_drt_path):
+                log_error("drt_assemble: .drt export failed (bridge).")
+                return False, {}, None
+        else:
+            target_tl = None
+            count = resolve_handler.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = resolve_handler.project.GetTimelineByIndex(i)
+                if tl.GetName() == original_tl_name:
+                    target_tl = tl
+                    break
 
-        if not target_tl:
-            log_error(f"drt_assemble: timeline '{original_tl_name}' not found.")
-            return False, {}, None
+            if not target_tl:
+                log_error(f"drt_assemble: timeline '{original_tl_name}' not found.")
+                return False, {}, None
 
-        # Get critical parameters for math
-        base_offset = target_tl.GetStartFrame()
-        fps = resolve_handler.fps
+            # Get critical parameters for math
+            base_offset = target_tl.GetStartFrame()
+            fps = resolve_handler.fps
 
-        export_type = getattr(resolve_handler.resolve, 'EXPORT_DRT', None)
-        if export_type is None:
-            log_error("drt_assemble: resolve.EXPORT_DRT constant not available.")
-            return False, {}, None
+            export_type = getattr(resolve_handler.resolve, 'EXPORT_DRT', None)
+            if export_type is None:
+                log_error("drt_assemble: resolve.EXPORT_DRT constant not available.")
+                return False, {}, None
 
-        export_ok = target_tl.Export(src_drt_path, export_type)
-        if not export_ok or not os.path.exists(src_drt_path):
-            log_error("drt_assemble: .drt export failed.")
-            return False, {}, None
+            export_ok = target_tl.Export(src_drt_path, export_type)
+            if not export_ok or not os.path.exists(src_drt_path):
+                log_error("drt_assemble: .drt export failed.")
+                return False, {}, None
 
         log_info(f"drt_assemble: exported .drt ({os.path.getsize(src_drt_path)} bytes)")
         time.sleep(0.05)
@@ -546,6 +553,15 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
         # ── Step 4: Repack as .drt ────────────────────────────────────────────
         repack_drt(unpack_dir, cut_drt_path)
         time.sleep(0.05)
+
+        if resolve_handler.backend == 'bridge':
+            log_info("drt_assemble: importing modified .drt via bridge...")
+            imp_ok, actual_name = resolve_handler.import_timeline_drt(cut_drt_path, new_tl_name)
+            if not imp_ok:
+                log_error("drt_assemble: import_timeline_drt (bridge) failed.")
+                return False, {}, None
+            log_info(f"drt_assemble: SUCCESS (bridge) → '{actual_name}'")
+            return True, color_schedule, actual_name
 
         # ── Step 5: Snapshot Media Pool BEFORE import ─────────────────────────
         # .drt import does NOT support importSourceClips:false, so Resolve will

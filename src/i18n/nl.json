@@ -433,5 +433,10 @@
     "msg_silence_detection_mode_active": "[Stiltedetectie: spraaktranscriptie is niet uitgevoerd]",
     "lbl_seamless_cut_export": "Verliesvrije export (Seamless Cut)",
     "msg_seamless_cut_success": "Verliesvrij knippen succesvol voltooid!\nOpgeslagen in: {path}",
-    "msg_unsupported_file_format": "Niet-ondersteund bestandsformaat. Selecteer een geldig video- of audiobestand."
+    "msg_unsupported_file_format": "Niet-ondersteund bestandsformaat. Selecteer een geldig video- of audiobestand.",
+    "status_resolve_bridge_connected": "Verbonden (Bridge): {project}",
+    "tt_resolve_connection_studio": "Zorg ervoor dat Voorkeuren > Systeem > Algemeen > 'External scripting using' is ingesteld op 'Local'.",
+    "tt_resolve_connection_free": "Open DaVinci Resolve en voer Workspace → Scripts → BadWords Bridge uit.",
+    "btn_stop_bridge": "Bridge stoppen",
+    "tt_stop_bridge": "BadWords Bridge stoppen in DaVinci Resolve"
 }

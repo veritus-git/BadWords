@@ -67,13 +67,17 @@ class ResolveStreamProxy:
 
 def log_info(msg):
     logging.info(msg)
-    try: print(f"[INFO] {msg}")
+    try:
+        print(f"[INFO] {msg}")
+        sys.stdout.flush()
     except Exception:
         pass  # log_info: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
 
 def log_error(msg):
     logging.error(msg)
-    try: print(f"[ERROR] {msg}", file=sys.__stderr__)
+    try:
+        print(f"[ERROR] {msg}", file=sys.__stderr__)
+        sys.__stderr__.flush()
     except Exception:
         pass  # log_error: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
 
@@ -606,6 +610,256 @@ class OSDoctor:
                 return os.path.dirname(p) if os.path.isfile(p) else p
                 
         return paths[0] if paths else ""
+
+    def get_resolve_installation_info(self) -> dict:
+        """
+        Detects installed DaVinci Resolve edition (Studio vs Free) and version.
+        Returns:
+            dict with keys:
+                installed (bool)
+                edition ('Studio' | 'Free' | 'Unknown')
+                version (str, e.g. '21.1.0')
+                version_tuple (tuple, e.g. (21, 1, 0))
+                is_21_1_or_newer (bool)
+        """
+        if hasattr(self, '_resolve_installation_info') and self._resolve_installation_info is not None:
+            return dict(self._resolve_installation_info)
+
+        info = {
+            "installed": False,
+            "edition": "Unknown",
+            "version": "",
+            "version_tuple": (0, 0, 0),
+            "is_21_1_or_newer": False,
+        }
+
+        if self.is_win:
+            try:
+                import winreg
+                for hkey in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                    for subkey in (
+                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                    ):
+                        try:
+                            key = winreg.OpenKey(hkey, subkey)
+                        except OSError:
+                            continue
+                        try:
+                            for i in range(winreg.QueryInfoKey(key)[0]):
+                                try:
+                                    sub_name = winreg.EnumKey(key, i)
+                                    sub_key = winreg.OpenKey(key, sub_name)
+                                    disp_name, _ = winreg.QueryValueEx(sub_key, "DisplayName")
+                                    if "DaVinci Resolve" in disp_name:
+                                        info["installed"] = True
+                                        info["edition"] = "Studio" if "Studio" in disp_name else "Free"
+                                        try:
+                                            ver, _ = winreg.QueryValueEx(sub_key, "DisplayVersion")
+                                            info["version"] = ver
+                                        except OSError:
+                                            pass
+                                        winreg.CloseKey(sub_key)
+                                        break
+                                    winreg.CloseKey(sub_key)
+                                except (OSError, ValueError):
+                                    continue
+                        finally:
+                            winreg.CloseKey(key)
+                        if info["installed"]:
+                            break
+                    if info["installed"]:
+                        break
+            except Exception as e:
+                log_warn(f"get_resolve_installation_info registry error: {e}")
+
+            exe_path = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe"
+            if os.path.isfile(exe_path):
+                info["installed"] = True
+                if not info["version"]:
+                    try:
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductVersion"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **self.get_subprocess_kwargs())
+                        if res.returncode == 0 and res.stdout.strip():
+                            info["version"] = res.stdout.strip()
+                    except Exception:
+                        pass
+                if info["edition"] == "Unknown":
+                    try:
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductName"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **self.get_subprocess_kwargs())
+                        if res.returncode == 0 and res.stdout.strip():
+                            prod_name = res.stdout.strip()
+                            info["edition"] = "Studio" if "Studio" in prod_name else "Free"
+                    except Exception:
+                        pass
+
+        elif self.is_mac:
+            studio_app = "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app"
+            free_app = "/Applications/DaVinci Resolve/DaVinci Resolve.app"
+            chosen_app = None
+            if os.path.isdir(studio_app):
+                info["installed"] = True
+                info["edition"] = "Studio"
+                chosen_app = studio_app
+            elif os.path.isdir(free_app):
+                info["installed"] = True
+                info["edition"] = "Free"
+                chosen_app = free_app
+
+            if chosen_app:
+                plist_path = os.path.join(chosen_app, "Contents", "Info.plist")
+                if os.path.isfile(plist_path):
+                    try:
+                        import plistlib
+                        with open(plist_path, "rb") as f:
+                            pl = plistlib.load(f)
+                            info["version"] = pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or ""
+                    except Exception as e:
+                        log_warn(f"Failed to read Info.plist: {e}")
+
+        elif self.is_linux:
+            resolve_bin = "/opt/resolve/bin/resolve"
+            if os.path.isfile(resolve_bin):
+                info["installed"] = True
+                # Fast path: check /opt/resolve/docs/ReadMe.html directly (0.1ms vs 3000ms)
+                readme_path = "/opt/resolve/docs/ReadMe.html"
+                if os.path.isfile(readme_path):
+                    try:
+                        with open(readme_path, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read(2048)
+                        import re
+                        m = re.search(r"<title>DaVinci Resolve (Studio )?(\d+(\.\d+)+)</title>", content)
+                        if m:
+                            info["edition"] = "Studio" if m.group(1) else "Free"
+                            info["version"] = m.group(2)
+                    except Exception:
+                        pass
+
+                # If edition still unknown, check package manager
+                if info["edition"] == "Unknown":
+                    try:
+                        res = subprocess.run(["dpkg", "-l", "davinci-resolve-studio"], capture_output=True, text=True, **self.get_subprocess_kwargs())
+                        if res.returncode == 0 and "davinci-resolve-studio" in res.stdout:
+                            info["edition"] = "Studio"
+                        else:
+                            info["edition"] = "Free"
+                    except Exception:
+                        info["edition"] = "Free"
+
+                # If version still unknown, fallback to resolve -v
+                if not info["version"]:
+                    try:
+                        res = subprocess.run([resolve_bin, "-v"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                        out = res.stdout + res.stderr
+                        import re
+                        m = re.search(r"(\d+\.\d+(\.\d+)?)", out)
+                        if m:
+                            info["version"] = m.group(1)
+                    except Exception:
+                        pass
+
+        # Parse version tuple
+        if info["version"]:
+            import re
+            nums = re.findall(r"\d+", info["version"])
+            if nums:
+                t = tuple(int(x) for x in nums[:3])
+                while len(t) < 3:
+                    t = t + (0,)
+                info["version_tuple"] = t
+                info["is_21_1_or_newer"] = t >= (21, 1, 0)
+
+        self._resolve_installation_info = dict(info)
+        return info
+
+    def get_resolve_script_utility_dirs(self) -> list:
+        """Returns candidate Fusion/Scripts/Utility directories on this machine."""
+        dirs = []
+        if self.is_win:
+            for env_var in ("APPDATA", "PROGRAMDATA"):
+                base = os.environ.get(env_var)
+                if base:
+                    dirs.append(os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Support", "Fusion", "Scripts", "Utility"))
+                    dirs.append(os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+        elif self.is_mac:
+            dirs.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join("/Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+        elif self.is_linux:
+            dirs.append(os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join("/opt", "resolve", "libs", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join("/opt", "resolve", "Fusion", "Scripts", "Utility"))
+
+        unique = []
+        for d in dirs:
+            if d not in unique:
+                unique.append(d)
+        return unique
+
+    def sync_resolve_scripts(self, force: bool = False) -> None:
+        """
+        Auto-healing: ensures the correct scripts are installed in DaVinci Resolve.
+        - Studio: BadWords.py
+        - Free < 21.1: BadWords.py + BadWords Bridge.lua
+        - Free >= 21.1: BadWords Bridge.lua (and REMOVES BadWords.py if present!)
+        """
+        try:
+            info = self.get_resolve_installation_info()
+            if not info["installed"]:
+                return
+
+            util_dirs = self.get_resolve_script_utility_dirs()
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            lua_src = os.path.join(repo_root, "setupfiles", "BadWords Bridge.lua")
+            if not os.path.isfile(lua_src) and hasattr(self, 'resources_dir'):
+                lua_src = os.path.join(self.resources_dir, "setupfiles", "BadWords Bridge.lua")
+
+            is_free_21_1 = (info["edition"] == "Free" and info["is_21_1_or_newer"])
+
+            primary_installed = False
+            for ud in util_dirs:
+                if not os.path.isdir(ud):
+                    continue
+
+                py_file = os.path.join(ud, "BadWords.py")
+                lua_file = os.path.join(ud, "BadWords Bridge.lua")
+
+                # If Free >= 21.1: remove dead BadWords.py
+                if is_free_21_1 and os.path.isfile(py_file):
+                    try:
+                        os.remove(py_file)
+                        log_info(f"[Auto-Healing] Removed deprecated BadWords.py for Resolve 21.1+ Free: {py_file}")
+                    except Exception as e:
+                        log_warn(f"[Auto-Healing] Could not remove {py_file}: {e}")
+
+                # Copy BadWords Bridge.lua to primary directory only; remove duplicates from secondary
+                if os.path.isfile(lua_src):
+                    if not primary_installed:
+                        try:
+                            should_copy = force or not os.path.isfile(lua_file)
+                            if not should_copy:
+                                if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
+                                    should_copy = True
+                            if should_copy:
+                                shutil.copy2(lua_src, lua_file)
+                                try: os.chmod(lua_file, 0o755)
+                                except Exception: pass
+                                log_info(f"[Auto-Healing] Installed BadWords Bridge.lua to: {lua_file}")
+                            primary_installed = True
+                        except Exception as e:
+                            log_warn(f"[Auto-Healing] Failed to sync BadWords Bridge.lua to {ud}: {e}")
+                    else:
+                        # Secondary directory — clean up duplicate to prevent multiple entries in Resolve menu
+                        if os.path.isfile(lua_file):
+                            try:
+                                os.remove(lua_file)
+                                log_info(f"[Auto-Healing] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
+                            except Exception:
+                                pass
+        except Exception as e:
+            log_warn(f"sync_resolve_scripts error: {e}")
 
     def _test_executable(self, cmd_path):
         try:
