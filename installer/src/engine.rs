@@ -365,23 +365,34 @@ fn extract_zip(archive_path: &Path, destination: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Finds the system Python executable (Python 3.10+)
+/// Finds the system Python executable (Python 3.10 - 3.12 compatible with DaVinci Resolve)
 fn find_python() -> Option<String> {
-    let candidates = [
-        "python3.14",
-        "python3.13",
-        "python3.12",
-        "python3.11",
-        "python3.10",
-        "python3",
-        "python",
-        "py",
-    ];
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(p) = os::windows::find_compatible_system_python() {
+            return Some(p.to_string_lossy().to_string());
+        }
+    }
 
-    for cmd in candidates {
-        if let Ok(output) = os::create_hidden_command(cmd).arg("-c").arg("import sys; exit(0 if sys.version_info >= (3, 10) else 1)").output() {
-            if output.status.success() {
-                return Some(cmd.to_string());
+    #[cfg(not(target_os = "windows"))]
+    {
+        let candidates = [
+            "python3.12",
+            "python3.11",
+            "python3.10",
+            "python3",
+            "python",
+        ];
+
+        for cmd in candidates {
+            if let Ok(output) = os::create_hidden_command(cmd)
+                .arg("-c")
+                .arg("import sys; exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)")
+                .output()
+            {
+                if output.status.success() {
+                    return Some(cmd.to_string());
+                }
             }
         }
     }
@@ -1069,15 +1080,91 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
     emit_log(sender, "WARN", "Could not download portable FFmpeg. System FFmpeg will be used if present.");
 }
 
+/// Verifies presence and importability of critical BadWords packages in venv.
+/// Returns list of package names that failed to import.
+fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
+    let mut missing = Vec::new();
+
+    // 1. PySide6
+    let pyside_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import PySide6; import PySide6.QtCore; import PySide6.QtWidgets"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !pyside_ok {
+        missing.push("PySide6".to_string());
+    }
+
+    // 2. faster-whisper
+    let whisper_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import faster_whisper"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !whisper_ok {
+        missing.push("faster-whisper".to_string());
+    }
+
+    // 3. pypdf
+    let pypdf_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import pypdf"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !pypdf_ok {
+        missing.push("pypdf".to_string());
+    }
+
+    // 4. NVIDIA CUDA acceleration modules (if applicable)
+    if check_nvidia {
+        let ct2_ok = os::create_hidden_command(v_py)
+            .args(["-c", "import ctranslate2"])
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !ct2_ok {
+            if !missing.contains(&"nvidia-cublas-cu12".to_string()) {
+                missing.push("nvidia-cublas-cu12".to_string());
+            }
+            if !missing.contains(&"nvidia-cudnn-cu12".to_string()) {
+                missing.push("nvidia-cudnn-cu12".to_string());
+            }
+        }
+    }
+
+    missing
+}
+
 /// Configures the Python virtual environment, upgrades pip tools, and installs all dependencies
 fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvidia: bool, sender: &EventSender) -> bool {
     emit_progress(sender, 55, 2, "Configuring Python environment...", "Setting up isolated virtual environment");
     let venv_dir = target_dir.join("venv");
-    
-    let py_exec = python_cmd.unwrap_or("python3");
-    if !venv_dir.exists() {
-        emit_log(sender, "INFO", "Creating Python virtual environment in venv/...");
-        let status = os::create_hidden_command(py_exec)
+
+    // Determine venv python & pip binaries
+    #[cfg(target_os = "windows")]
+    let v_py = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let v_py = venv_dir.join("bin").join("python");
+
+    let venv_valid = v_py.is_file() && os::create_hidden_command(&v_py).arg("-c").arg("import sys").output().is_ok_and(|o| o.status.success());
+    if !venv_valid {
+        if venv_dir.exists() {
+            emit_log(sender, "WARN", "Existing venv is invalid or broken; recreating clean environment...");
+            let _ = fs::remove_dir_all(&venv_dir);
+        }
+
+        let resolved_py = python_cmd.map(|s| s.to_string()).or_else(find_python);
+        let py_exec = match resolved_py {
+            Some(p) => p,
+            None => {
+                emit_log(sender, "INFO", "Compatible Python runtime (3.10 - 3.12) not detected; downloading Python 3.12...");
+                if os::install_system_python(sender) {
+                    find_python().unwrap_or_else(|| "python".to_string())
+                } else {
+                    emit_log(sender, "ERROR", "Could not obtain a compatible Python 3.10-3.12 runtime.");
+                    return false;
+                }
+            }
+        };
+
+        emit_log(sender, "INFO", &format!("Creating Python virtual environment in venv/ using {}...", py_exec));
+        let status = os::create_hidden_command(&py_exec)
             .args(["-m", "venv", &venv_dir.to_string_lossy()])
             .status();
 
@@ -1086,19 +1173,13 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
                 emit_log(sender, "OK", "Virtual environment initialized successfully.");
             } else {
                 emit_log(sender, "WARN", "Standard venv creation failed; attempting virtualenv fallback.");
-                let _ = os::create_hidden_command(py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
-                let _ = os::create_hidden_command(py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
+                let _ = os::create_hidden_command(&py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
+                let _ = os::create_hidden_command(&py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
             }
         }
     } else {
-        emit_log(sender, "OK", "Virtual environment already present.");
+        emit_log(sender, "OK", "Virtual environment verified and ready.");
     }
-
-    // Determine venv python & pip binaries
-    #[cfg(target_os = "windows")]
-    let v_py = venv_dir.join("Scripts").join("python.exe");
-    #[cfg(not(target_os = "windows"))]
-    let v_py = venv_dir.join("bin").join("python");
 
     if v_py.exists() {
         // Sub-step: pip, setuptools & wheel
@@ -1163,6 +1244,67 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
             emit_progress_sub(sender, 90, 100, "Configuring AI engine...", "CPU AI computation verified");
             emit_log(sender, "OK", "CPU AI acceleration configured.");
         }
+
+        // ── Comprehensive Package Verification & Auto-Recovery ──
+        emit_progress_sub(sender, 90, 0, "Verifying packages...", "Checking installed AI and GUI modules");
+        emit_log(sender, "INFO", "Verifying installed dependencies (PySide6, faster-whisper, pypdf)...");
+
+        let mut missing = check_missing_dependencies(&v_py, has_nvidia);
+        let mut retry_count = 0;
+        const MAX_RETRIES: usize = 2;
+
+        while !missing.is_empty() && retry_count < MAX_RETRIES {
+            retry_count += 1;
+            emit_log(
+                sender,
+                "WARN",
+                &format!(
+                    "Missing or incomplete dependencies detected: {}. Network or download issue suspected. Retrying download (attempt {}/{})...",
+                    missing.join(", "), retry_count, MAX_RETRIES
+                ),
+            );
+            emit_progress_sub(
+                sender,
+                90,
+                0,
+                "Retrying missing packages...",
+                &format!("Re-downloading {} (attempt {}/{})", missing.join(", "), retry_count, MAX_RETRIES),
+            );
+
+            let missing_refs: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
+            run_pip_install_streaming(
+                &v_py,
+                &missing_refs,
+                90,
+                92,
+                "Downloading missing libraries...",
+                "Recovering failed package downloads",
+                sender,
+            );
+
+            missing = check_missing_dependencies(&v_py, has_nvidia);
+        }
+
+        if !missing.is_empty() {
+            emit_log(
+                sender,
+                "ERROR",
+                &format!(
+                    "Network error: Failed to download and verify required packages: {}. Please check your internet connection.",
+                    missing.join(", ")
+                ),
+            );
+            emit_progress_sub(
+                sender,
+                90,
+                0,
+                "Package verification failed",
+                "Network error: missing required libraries",
+            );
+            return false;
+        }
+
+        emit_log(sender, "OK", "All required packages (PySide6, faster-whisper, pypdf) successfully verified.");
 
         // Final linking
         emit_progress_sub(sender, 91, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
@@ -1273,25 +1415,25 @@ fn run_install_core(
         // 2. System Python Check & Auto-Installation (Required for DaVinci Resolve scripts menu!)
         let has_sys_py = os::has_system_python();
         if !has_sys_py {
-            emit_log(&sender, "WARN", "System Python not detected. DaVinci Resolve requires an official system Python installation.");
-            emit_progress(&sender, 10, 0, "Installing System Python...", "Downloading and setting up official Python 3.10");
+            emit_log(&sender, "WARN", "Compatible System Python (3.10 - 3.12) not detected. Installing official Python 3.12...");
+            emit_progress(&sender, 10, 0, "Installing System Python...", "Downloading and setting up official Python 3.12");
             
             if os::install_system_python(&sender) {
                 // Leave marker file so uninstaller knows Python was auto-installed
                 let _ = fs::create_dir_all(&target_dir);
                 let _ = fs::write(target_dir.join(".python_auto_installed"), "1");
             } else {
-                emit_log(&sender, "WARN", "Could not automatically install system Python. Please ensure Python 3.10+ is installed.");
+                emit_log(&sender, "ERROR", "Could not automatically install system Python. DaVinci Resolve script integration may not be visible.");
             }
         } else {
-            emit_log(&sender, "OK", "Official System Python detected.");
+            emit_log(&sender, "OK", "Compatible System Python (3.10 - 3.12) detected.");
         }
 
         let python_cmd = find_python();
         if let Some(ref py) = python_cmd {
             emit_log(&sender, "OK", &format!("Using Python executable for venv: {}", py));
         } else {
-            emit_log(&sender, "WARN", "Python 3.10+ binary not found in PATH; attempting fallback...");
+            emit_log(&sender, "WARN", "Python 3.10-3.12 binary not found in PATH; attempting fallback...");
         }
 
         // 3. Prepare target directories
@@ -1342,7 +1484,11 @@ fn run_install_core(
         ensure_ffmpeg(&bin_dir, &sender);
 
         // 6. Virtual Environment & Python Packages (1:1 with setup.py)
-        setup_python_environment(&target_dir, python_cmd.as_deref(), has_nvidia, &sender);
+        if !setup_python_environment(&target_dir, python_cmd.as_deref(), has_nvidia, &sender) {
+            emit_log(&sender, "ERROR", "Failed to initialize Python virtual environment.");
+            emit_complete(&sender, "install", false, "Failed to initialize Python virtual environment.");
+            return;
+        }
 
         // 7. DaVinci Resolve Wrapper (1:1 with setup.py)
         emit_progress(&sender, 92, 3, "Configuring DaVinci Resolve...", "Writing Fusion utility script wrappers");
@@ -1448,22 +1594,33 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
         #[cfg(not(target_os = "windows"))]
         let v_py = venv_dir.join("bin").join("python");
 
-        if !v_py.exists() {
+        let has_nvidia = detect_nvidia_gpu();
+        let v_py_ok = v_py.is_file() && os::create_hidden_command(&v_py).arg("-c").arg("import sys").output().is_ok_and(|o| o.status.success());
+        if !v_py_ok {
             emit_log(&sender, "WARN", "Virtual environment missing or damaged; rebuilding fresh environment...");
-            let has_nvidia = detect_nvidia_gpu();
-            let _ = setup_python_environment(&target_dir, None, has_nvidia, &sender);
+            if !setup_python_environment(&target_dir, None, has_nvidia, &sender) {
+                emit_log(&sender, "ERROR", "Failed to repair virtual environment.");
+                emit_complete(&sender, "repair", false, "Failed to repair Python virtual environment.");
+                return;
+            }
         } else {
-            let pyside_check = os::create_hidden_command(&v_py).args(["-c", "import PySide6"]).output().is_ok_and(|o| o.status.success());
-            if !pyside_check {
-                emit_log(&sender, "WARN", "PySide6 missing in venv; reinstalling...");
-                let _ = os::create_hidden_command(&v_py).args(["-m", "pip", "install", "PySide6", "-q"]).status();
+            let mut missing = check_missing_dependencies(&v_py, has_nvidia);
+            if !missing.is_empty() {
+                emit_log(&sender, "WARN", &format!("Missing or corrupted packages detected during repair: {}. Retrying installation...", missing.join(", ")));
+                let missing_refs: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
+                let mut pip_cmd = os::create_hidden_command(&v_py);
+                pip_cmd.args(["-m", "pip", "install", "--no-cache-dir"]);
+                pip_cmd.args(&missing_refs);
+                let _ = pip_cmd.status();
+                missing = check_missing_dependencies(&v_py, has_nvidia);
             }
-            let whisper_check = os::create_hidden_command(&v_py).args(["-c", "import faster_whisper"]).output().is_ok_and(|o| o.status.success());
-            if !whisper_check {
-                emit_log(&sender, "WARN", "faster-whisper missing in venv; reinstalling...");
-                let _ = os::create_hidden_command(&v_py).args(["-m", "pip", "install", "faster-whisper", "pypdf", "-q"]).status();
+
+            if !missing.is_empty() {
+                emit_log(&sender, "ERROR", &format!("Repair failed: Required packages missing or damaged: {}. Please check your internet connection.", missing.join(", ")));
+                emit_complete(&sender, "repair", false, "Failed to restore required packages due to network or installation error. Please check your internet connection.");
+                return;
             }
-            emit_log(&sender, "OK", "Virtual environment verified.");
+            emit_log(&sender, "OK", "All virtual environment dependencies verified.");
         }
 
         // Re-create DaVinci wrapper & shortcuts
@@ -1564,7 +1721,7 @@ pub fn run_reset(target_dir: PathBuf, sender: EventSender) {
 }
 
 /// Executes complete uninstallation with live file-by-file progress
-pub fn run_uninstall(target_dir: PathBuf, sender: EventSender) {
+pub fn run_uninstall(target_dir: PathBuf, uninstall_system_python: bool, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Uninstalling BadWords from: {}", target_dir.display()));
 
@@ -1591,8 +1748,11 @@ pub fn run_uninstall(target_dir: PathBuf, sender: EventSender) {
         #[cfg(target_os = "linux")]
         let _ = os::linux::remove_linux_desktop_entry();
 
-        if had_auto_python {
-            emit_log(&sender, "INFO", "Note: Official Python installed during setup was kept intact to avoid breaking other tools.");
+        if had_auto_python && uninstall_system_python {
+            emit_progress(&sender, 95, 2, "Cleaning system entries...", "Uninstalling auto-installed System Python");
+            os::uninstall_system_python(&sender);
+        } else if had_auto_python {
+            emit_log(&sender, "INFO", "Note: Official Python installed during setup was kept intact as requested.");
         }
 
         emit_progress(&sender, 100, 3, "Uninstallation complete!", "BadWords removed");

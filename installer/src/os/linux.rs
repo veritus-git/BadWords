@@ -12,7 +12,7 @@ pub fn has_system_python() -> bool {
         for cmd in ["python3", "python"] {
             if let Ok(out) = std::process::Command::new(cmd)
                 .arg("-c")
-                .arg("import sys; exit(0 if sys.version_info >= (3, 10) else 1)")
+                .arg("import sys; exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)")
                 .output()
             {
                 if out.status.success() {

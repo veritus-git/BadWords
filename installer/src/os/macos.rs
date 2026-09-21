@@ -12,7 +12,7 @@ pub fn has_system_python() -> bool {
     {
         let framework_base = Path::new("/Library/Frameworks/Python.framework/Versions");
         if framework_base.is_dir() {
-            for ver in ["3.13", "3.12", "3.11", "3.10", "3.9", "3.8"] {
+            for ver in ["3.12", "3.11", "3.10"] {
                 if framework_base.join(ver).is_dir() {
                     return true;
                 }
@@ -23,14 +23,14 @@ pub fn has_system_python() -> bool {
 }
 
 #[allow(dead_code)]
-/// Downloads and installs official Python 3.10 macOS framework package
+/// Downloads and installs official Python 3.12 macOS framework package
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "macos")]
     {
-        crate::state::emit_log(sender, "INFO", "Downloading official Python 3.10 for macOS...");
+        crate::state::emit_log(sender, "INFO", "Downloading official Python 3.12 for macOS...");
         let temp_dir = std::env::temp_dir();
-        let py_pkg = temp_dir.join("python-3.10.11-macos11.pkg");
-        let url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-macos11.pkg";
+        let py_pkg = temp_dir.join("python-3.12.9-macos11.pkg");
+        let url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-macos11.pkg";
 
         if let Ok(resp) = ureq::get(url).call() {
             if let Ok(mut out) = std::fs::File::create(&py_pkg) {
