@@ -929,6 +929,8 @@ handlers.ReapplyClipColors = function(req)
                 end
             end
         end
+    end
+
     -- Clean up any uncolored duplicate timeline with the same name
     if req and req.timeline_name and req.timeline_name ~= "" then
         pcall(function()

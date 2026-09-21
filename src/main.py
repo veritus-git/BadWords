@@ -30,6 +30,68 @@ if sys.version_info < (3, 9):
                 break
     except Exception:
         pass
+# --- Linux Qt6 / KDE Environment Isolation (prevents system Qt conflict on Fedora KDE, Arch, etc.) ---
+if sys.platform.startswith('linux'):
+    if 'QT_QPA_PLATFORMTHEME' in os.environ:
+        del os.environ['QT_QPA_PLATFORMTHEME']
+
+    try:
+        import ctypes
+        _cand_dirs = [
+            os.path.dirname(os.path.abspath(__file__)),
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        ] + list(sys.path)
+
+        _qt_lib_dir = None
+        _qt_plugins_dir = None
+        for _d in _cand_dirs:
+            if not _d or not os.path.isdir(_d):
+                continue
+            _lib_check = os.path.join(_d, "PySide6", "Qt", "lib")
+            if os.path.isdir(_lib_check):
+                _qt_lib_dir = _lib_check
+                _plugins_check = os.path.join(_d, "PySide6", "Qt", "plugins")
+                if os.path.isdir(_plugins_check):
+                    _qt_plugins_dir = _plugins_check
+                break
+            _vlib = os.path.join(_d, "venv", "lib")
+            if os.path.isdir(_vlib):
+                try:
+                    for _sub in os.listdir(_vlib):
+                        _sp_lib = os.path.join(_vlib, _sub, "site-packages", "PySide6", "Qt", "lib")
+                        if os.path.isdir(_sp_lib):
+                            _qt_lib_dir = _sp_lib
+                            _sp_plugins = os.path.join(_vlib, _sub, "site-packages", "PySide6", "Qt", "plugins")
+                            if os.path.isdir(_sp_plugins):
+                                _qt_plugins_dir = _sp_plugins
+                            break
+                except Exception:
+                    pass
+                if _qt_lib_dir:
+                    break
+
+        if _qt_plugins_dir and 'QT_PLUGIN_PATH' not in os.environ:
+            os.environ['QT_PLUGIN_PATH'] = _qt_plugins_dir
+
+        if _qt_lib_dir:
+            _qt_preload = [
+                'libQt6Core.so.6',
+                'libQt6Network.so.6',
+                'libQt6DBus.so.6',
+                'libQt6Gui.so.6',
+                'libQt6Widgets.so.6',
+                'libQt6OpenGL.so.6',
+                'libQt6XcbQpa.so.6',
+            ]
+            for _lib_name in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib_name)
+                if os.path.isfile(_p):
+                    try:
+                        ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
 
 import time
 from PySide6.QtWidgets import QApplication, QMessageBox
