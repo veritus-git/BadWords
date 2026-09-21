@@ -235,7 +235,7 @@ class ResolveBridgeClient:
 
                 # 2. Poll Fusion.prefs for Ack and Response
                 deadline = time.time() + timeout_secs
-                poll_interval = 0.05
+                poll_interval = 0.01
                 acked = False
 
                 while time.time() < deadline:
