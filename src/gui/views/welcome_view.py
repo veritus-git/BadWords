@@ -333,8 +333,8 @@ class SourceHeaderWidget(QWidget):
         self.update_status()
 
     def set_source_mode(self, mode: str):
+        self.update_status()
         if mode == "resolve":
-            self.update_status()
             self.status_container.show()
         else:
             self.status_container.hide()
@@ -343,11 +343,15 @@ class SourceHeaderWidget(QWidget):
         rh = getattr(self.win.engine, 'resolve_handler', None)
         is_conn = rh.is_connected() if rh else False
         project_name = rh.get_current_project_name() if rh else ""
+        is_bridge = rh.is_bridge_connected() if rh else False
 
         self.dot.set_connected(is_conn)
         if is_conn:
             disp_project = project_name or "Aktywny"
-            txt_tpl = self.win.txt("status_resolve_connected") if hasattr(self.win, 'txt') else "Połączono: {project}"
+            if is_bridge:
+                txt_tpl = self.win.txt("status_resolve_bridge_connected") if hasattr(self.win, 'txt') else "Połączono (Bridge): {project}"
+            else:
+                txt_tpl = self.win.txt("status_resolve_connected") if hasattr(self.win, 'txt') else "Połączono: {project}"
             self.lbl_status.setText(txt_tpl.replace("{project}", disp_project))
             self.lbl_status.setStyleSheet(
                 f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
@@ -360,7 +364,29 @@ class SourceHeaderWidget(QWidget):
                 f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
-            self.setToolTip(self.win.txt("tt_resolve_connection_info") if hasattr(self.win, 'txt') else "Wymaga uruchomionego DaVinci Resolve Studio z włączonym External Scripting.")
+            ed_info = rh.get_resolve_edition_info() if rh else {}
+            if ed_info.get("edition") == "Studio":
+                tip = self.win.txt("tt_resolve_connection_studio") if hasattr(self.win, 'txt') else "DaVinci Resolve Studio: Upewnij się, że DaVinci Resolve > Preferences > System > General > 'External scripting using' jest ustawione na 'Local'."
+            else:
+                tip = self.win.txt("tt_resolve_connection_free") if hasattr(self.win, 'txt') else "DaVinci Resolve Free: W DaVinci Resolve uruchom: Workspace → Scripts → BadWords Bridge."
+            self.setToolTip(tip)
+
+        # Update tip banners and stop buttons
+        is_resolve_mode = (getattr(self.win, 'current_source_type', 'file') == 'resolve')
+        for tip_lbl in (getattr(self.win, 'lbl_resolve_tip_0', None), getattr(self.win, 'lbl_resolve_tip_1', None)):
+            if tip_lbl:
+                if is_resolve_mode and not is_conn:
+                    ed_info = rh.get_resolve_edition_info() if rh else {}
+                    tip = (self.win.txt("tt_resolve_connection_studio") if ed_info.get("edition") == "Studio"
+                           else self.win.txt("tt_resolve_connection_free"))
+                    tip_lbl.setText(tip)
+                    tip_lbl.show()
+                else:
+                    tip_lbl.hide()
+
+        for stop_btn in (getattr(self.win, 'btn_stop_bridge_0', None), getattr(self.win, 'btn_stop_bridge_1', None)):
+            if stop_btn:
+                stop_btn.setVisible(is_resolve_mode and is_bridge)
 
 
 class DavinciSourceBox(QWidget):
@@ -384,7 +410,7 @@ class SourceAreaWidget(QWidget):
     Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
     Cleanly switches between File state (90px) and DaVinci state (112px) with zero jitter.
     """
-    def __init__(self, drop_zone: QWidget, davinci_box: QWidget, parent=None):
+    def __init__(self, drop_zone: QWidget, davinci_box: QWidget, initial_mode: str = "file", parent=None):
         super().__init__(parent)
         self.drop_zone = drop_zone
         self.davinci_box = davinci_box
@@ -398,9 +424,7 @@ class SourceAreaWidget(QWidget):
         lay.addWidget(self.drop_zone)
         lay.addWidget(self.davinci_box)
 
-        self.setFixedHeight(self.H_FILE)
-        self.drop_zone.show()
-        self.davinci_box.hide()
+        self.set_mode(initial_mode)
 
     def set_mode(self, mode: str):
         if mode == "file":
@@ -685,7 +709,78 @@ def build_welcome_view(win) -> QWidget:
 
     is_standalone = not is_embedded_in_resolve()
     win.is_standalone = is_standalone
-    win.current_source_type = "file" if is_standalone else "resolve"
+    rh = getattr(win.engine, 'resolve_handler', None)
+    if is_standalone and rh and rh.is_connected():
+        win.current_source_type = "resolve"
+    else:
+        win.current_source_type = "file" if is_standalone else "resolve"
+
+    # Non-blocking auto-reconnect worker for standalone mode when Resolve is selected
+    if is_standalone and not hasattr(win, '_resolve_auto_reconnect_timer'):
+        from PySide6.QtCore import QTimer, QThread, Signal
+
+        class _ResolveReconnectWorker(QThread):
+            connected = Signal()
+
+            def __init__(self, engine, parent=None):
+                super().__init__(parent)
+                self.engine = engine
+
+            def run(self):
+                handler = getattr(self.engine, 'resolve_handler', None)
+                if handler and not handler.is_connected():
+                    handler.refresh_context(silent=True)
+                    if handler.is_connected():
+                        self.connected.emit()
+
+        win._reconnect_worker = None
+
+        def _on_reconnect_detected():
+            opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
+            win.current_source_type = "resolve"
+            if hasattr(win, 'combo_source_0'):
+                win.combo_source_0.blockSignals(True)
+                win.combo_source_0.setText(opt_dr)
+                win.combo_source_0.blockSignals(False)
+            if hasattr(win, 'combo_source_1'):
+                win.combo_source_1.blockSignals(True)
+                win.combo_source_1.setText(opt_dr)
+                win.combo_source_1.blockSignals(False)
+
+            if hasattr(win, 'source_area_0'):
+                win.source_area_0.set_mode("resolve")
+            if hasattr(win, 'source_area_1'):
+                win.source_area_1.set_mode("resolve")
+
+            if hasattr(win, 'header_source_0') and win.header_source_0:
+                win.header_source_0.set_source_mode("resolve")
+            if hasattr(win, 'header_source_1') and win.header_source_1:
+                win.header_source_1.set_source_mode("resolve")
+
+            if hasattr(win, 'btn_ref_source_0'):
+                win.btn_ref_source_0.setVisible(True)
+            if hasattr(win, 'btn_ref_source_1'):
+                win.btn_ref_source_1.setVisible(True)
+
+            if hasattr(win, 'w_fs_resolve_group'):
+                win.w_fs_resolve_group.show()
+            if hasattr(win, 'w_fs_hidden_info'):
+                win.w_fs_hidden_info.hide()
+
+            win._populate_timeline_track_combos()
+
+        def _check_auto_reconnect():
+            if getattr(win, 'current_source_type', 'file') == 'resolve':
+                handler = getattr(win.engine, 'resolve_handler', None)
+                if handler and not handler.is_connected():
+                    if win._reconnect_worker is None or not win._reconnect_worker.isRunning():
+                        win._reconnect_worker = _ResolveReconnectWorker(win.engine, win)
+                        win._reconnect_worker.connected.connect(_on_reconnect_detected)
+                        win._reconnect_worker.start()
+
+        win._resolve_auto_reconnect_timer = QTimer(win)
+        win._resolve_auto_reconnect_timer.timeout.connect(_check_auto_reconnect)
+        win._resolve_auto_reconnect_timer.start(2500)
 
     page = WelcomePageView(win)
 
@@ -780,6 +875,34 @@ def build_welcome_view(win) -> QWidget:
         _hbox_source_0.setSpacing(config.S(4))
         _hbox_source_0.addWidget(win.combo_source_0, 1)
 
+        def _on_stop_bridge():
+            win.engine.resolve_handler.stop_bridge()
+            if hasattr(win, 'header_source_0'):
+                win.header_source_0.update_status()
+            if hasattr(win, 'header_source_1'):
+                win.header_source_1.update_status()
+            if hasattr(win, '_populate_timeline_track_combos'):
+                win._populate_timeline_track_combos()
+
+        win.btn_stop_bridge_0 = QPushButton(win.txt("btn_stop_bridge") if hasattr(win, 'txt') else "Stop Bridge")
+        win.btn_stop_bridge_0.setFixedHeight(config.S(30))
+        win.btn_stop_bridge_0.setMinimumWidth(config.S(85))
+        win.btn_stop_bridge_0.setMaximumWidth(config.S(125))
+        win.btn_stop_bridge_0.setCursor(Qt.PointingHandCursor)
+        win.btn_stop_bridge_0.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu BadWords Bridge w DaVinci Resolve")
+        win.btn_stop_bridge_0.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(8.5)}pt; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
+                padding: 0 {config.S(6)}px;
+            }}
+            QPushButton:hover {{ background-color: #383838; color: #ffffff; border-color: #505050; }}
+            QPushButton:pressed {{ background-color: #702525; color: #ffffff; border-color: #903030; }}
+        """)
+        win.btn_stop_bridge_0.clicked.connect(_on_stop_bridge)
+        _hbox_source_0.addWidget(win.btn_stop_bridge_0)
+        win.btn_stop_bridge_0.setVisible(win.current_source_type == "resolve" and (rh.is_bridge_connected() if rh else False))
+
         win.btn_ref_source_0 = ReloadButton(size=30)
         win.btn_ref_source_0.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
         win.btn_ref_source_0.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
@@ -787,14 +910,26 @@ def build_welcome_view(win) -> QWidget:
         win.btn_ref_source_0.setVisible(win.current_source_type == "resolve")
 
         win.settings_layout.addLayout(_hbox_source_0)
-        win.settings_layout.addSpacing(config.S(8))
+        win.settings_layout.addSpacing(config.S(4))
+
+        win.lbl_resolve_tip_0 = QLabel()
+        win.lbl_resolve_tip_0.setWordWrap(True)
+        win.lbl_resolve_tip_0.setStyleSheet(f"""
+            background-color: #1a1e1a; color: #a2cca2; border: 1px solid #2d452d;
+            border-radius: {config.S(4)}px; padding: {config.S(6)}px {config.S(8)}px;
+            font-size: {config.FS(8.0)}pt; font-family: "{config.UI_FONT_NAME}";
+        """)
+        win.settings_layout.addWidget(win.lbl_resolve_tip_0)
+        win.settings_layout.addSpacing(config.S(4))
+        win.lbl_resolve_tip_0.hide()
 
         win.drop_zone_0 = FileDropZone()
         win.davinci_box_0 = DavinciSourceBox(
             _vbox_tl0,
             _row(win.txt("lbl_tracks_selection"), win.combo_tr_0)
         )
-        win.source_area_0 = SourceAreaWidget(win.drop_zone_0, win.davinci_box_0)
+        win.source_area_0 = SourceAreaWidget(win.drop_zone_0, win.davinci_box_0, initial_mode=win.current_source_type)
+        win.source_area_0.set_mode(win.current_source_type)
         win.settings_layout.addWidget(win.source_area_0)
         win.settings_layout.addSpacing(config.S(10))
 
@@ -1085,6 +1220,25 @@ def build_welcome_view(win) -> QWidget:
         _hbox_source_1.setSpacing(config.S(4))
         _hbox_source_1.addWidget(win.combo_source_1, 1)
 
+        win.btn_stop_bridge_1 = QPushButton(win.txt("btn_stop_bridge") if hasattr(win, 'txt') else "Stop Bridge")
+        win.btn_stop_bridge_1.setFixedHeight(config.S(30))
+        win.btn_stop_bridge_1.setMinimumWidth(config.S(85))
+        win.btn_stop_bridge_1.setMaximumWidth(config.S(125))
+        win.btn_stop_bridge_1.setCursor(Qt.PointingHandCursor)
+        win.btn_stop_bridge_1.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu BadWords Bridge w DaVinci Resolve")
+        win.btn_stop_bridge_1.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(8.5)}pt; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
+                padding: 0 {config.S(6)}px;
+            }}
+            QPushButton:hover {{ background-color: #383838; color: #ffffff; border-color: #505050; }}
+            QPushButton:pressed {{ background-color: #702525; color: #ffffff; border-color: #903030; }}
+        """)
+        win.btn_stop_bridge_1.clicked.connect(_on_stop_bridge)
+        _hbox_source_1.addWidget(win.btn_stop_bridge_1)
+        win.btn_stop_bridge_1.setVisible(win.current_source_type == "resolve" and (rh.is_bridge_connected() if rh else False))
+
         win.btn_ref_source_1 = ReloadButton(size=30)
         win.btn_ref_source_1.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
         win.btn_ref_source_1.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
@@ -1092,14 +1246,26 @@ def build_welcome_view(win) -> QWidget:
         win.btn_ref_source_1.setVisible(win.current_source_type == "resolve")
 
         l_fast.addLayout(_hbox_source_1)
-        l_fast.addSpacing(config.S(8))
+        l_fast.addSpacing(config.S(4))
+
+        win.lbl_resolve_tip_1 = QLabel()
+        win.lbl_resolve_tip_1.setWordWrap(True)
+        win.lbl_resolve_tip_1.setStyleSheet(f"""
+            background-color: #1a1e1a; color: #a2cca2; border: 1px solid #2d452d;
+            border-radius: {config.S(4)}px; padding: {config.S(6)}px {config.S(8)}px;
+            font-size: {config.FS(8.0)}pt; font-family: "{config.UI_FONT_NAME}";
+        """)
+        l_fast.addWidget(win.lbl_resolve_tip_1)
+        l_fast.addSpacing(config.S(4))
+        win.lbl_resolve_tip_1.hide()
 
         win.drop_zone_1 = FileDropZone()
         win.davinci_box_1 = DavinciSourceBox(
             _vbox_tl1,
             _row(win.txt("lbl_tracks_selection"), win.combo_tr_1)
         )
-        win.source_area_1 = SourceAreaWidget(win.drop_zone_1, win.davinci_box_1)
+        win.source_area_1 = SourceAreaWidget(win.drop_zone_1, win.davinci_box_1, initial_mode=win.current_source_type)
+        win.source_area_1.set_mode(win.current_source_type)
         l_fast.addWidget(win.source_area_1)
         l_fast.addSpacing(config.S(10))
 
@@ -1297,6 +1463,13 @@ def build_welcome_view(win) -> QWidget:
                 win.btn_ref_source_0.setVisible(mode == "resolve")
             if hasattr(win, 'btn_ref_source_1'):
                 win.btn_ref_source_1.setVisible(mode == "resolve")
+
+            rh = getattr(win.engine, 'resolve_handler', None) if hasattr(win, 'engine') else None
+            is_bridge = rh.is_bridge_connected() if rh else False
+            if hasattr(win, 'btn_stop_bridge_0'):
+                win.btn_stop_bridge_0.setVisible(mode == "resolve" and is_bridge)
+            if hasattr(win, 'btn_stop_bridge_1'):
+                win.btn_stop_bridge_1.setVisible(mode == "resolve" and is_bridge)
 
             if hasattr(win, 'source_area_0'):
                 win.source_area_0.set_mode(mode)

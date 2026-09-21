@@ -433,5 +433,10 @@
     "msg_silence_detection_mode_active": "[Detecção de silêncio: a transcrição de voz não foi executada]",
     "lbl_seamless_cut_export": "Exportação de corte sem perdas (Seamless Cut)",
     "msg_seamless_cut_success": "Corte sem perdas concluído com sucesso!\nSalvo em: {path}",
-    "msg_unsupported_file_format": "Formato de arquivo não suportado. Por favor, selecione um arquivo de vídeo ou áudio válido."
+    "msg_unsupported_file_format": "Formato de arquivo não suportado. Por favor, selecione um arquivo de vídeo ou áudio válido.",
+    "status_resolve_bridge_connected": "Conectado (Bridge): {project}",
+    "tt_resolve_connection_studio": "Certifique-se de que Preferências > Sistema > Geral > 'External scripting using' esteja definido como 'Local'.",
+    "tt_resolve_connection_free": "Abra o DaVinci Resolve e execute Workspace → Scripts → BadWords Bridge.",
+    "btn_stop_bridge": "Parar Bridge",
+    "tt_stop_bridge": "Parar BadWords Bridge no DaVinci Resolve"
 }

@@ -19,13 +19,16 @@ import threading
 import json
 import hashlib
 
+from .resolve_bridge import ResolveBridgeClient
+
 # Import OSDoctor (as per architecture)
 try:
-    from osdoc import log_error, log_info
+    from osdoc import log_error, log_info, log_warn
 except ImportError:
     # Fallback for testing without osdoc
     def log_error(m): print(f"[ERR] {m}")
     def log_info(m): print(f"[INFO] {m}")
+    def log_warn(m): print(f"[WARN] {m}")
 
 class ResolveHandler:
     def __init__(self, os_doctor):
@@ -42,6 +45,14 @@ class ResolveHandler:
         self.media_pool = None
         self.timeline = None
         self.fps = 24.0
+
+        # Hybrid backend: 'native' | 'bridge' | None
+        self.backend = None
+        self.bridge_client = ResolveBridgeClient()
+        self.bridge_project_name = ""
+        self.bridge_timeline_name = ""
+        self.bridge_start_frame = 0
+        self.bridge_timelines = []
         
         # Attempt to load script module
         self._load_resolve_script_module()
@@ -59,7 +70,7 @@ class ResolveHandler:
         except ImportError:
             log_error("Could not import DaVinciResolveScript module.")
 
-    def _connect(self):
+    def _connect(self, silent: bool = False):
         """Establishes connection to the running Resolve instance."""
         try:
             # 1. If DaVinciResolveScript was imported, request Resolve app object
@@ -89,46 +100,110 @@ class ResolveHandler:
                 self.project_manager = self.resolve.GetProjectManager()
                 self.project = self.project_manager.GetCurrentProject()
                 if self.project:
+                    self.backend = 'native'
                     self.media_pool = self.project.GetMediaPool()
                     self.timeline = self.project.GetCurrentTimeline()
                     self.fps = self.timeline.GetSetting("timelineFrameRate")
                     # Handle string fps (e.g. "24.00")
                     try: self.fps = float(self.fps)
                     except (TypeError, ValueError) as e:
-                        log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
+                        if not silent:
+                            log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
                         self.fps = 24.0
                     
-                    log_info(f"Connected to Resolve. Project: {self.project.GetName()}, FPS: {self.fps}")
+                    log_info(f"Connected to Resolve (native). Project: {self.project.GetName()}, FPS: {self.fps}")
+                    return
                 else:
-                    log_error("No project is open in Resolve.")
-            else:
-                log_error("Could not connect to Resolve API object.")
-                log_info("[Tip] If running standalone or on macOS, ensure DaVinci Resolve > Preferences > System > General > 'External scripting using' is set to 'Local'.")
-        except Exception as e:
-            log_error(f"Connection Error: {e}")
+                    if not silent:
+                        log_error("No project is open in Resolve.")
+            
+            # 3. Fallback: Try Mailbox Bridge (for DaVinci Resolve Free / 21.1+)
+            if self.bridge_client.is_bridge_alive(timeout_secs=0.25):
+                try:
+                    res = self.bridge_client.call("GetTimelineInfo", timeout_secs=2.0)
+                    if res and res.get("ok"):
+                        self.backend = 'bridge'
+                        self.bridge_project_name = res.get("project", "")
+                        self.bridge_timeline_name = res.get("current_timeline", "")
+                        self.fps = float(res.get("fps", 24.0))
+                        self.bridge_start_frame = int(res.get("start_frame", 0))
+                        self.bridge_timelines = res.get("timelines", [])
+                        log_info(f"Connected to Resolve via BadWords Bridge. Project: {self.bridge_project_name}, FPS: {self.fps}")
+                        return
+                except Exception as b_err:
+                    if not silent:
+                        log_warn(f"Bridge connection check: {b_err}")
 
-    def refresh_context(self):
+            self.backend = None
+            if not silent:
+                log_error("Could not connect to Resolve API object or Bridge.")
+                edition_info = self.get_resolve_edition_info()
+                if edition_info.get("edition") == "Studio":
+                    log_info("[Tip] DaVinci Resolve Studio: ensure Preferences > System > General > 'External scripting using' is set to 'Local'.")
+                else:
+                    log_info("[Tip] DaVinci Resolve Free: open DaVinci Resolve and run 'Workspace -> Scripts -> BadWords Bridge'.")
+        except Exception as e:
+            self.backend = None
+            if not silent:
+                log_error(f"Connection Error: {e}")
+
+    def refresh_context(self, silent: bool = False):
         """Re-fetches current project/timeline in case user switched them."""
         if not hasattr(self, 'bmd') or not self.bmd:
             self._load_resolve_script_module()
-        self._connect()
+        self._connect(silent=silent)
 
     def is_connected(self) -> bool:
         """Returns True if successfully connected to a running DaVinci Resolve instance with an active project."""
-        return bool(self.resolve is not None and self.project is not None)
+        if self.backend == 'native':
+            return bool(self.resolve is not None and self.project is not None)
+        elif self.backend == 'bridge':
+            return bool(self.bridge_project_name)
+        return False
+
+    def is_bridge_connected(self) -> bool:
+        """Returns True if connected via Mailbox Bridge."""
+        return bool(self.backend == 'bridge' and self.bridge_project_name)
+
+    def stop_bridge(self) -> bool:
+        """Sends Exit command to BadWords Bridge to shut it down inside DaVinci Resolve."""
+        if self.backend != 'bridge':
+            return False
+        try:
+            res = self.bridge_client.call("Exit", timeout_secs=2.0)
+            self.backend = None
+            self.bridge_project_name = ""
+            self.bridge_timeline_name = ""
+            self.bridge_timelines = []
+            log_info("BadWords Bridge stopped successfully.")
+            return bool(res and res.get("ok"))
+        except Exception as e:
+            log_error(f"stop_bridge error: {e}")
+            self.backend = None
+            return False
+
+    def get_resolve_edition_info(self) -> dict:
+        """Returns edition ('Studio'|'Free'), version, and whether 21.1+ from OSDoctor."""
+        if hasattr(self.os_doc, 'get_resolve_installation_info'):
+            return self.os_doc.get_resolve_installation_info()
+        return {"installed": False, "edition": "Unknown", "version": "", "is_21_1_or_newer": False}
 
     def get_current_project_name(self) -> str:
         """Returns the active DaVinci Resolve project name, or empty string."""
-        if self.project:
+        if self.backend == 'native' and self.project:
             try:
                 return self.project.GetName() or ""
             except Exception:
                 pass
+        elif self.backend == 'bridge':
+            return self.bridge_project_name or ""
         return ""
 
     def get_timeline_start_frame(self):
         """Gets the starting timecode of the timeline in frames."""
-        if not self.timeline: return 0  # Default to 0 instead of 3600*fps to act safe
+        if self.backend == 'bridge':
+            return self.bridge_start_frame
+        if not self.timeline: return 0
         try:
             return int(self.timeline.GetStartFrame())
         except Exception as e:
@@ -137,6 +212,13 @@ class ResolveHandler:
 
     def jump_to_seconds(self, seconds):
         """Moves playhead to a specific second in the timeline."""
+        if self.backend == 'bridge':
+            try:
+                self.bridge_client.call("JumpToSeconds", {"seconds": seconds}, timeout_secs=5.0)
+            except Exception as e:
+                log_error(f"jump_to_seconds (bridge) error: {e}")
+            return
+
         if not self.resolve or not self.timeline: return
         
         # Open Edit Page first
@@ -162,21 +244,24 @@ class ResolveHandler:
     def render_audio(self, unique_id, export_path, timeline_name=None, track_indices=None, end_frame_override=None, progress_callback=None):
         """
         Renders audio from the specified timeline to a WAV file.
-
-        Args:
-            unique_id (str): Unique file name prefix.
-            export_path (str): Directory to write the WAV file to.
-            timeline_name (str|None): Name of the timeline to render. If None,
-                uses the currently active timeline.
-            track_indices (list[int]|None): 1-based list of audio track indices
-                to include. If None or empty, all tracks are rendered.
-            end_frame_override (int|None): If set, render only up to this RELATIVE
-                frame (0-based from timeline start). Used to skip silent tail from
-                longer unused tracks. The timeline's original range is restored after.
-
-        Returns:
-            str|None: Absolute path to the rendered WAV file, or None on failure.
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("RenderAudio", {
+                    "unique_id": unique_id,
+                    "export_path": export_path,
+                    "timeline_name": timeline_name,
+                    "track_indices": track_indices,
+                    "end_frame_override": end_frame_override
+                }, timeout_secs=300.0)
+                if res and res.get("ok"):
+                    return res.get("file_path")
+                else:
+                    log_error(f"render_audio (bridge) failed: {res.get('error') if res else 'unknown'}")
+            except Exception as e:
+                log_error(f"render_audio (bridge) error: {e}")
+            return None
+
         if not self.project or not self.timeline:
             return None
 
@@ -489,10 +574,21 @@ class ResolveHandler:
     def get_all_timelines(self):
         """
         Returns a list of all timeline names in the current project.
-
-        Returns:
-            list[str]: Timeline names, or [] if no project / no timelines.
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetTimelineInfo", timeout_secs=5.0)
+                if res and res.get("ok"):
+                    self.bridge_timelines = res.get("timelines", [])
+                    self.bridge_project_name = res.get("project", "")
+                    self.bridge_timeline_name = res.get("current_timeline", "")
+                    self.fps = float(res.get("fps", 24.0))
+                    self.bridge_start_frame = int(res.get("start_frame", 0))
+                    return self.bridge_timelines
+            except Exception as e:
+                log_error(f"get_all_timelines (bridge) error: {e}")
+            return self.bridge_timelines
+
         if not self.project:
             return []
         try:
@@ -510,16 +606,17 @@ class ResolveHandler:
     def get_audio_tracks(self, timeline_name=None):
         """
         Returns a list of audio track labels for the specified timeline.
-        Only tracks that contain at least one clip are included — empty
-        placeholder tracks are excluded.
-
-        Args:
-            timeline_name (str|None): Name of the timeline. If None or matches
-                the current timeline, the active timeline is used.
-
-        Returns:
-            list[str]: Labels like ['A1', 'A3'] (only populated tracks), or [].
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetAudioTracks", {"timeline_name": timeline_name}, timeout_secs=5.0)
+                if res and res.get("ok"):
+                    tracks = res.get("tracks", [])
+                    return [f"A{t.get('index', i+1)}" for i, t in enumerate(tracks)]
+            except Exception as e:
+                log_error(f"get_audio_tracks (bridge) error: {e}")
+            return []
+
         if not self.project:
             return []
         try:
@@ -574,11 +671,25 @@ class ResolveHandler:
         Calculates the next suffix index for the new Edit timeline.
         """
         base_name = re.sub(r" BadWords Edit \d+$", "", original_name)
-        
         idx = 1
+
+        if self.backend == 'bridge':
+            for name in (self.bridge_timelines or []):
+                if name.startswith(f"{base_name} BadWords Edit "):
+                    try:
+                        curr_idx = int(name.split(" BadWords Edit ")[-1])
+                        if curr_idx >= idx: idx = curr_idx + 1
+                    except (ValueError, IndexError):
+                        pass
+            return base_name, idx
+
+        if not self.project:
+            return base_name, 1
+
         count_map = self.project.GetTimelineCount()
         for i in range(1, count_map + 1):
             tl = self.project.GetTimelineByIndex(i)
+            if not tl: continue
             name = tl.GetName()
             if name.startswith(f"{base_name} BadWords Edit "):
                 try:
@@ -600,6 +711,35 @@ class ResolveHandler:
         NOT 0. We must subtract GetStartFrame() to get a 0-based position that matches
         the WAV file timestamps from Whisper.
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetDirectAudioInfo", {
+                    "timeline_name": timeline_name,
+                    "track_indices": track_indices
+                }, timeout_secs=10.0)
+                if res and res.get("ok"):
+                    raw_clips = res.get("clips", [])
+                    if not raw_clips:
+                        return None
+                    fps = float(self.fps or 24.0)
+                    start_frame = int(self.bridge_start_frame or 0)
+                    max_rel_frame = 0
+                    for c in raw_clips:
+                        abs_end = int(c.get("end_frame", 0))
+                        rel_end = abs_end - start_frame
+                        if rel_end > max_rel_frame:
+                            max_rel_frame = rel_end
+                    if max_rel_frame > 0:
+                        end_seconds = max_rel_frame / fps
+                        log_info(f"get_selected_tracks_end_seconds (bridge): selected tracks end at {end_seconds:.3f}s (rel frame {max_rel_frame}).")
+                        return end_seconds
+            except Exception as e:
+                log_error(f"get_selected_tracks_end_seconds (bridge) error: {e}")
+            return None
+
+        if not self.project:
+            return None
+
         try:
             target_tl = None
             count = self.project.GetTimelineCount()
@@ -647,17 +787,45 @@ class ResolveHandler:
 
     def get_direct_audio_info(self, timeline_name, track_indices=None):
         """
-        Uses Resolve's scripting API (_build_source_clip_map) to inspect the
-        audio clips on the given timeline WITHOUT requiring an XML export.
-
-        ELIGIBILITY RULES:
-          • All clips on selected tracks must share the SAME source file path.
-          • No clip may have a non-1.0 speed (GetProperty('Clip Speed') / GetLeftOffset).
-          • No clip may have audio FX applied (GetProperty('Audio FX') non-empty).
-          • The source file must physically exist on disk.
-
-        Returns a dict on success, or None (fall back to Resolve render).
+        Uses Resolve's scripting API to inspect the audio clips on the given timeline
+        WITHOUT requiring an XML export.
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetDirectAudioInfo", {
+                    "timeline_name": timeline_name,
+                    "track_indices": track_indices
+                }, timeout_secs=10.0)
+                if res and res.get("ok"):
+                    raw_clips = res.get("clips", [])
+                    if not raw_clips:
+                        return None
+                    source_paths = set(c.get("file_path", "") for c in raw_clips if c.get("file_path"))
+                    if len(source_paths) != 1:
+                        return None
+                    source_file = next(iter(source_paths))
+                    if not os.path.isfile(source_file):
+                        return None
+                    fps = self.fps or 24.0
+                    clips_seconds = [
+                        {
+                            "src_in_s": float(c.get("left_offset", 0)) / fps,
+                            "duration_s": float(c.get("duration", 0)) / fps,
+                            "file_path": c.get("file_path", ""),
+                        }
+                        for c in raw_clips
+                    ]
+                    mode = "single_uncut" if len(clips_seconds) == 1 else "single_source_multicopy"
+                    return {
+                        "mode": mode,
+                        "source_file": source_file,
+                        "clips": clips_seconds,
+                        "fps": fps
+                    }
+            except Exception as e:
+                log_error(f"get_direct_audio_info (bridge) error: {e}")
+            return None
+
         if not self.project or not self.timeline:
             return None
 
@@ -915,10 +1083,14 @@ class ResolveHandler:
 
     def timeline_exists(self, timeline_name):
         """Returns True if a timeline with the given name exists in the current project."""
+        if self.backend == 'bridge':
+            return timeline_name in (self.bridge_timelines or [])
         try:
+            if not self.project: return False
             count = self.project.GetTimelineCount()
             for i in range(1, count + 1):
-                if self.project.GetTimelineByIndex(i).GetName() == timeline_name:
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
                     return True
             return False
         except Exception:
@@ -931,9 +1103,24 @@ class ResolveHandler:
         """
         base_name = re.sub(r" BadWords (Filtered|Edit) \d+$", "", source_tl_name)
         idx = 1
+        if self.backend == 'bridge':
+            for name in (self.bridge_timelines or []):
+                if name.startswith(f"{base_name} BadWords Filtered "):
+                    try:
+                        curr_idx = int(name.split(" BadWords Filtered ")[-1])
+                        if curr_idx >= idx: idx = curr_idx + 1
+                    except (ValueError, IndexError):
+                        pass
+            return base_name, idx
+
+        if not self.project:
+            return base_name, 1
+
         count_map = self.project.GetTimelineCount()
         for i in range(1, count_map + 1):
-            name = self.project.GetTimelineByIndex(i).GetName()
+            tl = self.project.GetTimelineByIndex(i)
+            if not tl: continue
+            name = tl.GetName()
             if name.startswith(f"{base_name} BadWords Filtered "):
                 try:
                     curr_idx = int(name.split(" BadWords Filtered ")[-1])
@@ -1017,17 +1204,110 @@ class ResolveHandler:
 
     # ── XML Pre-filter Pipeline ─────────────────────────────────────────────
 
-    def export_timeline_xml(self, timeline_name, output_path):
+    def export_timeline_drt(self, timeline_name: str, output_path: str) -> tuple[bool, int]:
         """
-        Exports the named timeline as FCP7 XML to output_path.
-        Returns True on success, False otherwise.
+        Exports the named timeline as native .drt to output_path.
+        Returns (success: bool, start_frame: int).
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("ExportTimelineDrt", {
+                    "timeline_name": timeline_name,
+                    "output_path": output_path
+                }, timeout_secs=30.0)
+                if res and res.get("ok"):
+                    return True, int(res.get("start_frame") or 0)
+                log_error(f"export_timeline_drt (bridge) failed: {res}")
+                return False, 0
+            except Exception as e:
+                log_error(f"export_timeline_drt (bridge) error: {e}")
+                return False, 0
+
         try:
             target_tl = None
             count = self.project.GetTimelineCount()
             for i in range(1, count + 1):
                 tl = self.project.GetTimelineByIndex(i)
-                if tl.GetName() == timeline_name:
+                if tl and tl.GetName() == timeline_name:
+                    target_tl = tl
+                    break
+            if not target_tl:
+                log_error(f"export_timeline_drt: timeline '{timeline_name}' not found.")
+                return False, 0
+            export_type = getattr(self.resolve, 'EXPORT_DRT', 1)
+            ok = target_tl.Export(output_path, export_type)
+            start_f = target_tl.GetStartFrame() or 0
+            return bool(ok and os.path.exists(output_path)), start_f
+        except Exception as e:
+            log_error(f"export_timeline_drt error: {e}")
+            return False, 0
+
+    def import_timeline_drt(self, drt_path: str, timeline_name: str = None) -> tuple[bool, str]:
+        """
+        Imports a native .drt file into Resolve as a timeline.
+        Returns (success: bool, actual_timeline_name: str).
+        """
+        if self.backend == 'bridge':
+            try:
+                payload = {"drt_path": drt_path}
+                if timeline_name:
+                    payload["timeline_name"] = timeline_name
+                res = self.bridge_client.call("ImportTimelineDrt", payload, timeout_secs=30.0)
+                if res and res.get("ok"):
+                    actual = res.get("timeline_name") or timeline_name or ""
+                    if actual and actual not in self.bridge_timelines:
+                        self.bridge_timelines.append(actual)
+                    return True, actual
+                log_error(f"import_timeline_drt (bridge) failed: {res}")
+                return False, ""
+            except Exception as e:
+                log_error(f"import_timeline_drt (bridge) error: {e}")
+                return False, ""
+
+        try:
+            if not self.media_pool:
+                log_error("import_timeline_drt: media_pool not available.")
+                return False, ""
+            root_folder = self.media_pool.GetRootFolder()
+            if root_folder:
+                self.media_pool.SetCurrentFolder(root_folder)
+            new_tl = self.media_pool.ImportTimelineFromFile(drt_path)
+            if not new_tl:
+                return False, ""
+            actual_name = new_tl.GetName()
+            if timeline_name and timeline_name != actual_name:
+                try:
+                    new_tl.SetName(timeline_name)
+                    actual_name = new_tl.GetName()
+                except Exception:
+                    pass
+            return True, actual_name
+        except Exception as e:
+            log_error(f"import_timeline_drt error: {e}")
+            return False, ""
+
+    def export_timeline_xml(self, timeline_name, output_path):
+        """
+        Exports the named timeline as FCP7 XML to output_path.
+        Returns True on success, False otherwise.
+        """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("ExportTimelineXml", {
+                    "timeline_name": timeline_name,
+                    "output_path": output_path
+                }, timeout_secs=30.0)
+                return bool(res and res.get("ok"))
+            except Exception as e:
+                log_error(f"export_timeline_xml (bridge) error: {e}")
+                return False
+
+        try:
+            target_tl = None
+            count = self.project.GetTimelineCount()
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
                     target_tl = tl
                     break
 
@@ -1048,6 +1328,43 @@ class ResolveHandler:
             return bool(result)
         except Exception as e:
             log_error(f"export_timeline_xml error: {e}")
+            return False
+
+    def import_timeline_xml(self, xml_path: str, timeline_name: str = None) -> bool:
+        """
+        Imports an FCP7 XML into Resolve as a timeline.
+        Works across both native API and Mailbox Bridge.
+        """
+        if self.backend == 'bridge':
+            try:
+                payload = {"xml_path": xml_path}
+                if timeline_name:
+                    payload["timeline_name"] = timeline_name
+                res = self.bridge_client.call("ImportTimelineXml", payload, timeout_secs=30.0)
+                if res and res.get("ok"):
+                    imported_name = res.get("timeline_name") or timeline_name
+                    if imported_name and imported_name not in self.bridge_timelines:
+                        self.bridge_timelines.append(imported_name)
+                    return True
+                log_error(f"import_timeline_xml (bridge) failed: {res}")
+                return False
+            except Exception as e:
+                log_error(f"import_timeline_xml (bridge) error: {e}")
+                return False
+
+        try:
+            if not self.media_pool:
+                log_error("import_timeline_xml: media_pool not available.")
+                return False
+
+            import_options = {"importSourceClips": True}
+            if timeline_name:
+                import_options["timelineName"] = timeline_name
+
+            new_tl = self.media_pool.ImportTimelineFromFile(xml_path, import_options)
+            return bool(new_tl is not None)
+        except Exception as e:
+            log_error(f"import_timeline_xml error: {e}")
             return False
 
     def filter_xml_tracks(self, input_path, output_path, track_indices):
@@ -1452,13 +1769,25 @@ class ResolveHandler:
             return False, {}
 
 
-    def import_xml_as_timeline(self, xml_path, source_tl_name):
+    def import_xml_as_timeline(self, xml_path, source_tl_name, audio_only_mode: bool = False, *args, **kwargs):
         """
         Imports a filtered FCP7 XML into Resolve as a new named timeline.
-        - Timeline is named: '{source_tl_name} BadWords Filtered N'
-        - importSourceClips=True re-links existing media by file path.
-        Returns the new timeline name (str) or None on failure.
         """
+        base_name, xml_idx = self.get_next_xml_index(source_tl_name)
+        xml_tl_name = f"{base_name} BadWords Filtered {xml_idx}"
+
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("ImportTimelineXml", {
+                    "xml_path": xml_path,
+                    "timeline_name": xml_tl_name
+                }, timeout_secs=30.0)
+                if res and res.get("ok"):
+                    return res.get("timeline_name") or xml_tl_name
+            except Exception as e:
+                log_error(f"import_xml_as_timeline (bridge) error: {e}")
+            return None
+
         try:
             if not self.media_pool:
                 log_error("import_xml_as_timeline: media_pool not available.")
@@ -2107,6 +2436,24 @@ class ResolveHandler:
         if not color_schedule:
             log_info("reapply_clip_colors: empty schedule, skipping.")
             return
+
+        if self.backend == 'bridge':
+            try:
+                sched_list = []
+                if isinstance(color_schedule, dict):
+                    for k, v in color_schedule.items():
+                        sched_list.append({"start_frame": k, "color": v})
+                elif isinstance(color_schedule, list):
+                    sched_list = color_schedule
+
+                res = self.bridge_client.call("ReapplyClipColors", {
+                    "timeline_name": tl_name,
+                    "color_schedule": sched_list
+                }, timeout_secs=30.0)
+                return bool(res and res.get("ok"))
+            except Exception as e:
+                log_error(f"reapply_clip_colors (bridge) error: {e}")
+                return False
 
         try:
             target_tl = None

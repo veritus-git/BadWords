@@ -1236,8 +1236,124 @@ def _clean_legacy_inno_setup(install_dir):
             for sk_path in to_delete:
                 delete_reg_key(hive_str, sk_path)
 
+def _detect_resolve_edition_info():
+    """Detects Resolve edition ('Studio' vs 'Free') and version tuple."""
+    info = {"installed": False, "edition": "Unknown", "version": "", "version_tuple": (0, 0, 0), "is_21_1_or_newer": False}
+    try:
+        if PLAT.startswith("win"):
+            import winreg
+            for hkey in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                for subkey in (
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                    r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                ):
+                    try:
+                        key = winreg.OpenKey(hkey, subkey)
+                    except OSError:
+                        continue
+                    try:
+                        for i in range(winreg.QueryInfoKey(key)[0]):
+                            try:
+                                sub_name = winreg.EnumKey(key, i)
+                                sub_key = winreg.OpenKey(key, sub_name)
+                                disp_name, _ = winreg.QueryValueEx(sub_key, "DisplayName")
+                                if "DaVinci Resolve" in disp_name:
+                                    info["installed"] = True
+                                    info["edition"] = "Studio" if "Studio" in disp_name else "Free"
+                                    try:
+                                        ver, _ = winreg.QueryValueEx(sub_key, "DisplayVersion")
+                                        info["version"] = ver
+                                    except OSError:
+                                        pass
+                                    winreg.CloseKey(sub_key)
+                                    break
+                                winreg.CloseKey(sub_key)
+                            except (OSError, ValueError):
+                                continue
+                    finally:
+                        winreg.CloseKey(key)
+                    if info["installed"]:
+                        break
+                if info["installed"]:
+                    break
+
+            exe_path = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe"
+            if os.path.isfile(exe_path):
+                info["installed"] = True
+                if not info["version"]:
+                    try:
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductVersion"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **_sp_hidden_kwargs())
+                        if res.returncode == 0 and res.stdout.strip():
+                            info["version"] = res.stdout.strip()
+                    except Exception:
+                        pass
+                if info["edition"] == "Unknown":
+                    try:
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductName"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **_sp_hidden_kwargs())
+                        if res.returncode == 0 and res.stdout.strip():
+                            prod_name = res.stdout.strip()
+                            info["edition"] = "Studio" if "Studio" in prod_name else "Free"
+                    except Exception:
+                        pass
+
+        elif "mac" in PLAT or "darwin" in PLAT:
+            studio_app = "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app"
+            free_app = "/Applications/DaVinci Resolve/DaVinci Resolve.app"
+            chosen_app = None
+            if os.path.isdir(studio_app):
+                info["installed"] = True
+                info["edition"] = "Studio"
+                chosen_app = studio_app
+            elif os.path.isdir(free_app):
+                info["installed"] = True
+                info["edition"] = "Free"
+                chosen_app = free_app
+
+            if chosen_app:
+                plist_path = os.path.join(chosen_app, "Contents", "Info.plist")
+                if os.path.isfile(plist_path):
+                    try:
+                        import plistlib
+                        with open(plist_path, "rb") as f:
+                            pl = plistlib.load(f)
+                            info["version"] = pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or ""
+                    except Exception:
+                        pass
+
+        else:
+            # Linux
+            resolve_bin = "/opt/resolve/bin/resolve"
+            if os.path.isfile(resolve_bin):
+                info["installed"] = True
+                try:
+                    res = subprocess.run(["dpkg", "-l", "davinci-resolve-studio"], capture_output=True, text=True)
+                    if res.returncode == 0 and "davinci-resolve-studio" in res.stdout:
+                        info["edition"] = "Studio"
+                    else:
+                        info["edition"] = "Free"
+                except Exception:
+                    info["edition"] = "Free"
+
+        if info["version"]:
+            import re
+            nums = re.findall(r"\d+", info["version"])
+            if nums:
+                t = tuple(int(x) for x in nums[:3])
+                while len(t) < 3:
+                    t = t + (0,)
+                info["version_tuple"] = t
+                info["is_21_1_or_newer"] = t >= (21, 1, 0)
+    except Exception as e:
+        debug_log(f"_detect_resolve_edition_info error: {e}")
+
+    return info
+
 def _create_davinci_wrappers(install_dir, resolve_dirs):
-    """Generates and writes the DaVinci Resolve Python wrapper for the given install_dir."""
+    """Generates and writes DaVinci Resolve scripts (BadWords.py and/or BadWords Bridge.lua)."""
     install_str = install_dir.replace('\\', "/")
     libs_str    = os.path.join(install_dir, "libs").replace('\\', "/")
     main_script = os.path.join(install_dir, "main.py").replace('\\', "/")
@@ -1315,7 +1431,7 @@ else:
     print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
     legacy_names = [
-        "BadWords.py", "Badwords.py", "BadWords (Linux).py",
+        "Badwords.py", "BadWords (Linux).py",
         "BadWords (Mac).py", "BadWords (macOS).py", "BadWords (Windows).py",
         "BadWords_Launcher.py", "BadWords.lua"
     ]
@@ -1328,20 +1444,46 @@ else:
                 try: os.remove(p)
                 except: pass
 
-    # Write wrapper to exactly ONE valid target (first writable user directory)
+    res_info = _detect_resolve_edition_info()
+    is_free_21_1 = (res_info["edition"] == "Free" and res_info["is_21_1_or_newer"])
+
+    # Locate BadWords Bridge.lua source
+    bridge_lua_src = os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua")
+    if not os.path.isfile(bridge_lua_src):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        bridge_lua_src = os.path.join(repo_root, "setupfiles", "BadWords Bridge.lua")
+
+    written = False
     for rd in resolve_dirs:
         try:
             os.makedirs(rd, exist_ok=True)
-            wp = os.path.join(rd, "BadWords.py")
-            with open(wp, "w", encoding="utf-8") as f:
-                f.write(wrapper_content)
-            os.chmod(wp, 0o755)
-            debug_log(f"Wrapper written to: {wp}")
-            return True
-        except Exception as exc:
-            debug_log(f"Could not write wrapper to {rd}: {exc}")
 
-    return False
+            # Copy BadWords Bridge.lua (for Free and as universal bridge)
+            if os.path.isfile(bridge_lua_src):
+                target_lua = os.path.join(rd, "BadWords Bridge.lua")
+                shutil.copy2(bridge_lua_src, target_lua)
+                os.chmod(target_lua, 0o755)
+                debug_log(f"BadWords Bridge.lua written to: {target_lua}")
+                written = True
+
+            # For Studio or Free < 21.1: write BadWords.py
+            if not is_free_21_1:
+                wp = os.path.join(rd, "BadWords.py")
+                with open(wp, "w", encoding="utf-8") as f:
+                    f.write(wrapper_content)
+                os.chmod(wp, 0o755)
+                debug_log(f"BadWords.py written to: {wp}")
+                written = True
+            else:
+                # On Free >= 21.1, ensure dead BadWords.py is removed
+                wp = os.path.join(rd, "BadWords.py")
+                if os.path.exists(wp):
+                    try: os.remove(wp)
+                    except Exception: pass
+        except Exception as exc:
+            debug_log(f"Could not write scripts to {rd}: {exc}")
+
+    return written
 
 
 def _unblock_file_windows(path):

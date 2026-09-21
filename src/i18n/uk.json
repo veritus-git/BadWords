@@ -433,5 +433,10 @@
     "msg_silence_detection_mode_active": "[Детекція тиші: транскрипція мовлення не виконувалася]",
     "lbl_seamless_cut_export": "Експорт без втрат (Seamless Cut)",
     "msg_seamless_cut_success": "Монтаж без втрат успішно завершено!\nЗбережено в: {path}",
-    "msg_unsupported_file_format": "Непідтримуваний формат файлу. Будь ласка, виберіть коректний відео- або аудіофайл."
+    "msg_unsupported_file_format": "Непідтримуваний формат файлу. Будь ласка, виберіть коректний відео- або аудіофайл.",
+    "status_resolve_bridge_connected": "Підключено (Bridge): {project}",
+    "tt_resolve_connection_studio": "Переконайтеся, що DaVinci Resolve > Preferences > System > General > 'External scripting using' встановлено на 'Local'.",
+    "tt_resolve_connection_free": "Відкрийте DaVinci Resolve та запустіть Workspace → Scripts → BadWords Bridge.",
+    "btn_stop_bridge": "Зупинити Bridge",
+    "tt_stop_bridge": "Зупинити BadWords Bridge в DaVinci Resolve"
 }

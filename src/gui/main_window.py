@@ -1897,11 +1897,35 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # ------------------------------------------------------------------
 
     def _refresh_davinci_connection(self):
-        """Attempts to reconnect to DaVinci Resolve and update all badges/combos."""
-        try:
-            rh = getattr(self.engine, 'resolve_handler', None)
-            if rh:
-                rh.refresh_context()
+        """Attempts to reconnect to DaVinci Resolve asynchronously and update all badges/combos."""
+        from PySide6.QtCore import QThread
+
+        if getattr(self, '_refreshing_connection', False):
+            return
+        self._refreshing_connection = True
+
+        for btn in (getattr(self, 'btn_ref_source_0', None), getattr(self, 'btn_ref_source_1', None)):
+            if btn: btn.setEnabled(False)
+
+        class _RefWorker(QThread):
+            def __init__(self, engine):
+                super().__init__()
+                self._engine = engine
+
+            def run(self):
+                try:
+                    rh = getattr(self._engine, 'resolve_handler', None)
+                    if rh:
+                        rh.refresh_context()
+                except Exception:
+                    pass
+
+        self._ref_worker = _RefWorker(self.engine)
+
+        def _on_done():
+            self._refreshing_connection = False
+            for btn in (getattr(self, 'btn_ref_source_0', None), getattr(self, 'btn_ref_source_1', None)):
+                if btn: btn.setEnabled(True)
             self._populate_timeline_track_combos()
             if hasattr(self, 'header_source_0') and self.header_source_0:
                 self.header_source_0.update_status()
@@ -1911,9 +1935,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.badge_resolve_0.update_status()
             if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
                 self.badge_resolve_1.update_status()
-        except Exception as e:
-            from osdoc import log_error
-            log_error(f"_refresh_davinci_connection error: {e}")
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if rh and rh.is_connected() and getattr(self, 'current_source_type', 'file') == 'resolve':
+                if hasattr(self, 'source_area_0'): self.source_area_0.set_mode("resolve")
+                if hasattr(self, 'source_area_1'): self.source_area_1.set_mode("resolve")
+
+        self._ref_worker.finished.connect(_on_done)
+        self._ref_worker.start()
 
     def _populate_timeline_track_combos(self):
         """
@@ -2135,31 +2163,123 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
 
     def _on_fs_finished(self, words_data, segments_data):
-        """Called when run_fast_silence_pipeline completes. Opens the Editor (Page 2) with silence cuts."""
+        """Called when run_fast_silence_pipeline completes."""
+        from PySide6.QtWidgets import QApplication
+        from gui.dialogs.msgbox import CustomMsgBox
+
         if not words_data:
-            dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_no_silence_segments_detec"), self.txt("btn_ok"))
+            dlg = CustomMsgBox(self, self.txt("msg_fast_silence"), self.txt("msg_no_silence_segments_detec"), self.txt("btn_ok"))
             dlg.exec()
             self.go_to_page(0)
             if hasattr(self, 'welcome_stack'):
                 self.welcome_stack.setCurrentIndex(1)
             return
 
-        # Replace placeholder text with localized notice
-        info_text = self.txt("msg_silence_detection_mode_active") if hasattr(self, 'txt') else "[Wykrywanie ciszy: transkrypcja mowy nie była uruchamiana]"
-        if words_data and len(words_data) > 0 and words_data[0].get('text') == '[FAST_SILENCE_TRACK]':
-            words_data[0]['text'] = info_text
+        is_file_source = (getattr(self, 'current_source_type', 'resolve') == 'file')
+        if is_file_source:
+            # Standalone local file mode: open editor (Page 2) with silence data and review notice
+            info_text = self.txt("msg_silence_detection_mode_active") if hasattr(self, 'txt') else "[Silence Detection: speech transcription was not performed]"
+            if words_data and len(words_data) > 0 and words_data[0].get('text') == '[FAST_SILENCE_TRACK]':
+                words_data[0]['text'] = info_text
 
-        # Open the editor (Page 2) with the silence data
-        self._on_analysis_finished(words_data, segments_data)
+            self._on_analysis_finished(words_data, segments_data)
 
-        # In Silence mode: ensure "Wykryj i usuń ciszę" (tgl_silence_cut) is checked and silence activity is open
-        if hasattr(self, 'tgl_silence_cut'):
-            self.tgl_silence_cut.setChecked(True)
-        for widget in self.findChildren(SidebarButton):
-            if getattr(widget, 'activity_id', None) == 'silence':
-                if not widget.is_active:
-                    self._toggle_activity('silence')
-                break
+            if hasattr(self, 'tgl_silence_cut'):
+                self.tgl_silence_cut.setChecked(True)
+            for widget in self.findChildren(SidebarButton):
+                if getattr(widget, 'activity_id', None) == 'silence':
+                    if not widget.is_active:
+                        self._toggle_activity('silence')
+                    break
+            return
+
+        # DaVinci Resolve mode: directly assemble the timeline!
+        self.lbl_processing_status.setText(self.txt("txt_initializing_assembly") if hasattr(self, 'txt') else "Assembling Timeline...")
+        self.bar_processing.set_value(-1)
+        QApplication.processEvents()
+
+        fs_prefs = self.engine.load_preferences() or {}
+        fs_cut = getattr(self, 'tgl_fs_cut', None)
+        fs_mark = getattr(self, 'tgl_fs_mark', None)
+        fs_prefs['silence_cut']  = fs_cut.isChecked() if fs_cut else True
+        fs_prefs['silence_mark'] = fs_mark.isChecked() if fs_mark else False
+
+        selected_tl = getattr(self, 'combo_tl_1', None)
+        selected_tl_name = selected_tl.text() if selected_tl else ""
+        if selected_tl_name == self.txt("msg_no_timelines_detected"):
+            selected_tl_name = ""
+
+        selected_tracks_combo = getattr(self, 'combo_tr_1', None)
+        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+
+        curr_tl_name = selected_tl_name
+        if not curr_tl_name:
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if rh and rh.timeline:
+                try: curr_tl_name = rh.timeline.GetName()
+                except Exception: curr_tl_name = ""
+
+        fs_prefs["source_snapshot"] = {
+            "source_file": None,
+            "timeline_name": curr_tl_name,
+            "track_indices": track_indices,
+            "track_names": selected_track_names
+        }
+
+        from PySide6.QtCore import QThread, Signal as _Signal, QObject as _QObject
+
+        class _FsAssemblySignals(_QObject):
+            status   = _Signal(str)
+            finished = _Signal(object)
+
+        sigs = _FsAssemblySignals()
+        sigs.status.connect(self.lbl_processing_status.setText)
+
+        def _on_fs_assemble_done(result):
+            self.bar_processing.set_value(100)
+            success, warning, new_tl_name, clean_ops = (
+                result if (isinstance(result, tuple) and len(result) == 4)
+                else (False, None, None, None)
+            )
+            if success:
+                dlg = CustomMsgBox(self, self.txt("msg_fast_silence"), self.txt("msg_fast_silence_processing_c"), self.txt("btn_ok"))
+                dlg.exec()
+            else:
+                dlg = CustomMsgBox(self, self.txt("msg_fast_silence"), f"{self.txt('msg_assembly_failed')}: {warning or ''}", self.txt("btn_ok"))
+                dlg.exec()
+            self.go_to_page(0)
+            if hasattr(self, 'welcome_stack'):
+                self.welcome_stack.setCurrentIndex(1)
+
+        sigs.finished.connect(_on_fs_assemble_done)
+
+        class _FsAssemblyThread(QThread):
+            def __init__(self, engine, words_data, prefs, sigs):
+                super().__init__()
+                self._engine = engine
+                self._data   = words_data
+                self._prefs  = prefs
+                self._sigs   = sigs
+
+            def run(self):
+                try:
+                    result = self._engine.assemble_timeline(
+                        self._data,
+                        self._prefs,
+                        callback_status   = self._sigs.status.emit,
+                        callback_progress = lambda v: None,
+                    )
+                except Exception as _e:
+                    import traceback as _tb
+                    from osdoc import log_error as _le
+                    _le(f"_FsAssemblyThread: {_e}\n{_tb.format_exc()}")
+                    result = (False, None, None, None)
+                self._sigs.finished.emit(result)
+
+        self._fs_assembly_thread = _FsAssemblyThread(self.engine, words_data, fs_prefs, sigs)
+        self._fs_assembly_sigs = sigs
+        self._fs_assembly_thread.start()
 
     def _toggle_favorite(self, target_id: str, source_toggle, label_text: str, pin_btn):
         """Proxy Favorites system — creates or destroys a mirrored ToggleSwitch in layout_favorites."""

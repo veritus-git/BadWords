@@ -180,7 +180,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 end_frame_override = None
                 if track_indices_for_render:
                     end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
-                        settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
+                        settings.get('timeline_name') or (self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')),
                         track_indices_for_render
                     )
                     if end_seconds:
@@ -190,7 +190,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
                 # ── Try Direct Audio first (skip Resolve render when possible) ───
                 tl_name_for_direct = settings.get('timeline_name') or (
-                    self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
+                    self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')
                 )
                 direct_info = None
                 if tl_name_for_direct:
@@ -456,7 +456,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 end_frame_override_tx = None
                 if track_indices_for_render:
                     _end_s = self.resolve_handler.get_selected_tracks_end_seconds(
-                        settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
+                        settings.get('timeline_name') or (self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')),
                         track_indices_for_render
                     )
                     if _end_s:
@@ -466,7 +466,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
                 # ── Try Direct Audio first (skip Resolve render when possible) ───
                 tl_name_for_direct = settings.get('timeline_name') or (
-                    self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
+                    self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')
                 )
                 direct_info = None
                 if tl_name_for_direct:
@@ -1688,13 +1688,16 @@ except Exception as e:
 
             # ── DAVINCI RESOLVE TIMELINE ASSEMBLY (DRT / XML) ─────────────────
             self.resolve_handler.refresh_context()
-            if not self.resolve_handler.timeline:
+            if not self.resolve_handler.is_connected():
                 log_error("No active timeline found.")
                 return False, None, None, None
 
-            original_tl_name  = source_snapshot.get("timeline_name") or settings.get("original_timeline_name")
+            original_tl_name = source_snapshot.get("timeline_name") or settings.get("original_timeline_name")
             if not original_tl_name:
-                original_tl_name = self.resolve_handler.timeline.GetName()
+                if self.resolve_handler.timeline:
+                    original_tl_name = self.resolve_handler.timeline.GetName()
+                elif hasattr(self.resolve_handler, 'bridge_timeline_name'):
+                    original_tl_name = self.resolve_handler.bridge_timeline_name
                 log_info(f"assemble_timeline: No source snapshot, using active: '{original_tl_name}'")
             else:
                 log_info(f"assemble_timeline: Source snapshot → '{original_tl_name}'")
@@ -1705,23 +1708,24 @@ except Exception as e:
             # Determine: audio_only_mode, a_track_count, for later use.
             context_type  = "video"  # default
             a_track_count = 0
-            try:
-                count = self.resolve_handler.project.GetTimelineCount()
-                for i in range(1, count + 1):
-                    tl = self.resolve_handler.project.GetTimelineByIndex(i)
-                    if tl.GetName() == original_tl_name:
-                        a_track_count = tl.GetTrackCount("audio")
-                        v_count       = tl.GetTrackCount("video")
-                        v_has_clips   = False
-                        for vi in range(1, v_count + 1):
-                            if tl.GetItemListInTrack("video", vi):
-                                v_has_clips = True
-                                break
-                        if not v_has_clips:
-                            context_type = "audio"
-                        break
-            except Exception:
-                pass
+            if self.resolve_handler.project:
+                try:
+                    count = self.resolve_handler.project.GetTimelineCount()
+                    for i in range(1, count + 1):
+                        tl = self.resolve_handler.project.GetTimelineByIndex(i)
+                        if tl and tl.GetName() == original_tl_name:
+                            a_track_count = tl.GetTrackCount("audio")
+                            v_count       = tl.GetTrackCount("video")
+                            v_has_clips   = False
+                            for vi in range(1, v_count + 1):
+                                if tl.GetItemListInTrack("video", vi):
+                                    v_has_clips = True
+                                    break
+                            if not v_has_clips:
+                                context_type = "audio"
+                            break
+                except Exception:
+                    pass
             audio_only_mode = (context_type == "audio")
 
             # ── AUDIO CAP: determine true end of selected tracks ──────────────
@@ -1866,50 +1870,64 @@ except Exception as e:
                             set_status(self.txt("status_assembly_xml_import"))
                             set_progress(-1)
 
-                            # CRITICAL: Reset current folder to Root before import.
-                            root_folder = self.resolve_handler.media_pool.GetRootFolder()
-                            if root_folder:
-                                self.resolve_handler.media_pool.SetCurrentFolder(root_folder)
+                            if self.resolve_handler.backend == 'bridge':
+                                ok_imp = self.resolve_handler.import_timeline_xml(cut_xml_path, new_tl_name)
+                                if ok_imp:
+                                    xml_tl_name = new_tl_name
+                                    xml_success = True
+                                    log_info(f"assemble_timeline: XML import OK (bridge) → '{xml_tl_name}'")
 
-                            import_options = {
-                                "timelineName": new_tl_name,
-                                "importSourceClips": True
-                            }
-
-                            new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
-                                cut_xml_path,
-                                import_options,
-                            )
-                            time.sleep(0.05)
-
-                            if new_tl:
-                                actual_name = new_tl.GetName()
-                                log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
-                                xml_tl_name = actual_name
-
-                                # Move timeline into BadWords/ root bin
-                                bw_bin = self.resolve_handler.get_badwords_root_bin()
-                                if bw_bin:
-                                    try:
-                                        tl_item = self.resolve_handler.find_timeline_item_recursive(
-                                            self.resolve_handler.media_pool.GetRootFolder(), actual_name
-                                        )
-                                        if tl_item:
-                                            self.resolve_handler.media_pool.MoveClips([tl_item], bw_bin)
-                                            log_info(f"assemble_timeline: moved '{actual_name}' → BadWords/")
-                                        else:
-                                            log_error("assemble_timeline: timeline item not found in pool")
-                                    except Exception as move_err:
-                                        log_error(f"assemble_timeline: MoveClips error: {move_err}")
-
-                                # Apply / verify clip colors
-                                set_status(self.txt("status_assembly_colors"))
-                                self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
-
-                                xml_success = True
-                                new_tl_name = xml_tl_name
+                                    # Apply / verify clip colors
+                                    set_status(self.txt("status_assembly_colors"))
+                                    self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
+                                    new_tl_name = xml_tl_name
+                                else:
+                                    log_error("assemble_timeline: import_timeline_xml (bridge) failed.")
                             else:
-                                log_error("assemble_timeline: ImportTimelineFromFile returned None.")
+                                # CRITICAL: Reset current folder to Root before import.
+                                root_folder = self.resolve_handler.media_pool.GetRootFolder()
+                                if root_folder:
+                                    self.resolve_handler.media_pool.SetCurrentFolder(root_folder)
+
+                                import_options = {
+                                    "timelineName": new_tl_name,
+                                    "importSourceClips": True
+                                }
+
+                                new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
+                                    cut_xml_path,
+                                    import_options,
+                                )
+                                time.sleep(0.05)
+
+                                if new_tl:
+                                    actual_name = new_tl.GetName()
+                                    log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
+                                    xml_tl_name = actual_name
+
+                                    # Move timeline into BadWords/ root bin
+                                    bw_bin = self.resolve_handler.get_badwords_root_bin()
+                                    if bw_bin:
+                                        try:
+                                            tl_item = self.resolve_handler.find_timeline_item_recursive(
+                                                self.resolve_handler.media_pool.GetRootFolder(), actual_name
+                                            )
+                                            if tl_item:
+                                                self.resolve_handler.media_pool.MoveClips([tl_item], bw_bin)
+                                                log_info(f"assemble_timeline: moved '{actual_name}' → BadWords/")
+                                            else:
+                                                log_error("assemble_timeline: timeline item not found in pool")
+                                        except Exception as move_err:
+                                            log_error(f"assemble_timeline: MoveClips error: {move_err}")
+
+                                    # Apply / verify clip colors
+                                    set_status(self.txt("status_assembly_colors"))
+                                    self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
+
+                                    xml_success = True
+                                    new_tl_name = xml_tl_name
+                                else:
+                                    log_error("assemble_timeline: ImportTimelineFromFile returned None.")
                         else:
                             log_error("assemble_timeline: apply_ops_cuts_to_timeline_xml failed.")
 
