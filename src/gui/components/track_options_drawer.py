@@ -133,12 +133,7 @@ class TrackOptionsDrawer(QWidget):
 
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
 
-        src = getattr(self.parent_gui, '_transcription_source', None) or {}
-        tr_indices = src.get('track_indices', [])
-        tr_label_text = self.parent_gui.txt("dlg_transcription_tracks")
-        if tr_indices:
-            tr_label_text += f" (A{', A'.join(str(i) for i in tr_indices)})"
-        self.w_a_tr = make_toggle_row(tr_label_text, self.tgl_a_tr)
+        self.w_a_tr = make_toggle_row(self.parent_gui.txt("dlg_transcription_tracks"), self.tgl_a_tr)
         inner_layout.addWidget(self.w_a_tr)
 
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_a_cust))
@@ -456,14 +451,6 @@ class TrackOptionsDrawer(QWidget):
         """Re-query timeline audio/video tracks and dynamically rebuild checkboxes."""
         audio_tracks, video_tracks = self._get_project_tracks()
 
-        # Update transcription tracks label
-        src = getattr(self.parent_gui, '_transcription_source', None) or {}
-        tr_indices = src.get('track_indices', [])
-        tr_label_text = self.parent_gui.txt("dlg_transcription_tracks")
-        if tr_indices:
-            tr_label_text += f" (A{', A'.join(str(i) for i in tr_indices)})"
-        if hasattr(self, 'w_a_tr') and hasattr(self.w_a_tr, '_lbl'):
-            self.w_a_tr._lbl.setText(tr_label_text)
 
         # Rebuild Audio checkboxes if changed
         current_a_keys = list(self.a_track_checkboxes.keys())

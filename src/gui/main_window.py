@@ -976,7 +976,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # ------------------------------------------------------------------
 
     def _jump_playhead(self, timestamp_s):
-        if not self.engine.resolve_handler or not getattr(self.engine.resolve_handler, 'project', None): return
+        rh = getattr(self.engine, 'resolve_handler', None) if self.engine else None
+        if not rh: return
         
         tl_name = None
         if getattr(self, '_current_chapter_idx', -1) >= 0 and self._chapters:
@@ -985,19 +986,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             tl_name = self._transcription_source.get("timeline_name")
             
         if tl_name:
-            curr_tl = self.engine.resolve_handler.project.GetCurrentTimeline()
-            if curr_tl and curr_tl.GetName() == tl_name:
-                self.engine.resolve_handler.timeline = curr_tl
-            else:
-                count = self.engine.resolve_handler.project.GetTimelineCount()
-                for i in range(1, count + 1):
-                    tl = self.engine.resolve_handler.project.GetTimelineByIndex(i)
-                    if tl and tl.GetName() == tl_name:
-                        self.engine.resolve_handler.project.SetCurrentTimeline(tl)
-                        self.engine.resolve_handler.timeline = tl
-                        break
+            rh.set_current_timeline(tl_name)
         
-        self.engine.resolve_handler.jump_to_seconds(timestamp_s)
+        rh.jump_to_seconds(timestamp_s, timeline_name=tl_name)
 
     def _on_import_script(self):
         from PySide6.QtWidgets import QFileDialog
@@ -1228,14 +1219,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         prefs = self.engine.load_preferences() or {}
         if prefs.get("sync_davinci_chapter", True):
             tl_name = ch.get("tl_name")
-            if tl_name and self.resolve_handler and getattr(self.resolve_handler, 'project', None):
+            if tl_name and self.resolve_handler:
                 try:
-                    count = self.resolve_handler.project.GetTimelineCount()
-                    for i in range(1, count + 1):
-                        tl = self.resolve_handler.project.GetTimelineByIndex(i)
-                        if tl and tl.GetName() == tl_name:
-                            self.resolve_handler.project.SetCurrentTimeline(tl)
-                            break
+                    self.resolve_handler.set_current_timeline(tl_name)
                 except Exception:
                     pass
 

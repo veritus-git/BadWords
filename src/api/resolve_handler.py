@@ -210,11 +210,53 @@ class ResolveHandler:
             log_error(f"get_timeline_start_frame: {e}")
             return 86400  # Fallback 01:00:00:00 at 24fps
 
-    def jump_to_seconds(self, seconds):
+    def set_current_timeline(self, timeline_name: str) -> bool:
+        """
+        Sets the active timeline in Resolve by name.
+        Supports both direct API and bridge backends.
+        """
+        if not timeline_name:
+            return False
+
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("SetCurrentTimeline", {"timeline_name": timeline_name}, timeout_secs=5.0)
+                if res and res.get("ok"):
+                    self.bridge_timeline_name = timeline_name
+                    return True
+                return False
+            except Exception as e:
+                log_error(f"set_current_timeline (bridge) error: {e}")
+                return False
+
+        if not self.project:
+            return False
+
+        try:
+            curr_tl = self.project.GetCurrentTimeline()
+            if curr_tl and curr_tl.GetName() == timeline_name:
+                self.timeline = curr_tl
+                return True
+
+            count = self.project.GetTimelineCount() or 0
+            for i in range(1, count + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
+                    self.project.SetCurrentTimeline(tl)
+                    self.timeline = tl
+                    return True
+        except Exception as e:
+            log_error(f"set_current_timeline error: {e}")
+        return False
+
+    def jump_to_seconds(self, seconds, timeline_name: str = None):
         """Moves playhead to a specific second in the timeline."""
         if self.backend == 'bridge':
             try:
-                self.bridge_client.call("JumpToSeconds", {"seconds": seconds}, timeout_secs=5.0)
+                payload = {"seconds": seconds, "fps": self.fps}
+                if timeline_name:
+                    payload["timeline_name"] = timeline_name
+                self.bridge_client.call("JumpToSeconds", payload, timeout_secs=5.0)
             except Exception as e:
                 log_error(f"jump_to_seconds (bridge) error: {e}")
             return
@@ -749,6 +791,7 @@ class ResolveHandler:
         idx = 1
 
         if self.backend == 'bridge':
+            self.get_all_timelines()
             for name in (self.bridge_timelines or []):
                 if name.startswith(f"{base_name} BadWords Edit "):
                     try:
@@ -2621,6 +2664,28 @@ class ResolveHandler:
             log_info(f"reapply_clip_colors: '{tl_name}' — "
                      f"{ok_count} ok from XML, {corrected} corrected via API"
                      + (f", {missed} unmatched (normal)" if missed else "."))
+
+            # Clean up any uncolored duplicate timeline with the exact same name
+            try:
+                cnt = self.project.GetTimelineCount() or 0
+                for i in range(cnt, 0, -1):
+                    t = self.project.GetTimelineByIndex(i)
+                    if t and t != target_tl and t.GetName() == tl_name:
+                        has_col = False
+                        for tt in ("video", "audio"):
+                            for tr in range(1, (t.GetTrackCount(tt) or 0) + 1):
+                                for it in (t.GetItemListInTrack(tt, tr) or []):
+                                    c = it.GetClipColor()
+                                    if c and c not in ("", "None", "null"):
+                                        has_col = True
+                                        break
+                                if has_col: break
+                            if has_col: break
+                        if not has_col:
+                            self.media_pool.DeleteTimelines([t])
+                            log_info(f"reapply_clip_colors: deleted uncolored duplicate timeline '{tl_name}'")
+            except Exception as del_err:
+                log_error(f"reapply_clip_colors: duplicate cleanup error: {del_err}")
 
         except Exception as e:
             log_error(f"reapply_clip_colors error: {e}")

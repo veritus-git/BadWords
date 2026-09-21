@@ -634,22 +634,38 @@ local function do_import_timeline_file(file_path, timeline_name)
         if rf then mp:SetCurrentFolder(rf) end
     end)
 
-    local import_options = nil
-    if timeline_name and timeline_name ~= "" then
-        import_options = {
-            timelineName = timeline_name,
-            importSourceClips = true
-        }
-    end
-
+    local is_drt = string.lower(file_path):match("%.drt$") ~= nil
+    local initial_count = proj:GetTimelineCount() or 0
     local imported = nil
-    if import_options then
-        local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path, import_options) end)
-        if ok and res then imported = res end
-    end
-    if not imported then
+
+    if is_drt then
+        -- DRT does NOT support importOptions in Resolve API; pass only file_path ONCE
         local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path) end)
         if ok and res then imported = res end
+    else
+        local import_options = nil
+        if timeline_name and timeline_name ~= "" then
+            import_options = {
+                timelineName = timeline_name,
+                importSourceClips = true
+            }
+        end
+        if import_options then
+            local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path, import_options) end)
+            if ok and res then imported = res end
+        end
+        local current_count = proj:GetTimelineCount() or 0
+        if not imported and current_count == initial_count then
+            local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path) end)
+            if ok and res then imported = res end
+        end
+    end
+
+    if not imported then
+        local count = proj:GetTimelineCount() or 0
+        if count > initial_count then
+            imported = proj:GetTimelineByIndex(count)
+        end
     end
 
     local imported_name = ""
@@ -661,6 +677,38 @@ local function do_import_timeline_file(file_path, timeline_name)
                 imported_name = imported:GetName() or timeline_name
             end)
         end
+
+        -- Set imported timeline as current active timeline
+        pcall(function() proj:SetCurrentTimeline(imported) end)
+
+        -- Clean up any uncolored duplicate timeline with the exact same name
+        pcall(function()
+            local total_tls = proj:GetTimelineCount() or 0
+            for i = total_tls, 1, -1 do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t ~= imported and t:GetName() == imported_name then
+                    local has_colors = false
+                    for _, tt in ipairs({"video", "audio"}) do
+                        local tc = t:GetTrackCount(tt) or 0
+                        for tr = 1, tc do
+                            local items = t:GetItemListInTrack(tt, tr) or {}
+                            for _, it in ipairs(items) do
+                                local c = it:GetClipColor()
+                                if c and c ~= "" and c ~= "None" and c ~= "null" then
+                                    has_colors = true
+                                    break
+                                end
+                            end
+                            if has_colors then break end
+                        end
+                        if has_colors then break end
+                    end
+                    if not has_colors then
+                        pcall(function() mp:DeleteTimelines({ t }) end)
+                    end
+                end
+            end
+        end)
 
         -- Move imported timeline into BadWords folder
         pcall(function()
@@ -710,31 +758,78 @@ handlers.ImportTimeline = function(req)
     return do_import_timeline_file(p, name)
 end
 
+handlers.SetCurrentTimeline = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl_name = req and req.timeline_name
+    if not tl_name or tl_name == "" then
+        return { error = "Timeline name required" }
+    end
+
+    local count = proj:GetTimelineCount() or 0
+    for i = 1, count do
+        local tl = proj:GetTimelineByIndex(i)
+        if tl and tl:GetName() == tl_name then
+            local ok = pcall(function() proj:SetCurrentTimeline(tl) end)
+            if ok then
+                return { ok = true, timeline_name = tl_name }
+            else
+                return { error = "SetCurrentTimeline failed" }
+            end
+        end
+    end
+    return { error = "Timeline not found: " .. tostring(tl_name) }
+end
+
 handlers.JumpToSeconds = function(req)
     if not res_app then return { error = "Resolve API object not available" } end
-    local secs = req and req.seconds or 0
+    local secs = tonumber(req and req.seconds) or 0
     pcall(function() res_app:OpenPage("edit") end)
 
     local pm = res_app:GetProjectManager()
     local proj = pm and pm:GetCurrentProject()
-    local tl = proj and proj:GetCurrentTimeline()
+    if not proj then return { error = "No project open" } end
+
+    local tl = nil
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        local count = proj:GetTimelineCount() or 0
+        for i = 1, count do
+            local t = proj:GetTimelineByIndex(i)
+            if t and t:GetName() == req.timeline_name then
+                tl = t
+                break
+            end
+        end
+    end
+    if not tl then tl = proj:GetCurrentTimeline() end
     if not tl then return { error = "No timeline active" } end
 
-    local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
+    pcall(function() proj:SetCurrentTimeline(tl) end)
+
+    local fps = tonumber(req and req.fps)
+    if not fps or fps <= 0 then
+        fps = tonumber(tl:GetSetting("timelineFrameRate")) or tonumber(proj:GetSetting("timelineFrameRate")) or 24.0
+    end
     local start_f = tonumber(tl:GetStartFrame()) or 0
     local target_f = start_f + floor(secs * fps + 0.5)
 
     -- Convert frames to timecode hh:mm:ss:ff
-    local total_sec = floor(target_f / fps)
-    local f = target_f % floor(fps)
+    local fps_int = floor(fps + 0.5)
+    if fps_int <= 0 then fps_int = 24 end
+
+    local f = floor(target_f % fps_int)
+    local total_sec = floor(target_f / fps_int)
     local s = total_sec % 60
     local total_m = floor(total_sec / 60)
     local m = total_m % 60
     local h = floor(total_m / 60)
     local tc = string.format("%02d:%02d:%02d:%02d", h, m, s, f)
 
-    pcall(function() tl:SetCurrentTimecode(tc) end)
-    return { ok = true, timecode = tc }
+    local set_ok = pcall(function() tl:SetCurrentTimecode(tc) end)
+    return { ok = set_ok, timecode = tc, target_frame = target_f }
 end
 
 handlers.ReapplyClipColors = function(req)
@@ -834,6 +929,35 @@ handlers.ReapplyClipColors = function(req)
                 end
             end
         end
+    -- Clean up any uncolored duplicate timeline with the same name
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        pcall(function()
+            local total_tls = proj:GetTimelineCount() or 0
+            for i = total_tls, 1, -1 do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t ~= tl and t:GetName() == req.timeline_name then
+                    local has_colors = false
+                    for _, tt in ipairs({"video", "audio"}) do
+                        local tc = t:GetTrackCount(tt) or 0
+                        for tr = 1, tc do
+                            local items = t:GetItemListInTrack(tt, tr) or {}
+                            for _, it in ipairs(items) do
+                                local c = it:GetClipColor()
+                                if c and c ~= "" and c ~= "None" and c ~= "null" then
+                                    has_colors = true
+                                    break
+                                end
+                            end
+                            if has_colors then break end
+                        end
+                        if has_colors then break end
+                    end
+                    if not has_colors then
+                        pcall(function() mp:DeleteTimelines({ t }) end)
+                    end
+                end
+            end
+        end)
     end
 
     return { ok = true, applied = applied_count }
