@@ -625,3 +625,162 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
                 shutil.rmtree(unpack_dir)
         except Exception:
             pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEAMLESS / LOSSLESS CUT ASSEMBLY PIPELINE (STANDALONE MEDIA FILES)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
+                              fps: float = 24.0, temp_dir: str = None,
+                              callback_status = None, callback_progress = None,
+                              ffmpeg_cmd: str = "ffmpeg") -> tuple[bool, str]:
+    """
+    Direct lossless/seamless cut assembly for standalone video and audio files
+    (MP4, MOV, MKV, WAV, etc.) using FFmpeg direct stream copy (-c copy) and concat demuxer.
+    
+    Preserves 100% of original quality, bitrates, codecs and container streams without
+    any re-encoding.
+    
+    Args:
+        source_file: Path to input media file.
+        ops: Sorted list of kept operations [{'s': start_frame, 'e': end_frame, ...}, ...]
+        output_path: Destination path for the cut media file.
+        fps: Timeline frame rate (default 24.0).
+        temp_dir: Directory for temporary segments.
+        callback_status: Callable(str) for progress updates.
+        callback_progress: Callable(int 0..100) for progress bar updates.
+        ffmpeg_cmd: Path or command for FFmpeg executable.
+        
+    Returns:
+        (success: bool, result_message: str)
+    """
+    import subprocess
+    import shutil
+    import time
+
+    def set_status(msg: str):
+        if callback_status:
+            callback_status(msg)
+        else:
+            log_info(f"[SeamlessCut] {msg}")
+
+    def set_progress(val: int):
+        if callback_progress:
+            callback_progress(val)
+
+    if not source_file or not os.path.isfile(source_file):
+        log_error(f"assemble_via_seamless_cut: source file does not exist: {source_file}")
+        return False, "Source file not found."
+
+    if not ops:
+        log_error("assemble_via_seamless_cut: ops list is empty.")
+        return False, "No operations to assemble."
+
+    if fps <= 0:
+        fps = 24.0
+
+    # 1. Calculate kept time ranges in seconds
+    keep_segments = []
+    for op in sorted(ops, key=lambda x: x['s']):
+        start_s = max(0.0, float(op['s']) / fps)
+        end_s = max(0.0, float(op['e']) / fps)
+        dur_s = end_s - start_s
+        if dur_s > 0.04:  # Minimum 1-frame duration threshold
+            keep_segments.append((start_s, dur_s))
+
+    if not keep_segments:
+        log_error("assemble_via_seamless_cut: all segments were cut.")
+        return False, "All segments were cut out."
+
+    log_info(f"assemble_via_seamless_cut: {len(keep_segments)} segment(s) to stitch into '{output_path}'")
+    set_status("Przygotowywanie bezstratnego montażu...")
+    set_progress(5)
+
+    # 2. Setup temp directory
+    if not temp_dir:
+        temp_dir = os.path.join(os.path.dirname(output_path), f".bw_tmp_{int(time.time())}")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    _, ext = os.path.splitext(source_file)
+    segment_files = []
+
+    try:
+        # 3. Extract each segment losslessly via FFmpeg stream copy
+        total_segs = len(keep_segments)
+        for idx, (start_s, dur_s) in enumerate(keep_segments):
+            seg_filename = f"seg_{idx:05d}{ext}"
+            seg_path = os.path.join(temp_dir, seg_filename)
+
+            set_status(f"Wycinanie segmentu {idx + 1}/{total_segs}...")
+            pct = 10 + int((idx / max(1, total_segs)) * 70)
+            set_progress(pct)
+
+            cmd = [
+                ffmpeg_cmd, "-y",
+                "-ss", f"{start_s:.6f}",
+                "-i", source_file,
+                "-t", f"{dur_s:.6f}",
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                seg_path
+            ]
+
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if res.returncode != 0 or not os.path.exists(seg_path) or os.path.getsize(seg_path) == 0:
+                log_error(f"assemble_via_seamless_cut: segment {idx} failed (rc={res.returncode}): {res.stderr[-300:]}")
+                return False, f"Failed to cut segment {idx + 1}."
+
+            segment_files.append(seg_path)
+
+        # 4. Write concat demuxer list
+        set_status("Łączenie wyciętych segmentów bez rekompresji...")
+        set_progress(85)
+
+        concat_list_path = os.path.join(temp_dir, "concat_list.txt")
+        with open(concat_list_path, "w", encoding="utf-8") as f:
+            for seg in segment_files:
+                # Escape single quotes for ffmpeg concat demuxer
+                safe_path = seg.replace("'", "'\\''")
+                f.write(f"file '{safe_path}'\n")
+
+        # 5. Merge all segments via Concat Demuxer with stream copy
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except Exception:
+                pass
+
+        concat_cmd = [
+            ffmpeg_cmd, "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_list_path,
+            "-c", "copy",
+            output_path
+        ]
+
+        concat_res = subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        if concat_res.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            log_error(f"assemble_via_seamless_cut: concat failed (rc={concat_res.returncode}): {concat_res.stderr[-300:]}")
+            return False, "Failed to concatenate segments."
+
+        set_status("Zakończono montaż bezstratny!")
+        set_progress(100)
+        log_info(f"assemble_via_seamless_cut: SUCCESS -> '{output_path}' ({os.path.getsize(output_path)} bytes)")
+        return True, output_path
+
+    except Exception as e:
+        import traceback
+        log_error(f"assemble_via_seamless_cut: unexpected error: {e}\n{traceback.format_exc()}")
+        return False, str(e)
+
+    finally:
+        # Clean up temporary segments directory
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+

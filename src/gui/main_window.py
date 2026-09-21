@@ -1896,6 +1896,25 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # Timeline / Track combo population & synchronisation
     # ------------------------------------------------------------------
 
+    def _refresh_davinci_connection(self):
+        """Attempts to reconnect to DaVinci Resolve and update all badges/combos."""
+        try:
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if rh:
+                rh.refresh_context()
+            self._populate_timeline_track_combos()
+            if hasattr(self, 'header_source_0') and self.header_source_0:
+                self.header_source_0.update_status()
+            if hasattr(self, 'header_source_1') and self.header_source_1:
+                self.header_source_1.update_status()
+            if hasattr(self, 'badge_resolve_0') and self.badge_resolve_0:
+                self.badge_resolve_0.update_status()
+            if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
+                self.badge_resolve_1.update_status()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_refresh_davinci_connection error: {e}")
+
     def _populate_timeline_track_combos(self):
         """
         Queries the Resolve API for all timelines in the current project and
@@ -1923,6 +1942,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     track_combo.options_list = []
                     track_combo.selected_items = set()
                     track_combo.setText(self.txt("msg_no_audio_tracks_detected"))
+                if hasattr(self, 'header_source_0') and self.header_source_0:
+                    self.header_source_0.update_status()
+                if hasattr(self, 'header_source_1') and self.header_source_1:
+                    self.header_source_1.update_status()
+                if hasattr(self, 'badge_resolve_0') and self.badge_resolve_0:
+                    self.badge_resolve_0.update_status()
+                if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
+                    self.badge_resolve_1.update_status()
                 return
 
             # Populate timeline dropdowns
@@ -1935,6 +1962,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             init_tl = current_tl_name if current_tl_name in timelines else timelines[0]
             self._on_timeline_selected(init_tl, self.combo_tr_0)
             self._on_timeline_selected(init_tl, self.combo_tr_1)
+
+            if hasattr(self, 'header_source_0') and self.header_source_0:
+                self.header_source_0.update_status()
+            if hasattr(self, 'header_source_1') and self.header_source_1:
+                self.header_source_1.update_status()
+            if hasattr(self, 'badge_resolve_0') and self.badge_resolve_0:
+                self.badge_resolve_0.update_status()
+            if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
+                self.badge_resolve_1.update_status()
 
         except Exception as e:
             from osdoc import log_error
@@ -2001,17 +2037,34 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             return []
 
     def _on_fast_silence(self):
-        """Fast Silence Cut: runs FFmpeg pipeline then directly assembles the timeline."""
-        if hasattr(self, '_panel_left'): self._panel_left.hide()
-        if hasattr(self, '_panel_right'): self._panel_right.hide()
+        """Fast Silence Cut: runs FFmpeg pipeline then opens the Editor (Page 2) with silence cuts."""
+        # ── Source validation ─────────────────────────────────────────────────
+        is_file_source = getattr(self, 'current_source_type', 'resolve') == 'file'
+        source_file_path = None
+        if is_file_source:
+            if hasattr(self, 'drop_zone_1'):
+                source_file_path = self.drop_zone_1.get_file()
+            if not source_file_path or not os.path.isfile(source_file_path):
+                if hasattr(self, 'drop_zone_1'):
+                    self.drop_zone_1.shake()
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_file_not_selected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+        else:
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if not rh or not rh.is_connected():
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_resolve_not_connected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+            selected_tl = getattr(self, 'combo_tl_1', None)
+            selected_tl_name = selected_tl.text() if selected_tl else ""
+            no_tl = self.txt("msg_no_timelines_detected")
+            if not selected_tl_name or selected_tl_name == no_tl:
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_no_timelines_detected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
 
-        self.go_to_page(1)
-        if hasattr(self, 'bar_processing'):
-            self.bar_processing.set_value(0)
-        if hasattr(self, 'lbl_processing_status'):
-            self.lbl_processing_status.setText(self.txt("txt_initializing_fast_silence"))
-
-        # Read from line edits
+        # ── Read from line edits ──────────────────────────────────────────────
         try:
             thresh_val = float(self.input_fs_thresh.text().replace(',', '.'))
         except (ValueError, AttributeError):
@@ -2034,6 +2087,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         _p['silence_min_dur']      = min_dur_val
         self.engine.save_preferences(_p)
 
+        # ── Switch to Processing Page ─────────────────────────────────────────
+        if hasattr(self, '_panel_left'): self._panel_left.hide()
+        if hasattr(self, '_panel_right'): self._panel_right.hide()
+
+        self.go_to_page(1)
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(self.txt("txt_initializing_fast_silence"))
+
         # Read selected timeline and tracks
         selected_tl = getattr(self, 'combo_tl_1', None)
         selected_tl_name = selected_tl.text() if selected_tl else ""
@@ -2052,6 +2115,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             'silence_min_dur': min_dur_val,
             'timeline_name':   selected_tl_name or None,
             'track_indices':   track_indices or None,
+            'source_file':     source_file_path,
         }
         self._fs_settings = settings
 
@@ -2064,73 +2128,31 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
 
     def _on_fs_finished(self, words_data, segments_data):
-        """Called when run_fast_silence_pipeline completes. Directly assembles the timeline."""
-
+        """Called when run_fast_silence_pipeline completes. Opens the Editor (Page 2) with silence cuts."""
         if not words_data:
             dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_no_silence_segments_detec"), self.txt("btn_ok"))
             dlg.exec()
             self.go_to_page(0)
-            if hasattr(self, 'welcome_stack'): self.welcome_stack.setCurrentIndex(0)
+            if hasattr(self, 'welcome_stack'):
+                self.welcome_stack.setCurrentIndex(1)
             return
 
-        self.lbl_processing_status.setText(self.txt("txt_assembling_timeline"))
+        # Replace placeholder text with localized notice
+        info_text = self.txt("msg_silence_detection_mode_active") if hasattr(self, 'txt') else "[Wykrywanie ciszy: transkrypcja mowy nie była uruchamiana]"
+        if words_data and len(words_data) > 0 and words_data[0].get('text') == '[FAST_SILENCE_TRACK]':
+            words_data[0]['text'] = info_text
 
-        fs_prefs = self.engine.load_preferences() or {}
-        fs_prefs['silence_cut']  = getattr(self, 'tgl_fs_cut',  None) and self.tgl_fs_cut.isChecked()
-        fs_prefs['silence_mark'] = getattr(self, 'tgl_fs_mark', None) and self.tgl_fs_mark.isChecked()
-        if hasattr(self, '_fs_settings'):
-            fs_prefs['source_snapshot'] = self._fs_settings
+        # Open the editor (Page 2) with the silence data
+        self._on_analysis_finished(words_data, segments_data)
 
-        # FIX KR-03: Asynchroniczny montaż osi czasu (Fast Silence) aby uniknąć GUI freeze
-        from PySide6.QtCore import QThread, Signal as _Signal, QObject
-
-        class _FSAssemblySignals(QObject):
-            status = _Signal(str)
-            progress = _Signal(int)
-            finished = _Signal(object)
-
-        class _FSAssemblyThread(QThread):
-            def __init__(self, engine, words_data, prefs, sigs):
-                super().__init__()
-                self._engine = engine
-                self._data = words_data
-                self._prefs = prefs
-                self._sigs = sigs
-
-            def run(self):
-                try:
-                    result = self._engine.assemble_timeline(
-                        self._data,
-                        self._prefs,
-                        callback_status=self._sigs.status.emit,
-                        callback_progress=self._sigs.progress.emit
-                    )
-                except Exception as e:
-                    import osdoc
-                    osdoc.log_error(f"_FSAssemblyThread Error: {e}")
-                    result = (False, str(e), None, None)
-                self._sigs.finished.emit(result)
-
-        self._fs_sigs = _FSAssemblySignals()
-        self._fs_sigs.status.connect(self.lbl_processing_status.setText)
-        self._fs_sigs.progress.connect(self.bar_processing.set_value)
-
-        def on_fs_assembly_done(result):
-            success, warning, new_tl_name, clean_ops = result
-            if success:
-                dlg = CustomMsgBox(self, self.txt("msg_standalone_silence"), self.txt("msg_standalone_silence_processing_c"), self.txt("btn_ok"))
-                dlg.exec()
-            else:
-                dlg = CustomMsgBox(self, self.txt("msg_fs_error"), f"{self.txt('msg_assembly_failed')}:\n{warning}", self.txt("btn_ok"))
-                dlg.exec()
-
-        self._fs_sigs.finished.connect(on_fs_assembly_done)
-        self._fs_assembly_thread = _FSAssemblyThread(self.engine, words_data, fs_prefs, self._fs_sigs)
-        self._fs_assembly_thread.start()
-
-        self.go_to_page(0)
-        if hasattr(self, 'welcome_stack'):
-            self.welcome_stack.setCurrentIndex(1)
+        # In Silence mode: ensure "Wykryj i usuń ciszę" (tgl_silence_cut) is checked and silence activity is open
+        if hasattr(self, 'tgl_silence_cut'):
+            self.tgl_silence_cut.setChecked(True)
+        for widget in self.findChildren(SidebarButton):
+            if getattr(widget, 'activity_id', None) == 'silence':
+                if not widget.is_active:
+                    self._toggle_activity('silence')
+                break
 
     def _toggle_favorite(self, target_id: str, source_toggle, label_text: str, pin_btn):
         """Proxy Favorites system — creates or destroys a mirrored ToggleSwitch in layout_favorites."""
@@ -2603,7 +2625,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             info.setStyleSheet("color: #888888; font-size: 11pt;")
             
         tt_text = self.txt(tooltip_key) if hasattr(self, 'txt') else tooltip_key
-        info.custom_tooltip_text = f"<div style='max-width: 300px; white-space: pre-wrap;'>{tt_text}</div>"
+        info.custom_tooltip_text = f"<div>{tt_text}</div>"
         info.setCursor(Qt.WhatsThisCursor)
         
         def instant_tooltip(event):
@@ -2793,6 +2815,32 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 _QT.singleShot(1250, lambda: self.welcome_script_edit.setStyleSheet(_orig_script_ss))
             return  # Do NOT start analysis
 
+        # ── Source validation ─────────────────────────────────────────────────
+        is_file_source = getattr(self, 'current_source_type', 'resolve') == 'file'
+        source_file_path = None
+        if is_file_source:
+            if hasattr(self, 'drop_zone_0'):
+                source_file_path = self.drop_zone_0.get_file()
+            if not source_file_path or not os.path.isfile(source_file_path):
+                if hasattr(self, 'drop_zone_0'):
+                    self.drop_zone_0.shake()
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_file_not_selected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+        else:
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if not rh or not rh.is_connected():
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_resolve_not_connected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+            selected_tl = getattr(self, 'combo_tl_0', None)
+            selected_tl_name = selected_tl.text() if selected_tl else ""
+            no_tl = self.txt("msg_no_timelines_detected")
+            if not selected_tl_name or selected_tl_name == no_tl:
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_no_timelines_detected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+
         # 1. Hide side panels (saving pre-analysis state)
         self._pre_analysis_panels_state = (
             getattr(self, '_panel_left', None) is not None and self._panel_left.isVisible(),
@@ -2943,6 +2991,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             "timeline_name": selected_tl_name or None,
             "track_indices": track_indices or None,
             "expected_script": self.text_script.toPlainText(),
+            "source_file": source_file_path,
         }
 
         

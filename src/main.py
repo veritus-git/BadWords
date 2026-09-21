@@ -356,6 +356,9 @@ def main():
         QSurfaceFormat.setDefaultFormat(fmt)
 
         # 2. QApplication must exist before any QWidget
+        from PySide6.QtCore import QLoggingCategory
+        QLoggingCategory.setFilterRules("qt.text.font.db.warning=false\nqt.text.font.db.debug=false")
+
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
         app.setApplicationName(config.APP_NAME)
