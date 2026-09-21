@@ -251,15 +251,23 @@ except Exception as e:
                 env=env, **self.os_doc.get_subprocess_kwargs()
             )
             
+            if status_callback:
+                status_callback(f"Pobieranie modelu {model_name}...")
+            if progress_callback:
+                progress_callback(-1)
+
             for line in process.stdout:
                 line_s = line.strip()
                 if line_s:
                     log_info(f"[FW-DL] {line_s}")
-
+                    if status_callback and ("downloading" in line_s.lower() or "dl-start" in line_s.lower()):
+                        status_callback(f"Pobieranie modelu {model_name}...")
 
             process.wait()
             if process.returncode == 0:
                 log_info(f"Model {model_name} ready.")
+                if status_callback:
+                    status_callback(f"Model {model_name} gotowy.")
                 return True
             else:
                 log_error(f"Model download failed (return code {process.returncode})")

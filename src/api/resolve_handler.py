@@ -109,7 +109,22 @@ class ResolveHandler:
 
     def refresh_context(self):
         """Re-fetches current project/timeline in case user switched them."""
+        if not hasattr(self, 'bmd') or not self.bmd:
+            self._load_resolve_script_module()
         self._connect()
+
+    def is_connected(self) -> bool:
+        """Returns True if successfully connected to a running DaVinci Resolve instance with an active project."""
+        return bool(self.resolve is not None and self.project is not None)
+
+    def get_current_project_name(self) -> str:
+        """Returns the active DaVinci Resolve project name, or empty string."""
+        if self.project:
+            try:
+                return self.project.GetName() or ""
+            except Exception:
+                pass
+        return ""
 
     def get_timeline_start_frame(self):
         """Gets the starting timecode of the timeline in frames."""

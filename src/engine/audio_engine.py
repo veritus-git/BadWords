@@ -56,6 +56,26 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             self.save_preferences({'offset': 0.133, 'pad': 0.0, 'snap_max': 0.25})
             log_info("Forced offset/pad/snap override applied successfully.")
 
+    def _get_file_fps(self, file_path: str) -> float:
+        """Inspects media file to determine its frame rate via ffprobe, fallback to 24.0."""
+        try:
+            cmd = [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=r_frame_rate",
+                "-of", "default=noprint_wrappers=1:nokey=1", file_path
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3)
+            if res.returncode == 0 and res.stdout.strip():
+                val = res.stdout.strip()
+                if "/" in val:
+                    num, den = val.split("/", 1)
+                    if float(den) > 0:
+                        return float(num) / float(den)
+                return float(val)
+        except Exception:
+            pass
+        return 24.0
+
     # ==========================================
 
     # ==========================================
@@ -131,58 +151,81 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
 
-            # ── Pre-render: calculate track end frame to limit render range ───
-            # If specific tracks are selected, we only need to render up to where
-            # THOSE tracks end — no need to render silence from longer other tracks.
-            track_indices_for_render = settings.get('track_indices') or None
-            end_frame_override = None
-            if track_indices_for_render:
-                end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
-                    settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
-                    track_indices_for_render
-                )
-                if end_seconds:
-                    fps = self.resolve_handler.fps or 60.0
-                    end_frame_override = int(round(end_seconds * fps))
-                    log_info(f"transcribe_audio: render end_frame_override={end_frame_override} ({end_seconds:.2f}s)")
-
-            # ── Try Direct Audio first (skip Resolve render when possible) ───
-            tl_name_for_direct = settings.get('timeline_name') or (
-                self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
-            )
-            direct_info = None
-            if tl_name_for_direct:
-                try:
-                    direct_info = self.resolve_handler.get_direct_audio_info(
-                        tl_name_for_direct, track_indices_for_render
-                    )
-                except Exception as _di_err:
-                    log_info(f"[DirectAudio] Inspection error (harmless, using render): {_di_err}")
-
+            source_file = settings.get('source_file')
             wav_path = None
-            if direct_info:
-                # Build unique output path for the direct-extracted WAV
-                _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
-                ok_direct = self._extract_audio_direct(
-                    direct_info, _direct_wav,
-                    callback_status=update_status,
-                )
-                if ok_direct:
-                    wav_path = _direct_wav
-                    log_info(f"[DirectAudio] Using direct source audio ({direct_info['mode']})")
-                else:
-                    log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
 
-            if not wav_path:
-                update_status(self.txt("status_render"))
-                update_progress(-1)  # Indeterminate infinite progress bar
+            if source_file and os.path.isfile(source_file):
+                log_info(f"[FastSilence] Using standalone source file: {source_file}")
+                update_status("Ekstrakcja audio ze źródła...")
+                update_progress(20)
+                wav_path = os.path.join(temp_dir, f"{unique_id}_source.wav")
+                cmd = [
+                    self.ffmpeg_cmd, "-y",
+                    "-i", source_file,
+                    "-vn",
+                    "-map", "0:a:0?",
+                    "-ar", "48000",
+                    "-ac", "1",
+                    wav_path
+                ]
+                sp_res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **self.os_doc.get_subprocess_kwargs())
+                if sp_res.returncode != 0 or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+                    log_error(f"[FastSilence] FFmpeg audio extraction failed: {sp_res.stderr[-300:]}")
+                    return None, None
+            else:
+                # ── Pre-render: calculate track end frame to limit render range ───
+                # If specific tracks are selected, we only need to render up to where
+                # THOSE tracks end — no need to render silence from longer other tracks.
+                track_indices_for_render = settings.get('track_indices') or None
+                end_frame_override = None
+                if track_indices_for_render:
+                    end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
+                        settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
+                        track_indices_for_render
+                    )
+                    if end_seconds:
+                        fps = self.resolve_handler.fps or 60.0
+                        end_frame_override = int(round(end_seconds * fps))
+                        log_info(f"transcribe_audio: render end_frame_override={end_frame_override} ({end_seconds:.2f}s)")
 
-                wav_path = self.resolve_handler.render_audio(
-                    unique_id, temp_dir,
-                    timeline_name=settings.get('timeline_name'),
-                    track_indices=track_indices_for_render,
-                    end_frame_override=end_frame_override,
+                # ── Try Direct Audio first (skip Resolve render when possible) ───
+                tl_name_for_direct = settings.get('timeline_name') or (
+                    self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
                 )
+                direct_info = None
+                if tl_name_for_direct:
+                    try:
+                        direct_info = self.resolve_handler.get_direct_audio_info(
+                            tl_name_for_direct, track_indices_for_render
+                        )
+                    except Exception as _di_err:
+                        log_info(f"[DirectAudio] Inspection error (harmless, using render): {_di_err}")
+
+                if direct_info:
+                    # Build unique output path for the direct-extracted WAV
+                    _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
+                    ok_direct = self._extract_audio_direct(
+                        direct_info, _direct_wav,
+                        callback_status=update_status,
+                    )
+                    if ok_direct:
+                        wav_path = _direct_wav
+                        log_info(f"[DirectAudio] Using direct source audio ({direct_info['mode']})")
+                        update_progress(40)
+                    else:
+                        log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
+
+                if not wav_path:
+                    update_status(self.txt("status_render"))
+                    update_progress(-1)  # Indeterminate infinite progress bar
+
+                    wav_path = self.resolve_handler.render_audio(
+                        unique_id, temp_dir,
+                        timeline_name=settings.get('timeline_name'),
+                        track_indices=track_indices_for_render,
+                        end_frame_override=end_frame_override,
+                    )
+
             if not wav_path:
                 log_error("Fast Silence: render failed.")
                 return None, None
@@ -371,68 +414,92 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
 
             filler_words = settings.get('filler_words', [])
-            fps = self.resolve_handler.fps
-            txt_inaudible = "inaudible"
-            
+            source_file = settings.get('source_file')
 
+            if source_file and os.path.isfile(source_file):
+                fps = self._get_file_fps(source_file)
+            else:
+                fps = self.resolve_handler.fps or 24.0
+
+            txt_inaudible = "inaudible"
             
             unique_id = f"BW_{int(time.time())}"
             update_progress(10)
 
-            update_status(self.txt("status_render"))
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
-            
-            # ── Pre-render: calculate track end frame to limit render range ───
-            track_indices_for_render = settings.get('track_indices') or None
-            end_frame_override_tx = None
-            if track_indices_for_render:
-                _end_s = self.resolve_handler.get_selected_tracks_end_seconds(
-                    settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
-                    track_indices_for_render
-                )
-                if _end_s:
-                    _fps = self.resolve_handler.fps or 60.0
-                    end_frame_override_tx = int(round(_end_s * _fps))
-                    log_info(f"transcribe_audio: render end_frame_override={end_frame_override_tx} ({_end_s:.2f}s)")
-
-            # ── Try Direct Audio first (skip Resolve render when possible) ───
-            tl_name_for_direct = settings.get('timeline_name') or (
-                self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
-            )
-            direct_info = None
-            if tl_name_for_direct:
-                try:
-                    direct_info = self.resolve_handler.get_direct_audio_info(
-                        tl_name_for_direct, track_indices_for_render
-                    )
-                except Exception as _di_err:
-                    log_info(f"[DirectAudio] Inspection error (harmless, using render): {_di_err}")
 
             wav_path = None
-            if direct_info:
-                _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
-                ok_direct = self._extract_audio_direct(
-                    direct_info, _direct_wav,
-                    callback_status=update_status,
-                )
-                if ok_direct:
-                    wav_path = _direct_wav
-                    log_info(f"[DirectAudio] Using direct source audio ({direct_info['mode']})")
-                    update_progress(40)
-                else:
-                    log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
-
-            if not wav_path:
+            if source_file and os.path.isfile(source_file):
+                log_info(f"[AnalysisPipeline] Using standalone source file: {source_file}")
+                update_status("Ekstrakcja audio ze źródła...")
+                update_progress(20)
+                wav_path = os.path.join(temp_dir, f"{unique_id}_source.wav")
+                cmd = [
+                    self.ffmpeg_cmd, "-y",
+                    "-i", source_file,
+                    "-vn",
+                    "-map", "0:a:0?",
+                    "-ar", "48000",
+                    "-ac", "1",
+                    wav_path
+                ]
+                sp_res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **self.os_doc.get_subprocess_kwargs())
+                if sp_res.returncode != 0 or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+                    log_error(f"[AnalysisPipeline] FFmpeg audio extraction failed: {sp_res.stderr[-300:]}")
+                    return None, None
+                update_progress(40)
+            else:
                 update_status(self.txt("status_render"))
-                update_progress(-1)  # Indeterminate infinite progress bar
+                # ── Pre-render: calculate track end frame to limit render range ───
+                track_indices_for_render = settings.get('track_indices') or None
+                end_frame_override_tx = None
+                if track_indices_for_render:
+                    _end_s = self.resolve_handler.get_selected_tracks_end_seconds(
+                        settings.get('timeline_name') or self.resolve_handler.timeline.GetName(),
+                        track_indices_for_render
+                    )
+                    if _end_s:
+                        _fps = self.resolve_handler.fps or 60.0
+                        end_frame_override_tx = int(round(_end_s * _fps))
+                        log_info(f"transcribe_audio: render end_frame_override={end_frame_override_tx} ({_end_s:.2f}s)")
 
-                wav_path = self.resolve_handler.render_audio(
-                    unique_id, temp_dir,
-                    timeline_name=settings.get('timeline_name'),
-                    track_indices=track_indices_for_render,
-                    end_frame_override=end_frame_override_tx,
+                # ── Try Direct Audio first (skip Resolve render when possible) ───
+                tl_name_for_direct = settings.get('timeline_name') or (
+                    self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else ""
                 )
+                direct_info = None
+                if tl_name_for_direct:
+                    try:
+                        direct_info = self.resolve_handler.get_direct_audio_info(
+                            tl_name_for_direct, track_indices_for_render
+                        )
+                    except Exception as _di_err:
+                        log_info(f"[DirectAudio] Inspection error (harmless, using render): {_di_err}")
+
+                if direct_info:
+                    _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
+                    ok_direct = self._extract_audio_direct(
+                        direct_info, _direct_wav,
+                        callback_status=update_status,
+                    )
+                    if ok_direct:
+                        wav_path = _direct_wav
+                        log_info(f"[DirectAudio] Using direct source audio ({direct_info['mode']})")
+                        update_progress(40)
+                    else:
+                        log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
+
+                if not wav_path:
+                    update_status(self.txt("status_render"))
+                    update_progress(-1)  # Indeterminate infinite progress bar
+
+                    wav_path = self.resolve_handler.render_audio(
+                        unique_id, temp_dir,
+                        timeline_name=settings.get('timeline_name'),
+                        track_indices=track_indices_for_render,
+                        end_frame_override=end_frame_override_tx,
+                    )
             if not wav_path:
                 log_error("Render failed.")
                 return None, None
@@ -1590,13 +1657,41 @@ except Exception as e:
             set_status(self.txt("status_assembly_init"))
             set_progress(-1)
 
+            source_snapshot   = settings.get("source_snapshot") or {}
+            source_file       = source_snapshot.get("source_file") or settings.get("source_file")
+
+            # ── STANDALONE MEDIA FILE ASSEMBLY (SEAMLESS CUT) ─────────────────
+            if source_file and os.path.isfile(source_file):
+                log_info(f"assemble_timeline: Standalone file assembly via Seamless Cut -> '{source_file}'")
+                fps = self._get_file_fps(source_file)
+                calc_settings = dict(settings)
+                clean_ops = self.calculate_timeline_structure(words_data, fps, calc_settings)
+
+                base, ext = os.path.splitext(source_file)
+                output_path = settings.get("output_path") or f"{base}_cut{ext}"
+
+                import assembler
+                ok, res_path = assembler.assemble_via_seamless_cut(
+                    source_file=source_file,
+                    ops=clean_ops,
+                    output_path=output_path,
+                    fps=fps,
+                    temp_dir=self.os_doc.get_temp_folder(),
+                    callback_status=set_status,
+                    callback_progress=set_progress,
+                    ffmpeg_cmd=self.ffmpeg_cmd
+                )
+                if ok:
+                    return True, None, res_path, clean_ops
+                else:
+                    return False, res_path, None, None
+
+            # ── DAVINCI RESOLVE TIMELINE ASSEMBLY (DRT / XML) ─────────────────
             self.resolve_handler.refresh_context()
             if not self.resolve_handler.timeline:
                 log_error("No active timeline found.")
                 return False, None, None, None
 
-            # ── SOURCE SNAPSHOT ───────────────────────────────────────────────
-            source_snapshot   = settings.get("source_snapshot") or {}
             original_tl_name  = source_snapshot.get("timeline_name") or settings.get("original_timeline_name")
             if not original_tl_name:
                 original_tl_name = self.resolve_handler.timeline.GetName()

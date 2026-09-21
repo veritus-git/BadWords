@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#Copyright (c) 2026 Szymon Wolarz
-#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+# Copyright (c) 2026 Szymon Wolarz
+# Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 """
 MODULE: welcome_view.py
 ROLE: GUI View
 DESCRIPTION:
 Welcome screen with smooth Y-axis vertical centering of both workspaces,
-hardware-accelerated sequential fade transition (zero flash / double-blending),
-and rock-solid horizontal centering without jitter during scenario expansion.
+hardware-accelerated sequential fade transition, rock-solid horizontal centering,
+and adaptive support for both Standalone (file import / DaVinci switch) and
+Embedded DaVinci Resolve modes.
+Adheres strictly to the BadWords design system: dark aesthetics, zero emojis,
+vector SVG icons, and embedded Ubuntu font consistency across all platforms.
 """
 
 import os
@@ -25,6 +28,28 @@ from PySide6.QtSvg import QSvgRenderer
 import config
 from gui.utils import get_play_icon, get_layout_icon_path
 from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch, ReloadButton
+from gui.widgets.file_drop_zone import FileDropZone
+
+
+def is_embedded_in_resolve() -> bool:
+    """Returns True if BadWords was launched from inside DaVinci Resolve (Workspace -> Scripts)."""
+    import sys
+    for mod_name in ('__main__', 'builtins'):
+        mod = sys.modules.get(mod_name)
+        if not mod:
+            continue
+        obj_res = getattr(mod, 'resolve', None)
+        if obj_res is not None:
+            type_name = type(obj_res).__name__
+            if type_name != 'ResolveHandler' and hasattr(obj_res, 'GetProjectManager'):
+                return True
+        obj_bmd = getattr(mod, 'bmd', None)
+        if obj_bmd is not None and hasattr(obj_bmd, 'scriptapp'):
+            return True
+
+    if 'fscript' in sys.executable.lower():
+        return True
+    return False
 
 
 class _WorkspaceFadeCanvas(QWidget):
@@ -68,13 +93,11 @@ class _WorkspaceFadeCanvas(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        # Solid background ensures underlying live widgets or parent widgets cannot bleed through
         painter.fillRect(self.rect(), QColor(config.BG_COLOR))
 
         p = self.progress
         w = self.width()
 
-        # Seamless overlapping cross-fade without dead black frames
         if self.pix_from and p < 0.65:
             alpha_from = max(0.0, min(1.0, (0.65 - p) / 0.65))
             painter.setOpacity(alpha_from)
@@ -222,24 +245,173 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         h = float(self.height())
         half_w = w / 2.0
 
-        # Continuous gray baseline
         p.setPen(QPen(QColor("#333333"), 1.0))
         p.drawLine(0, int(h - 1), int(w), int(h - 1))
 
-        # Bezier-interpolated active tab geometry
         cur_left = self._anim_pos * half_w
         active_rect = QRectF(cur_left, 0, half_w, h - 1)
 
-        # Soft upward flame glow gradient
         grad = QLinearGradient(0, h, 0, 0)
         grad.setColorAt(0.0, QColor(26, 122, 62, 75))
         grad.setColorAt(0.45, QColor(26, 122, 62, 20))
         grad.setColorAt(1.0, QColor(26, 122, 62, 0))
         p.fillRect(active_rect, grad)
 
-        # Green accent indicator line
         p.setPen(QPen(QColor("#1a7a3e"), 2.0))
         p.drawLine(int(active_rect.left()), int(h - 1), int(active_rect.right()), int(h - 1))
+
+
+class _StatusDotWidget(QWidget):
+    """Paints a soft anti-aliased status circle (green for connected, red for disconnected)."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._connected = False
+        self.setFixedSize(config.S(8), config.S(8))
+
+    def set_connected(self, conn: bool):
+        self._connected = conn
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        c = QColor("#38c172") if self._connected else QColor("#e05555")
+        p.setBrush(c)
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(0, 0, config.S(8), config.S(8))
+        p.end()
+
+
+class SourceHeaderWidget(QWidget):
+    """
+    Header label above the Source dropdown:
+    - Left: 'Source' / 'Źródło'
+    - Right: Soft status dot + 'Connected: ProjectName' (or 'Disconnected')
+      Only shown when DaVinci Resolve is selected.
+    """
+    def __init__(self, win, parent=None):
+        super().__init__(parent)
+        self.win = win
+        self.setFixedHeight(config.S(18))
+        self.setStyleSheet("background: transparent;")
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(config.S(4))
+
+        self.lbl_title = QLabel(win.txt("src_source") if hasattr(win, 'txt') else "Źródło")
+        self.lbl_title.setFixedHeight(config.S(18))
+        self.lbl_title.setStyleSheet(
+            f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
+        )
+        lay.addWidget(self.lbl_title)
+        lay.addStretch()
+
+        self.status_container = QWidget()
+        self.status_container.setFixedHeight(config.S(18))
+        self.status_container.setStyleSheet("background: transparent;")
+        stat_lay = QHBoxLayout(self.status_container)
+        stat_lay.setContentsMargins(0, 0, 0, 0)
+        stat_lay.setSpacing(config.S(4))
+
+        self.dot = _StatusDotWidget()
+        stat_lay.addWidget(self.dot)
+
+        self.lbl_status = QLabel()
+        self.lbl_status.setStyleSheet(
+            f"font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
+            f" background: transparent; padding: 0;"
+        )
+        stat_lay.addWidget(self.lbl_status)
+        lay.addWidget(self.status_container)
+
+        if getattr(win, 'current_source_type', 'file') == "resolve":
+            self.status_container.show()
+        else:
+            self.status_container.hide()
+        self.update_status()
+
+    def set_source_mode(self, mode: str):
+        if mode == "resolve":
+            self.update_status()
+            self.status_container.show()
+        else:
+            self.status_container.hide()
+
+    def update_status(self):
+        rh = getattr(self.win.engine, 'resolve_handler', None)
+        is_conn = rh.is_connected() if rh else False
+        project_name = rh.get_current_project_name() if rh else ""
+
+        self.dot.set_connected(is_conn)
+        if is_conn:
+            disp_project = project_name or "Aktywny"
+            txt_tpl = self.win.txt("status_resolve_connected") if hasattr(self.win, 'txt') else "Połączono: {project}"
+            self.lbl_status.setText(txt_tpl.replace("{project}", disp_project))
+            self.lbl_status.setStyleSheet(
+                f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
+                f" background: transparent; padding: 0;"
+            )
+            self.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
+        else:
+            self.lbl_status.setText(self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "Brak połączenia")
+            self.lbl_status.setStyleSheet(
+                f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
+                f" background: transparent; padding: 0;"
+            )
+            self.setToolTip(self.win.txt("tt_resolve_connection_info") if hasattr(self.win, 'txt') else "Wymaga uruchomionego DaVinci Resolve Studio z włączonym External Scripting.")
+
+
+class DavinciSourceBox(QWidget):
+    """
+    Groups DaVinci Resolve timeline selector and track selector.
+    """
+    def __init__(self, vbox_tl: QVBoxLayout, vbox_tr: QVBoxLayout, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addLayout(vbox_tl)
+        lay.addSpacing(config.S(8))
+        lay.addLayout(vbox_tr)
+        self.setFixedHeight(config.S(112))
+
+
+class SourceAreaWidget(QWidget):
+    """
+    Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
+    Cleanly switches between File state (90px) and DaVinci state (112px) with zero jitter.
+    """
+    def __init__(self, drop_zone: QWidget, davinci_box: QWidget, parent=None):
+        super().__init__(parent)
+        self.drop_zone = drop_zone
+        self.davinci_box = davinci_box
+
+        self.H_FILE = config.S(90)
+        self.H_RESOLVE = config.S(112)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.drop_zone)
+        lay.addWidget(self.davinci_box)
+
+        self.setFixedHeight(self.H_FILE)
+        self.drop_zone.show()
+        self.davinci_box.hide()
+
+    def set_mode(self, mode: str):
+        if mode == "file":
+            self.davinci_box.hide()
+            self.drop_zone.show()
+            self.setFixedHeight(self.H_FILE)
+        else:
+            self.drop_zone.hide()
+            self.davinci_box.show()
+            self.setFixedHeight(self.H_RESOLVE)
+
 
 
 class WelcomePageView(QWidget):
@@ -258,16 +430,9 @@ class WelcomePageView(QWidget):
         self._is_animating = False
         self._y_anim = None
 
-        # Content height metrics:
-        # Header = Logo (36) + Spacing (24) + Switch (30) + Spacing (20) = 110px
-        # Transcript visual height = 328px (total = 438px)
-        # Silence visual height = 398px (total = 508px)
         self.H_HEADER = config.S(110)
-        self.H_TRANS_VISUAL = config.S(444)
-        self.H_SILENCE_VISUAL = config.S(508)
-        self.H_MAX_CONTENT = config.S(398)
+        self.H_MAX_CONTENT = config.S(540)
 
-        # Full-width root container ensuring 100% stable horizontal centering
         self.welcome_root = QWidget(self)
         self.welcome_root.setObjectName("welcome_root")
         self.welcome_root.setStyleSheet("QWidget#welcome_root { background: transparent; }")
@@ -325,7 +490,6 @@ class WelcomePageView(QWidget):
 
         win.welcome_mode_switch.on_change = self.switch_workspace_animated
 
-        # Hook setCurrentIndex on welcome_stack for external programmatic calls
         orig_set_current_index = win.welcome_stack.setCurrentIndex
         def _on_stack_set_index(idx: int):
             orig_set_current_index(idx)
@@ -334,11 +498,6 @@ class WelcomePageView(QWidget):
         win.welcome_stack.setCurrentIndex = _on_stack_set_index
 
     def preload(self, target_w: int = 0, target_h: int = 0):
-        """
-        Preloads and pre-renders the welcome screen layout to match target screen size.
-        Pre-calculates all stretches, widget sizes, fonts, and offscreen snapshots.
-        Completely eliminates any visual jumping or hitching on startup and DPI changes.
-        """
         if target_w <= 0 or target_h <= 0:
             from PySide6.QtGui import QGuiApplication
             screen = QGuiApplication.primaryScreen()
@@ -357,12 +516,50 @@ class WelcomePageView(QWidget):
         for child in self.welcome_root.findChildren(QWidget):
             child.ensurePolished()
 
-    def _target_y(self, idx: int) -> int:
-        h_visual = self.H_TRANS_VISUAL if idx == 0 else self.H_SILENCE_VISUAL
+    def get_visual_height(self, idx: int, source_type: str = None) -> int:
+        is_standalone = getattr(self.win, 'is_standalone', True)
+        if source_type is None:
+            source_type = getattr(self.win, 'current_source_type', 'file')
+
+        if not is_standalone:
+            content_h = config.S(322) if idx == 0 else config.S(404)
+        else:
+            if idx == 0:
+                content_h = config.S(366) if source_type == 'file' else config.S(388)
+            else:
+                content_h = config.S(408) if source_type == 'file' else config.S(458)
+
+        return self.H_HEADER + content_h
+
+    def _target_y(self, idx: int, source_type: str = None) -> int:
+        vis_h = self.get_visual_height(idx, source_type)
         avail_h = self.height()
         if avail_h <= 0:
-            avail_h = config.S(600)
-        return max(config.S(10), (avail_h - h_visual) // 2)
+            avail_h = config.S(800)
+        return max(config.S(16), (avail_h - vis_h) // 2)
+
+    def animate_y_step(self):
+        if not self._is_animating:
+            cur_y = self._target_y(self._current_idx)
+            self.welcome_root.move(0, cur_y)
+
+    def animate_y_to_content(self, duration: int = 240):
+        if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
+            self._y_anim.stop()
+        start_y = self.welcome_root.y()
+        end_y = self._target_y(self._current_idx)
+        if start_y == end_y or duration <= 0:
+            self.welcome_root.move(0, end_y)
+            return
+
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(start_y)
+        anim.setEndValue(end_y)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        anim.valueChanged.connect(lambda y: self.welcome_root.move(0, int(y)))
+        self._y_anim = anim
+        anim.start()
 
     def resizeEvent(self, event):
         if event is not None:
@@ -412,16 +609,13 @@ class WelcomePageView(QWidget):
         self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
         self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
 
-        # 1. Grab snapshot of current outgoing workspace
         pix_from = current_w.grab()
 
-        # 2. Prepare target incoming workspace and grab snapshot
         target_w.resize(w, self.H_MAX_CONTENT)
         if target_w.layout():
             target_w.layout().activate()
         pix_to = target_w.grab()
 
-        # 3. Setup canvas & hide live widgets to prevent double-render/flash
         self.fade_canvas.set_transition(pix_from, pix_to)
         current_w.hide()
 
@@ -488,7 +682,11 @@ def build_welcome_view(win) -> QWidget:
     """Build Page 0 of the main stack: Welcome / Configuration screen."""
     prefs = win.engine.load_preferences() or {}
     is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
-    
+
+    is_standalone = not is_embedded_in_resolve()
+    win.is_standalone = is_standalone
+    win.current_source_type = "file" if is_standalone else "resolve"
+
     page = WelcomePageView(win)
 
     def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
@@ -533,7 +731,8 @@ def build_welcome_view(win) -> QWidget:
     win.settings_layout.setAlignment(Qt.AlignTop)
     win.slider_layout.addWidget(win.settings_container)
 
-    # 1. Timeline Selection
+    # ── 1. Source Selection & Controls ────────────────────────────────────────
+    # Shared Timeline / Track dropdowns for Resolve branch
     win.combo_tl_0 = CustomDropdown([])
     win.combo_tl_0.setFixedHeight(config.S(30))
     win.combo_tl_0.valueChanged.connect(
@@ -561,28 +760,64 @@ def build_welcome_view(win) -> QWidget:
 
     _vbox_tl0.addWidget(_lbl_tl0)
     _vbox_tl0.addLayout(_hbox_tl0)
-    win.settings_layout.addLayout(_vbox_tl0)
-    win.settings_layout.addSpacing(config.S(10))
 
-    # 2. Tracks Selection
     win.combo_tr_0 = MultiSelectDropdown([])
     win.combo_tr_0.setFixedHeight(config.S(30))
-    win.settings_layout.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_0))
-    win.settings_layout.addSpacing(config.S(10))
 
-    # 3. Language Selection
+    if is_standalone:
+        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
+        opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
+        win.combo_source_0 = CustomDropdown([opt_file, opt_dr])
+        win.combo_source_0.setText(opt_file if win.current_source_type == "file" else opt_dr)
+        win.combo_source_0.setFixedHeight(config.S(30))
+
+        win.header_source_0 = SourceHeaderWidget(win)
+        win.settings_layout.addWidget(win.header_source_0)
+        win.settings_layout.addSpacing(config.S(4))
+
+        _hbox_source_0 = QHBoxLayout()
+        _hbox_source_0.setContentsMargins(0, 0, 0, 0)
+        _hbox_source_0.setSpacing(config.S(4))
+        _hbox_source_0.addWidget(win.combo_source_0, 1)
+
+        win.btn_ref_source_0 = ReloadButton(size=30)
+        win.btn_ref_source_0.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
+        win.btn_ref_source_0.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
+        _hbox_source_0.addWidget(win.btn_ref_source_0)
+        win.btn_ref_source_0.setVisible(win.current_source_type == "resolve")
+
+        win.settings_layout.addLayout(_hbox_source_0)
+        win.settings_layout.addSpacing(config.S(8))
+
+        win.drop_zone_0 = FileDropZone()
+        win.davinci_box_0 = DavinciSourceBox(
+            _vbox_tl0,
+            _row(win.txt("lbl_tracks_selection"), win.combo_tr_0)
+        )
+        win.source_area_0 = SourceAreaWidget(win.drop_zone_0, win.davinci_box_0)
+        win.settings_layout.addWidget(win.source_area_0)
+        win.settings_layout.addSpacing(config.S(10))
+
+    else:
+        # Embedded DaVinci Resolve mode: exact original layout
+        win.settings_layout.addLayout(_vbox_tl0)
+        win.settings_layout.addSpacing(config.S(10))
+        win.settings_layout.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_0))
+        win.settings_layout.addSpacing(config.S(10))
+
+    # ── 2. Language Selection ─────────────────────────────────────────────────
     lang_items = list(config.SUPPORTED_LANGUAGES.values())
     win._combo_lang = SearchableDropdown(lang_items)
     win._combo_lang.setFixedHeight(config.S(30))
     saved_lang = prefs.get('lang', '')
     display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
-    placeholder = win.txt("lbl_choose_recording_language") if hasattr(win, 'txt') else "Choose recording language"
+    placeholder = win.txt("lbl_choose_recording_language") if hasattr(win, 'txt') else "Wybierz język nagrania"
     win._combo_lang.setText(display_name if display_name in lang_items else placeholder)
     win._combo_lang.valueChanged.connect(lambda v: win.engine.save_preferences({"lang": v}))
     win.settings_layout.addLayout(_row(win.txt("lbl_lang"), win._combo_lang))
     win.settings_layout.addSpacing(config.S(10))
 
-    # 4. Model Selection
+    # ── 3. Model Selection ────────────────────────────────────────────────────
     model_items = [
         "Tiny (I wouldn't, ~0.3GB)",
         "Base (Dogsh!t, ~0.5GB)",
@@ -625,9 +860,9 @@ def build_welcome_view(win) -> QWidget:
     vbox_model.addWidget(win._combo_model)
 
     win.settings_layout.addLayout(vbox_model)
-    win.settings_layout.addSpacing(config.S(16))
+    win.settings_layout.addSpacing(config.S(14))
 
-    # 5. More Accurate Mode Toggle
+    # ── 4. More Accurate Mode Toggle ──────────────────────────────────────────
     win.tgl_more_accurate = ToggleSwitch()
     win.tgl_more_accurate.setChecked(is_more_accurate)
     win.tgl_more_accurate.toggled.connect(win._on_more_accurate_toggled)
@@ -678,7 +913,6 @@ def build_welcome_view(win) -> QWidget:
     win.script_layout.addSpacing(config.S(4))
 
     win.welcome_script_edit = QTextEdit()
-    # Matches top of Timeline flush with bottom of More Accurate toggle: 256px.
     win.welcome_script_edit.setFixedHeight(config.S(256))
     win.welcome_script_edit.setAcceptRichText(False)
     win.welcome_script_edit.setStyleSheet(f"""
@@ -705,8 +939,8 @@ def build_welcome_view(win) -> QWidget:
     h_slider.addStretch()
     l_trans.addLayout(h_slider)
 
-    # ── Action Buttons (STATIONARY IN THE CENTER BELOW SLIDER) ────────────────
-    l_trans.addSpacing(config.S(20))
+    # ── Action Buttons ────────────────────────────────────────────────────────
+    l_trans.addSpacing(config.S(18))
 
     btn_row_t = QHBoxLayout()
     btn_row_t.setContentsMargins(0, 0, 0, 0)
@@ -803,7 +1037,7 @@ def build_welcome_view(win) -> QWidget:
     p_silence_outer_layout.addWidget(p_silence)
     p_silence_outer_layout.addStretch()
 
-    # 1. Timeline Selection
+    # ── 1. Source Selection & Controls (Fast Silence) ─────────────────────────
     win.combo_tl_1 = CustomDropdown([])
     win.combo_tl_1.setFixedHeight(config.S(30))
     win.combo_tl_1.valueChanged.connect(
@@ -831,16 +1065,52 @@ def build_welcome_view(win) -> QWidget:
 
     _vbox_tl1.addWidget(_lbl_tl1)
     _vbox_tl1.addLayout(_hbox_tl1)
-    l_fast.addLayout(_vbox_tl1)
-    l_fast.addSpacing(config.S(10))
 
-    # 2. Tracks Selection
     win.combo_tr_1 = MultiSelectDropdown([])
     win.combo_tr_1.setFixedHeight(config.S(30))
-    l_fast.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_1))
-    l_fast.addSpacing(config.S(10))
 
-    # Input style for silence detection
+    if is_standalone:
+        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
+        opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
+        win.combo_source_1 = CustomDropdown([opt_file, opt_dr])
+        win.combo_source_1.setText(opt_file if win.current_source_type == "file" else opt_dr)
+        win.combo_source_1.setFixedHeight(config.S(30))
+
+        win.header_source_1 = SourceHeaderWidget(win)
+        l_fast.addWidget(win.header_source_1)
+        l_fast.addSpacing(config.S(4))
+
+        _hbox_source_1 = QHBoxLayout()
+        _hbox_source_1.setContentsMargins(0, 0, 0, 0)
+        _hbox_source_1.setSpacing(config.S(4))
+        _hbox_source_1.addWidget(win.combo_source_1, 1)
+
+        win.btn_ref_source_1 = ReloadButton(size=30)
+        win.btn_ref_source_1.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
+        win.btn_ref_source_1.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
+        _hbox_source_1.addWidget(win.btn_ref_source_1)
+        win.btn_ref_source_1.setVisible(win.current_source_type == "resolve")
+
+        l_fast.addLayout(_hbox_source_1)
+        l_fast.addSpacing(config.S(8))
+
+        win.drop_zone_1 = FileDropZone()
+        win.davinci_box_1 = DavinciSourceBox(
+            _vbox_tl1,
+            _row(win.txt("lbl_tracks_selection"), win.combo_tr_1)
+        )
+        win.source_area_1 = SourceAreaWidget(win.drop_zone_1, win.davinci_box_1)
+        l_fast.addWidget(win.source_area_1)
+        l_fast.addSpacing(config.S(10))
+
+    else:
+        # Embedded DaVinci Resolve mode: exact original layout
+        l_fast.addLayout(_vbox_tl1)
+        l_fast.addSpacing(config.S(10))
+        l_fast.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_1))
+        l_fast.addSpacing(config.S(10))
+
+    # ── 2. Silence Threshold Inputs ───────────────────────────────────────────
     h_in = config.S(30) - 2
     input_style = f"""
         QLineEdit {{
@@ -876,7 +1146,6 @@ def build_welcome_view(win) -> QWidget:
         vbox.addLayout(hbox)
         return vbox
 
-    # 3. Silence threshold
     win.input_fs_thresh = QLineEdit()
     win.input_fs_thresh.setText(str(prefs.get('silence_threshold_db', prefs.get('ui_spin_thresh', -42.0))))
     win.input_fs_thresh.setStyleSheet(input_style)
@@ -884,7 +1153,6 @@ def build_welcome_view(win) -> QWidget:
     l_fast.addLayout(_row_rst(win.txt("lbl_silence_threshold_db"), win.input_fs_thresh, "-42.0"))
     l_fast.addSpacing(config.S(10))
 
-    # 4. Padding
     win.input_fs_pad = QLineEdit()
     win.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.1)))
     win.input_fs_pad.setStyleSheet(input_style)
@@ -892,7 +1160,6 @@ def build_welcome_view(win) -> QWidget:
     l_fast.addLayout(_row_rst(win.txt("lbl_padding_s"), win.input_fs_pad, "0.1"))
     l_fast.addSpacing(config.S(10))
 
-    # 5. Min silence duration
     win.input_fs_min_dur = QLineEdit()
     win.input_fs_min_dur.setText(str(prefs.get('silence_min_dur', 0.2)))
     win.input_fs_min_dur.setStyleSheet(input_style)
@@ -902,12 +1169,12 @@ def build_welcome_view(win) -> QWidget:
         "Lower = more gaps detected. Shared with post-transcript mode."
     )
     l_fast.addLayout(_row_rst(win.txt("lbl_min_silence_dur"), win.input_fs_min_dur, "0.2"))
-    l_fast.addSpacing(config.S(16))
+    l_fast.addSpacing(config.S(6))
 
-    # 6. Mode Toggles
-    w_fs_cut = QWidget()
-    w_fs_cut.setFixedHeight(config.S(22))
-    row_fs_cut = QHBoxLayout(w_fs_cut)
+    # ── 3. Mode Toggles & Standalone Info ─────────────────────────────────────
+    win.w_fs_cut = QWidget()
+    win.w_fs_cut.setFixedHeight(config.S(22))
+    row_fs_cut = QHBoxLayout(win.w_fs_cut)
     row_fs_cut.setContentsMargins(0, 0, 0, 0)
     lbl_fs_cut = QLabel(win.txt("lbl_cut_silence_directly"))
     lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; background: transparent;")
@@ -919,12 +1186,10 @@ def build_welcome_view(win) -> QWidget:
     win.tgl_fs_cut = ToggleSwitch()
     win.tgl_fs_cut.setChecked(prefs.get('fs_cut_mode', True), animated=False)
     row_fs_cut.addWidget(win.tgl_fs_cut)
-    l_fast.addWidget(w_fs_cut)
-    l_fast.addSpacing(config.S(8))
 
-    w_fs_mark = QWidget()
-    w_fs_mark.setFixedHeight(config.S(22))
-    row_fs_mark = QHBoxLayout(w_fs_mark)
+    win.w_fs_mark = QWidget()
+    win.w_fs_mark.setFixedHeight(config.S(22))
+    row_fs_mark = QHBoxLayout(win.w_fs_mark)
     row_fs_mark.setContentsMargins(0, 0, 0, 0)
     lbl_fs_mark = QLabel(win.txt("lbl_mark_silence_with_color"))
     lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; background: transparent;")
@@ -936,15 +1201,48 @@ def build_welcome_view(win) -> QWidget:
     win.tgl_fs_mark = ToggleSwitch()
     win.tgl_fs_mark.setChecked(prefs.get('fs_mark_mode', False), animated=False)
     row_fs_mark.addWidget(win.tgl_fs_mark)
-    l_fast.addWidget(w_fs_mark)
-    l_fast.addSpacing(config.S(18))
+
+    win.w_fs_resolve_group = QWidget()
+    win.w_fs_resolve_group.setStyleSheet("background: transparent;")
+    lay_fs_resolve = QVBoxLayout(win.w_fs_resolve_group)
+    lay_fs_resolve.setContentsMargins(0, 0, 0, 0)
+    lay_fs_resolve.setSpacing(config.S(8))
+    lay_fs_resolve.addWidget(win.w_fs_cut)
+    lay_fs_resolve.addWidget(win.w_fs_mark)
+    l_fast.addWidget(win.w_fs_resolve_group)
+
+    # Info row when in Local File mode (toggles are hidden)
+    win.w_fs_hidden_info = QWidget()
+    win.w_fs_hidden_info.setFixedHeight(config.S(24))
+    row_fs_hidden = QHBoxLayout(win.w_fs_hidden_info)
+    row_fs_hidden.setContentsMargins(0, 0, 0, 0)
+    row_fs_hidden.setSpacing(config.S(6))
+    lbl_why_hidden = QLabel(win.txt("lbl_why_options_hidden") if hasattr(win, 'txt') else "Dlaczego niektóre opcje są ukryte?")
+    lbl_why_hidden.setStyleSheet(
+        f"color: #9e9e9e; font-family: '{config.UI_FONT_NAME}'; "
+        f"font-size: {config.FS(9.0)}pt; font-style: italic; background: transparent; padding: 0;"
+    )
+    row_fs_hidden.addWidget(lbl_why_hidden)
+    info_why = win._create_info_icon("tt_why_silence_options_hidden")
+    row_fs_hidden.addWidget(info_why)
+    row_fs_hidden.addStretch()
+    l_fast.addWidget(win.w_fs_hidden_info)
+
+    if is_standalone and win.current_source_type == "file":
+        win.w_fs_resolve_group.hide()
+        win.w_fs_hidden_info.show()
+    else:
+        win.w_fs_resolve_group.show()
+        win.w_fs_hidden_info.hide()
+
+    l_fast.addSpacing(config.S(16))
 
     win.tgl_fs_cut.toggled.connect(lambda c: win.tgl_fs_mark.setChecked(False) if c else None)
     win.tgl_fs_mark.toggled.connect(lambda c: win.tgl_fs_cut.setChecked(False) if c else None)
     win.tgl_fs_cut.toggled.connect(lambda v: win._save_single_pref('fs_cut_mode', v))
     win.tgl_fs_mark.toggled.connect(lambda v: win._save_single_pref('fs_mark_mode', v))
 
-    # 7. Run Detection button
+    # ── 4. Run Detection Button ───────────────────────────────────────────────
     btn_row_fs = QHBoxLayout()
     btn_row_fs.setContentsMargins(0, 0, 0, 0)
     btn_row_fs.addStretch()
@@ -971,5 +1269,69 @@ def build_welcome_view(win) -> QWidget:
     l_fast.addStretch()
 
     win.welcome_stack.addWidget(p_silence_outer)
+
+    # ── 5. Standalone Synchronization ─────────────────────────────────────────
+    if is_standalone:
+        p_txt = win.txt("lbl_drop_file_prompt") if hasattr(win, 'txt') else "Przeciągnij plik wideo lub audio tutaj"
+        sub_txt = win.txt("lbl_drop_file_subprompt") if hasattr(win, 'txt') else "lub kliknij, aby wybrać z dysku"
+        win.drop_zone_0.set_texts(p_txt, sub_txt)
+        win.drop_zone_1.set_texts(p_txt, sub_txt)
+
+        def _sync_source(idx: int):
+            mode = "file" if idx == 0 else "resolve"
+            win.current_source_type = mode
+
+            win.combo_source_0.blockSignals(True)
+            win.combo_source_1.blockSignals(True)
+            win.combo_source_0.setText(opt_file if idx == 0 else opt_dr)
+            win.combo_source_1.setText(opt_file if idx == 0 else opt_dr)
+            win.combo_source_0.blockSignals(False)
+            win.combo_source_1.blockSignals(False)
+
+            if hasattr(win, 'header_source_0'):
+                win.header_source_0.set_source_mode(mode)
+            if hasattr(win, 'header_source_1'):
+                win.header_source_1.set_source_mode(mode)
+
+            if hasattr(win, 'btn_ref_source_0'):
+                win.btn_ref_source_0.setVisible(mode == "resolve")
+            if hasattr(win, 'btn_ref_source_1'):
+                win.btn_ref_source_1.setVisible(mode == "resolve")
+
+            if hasattr(win, 'source_area_0'):
+                win.source_area_0.set_mode(mode)
+            if hasattr(win, 'source_area_1'):
+                win.source_area_1.set_mode(mode)
+
+            if mode == "file":
+                if hasattr(win, 'w_fs_resolve_group'):
+                    win.w_fs_resolve_group.hide()
+                win.w_fs_hidden_info.show()
+            else:
+                if hasattr(win, 'w_fs_resolve_group'):
+                    win.w_fs_resolve_group.show()
+                win.w_fs_hidden_info.hide()
+
+            page.animate_y_to_content(200)
+
+        win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
+        win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
+
+        def _sync_file_0(fp: str):
+            if hasattr(win, 'drop_zone_1') and win.drop_zone_1.get_file() != fp:
+                if fp:
+                    win.drop_zone_1.set_file(fp)
+                else:
+                    win.drop_zone_1.clear_file()
+
+        def _sync_file_1(fp: str):
+            if hasattr(win, 'drop_zone_0') and win.drop_zone_0.get_file() != fp:
+                if fp:
+                    win.drop_zone_0.set_file(fp)
+                else:
+                    win.drop_zone_0.clear_file()
+
+        win.drop_zone_0.file_selected.connect(_sync_file_0)
+        win.drop_zone_1.file_selected.connect(_sync_file_1)
 
     return page
