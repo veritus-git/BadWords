@@ -288,7 +288,13 @@ def _run_auto_update_if_needed(os_doc, splash=None):
             fh.write(content)
         
         venv_py = os_doc.get_venv_python_path() if hasattr(os_doc, 'get_venv_python_path') else sys.executable
-        cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+        sp_kwargs = os_doc.get_subprocess_kwargs() if hasattr(os_doc, 'get_subprocess_kwargs') else {}
+        if not sp_kwargs and os.name == 'nt':
+            sp_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+            si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+            sp_kwargs['startupinfo'] = si
         cmd = [venv_py, tmp_path, '--install-dir', os_doc.install_dir]
 
         osdoc.log_info("[AutoUpdate] Running update script via Python (blocking)...")
@@ -299,7 +305,7 @@ def _run_auto_update_if_needed(os_doc, splash=None):
             stderr=subprocess.STDOUT,
             text=True,
             timeout=600,
-            creationflags=cf
+            **sp_kwargs
         )
         if result.returncode == 0:
             osdoc.log_info("[AutoUpdate] Update script completed successfully.")
