@@ -146,6 +146,7 @@ impl Language {
                 
                 confirm_title: "Potwierdzenie operacji",
                 confirm_uninstall_warn: "Ta operacja całkowicie usunie BadWords z systemu, w tym venv i integracje DaVinci Resolve.",
+                checkbox_uninstall_python: "Odinstaluj również systemowego Pythona pobranego dla BadWords",
                 confirm_reset_warn: "Ta operacja wyczyści obecną instalację i pobierze/zainstaluje czystą wersję aplikacji.",
                 confirm_repair_info: "Instalator zweryfikuje wszystkie pliki aplikacji, zależności i naprawi uszkodzone elementy.",
                 
@@ -193,6 +194,7 @@ impl Language {
                 
                 confirm_title: "Aktion bestätigen",
                 confirm_uninstall_warn: "Dieser Vorgang entfernt BadWords, venv und DaVinci Resolve Integrationen vollständig vom System.",
+                checkbox_uninstall_python: "Auch die für BadWords installierte System-Python-Umgebung deinstallieren",
                 confirm_reset_warn: "Dieser Vorgang löscht die aktuelle Installation und installiert eine saubere Version der Anwendung neu.",
                 confirm_repair_info: "Das Setup überprüft alle Anwendungsdateien und repariert beschädigte Komponenten.",
                 
@@ -240,6 +242,7 @@ impl Language {
                 
                 confirm_title: "Confirmar acción",
                 confirm_uninstall_warn: "Esta operación eliminará completamente BadWords, el venv y las integraciones de DaVinci Resolve.",
+                checkbox_uninstall_python: "Desinstalar también el entorno de Python instalado para BadWords",
                 confirm_reset_warn: "Esta operación borrará la instalación actual e instalará una copia limpia de la aplicación.",
                 confirm_repair_info: "El instalador verificará los archivos de la aplicación y reparará los componentes dañados.",
                 
@@ -287,6 +290,7 @@ impl Language {
                 
                 confirm_title: "Confirmer l'action",
                 confirm_uninstall_warn: "Cette action supprimera complètement BadWords, le venv et les intégrations DaVinci Resolve.",
+                checkbox_uninstall_python: "Désinstaller également l'environnement Python installé pour BadWords",
                 confirm_reset_warn: "Cette action effacera l'installation actuelle et réinstallera une version propre de l'application.",
                 confirm_repair_info: "L'assistant vérifiera tous les fichiers de l'application et réparera les composants endommagés.",
                 
@@ -334,7 +338,8 @@ impl Language {
                 
                 confirm_title: "Conferma azione",
                 confirm_uninstall_warn: "Questa operazione rimuoverà completamente BadWords, il venv e le integrazioni DaVinci Resolve.",
-                confirm_reset_warn: "Questa operazione cancellerà l'installazione corrente e installerà una versione pulita dell'applicazione.",
+                checkbox_uninstall_python: "Disinstalla anche l'ambiente Python installato per BadWords",
+                confirm_reset_warn: "Questa operazione cancellerà l'installatione corrente e installerà una versione pulita dell'applicazione.",
                 confirm_repair_info: "Il programma di installazione verificherà i file e riparerà i componenti danneggiati.",
                 
                 complete_title: "Operazione completata",
@@ -381,6 +386,7 @@ impl Language {
                 
                 confirm_title: "Actie bevestigen",
                 confirm_uninstall_warn: "Hiermee verwijdert u BadWords, venv en DaVinci Resolve integraties volledig van het systeem.",
+                checkbox_uninstall_python: "Verwijder ook de Python-runtime die voor BadWords is geïnstalleerd",
                 confirm_reset_warn: "Hiermee wist u de huidige installatie en installeert u een schone versie van de applicatie.",
                 confirm_repair_info: "Setup controleert de bestanden en herstelt beschadigde componenten.",
                 
@@ -428,6 +434,7 @@ impl Language {
                 
                 confirm_title: "Confirmar Ação",
                 confirm_uninstall_warn: "Esta operação irá remover completamente o BadWords, venv e integrações do DaVinci Resolve.",
+                checkbox_uninstall_python: "Desinstalar também o ambiente Python instalado para o BadWords",
                 confirm_reset_warn: "Esta operação irá limpar a instalação atual e instalar uma cópia limpa da aplicação.",
                 confirm_repair_info: "O instalador verificará os ficheiros e reparará os componentes danificados.",
                 
@@ -475,6 +482,7 @@ impl Language {
                 
                 confirm_title: "Подтверждение действия",
                 confirm_uninstall_warn: "Эта операция полностью удалит BadWords, venv и интеграции с DaVinci Resolve.",
+                checkbox_uninstall_python: "Также удалить среду Python, установленную для BadWords",
                 confirm_reset_warn: "Эта операция очистит текущую установку и установит чистую версию приложения.",
                 confirm_repair_info: "Установщик проверит файлы приложения и восстановит поврежденные компоненты.",
                 
@@ -522,6 +530,7 @@ impl Language {
                 
                 confirm_title: "Підтвердження дії",
                 confirm_uninstall_warn: "Ця дія повністю видалить BadWords, venv та інтеграції з DaVinci Resolve.",
+                checkbox_uninstall_python: "Також видалити середовище Python, встановлене для BadWords",
                 confirm_reset_warn: "Ця дія очистить поточне встановлення та встановить чисту копію програми.",
                 confirm_repair_info: "Установник перевірить файли програми та відновить пошкоджені компоненти.",
                 
@@ -569,6 +578,7 @@ impl Language {
                 
                 confirm_title: "Confirm Action",
                 confirm_uninstall_warn: "This operation will completely remove BadWords from your system, including its venv and DaVinci Resolve integrations.",
+                checkbox_uninstall_python: "Also uninstall Python runtime installed for BadWords",
                 confirm_reset_warn: "This operation will wipe your current installation and download/install a fresh copy of the application.",
                 confirm_repair_info: "Setup will verify all application files, dependencies, and repair any damaged components.",
                 
@@ -620,6 +630,7 @@ pub struct Translations {
     
     pub confirm_title: &'static str,
     pub confirm_uninstall_warn: &'static str,
+    pub checkbox_uninstall_python: &'static str,
     pub confirm_reset_warn: &'static str,
     pub confirm_repair_info: &'static str,
     
@@ -687,6 +698,26 @@ pub fn translate_phrase(text: &str, lang: Language) -> String {
         ("Detecting Python runtime & GPU hardware", Language::Pt) => Some("Detectando runtime Python e GPU"),
         ("Detecting Python runtime & GPU hardware", Language::Ru) => Some("Обнаружение Python и оборудования GPU"),
         ("Detecting Python runtime & GPU hardware", Language::Uk) => Some("Виявлення середовища Python та GPU"),
+
+        ("Installing System Python...", Language::Pl) => Some("Instalowanie środowiska Python..."),
+        ("Installing System Python...", Language::De) => Some("System-Python installieren..."),
+        ("Installing System Python...", Language::Es) => Some("Instalando entorno Python..."),
+        ("Installing System Python...", Language::Fr) => Some("Installation de Python..."),
+        ("Installing System Python...", Language::It) => Some("Installazione di Python..."),
+        ("Installing System Python...", Language::Nl) => Some("Python installeren..."),
+        ("Installing System Python...", Language::Pt) => Some("Instalando o Python..."),
+        ("Installing System Python...", Language::Ru) => Some("Установка среды Python..."),
+        ("Installing System Python...", Language::Uk) => Some("Встановлення середовища Python..."),
+
+        ("Downloading and setting up official Python 3.12", Language::Pl) => Some("Pobieranie i konfiguracja oficjalnego Pythona 3.12"),
+        ("Downloading and setting up official Python 3.12", Language::De) => Some("Herunterladen und Einrichten von offiziellem Python 3.12"),
+        ("Downloading and setting up official Python 3.12", Language::Es) => Some("Descargando y configurando Python 3.12 oficial"),
+        ("Downloading and setting up official Python 3.12", Language::Fr) => Some("Téléchargement et configuration de Python 3.12"),
+        ("Downloading and setting up official Python 3.12", Language::It) => Some("Download e configurazione di Python 3.12"),
+        ("Downloading and setting up official Python 3.12", Language::Nl) => Some("Officiële Python 3.12 downloaden en instellen"),
+        ("Downloading and setting up official Python 3.12", Language::Pt) => Some("Baixando e configurando o Python 3.12 oficial"),
+        ("Downloading and setting up official Python 3.12", Language::Ru) => Some("Загрузка и настройка официального Python 3.12"),
+        ("Downloading and setting up official Python 3.12", Language::Uk) => Some("Завантаження та налаштування офіційного Python 3.12"),
 
         ("Creating directories...", Language::Pl) => Some("Tworzenie katalogów..."),
         ("Creating directories...", Language::De) => Some("Verzeichnisse erstellen..."),

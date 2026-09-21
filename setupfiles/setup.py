@@ -164,6 +164,212 @@ def debug_log(msg):
                 f.write(entry + "\n")
         except: pass
 
+def _broadcast_setting_change():
+    """Broadcast WM_SETTINGCHANGE so Explorer, cmd, and other apps pick up PATH changes."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        HWND_BROADCAST = 0xFFFF
+        WM_SETTINGCHANGE = 0x001A
+        SMTO_ABORTIFHUNG = 0x0002
+        result = wintypes.DWORD()
+        ctypes.windll.user32.SendMessageTimeoutW(
+            HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment",
+            SMTO_ABORTIFHUNG, 5000, ctypes.byref(result)
+        )
+    except Exception as e:
+        debug_log(f"Failed to broadcast WM_SETTINGCHANGE: {e}")
+
+def _add_to_windows_user_path(new_dir):
+    """Add directory to HKCU\\Environment\\Path without requiring administrator privileges."""
+    if os.name != "nt" or not new_dir:
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            try:
+                cur_path, val_type = winreg.QueryValueEx(key, "Path")
+            except FileNotFoundError:
+                cur_path, val_type = "", winreg.REG_EXPAND_SZ
+            parts = [p.strip() for p in cur_path.split(";") if p.strip()]
+            norm_new = os.path.normcase(os.path.abspath(new_dir))
+            if not any(os.path.normcase(os.path.abspath(p)) == norm_new for p in parts):
+                parts.insert(0, new_dir)
+                new_path = ";".join(parts)
+                winreg.SetValueEx(key, "Path", 0, val_type, new_path)
+                debug_log(f"Added {new_dir} to HKCU\\Environment\\Path")
+                _broadcast_setting_change()
+    except Exception as e:
+        debug_log(f"Failed to add {new_dir} to user PATH: {e}")
+
+def _remove_from_windows_user_path(old_dir):
+    """Remove directory from HKCU\\Environment\\Path without requiring administrator privileges."""
+    if os.name != "nt" or not old_dir:
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            try:
+                cur_path, val_type = winreg.QueryValueEx(key, "Path")
+            except FileNotFoundError:
+                return
+            parts = [p.strip() for p in cur_path.split(";") if p.strip()]
+            norm_old = os.path.normcase(os.path.abspath(old_dir))
+            filtered = [p for p in parts if os.path.normcase(os.path.abspath(p)) != norm_old]
+            if len(filtered) != len(parts):
+                new_path = ";".join(filtered)
+                winreg.SetValueEx(key, "Path", 0, val_type, new_path)
+                debug_log(f"Removed {old_dir} from HKCU\\Environment\\Path")
+                _broadcast_setting_change()
+    except Exception as e:
+        debug_log(f"Failed to remove {old_dir} from user PATH: {e}")
+
+def _is_py_compatible(exe):
+    """Check if Python binary is valid, in version range 3.10 <= v < 3.13, and has the venv module."""
+    if not exe:
+        return False
+    try:
+        r = subprocess.run(
+            [exe, "-c", "import sys, importlib; importlib.import_module('venv'); exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)"],
+            capture_output=True, timeout=4
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+def _find_compatible_system_python():
+    """Find a Python executable compatible with DaVinci Resolve (3.10 <= v < 3.13).
+    Ignores Windows Store dummy stubs and verifies venv module availability."""
+    if os.name == "nt":
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            for vf in ["Python312", "Python311", "Python310"]:
+                cand = os.path.join(localappdata, "Programs", "Python", vf, "python.exe")
+                if os.path.isfile(cand) and _is_py_compatible(cand):
+                    return cand
+
+        # Check registry
+        try:
+            import winreg
+            for hkey in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(hkey, r"SOFTWARE\Python\PythonCore") as key:
+                        num_subkeys = winreg.QueryInfoKey(key)[0]
+                        for i in range(num_subkeys):
+                            subkey_name = winreg.EnumKey(key, i)
+                            if subkey_name in ("3.12", "3.11", "3.10") or subkey_name.startswith(("3.12-", "3.11-", "3.10-")):
+                                try:
+                                    with winreg.OpenKey(key, rf"{subkey_name}\InstallPath") as ip_key:
+                                        val, _ = winreg.QueryValueEx(ip_key, "ExecutablePath")
+                                        if val and os.path.isfile(val) and _is_py_compatible(val):
+                                            return val
+                                except OSError:
+                                    pass
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
+        # Check PATH excluding WindowsApps stubs
+        path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+        for d in path_dirs:
+            if not d.strip() or "windowsapps" in d.lower():
+                continue
+            cand = os.path.join(d, "python.exe")
+            if os.path.isfile(cand) and _is_py_compatible(cand):
+                return cand
+
+        # Try py launcher
+        py_launcher = shutil.which("py")
+        if py_launcher:
+            for ver_flag in ["-3.12", "-3.11", "-3.10"]:
+                try:
+                    r = subprocess.run([py_launcher, ver_flag, "-c", "import sys; print(sys.executable)"],
+                                       capture_output=True, text=True, timeout=3)
+                    if r.returncode == 0:
+                        cand = r.stdout.strip()
+                        if cand and os.path.isfile(cand) and _is_py_compatible(cand):
+                            return cand
+                except Exception:
+                    pass
+
+    elif "mac" in PLAT or "darwin" in PLAT:
+        framework_base = "/Library/Frameworks/Python.framework/Versions"
+        for ver in ["3.12", "3.11", "3.10"]:
+            cand = os.path.join(framework_base, ver, "bin", "python3")
+            if os.path.isfile(cand) and _is_py_compatible(cand):
+                return cand
+
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3"]:
+            cand = shutil.which(cmd)
+            if cand and _is_py_compatible(cand):
+                return cand
+
+    else:
+        # Linux
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3"]:
+            cand = shutil.which(cmd)
+            if cand and _is_py_compatible(cand):
+                return cand
+
+    return None
+
+def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
+    """Check if critical BadWords dependencies can be imported cleanly in the venv.
+    Returns a list of missing package names for pip."""
+    missing = []
+
+    # 1. PySide6
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import PySide6; import PySide6.QtCore; import PySide6.QtWidgets"],
+            capture_output=True, timeout=12
+        )
+        if r.returncode != 0:
+            missing.append("PySide6")
+    except Exception:
+        missing.append("PySide6")
+
+    # 2. faster-whisper
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import faster_whisper"],
+            capture_output=True, timeout=12
+        )
+        if r.returncode != 0:
+            missing.append("faster-whisper")
+    except Exception:
+        missing.append("faster-whisper")
+
+    # 3. pypdf
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import pypdf"],
+            capture_output=True, timeout=12
+        )
+        if r.returncode != 0:
+            missing.append("pypdf")
+    except Exception:
+        missing.append("pypdf")
+
+    # 4. Optional GPU acceleration packages
+    if check_nvidia and nvidia_pkgs:
+        try:
+            r = subprocess.run(
+                [venv_py, "-c", "import ctranslate2"],
+                capture_output=True, timeout=12
+            )
+            if r.returncode != 0:
+                for npkg in nvidia_pkgs.split():
+                    if npkg not in missing:
+                        missing.append(npkg)
+        except Exception:
+            pass
+
+    return missing
+
 # ── Cancellation ─────────────────────────────────────────────
 class UserCancelled(Exception):
     pass
@@ -2037,57 +2243,40 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                         pass
 
         # ── System Python Check ───────────────────────────────
-        if os.name == "nt":
-            def _has_system_python():
-                import winreg
-                found_in_reg = False
-                try:
-                    for hkey in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-                        try:
-                            with winreg.OpenKey(hkey, r"SOFTWARE\Python\PythonCore") as key:
-                                num_subkeys = winreg.QueryInfoKey(key)[0]
-                                for i in range(num_subkeys):
-                                    subkey_name = winreg.EnumKey(key, i)
-                                    if subkey_name.startswith("3."):
-                                        found_in_reg = True
-                                        break
-                        except OSError: pass
-                except Exception: pass
-                
-                if found_in_reg:
-                    return True
-                    
-                try:
-                    import shutil, sys, subprocess
-                    sys_py = shutil.which("python") or shutil.which("python3")
-                    if sys_py:
-                        res = subprocess.run([sys_py, "-V"], capture_output=True, text=True, timeout=2)
-                        if "Python 3." in res.stdout or "Python 3." in res.stderr: 
-                            return True
-                except Exception: pass
-                return False
-
-            if not _has_system_python():
+        comp_py = _find_compatible_system_python()
+        if not comp_py:
+            if os.name == "nt":
                 console.print()
-                log_warn("System Python not detected. DaVinci Resolve requires it.")
-                sp_py = Spinner("Downloading & installing System Python 3.10...").start()
+                log_warn("Compatible System Python (3.10 - 3.12) not detected. DaVinci Resolve requires it.")
+                sp_py = Spinner("Downloading & installing System Python 3.12...").start()
                 try:
-                    py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe"
+                    py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
                     py_exe = os.path.join(tempfile.gettempdir(), "python_installer.exe")
                     if download(py_url, py_exe):
-                        res = subprocess.run([py_exe, "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0", "Include_launcher=0"])
-                        if res.returncode in (0, 1641, 3010):
+                        localappdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+                        target_py_dir = os.path.join(localappdata, "Programs", "Python", "Python312")
+                        res = subprocess.run([
+                            py_exe, "/quiet",
+                            "InstallAllUsers=0",
+                            "PrependPath=1",
+                            "Include_test=0",
+                            "Include_launcher=1",
+                            f"TargetDir={target_py_dir}"
+                        ])
+                        installed_py = os.path.join(target_py_dir, "python.exe")
+                        if res.returncode in (0, 1641, 3010) and os.path.isfile(installed_py) and _is_py_compatible(installed_py):
                             sp_py.done(ok=True)
-                            log_ok("System Python 3.10 installed successfully.")
+                            log_ok("System Python 3.12 installed successfully.")
                             py_auto_installed = True
-                            
-                            # Add to current process PATH so venv creation can find it
-                            new_py_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python310")
-                            os.environ["PATH"] = new_py_dir + os.pathsep + os.path.join(new_py_dir, "Scripts") + os.pathsep + os.environ.get("PATH", "")
-                            
+
+                            # Register in user PATH and update current process environment
+                            _add_to_windows_user_path(target_py_dir)
+                            _add_to_windows_user_path(os.path.join(target_py_dir, "Scripts"))
+                            os.environ["PATH"] = target_py_dir + os.pathsep + os.path.join(target_py_dir, "Scripts") + os.pathsep + os.environ.get("PATH", "")
+
                             try:
-                                with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
-                                    f.write("1")
+                                with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
+                                    f.write("3.12.9")
                             except Exception: pass
                         else:
                             sp_py.done(ok=False)
@@ -2099,41 +2288,29 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     sp_py.done(ok=False)
                     log_warn(f"Failed to auto-install Python: {e}")
 
-        elif "mac" in PLAT or "darwin" in PLAT:
-            # DaVinci Resolve on macOS requires a Python framework from python.org.
-            # Homebrew or Xcode command-line tools Python will NOT work.
-            framework_base = "/Library/Frameworks/Python.framework/Versions"
-            has_framework = False
-            if os.path.isdir(framework_base):
-                for ver in ["3.12", "3.11", "3.10", "3.9", "3.8", "3.7", "3.6"]:
-                    if os.path.isdir(os.path.join(framework_base, ver)):
-                        has_framework = True
-                        break
-            
-            if not has_framework:
+            elif "mac" in PLAT or "darwin" in PLAT:
                 console.print()
-                log_warn("System Python framework not detected. DaVinci Resolve requires it!")
+                log_warn("System Python framework (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
                 console.print(Text(f"{PAD}BadWords cannot integrate with DaVinci Resolve without the official Python.", style="bold yellow"), no_wrap=True)
-                console.print(Text(f"{PAD}Setup will now download and install the official Python 3.10 from python.org.", style="cyan"), no_wrap=True)
+                console.print(Text(f"{PAD}Setup will now download and install the official Python 3.12 from python.org.", style="cyan"), no_wrap=True)
                 console.print(Text(f"{PAD}This is a safe, standard installation, but it requires your Mac password.", style="bold red"), no_wrap=True)
                 pause("Press Enter to proceed with the Python installation...")
-                
-                sp_py = Spinner("Downloading Python 3.10 for macOS...").start()
-                py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-macos11.pkg"
+
+                sp_py = Spinner("Downloading Python 3.12 for macOS...").start()
+                py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-macos11.pkg"
                 py_pkg = os.path.join(tempfile.gettempdir(), "python_installer.pkg")
-                
+
                 try:
                     if download(py_url, py_pkg):
                         sp_py.done(ok=True)
                         log_step("Installing Python (please enter your Mac password if prompted)...")
-                        # Run the installer interactively so sudo password prompt is visible
                         res = subprocess.run(["sudo", "installer", "-pkg", py_pkg, "-target", "/"])
                         if res.returncode == 0:
-                            log_ok("System Python 3.10 installed successfully.")
+                            log_ok("System Python 3.12 installed successfully.")
                             py_auto_installed = True
                             try:
-                                with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
-                                    f.write("1")
+                                with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
+                                    f.write("3.12.9")
                             except Exception: pass
                         else:
                             log_warn(f"Failed to auto-install Python: exit code {res.returncode}")
@@ -2144,27 +2321,14 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     sp_py.done(ok=False)
                     log_warn(f"Failed to auto-install Python: {e}")
 
-        else:
-            # Linux
-            def _has_linux_python():
-                import shutil, subprocess
-                for cmd in ["python3", "python"]:
-                    exe = shutil.which(cmd)
-                    if exe:
-                        try:
-                            r = subprocess.run([exe, "-V"], capture_output=True, text=True, timeout=2)
-                            if "Python 3." in r.stdout or "Python 3." in r.stderr:
-                                return True
-                        except Exception: pass
-                return False
-                
-            if not _has_linux_python():
+            else:
+                # Linux
                 console.print()
-                log_warn("System Python not detected. DaVinci Resolve requires it!")
+                log_warn("Compatible System Python (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
                 console.print(Text(f"{PAD}Setup will try to safely install Python using your system package manager.", style="cyan"), no_wrap=True)
                 console.print(Text(f"{PAD}This requires administrator privileges. You may be prompted for your password.", style="bold red"), no_wrap=True)
                 pause("Press Enter to proceed with the Python installation...")
-                
+
                 log_step("Installing Python (please enter your sudo password if prompted)...")
                 try:
                     pkg_mgrs = [
@@ -2186,48 +2350,36 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                                 log_ok(f"Python installed via {cmd_name}.")
                                 py_auto_installed = True
                                 try:
-                                    with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
-                                        f.write("1")
+                                    with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
+                                        f.write("3.12.9")
                                 except Exception: pass
                                 break
-                                
+
                     if not installed:
                         log_warn("Failed to automatically install Python using package manager.")
-                        log_warn("Please install python3 manually.")
+                        log_warn("Please install Python 3.10 - 3.12 manually.")
                 except Exception as e:
                     log_warn(f"Failed to auto-install Python: {e}")
 
         # ── Python for venv ───────────────────────────────────
-        # The bootstrap Python (from the bootstrapper) may be embedded/portable
-        # and lack the venv module. We search for a system Python that has it.
-        bootstrap_py = ARGS.bootstrap_python
-        target_py = None
-
-        # Search order: versioned names (unix), then py/python (Windows), then bootstrap fallback
-        _py_candidates = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3"]
-        if os.name == "nt":
-            _py_candidates += ["py", "python"]
-
-        for cmd in _py_candidates:
-            exe = shutil.which(cmd)
-            if exe:
-                try:
-                    r = subprocess.run([exe, "-c",
-                        "import sys, importlib; importlib.import_module('venv'); exit(0 if (3,10) <= sys.version_info < (3,15) else 1)"],
-                        capture_output=True)
-                    if r.returncode == 0:
-                        target_py = exe
-                        break
-                except Exception:
-                    pass
-
-        # Fallback: use bootstrap Python (may not have venv, but virtualenv fallback handles it)
+        target_py = _find_compatible_system_python()
         if not target_py:
-            target_py = bootstrap_py if os.path.isfile(bootstrap_py) else sys.executable
+            bootstrap_py = ARGS.bootstrap_python
+            if _is_py_compatible(bootstrap_py):
+                target_py = bootstrap_py
+            elif _is_py_compatible(sys.executable):
+                target_py = sys.executable
 
         # ── Venv ──────────────────────────────────────────────
         console.print()
         if not os.path.isdir(venv_dir):
+            if not target_py:
+                log_err("No compatible Python (3.10 - 3.12) with venv found!")
+                log_err("Please install Python 3.12 from https://www.python.org/downloads/ and try again.")
+                if not ARGS.non_interactive:
+                    pause()
+                return False
+
             log_step(f"Creating virtual environment ({target_py})...")
             _venv_ok = False
             try:
@@ -2255,9 +2407,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 log_ok("Virtual environment created.")
             else:
                 log_err("Failed to create virtual environment.")
-                log_err("Please install Python 3.10+ from https://python.org and try again.")
-                pause()
-                return
+                log_err("Please install Python 3.10 - 3.12 from https://python.org and try again.")
+                if not ARGS.non_interactive:
+                    pause()
+                return False
         else:
             log_ok("Virtual environment already exists.")
 
@@ -2318,8 +2471,30 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         else:
             log_info("PySide6 already installed.")
 
+        # ── Comprehensive Package Verification & Auto-Recovery ──
+        console.print()
+        log_step("Verifying installed packages (faster-whisper, PySide6, pypdf)...")
+        missing_pkgs = _check_missing_dependencies(venv_py, check_nvidia=has_nvidia, nvidia_pkgs=nvidia_pkgs)
+        retry_count = 0
+        MAX_RETRIES = 2
 
-        log_ok("All dependencies installed.")
+        while missing_pkgs and retry_count < MAX_RETRIES:
+            retry_count += 1
+            log_warn(f"Missing or incomplete packages: {', '.join(missing_pkgs)}. Network issue suspected.")
+            log_step(f"Retrying download and installation (attempt {retry_count}/{MAX_RETRIES})...")
+
+            _pip_run("install", *missing_pkgs, "-q", label=f"Re-downloading: {', '.join(missing_pkgs)}")
+            missing_pkgs = _check_missing_dependencies(venv_py, check_nvidia=has_nvidia, nvidia_pkgs=nvidia_pkgs)
+
+        if missing_pkgs:
+            console.print()
+            log_err(f"Network error: Failed to download and verify required packages: {', '.join(missing_pkgs)}.")
+            log_err("Please check your internet connection and run setup again.")
+            if not ARGS.non_interactive:
+                pause()
+            return False
+
+        log_ok("All required packages (faster-whisper, PySide6, pypdf) successfully verified.")
 
         # ── Libs symlink ──────────────────────────────────────
         console.print()
@@ -2717,29 +2892,23 @@ def option_move():
         except Exception:
             shutil.rmtree(old_libs, ignore_errors=True)
 
-    # Pick best available Python (must have venv support)
-    bootstrap_py = ARGS.bootstrap_python
-    target_py = None
-
-    _py_candidates = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3"]
-    if os.name == "nt":
-        _py_candidates += ["py", "python"]
-
-    for cmd in _py_candidates:
-        exe = shutil.which(cmd)
-        if exe:
-            try:
-                r = subprocess.run([exe, "-c",
-                    "import sys, importlib; importlib.import_module('venv'); exit(0 if (3,10) <= sys.version_info < (3,15) else 1)"],
-                    capture_output=True)
-                if r.returncode == 0:
-                    target_py = exe
-                    break
-            except Exception:
-                pass
+    # Pick best available Python (must have venv support and be compatible with DaVinci Resolve)
+    target_py = _find_compatible_system_python()
+    if not target_py:
+        bootstrap_py = ARGS.bootstrap_python
+        if _is_py_compatible(bootstrap_py):
+            target_py = bootstrap_py
+        elif _is_py_compatible(sys.executable):
+            target_py = sys.executable
 
     if not target_py:
-        target_py = bootstrap_py if os.path.isfile(bootstrap_py) else sys.executable
+        log_err("No compatible Python (3.10 - 3.12) with venv found!")
+        log_err("Please install Python 3.12 from https://www.python.org/downloads/ and try again.")
+        if rescued_pkgs and os.path.exists(rescued_pkgs):
+            shutil.rmtree(rescued_pkgs, ignore_errors=True)
+        if not ARGS.non_interactive:
+            pause()
+        return False
 
     log_step(f"Creating fresh venv ({target_py})...")
     try:
@@ -2757,8 +2926,9 @@ def option_move():
             log_err(f"Failed to create venv: {e}")
             if rescued_pkgs and os.path.exists(rescued_pkgs):
                 shutil.rmtree(rescued_pkgs, ignore_errors=True)
-            pause()
-            return
+            if not ARGS.non_interactive:
+                pause()
+            return False
 
     if os.name == "nt":
         venv_py = os.path.join(new_venv, "Scripts", "python.exe")
@@ -2842,7 +3012,21 @@ def option_move():
         if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode != 0:
             _pip("Installing PySide6", "install", "PySide6", "-q")
 
-        log_ok("Dependencies installed.")
+        # ── Verify dependencies ──
+        missing_repair = _check_missing_dependencies(venv_py)
+        if missing_repair:
+            log_warn(f"Missing packages detected during repair: {', '.join(missing_repair)}. Retrying installation...")
+            r = subprocess.run([venv_py, "-m", "pip", "install"] + missing_repair + ["-q"], capture_output=True)
+            missing_repair = _check_missing_dependencies(venv_py)
+
+        if missing_repair:
+            log_err(f"Repair failed: Could not install required packages: {', '.join(missing_repair)}.")
+            log_err("Please check your internet connection and try again.")
+            if not ARGS.non_interactive:
+                pause()
+            return False
+
+        log_ok("All dependencies verified.")
 
     # ── Step 3: Recreate libs symlink ────────────────────────
     console.print()
@@ -3065,27 +3249,38 @@ def option_uninstall():
             
     if python_auto_installed:
         console.print()
-        console.print(Text(f"{PAD}BadWords installer previously downloaded Python for its operation.", style="bold yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}Do you wish to uninstall it as well?", style="bold yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}  [yes] - Uninstalls Python from your system.", style="yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}  [no]  - Leaves Python (safe if you use it for other apps).", style="yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}BadWords installer previously downloaded Python 3.12 for its operation.", style="bold yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}Do you wish to uninstall Python 3.12 as well?", style="bold yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}  [yes] - Uninstalls Python 3.12 from your system.", style="yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}  [no]  - Leaves Python 3.12 (safe if you use it for other apps).", style="yellow"), no_wrap=True)
         console.print()
         console.print(Text(f'{PAD}Type "yes" or "no" and press Enter: ', style="bold white"), end="", no_wrap=True)
         sys.stdout.flush()
         try:
             ans_py = readline_with_esc()
             if ans_py.strip().lower() == "yes":
-                log_step("Uninstalling Python 3.10...")
+                log_step("Uninstalling Python 3.12...")
                 sp_py_un = Spinner("Removing Python from system...").start()
                 try:
-                    py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe"
-                    py_exe = os.path.join(tempfile.gettempdir(), "python_uninstaller.exe")
-                    if download(py_url, py_exe):
-                        res = subprocess.run([py_exe, "/uninstall", "/quiet"])
-                        sp_py_un.done(ok=(res.returncode in (0, 1641, 3010)))
+                    if os.name == "nt":
+                        py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+                        py_exe = os.path.join(tempfile.gettempdir(), "python_uninstaller.exe")
+                        if download(py_url, py_exe):
+                            res = subprocess.run([py_exe, "/uninstall", "/quiet"])
+                            sp_py_un.done(ok=(res.returncode in (0, 1641, 3010)))
+                        else:
+                            sp_py_un.done(ok=False)
+                            log_warn("Failed to download Python uninstaller.")
+
+                        # Clean user PATH and remove directory
+                        localappdata = os.environ.get("LOCALAPPDATA", "")
+                        if localappdata:
+                            target_py_dir = os.path.join(localappdata, "Programs", "Python", "Python312")
+                            _remove_from_windows_user_path(target_py_dir)
+                            _remove_from_windows_user_path(os.path.join(target_py_dir, "Scripts"))
+                            shutil.rmtree(target_py_dir, ignore_errors=True)
                     else:
-                        sp_py_un.done(ok=False)
-                        log_warn("Failed to download Python uninstaller.")
+                        sp_py_un.done(ok=True)
                 except Exception as e:
                     sp_py_un.done(ok=False)
                     log_warn(f"Failed to uninstall Python: {e}")
@@ -3321,8 +3516,11 @@ def main():
                 _unblock_file_windows(cand)
 
     if ARGS.uninstall:
-        target = ARGS.install or _default_install_dir()
-        _do_uninstall(_resolve_script_dirs(), [target])
+        if ARGS.non_interactive:
+            target = ARGS.install or _default_install_dir()
+            _do_uninstall(_resolve_script_dirs(), [target])
+        else:
+            option_uninstall()
         sys.exit(0)
     elif ARGS.repair:
         target = ARGS.install or _default_install_dir()

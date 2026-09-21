@@ -140,7 +140,7 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
 
     if args.iter().any(|a| a == "--uninstall") {
         println!("[CLI] Running headless uninstall on: {}", target_dir.display());
-        engine::run_uninstall(target_dir, tx);
+        engine::run_uninstall(target_dir, false, tx);
     } else if args.iter().any(|a| a == "--repair") {
         println!("[CLI] Running headless repair on: {}", target_dir.display());
         engine::run_repair(target_dir, tx);
@@ -304,6 +304,9 @@ struct InstallerApp {
     branches: Vec<String>,
     branch_selected_index: usize,
     branch_fetching: bool,
+    uninstall_system_python: bool,
+    has_auto_python_marker: bool,
+    operation_success: bool,
     tx: Sender<IpcEvent>,
     rx: Receiver<IpcEvent>,
 }
@@ -369,6 +372,9 @@ impl InstallerApp {
             branches: vec![],
             branch_selected_index: 0,
             branch_fetching: false,
+            uninstall_system_python: false,
+            has_auto_python_marker: false,
+            operation_success: true,
             tx,
             rx,
         }
@@ -378,6 +384,9 @@ impl InstallerApp {
         let mut app = Self::new();
         if args.iter().any(|a| a == "--uninstall") {
             app.action = Some(InstallAction::Uninstall);
+            let target = app.current_target_path();
+            app.has_auto_python_marker = target.join(".python_auto_installed").exists()
+                || app.detected_existing.as_ref().map(|p| p.join(".python_auto_installed").exists()).unwrap_or(false);
             app.screen = Screen::ConfirmAction;
         } else if args.iter().any(|a| a == "--repair") {
             app.action = Some(InstallAction::Repair);
@@ -456,7 +465,7 @@ impl InstallerApp {
                 engine::run_reset(target, tx);
             }
             Some(InstallAction::Uninstall) => {
-                engine::run_uninstall(target, tx);
+                engine::run_uninstall(target, self.uninstall_system_python, tx);
             }
             None => {}
         }
@@ -482,6 +491,9 @@ impl InstallerApp {
             }
             4 => {
                 self.action = Some(InstallAction::Uninstall);
+                let target = self.current_target_path();
+                self.has_auto_python_marker = target.join(".python_auto_installed").exists()
+                    || self.detected_existing.as_ref().map(|p| p.join(".python_auto_installed").exists()).unwrap_or(false);
                 self.screen = Screen::ConfirmAction;
             }
             _ => {}
@@ -638,6 +650,7 @@ impl eframe::App for InstallerApp {
                 self.sub_progress = 1.0;
                 self.displayed_sub_progress = 1.0;
                 let success = event.data.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+                self.operation_success = success;
                 let message = event.data.get("message").and_then(|v| v.as_str()).unwrap_or("Operation finished.").to_string();
                 self.status_title = message.clone();
                 self.status_details = if success { "Done.".to_string() } else { "Error occurred.".to_string() };
@@ -1297,6 +1310,15 @@ impl eframe::App for InstallerApp {
                                                                             .size(13.5)
                                                                             .color(egui::Color32::from_gray(220))
                                                                     );
+                                                                    if self.has_auto_python_marker {
+                                                                        ui.add_space(14.0);
+                                                                        ui.checkbox(
+                                                                            &mut self.uninstall_system_python,
+                                                                            egui::RichText::new(t.checkbox_uninstall_python)
+                                                                                .size(13.0)
+                                                                                .color(egui::Color32::from_rgb(251, 191, 36))
+                                                                        );
+                                                                    }
                                                                 } else {
                                                                     ui.label(
                                                                         egui::RichText::new(t.confirm_reset_warn)
@@ -1398,21 +1420,39 @@ impl eframe::App for InstallerApp {
                                                             }
 
                                                             Screen::Complete => {
+                                                                let is_error = !self.operation_success;
+                                                                let title_text = if is_error {
+                                                                    match self.language {
+                                                                        Language::Pl => "Wystąpił błąd instalacji",
+                                                                        Language::De => "Installationsfehler aufgetreten",
+                                                                        Language::Es => "Error de instalación",
+                                                                        Language::Fr => "Erreur d'installation survenue",
+                                                                        Language::It => "Errore di installazione",
+                                                                        Language::Nl => "Installatiefout opgetreden",
+                                                                        Language::Pt => "Erro de instalação",
+                                                                        Language::Ru => "Произошла ошибка установки",
+                                                                        Language::Uk => "Сталася помилка встановлення",
+                                                                        Language::En => "Installation Error Occurred",
+                                                                    }
+                                                                } else {
+                                                                    t.complete_title
+                                                                };
+
                                                                 ui.heading(
-                                                                    egui::RichText::new(t.complete_title)
+                                                                    egui::RichText::new(title_text)
                                                                         .size(21.0)
                                                                         .strong()
-                                                                        .color(egui::Color32::WHITE)
+                                                                        .color(if is_error { egui::Color32::from_rgb(248, 113, 113) } else { egui::Color32::WHITE })
                                                                 );
                                                                 ui.add_space(16.0);
 
                                                                 ui.label(
                                                                     egui::RichText::new(&self.status_title)
                                                                         .size(13.5)
-                                                                        .color(egui::Color32::from_gray(220))
+                                                                        .color(if is_error { egui::Color32::from_rgb(252, 165, 165) } else { egui::Color32::from_gray(220) })
                                                                 );
                                                                 
-                                                                if self.action == Some(InstallAction::InstallUpdate) {
+                                                                if !is_error && self.action == Some(InstallAction::InstallUpdate) {
                                                                     ui.add_space(20.0);
                                                                     ui.checkbox(&mut self.launch_on_finish, t.launch_checkbox);
                                                                 }
@@ -1616,8 +1656,25 @@ impl eframe::App for InstallerApp {
                                                 }
 
                                                 Screen::Complete => {
-                                                    if custom_button(ui, ctx, [100.0, 32.0], t.btn_finish) {
-                                                        if self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
+                                                    let is_error = !self.operation_success;
+                                                    let finish_label = if is_error {
+                                                        match self.language {
+                                                            Language::Pl => "Zamknij",
+                                                            Language::De => "Schließen",
+                                                            Language::Es => "Cerrar",
+                                                            Language::Fr => "Fermer",
+                                                            Language::It => "Chiudi",
+                                                            Language::Nl => "Sluiten",
+                                                            Language::Pt => "Fechar",
+                                                            Language::Ru => "Закрыть",
+                                                            Language::Uk => "Закрити",
+                                                            Language::En => "Close",
+                                                        }
+                                                    } else {
+                                                        t.btn_finish
+                                                    };
+                                                    if custom_button(ui, ctx, [100.0, 32.0], finish_label) {
+                                                        if !is_error && self.launch_on_finish && self.action == Some(InstallAction::InstallUpdate) {
                                                             launch_installed_badwords(&self.current_target_path());
                                                         }
                                                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);

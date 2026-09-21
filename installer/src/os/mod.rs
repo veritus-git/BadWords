@@ -103,6 +103,18 @@ pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     }
 }
 
+/// Automatically uninstalls auto-installed System Python for current OS
+pub fn uninstall_system_python(sender: &crate::state::EventSender) -> bool {
+    #[cfg(target_os = "windows")]
+    return windows::uninstall_system_python(sender);
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = sender;
+        false
+    }
+}
+
 /// Detects all possible DaVinci Resolve Fusion Scripts Utility directories
 pub fn resolve_script_dirs() -> Vec<PathBuf> {
     let mut raw_paths = Vec::new();
