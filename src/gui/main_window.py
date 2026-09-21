@@ -3257,6 +3257,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         self._populate_editor(words_data, segments_data)
         
+        if hasattr(self, 'w_track_options'):
+            self.w_track_options.refresh_tracks()
+
         if hasattr(self, 'audio_preview'):
             self.audio_preview.check_audio_availability()
         

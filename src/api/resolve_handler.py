@@ -665,6 +665,81 @@ class ResolveHandler:
             log_error(f"get_audio_tracks error: {e}")
             return []
 
+    def get_timeline_tracks(self, timeline_name=None):
+        """
+        Returns (audio_tracks, video_tracks) where each is a list of (index, name) tuples.
+        Works across both native/Direct API and bridge backends.
+        """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetTimelineTracks", {
+                    "timeline_name": timeline_name or ""
+                }, timeout_secs=5.0)
+                if res and res.get("ok"):
+                    a_tracks = [(t.get("index", i + 1), t.get("name", f"Audio {i+1}"))
+                                for i, t in enumerate(res.get("audio_tracks", []))]
+                    v_tracks = [(t.get("index", i + 1), t.get("name", f"Video {i+1}"))
+                                for i, t in enumerate(res.get("video_tracks", []))]
+                    return a_tracks, v_tracks
+            except Exception as e:
+                log_error(f"get_timeline_tracks (bridge) error: {e}")
+            return [], []
+
+        if not self.project:
+            return [], []
+
+        target_tl = self.timeline
+        if timeline_name and (not target_tl or target_tl.GetName() != timeline_name):
+            try:
+                cnt = self.project.GetTimelineCount()
+                for i in range(1, cnt + 1):
+                    tl = self.project.GetTimelineByIndex(i)
+                    if tl and tl.GetName() == timeline_name:
+                        target_tl = tl
+                        break
+            except Exception:
+                pass
+
+        if not target_tl:
+            try:
+                target_tl = self.project.GetCurrentTimeline()
+            except Exception:
+                pass
+
+        if not target_tl:
+            return [], []
+
+        audio_tracks = []
+        video_tracks = []
+
+        try:
+            ac = target_tl.GetTrackCount("audio") or 0
+            _get_a_name = getattr(target_tl, "GetTrackName", None)
+            for i in range(1, ac + 1):
+                tname = ""
+                if callable(_get_a_name):
+                    try: tname = _get_a_name("audio", i)
+                    except Exception: pass
+                if not tname: tname = f"Audio {i}"
+                audio_tracks.append((i, tname))
+        except Exception:
+            pass
+
+        try:
+            vc = target_tl.GetTrackCount("video") or 0
+            _get_v_name = getattr(target_tl, "GetTrackName", None)
+            for i in range(1, vc + 1):
+                tname = ""
+                if callable(_get_v_name):
+                    try: tname = _get_v_name("video", i)
+                    except Exception: pass
+                if not tname: tname = f"Video {i}"
+                video_tracks.append((i, tname))
+        except Exception:
+            pass
+
+        return audio_tracks, video_tracks
+
 
     def get_next_badwords_edit_index(self, original_name):
         """
@@ -2419,37 +2494,37 @@ class ResolveHandler:
     def reapply_clip_colors(self, tl_name, color_schedule):
         """
         POST-IMPORT COLOR VERIFICATION & CORRECTION.
-
-        Receives the color_schedule built during XML generation — a dict of
-        {dest_start_frame: color_string|None} covering EVERY clipitem in the
-        imported timeline (including multi-clip-source splits).
-
-        Strategy:
-          1. For each clip on every track, look up its GetStart() in color_schedule.
-          2. If expected color is None (normal clip) — don’t touch it.
-          3. If expected color is set:
-             - GetClipColor() to check current color.
-             - If already correct: count as OK (XML did its job).
-             - If wrong/missing: SetClipColor() to correct it.
-          4. Log summary: X correct from XML, Y corrected via API.
+        Works across both Direct API and BadWords Bridge.
         """
         if not color_schedule:
             log_info("reapply_clip_colors: empty schedule, skipping.")
             return
 
+        # Normalize schedule colors to Title Case
+        norm_schedule = {}
+        for k, v in color_schedule.items():
+            if v:
+                norm_schedule[int(k)] = str(v).capitalize()
+            else:
+                norm_schedule[int(k)] = None
+
+        colored_entries = {k: v for k, v in norm_schedule.items() if v}
+        if not colored_entries:
+            log_info("reapply_clip_colors: no colored clips in schedule, skipping.")
+            return
+
         if self.backend == 'bridge':
             try:
                 sched_list = []
-                if isinstance(color_schedule, dict):
-                    for k, v in color_schedule.items():
-                        sched_list.append({"start_frame": k, "color": v})
-                elif isinstance(color_schedule, list):
-                    sched_list = color_schedule
+                for k, v in colored_entries.items():
+                    sched_list.append({"start_frame": k, "color": v})
 
                 res = self.bridge_client.call("ReapplyClipColors", {
                     "timeline_name": tl_name,
                     "color_schedule": sched_list
                 }, timeout_secs=30.0)
+                applied = res.get("applied", 0) if res else 0
+                log_info(f"reapply_clip_colors (bridge): '{tl_name}' — applied {applied} clip color(s).")
                 return bool(res and res.get("ok"))
             except Exception as e:
                 log_error(f"reapply_clip_colors (bridge) error: {e}")
@@ -2467,20 +2542,42 @@ class ResolveHandler:
                 log_error(f"reapply_clip_colors: timeline '{tl_name}' not found.")
                 return
 
-            tl_start = int(target_tl.GetStartFrame())
-            # The schedule was built with dest_start=0 as sequence frame 0;
-            # after import, frame 0 of the sequence maps to tl_start of the new TL.
-            # Build an adjusted lookup: (tl_start + schedule_key) → color
-            # But also keep original keys in case TL start is 0.
+            # CRITICAL: Activate timeline so Resolve permits modifying clip properties!
+            try:
+                self.project.SetCurrentTimeline(target_tl)
+            except Exception as e:
+                log_error(f"reapply_clip_colors: SetCurrentTimeline failed: {e}")
+
+            tl_start = int(target_tl.GetStartFrame() or 0)
+
+            # Find earliest clip start across tracks to handle timecode offsets
+            min_clip_start = None
+            for track_type in ("video", "audio"):
+                tc = target_tl.GetTrackCount(track_type) or 0
+                for ti in range(1, tc + 1):
+                    for it in (target_tl.GetItemListInTrack(track_type, ti) or []):
+                        if it:
+                            try:
+                                s = int(it.GetStart())
+                                if min_clip_start is None or s < min_clip_start:
+                                    min_clip_start = s
+                            except Exception:
+                                pass
+
+            candidate_offsets = [tl_start]
+            if min_clip_start is not None and min_clip_start not in candidate_offsets:
+                candidate_offsets.append(min_clip_start)
+            if 0 not in candidate_offsets:
+                candidate_offsets.append(0)
+
             def sched_color(item_start):
-                """Returns expected color for a clip at item_start, or False if not found."""
-                c = color_schedule.get(item_start)
-                if c is not None or item_start in color_schedule:
-                    return c  # None means 'normal' (no color)
-                # Try offset by tl_start in case XML=0-based but TL has timecode offset
-                adjusted = item_start - tl_start
-                if adjusted in color_schedule:
-                    return color_schedule[adjusted]
+                """Returns expected color for a clip at item_start with +/-2 frames tolerance."""
+                for off in candidate_offsets:
+                    rel = item_start - off
+                    for delta in (0, -1, 1, -2, 2):
+                        test_key = rel + delta
+                        if test_key in norm_schedule:
+                            return norm_schedule[test_key]
                 return False  # not found
 
             corrected = 0
@@ -2495,36 +2592,21 @@ class ResolveHandler:
                         for item in items:
                             if not item:
                                 continue
-                            item_start     = int(item.GetStart())
-                            item_dur       = int(item.GetDuration()) if hasattr(item, 'GetDuration') else -1
+                            item_start = int(item.GetStart())
                             expected_color = sched_color(item_start)
-                            if expected_color is False:
-                                # ── DIAGNOSTIC: log unknown clips so we can trace ghost clips ──
-                                try:
-                                    pool_item = item.GetMediaPoolItem()
-                                    fp = (pool_item.GetClipProperty("File Path") or "??") if pool_item else "<no pool item>"
-                                except Exception:
-                                    fp = "<err>"
-                                log_error(
-                                    f"reapply_clip_colors: UNKNOWN CLIP on {track_type}{ti} "
-                                    f"| start={item_start} (adj={item_start - tl_start}) "
-                                    f"| dur={item_dur}f "
-                                    f"| file={fp} "
-                                    f"| schedule_keys={sorted(color_schedule.keys())[:10]}..."
-                                )
-                                missed += 1
+                            if expected_color is False or not expected_color:
+                                if expected_color is False:
+                                    missed += 1
+                                else:
+                                    ok_count += 1
                                 continue
-                            if not expected_color:
-                                # Normal clip — no color expected, skip
-                                ok_count += 1
-                                continue
-                            # Check what color is currently set
+
                             try:
                                 actual_color = item.GetClipColor() or ""
                             except Exception:
                                 actual_color = ""
                             if actual_color.lower() == expected_color.lower():
-                                ok_count += 1  # XML set it correctly
+                                ok_count += 1
                             else:
                                 item.SetClipColor(expected_color)
                                 corrected += 1
