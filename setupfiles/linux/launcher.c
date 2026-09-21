@@ -311,6 +311,49 @@ int main(int argc, char *argv[]) {
     }
     setenv("PYTHONPATH", py_path, 1);
 
+    // 9b. Isolate Qt environment from system KDE/Qt mismatches (Fedora KDE, Arch, openSUSE)
+    unsetenv("QT_QPA_PLATFORMTHEME");
+
+    if (site_pkgs[0] != '\0') {
+        char qt_lib_dir[MAX_PATH_LEN];
+        snprintf(qt_lib_dir, sizeof(qt_lib_dir), "%s/PySide6/Qt/lib", site_pkgs);
+        if (dir_exists(qt_lib_dir)) {
+            // Preload bundled Qt6 libraries into RTLD_GLOBAL so system libraries are never loaded
+            const char *qt_libs[] = {
+                "libQt6Core.so.6",
+                "libQt6Network.so.6",
+                "libQt6DBus.so.6",
+                "libQt6Gui.so.6",
+                "libQt6Widgets.so.6",
+                "libQt6OpenGL.so.6",
+                "libQt6XcbQpa.so.6",
+                NULL
+            };
+            for (int q = 0; qt_libs[q] != NULL; q++) {
+                char qpath[MAX_PATH_LEN * 2];
+                snprintf(qpath, sizeof(qpath), "%s/%s", qt_lib_dir, qt_libs[q]);
+                if (file_exists(qpath)) {
+                    dlopen(qpath, RTLD_NOW | RTLD_GLOBAL);
+                }
+            }
+
+            char qt_plugins_dir[MAX_PATH_LEN * 2];
+            snprintf(qt_plugins_dir, sizeof(qt_plugins_dir), "%s/PySide6/Qt/plugins", site_pkgs);
+            if (dir_exists(qt_plugins_dir)) {
+                setenv("QT_PLUGIN_PATH", qt_plugins_dir, 1);
+            }
+
+            const char *cur_ld = getenv("LD_LIBRARY_PATH");
+            char new_ld[MAX_ENV_LEN];
+            if (cur_ld && cur_ld[0] != '\0') {
+                snprintf(new_ld, sizeof(new_ld), "%s:%s", qt_lib_dir, cur_ld);
+            } else {
+                snprintf(new_ld, sizeof(new_ld), "%s", qt_lib_dir);
+            }
+            setenv("LD_LIBRARY_PATH", new_ld, 1);
+        }
+    }
+
     // 10. Set Working Directory
     char work_dir[MAX_PATH_LEN];
     snprintf(work_dir, sizeof(work_dir), "%s/src", install_dir);
