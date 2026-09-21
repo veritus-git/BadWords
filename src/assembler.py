@@ -608,7 +608,29 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
             log_error(f"drt_assemble: SetName failed: {rename_err}")
             # Continue with original name — not fatal
 
-        # ── Step 9: Move to BadWords bin ──────────────────────────────────────
+        # ── Step 9: Clean up uncolored duplicate timelines ────────────────────
+        try:
+            cnt = resolve_handler.project.GetTimelineCount() or 0
+            for i in range(cnt, 0, -1):
+                t = resolve_handler.project.GetTimelineByIndex(i)
+                if t and t != new_tl and t.GetName() == actual_name:
+                    has_col = False
+                    for tt in ("video", "audio"):
+                        for tr in range(1, (t.GetTrackCount(tt) or 0) + 1):
+                            for it in (t.GetItemListInTrack(tt, tr) or []):
+                                c = it.GetClipColor()
+                                if c and c not in ("", "None", "null"):
+                                    has_col = True
+                                    break
+                            if has_col: break
+                        if has_col: break
+                    if not has_col:
+                        resolve_handler.media_pool.DeleteTimelines([t])
+                        log_info(f"drt_assemble: deleted uncolored duplicate timeline '{actual_name}'")
+        except Exception as del_err:
+            log_error(f"drt_assemble: duplicate timeline cleanup error: {del_err}")
+
+        # ── Step 10: Move to BadWords bin ─────────────────────────────────────
         bw_bin = resolve_handler.get_badwords_root_bin()
         if bw_bin:
             try:
