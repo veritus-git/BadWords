@@ -34,6 +34,7 @@ if sys.version_info < (3, 9):
 if sys.platform.startswith('linux'):
     if 'QT_QPA_PLATFORMTHEME' in os.environ:
         del os.environ['QT_QPA_PLATFORMTHEME']
+    os.environ.pop('QT_STYLE_OVERRIDE', None)
 
     try:
         import ctypes
@@ -70,10 +71,16 @@ if sys.platform.startswith('linux'):
                 if _qt_lib_dir:
                     break
 
-        if _qt_plugins_dir and 'QT_PLUGIN_PATH' not in os.environ:
+        if _qt_plugins_dir:
             os.environ['QT_PLUGIN_PATH'] = _qt_plugins_dir
 
         if _qt_lib_dir:
+            _cur_ld = os.environ.get('LD_LIBRARY_PATH', '')
+            if _cur_ld:
+                os.environ['LD_LIBRARY_PATH'] = f"{_qt_lib_dir}:{_cur_ld}"
+            else:
+                os.environ['LD_LIBRARY_PATH'] = _qt_lib_dir
+
             _qt_preload = [
                 'libQt6Core.so.6',
                 'libQt6Network.so.6',
@@ -81,6 +88,7 @@ if sys.platform.startswith('linux'):
                 'libQt6Gui.so.6',
                 'libQt6Widgets.so.6',
                 'libQt6OpenGL.so.6',
+                'libQt6WaylandClient.so.6',
                 'libQt6XcbQpa.so.6',
             ]
             for _lib_name in _qt_preload:

@@ -313,6 +313,7 @@ int main(int argc, char *argv[]) {
 
     // 9b. Isolate Qt environment from system KDE/Qt mismatches (Fedora KDE, Arch, openSUSE)
     unsetenv("QT_QPA_PLATFORMTHEME");
+    unsetenv("QT_STYLE_OVERRIDE");
 
     if (site_pkgs[0] != '\0') {
         char qt_lib_dir[MAX_PATH_LEN];
@@ -326,6 +327,7 @@ int main(int argc, char *argv[]) {
                 "libQt6Gui.so.6",
                 "libQt6Widgets.so.6",
                 "libQt6OpenGL.so.6",
+                "libQt6WaylandClient.so.6",
                 "libQt6XcbQpa.so.6",
                 NULL
             };

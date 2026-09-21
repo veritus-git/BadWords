@@ -113,7 +113,9 @@ pub fn create_macos_app_bundle(install_dir: &Path, version: &str, create_desktop
             // Native Mach-O launcher binary
             let launcher_path = macos.join("BadWords");
             let mut compiled = false;
-            let launcher_c_src = include_str!("../../../setupfiles/macos/launcher.c");
+            let disk_launcher_c = install_dir.join("setupfiles").join("macos").join("launcher.c");
+            let disk_src = std::fs::read_to_string(&disk_launcher_c).ok();
+            let launcher_c_src = disk_src.as_deref().unwrap_or(include_str!("../../../setupfiles/macos/launcher.c"));
             let temp_c = std::env::temp_dir().join("badwords_launcher_tmp.c");
 
             if std::fs::write(&temp_c, launcher_c_src).is_ok() {
