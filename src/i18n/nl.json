@@ -432,5 +432,6 @@
     "tt_why_silence_options_hidden": "<b>Stiltedetectie voor lokale bestanden:</b><br><br>In de lokale bestandsmodus opent stiltedetectie het<br>volledige tijdlijnvoorbeeld en de editor.<br><br>U kunt alle gedetecteerde stiltesneden bekijken, handmatig<br>aanpassen en verliesvrij exporteren met behulp van Seamless Cut.<br><br><i>Direct knippen op de tijdlijn en clipkleuring zijn exclusief<br>beschikbaar bij verbinding met DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Stiltedetectie: spraaktranscriptie is niet uitgevoerd]",
     "lbl_seamless_cut_export": "Verliesvrije export (Seamless Cut)",
-    "msg_seamless_cut_success": "Verliesvrij knippen succesvol voltooid!\nOpgeslagen in: {path}"
+    "msg_seamless_cut_success": "Verliesvrij knippen succesvol voltooid!\nOpgeslagen in: {path}",
+    "msg_unsupported_file_format": "Niet-ondersteund bestandsformaat. Selecteer een geldig video- of audiobestand."
 }

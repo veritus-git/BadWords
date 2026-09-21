@@ -33,10 +33,20 @@ class FileDropZone(QWidget):
     """
     file_selected = Signal(str)
 
-    SUPPORTED_EXTENSIONS = (
-        ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts", ".mts",
-        ".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg", ".aiff"
+    SUPPORTED_AUDIO_EXTENSIONS = (
+        ".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg", ".aiff", ".wma", ".opus"
     )
+    SUPPORTED_VIDEO_EXTENSIONS = (
+        ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts", ".mts", ".wmv", ".flv"
+    )
+    SUPPORTED_EXTENSIONS = SUPPORTED_AUDIO_EXTENSIONS + SUPPORTED_VIDEO_EXTENSIONS
+
+    @classmethod
+    def is_supported_file(cls, file_path: str) -> bool:
+        if not file_path:
+            return False
+        ext = os.path.splitext(file_path)[1].lower()
+        return ext in cls.SUPPORTED_EXTENSIONS
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -260,12 +270,17 @@ class FileDropZone(QWidget):
 
     def set_file(self, file_path: str):
         if file_path and os.path.isfile(file_path):
+            if not self.is_supported_file(file_path):
+                self.shake()
+                return
             self._current_file = os.path.abspath(file_path)
             self._update_state()
             self.file_selected.emit(self._current_file)
             self.update()
         elif not file_path:
             self.clear_file()
+        else:
+            self.shake()
 
     def clear_file(self):
         if not self._current_file:
@@ -282,17 +297,22 @@ class FileDropZone(QWidget):
         super().mousePressEvent(event)
 
     def browse_file(self):
+        video_patterns = " ".join(f"*{ext}" for ext in self.SUPPORTED_VIDEO_EXTENSIONS)
+        audio_patterns = " ".join(f"*{ext}" for ext in self.SUPPORTED_AUDIO_EXTENSIONS)
+        all_patterns = f"{video_patterns} {audio_patterns}"
         filters = (
-            "Wszystkie pliki multimedialne (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.ts *.mts *.wav *.mp3 *.m4a *.flac *.aac *.ogg *.aiff);;"
-            "Pliki wideo (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.ts *.mts);;"
-            "Pliki audio (*.wav *.mp3 *.m4a *.flac *.aac *.ogg *.aiff);;"
-            "Wszystkie pliki (*.*)"
+            f"Pliki multimedialne ({all_patterns});;"
+            f"Pliki wideo ({video_patterns});;"
+            f"Pliki audio ({audio_patterns})"
         )
         path, _ = QFileDialog.getOpenFileName(
             self, "Wybierz plik wideo lub audio", "", filters
         )
         if path:
-            self.set_file(path)
+            if self.is_supported_file(path):
+                self.set_file(path)
+            else:
+                self.shake()
 
     # ── Drag and Drop Handlers ───────────────────────────────────────────────
     def dragEnterEvent(self, event):
@@ -300,12 +320,21 @@ class FileDropZone(QWidget):
             urls = event.mimeData().urls()
             if urls:
                 fp = urls[0].toLocalFile()
-                ext = os.path.splitext(fp)[1].lower()
-                if ext in self.SUPPORTED_EXTENSIONS or os.path.isfile(fp):
+                if fp and self.is_supported_file(fp):
                     event.acceptProposedAction()
                     self._is_drag_active = True
                     self._update_empty_icon(is_hover=True)
                     self.update()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                fp = urls[0].toLocalFile()
+                if fp and self.is_supported_file(fp):
+                    event.acceptProposedAction()
                     return
         event.ignore()
 
@@ -322,11 +351,13 @@ class FileDropZone(QWidget):
             urls = event.mimeData().urls()
             if urls:
                 fp = urls[0].toLocalFile()
-                if os.path.isfile(fp):
+                if fp and os.path.isfile(fp) and self.is_supported_file(fp):
                     self.set_file(fp)
                     event.acceptProposedAction()
                     self.update()
                     return
+                else:
+                    self.shake()
         event.ignore()
 
     def shake(self):

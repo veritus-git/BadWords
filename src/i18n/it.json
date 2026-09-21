@@ -432,5 +432,6 @@
     "tt_why_silence_options_hidden": "<b>Rilevamento silenzio per file locali:</b><br><br>In modalità file locale, il rilevamento del silenzio apre<br>l'anteprima completa della timeline e l'editor.<br><br>Puoi esaminare tutti i tagli di silenzio rilevati, modificarli<br>manualmente ed esportare senza perdita con Seamless Cut.<br><br><i>Il taglio diretto sulla timeline e la colorazione delle clip<br>sono disponibili esclusivamente quando connessi a DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Rilevamento silenzio: la trascrizione vocale non è stata eseguita]",
     "lbl_seamless_cut_export": "Esportazione taglio senza perdita (Seamless Cut)",
-    "msg_seamless_cut_success": "Taglio senza perdita completato con successo!\nSalvato in: {path}"
+    "msg_seamless_cut_success": "Taglio senza perdita completato con successo!\nSalvato in: {path}",
+    "msg_unsupported_file_format": "Formato di file non supportato. Seleziona un file video o audio valido."
 }
