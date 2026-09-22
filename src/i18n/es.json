@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Solo resalta el silencio detectado con un color.",
     "tt_mark_filler_words": "Resalta automáticamente en rojo las muletillas introducidas arriba.",
     "tt_sync_davinci_chapter": "Cambia automáticamente la línea de tiempo en DaVinci para que coincida con la Edición seleccionada arriba.",
-    "tt_model_size_info": "Los valores de GB que se muestran en el menú desplegable indican el consumo estimado de <b>RAM / VRAM</b> durante la transcripción.<br><br><b>Espacio en disco estimado:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Nota: El uso real de la memoria puede variar según el Tipo de Cómputo (int/float) seleccionado y la arquitectura del hardware.</i>",
+    "tt_model_size_info": "<!-- raw -->Los valores de GB que se muestran en el menú desplegable indican el<br>consumo estimado de <b>RAM / VRAM</b> durante la transcripción.<br><br><b>Espacio en disco estimado:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Nota: El uso real de la memoria puede variar según el<br>Tipo de Cómputo (int/float) seleccionado y la arquitectura del hardware.</i>",
     "btn_minimize": "Minimizar",
     "btn_maximize": "Maximizar",
     "lbl_auto_check_updates": "Notificarme sobre nuevas versiones",

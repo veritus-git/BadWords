@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Highlights the detected silence with a color.",
     "tt_mark_filler_words": "Automatically highlights the filler words you entered above in red.",
     "tt_sync_davinci_chapter": "Automatically switches the active timeline in DaVinci to match the Edit you select at the top of the screen.",
-    "tt_model_size_info": "The GB values shown in the dropdown indicate the estimated <b>RAM / VRAM</b> consumption during transcription.<br><br><b>Estimated Disk Space:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Note: Actual memory usage may vary depending on the selected Compute Type (int/float) and hardware architecture.</i>",
+    "tt_model_size_info": "<!-- raw -->The GB values shown in the dropdown indicate the<br>estimated <b>RAM / VRAM</b> consumption during transcription.<br><br><b>Estimated Disk Space:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Note: Actual memory usage may vary depending on the<br>selected Compute Type (int/float) and hardware architecture.</i>",
     "btn_minimize": "Minimize",
     "btn_maximize": "Maximize",
     "lbl_auto_check_updates": "Notify me about new versions",

@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Hebt die erkannte Stille nur farblich hervor.",
     "tt_mark_filler_words": "Hebt die oben eingegebenen Füllwörter automatisch rot hervor.",
     "tt_sync_davinci_chapter": "Wechselt automatisch die aktive Timeline in DaVinci passend zum oben ausgewählten Edit.",
-    "tt_model_size_info": "Die im Dropdown-Menü angezeigten GB-Werte geben den geschätzten <b>RAM- / VRAM-Verbrauch</b> während der Transkription an.<br><br><b>Geschätzter Speicherplatz:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Hinweis: Die tatsächliche Speichernutzung kann je nach ausgewähltem Berechnungstyp (int/float) und Hardwarearchitektur variieren.</i>",
+    "tt_model_size_info": "<!-- raw -->Die im Dropdown-Menü angezeigten GB-Werte geben den<br>geschätzten <b>RAM- / VRAM-Verbrauch</b> während der Transkription an.<br><br><b>Geschätzter Speicherplatz:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Hinweis: Die tatsächliche Speichernutzung kann je nach<br>ausgewähltem Berechnungstyp (int/float) und Hardwarearchitektur variieren.</i>",
     "btn_minimize": "Minimieren",
     "btn_maximize": "Maximieren",
     "lbl_auto_check_updates": "Benachrichtige mich über neue Versionen",

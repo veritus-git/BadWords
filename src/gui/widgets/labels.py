@@ -173,13 +173,15 @@ class IDETooltip(QLabel):
         super().__init__()
         self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setWordWrap(True)
+        self.pad_v = config.S(5)
+        self.pad_h = config.S(7)
         self.setStyleSheet(f"""
             QLabel {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #3c3c3c;
                 border-radius: {config.S(4)}px;
-                padding: {config.S(6)}px {config.S(10)}px;
+                padding: {self.pad_v}px {self.pad_h}px;
                 font-family: '{config.UI_FONT_NAME}', sans-serif;
                 font-size: 9pt;
             }}
@@ -194,7 +196,22 @@ class IDETooltip(QLabel):
             self.adjustSize()
             return
 
-        # Strip any wrapping outer container divs if passed from legacy code
+        # 1. Explicit raw formatting override (<!-- raw --> or <raw width=...>)
+        raw_match = re.match(
+            r'^\s*(?:<!--\s*raw(?:\s+width=(\d+))?\s*-->|<raw(?:\s+width=(\d+))?>)(.*?)(?:</raw>)?$',
+            text,
+            flags=re.DOTALL | re.IGNORECASE
+        )
+        if raw_match:
+            custom_w = raw_match.group(1) or raw_match.group(2)
+            content = raw_match.group(3).strip()
+            target_w = config.S(int(custom_w)) if custom_w else config.S(400)
+            self.setFixedWidth(target_w)
+            self.setText(content)
+            self.adjustSize()
+            return
+
+        # 2. Clean input
         clean_input = text.strip()
         outer_div_match = re.match(r'^<div\s+style=[\'"][^\'"]*[\'"]>(.*)</div>$', clean_input, flags=re.DOTALL | re.IGNORECASE)
         if outer_div_match:
@@ -209,10 +226,11 @@ class IDETooltip(QLabel):
         cleaned_paras = []
         total_plain_chars = 0
         for p in raw_paras:
-            lines = [line.strip() for line in p.split('\n') if line.strip()]
-            is_bullet_list = any(l.startswith(('-', '•', '*')) for l in lines)
+            # Detect bullet list lines separated by either \n or <br>
+            p_lines = [l.strip() for l in re.split(r'(?:<br\s*/?>|\n)', p) if l.strip()]
+            is_bullet_list = any(l.startswith(('-', '•', '*')) for l in p_lines)
             if is_bullet_list:
-                cleaned_lines = [re.sub(r'\s+', ' ', l).strip() for l in lines]
+                cleaned_lines = [re.sub(r'\s+', ' ', l).strip() for l in p_lines]
                 p_clean = '<br>'.join(cleaned_lines)
             else:
                 p_sub = re.sub(r'<br\s*/?>', ' ', p, flags=re.IGNORECASE)
@@ -224,15 +242,13 @@ class IDETooltip(QLabel):
         from PySide6.QtGui import QTextDocument
         doc = QTextDocument()
         doc.setDefaultFont(self.font())
+        doc.setDocumentMargin(0)
 
-        html_parts = []
-        for i, p in enumerate(cleaned_paras):
-            margin_b = config.S(8) if i < len(cleaned_paras) - 1 else 0
-            html_parts.append(f"<div style='margin-bottom: {margin_b}px; line-height: 140%;'>{p}</div>")
-        full_html = f"<div style='color: #d4d4d4;'>{''.join(html_parts)}</div>"
+        # Using <br><br> between paragraphs ensures even top/bottom padding without block-level div inflation
+        full_html = '<br><br>'.join(cleaned_paras)
         doc.setHtml(full_html)
 
-        pad = config.S(24)
+        pad = 2 * self.pad_h + 4
         ideal_w = doc.idealWidth()
 
         max_w_wide = config.S(540)

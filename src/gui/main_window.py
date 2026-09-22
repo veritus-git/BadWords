@@ -499,16 +499,39 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         self._enforce_native_always_on_top()
-        self._sync_script_edit_height()
+        self._sync_script_edit_height(animated=False)
 
     def moveEvent(self, event):
         super().moveEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._sync_script_edit_height()
+        self._sync_script_edit_height(animated=False)
 
-    def _sync_script_edit_height(self):
+    def animate_script_edit_height(self, target_h: int, duration: int = 200):
+        if not hasattr(self, 'welcome_script_edit'):
+            return
+        if getattr(self, '_script_h_anim', None) and self._script_h_anim.state() == QVariantAnimation.Running:
+            self._script_h_anim.stop()
+
+        start_h = self.welcome_script_edit.height()
+        if start_h == target_h or duration <= 0:
+            self.welcome_script_edit.setFixedHeight(target_h)
+            return
+
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(start_h)
+        anim.setEndValue(target_h)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        anim.valueChanged.connect(lambda h: self.welcome_script_edit.setFixedHeight(int(h)))
+        def _on_finish():
+            self.welcome_script_edit.setFixedHeight(target_h)
+        anim.finished.connect(_on_finish)
+        self._script_h_anim = anim
+        anim.start()
+
+    def _sync_script_edit_height(self, animated: bool = True):
         if not hasattr(self, 'welcome_script_edit') or not hasattr(self, 'w_row_acc') or not hasattr(self, 'settings_container'):
             return
         try:
@@ -527,7 +550,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
             target_h = p_bottom - top_offset
             if target_h > config.S(50):
-                self.welcome_script_edit.setFixedHeight(target_h)
+                cur_h = self.welcome_script_edit.height()
+                if animated and self.isVisible() and abs(cur_h - target_h) > 2:
+                    self.animate_script_edit_height(target_h, 200)
+                else:
+                    self.welcome_script_edit.setFixedHeight(target_h)
         except Exception:
             pass
 
@@ -2795,7 +2822,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             return
 
         if checked:
-            self._sync_script_edit_height()
+            self._sync_script_edit_height(animated=False)
             self.script_container.setVisible(True)
 
         has_btn = hasattr(self, 'btn_import_wrapper')
@@ -2835,7 +2862,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'slider_widget'):
                 self.slider_widget.setFixedWidth(w_settings + end_w)
             if checked:
-                self._sync_script_edit_height()
+                self._sync_script_edit_height(animated=False)
             else:
                 self.script_container.setVisible(False)
             if has_btn:
