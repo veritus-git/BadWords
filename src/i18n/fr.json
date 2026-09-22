@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Met uniquement en évidence le silence détecté avec une\ncouleur.",
     "tt_mark_filler_words": "Surligne automatiquement en rouge les mots parasites saisis ci-dessus.",
     "tt_sync_davinci_chapter": "Bascule automatiquement la timeline dans DaVinci pour correspondre à l'Édition sélectionnée en haut.",
-    "tt_model_size_info": "Les valeurs en Go affichées dans le menu déroulant indiquent la consommation estimée de <b>RAM / VRAM</b> pendant la transcription.<br><br><b>Espace disque estimé :</b><br>• Tiny : <b>~75 Mo</b><br>• Base : <b>~140 Mo</b><br>• Small : <b>~480 Mo</b><br>• Medium : <b>~1.5 Go</b><br>• Large Turbo : <b>~1.6 Go</b><br>• Large : <b>~3.1 Go</b><br><br><i>Remarque : l'utilisation réelle de la mémoire peut varier en fonction du Type de Calcul (int/float) sélectionné et de l'architecture matérielle.</i>",
+    "tt_model_size_info": "<!-- raw -->Les valeurs en Go affichées dans le menu déroulant indiquent la<br>consommation estimée de <b>RAM / VRAM</b> pendant la transcription.<br><br><b>Espace disque estimé :</b><br>• Tiny : <b>~75 Mo</b><br>• Base : <b>~140 Mo</b><br>• Small : <b>~480 Mo</b><br>• Medium : <b>~1.5 Go</b><br>• Large Turbo : <b>~1.6 Go</b><br>• Large : <b>~3.1 Go</b><br><br><i>Remarque : l'utilisation réelle de la mémoire peut varier en fonction du<br>Type de Calcul (int/float) sélectionné et de l'architecture matérielle.</i>",
     "btn_minimize": "Réduire",
     "btn_maximize": "Agrandir",
     "lbl_auto_check_updates": "M'avertir des nouvelles versions",

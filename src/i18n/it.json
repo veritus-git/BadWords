@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Evidenzia semplicemente il silenzio rilevato con un\ncolore.",
     "tt_mark_filler_words": "Evidenzia automaticamente in rosso i riempitivi inseriti sopra.",
     "tt_sync_davinci_chapter": "Cambia automaticamente la timeline in DaVinci per farla corrispondere all'Editing selezionato in alto.",
-    "tt_model_size_info": "I valori in GB mostrati nel menu a discesa indicano il consumo stimato di <b>RAM / VRAM</b> durante la trascrizione.<br><br><b>Spazio su disco stimato:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Nota: L'utilizzo effettivo della memoria può variare a seconda del tipo di calcolo (int/float) selezionato e dell'architettura hardware.</i>",
+    "tt_model_size_info": "<!-- raw -->I valori in GB mostrati nel menu a discesa indicano il<br>consumo stimato di <b>RAM / VRAM</b> durante la trascrizione.<br><br><b>Spazio su disco stimato:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Nota: L'utilizzo effettivo della memoria può variare a seconda del<br>tipo di calcolo (int/float) selezionato e dell'architettura hardware.</i>",
     "btn_minimize": "Riduci a icona",
     "btn_maximize": "Ingrandisci",
     "lbl_auto_check_updates": "Avvisami delle nuove versioni",

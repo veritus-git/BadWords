@@ -655,12 +655,10 @@ class WelcomePageView(QWidget):
 
         def _on_anim_step(y):
             self.welcome_root.move(0, int(y))
-            if hasattr(self.win, '_sync_script_edit_height'):
-                self.win._sync_script_edit_height()
 
         anim.valueChanged.connect(_on_anim_step)
         if hasattr(self.win, '_sync_script_edit_height'):
-            anim.finished.connect(self.win._sync_script_edit_height)
+            anim.finished.connect(lambda: self.win._sync_script_edit_height(animated=False))
         self._y_anim = anim
         anim.start()
 
@@ -1556,10 +1554,7 @@ def build_welcome_view(win) -> QWidget:
 
             page.animate_y_to_content(200)
             if hasattr(win, '_sync_script_edit_height'):
-                win._sync_script_edit_height()
-                QTimer.singleShot(0, win._sync_script_edit_height)
-                QTimer.singleShot(50, win._sync_script_edit_height)
-                QTimer.singleShot(220, win._sync_script_edit_height)
+                win._sync_script_edit_height(animated=True)
 
         win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
         win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))

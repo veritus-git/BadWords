@@ -403,7 +403,7 @@ class FileDropZone(QWidget):
         h = float(rect.height())
         r = float(config.S(4))
 
-        # Background
+        # Background - dark graphite blending harmoniously with #1c1c1c UI
         if getattr(self, '_shake_err_border', False):
             bg_color = QColor("#221414")
             border_color = QColor("#ed4245")
@@ -415,12 +415,12 @@ class FileDropZone(QWidget):
             pen_style = Qt.SolidLine
             pen_w = 2.0
         elif self._current_file:
-            bg_color = QColor("#222222")
+            bg_color = QColor("#1a1a1a")
             border_color = QColor("#3a3a3a")
             pen_style = Qt.SolidLine
             pen_w = 1.0
         else:
-            bg_color = QColor("#222222")
+            bg_color = QColor("#1a1a1a")
             border_color = QColor("#3a3a3a")
             pen_style = Qt.DashLine
             pen_w = 1.2
@@ -428,16 +428,15 @@ class FileDropZone(QWidget):
         # 1. Fill background with flat top corners and rounded bottom corners
         path = QPainterPath()
         path.moveTo(0.0, 0.0)
+        path.lineTo(0.0, h - r)
+        path.quadTo(0.0, h, r, h)
+        path.lineTo(w - r, h)
+        path.quadTo(w, h, w, h - r)
         path.lineTo(w, 0.0)
-        path.lineTo(w, h - r)
-        path.arcTo(w - 2.0 * r, h - 2.0 * r, 2.0 * r, 2.0 * r, 0.0, -90.0)
-        path.lineTo(r, h)
-        path.arcTo(0.0, h - 2.0 * r, 2.0 * r, 2.0 * r, 270.0, -90.0)
-        path.lineTo(0.0, 0.0)
         path.closeSubpath()
         p.fillPath(path, bg_color)
 
-        # 2. Draw border along left, bottom, and right (seamless flush top)
+        # 2. Draw border along left, bottom, and right (seamless perpendicular vertical lines)
         pen = QPen(border_color, pen_w, pen_style)
         if pen_style == Qt.DashLine:
             pen.setDashPattern([4, 4])
@@ -446,16 +445,15 @@ class FileDropZone(QWidget):
         half_w = pen_w / 2.0
         x0 = half_w
         x1 = w - half_w
-        y0 = 0.0
         y1 = h - half_w
 
         outline = QPainterPath()
-        outline.moveTo(x0, y0)
+        outline.moveTo(x0, 0.0)
         outline.lineTo(x0, y1 - r)
-        outline.arcTo(x0, y1 - 2.0 * r, 2.0 * r, 2.0 * r, 180.0, -90.0)
+        outline.quadTo(x0, y1, x0 + r, y1)
         outline.lineTo(x1 - r, y1)
-        outline.arcTo(x1 - 2.0 * r, y1 - 2.0 * r, 2.0 * r, 2.0 * r, 270.0, -90.0)
-        outline.lineTo(x1, y0)
+        outline.quadTo(x1, y1, x1, y1 - r)
+        outline.lineTo(x1, 0.0)
         p.drawPath(outline)
 
         # 3. Subtle seam separator line at top

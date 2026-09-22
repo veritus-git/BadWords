@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Jedynie podświetla wykrytą ciszę kolorem.",
     "tt_mark_filler_words": "Automatycznie podświetla na czerwono wpisane wyżej słowa-przerywniki.",
     "tt_sync_davinci_chapter": "Automatycznie przełącza oś czasu w DaVinci tak, aby pasowała do Edycji wybranej na górnym pasku.",
-    "tt_model_size_info": "Wartości GB wyświetlane na liście wskazują szacowane zużycie pamięci <b>RAM / VRAM</b> podczas transkrypcji.<br><br><b>Szacowane miejsce na dysku:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Uwaga: Rzeczywiste zużycie pamięci może się różnić w zależności od wybranego typu obliczeń (int/float) oraz architektury sprzętowej.</i>",
+    "tt_model_size_info": "<!-- raw -->Wartości GB wyświetlane na liście wskazują<br>szacowane zużycie pamięci <b>RAM / VRAM</b> podczas transkrypcji.<br><br><b>Szacowane miejsce na dysku:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Uwaga: Rzeczywiste zużycie pamięci może się różnić w zależności od<br>wybranego typu obliczeń (int/float) oraz architektury sprzętowej.</i>",
     "btn_minimize": "Minimalizuj",
     "btn_maximize": "Maksymalizuj",
     "lbl_auto_check_updates": "Powiadamiaj mnie o nowych wersjach",

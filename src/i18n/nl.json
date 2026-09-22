@@ -357,7 +357,7 @@
     "tt_detect_and_mark_silence": "Markeert de gedetecteerde stilte alleen met een kleur.",
     "tt_mark_filler_words": "Markeert de hierboven ingevulde vulwoorden automatisch in het rood.",
     "tt_sync_davinci_chapter": "Schakelt de tijdlijn in DaVinci automatisch over naar de Edit die je bovenaan selecteert.",
-    "tt_model_size_info": "De GB-waarden in het keuzemenu geven het geschatte <b>RAM- / VRAM-verbruik</b> tijdens de transcriptie aan.<br><br><b>Geschatte schijfruimte:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Opmerking: Het werkelijke geheugengebruik kan variëren, afhankelijk van het geselecteerde rekentype (int/float) en de hardware-architectuur.</i>",
+    "tt_model_size_info": "<!-- raw -->De GB-waarden in het keuzemenu geven het<br>geschatte <b>RAM- / VRAM-verbruik</b> tijdens de transcriptie aan.<br><br><b>Geschatte schijfruimte:</b><br>• Tiny: <b>~75 MB</b><br>• Base: <b>~140 MB</b><br>• Small: <b>~480 MB</b><br>• Medium: <b>~1.5 GB</b><br>• Large Turbo: <b>~1.6 GB</b><br>• Large: <b>~3.1 GB</b><br><br><i>Opmerking: Het werkelijke geheugengebruik kan variëren, afhankelijk van het<br>geselecteerde rekentype (int/float) en de hardware-architectuur.</i>",
     "btn_minimize": "Minimaliseren",
     "btn_maximize": "Maximaliseren",
     "lbl_auto_check_updates": "Houd mij op de hoogte van nieuwe versies",
