@@ -2757,8 +2757,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             info.setStyleSheet("color: #888888; font-size: 11pt;")
             
         tt_text = self.txt(tooltip_key) if hasattr(self, 'txt') else tooltip_key
-        formatted_text = tt_text.replace("\n", "<br>") if tt_text else ""
-        info.custom_tooltip_text = f"<div style='max-width: {config.S(360)}px; line-height: 135%;'>{formatted_text}</div>"
+        info.custom_tooltip_text = tt_text or ""
         info.setCursor(Qt.WhatsThisCursor)
         
         def instant_tooltip(event):

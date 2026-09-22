@@ -17,7 +17,7 @@ vector SVG icons, and embedded Ubuntu font consistency across all platforms.
 """
 
 import os
-from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QRectF, QRect
+from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QRectF, QRect, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
@@ -394,8 +394,7 @@ class SourceHeaderWidget(QWidget):
 
             if hasattr(self, 'info_icon') and self.info_icon:
                 self.info_icon.show()
-                formatted_tip = tip.replace('\n', '<br>')
-                self.info_icon.custom_tooltip_text = f"<div style='max-width: {config.S(360)}px; line-height: 135%;'>{formatted_tip}</div>"
+                self.info_icon.custom_tooltip_text = tip or ""
             self.setToolTip("")
 
         # Update stop bridge buttons visibility
@@ -407,7 +406,7 @@ class SourceHeaderWidget(QWidget):
 
 class DavinciSourceBox(QWidget):
     """
-    Groups DaVinci Resolve timeline selector and track selector.
+    Groups DaVinci Resolve timeline selector and track selector with consistent 14px gap.
     """
     def __init__(self, vbox_tl: QVBoxLayout, vbox_tr: QVBoxLayout, parent=None):
         super().__init__(parent)
@@ -416,15 +415,15 @@ class DavinciSourceBox(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addLayout(vbox_tl)
-        lay.addSpacing(config.S(8))
+        lay.addSpacing(config.S(14))
         lay.addLayout(vbox_tr)
-        self.setFixedHeight(config.S(112))
+        self.setFixedHeight(config.S(118))
 
 
 class SourceAreaWidget(QWidget):
     """
     Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
-    Cleanly switches between File state (90px) and DaVinci state (112px) with zero jitter.
+    Cleanly switches between File state (90px) and DaVinci state (14px spacer + 118px controls = 132px).
     """
     def __init__(self, drop_zone: QWidget, davinci_box: QWidget, initial_mode: str = "file", parent=None):
         super().__init__(parent)
@@ -432,25 +431,79 @@ class SourceAreaWidget(QWidget):
         self.davinci_box = davinci_box
 
         self.H_FILE = config.S(90)
-        self.H_RESOLVE = config.S(112)
+        self.H_RESOLVE_GAP = config.S(14)
+        self.H_RESOLVE_BOX = config.S(118)
+        self.H_RESOLVE = self.H_RESOLVE_GAP + self.H_RESOLVE_BOX
+
+        self.resolve_spacer = QWidget(self)
+        self.resolve_spacer.setFixedHeight(self.H_RESOLVE_GAP)
+        self.resolve_spacer.setStyleSheet("background: transparent;")
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.drop_zone)
+        lay.addWidget(self.resolve_spacer)
         lay.addWidget(self.davinci_box)
 
         self.set_mode(initial_mode)
 
     def set_mode(self, mode: str):
         if mode == "file":
+            self.resolve_spacer.hide()
             self.davinci_box.hide()
             self.drop_zone.show()
             self.setFixedHeight(self.H_FILE)
         else:
             self.drop_zone.hide()
+            self.resolve_spacer.show()
             self.davinci_box.show()
             self.setFixedHeight(self.H_RESOLVE)
+
+
+def update_source_combo_style(combo, mode: str):
+    """Styles the source dropdown: flat bottom corners in file mode to extend into the drop zone, rounded in resolve mode."""
+    r = config.S(4)
+    h = config.S(30) - 2
+    pad_x = config.S(8)
+    if mode == "file":
+        combo.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                text-align: left;
+                padding: 0px {pad_x}px;
+                border: 1px solid #3a3a3a;
+                border-bottom: 1px solid #282828;
+                border-top-left-radius: {r}px;
+                border-top-right-radius: {r}px;
+                border-bottom-left-radius: 0px;
+                border-bottom-right-radius: 0px;
+                min-height: {h}px;
+                max-height: {h}px;
+                height: {h}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QPushButton:hover {{ border-color: {config.BTN_BG}; }}
+        """)
+    else:
+        combo.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                text-align: left;
+                padding: 0px {pad_x}px;
+                border: 1px solid #3a3a3a;
+                border-radius: {r}px;
+                min-height: {h}px;
+                max-height: {h}px;
+                height: {h}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QPushButton:hover {{ border-color: {config.BTN_BG}; }}
+        """)
 
 
 
@@ -565,7 +618,7 @@ class WelcomePageView(QWidget):
             content_h = config.S(322) if idx == 0 else config.S(404)
         else:
             if idx == 0:
-                content_h = config.S(366) if source_type == 'file' else config.S(388)
+                content_h = config.S(366) if source_type == 'file' else config.S(408)
             else:
                 content_h = config.S(408) if source_type == 'file' else config.S(458)
 
@@ -590,6 +643,8 @@ class WelcomePageView(QWidget):
         end_y = self._target_y(self._current_idx)
         if start_y == end_y or duration <= 0:
             self.welcome_root.move(0, end_y)
+            if hasattr(self.win, '_sync_script_edit_height'):
+                self.win._sync_script_edit_height()
             return
 
         anim = QVariantAnimation(self)
@@ -597,7 +652,15 @@ class WelcomePageView(QWidget):
         anim.setStartValue(start_y)
         anim.setEndValue(end_y)
         anim.setEasingCurve(QEasingCurve.InOutCubic)
-        anim.valueChanged.connect(lambda y: self.welcome_root.move(0, int(y)))
+
+        def _on_anim_step(y):
+            self.welcome_root.move(0, int(y))
+            if hasattr(self.win, '_sync_script_edit_height'):
+                self.win._sync_script_edit_height()
+
+        anim.valueChanged.connect(_on_anim_step)
+        if hasattr(self.win, '_sync_script_edit_height'):
+            anim.finished.connect(self.win._sync_script_edit_height)
         self._y_anim = anim
         anim.start()
 
@@ -926,7 +989,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_ref_source_0.setVisible(win.current_source_type == "resolve")
 
         win.settings_layout.addLayout(_hbox_source_0)
-        win.settings_layout.addSpacing(config.S(4))
+        update_source_combo_style(win.combo_source_0, win.current_source_type)
 
         win.drop_zone_0 = FileDropZone()
         win.davinci_box_0 = DavinciSourceBox(
@@ -936,14 +999,14 @@ def build_welcome_view(win) -> QWidget:
         win.source_area_0 = SourceAreaWidget(win.drop_zone_0, win.davinci_box_0, initial_mode=win.current_source_type)
         win.source_area_0.set_mode(win.current_source_type)
         win.settings_layout.addWidget(win.source_area_0)
-        win.settings_layout.addSpacing(config.S(10))
+        win.settings_layout.addSpacing(config.S(14))
 
     else:
         # Embedded DaVinci Resolve mode: exact original layout
         win.settings_layout.addLayout(_vbox_tl0)
-        win.settings_layout.addSpacing(config.S(10))
+        win.settings_layout.addSpacing(config.S(14))
         win.settings_layout.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_0))
-        win.settings_layout.addSpacing(config.S(10))
+        win.settings_layout.addSpacing(config.S(14))
 
     # ── 2. Language Selection ─────────────────────────────────────────────────
     lang_items = list(config.SUPPORTED_LANGUAGES.values())
@@ -955,7 +1018,7 @@ def build_welcome_view(win) -> QWidget:
     win._combo_lang.setText(display_name if display_name in lang_items else placeholder)
     win._combo_lang.valueChanged.connect(lambda v: win.engine.save_preferences({"lang": v}))
     win.settings_layout.addLayout(_row(win.txt("lbl_lang"), win._combo_lang))
-    win.settings_layout.addSpacing(config.S(10))
+    win.settings_layout.addSpacing(config.S(14))
 
     # ── 3. Model Selection ────────────────────────────────────────────────────
     model_items = [
@@ -1252,7 +1315,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_ref_source_1.setVisible(win.current_source_type == "resolve")
 
         l_fast.addLayout(_hbox_source_1)
-        l_fast.addSpacing(config.S(4))
+        update_source_combo_style(win.combo_source_1, win.current_source_type)
 
         win.drop_zone_1 = FileDropZone()
         win.davinci_box_1 = DavinciSourceBox(
@@ -1262,14 +1325,14 @@ def build_welcome_view(win) -> QWidget:
         win.source_area_1 = SourceAreaWidget(win.drop_zone_1, win.davinci_box_1, initial_mode=win.current_source_type)
         win.source_area_1.set_mode(win.current_source_type)
         l_fast.addWidget(win.source_area_1)
-        l_fast.addSpacing(config.S(10))
+        l_fast.addSpacing(config.S(14))
 
     else:
         # Embedded DaVinci Resolve mode: exact original layout
         l_fast.addLayout(_vbox_tl1)
-        l_fast.addSpacing(config.S(10))
+        l_fast.addSpacing(config.S(14))
         l_fast.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_1))
-        l_fast.addSpacing(config.S(10))
+        l_fast.addSpacing(config.S(14))
 
     # ── 2. Silence Threshold Inputs ───────────────────────────────────────────
     h_in = config.S(30) - 2
@@ -1446,6 +1509,8 @@ def build_welcome_view(win) -> QWidget:
             win.combo_source_1.blockSignals(True)
             win.combo_source_0.setText(opt_file if idx == 0 else opt_dr)
             win.combo_source_1.setText(opt_file if idx == 0 else opt_dr)
+            update_source_combo_style(win.combo_source_0, mode)
+            update_source_combo_style(win.combo_source_1, mode)
             win.combo_source_0.blockSignals(False)
             win.combo_source_1.blockSignals(False)
 
@@ -1471,6 +1536,15 @@ def build_welcome_view(win) -> QWidget:
             if hasattr(win, 'source_area_1'):
                 win.source_area_1.set_mode(mode)
 
+            if hasattr(win, 'welcome_stack') and win.welcome_stack.currentWidget():
+                curr_w = win.welcome_stack.currentWidget()
+                if curr_w.layout():
+                    curr_w.layout().activate()
+            if hasattr(win, 'settings_layout') and win.settings_layout:
+                win.settings_layout.activate()
+            if hasattr(win, 'slider_widget') and win.slider_widget:
+                win.slider_widget.adjustSize()
+
             if mode == "file":
                 if hasattr(win, 'w_fs_resolve_group'):
                     win.w_fs_resolve_group.hide()
@@ -1483,6 +1557,9 @@ def build_welcome_view(win) -> QWidget:
             page.animate_y_to_content(200)
             if hasattr(win, '_sync_script_edit_height'):
                 win._sync_script_edit_height()
+                QTimer.singleShot(0, win._sync_script_edit_height)
+                QTimer.singleShot(50, win._sync_script_edit_height)
+                QTimer.singleShot(220, win._sync_script_edit_height)
 
         win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
         win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))

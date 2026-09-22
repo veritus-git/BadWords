@@ -173,26 +173,90 @@ class IDETooltip(QLabel):
         super().__init__()
         self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setWordWrap(True)
-        self.setMaximumWidth(config.S(380))
         self.setStyleSheet(f"""
             QLabel {{
                 background-color: #1e1e1e;
-                color: #cccccc;
-                border: 1px solid #454545;
+                color: #d4d4d4;
+                border: 1px solid #3c3c3c;
                 border-radius: {config.S(4)}px;
                 padding: {config.S(6)}px {config.S(10)}px;
                 font-family: '{config.UI_FONT_NAME}', sans-serif;
                 font-size: 9pt;
-                line-height: 135%;
             }}
         """)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-    def show_at(self, widget, text, is_right_side=False):
-        if text and "\n" in text and "<br" not in text:
-            text = text.replace("\n", "<br>")
-        self.setText(text)
+    def prepare_content(self, text: str):
+        import re
+        if not text:
+            self.setText("")
+            self.setFixedWidth(config.S(100))
+            self.adjustSize()
+            return
+
+        # Strip any wrapping outer container divs if passed from legacy code
+        clean_input = text.strip()
+        outer_div_match = re.match(r'^<div\s+style=[\'"][^\'"]*[\'"]>(.*)</div>$', clean_input, flags=re.DOTALL | re.IGNORECASE)
+        if outer_div_match:
+            clean_input = outer_div_match.group(1).strip()
+
+        t = clean_input.replace('\r\n', '\n').replace('\r', '\n')
+        t = re.sub(r'</p>\s*<p[^>]*>', '\n\n', t, flags=re.IGNORECASE)
+        t = re.sub(r'</?p[^>]*>', '\n\n', t, flags=re.IGNORECASE)
+        t = re.sub(r'(?:<br\s*/?>\s*){2,}', '\n\n', t, flags=re.IGNORECASE)
+        raw_paras = [p.strip() for p in re.split(r'\n\s*\n+', t) if p.strip()]
+
+        cleaned_paras = []
+        total_plain_chars = 0
+        for p in raw_paras:
+            lines = [line.strip() for line in p.split('\n') if line.strip()]
+            is_bullet_list = any(l.startswith(('-', '•', '*')) for l in lines)
+            if is_bullet_list:
+                cleaned_lines = [re.sub(r'\s+', ' ', l).strip() for l in lines]
+                p_clean = '<br>'.join(cleaned_lines)
+            else:
+                p_sub = re.sub(r'<br\s*/?>', ' ', p, flags=re.IGNORECASE)
+                p_clean = re.sub(r'\s+', ' ', p_sub).strip()
+            plain_len = len(re.sub(r'<[^>]+>', '', p_clean))
+            cleaned_paras.append(p_clean)
+            total_plain_chars += plain_len
+
+        from PySide6.QtGui import QTextDocument
+        doc = QTextDocument()
+        doc.setDefaultFont(self.font())
+
+        html_parts = []
+        for i, p in enumerate(cleaned_paras):
+            margin_b = config.S(8) if i < len(cleaned_paras) - 1 else 0
+            html_parts.append(f"<div style='margin-bottom: {margin_b}px; line-height: 140%;'>{p}</div>")
+        full_html = f"<div style='color: #d4d4d4;'>{''.join(html_parts)}</div>"
+        doc.setHtml(full_html)
+
+        pad = config.S(24)
+        ideal_w = doc.idealWidth()
+
+        max_w_wide = config.S(540)
+        max_w_normal = config.S(400)
+
+        if len(cleaned_paras) == 1:
+            if ideal_w + pad <= max_w_wide:
+                target_w = int(ideal_w) + pad
+            elif total_plain_chars <= 140:
+                target_w = min(max_w_wide, config.S(480))
+            else:
+                target_w = max_w_normal
+        else:
+            if ideal_w + pad <= max_w_normal:
+                target_w = int(ideal_w) + pad
+            else:
+                target_w = max_w_normal
+
+        self.setFixedWidth(target_w)
+        self.setText(full_html)
         self.adjustSize()
+
+    def show_at(self, widget, text, is_right_side=False):
+        self.prepare_content(text)
         self.show_beside(widget, is_right_side=is_right_side)
 
     def show_beside(self, widget, is_right_side=False):
@@ -205,15 +269,19 @@ class IDETooltip(QLabel):
             x = global_pos.x() - self.width() - 5
 
         y = global_pos.y() + (rect.height() - self.height()) // 2
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        if x + self.width() > screen.right() - 10:
+            x = max(10, screen.right() - self.width() - 10)
+        if y + self.height() > screen.bottom() - 10:
+            y = max(10, screen.bottom() - self.height() - 10)
+        if y < screen.top() + 10:
+            y = screen.top() + 10
         self.move(x, y)
         self.show()
 
     def show_global(self, text, pos):
-        if text and "<html" not in text and "<!DOCTYPE" not in text:
-            if "\n" in text and "<br" not in text:
-                text = text.replace("\n", "<br>")
-        self.setText(text)
-        self.adjustSize()
+        self.prepare_content(text)
         x = pos.x()
         y = pos.y() + 15
         from PySide6.QtWidgets import QApplication
@@ -222,6 +290,8 @@ class IDETooltip(QLabel):
             x = max(10, screen.right() - self.width() - 10)
         if y + self.height() > screen.bottom() - 10:
             y = max(10, pos.y() - self.height() - 10)
+        if y < screen.top() + 10:
+            y = screen.top() + 10
         self.move(x, y)
         self.show()
 
