@@ -416,7 +416,7 @@
     "lbl_repetition_penalty": "Pénalité de répétition",
     "tt_clear_shortcut": "Effacer le raccourci",
     "src_source": "Source",
-    "src_local_file": "Fichier local",
+    "src_local_file": "Fichier",
     "src_davinci_resolve": "DaVinci Resolve",
     "lbl_drop_file_prompt": "Glissez-déposez un fichier vidéo ou audio ici",
     "lbl_drop_file_subprompt": "ou cliquez pour parcourir le disque",
@@ -429,14 +429,15 @@
     "lbl_fs_mark_info": "La coloration des clips n'est disponible que dans DaVinci Resolve.",
     "msg_resolve_not_connected": "Aucune connexion active à DaVinci Resolve. Assurez-vous que DaVinci Resolve Studio est lancé et que External Scripting est activé.",
     "lbl_why_options_hidden": "Pourquoi certaines options sont-elles masquées ?",
-    "tt_why_silence_options_hidden": "<b>Détection de silence pour fichiers locaux :</b><br><br>En mode fichier local, la détection de silence ouvre<br>l'aperçu complet de la timeline et l'éditeur.<br><br>Vous pouvez examiner toutes les coupes de silence détectées,<br>les ajuster manuellement et exporter sans perte via Seamless Cut.<br><br><i>Le découpage direct sur la timeline et la coloration des clips<br>sont disponibles exclusivement lors de la connexion à DaVinci Resolve.</i>",
+    "tt_why_silence_options_hidden": "<b>Détection de silence pour fichiers :</b><br><br>En mode fichier, la détection de silence ouvre<br>l'aperçu complet de la timeline et l'éditeur.<br><br>Vous pouvez examiner toutes les coupes de silence détectées,<br>les ajuster manuellement et exporter sans perte une fois prêt.<br><br><i>Le découpage direct sur la timeline et la coloration des clips<br>sont disponibles exclusivement lors de la connexion à DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Détection de silence : la transcription vocale n'a pas été effectuée]",
     "lbl_seamless_cut_export": "Export coupe sans perte (Seamless Cut)",
     "msg_seamless_cut_success": "Coupe sans perte terminée avec succès !\nEnregistré sous : {path}",
     "msg_unsupported_file_format": "Format de fichier non pris en charge. Veuillez sélectionner un fichier vidéo ou audio valide.",
     "status_resolve_bridge_connected": "Connecté (Bridge) : {project}",
-    "tt_resolve_connection_studio": "Assurez-vous que Préférences > Système > Général > 'External scripting using' est défini sur 'Local'.",
+    "tt_resolve_connection_studio": "Assurez-vous que Preferences > System > General > 'External scripting using' est défini sur 'Local'.",
     "tt_resolve_connection_free": "Ouvrez DaVinci Resolve et lancez Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Arrêter Bridge",
-    "tt_stop_bridge": "Arrêter BadWords Bridge dans DaVinci Resolve"
+    "tt_stop_bridge": "Arrêter BadWords Bridge dans DaVinci Resolve",
+    "tt_resolve_not_installed": "DaVinci Resolve n'a pas été trouvé. Il est recommandé de télécharger DaVinci Resolve pour profiter de toutes les fonctionnalités de BadWords."
 }

@@ -416,7 +416,7 @@
     "lbl_repetition_penalty": "Kara za powtórzenia",
     "tt_clear_shortcut": "Wyczyść skrót",
     "src_source": "Źródło",
-    "src_local_file": "Plik lokalny",
+    "src_local_file": "Plik",
     "src_davinci_resolve": "DaVinci Resolve",
     "lbl_drop_file_prompt": "Przeciągnij plik wideo lub audio tutaj",
     "lbl_drop_file_subprompt": "lub kliknij, aby wybrać z dysku",
@@ -429,14 +429,15 @@
     "lbl_fs_mark_info": "Kolorowanie klipów jest dostępne wyłącznie w DaVinci Resolve.",
     "msg_resolve_not_connected": "Brak aktywnego połączenia z DaVinci Resolve. Upewnij się, że DaVinci Resolve Studio jest uruchomione i opcja External Scripting jest włączona.",
     "lbl_why_options_hidden": "Dlaczego niektóre opcje są ukryte?",
-    "tt_why_silence_options_hidden": "<b>Wykrywanie ciszy dla pliku lokalnego:</b><br><br>W trybie pliku lokalnego badanie ciszy otwiera pełny<br>edytor osi czasu z podglądem.<br><br>Możesz tam przejrzeć wykryte fragmenty, dostosować je ręcznie,<br>a następnie zapisać zmiany bezstratnym montażem (Seamless Cut).<br><br><i>Bezpośrednie natychmiastowe cięcie oraz kolorowanie klipów na osi<br>są dostępne wyłącznie przy integracji z DaVinci Resolve.</i>",
+    "tt_why_silence_options_hidden": "<b>Wykrywanie ciszy dla pliku:</b><br><br>W trybie pliku badanie ciszy otwiera pełny<br>edytor osi czasu z podglądem.<br><br>Możesz tam przejrzeć wykryte fragmenty, dostosować je ręcznie,<br>a następnie wyeksportować bezstratnie w dowolnym momencie.<br><br><i>Bezpośrednie natychmiastowe cięcie oraz kolorowanie klipów na osi<br>są dostępne wyłącznie przy integracji z DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Wykrywanie ciszy: transkrypcja mowy nie była uruchamiana]",
     "lbl_seamless_cut_export": "Eksport bezstratny (Seamless Cut)",
     "msg_seamless_cut_success": "Bezstratny montaż zakończony pomyślnie!\nZapisano do: {path}",
     "msg_unsupported_file_format": "Nieobsługiwany format pliku. Wybierz poprawny plik wideo lub audio.",
     "status_resolve_bridge_connected": "Połączono (Bridge): {project}",
-    "tt_resolve_connection_studio": "Upewnij się, że DaVinci Resolve > Preferences > System > General > 'External scripting using' jest ustawione na 'Local'.",
+    "tt_resolve_connection_studio": "Upewnij się, że Preferences > System > General > 'External scripting using' jest ustawione na 'Local'.",
     "tt_resolve_connection_free": "W DaVinci Resolve uruchom: Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Zatrzymaj Bridge",
-    "tt_stop_bridge": "Zatrzymaj skrypt BadWords Bridge w DaVinci Resolve"
+    "tt_stop_bridge": "Zatrzymaj skrypt BadWords Bridge w DaVinci Resolve",
+    "tt_resolve_not_installed": "Nie znaleziono programu DaVinci Resolve. Dla pełni funkcji BadWords zalecane jest pobranie DaVinci Resolve."
 }

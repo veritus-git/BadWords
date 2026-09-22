@@ -416,7 +416,7 @@
     "lbl_repetition_penalty": "Repetition Penalty",
     "tt_clear_shortcut": "Clear shortcut",
     "src_source": "Source",
-    "src_local_file": "Local File",
+    "src_local_file": "File",
     "src_davinci_resolve": "DaVinci Resolve",
     "lbl_drop_file_prompt": "Drag & drop video or audio file here",
     "lbl_drop_file_subprompt": "or click to browse disk",
@@ -429,14 +429,15 @@
     "lbl_fs_mark_info": "Clip coloring is only available in DaVinci Resolve.",
     "msg_resolve_not_connected": "No active connection to DaVinci Resolve. Ensure DaVinci Resolve Studio is running and External Scripting is enabled.",
     "lbl_why_options_hidden": "Why some options are hidden?",
-    "tt_why_silence_options_hidden": "<b>Silence Detection for Local Files:</b><br><br>In local file mode, silence detection opens the full<br>timeline preview and editor.<br><br>You can review all detected silence cuts, adjust them<br>manually, and export losslessly using Seamless Cut when ready.<br><br><i>Direct timeline cutting and clip coloring are available<br>exclusively when connected to DaVinci Resolve.</i>",
+    "tt_why_silence_options_hidden": "<b>Silence Detection for Files:</b><br><br>In file mode, silence detection opens the full<br>timeline preview and editor.<br><br>You can review all detected silence cuts, adjust them<br>manually, and export losslessly when ready.<br><br><i>Direct timeline cutting and clip coloring are available<br>exclusively when connected to DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Silence Detection: speech transcription was not performed]",
     "lbl_seamless_cut_export": "Lossless Cut Export",
     "msg_seamless_cut_success": "Lossless cut completed successfully!\nSaved to: {path}",
     "msg_unsupported_file_format": "Unsupported file format. Please select a valid video or audio file.",
     "status_resolve_bridge_connected": "Connected (Bridge): {project}",
-    "tt_resolve_connection_studio": "DaVinci Resolve Studio: Ensure Preferences > System > General > 'External scripting using' is set to 'Local'.",
+    "tt_resolve_connection_studio": "Ensure Preferences > System > General > 'External scripting using' is set to 'Local'.",
     "tt_resolve_connection_free": "Open DaVinci Resolve and run Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Stop Bridge",
-    "tt_stop_bridge": "Stop BadWords Bridge running inside DaVinci Resolve"
+    "tt_stop_bridge": "Stop BadWords Bridge running inside DaVinci Resolve",
+    "tt_resolve_not_installed": "DaVinci Resolve was not found. Downloading DaVinci Resolve is recommended for the full functionality of BadWords."
 }

@@ -499,12 +499,37 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         self._enforce_native_always_on_top()
+        self._sync_script_edit_height()
 
     def moveEvent(self, event):
         super().moveEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._sync_script_edit_height()
+
+    def _sync_script_edit_height(self):
+        if not hasattr(self, 'welcome_script_edit') or not hasattr(self, 'w_row_acc') or not hasattr(self, 'settings_container'):
+            return
+        try:
+            from PySide6.QtCore import QPoint
+            if hasattr(self, 'settings_layout') and self.settings_layout:
+                self.settings_layout.activate()
+            self.settings_container.updateGeometry()
+
+            top_offset = config.S(22)
+            p_bottom = 0
+            if getattr(self, 'w_row_acc', None) and getattr(self, 'settings_container', None):
+                p_bottom = self.w_row_acc.mapTo(self.settings_container, QPoint(0, self.w_row_acc.height())).y()
+
+            if p_bottom <= top_offset:
+                p_bottom = self.settings_container.sizeHint().height()
+
+            target_h = p_bottom - top_offset
+            if target_h > config.S(50):
+                self.welcome_script_edit.setFixedHeight(target_h)
+        except Exception:
+            pass
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -2723,7 +2748,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if os.path.exists(info_icon_path):
             pix = QPixmap(info_icon_path)
             dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
-            size = config.S(18)
+            size = config.S(16)
             scaled_pix = pix.scaled(int(size * dpr), int(size * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             scaled_pix.setDevicePixelRatio(dpr)
             info.setPixmap(scaled_pix)
@@ -2732,7 +2757,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             info.setStyleSheet("color: #888888; font-size: 11pt;")
             
         tt_text = self.txt(tooltip_key) if hasattr(self, 'txt') else tooltip_key
-        info.custom_tooltip_text = f"<div>{tt_text}</div>"
+        formatted_text = tt_text.replace("\n", "<br>") if tt_text else ""
+        info.custom_tooltip_text = f"<div style='max-width: {config.S(360)}px; line-height: 135%;'>{formatted_text}</div>"
         info.setCursor(Qt.WhatsThisCursor)
         
         def instant_tooltip(event):
@@ -2770,6 +2796,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             return
 
         if checked:
+            self._sync_script_edit_height()
             self.script_container.setVisible(True)
 
         has_btn = hasattr(self, 'btn_import_wrapper')
@@ -2808,7 +2835,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.script_container.setFixedWidth(end_w)
             if hasattr(self, 'slider_widget'):
                 self.slider_widget.setFixedWidth(w_settings + end_w)
-            if not checked:
+            if checked:
+                self._sync_script_edit_height()
+            else:
                 self.script_container.setVisible(False)
             if has_btn:
                 if not checked:
@@ -3527,7 +3556,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         if app and not getattr(self, '_focus_signal_connected', False):
-            app.focusChanged.connect(lambda _old_w, _new_w: self._update_shortcut_enabled_states())
+            def _on_focus_changed(_old_w, _new_w):
+                try:
+                    self._update_shortcut_enabled_states()
+                except (RuntimeError, AttributeError):
+                    pass
+            app.focusChanged.connect(_on_focus_changed)
             self._focus_signal_connected = True
 
         def safe_toggle_play():

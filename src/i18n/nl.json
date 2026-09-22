@@ -416,7 +416,7 @@
     "lbl_repetition_penalty": "Herhalingsboete",
     "tt_clear_shortcut": "Snelkoppeling wissen",
     "src_source": "Bron",
-    "src_local_file": "Lokaal bestand",
+    "src_local_file": "Bestand",
     "src_davinci_resolve": "DaVinci Resolve",
     "lbl_drop_file_prompt": "Sleep video- of audiobestand hierheen",
     "lbl_drop_file_subprompt": "of klik om schijf te bladeren",
@@ -429,14 +429,15 @@
     "lbl_fs_mark_info": "Clipkleuring is alleen beschikbaar in DaVinci Resolve.",
     "msg_resolve_not_connected": "Geen actieve verbinding met DaVinci Resolve. Zorg ervoor dat DaVinci Resolve Studio actief is en External Scripting is ingeschakeld.",
     "lbl_why_options_hidden": "Waarom zijn sommige opties verborgen?",
-    "tt_why_silence_options_hidden": "<b>Stiltedetectie voor lokale bestanden:</b><br><br>In de lokale bestandsmodus opent stiltedetectie het<br>volledige tijdlijnvoorbeeld en de editor.<br><br>U kunt alle gedetecteerde stiltesneden bekijken, handmatig<br>aanpassen en verliesvrij exporteren met behulp van Seamless Cut.<br><br><i>Direct knippen op de tijdlijn en clipkleuring zijn exclusief<br>beschikbaar bij verbinding met DaVinci Resolve.</i>",
+    "tt_why_silence_options_hidden": "<b>Stiltedetectie voor bestanden:</b><br><br>In de bestandsmodus opent stiltedetectie het<br>volledige tijdlijnvoorbeeld en de editor.<br><br>U kunt alle gedetecteerde stiltesneden bekijken, handmatig<br>aanpassen en verliesvrij exporteren wanneer u klaar bent.<br><br><i>Direct knippen op de tijdlijn en clipkleuring zijn exclusief<br>beschikbaar bij verbinding met DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Stiltedetectie: spraaktranscriptie is niet uitgevoerd]",
     "lbl_seamless_cut_export": "Verliesvrije export (Seamless Cut)",
     "msg_seamless_cut_success": "Verliesvrij knippen succesvol voltooid!\nOpgeslagen in: {path}",
     "msg_unsupported_file_format": "Niet-ondersteund bestandsformaat. Selecteer een geldig video- of audiobestand.",
     "status_resolve_bridge_connected": "Verbonden (Bridge): {project}",
-    "tt_resolve_connection_studio": "Zorg ervoor dat Voorkeuren > Systeem > Algemeen > 'External scripting using' is ingesteld op 'Local'.",
+    "tt_resolve_connection_studio": "Zorg ervoor dat Preferences > System > General > 'External scripting using' is ingesteld op 'Local'.",
     "tt_resolve_connection_free": "Open DaVinci Resolve en voer Workspace → Scripts → BadWords Bridge uit.",
     "btn_stop_bridge": "Bridge stoppen",
-    "tt_stop_bridge": "BadWords Bridge stoppen in DaVinci Resolve"
+    "tt_stop_bridge": "BadWords Bridge stoppen in DaVinci Resolve",
+    "tt_resolve_not_installed": "DaVinci Resolve is niet gevonden. Het downloaden van DaVinci Resolve wordt aanbevolen voor de volledige functionaliteit van BadWords."
 }
