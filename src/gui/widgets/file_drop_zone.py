@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QSizePolicy
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QCursor
+from PySide6.QtGui import QPainter, QPainterPath, QColor, QPen, QFont, QCursor
 
 import config
 from gui.utils import get_svg_icon
@@ -393,15 +393,15 @@ class FileDropZone(QWidget):
         self._shake_err_border = False
         self.update()
 
-    # ── Custom Painting (Dashed Border / Hover Glow) ─────────────────────────
+    # ── Custom Painting (Seamless Dropdown Extension) ───────────────────────
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
 
         rect = self.rect()
-        w = rect.width()
-        h = rect.height()
-        r = config.S(4)
+        w = float(rect.width())
+        h = float(rect.height())
+        r = float(config.S(4))
 
         # Background
         if getattr(self, '_shake_err_border', False):
@@ -415,21 +415,51 @@ class FileDropZone(QWidget):
             pen_style = Qt.SolidLine
             pen_w = 2.0
         elif self._current_file:
-            bg_color = QColor("#1a1a1a")
+            bg_color = QColor("#222222")
             border_color = QColor("#3a3a3a")
             pen_style = Qt.SolidLine
             pen_w = 1.0
         else:
-            bg_color = QColor("#181818")
-            border_color = QColor("#444444")
+            bg_color = QColor("#222222")
+            border_color = QColor("#3a3a3a")
             pen_style = Qt.DashLine
             pen_w = 1.2
 
-        p.setBrush(bg_color)
+        # 1. Fill background with flat top corners and rounded bottom corners
+        path = QPainterPath()
+        path.moveTo(0.0, 0.0)
+        path.lineTo(w, 0.0)
+        path.lineTo(w, h - r)
+        path.arcTo(w - 2.0 * r, h - 2.0 * r, 2.0 * r, 2.0 * r, 0.0, -90.0)
+        path.lineTo(r, h)
+        path.arcTo(0.0, h - 2.0 * r, 2.0 * r, 2.0 * r, 270.0, -90.0)
+        path.lineTo(0.0, 0.0)
+        path.closeSubpath()
+        p.fillPath(path, bg_color)
+
+        # 2. Draw border along left, bottom, and right (seamless flush top)
         pen = QPen(border_color, pen_w, pen_style)
         if pen_style == Qt.DashLine:
             pen.setDashPattern([4, 4])
         p.setPen(pen)
 
-        p.drawRoundedRect(1, 1, w - 2, h - 2, r, r)
+        half_w = pen_w / 2.0
+        x0 = half_w
+        x1 = w - half_w
+        y0 = 0.0
+        y1 = h - half_w
+
+        outline = QPainterPath()
+        outline.moveTo(x0, y0)
+        outline.lineTo(x0, y1 - r)
+        outline.arcTo(x0, y1 - 2.0 * r, 2.0 * r, 2.0 * r, 180.0, -90.0)
+        outline.lineTo(x1 - r, y1)
+        outline.arcTo(x1 - 2.0 * r, y1 - 2.0 * r, 2.0 * r, 2.0 * r, 270.0, -90.0)
+        outline.lineTo(x1, y0)
+        p.drawPath(outline)
+
+        # 3. Subtle seam separator line at top
+        p.setPen(QPen(QColor("#2a2a2a"), 1.0, Qt.SolidLine))
+        p.drawLine(0, 0, int(w), 0)
+
         p.end()
