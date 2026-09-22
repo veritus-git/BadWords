@@ -172,19 +172,25 @@ class IDETooltip(QLabel):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setWordWrap(True)
+        self.setMaximumWidth(config.S(380))
         self.setStyleSheet(f"""
             QLabel {{
                 background-color: #1e1e1e;
                 color: #cccccc;
                 border: 1px solid #454545;
-                padding: 4px 8px;
+                border-radius: {config.S(4)}px;
+                padding: {config.S(6)}px {config.S(10)}px;
                 font-family: '{config.UI_FONT_NAME}', sans-serif;
                 font-size: 9pt;
+                line-height: 135%;
             }}
         """)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def show_at(self, widget, text, is_right_side=False):
+        if text and "\n" in text and "<br" not in text:
+            text = text.replace("\n", "<br>")
         self.setText(text)
         self.adjustSize()
         self.show_beside(widget, is_right_side=is_right_side)
@@ -203,10 +209,20 @@ class IDETooltip(QLabel):
         self.show()
 
     def show_global(self, text, pos):
+        if text and "<html" not in text and "<!DOCTYPE" not in text:
+            if "\n" in text and "<br" not in text:
+                text = text.replace("\n", "<br>")
         self.setText(text)
         self.adjustSize()
-        # Offset cursor by ~15px below it
-        self.move(pos.x(), pos.y() + 15)
+        x = pos.x()
+        y = pos.y() + 15
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        if x + self.width() > screen.right() - 10:
+            x = max(10, screen.right() - self.width() - 10)
+        if y + self.height() > screen.bottom() - 10:
+            y = max(10, pos.y() - self.height() - 10)
+        self.move(x, y)
         self.show()
 
 class MarqueeLabel(QLabel):

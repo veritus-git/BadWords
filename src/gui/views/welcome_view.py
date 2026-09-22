@@ -324,6 +324,9 @@ class SourceHeaderWidget(QWidget):
             f" background: transparent; padding: 0;"
         )
         stat_lay.addWidget(self.lbl_status)
+
+        self.info_icon = self.win._create_info_icon("") if hasattr(self.win, '_create_info_icon') else QLabel()
+        stat_lay.addWidget(self.info_icon)
         lay.addWidget(self.status_container)
 
         if getattr(win, 'current_source_type', 'file') == "resolve":
@@ -357,6 +360,8 @@ class SourceHeaderWidget(QWidget):
                 f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
+            if hasattr(self, 'info_icon') and self.info_icon:
+                self.info_icon.hide()
             self.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
         else:
             self.lbl_status.setText(self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "Brak połączenia")
@@ -364,49 +369,37 @@ class SourceHeaderWidget(QWidget):
                 f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
+            is_installed = False
             is_studio = False
             if rh:
                 ed_info = rh.get_resolve_edition_info() if hasattr(rh, 'get_resolve_edition_info') else {}
-                if ed_info.get("edition") == "Studio":
-                    is_studio = True
-                elif ed_info.get("edition") != "Free":
-                    if hasattr(rh, 'os_doc') and rh.os_doc:
-                        util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
-                        has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
-                        has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
-                        if has_py and not has_lua:
-                            is_studio = True
+                is_installed = bool(ed_info.get("installed", False))
+                if is_installed:
+                    if ed_info.get("edition") == "Studio":
+                        is_studio = True
+                    elif ed_info.get("edition") != "Free":
+                        if hasattr(rh, 'os_doc') and rh.os_doc:
+                            util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
+                            has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
+                            has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
+                            if has_py and not has_lua:
+                                is_studio = True
 
-            if is_studio:
-                tip = self.win.txt("tt_resolve_connection_studio") if hasattr(self.win, 'txt') else "DaVinci Resolve Studio: Upewnij się, że DaVinci Resolve > Preferences > System > General > 'External scripting using' jest ustawione na 'Local'."
+            if not is_installed:
+                tip = self.win.txt("tt_resolve_not_installed") if hasattr(self.win, 'txt') else "Nie znaleziono programu DaVinci Resolve. Dla pełni funkcji BadWords zalecane jest pobranie DaVinci Resolve."
+            elif is_studio:
+                tip = self.win.txt("tt_resolve_connection_studio") if hasattr(self.win, 'txt') else "Ensure Preferences > System > General > 'External scripting using' is set to 'Local'."
             else:
-                tip = self.win.txt("tt_resolve_connection_free") if hasattr(self.win, 'txt') else "DaVinci Resolve Free: W DaVinci Resolve uruchom: Workspace → Scripts → BadWords Bridge."
-            self.setToolTip(tip)
+                tip = self.win.txt("tt_resolve_connection_free") if hasattr(self.win, 'txt') else "Open DaVinci Resolve and run Workspace → Scripts → BadWords Bridge."
 
-        # Update tip banners and stop buttons
+            if hasattr(self, 'info_icon') and self.info_icon:
+                self.info_icon.show()
+                formatted_tip = tip.replace('\n', '<br>')
+                self.info_icon.custom_tooltip_text = f"<div style='max-width: {config.S(360)}px; line-height: 135%;'>{formatted_tip}</div>"
+            self.setToolTip("")
+
+        # Update stop bridge buttons visibility
         is_resolve_mode = (getattr(self.win, 'current_source_type', 'file') == 'resolve')
-        for tip_lbl in (getattr(self.win, 'lbl_resolve_tip_0', None), getattr(self.win, 'lbl_resolve_tip_1', None)):
-            if tip_lbl:
-                if is_resolve_mode and not is_conn:
-                    is_studio = False
-                    if rh:
-                        ed_info = rh.get_resolve_edition_info() if hasattr(rh, 'get_resolve_edition_info') else {}
-                        if ed_info.get("edition") == "Studio":
-                            is_studio = True
-                        elif ed_info.get("edition") != "Free":
-                            if hasattr(rh, 'os_doc') and rh.os_doc:
-                                util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
-                                has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
-                                has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
-                                if has_py and not has_lua:
-                                    is_studio = True
-                    tip = (self.win.txt("tt_resolve_connection_studio") if is_studio
-                           else self.win.txt("tt_resolve_connection_free"))
-                    tip_lbl.setText(tip)
-                    tip_lbl.show()
-                else:
-                    tip_lbl.hide()
-
         for stop_btn in (getattr(self.win, 'btn_stop_bridge_0', None), getattr(self.win, 'btn_stop_bridge_1', None)):
             if stop_btn:
                 stop_btn.setVisible(is_resolve_mode and is_bridge)
@@ -935,17 +928,6 @@ def build_welcome_view(win) -> QWidget:
         win.settings_layout.addLayout(_hbox_source_0)
         win.settings_layout.addSpacing(config.S(4))
 
-        win.lbl_resolve_tip_0 = QLabel()
-        win.lbl_resolve_tip_0.setWordWrap(True)
-        win.lbl_resolve_tip_0.setStyleSheet(f"""
-            background-color: #1a1e1a; color: #a2cca2; border: 1px solid #2d452d;
-            border-radius: {config.S(4)}px; padding: {config.S(6)}px {config.S(8)}px;
-            font-size: {config.FS(8.0)}pt; font-family: "{config.UI_FONT_NAME}";
-        """)
-        win.settings_layout.addWidget(win.lbl_resolve_tip_0)
-        win.settings_layout.addSpacing(config.S(4))
-        win.lbl_resolve_tip_0.hide()
-
         win.drop_zone_0 = FileDropZone()
         win.davinci_box_0 = DavinciSourceBox(
             _vbox_tl0,
@@ -1041,6 +1023,7 @@ def build_welcome_view(win) -> QWidget:
     row_acc.addSpacing(config.S(6))
     row_acc.addWidget(win.tgl_more_accurate)
 
+    win.w_row_acc = w_row_acc
     win.settings_layout.addWidget(w_row_acc)
 
     # ── Right Column: Full-Height Script Container (325px + shake padding) ───
@@ -1271,17 +1254,6 @@ def build_welcome_view(win) -> QWidget:
         l_fast.addLayout(_hbox_source_1)
         l_fast.addSpacing(config.S(4))
 
-        win.lbl_resolve_tip_1 = QLabel()
-        win.lbl_resolve_tip_1.setWordWrap(True)
-        win.lbl_resolve_tip_1.setStyleSheet(f"""
-            background-color: #1a1e1a; color: #a2cca2; border: 1px solid #2d452d;
-            border-radius: {config.S(4)}px; padding: {config.S(6)}px {config.S(8)}px;
-            font-size: {config.FS(8.0)}pt; font-family: "{config.UI_FONT_NAME}";
-        """)
-        l_fast.addWidget(win.lbl_resolve_tip_1)
-        l_fast.addSpacing(config.S(4))
-        win.lbl_resolve_tip_1.hide()
-
         win.drop_zone_1 = FileDropZone()
         win.davinci_box_1 = DavinciSourceBox(
             _vbox_tl1,
@@ -1509,6 +1481,8 @@ def build_welcome_view(win) -> QWidget:
                 win.w_fs_hidden_info.hide()
 
             page.animate_y_to_content(200)
+            if hasattr(win, '_sync_script_edit_height'):
+                win._sync_script_edit_height()
 
         win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
         win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
@@ -1529,5 +1503,8 @@ def build_welcome_view(win) -> QWidget:
 
         win.drop_zone_0.file_selected.connect(_sync_file_0)
         win.drop_zone_1.file_selected.connect(_sync_file_1)
+
+    if hasattr(win, '_sync_script_edit_height'):
+        QTimer.singleShot(0, win._sync_script_edit_height)
 
     return page

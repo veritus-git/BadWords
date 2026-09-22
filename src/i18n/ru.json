@@ -416,7 +416,7 @@
     "lbl_repetition_penalty": "Штраф за повторения",
     "tt_clear_shortcut": "Очистить сочетание клавиш",
     "src_source": "Источник",
-    "src_local_file": "Локальный файл",
+    "src_local_file": "Файл",
     "src_davinci_resolve": "DaVinci Resolve",
     "lbl_drop_file_prompt": "Перетащите видео или аудио файл сюда",
     "lbl_drop_file_subprompt": "или нажмите, чтобы выбрать с диска",
@@ -429,14 +429,15 @@
     "lbl_fs_mark_info": "Окрашивание клипов доступно только в DaVinci Resolve.",
     "msg_resolve_not_connected": "Нет активного подключения к DaVinci Resolve. Убедитесь, что DaVinci Resolve Studio запущена и External Scripting включен.",
     "lbl_why_options_hidden": "Почему некоторые опции скрыты?",
-    "tt_why_silence_options_hidden": "<b>Детекция тишины для локального файла:</b><br><br>В режиме локального файла обнаружение тишины открывает<br>полный редактор таймлайна с предпросмотром.<br><br>Вы можете просмотреть все найденные паузы, скорректировать<br>их вручную и экспортировать без потерь через Seamless Cut.<br><br><i>Прямая обрезка на таймлайне и цветовая маркировка клипов<br>доступны только при интеграции с DaVinci Resolve.</i>",
+    "tt_why_silence_options_hidden": "<b>Детекция тишины для файла:</b><br><br>В режиме файла обнаружение тишины открывает<br>полный редактор таймлайна с предпросмотром.<br><br>Вы можете просмотреть все найденные паузы, скорректировать<br>их вручную и экспортировать без потерь, когда будете готовы.<br><br><i>Прямая обрезка на таймлайне и цветовая маркировка клипов<br>доступны только при интеграции с DaVinci Resolve.</i>",
     "msg_silence_detection_mode_active": "[Детекция тишины: транскрипция речи не выполнялась]",
     "lbl_seamless_cut_export": "Экспорт без потерь (Seamless Cut)",
     "msg_seamless_cut_success": "Монтаж без потерь успешно завершен!\nСохранено в: {path}",
     "msg_unsupported_file_format": "Неподдерживаемый формат файла. Пожалуйста, выберите корректный видео- или аудиофайл.",
     "status_resolve_bridge_connected": "Подключено (Bridge): {project}",
-    "tt_resolve_connection_studio": "Убедитесь, что DaVinci Resolve > Preferences > System > General > 'External scripting using' установлено на 'Local'.",
+    "tt_resolve_connection_studio": "Убедитесь, что Preferences > System > General > 'External scripting using' установлено на 'Local'.",
     "tt_resolve_connection_free": "Откройте DaVinci Resolve и запустите Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Остановить Bridge",
-    "tt_stop_bridge": "Остановить BadWords Bridge в DaVinci Resolve"
+    "tt_stop_bridge": "Остановить BadWords Bridge в DaVinci Resolve",
+    "tt_resolve_not_installed": "DaVinci Resolve не найден. Для полноценной работы всех функций BadWords рекомендуется скачать DaVinci Resolve."
 }

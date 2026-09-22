@@ -416,7 +416,7 @@
     "lbl_repetition_penalty": "Wiederholungsstrafe",
     "tt_clear_shortcut": "Tastenkürzel löschen",
     "src_source": "Quelle",
-    "src_local_file": "Lokale Datei",
+    "src_local_file": "Datei",
     "src_davinci_resolve": "DaVinci Resolve",
     "lbl_drop_file_prompt": "Video- oder Audiodatei hierher ziehen",
     "lbl_drop_file_subprompt": "oder klicken, um Datei auszuwählen",
@@ -429,14 +429,15 @@
     "lbl_fs_mark_info": "Clip-Farbmarkierung ist nur in DaVinci Resolve verfügbar.",
     "msg_resolve_not_connected": "Keine aktive Verbindung zu DaVinci Resolve. Stellen Sie sicher, dass DaVinci Resolve Studio läuft und External Scripting aktiviert ist.",
     "lbl_why_options_hidden": "Warum sind einige Optionen ausgeblendet?",
-    "tt_why_silence_options_hidden": "<b>Stille-Erkennung für lokale Dateien:</b><br><br>Im lokalen Dateimodus öffnet die Stille-Erkennung die<br>vollständige Zeitleisten-Vorschau und den Editor.<br><br>Sie können alle erkannten Stille-Schnitte überprüfen,<br>manuell anpassen und verlustfrei per Seamless Cut exportieren.<br><br><i>Direktes Schneiden und Einfärben von Clips auf der Zeitleiste<br>sind exklusiv bei Verbindung mit DaVinci Resolve verfügbar.</i>",
+    "tt_why_silence_options_hidden": "<b>Stille-Erkennung für Dateien:</b><br><br>Im Dateimodus öffnet die Stille-Erkennung die<br>vollständige Zeitleisten-Vorschau und den Editor.<br><br>Sie können alle erkannten Stille-Schnitte überprüfen,<br>manuell anpassen und bei Bedarf verlustfrei exportieren.<br><br><i>Direktes Schneiden und Einfärben von Clips auf der Zeitleiste<br>sind exklusiv bei Verbindung mit DaVinci Resolve verfügbar.</i>",
     "msg_silence_detection_mode_active": "[Stille-Erkennung: Sprachtranskription wurde nicht ausgeführt]",
     "lbl_seamless_cut_export": "Verlustfreier Schnitt-Export (Seamless Cut)",
     "msg_seamless_cut_success": "Verlustfreier Schnitt erfolgreich abgeschlossen!\nGespeichert unter: {path}",
     "msg_unsupported_file_format": "Nicht unterstütztes Dateiformat. Bitte wählen Sie eine gültige Video- oder Audiodatei aus.",
     "status_resolve_bridge_connected": "Verbunden (Bridge): {project}",
-    "tt_resolve_connection_studio": "Stellen Sie sicher, dass DaVinci Resolve > Einstellungen > System > Allgemein > 'External scripting using' auf 'Lokal' eingestellt ist.",
+    "tt_resolve_connection_studio": "Stellen Sie sicher, dass Preferences > System > General > 'External scripting using' auf 'Local' eingestellt ist.",
     "tt_resolve_connection_free": "Öffnen Sie DaVinci Resolve und führen Sie Workspace → Skripte → BadWords Bridge aus.",
     "btn_stop_bridge": "Bridge stoppen",
-    "tt_stop_bridge": "BadWords Bridge in DaVinci Resolve stoppen"
+    "tt_stop_bridge": "BadWords Bridge in DaVinci Resolve stoppen",
+    "tt_resolve_not_installed": "DaVinci Resolve wurde nicht gefunden. Für den vollen Funktionsumfang von BadWords wird das Herunterladen von DaVinci Resolve empfohlen."
 }
