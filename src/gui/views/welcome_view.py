@@ -479,13 +479,19 @@ class _SourceFadeCanvas(QWidget):
         painter.fillRect(self.rect(), QColor(config.BG_COLOR))
 
         p = self.progress
-        if self.pix_from and p < 1.0:
-            alpha_from = max(0.0, min(1.0, 1.0 - p))
+        # Phase 1: Pure smooth fade OUT of outgoing controls (0.00 -> 0.40)
+        if self.pix_from and p < 0.40:
+            t = (0.40 - p) / 0.40
+            alpha_from = max(0.0, min(1.0, t * t))
             painter.setOpacity(alpha_from)
             painter.drawPixmap(0, 0, self.pix_from)
 
-        if self.pix_to and p > 0.0:
-            alpha_to = max(0.0, min(1.0, p))
+        # Phase 2 (0.40 -> 0.60): Clean buffer on solid BG while height glides
+
+        # Phase 3: Pure smooth fade IN of incoming controls (0.60 -> 1.00)
+        if self.pix_to and p > 0.60:
+            t = (p - 0.60) / 0.40
+            alpha_to = max(0.0, min(1.0, t * (2.0 - t)))
             painter.setOpacity(alpha_to)
             painter.drawPixmap(0, 0, self.pix_to)
 
@@ -603,12 +609,12 @@ class SourceAreaWidget(QWidget):
         self.fade_canvas.set_transition(pix_from, pix_to)
 
         self._is_animating = True
-        duration = 150
+        duration = 260
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
 
         def _step(v: float):
             cur_h = int(start_h + (target_h - start_h) * v)
@@ -621,9 +627,9 @@ class SourceAreaWidget(QWidget):
         def _done():
             self._current_mode = mode
             self.setFixedHeight(target_h)
+            force_sync_geometry(self)
             self.fade_canvas.finish()
             self._is_animating = False
-            force_sync_geometry(self)
 
         anim.valueChanged.connect(_step)
         anim.finished.connect(_done)
@@ -793,29 +799,25 @@ class WelcomePageView(QWidget):
             cur_y = self._target_y(self._current_idx)
             self.welcome_root.move(0, cur_y)
 
-    def animate_y_to_content(self, duration: int = 150):
+    def animate_y_to_content(self, duration: int = 260):
         if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
             self._y_anim.stop()
         start_y = self.welcome_root.y()
         end_y = self._target_y(self._current_idx)
         if start_y == end_y or duration <= 0:
             self.welcome_root.move(0, end_y)
-            if hasattr(self.win, '_sync_script_edit_height'):
-                self.win._sync_script_edit_height(animated=False)
             return
 
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
         anim.setStartValue(start_y)
         anim.setEndValue(end_y)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
 
         def _on_anim_step(y):
             self.welcome_root.move(0, int(y))
 
         anim.valueChanged.connect(_on_anim_step)
-        if hasattr(self.win, '_sync_script_edit_height'):
-            anim.finished.connect(lambda: self.win._sync_script_edit_height(animated=False))
         self._y_anim = anim
         anim.start()
 
@@ -1691,16 +1693,18 @@ def build_welcome_view(win) -> QWidget:
             if hasattr(win, 'btn_stop_bridge_1'):
                 win.btn_stop_bridge_1.setVisible(mode == "resolve" and is_bridge)
 
+            active_ws = win.welcome_stack.currentIndex() if hasattr(win, 'welcome_stack') and win.welcome_stack else 0
             if hasattr(win, 'source_area_0'):
-                win.source_area_0.set_mode(mode, animated=True)
+                win.source_area_0.set_mode(mode, animated=(active_ws == 0))
             if hasattr(win, 'source_area_1'):
-                win.source_area_1.set_mode(mode, animated=True)
+                win.source_area_1.set_mode(mode, animated=(active_ws == 1))
 
             if hasattr(win, 'welcome_stack') and win.welcome_stack:
                 for i in range(win.welcome_stack.count()):
-                    w_item = win.welcome_stack.widget(i)
-                    if w_item:
-                        force_sync_geometry(w_item)
+                    if i != active_ws:
+                        w_item = win.welcome_stack.widget(i)
+                        if w_item:
+                            force_sync_geometry(w_item)
             if hasattr(win, 'settings_layout') and win.settings_layout:
                 win.settings_layout.activate()
             if hasattr(win, 'slider_widget') and win.slider_widget:
@@ -1715,9 +1719,9 @@ def build_welcome_view(win) -> QWidget:
                     win.w_fs_resolve_group.show()
                 win.w_fs_hidden_info.hide()
 
-            page.animate_y_to_content(150)
+            page.animate_y_to_content(260)
             if hasattr(win, '_sync_script_edit_height'):
-                win._sync_script_edit_height(animated=True)
+                win._sync_script_edit_height(animated=True, duration=260)
 
         win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
         win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
