@@ -52,7 +52,7 @@ class FileDropZone(QWidget):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setObjectName("file_drop_zone")
-        self.setFixedHeight(config.S(90))
+        self.setFixedHeight(config.S(118))
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self._current_file = ""
