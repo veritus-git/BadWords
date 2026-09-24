@@ -615,9 +615,9 @@ class SourceActionsBox(QWidget):
     def calc_target_width(self, is_resolve: bool, is_bridge: bool) -> int:
         if not is_resolve:
             return 0
-        w_ref = self.btn_ref_source.sizeHint().width() if self.btn_ref_source else config.S(30)
-        w_stop = (self.btn_stop_bridge.sizeHint().width() if self.btn_stop_bridge else config.S(90)) if is_bridge else 0
-        spacing = config.S(4) if is_bridge else 0
+        w_ref = config.S(30)
+        w_stop = max(self.btn_stop_bridge.sizeHint().width(), config.S(85)) if (is_bridge and self.btn_stop_bridge) else 0
+        spacing = config.S(4) if (is_bridge and self.btn_stop_bridge) else 0
         left_margin = config.S(4)
         return left_margin + w_stop + spacing + w_ref
 
@@ -904,14 +904,8 @@ class SilenceOptionsAreaWidget(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        w = self.width()
-        h = self.height()
         if hasattr(self, 'fade_canvas'):
-            self.fade_canvas.setGeometry(0, 0, w, h)
-        if hasattr(self, 'resolve_group'):
-            self.resolve_group.setFixedWidth(w)
-        if hasattr(self, 'hidden_info'):
-            self.hidden_info.setFixedWidth(w)
+            self.fade_canvas.setGeometry(0, 0, self.width(), self.height())
 
     def set_mode(self, mode: str, animated: bool = True, duration: int = 310):
         if self._current_mode == mode and not self._is_animating:
@@ -921,12 +915,6 @@ class SilenceOptionsAreaWidget(QWidget):
             self._anim.stop()
             self.fade_canvas.finish()
 
-        w = self.width()
-        if w <= 0 and self.parentWidget():
-            w = self.parentWidget().width()
-        if w <= 0:
-            w = config.S(380)
-
         target_h = self._calc_target_height(mode)
 
         if not animated or not self.isVisible() or self.width() <= 0:
@@ -934,46 +922,36 @@ class SilenceOptionsAreaWidget(QWidget):
             if mode == "file":
                 self.resolve_group.hide()
                 self.hidden_info.show()
-                self.hidden_info.setFixedSize(w, target_h)
             else:
                 self.hidden_info.hide()
                 self.resolve_group.show()
-                self.resolve_group.setFixedSize(w, target_h)
-            self.setFixedSize(w, target_h)
+            self.setFixedHeight(target_h)
             force_sync_geometry(self)
             return
 
         h_from = self.height() if self.height() > 0 else self._calc_target_height(self._current_mode)
-        # Ensure current state is full width w before grabbing
-        self.setFixedSize(w, h_from)
-        if self._current_mode == "file":
-            self.hidden_info.setFixedSize(w, h_from)
-        else:
-            self.resolve_group.setFixedSize(w, h_from)
-        force_sync_geometry(self)
         pix_from = self.grab()
 
         self._current_mode = mode
         if mode == "file":
             self.resolve_group.hide()
             self.hidden_info.show()
-            self.hidden_info.setFixedSize(w, target_h)
         else:
             self.hidden_info.hide()
             self.resolve_group.show()
-            self.resolve_group.setFixedSize(w, target_h)
 
-        self.setFixedSize(w, target_h)
+        self.setFixedHeight(target_h)
         force_sync_geometry(self)
         pix_to = self.grab()
         h_to = target_h
 
         # Start animation from initial height so widgets below do not jump
-        self.setFixedSize(w, h_from)
+        self.setFixedHeight(h_from)
         if self.parentWidget() and self.parentWidget().layout():
             self.parentWidget().layout().activate()
 
         max_h = max(h_from, h_to)
+        w = self.width()
         self.fade_canvas.setGeometry(0, 0, w, max_h)
         self.fade_canvas.set_transition(pix_from, pix_to)
 
@@ -986,8 +964,8 @@ class SilenceOptionsAreaWidget(QWidget):
 
         def _step(v: float):
             cur_h = int(round(h_from + (h_to - h_from) * v))
-            self.setFixedSize(w, cur_h)
-            self.fade_canvas.setGeometry(0, 0, w, max(cur_h, max_h))
+            self.setFixedHeight(cur_h)
+            self.fade_canvas.setGeometry(0, 0, self.width(), max(cur_h, max_h))
             self.fade_canvas.set_progress(v)
             if self.parentWidget() and self.parentWidget().layout():
                 self.parentWidget().layout().activate()
@@ -997,12 +975,10 @@ class SilenceOptionsAreaWidget(QWidget):
             if mode == "file":
                 self.resolve_group.hide()
                 self.hidden_info.show()
-                self.hidden_info.setFixedSize(w, h_to)
             else:
                 self.hidden_info.hide()
                 self.resolve_group.show()
-                self.resolve_group.setFixedSize(w, h_to)
-            self.setFixedSize(w, h_to)
+            self.setFixedHeight(h_to)
             if self.parentWidget() and self.parentWidget().layout():
                 self.parentWidget().layout().activate()
             self._is_animating = False
