@@ -17,7 +17,7 @@ vector SVG icons, and embedded Ubuntu font consistency across all platforms.
 """
 
 import os
-from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QRectF, QRect, QTimer
+from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QRectF, QRect, QTimer, QCoreApplication, QEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
@@ -50,6 +50,25 @@ def is_embedded_in_resolve() -> bool:
     if 'fscript' in sys.executable.lower():
         return True
     return False
+def force_sync_geometry(w: QWidget):
+    """
+    Recursively ensures all child layouts and widget geometries are polished,
+    activated, and processed immediately. Prevents layout lag, dirty-state caching,
+    and visual jumping when grabbing pixmaps or displaying hidden stacked pages.
+    """
+    if not w:
+        return
+    w.ensurePolished()
+    for child in w.findChildren(QWidget):
+        child.ensurePolished()
+        if child.layout():
+            child.layout().activate()
+        child.updateGeometry()
+    if w.layout():
+        w.layout().activate()
+    w.updateGeometry()
+    QCoreApplication.sendPostedEvents(w, QEvent.LayoutRequest)
+
 
 
 class _WorkspaceFadeCanvas(QWidget):
@@ -421,17 +440,71 @@ class DavinciSourceBox(QWidget):
         self.setFixedHeight(config.S(118))
 
 
+class _SourceFadeCanvas(QWidget):
+    """
+    Overlays SourceAreaWidget during animated source mode switching to provide
+    a smooth crossfade between File drop zone and DaVinci Resolve controls.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.pix_from = None
+        self.pix_to = None
+        self.progress = 0.0
+        self.hide()
+
+    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap):
+        self.pix_from = pix_from
+        self.pix_to = pix_to
+        self.progress = 0.0
+        self.show()
+        self.raise_()
+
+    def set_progress(self, p: float):
+        self.progress = p
+        self.update()
+
+    def finish(self):
+        self.pix_from = None
+        self.pix_to = None
+        self.progress = 0.0
+        self.hide()
+
+    def paintEvent(self, event):
+        if not self.pix_from and not self.pix_to:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.fillRect(self.rect(), QColor(config.BG_COLOR))
+
+        p = self.progress
+        if self.pix_from and p < 1.0:
+            alpha_from = max(0.0, min(1.0, 1.0 - p))
+            painter.setOpacity(alpha_from)
+            painter.drawPixmap(0, 0, self.pix_from)
+
+        if self.pix_to and p > 0.0:
+            alpha_to = max(0.0, min(1.0, p))
+            painter.setOpacity(alpha_to)
+            painter.drawPixmap(0, 0, self.pix_to)
+
+
 class SourceAreaWidget(QWidget):
     """
     Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
     Cleanly switches between File state (14px spacer + 90px drop zone = 104px)
     and DaVinci state (14px spacer + 118px controls = 132px).
     Both states maintain an identical 14px gap below the Source dropdown.
+    Provides a silky-smooth crossfade + height transition during mode changes.
     """
     def __init__(self, drop_zone: QWidget, davinci_box: QWidget, initial_mode: str = "file", parent=None):
         super().__init__(parent)
         self.drop_zone = drop_zone
         self.davinci_box = davinci_box
+        self._current_mode = None
+        self._is_animating = False
+        self._anim = None
 
         self.H_FILE_BOX = config.S(90)
         self.H_FILE_GAP = config.S(14)
@@ -441,37 +514,121 @@ class SourceAreaWidget(QWidget):
         self.H_RESOLVE_BOX = config.S(118)
         self.H_RESOLVE = self.H_RESOLVE_GAP + self.H_RESOLVE_BOX
 
-        self.file_spacer = QWidget(self)
+        self.file_container = QWidget(self)
+        self.file_container.setStyleSheet("background: transparent;")
+        l_file = QVBoxLayout(self.file_container)
+        l_file.setContentsMargins(0, 0, 0, 0)
+        l_file.setSpacing(0)
+        self.file_spacer = QWidget(self.file_container)
         self.file_spacer.setFixedHeight(self.H_FILE_GAP)
         self.file_spacer.setStyleSheet("background: transparent;")
+        l_file.addWidget(self.file_spacer)
+        l_file.addWidget(self.drop_zone)
 
-        self.resolve_spacer = QWidget(self)
+        self.resolve_container = QWidget(self)
+        self.resolve_container.setStyleSheet("background: transparent;")
+        l_res = QVBoxLayout(self.resolve_container)
+        l_res.setContentsMargins(0, 0, 0, 0)
+        l_res.setSpacing(0)
+        self.resolve_spacer = QWidget(self.resolve_container)
         self.resolve_spacer.setFixedHeight(self.H_RESOLVE_GAP)
         self.resolve_spacer.setStyleSheet("background: transparent;")
+        l_res.addWidget(self.resolve_spacer)
+        l_res.addWidget(self.davinci_box)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        lay.addWidget(self.file_spacer)
-        lay.addWidget(self.drop_zone)
-        lay.addWidget(self.resolve_spacer)
-        lay.addWidget(self.davinci_box)
+        lay.addWidget(self.file_container)
+        lay.addWidget(self.resolve_container)
 
-        self.set_mode(initial_mode)
+        self.fade_canvas = _SourceFadeCanvas(self)
 
-    def set_mode(self, mode: str):
+        self.set_mode(initial_mode, animated=False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        h = self.height()
+        if hasattr(self, 'fade_canvas'):
+            self.fade_canvas.setGeometry(0, 0, w, h)
+        if hasattr(self, 'file_container'):
+            self.file_container.setFixedWidth(w)
+        if hasattr(self, 'resolve_container'):
+            self.resolve_container.setFixedWidth(w)
+
+    def set_mode(self, mode: str, animated: bool = True):
+        if self._current_mode == mode and not self._is_animating:
+            return
+
+        if self._anim and self._anim.state() == QVariantAnimation.Running:
+            self._anim.stop()
+            self.fade_canvas.finish()
+
+        target_h = self.H_FILE if mode == "file" else self.H_RESOLVE
+        start_h = self.height()
+        if start_h <= 0:
+            start_h = self.H_FILE if self._current_mode == "file" else self.H_RESOLVE
+
+        if not animated or not self.isVisible() or self.width() <= 0:
+            self._current_mode = mode
+            if mode == "file":
+                self.resolve_container.hide()
+                self.file_container.show()
+                self.setFixedHeight(self.H_FILE)
+            else:
+                self.file_container.hide()
+                self.resolve_container.show()
+                self.setFixedHeight(self.H_RESOLVE)
+            force_sync_geometry(self)
+            return
+
+        # Snapshot current visual state
+        pix_from = self.grab()
+
+        # Switch visibility to target mode and capture pix_to
         if mode == "file":
-            self.resolve_spacer.hide()
-            self.davinci_box.hide()
-            self.file_spacer.show()
-            self.drop_zone.show()
-            self.setFixedHeight(self.H_FILE)
+            self.resolve_container.hide()
+            self.file_container.show()
         else:
-            self.file_spacer.hide()
-            self.drop_zone.hide()
-            self.resolve_spacer.show()
-            self.davinci_box.show()
-            self.setFixedHeight(self.H_RESOLVE)
+            self.file_container.hide()
+            self.resolve_container.show()
+        self.setFixedHeight(target_h)
+        force_sync_geometry(self)
+        pix_to = self.grab()
+
+        # Restore height to start_h so animation interpolates height smoothly
+        self.setFixedHeight(start_h)
+        self.fade_canvas.setGeometry(0, 0, self.width(), start_h)
+        self.fade_canvas.set_transition(pix_from, pix_to)
+
+        self._is_animating = True
+        duration = 150
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+
+        def _step(v: float):
+            cur_h = int(start_h + (target_h - start_h) * v)
+            self.setFixedHeight(cur_h)
+            self.fade_canvas.setGeometry(0, 0, self.width(), cur_h)
+            self.fade_canvas.set_progress(v)
+            if self.parentWidget():
+                self.parentWidget().updateGeometry()
+
+        def _done():
+            self._current_mode = mode
+            self.setFixedHeight(target_h)
+            self.fade_canvas.finish()
+            self._is_animating = False
+            force_sync_geometry(self)
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        self._anim = anim
+        anim.start()
 
 
 def update_source_combo_style(combo, mode: str = "file"):
@@ -717,8 +874,7 @@ class WelcomePageView(QWidget):
             self.win._sync_script_edit_height(animated=False)
 
         target_w.resize(w, self.H_MAX_CONTENT)
-        if target_w.layout():
-            target_w.layout().activate()
+        force_sync_geometry(target_w)
         pix_to = target_w.grab()
 
         self.fade_canvas.set_transition(pix_from, pix_to)
@@ -743,16 +899,15 @@ class WelcomePageView(QWidget):
             self.welcome_root.move(0, end_y)
             self._current_idx = target_idx
             self.win.welcome_stack.setCurrentIndex(target_idx)
-            self.fade_canvas.finish()
             cur_w = self.width()
             self.win.welcome_stack.setFixedSize(cur_w, self.H_MAX_CONTENT)
             target_w.resize(cur_w, self.H_MAX_CONTENT)
-            if target_w.layout():
-                target_w.layout().activate()
             target_w.show()
             target_w.raise_()
             if target_idx == 0 and hasattr(self.win, '_sync_script_edit_height'):
                 self.win._sync_script_edit_height(animated=False)
+            force_sync_geometry(target_w)
+            self.fade_canvas.finish()
             self._is_animating = False
 
         anim.valueChanged.connect(_step)
@@ -774,8 +929,7 @@ class WelcomePageView(QWidget):
             target_w = self.win.welcome_stack.widget(target_idx)
             if target_w:
                 target_w.resize(w, self.H_MAX_CONTENT)
-                if target_w.layout():
-                    target_w.layout().activate()
+                force_sync_geometry(target_w)
                 target_w.show()
                 target_w.raise_()
         if target_idx == 0 and hasattr(self.win, '_sync_script_edit_height'):
@@ -1435,7 +1589,7 @@ def build_welcome_view(win) -> QWidget:
     win.w_fs_resolve_group = QWidget()
     win.w_fs_resolve_group.setStyleSheet("background: transparent;")
     lay_fs_resolve = QVBoxLayout(win.w_fs_resolve_group)
-    lay_fs_resolve.setContentsMargins(0, 0, 0, 0)
+    lay_fs_resolve.setContentsMargins(0, config.S(6), 0, 0)
     lay_fs_resolve.setSpacing(config.S(8))
     lay_fs_resolve.addWidget(win.w_fs_cut)
     lay_fs_resolve.addWidget(win.w_fs_mark)
@@ -1538,15 +1692,15 @@ def build_welcome_view(win) -> QWidget:
                 win.btn_stop_bridge_1.setVisible(mode == "resolve" and is_bridge)
 
             if hasattr(win, 'source_area_0'):
-                win.source_area_0.set_mode(mode)
+                win.source_area_0.set_mode(mode, animated=True)
             if hasattr(win, 'source_area_1'):
-                win.source_area_1.set_mode(mode)
+                win.source_area_1.set_mode(mode, animated=True)
 
             if hasattr(win, 'welcome_stack') and win.welcome_stack:
                 for i in range(win.welcome_stack.count()):
                     w_item = win.welcome_stack.widget(i)
-                    if w_item and w_item.layout():
-                        w_item.layout().activate()
+                    if w_item:
+                        force_sync_geometry(w_item)
             if hasattr(win, 'settings_layout') and win.settings_layout:
                 win.settings_layout.activate()
             if hasattr(win, 'slider_widget') and win.slider_widget:
