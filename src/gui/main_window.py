@@ -508,7 +508,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         super().resizeEvent(event)
         self._sync_script_edit_height(animated=False)
 
-    def animate_script_edit_height(self, target_h: int, duration: int = 200):
+    def animate_script_edit_height(self, target_h: int, duration: int = 150):
         if not hasattr(self, 'welcome_script_edit'):
             return
         if getattr(self, '_script_h_anim', None) and self._script_h_anim.state() == QVariantAnimation.Running:
@@ -523,7 +523,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         anim.setDuration(duration)
         anim.setStartValue(start_h)
         anim.setEndValue(target_h)
-        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
         anim.valueChanged.connect(lambda h: self.welcome_script_edit.setFixedHeight(int(h)))
         def _on_finish():
             self.welcome_script_edit.setFixedHeight(target_h)
@@ -542,17 +542,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
             top_offset = config.S(22)
             p_bottom = 0
-            if getattr(self, 'w_row_acc', None) and getattr(self, 'settings_container', None):
+            is_acc_visible = getattr(self, 'w_row_acc', None) and self.w_row_acc.isVisible()
+            if is_acc_visible and getattr(self, 'settings_container', None):
                 p_bottom = self.w_row_acc.mapTo(self.settings_container, QPoint(0, self.w_row_acc.height())).y()
 
-            if p_bottom <= top_offset:
-                p_bottom = self.settings_container.sizeHint().height()
+            if p_bottom <= top_offset or not is_acc_visible:
+                # Preload calculation when workspace 0 is hidden or not yet mapped:
+                mode = getattr(self, 'current_source_type', 'file')
+                p_bottom = config.S(332) if mode == "file" else config.S(360)
 
             target_h = p_bottom - top_offset
             if target_h > config.S(50):
                 cur_h = self.welcome_script_edit.height()
-                if animated and self.isVisible() and abs(cur_h - target_h) > 2:
-                    self.animate_script_edit_height(target_h, 200)
+                # Only animate if workspace 0 is actually visible on screen
+                is_ws0_active = hasattr(self, 'welcome_stack') and self.welcome_stack.currentIndex() == 0
+                if animated and self.isVisible() and is_ws0_active and abs(cur_h - target_h) > 2:
+                    self.animate_script_edit_height(target_h, 150)
                 else:
                     self.welcome_script_edit.setFixedHeight(target_h)
         except Exception:

@@ -393,7 +393,7 @@ class FileDropZone(QWidget):
         self._shake_err_border = False
         self.update()
 
-    # ── Custom Painting (Seamless Dropdown Extension) ───────────────────────
+    # ── Custom Painting (Standalone Rounded Card) ───────────────────────────
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -425,39 +425,20 @@ class FileDropZone(QWidget):
             pen_style = Qt.DashLine
             pen_w = 1.2
 
-        # 1. Fill background with flat top corners and rounded bottom corners
+        # 1. Fill background with rounded corners on all 4 sides
         path = QPainterPath()
-        path.moveTo(0.0, 0.0)
-        path.lineTo(0.0, h - r)
-        path.quadTo(0.0, h, r, h)
-        path.lineTo(w - r, h)
-        path.quadTo(w, h, w, h - r)
-        path.lineTo(w, 0.0)
-        path.closeSubpath()
+        path.addRoundedRect(0.0, 0.0, w, h, r, r)
         p.fillPath(path, bg_color)
 
-        # 2. Draw border along left, bottom, and right (seamless perpendicular vertical lines)
+        # 2. Draw border along all 4 sides with rounded corners
         pen = QPen(border_color, pen_w, pen_style)
         if pen_style == Qt.DashLine:
             pen.setDashPattern([4, 4])
         p.setPen(pen)
 
         half_w = pen_w / 2.0
-        x0 = half_w
-        x1 = w - half_w
-        y1 = h - half_w
-
         outline = QPainterPath()
-        outline.moveTo(x0, 0.0)
-        outline.lineTo(x0, y1 - r)
-        outline.quadTo(x0, y1, x0 + r, y1)
-        outline.lineTo(x1 - r, y1)
-        outline.quadTo(x1, y1, x1, y1 - r)
-        outline.lineTo(x1, 0.0)
+        outline.addRoundedRect(half_w, half_w, w - pen_w, h - pen_w, r, r)
         p.drawPath(outline)
-
-        # 3. Subtle seam separator line at top
-        p.setPen(QPen(QColor("#2a2a2a"), 1.0, Qt.SolidLine))
-        p.drawLine(0, 0, int(w), 0)
 
         p.end()

@@ -285,7 +285,7 @@ class _StatusDotWidget(QWidget):
 class SourceHeaderWidget(QWidget):
     """
     Header label above the Source dropdown:
-    - Left: 'Source' / 'Źródło'
+    - Left: 'Source' / 'Źródło' + Info icon ⓘ (always visible, describes input & connection)
     - Right: Soft status dot + 'Connected: ProjectName' (or 'Disconnected')
       Only shown when DaVinci Resolve is selected.
     """
@@ -306,6 +306,10 @@ class SourceHeaderWidget(QWidget):
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
         )
         lay.addWidget(self.lbl_title)
+
+        # Info icon moved right next to Source text, matching Model info icon
+        self.info_icon = self.win._create_info_icon("") if hasattr(self.win, '_create_info_icon') else QLabel()
+        lay.addWidget(self.info_icon)
         lay.addStretch()
 
         self.status_container = QWidget()
@@ -324,9 +328,6 @@ class SourceHeaderWidget(QWidget):
             f" background: transparent; padding: 0;"
         )
         stat_lay.addWidget(self.lbl_status)
-
-        self.info_icon = self.win._create_info_icon("") if hasattr(self.win, '_create_info_icon') else QLabel()
-        stat_lay.addWidget(self.info_icon)
         lay.addWidget(self.status_container)
 
         if getattr(win, 'current_source_type', 'file') == "resolve":
@@ -360,8 +361,6 @@ class SourceHeaderWidget(QWidget):
                 f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
-            if hasattr(self, 'info_icon') and self.info_icon:
-                self.info_icon.hide()
             self.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
         else:
             self.lbl_status.setText(self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "Brak połączenia")
@@ -369,33 +368,35 @@ class SourceHeaderWidget(QWidget):
                 f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
-            is_installed = False
-            is_studio = False
-            if rh:
-                ed_info = rh.get_resolve_edition_info() if hasattr(rh, 'get_resolve_edition_info') else {}
-                is_installed = bool(ed_info.get("installed", False))
-                if is_installed:
-                    if ed_info.get("edition") == "Studio":
-                        is_studio = True
-                    elif ed_info.get("edition") != "Free":
-                        if hasattr(rh, 'os_doc') and rh.os_doc:
-                            util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
-                            has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
-                            has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
-                            if has_py and not has_lua:
-                                is_studio = True
-
-            if not is_installed:
-                tip = self.win.txt("tt_resolve_not_installed") if hasattr(self.win, 'txt') else "Nie znaleziono programu DaVinci Resolve. Dla pełni funkcji BadWords zalecane jest pobranie DaVinci Resolve."
-            elif is_studio:
-                tip = self.win.txt("tt_resolve_connection_studio") if hasattr(self.win, 'txt') else "Ensure Preferences > System > General > 'External scripting using' is set to 'Local'."
-            else:
-                tip = self.win.txt("tt_resolve_connection_free") if hasattr(self.win, 'txt') else "Open DaVinci Resolve and run Workspace → Scripts → BadWords Bridge."
-
-            if hasattr(self, 'info_icon') and self.info_icon:
-                self.info_icon.show()
-                self.info_icon.custom_tooltip_text = tip or ""
             self.setToolTip("")
+
+        is_installed = False
+        is_studio = False
+        if rh:
+            ed_info = rh.get_resolve_edition_info() if hasattr(rh, 'get_resolve_edition_info') else {}
+            is_installed = bool(ed_info.get("installed", False))
+            if is_installed:
+                if ed_info.get("edition") == "Studio":
+                    is_studio = True
+                elif ed_info.get("edition") != "Free":
+                    if hasattr(rh, 'os_doc') and rh.os_doc:
+                        util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
+                        has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
+                        has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
+                        if has_py and not has_lua:
+                            is_studio = True
+
+        if not is_installed:
+            tip_key = "tt_source_info_not_installed"
+        elif is_studio:
+            tip_key = "tt_source_info_studio"
+        else:
+            tip_key = "tt_source_info_free"
+
+        tip = self.win.txt(tip_key) if hasattr(self.win, 'txt') else ""
+        if hasattr(self, 'info_icon') and self.info_icon:
+            self.info_icon.show()
+            self.info_icon.custom_tooltip_text = tip or ""
 
         # Update stop bridge buttons visibility
         is_resolve_mode = (getattr(self.win, 'current_source_type', 'file') == 'resolve')
@@ -423,17 +424,26 @@ class DavinciSourceBox(QWidget):
 class SourceAreaWidget(QWidget):
     """
     Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
-    Cleanly switches between File state (90px) and DaVinci state (14px spacer + 118px controls = 132px).
+    Cleanly switches between File state (14px spacer + 90px drop zone = 104px)
+    and DaVinci state (14px spacer + 118px controls = 132px).
+    Both states maintain an identical 14px gap below the Source dropdown.
     """
     def __init__(self, drop_zone: QWidget, davinci_box: QWidget, initial_mode: str = "file", parent=None):
         super().__init__(parent)
         self.drop_zone = drop_zone
         self.davinci_box = davinci_box
 
-        self.H_FILE = config.S(90)
+        self.H_FILE_BOX = config.S(90)
+        self.H_FILE_GAP = config.S(14)
+        self.H_FILE = self.H_FILE_GAP + self.H_FILE_BOX
+
         self.H_RESOLVE_GAP = config.S(14)
         self.H_RESOLVE_BOX = config.S(118)
         self.H_RESOLVE = self.H_RESOLVE_GAP + self.H_RESOLVE_BOX
+
+        self.file_spacer = QWidget(self)
+        self.file_spacer.setFixedHeight(self.H_FILE_GAP)
+        self.file_spacer.setStyleSheet("background: transparent;")
 
         self.resolve_spacer = QWidget(self)
         self.resolve_spacer.setFixedHeight(self.H_RESOLVE_GAP)
@@ -442,6 +452,7 @@ class SourceAreaWidget(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
+        lay.addWidget(self.file_spacer)
         lay.addWidget(self.drop_zone)
         lay.addWidget(self.resolve_spacer)
         lay.addWidget(self.davinci_box)
@@ -452,58 +463,38 @@ class SourceAreaWidget(QWidget):
         if mode == "file":
             self.resolve_spacer.hide()
             self.davinci_box.hide()
+            self.file_spacer.show()
             self.drop_zone.show()
             self.setFixedHeight(self.H_FILE)
         else:
+            self.file_spacer.hide()
             self.drop_zone.hide()
             self.resolve_spacer.show()
             self.davinci_box.show()
             self.setFixedHeight(self.H_RESOLVE)
 
 
-def update_source_combo_style(combo, mode: str):
-    """Styles the source dropdown: flat bottom corners in file mode to extend into the drop zone, rounded in resolve mode."""
+def update_source_combo_style(combo, mode: str = "file"):
+    """Styles the source dropdown: standard rounded corners on all 4 sides."""
     r = config.S(4)
     h = config.S(30) - 2
     pad_x = config.S(8)
-    if mode == "file":
-        combo.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                text-align: left;
-                padding: 0px {pad_x}px;
-                border: 1px solid #3a3a3a;
-                border-bottom: 1px solid #282828;
-                border-top-left-radius: {r}px;
-                border-top-right-radius: {r}px;
-                border-bottom-left-radius: 0px;
-                border-bottom-right-radius: 0px;
-                min-height: {h}px;
-                max-height: {h}px;
-                height: {h}px;
-                font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
-            }}
-            QPushButton:hover {{ border-color: {config.BTN_BG}; }}
-        """)
-    else:
-        combo.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                text-align: left;
-                padding: 0px {pad_x}px;
-                border: 1px solid #3a3a3a;
-                border-radius: {r}px;
-                min-height: {h}px;
-                max-height: {h}px;
-                height: {h}px;
-                font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
-            }}
-            QPushButton:hover {{ border-color: {config.BTN_BG}; }}
-        """)
+    combo.setStyleSheet(f"""
+        QPushButton {{
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            text-align: left;
+            padding: 0px {pad_x}px;
+            border: 1px solid #3a3a3a;
+            border-radius: {r}px;
+            min-height: {h}px;
+            max-height: {h}px;
+            height: {h}px;
+            font-family: "{config.UI_FONT_NAME}", sans-serif;
+            font-size: {config.FS(9.5)}pt;
+        }}
+        QPushButton:hover {{ border-color: {config.BTN_BG}; }}
+    """)
 
 
 
@@ -608,6 +599,15 @@ class WelcomePageView(QWidget):
         self.welcome_root.ensurePolished()
         for child in self.welcome_root.findChildren(QWidget):
             child.ensurePolished()
+        if hasattr(self.win, 'welcome_stack') and self.win.welcome_stack:
+            for i in range(self.win.welcome_stack.count()):
+                w = self.win.welcome_stack.widget(i)
+                if w:
+                    w.ensurePolished()
+                    if w.layout():
+                        w.layout().activate()
+        if hasattr(self.win, '_sync_script_edit_height'):
+            self.win._sync_script_edit_height(animated=False)
 
     def get_visual_height(self, idx: int, source_type: str = None) -> int:
         is_standalone = getattr(self.win, 'is_standalone', True)
@@ -618,9 +618,9 @@ class WelcomePageView(QWidget):
             content_h = config.S(322) if idx == 0 else config.S(404)
         else:
             if idx == 0:
-                content_h = config.S(366) if source_type == 'file' else config.S(408)
+                content_h = config.S(380) if source_type == 'file' else config.S(408)
             else:
-                content_h = config.S(408) if source_type == 'file' else config.S(458)
+                content_h = config.S(422) if source_type == 'file' else config.S(458)
 
         return self.H_HEADER + content_h
 
@@ -636,7 +636,7 @@ class WelcomePageView(QWidget):
             cur_y = self._target_y(self._current_idx)
             self.welcome_root.move(0, cur_y)
 
-    def animate_y_to_content(self, duration: int = 240):
+    def animate_y_to_content(self, duration: int = 150):
         if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
             self._y_anim.stop()
         start_y = self.welcome_root.y()
@@ -644,14 +644,14 @@ class WelcomePageView(QWidget):
         if start_y == end_y or duration <= 0:
             self.welcome_root.move(0, end_y)
             if hasattr(self.win, '_sync_script_edit_height'):
-                self.win._sync_script_edit_height()
+                self.win._sync_script_edit_height(animated=False)
             return
 
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
         anim.setStartValue(start_y)
         anim.setEndValue(end_y)
-        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
 
         def _on_anim_step(y):
             self.welcome_root.move(0, int(y))
@@ -712,6 +712,10 @@ class WelcomePageView(QWidget):
 
         pix_from = current_w.grab()
 
+        # Preload target workspace before snapshotting
+        if target_idx == 0 and hasattr(self.win, '_sync_script_edit_height'):
+            self.win._sync_script_edit_height(animated=False)
+
         target_w.resize(w, self.H_MAX_CONTENT)
         if target_w.layout():
             target_w.layout().activate()
@@ -747,6 +751,8 @@ class WelcomePageView(QWidget):
                 target_w.layout().activate()
             target_w.show()
             target_w.raise_()
+            if target_idx == 0 and hasattr(self.win, '_sync_script_edit_height'):
+                self.win._sync_script_edit_height(animated=False)
             self._is_animating = False
 
         anim.valueChanged.connect(_step)
@@ -772,6 +778,8 @@ class WelcomePageView(QWidget):
                     target_w.layout().activate()
                 target_w.show()
                 target_w.raise_()
+        if target_idx == 0 and hasattr(self.win, '_sync_script_edit_height'):
+            self.win._sync_script_edit_height(animated=False)
         self.win.welcome_mode_switch.set_index(target_idx, trigger_callback=False)
         self.win.welcome_mode_switch.animate_indicator(target_idx, duration=0)
         y = self._target_y(target_idx)
@@ -1534,10 +1542,11 @@ def build_welcome_view(win) -> QWidget:
             if hasattr(win, 'source_area_1'):
                 win.source_area_1.set_mode(mode)
 
-            if hasattr(win, 'welcome_stack') and win.welcome_stack.currentWidget():
-                curr_w = win.welcome_stack.currentWidget()
-                if curr_w.layout():
-                    curr_w.layout().activate()
+            if hasattr(win, 'welcome_stack') and win.welcome_stack:
+                for i in range(win.welcome_stack.count()):
+                    w_item = win.welcome_stack.widget(i)
+                    if w_item and w_item.layout():
+                        w_item.layout().activate()
             if hasattr(win, 'settings_layout') and win.settings_layout:
                 win.settings_layout.activate()
             if hasattr(win, 'slider_widget') and win.slider_widget:
@@ -1552,7 +1561,7 @@ def build_welcome_view(win) -> QWidget:
                     win.w_fs_resolve_group.show()
                 win.w_fs_hidden_info.hide()
 
-            page.animate_y_to_content(200)
+            page.animate_y_to_content(150)
             if hasattr(win, '_sync_script_edit_height'):
                 win._sync_script_edit_height(animated=True)
 

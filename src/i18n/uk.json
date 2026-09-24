@@ -439,5 +439,8 @@
     "tt_resolve_connection_free": "Відкрийте DaVinci Resolve та запустіть Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Зупинити Bridge",
     "tt_stop_bridge": "Зупинити BadWords Bridge в DaVinci Resolve",
-    "tt_resolve_not_installed": "DaVinci Resolve не знайдено. Для повної функціональності BadWords рекомендується завантажити DaVinci Resolve."
+    "tt_resolve_not_installed": "DaVinci Resolve не знайдено. Для повної функціональності BadWords рекомендується завантажити DaVinci Resolve.",
+    "tt_source_info_free": "<!-- raw -->Виберіть джерело медіа: ви можете редагувати аудіо/відеофайл безпосередньо з диска або використовувати BadWords як плагін для DaVinci Resolve (що дозволяє переносити розрізи безпосередньо на таймлайн і фарбувати кліпи).<br><br><b>Підключення до DaVinci Resolve (Free):</b><br>Відкрийте DaVinci Resolve та запустіть <i>Workspace → Scripts → BadWords Bridge</i>.",
+    "tt_source_info_studio": "<!-- raw -->Виберіть джерело медіа: ви можете редагувати аудіо/відеофайл безпосередньо з диска або використовувати BadWords як плагін для DaVinci Resolve (що дозволяє переносити розрізи безпосередньо на таймлайн і фарбувати кліпи).<br><br><b>Підключення до DaVinci Resolve Studio:</b><br>Переконайтеся, що в DaVinci Resolve параметр <i>Preferences → System → General → External scripting using</i> встановлено на <i>Local</i>.",
+    "tt_source_info_not_installed": "<!-- raw -->Виберіть джерело медіа: ви можете редагувати аудіо/відеофайл безпосередньо з диска або використовувати BadWords як плагін для DaVinci Resolve (що дозволяє переносити розрізи безпосередньо на таймлайн і фарбувати кліпи).<br><br><b>DaVinci Resolve:</b><br>Професійна програма для відеомонтажу. Її не виявлено в системі – рекомендуємо встановити DaVinci Resolve для повної інтеграції з таймлайном."
 }

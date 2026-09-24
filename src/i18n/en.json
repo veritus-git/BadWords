@@ -439,5 +439,8 @@
     "tt_resolve_connection_free": "Open DaVinci Resolve and run Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Stop Bridge",
     "tt_stop_bridge": "Stop BadWords Bridge running inside DaVinci Resolve",
-    "tt_resolve_not_installed": "DaVinci Resolve was not found. Downloading DaVinci Resolve is recommended for the full functionality of BadWords."
+    "tt_resolve_not_installed": "DaVinci Resolve was not found. Downloading DaVinci Resolve is recommended for the full functionality of BadWords.",
+    "tt_source_info_free": "<!-- raw -->Choose media source: you can edit an audio/video file directly from your disk, or use BadWords as a plugin for DaVinci Resolve (which enables applying cuts directly onto the timeline and color-coding clips).<br><br><b>DaVinci Resolve Connection (Free):</b><br>Open DaVinci Resolve and run <i>Workspace → Scripts → BadWords Bridge</i>.",
+    "tt_source_info_studio": "<!-- raw -->Choose media source: you can edit an audio/video file directly from your disk, or use BadWords as a plugin for DaVinci Resolve (which enables applying cuts directly onto the timeline and color-coding clips).<br><br><b>DaVinci Resolve Studio Connection:</b><br>Ensure that in DaVinci Resolve <i>Preferences → System → General → External scripting using</i> is set to <i>Local</i>.",
+    "tt_source_info_not_installed": "<!-- raw -->Choose media source: you can edit an audio/video file directly from your disk, or use BadWords as a plugin for DaVinci Resolve (which enables applying cuts directly onto the timeline and color-coding clips).<br><br><b>DaVinci Resolve:</b><br>Professional video editing software. Not detected on this system – downloading DaVinci Resolve is recommended for full timeline integration."
 }

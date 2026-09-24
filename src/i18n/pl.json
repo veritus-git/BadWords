@@ -439,5 +439,8 @@
     "tt_resolve_connection_free": "W DaVinci Resolve uruchom: Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Zatrzymaj Bridge",
     "tt_stop_bridge": "Zatrzymaj skrypt BadWords Bridge w DaVinci Resolve",
-    "tt_resolve_not_installed": "Nie znaleziono programu DaVinci Resolve. Dla pełni funkcji BadWords zalecane jest pobranie DaVinci Resolve."
+    "tt_resolve_not_installed": "Nie znaleziono programu DaVinci Resolve. Dla pełni funkcji BadWords zalecane jest pobranie DaVinci Resolve.",
+    "tt_source_info_free": "<!-- raw -->Wybierz źródło multimediów: możesz edytować plik wideo/audio bezpośrednio z dysku lub użyć BadWords jako wtyczki do DaVinci Resolve (co pozwala na bezpośrednie nanoszenie cięć na osi czasu oraz kolorowanie klipów).<br><br><b>Połączenie z DaVinci Resolve (Free):</b><br>Otwórz DaVinci Resolve i uruchom <i>Workspace → Scripts → BadWords Bridge</i>.",
+    "tt_source_info_studio": "<!-- raw -->Wybierz źródło multimediów: możesz edytować plik wideo/audio bezpośrednio z dysku lub użyć BadWords jako wtyczki do DaVinci Resolve (co pozwala na bezpośrednie nanoszenie cięć na osi czasu oraz kolorowanie klipów).<br><br><b>Połączenie z DaVinci Resolve Studio:</b><br>Upewnij się, że w DaVinci Resolve opcja <i>Preferences → System → General → External scripting using</i> jest ustawiona na <i>Local</i>.",
+    "tt_source_info_not_installed": "<!-- raw -->Wybierz źródło multimediów: możesz edytować plik wideo/audio bezpośrednio z dysku lub użyć BadWords jako wtyczki do DaVinci Resolve (co pozwala na bezpośrednie nanoszenie cięć na osi czasu oraz kolorowanie klipów).<br><br><b>DaVinci Resolve:</b><br>Profesjonalny program do montażu wideo. Nie wykryto go w systemie – zalecamy pobranie DaVinci Resolve dla pełni funkcji integracji z osią czasu."
 }
