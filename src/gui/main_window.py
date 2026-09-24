@@ -531,22 +531,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._script_h_anim = anim
         anim.start()
 
-    def _sync_script_edit_height(self, animated: bool = True, duration: int = 260):
+    def _sync_script_edit_height(self, animated: bool = False, duration: int = 0):
         if not hasattr(self, 'welcome_script_edit'):
             return
         try:
             top_offset = config.S(22)
-            mode = getattr(self, 'current_source_type', 'file')
-            target_p_bottom = config.S(332) if mode == "file" else config.S(360)
+            target_p_bottom = config.S(360)
             target_h = target_p_bottom - top_offset
 
             if target_h > config.S(50):
-                cur_h = self.welcome_script_edit.height()
-                is_ws0_active = hasattr(self, 'welcome_stack') and self.welcome_stack.currentIndex() == 0
-                if animated and self.isVisible() and is_ws0_active and abs(cur_h - target_h) > 2:
-                    self.animate_script_edit_height(target_h, duration)
-                else:
-                    self.welcome_script_edit.setFixedHeight(target_h)
+                self.welcome_script_edit.setFixedHeight(target_h)
         except Exception:
             pass
 
