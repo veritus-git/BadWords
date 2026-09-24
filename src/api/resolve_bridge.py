@@ -160,13 +160,15 @@ class ResolveBridgeClient:
         has_bytes = False
 
         while i < n:
-            if payload_str[i:i + 6].startswith("\\uE0") and len(payload_str[i:i + 6]) == 6:
+            chunk = payload_str[i:i + 6]
+            if len(chunk) == 6 and chunk[:4].lower() == "\\ue0":
                 try:
-                    b = int(payload_str[i + 2:i + 6], 16) - 0xE000
-                    raw_bytes.append(b)
-                    has_bytes = True
-                    i += 6
-                    continue
+                    b = int(chunk[2:6], 16) - 0xE000
+                    if 0 <= b <= 255:
+                        raw_bytes.append(b)
+                        has_bytes = True
+                        i += 6
+                        continue
                 except ValueError:
                     pass
             if has_bytes:
@@ -188,7 +190,10 @@ class ResolveBridgeClient:
             try:
                 chars.append(raw_bytes.decode('utf-8'))
             except UnicodeDecodeError:
-                chars.append(raw_bytes.decode('latin-1', errors='replace'))
+                try:
+                    chars.append(raw_bytes.decode('cp1250' if sys.platform == 'win32' else 'latin-1', errors='replace'))
+                except Exception:
+                    chars.append(raw_bytes.decode('latin-1', errors='replace'))
 
         return "".join(chars)
 

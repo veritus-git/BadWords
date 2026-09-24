@@ -349,11 +349,30 @@ class SourceHeaderWidget(QWidget):
         stat_lay.addWidget(self.lbl_status)
         lay.addWidget(self.status_container)
 
+        self._full_status_text = ""
+        self._full_project_name = ""
+
         if getattr(win, 'current_source_type', 'file') == "resolve":
             self.status_container.show()
         else:
             self.status_container.hide()
         self.update_status()
+
+    def _update_status_elision(self):
+        if not hasattr(self, '_full_status_text') or not self._full_status_text:
+            return
+        w = self.width() if self.width() > 0 else config.S(380)
+        left_w = self.lbl_title.sizeHint().width() + self.info_icon.sizeHint().width() + config.S(24)
+        dot_w = config.S(16)
+        avail_w = max(config.S(100), w - left_w - dot_w)
+        fm = self.lbl_status.fontMetrics()
+        elided = fm.elidedText(self._full_status_text, Qt.ElideRight, avail_w)
+        self.lbl_status.setText(elided)
+        self.status_container.setMaximumWidth(avail_w + dot_w)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_status_elision()
 
     def set_source_mode(self, mode: str):
         self.update_status()
@@ -375,19 +394,26 @@ class SourceHeaderWidget(QWidget):
                 txt_tpl = self.win.txt("status_resolve_bridge_connected") if hasattr(self.win, 'txt') else "Połączono (Bridge): {project}"
             else:
                 txt_tpl = self.win.txt("status_resolve_connected") if hasattr(self.win, 'txt') else "Połączono: {project}"
-            self.lbl_status.setText(txt_tpl.replace("{project}", disp_project))
+            full_status = txt_tpl.replace("{project}", disp_project)
+            self._full_status_text = full_status
+            self._full_project_name = disp_project
+            self._update_status_elision()
             self.lbl_status.setStyleSheet(
                 f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
             self.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
+            self.lbl_status.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
         else:
-            self.lbl_status.setText(self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "Brak połączenia")
+            self._full_status_text = self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "Brak połączenia"
+            self._full_project_name = ""
+            self._update_status_elision()
             self.lbl_status.setStyleSheet(
                 f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
             self.setToolTip("")
+            self.lbl_status.setToolTip("")
 
         is_installed = False
         is_studio = False

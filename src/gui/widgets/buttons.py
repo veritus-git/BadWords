@@ -1268,7 +1268,19 @@ class CustomDropdown(QPushButton):
 
     def setText(self, text):
         super().setText(text)
+        self.setToolTip(str(text))
         self._update_text_alignment(text)
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        pad_x = config.S(10) if bool(self.property("large_input")) else config.S(8)
+        avail = self.width() - 2 * pad_x - config.S(4)
+        if avail > config.S(20) and opt.text:
+            fm = opt.fontMetrics
+            opt.text = fm.elidedText(opt.text, Qt.ElideRight, avail)
+        painter.drawControl(QStyle.CE_PushButton, opt)
 
     def _update_text_alignment(self, text):
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
