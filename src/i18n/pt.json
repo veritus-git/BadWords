@@ -439,5 +439,8 @@
     "tt_resolve_connection_free": "Abra o DaVinci Resolve e execute Workspace → Scripts → BadWords Bridge.",
     "btn_stop_bridge": "Parar Bridge",
     "tt_stop_bridge": "Parar BadWords Bridge no DaVinci Resolve",
-    "tt_resolve_not_installed": "O DaVinci Resolve não foi encontrado. É recomendável baixar o DaVinci Resolve para aproveitar todas as funcionalidades do BadWords."
+    "tt_resolve_not_installed": "O DaVinci Resolve não foi encontrado. É recomendável baixar o DaVinci Resolve para aproveitar todas as funcionalidades do BadWords.",
+    "tt_source_info_free": "<!-- raw -->Escolha a fonte de mídia: pode editar um ficheiro de áudio/vídeo diretamente do disco ou usar o BadWords como plugin para o DaVinci Resolve (permitindo aplicar cortes diretamente na timeline e colorir clipes).<br><br><b>Ligação DaVinci Resolve (Free):</b><br>Abra o DaVinci Resolve e execute <i>Workspace → Scripts → BadWords Bridge</i>.",
+    "tt_source_info_studio": "<!-- raw -->Escolha a fonte de mídia: pode editar um ficheiro de áudio/vídeo diretamente do disco ou usar o BadWords como plugin para o DaVinci Resolve (permitindo aplicar cortes diretamente na timeline e colorir clipes).<br><br><b>Ligação DaVinci Resolve Studio:</b><br>Certifique-se de que no DaVinci Resolve <i>Preferences → System → General → External scripting using</i> está definido como <i>Local</i>.",
+    "tt_source_info_not_installed": "<!-- raw -->Escolha a fonte de mídia: pode editar um ficheiro de áudio/vídeo diretamente do disco ou usar o BadWords como plugin para o DaVinci Resolve (permitindo aplicar cortes diretamente na timeline e colorir clipes).<br><br><b>DaVinci Resolve:</b><br>Software profissional de edição de vídeo. Não detetado neste sistema – descarregar o DaVinci Resolve é recomendado para obter a integração total com a timeline."
 }

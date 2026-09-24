@@ -439,5 +439,8 @@
     "tt_resolve_connection_free": "Öffnen Sie DaVinci Resolve und führen Sie Workspace → Skripte → BadWords Bridge aus.",
     "btn_stop_bridge": "Bridge stoppen",
     "tt_stop_bridge": "BadWords Bridge in DaVinci Resolve stoppen",
-    "tt_resolve_not_installed": "DaVinci Resolve wurde nicht gefunden. Für den vollen Funktionsumfang von BadWords wird das Herunterladen von DaVinci Resolve empfohlen."
+    "tt_resolve_not_installed": "DaVinci Resolve wurde nicht gefunden. Für den vollen Funktionsumfang von BadWords wird das Herunterladen von DaVinci Resolve empfohlen.",
+    "tt_source_info_free": "<!-- raw -->Medienquelle auswählen: Sie können eine Audio-/Videodatei direkt von der Festplatte bearbeiten oder BadWords als Plugin für DaVinci Resolve verwenden (ermöglicht direkte Schnitte auf der Timeline und Farbmarkierung von Clips).<br><br><b>DaVinci Resolve Verbindung (Free):</b><br>Öffnen Sie DaVinci Resolve und starten Sie <i>Workspace → Scripts → BadWords Bridge</i>.",
+    "tt_source_info_studio": "<!-- raw -->Medienquelle auswählen: Sie können eine Audio-/Videodatei direkt von der Festplatte bearbeiten oder BadWords als Plugin für DaVinci Resolve verwenden (ermöglicht direkte Schnitte auf der Timeline und Farbmarkierung von Clips).<br><br><b>DaVinci Resolve Studio Verbindung:</b><br>Stellen Sie sicher, dass in DaVinci Resolve unter <i>Preferences → System → General → External scripting using</i> die Option <i>Local</i> gewählt ist.",
+    "tt_source_info_not_installed": "<!-- raw -->Medienquelle auswählen: Sie können eine Audio-/Videodatei direkt von der Festplatte bearbeiten oder BadWords als Plugin für DaVinci Resolve verwenden (ermöglicht direkte Schnitte auf der Timeline und Farbmarkierung von Clips).<br><br><b>DaVinci Resolve:</b><br>Professionelle Videobearbeitungssoftware. Auf diesem System nicht erkannt – das Herunterladen von DaVinci Resolve wird für die volle Timeline-Integration empfohlen."
 }
