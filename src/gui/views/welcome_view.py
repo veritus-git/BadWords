@@ -374,12 +374,50 @@ class SourceHeaderWidget(QWidget):
         super().resizeEvent(event)
         self._update_status_elision()
 
-    def set_source_mode(self, mode: str):
+    def set_source_mode(self, mode: str, animated: bool = False, duration: int = 310):
         self.update_status(animated=False)
         if mode == "resolve":
-            self.status_container.show()
+            if animated and self.isVisible():
+                self._animate_status_container(True, duration)
+            else:
+                self.status_container.show()
         else:
-            self.status_container.hide()
+            if animated and self.isVisible() and self.status_container.isVisible():
+                self._animate_status_container(False, duration)
+            else:
+                self.status_container.hide()
+
+    def _animate_status_container(self, show: bool, duration: int = 310):
+        if getattr(self, '_status_fade_anim', None) and self._status_fade_anim.state() == QPropertyAnimation.Running:
+            self._status_fade_anim.stop()
+        eff = QGraphicsOpacityEffect(self.status_container)
+        self.status_container.setGraphicsEffect(eff)
+        if show:
+            self.status_container.show()
+            eff.setOpacity(0.0)
+            anim = QPropertyAnimation(eff, b"opacity", self.status_container)
+            anim.setDuration(duration)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.InOutCubic)
+            def _clean_in():
+                self.status_container.setGraphicsEffect(None)
+            anim.finished.connect(_clean_in)
+            self._status_fade_anim = anim
+            anim.start()
+        else:
+            eff.setOpacity(1.0)
+            anim = QPropertyAnimation(eff, b"opacity", self.status_container)
+            anim.setDuration(duration)
+            anim.setStartValue(1.0)
+            anim.setEndValue(0.0)
+            anim.setEasingCurve(QEasingCurve.InOutCubic)
+            def _clean_out():
+                self.status_container.hide()
+                self.status_container.setGraphicsEffect(None)
+            anim.finished.connect(_clean_out)
+            self._status_fade_anim = anim
+            anim.start()
 
     def update_status(self, animated: bool = True):
         rh = getattr(self.win.engine, 'resolve_handler', None) if hasattr(self.win, 'engine') else None
@@ -548,6 +586,50 @@ class _SourceFadeCanvas(QWidget):
         painter.end()
 
 
+def _fade_widget_visibility(widget: QWidget, show: bool, duration: int = 310, animated: bool = True):
+    """Smoothly fades in or out a widget (like reload/stop-bridge buttons) without affecting siblings."""
+    if not widget:
+        return
+    parent = widget.parentWidget()
+    if not animated or not parent or not parent.isVisible():
+        widget.setVisible(show)
+        return
+    if getattr(widget, '_fade_anim', None) and widget._fade_anim.state() == QPropertyAnimation.Running:
+        widget._fade_anim.stop()
+    if show:
+        widget.show()
+        eff = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(eff)
+        eff.setOpacity(0.0)
+        anim = QPropertyAnimation(eff, b"opacity", widget)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        def _done_in():
+            widget.setGraphicsEffect(None)
+        anim.finished.connect(_done_in)
+        widget._fade_anim = anim
+        anim.start()
+    else:
+        if not widget.isVisible():
+            return
+        eff = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(eff)
+        eff.setOpacity(1.0)
+        anim = QPropertyAnimation(eff, b"opacity", widget)
+        anim.setDuration(duration)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        def _done_out():
+            widget.hide()
+            widget.setGraphicsEffect(None)
+        anim.finished.connect(_done_out)
+        widget._fade_anim = anim
+        anim.start()
+
+
 class SourceAreaWidget(QWidget):
     """
     Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
@@ -616,7 +698,7 @@ class SourceAreaWidget(QWidget):
         if hasattr(self, 'resolve_container'):
             self.resolve_container.setFixedWidth(w)
 
-    def set_mode(self, mode: str, animated: bool = False):
+    def set_mode(self, mode: str, animated: bool = False, duration: int = 310):
         if self._current_mode == mode and not self._is_animating:
             return
 
@@ -668,7 +750,6 @@ class SourceAreaWidget(QWidget):
         self.fade_canvas.set_transition(pix_from, pix_to)
 
         self._is_animating = True
-        duration = 270
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
         anim.setStartValue(0.0)
@@ -689,6 +770,122 @@ class SourceAreaWidget(QWidget):
                 self.resolve_container.show()
                 self.resolve_container.raise_()
             force_sync_geometry(self)
+            self._is_animating = False
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        self._anim = anim
+        anim.start()
+
+
+class SilenceOptionsAreaWidget(QWidget):
+    """
+    Container for Silence Detection source-specific options:
+    - In Resolve mode: cut silence and mark clips toggles (resolve_group)
+    - In File mode: info row explaining why options are hidden (hidden_info)
+    Fades between them with a dedicated _SourceFadeCanvas when switching mode.
+    """
+    def __init__(self, resolve_group: QWidget, hidden_info: QWidget, initial_mode: str = "file", parent=None):
+        super().__init__(parent)
+        self.resolve_group = resolve_group
+        self.hidden_info = hidden_info
+        self._current_mode = None
+        self._is_animating = False
+        self._anim = None
+
+        self.setStyleSheet("background: transparent;")
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.resolve_group)
+        lay.addWidget(self.hidden_info)
+
+        self.fade_canvas = _SourceFadeCanvas(self)
+        self.set_mode(initial_mode, animated=False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'fade_canvas'):
+            self.fade_canvas.setGeometry(0, 0, self.width(), self.height())
+
+    def set_mode(self, mode: str, animated: bool = True, duration: int = 310):
+        if self._current_mode == mode and not self._is_animating:
+            return
+
+        if self._anim and self._anim.state() == QVariantAnimation.Running:
+            self._anim.stop()
+            self.fade_canvas.finish()
+
+        if not animated or not self.isVisible() or self.width() <= 0:
+            self._current_mode = mode
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)
+            if mode == "file":
+                self.resolve_group.hide()
+                self.hidden_info.show()
+            else:
+                self.hidden_info.hide()
+                self.resolve_group.show()
+            self.adjustSize()
+            return
+
+        w = self.width()
+        pix_from = self.grab()
+        h_from = self.height()
+
+        self._current_mode = mode
+        if mode == "file":
+            self.resolve_group.hide()
+            self.hidden_info.show()
+        else:
+            self.hidden_info.hide()
+            self.resolve_group.show()
+
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
+        self.adjustSize()
+        force_sync_geometry(self)
+        pix_to = self.grab()
+        h_to = self.height()
+
+        # Start animation from initial height so widgets below do not jump
+        self.setFixedHeight(h_from)
+        if self.parentWidget() and self.parentWidget().layout():
+            self.parentWidget().layout().activate()
+
+        max_h = max(h_from, h_to)
+        self.fade_canvas.setGeometry(0, 0, w, max_h)
+        self.fade_canvas.set_transition(pix_from, pix_to)
+
+        self._is_animating = True
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def _step(v: float):
+            cur_h = int(round(h_from + (h_to - h_from) * v))
+            self.setFixedHeight(cur_h)
+            self.fade_canvas.setGeometry(0, 0, self.width(), max(cur_h, max_h))
+            self.fade_canvas.set_progress(v)
+            if self.parentWidget() and self.parentWidget().layout():
+                self.parentWidget().layout().activate()
+
+        def _done():
+            self.fade_canvas.finish()
+            if mode == "file":
+                self.resolve_group.hide()
+                self.hidden_info.show()
+            else:
+                self.hidden_info.hide()
+                self.resolve_group.show()
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)
+            self.adjustSize()
+            if self.parentWidget() and self.parentWidget().layout():
+                self.parentWidget().layout().activate()
             self._is_animating = False
 
         anim.valueChanged.connect(_step)
@@ -1002,7 +1199,7 @@ class WelcomePageView(QWidget):
         self.welcome_root.move(0, y)
         self._is_animating = False
 
-    def _apply_source_mode(self, mode: str):
+    def _apply_source_mode(self, mode: str, animated: bool = False, duration: int = 310):
         win = self.win
         win.current_source_type = mode
 
@@ -1018,32 +1215,27 @@ class WelcomePageView(QWidget):
 
         for hdr in (getattr(win, 'header_source_0', None), getattr(win, 'header_source_1', None)):
             if hdr:
-                hdr.set_source_mode(mode)
-
-        for btn in (getattr(win, 'btn_ref_source_0', None), getattr(win, 'btn_ref_source_1', None)):
-            if btn:
-                btn.setVisible(mode == "resolve")
+                hdr.set_source_mode(mode, animated=animated, duration=duration)
 
         rh = getattr(win.engine, 'resolve_handler', None) if hasattr(win, 'engine') else None
         is_bridge = rh.is_bridge_connected() if rh else False
-        for btn in (getattr(win, 'btn_stop_bridge_0', None), getattr(win, 'btn_stop_bridge_1', None)):
-            if btn:
-                btn.setVisible(mode == "resolve" and is_bridge)
+
+        _fade_widget_visibility(getattr(win, 'btn_ref_source_0', None), mode == "resolve", duration=duration, animated=animated)
+        _fade_widget_visibility(getattr(win, 'btn_ref_source_1', None), mode == "resolve", duration=duration, animated=animated)
+        _fade_widget_visibility(getattr(win, 'btn_stop_bridge_0', None), mode == "resolve" and is_bridge, duration=duration, animated=animated)
+        _fade_widget_visibility(getattr(win, 'btn_stop_bridge_1', None), mode == "resolve" and is_bridge, duration=duration, animated=animated)
 
         for sa in (getattr(win, 'source_area_0', None), getattr(win, 'source_area_1', None)):
             if sa:
-                sa.set_mode(mode, animated=False)
+                sa.set_mode(mode, animated=animated, duration=duration)
 
-        if mode == "file":
-            if hasattr(win, 'w_fs_resolve_group') and win.w_fs_resolve_group:
-                win.w_fs_resolve_group.hide()
-            if hasattr(win, 'w_fs_hidden_info') and win.w_fs_hidden_info:
-                win.w_fs_hidden_info.show()
+        if hasattr(win, 'silence_options_area') and win.silence_options_area:
+            win.silence_options_area.set_mode(mode, animated=animated, duration=duration)
         else:
             if hasattr(win, 'w_fs_resolve_group') and win.w_fs_resolve_group:
-                win.w_fs_resolve_group.show()
+                win.w_fs_resolve_group.setVisible(mode == "resolve")
             if hasattr(win, 'w_fs_hidden_info') and win.w_fs_hidden_info:
-                win.w_fs_hidden_info.hide()
+                win.w_fs_hidden_info.setVisible(mode == "file")
 
         if hasattr(win, 'welcome_stack') and win.welcome_stack:
             for i in range(win.welcome_stack.count()):
@@ -1063,41 +1255,21 @@ class WelcomePageView(QWidget):
 
         if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
             self._y_anim.stop()
-            self.fade_canvas.finish()
 
+        duration = 310
         active_idx = self.win.welcome_stack.currentIndex() if (hasattr(self.win, 'welcome_stack') and self.win.welcome_stack) else self._current_idx
-        current_w = self.win.welcome_stack.widget(active_idx) if (hasattr(self.win, 'welcome_stack') and self.win.welcome_stack) else None
+        animated = self.isVisible() and self.width() > 0
 
-        if not current_w or not self.isVisible() or self.width() <= 0:
-            self._apply_source_mode(mode)
-            cur_y = self._target_y(active_idx, mode)
-            self.welcome_root.move(0, cur_y)
-            return
-
-        w = self.width()
-        self.welcome_root.setFixedWidth(w)
-        self.workspace_container.setFixedWidth(w)
-        self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
-        self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
-
-        # Snapshot current visual state before changes
-        pix_from = current_w.grab()
-
-        # Apply all source updates to widgets instantly
-        self._apply_source_mode(mode)
-        current_w.resize(w, self.H_MAX_CONTENT)
-        force_sync_geometry(current_w)
-
-        # Snapshot target visual state after changes
-        pix_to = current_w.grab()
-
-        self.fade_canvas.set_transition(pix_from, pix_to)
+        self._apply_source_mode(mode, animated=animated, duration=duration)
 
         start_y = self.welcome_root.y()
         end_y = self._target_y(active_idx, mode)
 
-        # Duration minimally faster than workspace switch (350ms vs 270ms)
-        duration = 270
+        if not animated or start_y == end_y:
+            self.welcome_root.move(0, end_y)
+            self._is_animating = False
+            return
+
         self._is_animating = True
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
@@ -1108,14 +1280,9 @@ class WelcomePageView(QWidget):
         def _step(v: float):
             cur_y = int(start_y + (end_y - start_y) * v)
             self.welcome_root.move(0, cur_y)
-            self.fade_canvas.set_progress(v)
 
         def _done():
             self.welcome_root.move(0, end_y)
-            self.fade_canvas.finish()
-            cur_w = self.width()
-            current_w.resize(cur_w, self.H_MAX_CONTENT)
-            force_sync_geometry(current_w)
             self._is_animating = False
 
         anim.valueChanged.connect(_step)
@@ -1748,7 +1915,6 @@ def build_welcome_view(win) -> QWidget:
     lay_fs_resolve.setSpacing(config.S(8))
     lay_fs_resolve.addWidget(win.w_fs_cut)
     lay_fs_resolve.addWidget(win.w_fs_mark)
-    l_fast.addWidget(win.w_fs_resolve_group)
 
     # Info row when in Local File mode (toggles are hidden)
     win.w_fs_hidden_info = QWidget()
@@ -1765,14 +1931,13 @@ def build_welcome_view(win) -> QWidget:
     info_why = win._create_info_icon("tt_why_silence_options_hidden")
     row_fs_hidden.addWidget(info_why)
     row_fs_hidden.addStretch()
-    l_fast.addWidget(win.w_fs_hidden_info)
 
-    if is_standalone and win.current_source_type == "file":
-        win.w_fs_resolve_group.hide()
-        win.w_fs_hidden_info.show()
-    else:
-        win.w_fs_resolve_group.show()
-        win.w_fs_hidden_info.hide()
+    win.silence_options_area = SilenceOptionsAreaWidget(
+        win.w_fs_resolve_group,
+        win.w_fs_hidden_info,
+        initial_mode=win.current_source_type
+    )
+    l_fast.addWidget(win.silence_options_area)
 
     l_fast.addSpacing(config.S(16))
 
