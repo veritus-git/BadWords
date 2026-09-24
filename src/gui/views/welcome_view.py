@@ -203,7 +203,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         if trigger_callback and self.on_change:
             self.on_change(idx)
 
-    def animate_indicator(self, idx: int, duration: int = 280):
+    def animate_indicator(self, idx: int, duration: int = 400):
         target_pos = float(idx)
         if self._anim is not None:
             self._anim.stop()
@@ -1135,7 +1135,7 @@ class WelcomePageView(QWidget):
             if idx == 0:
                 content_h = config.S(408)
             else:
-                content_h = config.S(422) if source_type == 'file' else config.S(458)
+                content_h = config.S(408) if source_type == 'file' else config.S(458)
 
         return self.H_HEADER + content_h
 
@@ -1205,8 +1205,8 @@ class WelcomePageView(QWidget):
             self._y_anim.stop()
             self.fade_canvas.finish()
 
-        duration = 350
-        self.win.welcome_mode_switch.animate_indicator(target_idx, duration=280)
+        duration = 400
+        self.win.welcome_mode_switch.animate_indicator(target_idx, duration=duration)
 
         current_w = self.win.welcome_stack.widget(self._current_idx)
         target_w = self.win.welcome_stack.widget(target_idx)
