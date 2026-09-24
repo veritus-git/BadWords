@@ -501,9 +501,9 @@ class SourceHeaderWidget(QWidget):
 
         # Update stop bridge buttons visibility
         is_resolve_mode = (getattr(self.win, 'current_source_type', 'file') == 'resolve')
-        for stop_btn in (getattr(self.win, 'btn_stop_bridge_0', None), getattr(self.win, 'btn_stop_bridge_1', None)):
-            if stop_btn:
-                stop_btn.setVisible(is_resolve_mode and is_bridge)
+        for box in (getattr(self.win, 'source_actions_0', None), getattr(self.win, 'source_actions_1', None)):
+            if box:
+                box.set_state(is_resolve_mode, is_bridge, animated=False)
 
 
 class DavinciSourceBox(QWidget):
@@ -572,7 +572,7 @@ class _SourceFadeCanvas(QWidget):
             painter.setOpacity(alpha_from)
             dpr_from = self.pix_from.devicePixelRatio() if hasattr(self.pix_from, 'devicePixelRatio') and self.pix_from.devicePixelRatio() > 0 else 1.0
             log_w_from = self.pix_from.width() / dpr_from
-            x_from = int(round((w - log_w_from) / 2.0))
+            x_from = 0 if abs(log_w_from - w) < 2 else int(round((w - log_w_from) / 2.0))
             painter.drawPixmap(x_from, 0, self.pix_from)
 
         if self.pix_to and p > 0.35:
@@ -580,10 +580,101 @@ class _SourceFadeCanvas(QWidget):
             painter.setOpacity(alpha_to)
             dpr_to = self.pix_to.devicePixelRatio() if hasattr(self.pix_to, 'devicePixelRatio') and self.pix_to.devicePixelRatio() > 0 else 1.0
             log_w_to = self.pix_to.width() / dpr_to
-            x_to = int(round((w - log_w_to) / 2.0))
+            x_to = 0 if abs(log_w_to - w) < 2 else int(round((w - log_w_to) / 2.0))
             painter.drawPixmap(x_to, 0, self.pix_to)
 
         painter.end()
+
+
+class SourceActionsBox(QWidget):
+    """
+    Holds DaVinci Resolve action buttons (reconnect and optional stop-bridge).
+    Smoothly animates its width and opacity when switching between File mode (0px width)
+    and Resolve mode (target width), preventing any abrupt snapping or jumping of the
+    adjacent source dropdown combo.
+    """
+    def __init__(self, btn_stop_bridge: QWidget, btn_ref_source: QWidget, parent=None):
+        super().__init__(parent)
+        self.btn_stop_bridge = btn_stop_bridge
+        self.btn_ref_source = btn_ref_source
+        self.setStyleSheet("background: transparent;")
+        self.setFixedHeight(config.S(30))
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(config.S(4), 0, 0, 0)
+        lay.setSpacing(config.S(4))
+        if self.btn_stop_bridge:
+            lay.addWidget(self.btn_stop_bridge)
+        if self.btn_ref_source:
+            lay.addWidget(self.btn_ref_source)
+
+        self._opacity_eff = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_eff)
+        self._anim = None
+
+    def calc_target_width(self, is_resolve: bool, is_bridge: bool) -> int:
+        if not is_resolve:
+            return 0
+        w_ref = self.btn_ref_source.sizeHint().width() if self.btn_ref_source else config.S(30)
+        w_stop = (self.btn_stop_bridge.sizeHint().width() if self.btn_stop_bridge else config.S(90)) if is_bridge else 0
+        spacing = config.S(4) if is_bridge else 0
+        left_margin = config.S(4)
+        return left_margin + w_stop + spacing + w_ref
+
+    def set_state(self, is_resolve: bool, is_bridge: bool, animated: bool = True, duration: int = 310):
+        if self._anim and self._anim.state() == QVariantAnimation.Running:
+            self._anim.stop()
+
+        target_w = self.calc_target_width(is_resolve, is_bridge)
+
+        if self.btn_stop_bridge:
+            self.btn_stop_bridge.setVisible(is_resolve and is_bridge)
+        if self.btn_ref_source:
+            self.btn_ref_source.setVisible(is_resolve)
+
+        parent = self.parentWidget()
+        if not animated or not parent or not parent.isVisible():
+            self.setFixedWidth(target_w)
+            self._opacity_eff.setOpacity(1.0 if is_resolve else 0.0)
+            self.setVisible(is_resolve)
+            if parent and parent.layout():
+                parent.layout().activate()
+            return
+
+        start_w = self.width() if self.isVisible() else 0
+        start_op = self._opacity_eff.opacity() if self.isVisible() else 0.0
+        end_op = 1.0 if is_resolve else 0.0
+
+        if start_w == target_w and start_op == end_op:
+            return
+
+        self.show()
+
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def _step(v: float):
+            cur_w = int(round(start_w + (target_w - start_w) * v))
+            self.setFixedWidth(cur_w)
+            self._opacity_eff.setOpacity(start_op + (end_op - start_op) * v)
+            if self.parentWidget() and self.parentWidget().layout():
+                self.parentWidget().layout().activate()
+
+        def _done():
+            self.setFixedWidth(target_w)
+            self._opacity_eff.setOpacity(end_op)
+            if not is_resolve:
+                self.hide()
+            if self.parentWidget() and self.parentWidget().layout():
+                self.parentWidget().layout().activate()
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        self._anim = anim
+        anim.start()
 
 
 def _fade_widget_visibility(widget: QWidget, show: bool, duration: int = 310, animated: bool = True):
@@ -784,6 +875,8 @@ class SilenceOptionsAreaWidget(QWidget):
     - In Resolve mode: cut silence and mark clips toggles (resolve_group)
     - In File mode: info row explaining why options are hidden (hidden_info)
     Fades between them with a dedicated _SourceFadeCanvas when switching mode.
+    Maintains full width at all times so that child widgets and switches
+    do not contract into the center during transitions.
     """
     def __init__(self, resolve_group: QWidget, hidden_info: QWidget, initial_mode: str = "file", parent=None):
         super().__init__(parent)
@@ -804,10 +897,21 @@ class SilenceOptionsAreaWidget(QWidget):
         self.fade_canvas = _SourceFadeCanvas(self)
         self.set_mode(initial_mode, animated=False)
 
+    def _calc_target_height(self, mode: str) -> int:
+        if mode == "file":
+            return config.S(24)
+        return self.resolve_group.sizeHint().height() if hasattr(self, 'resolve_group') else config.S(58)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        w = self.width()
+        h = self.height()
         if hasattr(self, 'fade_canvas'):
-            self.fade_canvas.setGeometry(0, 0, self.width(), self.height())
+            self.fade_canvas.setGeometry(0, 0, w, h)
+        if hasattr(self, 'resolve_group'):
+            self.resolve_group.setFixedWidth(w)
+        if hasattr(self, 'hidden_info'):
+            self.hidden_info.setFixedWidth(w)
 
     def set_mode(self, mode: str, animated: bool = True, duration: int = 310):
         if self._current_mode == mode and not self._is_animating:
@@ -817,40 +921,55 @@ class SilenceOptionsAreaWidget(QWidget):
             self._anim.stop()
             self.fade_canvas.finish()
 
+        w = self.width()
+        if w <= 0 and self.parentWidget():
+            w = self.parentWidget().width()
+        if w <= 0:
+            w = config.S(380)
+
+        target_h = self._calc_target_height(mode)
+
         if not animated or not self.isVisible() or self.width() <= 0:
             self._current_mode = mode
-            self.setMinimumHeight(0)
-            self.setMaximumHeight(16777215)
             if mode == "file":
                 self.resolve_group.hide()
                 self.hidden_info.show()
+                self.hidden_info.setFixedSize(w, target_h)
             else:
                 self.hidden_info.hide()
                 self.resolve_group.show()
-            self.adjustSize()
+                self.resolve_group.setFixedSize(w, target_h)
+            self.setFixedSize(w, target_h)
+            force_sync_geometry(self)
             return
 
-        w = self.width()
+        h_from = self.height() if self.height() > 0 else self._calc_target_height(self._current_mode)
+        # Ensure current state is full width w before grabbing
+        self.setFixedSize(w, h_from)
+        if self._current_mode == "file":
+            self.hidden_info.setFixedSize(w, h_from)
+        else:
+            self.resolve_group.setFixedSize(w, h_from)
+        force_sync_geometry(self)
         pix_from = self.grab()
-        h_from = self.height()
 
         self._current_mode = mode
         if mode == "file":
             self.resolve_group.hide()
             self.hidden_info.show()
+            self.hidden_info.setFixedSize(w, target_h)
         else:
             self.hidden_info.hide()
             self.resolve_group.show()
+            self.resolve_group.setFixedSize(w, target_h)
 
-        self.setMinimumHeight(0)
-        self.setMaximumHeight(16777215)
-        self.adjustSize()
+        self.setFixedSize(w, target_h)
         force_sync_geometry(self)
         pix_to = self.grab()
-        h_to = self.height()
+        h_to = target_h
 
         # Start animation from initial height so widgets below do not jump
-        self.setFixedHeight(h_from)
+        self.setFixedSize(w, h_from)
         if self.parentWidget() and self.parentWidget().layout():
             self.parentWidget().layout().activate()
 
@@ -867,8 +986,8 @@ class SilenceOptionsAreaWidget(QWidget):
 
         def _step(v: float):
             cur_h = int(round(h_from + (h_to - h_from) * v))
-            self.setFixedHeight(cur_h)
-            self.fade_canvas.setGeometry(0, 0, self.width(), max(cur_h, max_h))
+            self.setFixedSize(w, cur_h)
+            self.fade_canvas.setGeometry(0, 0, w, max(cur_h, max_h))
             self.fade_canvas.set_progress(v)
             if self.parentWidget() and self.parentWidget().layout():
                 self.parentWidget().layout().activate()
@@ -878,12 +997,12 @@ class SilenceOptionsAreaWidget(QWidget):
             if mode == "file":
                 self.resolve_group.hide()
                 self.hidden_info.show()
+                self.hidden_info.setFixedSize(w, h_to)
             else:
                 self.hidden_info.hide()
                 self.resolve_group.show()
-            self.setMinimumHeight(0)
-            self.setMaximumHeight(16777215)
-            self.adjustSize()
+                self.resolve_group.setFixedSize(w, h_to)
+            self.setFixedSize(w, h_to)
             if self.parentWidget() and self.parentWidget().layout():
                 self.parentWidget().layout().activate()
             self._is_animating = False
@@ -1220,10 +1339,9 @@ class WelcomePageView(QWidget):
         rh = getattr(win.engine, 'resolve_handler', None) if hasattr(win, 'engine') else None
         is_bridge = rh.is_bridge_connected() if rh else False
 
-        _fade_widget_visibility(getattr(win, 'btn_ref_source_0', None), mode == "resolve", duration=duration, animated=animated)
-        _fade_widget_visibility(getattr(win, 'btn_ref_source_1', None), mode == "resolve", duration=duration, animated=animated)
-        _fade_widget_visibility(getattr(win, 'btn_stop_bridge_0', None), mode == "resolve" and is_bridge, duration=duration, animated=animated)
-        _fade_widget_visibility(getattr(win, 'btn_stop_bridge_1', None), mode == "resolve" and is_bridge, duration=duration, animated=animated)
+        for box in (getattr(win, 'source_actions_0', None), getattr(win, 'source_actions_1', None)):
+            if box:
+                box.set_state(mode == "resolve", is_bridge, animated=animated, duration=duration)
 
         for sa in (getattr(win, 'source_area_0', None), getattr(win, 'source_area_1', None)):
             if sa:
@@ -1433,7 +1551,7 @@ def build_welcome_view(win) -> QWidget:
 
         _hbox_source_0 = QHBoxLayout()
         _hbox_source_0.setContentsMargins(0, 0, 0, 0)
-        _hbox_source_0.setSpacing(config.S(4))
+        _hbox_source_0.setSpacing(0)
         _hbox_source_0.addWidget(win.combo_source_0, 1)
 
         def _on_stop_bridge():
@@ -1461,14 +1579,14 @@ def build_welcome_view(win) -> QWidget:
             QPushButton:pressed {{ background-color: #702525; color: #ffffff; border-color: #903030; }}
         """)
         win.btn_stop_bridge_0.clicked.connect(_on_stop_bridge)
-        _hbox_source_0.addWidget(win.btn_stop_bridge_0)
-        win.btn_stop_bridge_0.setVisible(win.current_source_type == "resolve" and (rh.is_bridge_connected() if rh else False))
 
         win.btn_ref_source_0 = ReloadButton(size=30)
         win.btn_ref_source_0.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
         win.btn_ref_source_0.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
-        _hbox_source_0.addWidget(win.btn_ref_source_0)
-        win.btn_ref_source_0.setVisible(win.current_source_type == "resolve")
+
+        win.source_actions_0 = SourceActionsBox(win.btn_stop_bridge_0, win.btn_ref_source_0)
+        _hbox_source_0.addWidget(win.source_actions_0)
+        win.source_actions_0.set_state(win.current_source_type == "resolve", (rh.is_bridge_connected() if rh else False), animated=False)
 
         win.settings_layout.addLayout(_hbox_source_0)
         update_source_combo_style(win.combo_source_0, win.current_source_type)
@@ -1768,7 +1886,7 @@ def build_welcome_view(win) -> QWidget:
 
         _hbox_source_1 = QHBoxLayout()
         _hbox_source_1.setContentsMargins(0, 0, 0, 0)
-        _hbox_source_1.setSpacing(config.S(4))
+        _hbox_source_1.setSpacing(0)
         _hbox_source_1.addWidget(win.combo_source_1, 1)
 
         win.btn_stop_bridge_1 = QPushButton(win.txt("btn_stop_bridge") if hasattr(win, 'txt') else "Stop Bridge")
@@ -1787,14 +1905,14 @@ def build_welcome_view(win) -> QWidget:
             QPushButton:pressed {{ background-color: #702525; color: #ffffff; border-color: #903030; }}
         """)
         win.btn_stop_bridge_1.clicked.connect(_on_stop_bridge)
-        _hbox_source_1.addWidget(win.btn_stop_bridge_1)
-        win.btn_stop_bridge_1.setVisible(win.current_source_type == "resolve" and (rh.is_bridge_connected() if rh else False))
 
         win.btn_ref_source_1 = ReloadButton(size=30)
         win.btn_ref_source_1.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
         win.btn_ref_source_1.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
-        _hbox_source_1.addWidget(win.btn_ref_source_1)
-        win.btn_ref_source_1.setVisible(win.current_source_type == "resolve")
+
+        win.source_actions_1 = SourceActionsBox(win.btn_stop_bridge_1, win.btn_ref_source_1)
+        _hbox_source_1.addWidget(win.source_actions_1)
+        win.source_actions_1.set_state(win.current_source_type == "resolve", (rh.is_bridge_connected() if rh else False), animated=False)
 
         l_fast.addLayout(_hbox_source_1)
         update_source_combo_style(win.combo_source_1, win.current_source_type)
