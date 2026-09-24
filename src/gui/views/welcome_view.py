@@ -17,10 +17,10 @@ vector SVG icons, and embedded Ubuntu font consistency across all platforms.
 """
 
 import os
-from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QRectF, QRect, QTimer, QCoreApplication, QEvent
+from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QPropertyAnimation, QRectF, QRect, QTimer, QCoreApplication, QEvent, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
-    QLineEdit, QTextEdit, QSpacerItem, QSizePolicy
+    QLineEdit, QTextEdit, QSpacerItem, QSizePolicy, QGraphicsOpacityEffect
 )
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QLinearGradient
 from PySide6.QtSvg import QSvgRenderer
@@ -375,17 +375,19 @@ class SourceHeaderWidget(QWidget):
         self._update_status_elision()
 
     def set_source_mode(self, mode: str):
-        self.update_status()
+        self.update_status(animated=False)
         if mode == "resolve":
             self.status_container.show()
         else:
             self.status_container.hide()
 
-    def update_status(self):
-        rh = getattr(self.win.engine, 'resolve_handler', None)
+    def update_status(self, animated: bool = True):
+        rh = getattr(self.win.engine, 'resolve_handler', None) if hasattr(self.win, 'engine') else None
         is_conn = rh.is_connected() if rh else False
         project_name = rh.get_current_project_name() if rh else ""
         is_bridge = rh.is_bridge_connected() if rh else False
+
+        old_status = getattr(self, '_full_status_text', '')
 
         self.dot.set_connected(is_conn)
         if is_conn:
@@ -414,6 +416,22 @@ class SourceHeaderWidget(QWidget):
             )
             self.setToolTip("")
             self.lbl_status.setToolTip("")
+
+        page_anim = getattr(getattr(self.win, 'welcome_page', None), '_is_animating', False)
+        if (animated and old_status and old_status != self._full_status_text 
+                and self.status_container.isVisible() and not page_anim):
+            eff = QGraphicsOpacityEffect(self.status_container)
+            self.status_container.setGraphicsEffect(eff)
+            anim = QPropertyAnimation(eff, b"opacity", self.status_container)
+            anim.setDuration(220)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.InOutCubic)
+            def _clean():
+                self.status_container.setGraphicsEffect(None)
+            anim.finished.connect(_clean)
+            self._status_anim = anim
+            anim.start()
 
         is_installed = False
         is_studio = False
@@ -650,7 +668,7 @@ class SourceAreaWidget(QWidget):
         self.fade_canvas.set_transition(pix_from, pix_to)
 
         self._is_animating = True
-        duration = 350
+        duration = 270
         anim = QVariantAnimation(self)
         anim.setDuration(duration)
         anim.setStartValue(0.0)
@@ -984,6 +1002,127 @@ class WelcomePageView(QWidget):
         self.welcome_root.move(0, y)
         self._is_animating = False
 
+    def _apply_source_mode(self, mode: str):
+        win = self.win
+        win.current_source_type = mode
+
+        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
+        opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
+
+        for combo in (getattr(win, 'combo_source_0', None), getattr(win, 'combo_source_1', None)):
+            if combo:
+                combo.blockSignals(True)
+                combo.setText(opt_file if mode == "file" else opt_dr)
+                update_source_combo_style(combo, mode)
+                combo.blockSignals(False)
+
+        for hdr in (getattr(win, 'header_source_0', None), getattr(win, 'header_source_1', None)):
+            if hdr:
+                hdr.set_source_mode(mode)
+
+        for btn in (getattr(win, 'btn_ref_source_0', None), getattr(win, 'btn_ref_source_1', None)):
+            if btn:
+                btn.setVisible(mode == "resolve")
+
+        rh = getattr(win.engine, 'resolve_handler', None) if hasattr(win, 'engine') else None
+        is_bridge = rh.is_bridge_connected() if rh else False
+        for btn in (getattr(win, 'btn_stop_bridge_0', None), getattr(win, 'btn_stop_bridge_1', None)):
+            if btn:
+                btn.setVisible(mode == "resolve" and is_bridge)
+
+        for sa in (getattr(win, 'source_area_0', None), getattr(win, 'source_area_1', None)):
+            if sa:
+                sa.set_mode(mode, animated=False)
+
+        if mode == "file":
+            if hasattr(win, 'w_fs_resolve_group') and win.w_fs_resolve_group:
+                win.w_fs_resolve_group.hide()
+            if hasattr(win, 'w_fs_hidden_info') and win.w_fs_hidden_info:
+                win.w_fs_hidden_info.show()
+        else:
+            if hasattr(win, 'w_fs_resolve_group') and win.w_fs_resolve_group:
+                win.w_fs_resolve_group.show()
+            if hasattr(win, 'w_fs_hidden_info') and win.w_fs_hidden_info:
+                win.w_fs_hidden_info.hide()
+
+        if hasattr(win, 'welcome_stack') and win.welcome_stack:
+            for i in range(win.welcome_stack.count()):
+                w_item = win.welcome_stack.widget(i)
+                if w_item:
+                    force_sync_geometry(w_item)
+        if hasattr(win, 'settings_layout') and win.settings_layout:
+            win.settings_layout.activate()
+        if hasattr(win, 'slider_widget') and win.slider_widget:
+            win.slider_widget.adjustSize()
+        if hasattr(win, '_sync_script_edit_height'):
+            win._sync_script_edit_height(animated=False)
+
+    def switch_source_animated(self, mode: str):
+        if getattr(self.win, 'current_source_type', 'file') == mode and not self._is_animating:
+            return
+
+        if self._y_anim and self._y_anim.state() == QVariantAnimation.Running:
+            self._y_anim.stop()
+            self.fade_canvas.finish()
+
+        active_idx = self.win.welcome_stack.currentIndex() if (hasattr(self.win, 'welcome_stack') and self.win.welcome_stack) else self._current_idx
+        current_w = self.win.welcome_stack.widget(active_idx) if (hasattr(self.win, 'welcome_stack') and self.win.welcome_stack) else None
+
+        if not current_w or not self.isVisible() or self.width() <= 0:
+            self._apply_source_mode(mode)
+            cur_y = self._target_y(active_idx, mode)
+            self.welcome_root.move(0, cur_y)
+            return
+
+        w = self.width()
+        self.welcome_root.setFixedWidth(w)
+        self.workspace_container.setFixedWidth(w)
+        self.win.welcome_stack.setFixedSize(w, self.H_MAX_CONTENT)
+        self.fade_canvas.setGeometry(0, 0, w, self.H_MAX_CONTENT)
+
+        # Snapshot current visual state before changes
+        pix_from = current_w.grab()
+
+        # Apply all source updates to widgets instantly
+        self._apply_source_mode(mode)
+        current_w.resize(w, self.H_MAX_CONTENT)
+        force_sync_geometry(current_w)
+
+        # Snapshot target visual state after changes
+        pix_to = current_w.grab()
+
+        self.fade_canvas.set_transition(pix_from, pix_to)
+
+        start_y = self.welcome_root.y()
+        end_y = self._target_y(active_idx, mode)
+
+        # Duration minimally faster than workspace switch (350ms vs 270ms)
+        duration = 270
+        self._is_animating = True
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def _step(v: float):
+            cur_y = int(start_y + (end_y - start_y) * v)
+            self.welcome_root.move(0, cur_y)
+            self.fade_canvas.set_progress(v)
+
+        def _done():
+            self.welcome_root.move(0, end_y)
+            self.fade_canvas.finish()
+            cur_w = self.width()
+            current_w.resize(cur_w, self.H_MAX_CONTENT)
+            force_sync_geometry(current_w)
+            self._is_animating = False
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        self._y_anim = anim
+        anim.start()
+
 
 def build_welcome_view(win) -> QWidget:
     """Build Page 0 of the main stack: Welcome / Configuration screen."""
@@ -1000,8 +1139,6 @@ def build_welcome_view(win) -> QWidget:
 
     # Non-blocking auto-reconnect worker for standalone mode when Resolve is selected
     if is_standalone and not hasattr(win, '_resolve_auto_reconnect_timer'):
-        from PySide6.QtCore import QTimer, QThread, Signal
-
         class _ResolveReconnectWorker(QThread):
             connected = Signal()
 
@@ -1019,37 +1156,10 @@ def build_welcome_view(win) -> QWidget:
         win._reconnect_worker = None
 
         def _on_reconnect_detected():
-            opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
-            win.current_source_type = "resolve"
-            if hasattr(win, 'combo_source_0'):
-                win.combo_source_0.blockSignals(True)
-                win.combo_source_0.setText(opt_dr)
-                win.combo_source_0.blockSignals(False)
-            if hasattr(win, 'combo_source_1'):
-                win.combo_source_1.blockSignals(True)
-                win.combo_source_1.setText(opt_dr)
-                win.combo_source_1.blockSignals(False)
-
-            if hasattr(win, 'source_area_0'):
-                win.source_area_0.set_mode("resolve")
-            if hasattr(win, 'source_area_1'):
-                win.source_area_1.set_mode("resolve")
-
-            if hasattr(win, 'header_source_0') and win.header_source_0:
-                win.header_source_0.set_source_mode("resolve")
-            if hasattr(win, 'header_source_1') and win.header_source_1:
-                win.header_source_1.set_source_mode("resolve")
-
-            if hasattr(win, 'btn_ref_source_0'):
-                win.btn_ref_source_0.setVisible(True)
-            if hasattr(win, 'btn_ref_source_1'):
-                win.btn_ref_source_1.setVisible(True)
-
-            if hasattr(win, 'w_fs_resolve_group'):
-                win.w_fs_resolve_group.show()
-            if hasattr(win, 'w_fs_hidden_info'):
-                win.w_fs_hidden_info.hide()
-
+            if hasattr(win, 'welcome_page') and win.welcome_page:
+                win.welcome_page.switch_source_animated("resolve")
+            else:
+                win.current_source_type = "resolve"
             win._populate_timeline_track_combos()
 
         def _check_auto_reconnect():
@@ -1066,6 +1176,7 @@ def build_welcome_view(win) -> QWidget:
         win._resolve_auto_reconnect_timer.start(2500)
 
     page = WelcomePageView(win)
+    win.welcome_page = page
 
     def _row(label_text: str, widget: QWidget) -> QVBoxLayout:
         row_l = QVBoxLayout()
@@ -1705,65 +1816,12 @@ def build_welcome_view(win) -> QWidget:
         win.drop_zone_0.set_texts(p_txt, sub_txt)
         win.drop_zone_1.set_texts(p_txt, sub_txt)
 
+        page._apply_source_mode(win.current_source_type)
+        page.welcome_root.move(0, page._target_y(0, win.current_source_type))
+
         def _sync_source(idx: int):
             mode = "file" if idx == 0 else "resolve"
-            win.current_source_type = mode
-
-            win.combo_source_0.blockSignals(True)
-            win.combo_source_1.blockSignals(True)
-            win.combo_source_0.setText(opt_file if idx == 0 else opt_dr)
-            win.combo_source_1.setText(opt_file if idx == 0 else opt_dr)
-            update_source_combo_style(win.combo_source_0, mode)
-            update_source_combo_style(win.combo_source_1, mode)
-            win.combo_source_0.blockSignals(False)
-            win.combo_source_1.blockSignals(False)
-
-            if hasattr(win, 'header_source_0'):
-                win.header_source_0.set_source_mode(mode)
-            if hasattr(win, 'header_source_1'):
-                win.header_source_1.set_source_mode(mode)
-
-            if hasattr(win, 'btn_ref_source_0'):
-                win.btn_ref_source_0.setVisible(mode == "resolve")
-            if hasattr(win, 'btn_ref_source_1'):
-                win.btn_ref_source_1.setVisible(mode == "resolve")
-
-            rh = getattr(win.engine, 'resolve_handler', None) if hasattr(win, 'engine') else None
-            is_bridge = rh.is_bridge_connected() if rh else False
-            if hasattr(win, 'btn_stop_bridge_0'):
-                win.btn_stop_bridge_0.setVisible(mode == "resolve" and is_bridge)
-            if hasattr(win, 'btn_stop_bridge_1'):
-                win.btn_stop_bridge_1.setVisible(mode == "resolve" and is_bridge)
-
-            active_ws = win.welcome_stack.currentIndex() if hasattr(win, 'welcome_stack') and win.welcome_stack else 0
-            if hasattr(win, 'source_area_0'):
-                win.source_area_0.set_mode(mode, animated=(active_ws == 0))
-            if hasattr(win, 'source_area_1'):
-                win.source_area_1.set_mode(mode, animated=(active_ws == 1))
-
-            if hasattr(win, 'welcome_stack') and win.welcome_stack:
-                for i in range(win.welcome_stack.count()):
-                    w_item = win.welcome_stack.widget(i)
-                    if w_item:
-                        force_sync_geometry(w_item)
-            if hasattr(win, 'settings_layout') and win.settings_layout:
-                win.settings_layout.activate()
-            if hasattr(win, 'slider_widget') and win.slider_widget:
-                win.slider_widget.adjustSize()
-
-            if mode == "file":
-                if hasattr(win, 'w_fs_resolve_group'):
-                    win.w_fs_resolve_group.hide()
-                win.w_fs_hidden_info.show()
-            else:
-                if hasattr(win, 'w_fs_resolve_group'):
-                    win.w_fs_resolve_group.show()
-                win.w_fs_hidden_info.hide()
-
-            if active_ws == 1:
-                page.animate_y_to_content(350)
-            if hasattr(win, '_sync_script_edit_height'):
-                win._sync_script_edit_height(animated=False)
+            page.switch_source_animated(mode)
 
         win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
         win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
