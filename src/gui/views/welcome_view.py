@@ -440,18 +440,85 @@ class DavinciSourceBox(QWidget):
         self.setFixedHeight(config.S(118))
 
 
+class _SourceFadeCanvas(QWidget):
+    """
+    Renders a hardware-accelerated sequential Fade Out -> Fade In transition.
+    Renders on a solid background matching config.BG_COLOR to completely eliminate
+    double alpha-blending, brightness flashes, and color glitches, matching
+    _WorkspaceFadeCanvas 1:1.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.pix_from = None
+        self.pix_to = None
+        self.progress = 0.0
+        self.hide()
+
+    def set_transition(self, pix_from: QPixmap, pix_to: QPixmap):
+        self.pix_from = pix_from
+        self.pix_to = pix_to
+        self.progress = 0.0
+        self.show()
+        self.raise_()
+        self.update()
+
+    def set_progress(self, p: float):
+        self.progress = p
+        self.update()
+
+    def finish(self):
+        self.pix_from = None
+        self.pix_to = None
+        self.progress = 0.0
+        self.hide()
+
+    def paintEvent(self, event):
+        if not self.pix_from and not self.pix_to:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+        painter.fillRect(self.rect(), QColor(config.BG_COLOR))
+
+        p = self.progress
+        w = self.width()
+
+        if self.pix_from and p < 0.65:
+            alpha_from = max(0.0, min(1.0, (0.65 - p) / 0.65))
+            painter.setOpacity(alpha_from)
+            dpr_from = self.pix_from.devicePixelRatio() if hasattr(self.pix_from, 'devicePixelRatio') and self.pix_from.devicePixelRatio() > 0 else 1.0
+            log_w_from = self.pix_from.width() / dpr_from
+            x_from = int(round((w - log_w_from) / 2.0))
+            painter.drawPixmap(x_from, 0, self.pix_from)
+
+        if self.pix_to and p > 0.35:
+            alpha_to = max(0.0, min(1.0, (p - 0.35) / 0.65))
+            painter.setOpacity(alpha_to)
+            dpr_to = self.pix_to.devicePixelRatio() if hasattr(self.pix_to, 'devicePixelRatio') and self.pix_to.devicePixelRatio() > 0 else 1.0
+            log_w_to = self.pix_to.width() / dpr_to
+            x_to = int(round((w - log_w_to) / 2.0))
+            painter.drawPixmap(x_to, 0, self.pix_to)
+
+        painter.end()
+
+
 class SourceAreaWidget(QWidget):
     """
     Container for source inputs (File Drop Zone vs DaVinci Resolve controls).
     Both states maintain an identical 14px gap below the Source dropdown and
-    an identical 118px widget height (total 132px), allowing instantaneous,
-    zero-jitter source swapping without any height change or layout shift.
+    an identical 118px widget height (total 132px).
+    Transitions between File and DaVinci Resolve use the exact same fade effect
+    as workspace switching (350ms InOutCubic fade out -> fade in on solid background).
     """
     def __init__(self, drop_zone: QWidget, davinci_box: QWidget, initial_mode: str = "file", parent=None):
         super().__init__(parent)
         self.drop_zone = drop_zone
         self.davinci_box = davinci_box
         self._current_mode = None
+        self._is_animating = False
+        self._anim = None
 
         self.H_GAP = config.S(14)
         self.H_BOX = config.S(118)
@@ -459,39 +526,131 @@ class SourceAreaWidget(QWidget):
 
         self.drop_zone.setFixedHeight(self.H_BOX)
 
-        self.file_spacer = QWidget(self)
+        # File container: spacer (14px) + drop_zone (118px)
+        self.file_container = QWidget(self)
+        self.file_container.setStyleSheet("background: transparent;")
+        l_file = QVBoxLayout(self.file_container)
+        l_file.setContentsMargins(0, 0, 0, 0)
+        l_file.setSpacing(0)
+        self.file_spacer = QWidget(self.file_container)
         self.file_spacer.setFixedHeight(self.H_GAP)
         self.file_spacer.setStyleSheet("background: transparent;")
+        l_file.addWidget(self.file_spacer)
+        l_file.addWidget(self.drop_zone)
 
-        self.resolve_spacer = QWidget(self)
+        # Resolve container: spacer (14px) + davinci_box (118px)
+        self.resolve_container = QWidget(self)
+        self.resolve_container.setStyleSheet("background: transparent;")
+        l_res = QVBoxLayout(self.resolve_container)
+        l_res.setContentsMargins(0, 0, 0, 0)
+        l_res.setSpacing(0)
+        self.resolve_spacer = QWidget(self.resolve_container)
         self.resolve_spacer.setFixedHeight(self.H_GAP)
         self.resolve_spacer.setStyleSheet("background: transparent;")
+        l_res.addWidget(self.resolve_spacer)
+        l_res.addWidget(self.davinci_box)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        lay.addWidget(self.file_spacer)
-        lay.addWidget(self.drop_zone)
-        lay.addWidget(self.resolve_spacer)
-        lay.addWidget(self.davinci_box)
+        lay.addWidget(self.file_container)
+        lay.addWidget(self.resolve_container)
+
+        self.fade_canvas = _SourceFadeCanvas(self)
 
         self.setFixedHeight(self.TOTAL_H)
-        self.set_mode(initial_mode)
+        self.set_mode(initial_mode, animated=False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        h = self.height()
+        if hasattr(self, 'fade_canvas'):
+            self.fade_canvas.setGeometry(0, 0, w, h)
+        if hasattr(self, 'file_container'):
+            self.file_container.setFixedWidth(w)
+        if hasattr(self, 'resolve_container'):
+            self.resolve_container.setFixedWidth(w)
 
     def set_mode(self, mode: str, animated: bool = False):
+        if self._current_mode == mode and not self._is_animating:
+            return
+
+        if self._anim and self._anim.state() == QVariantAnimation.Running:
+            self._anim.stop()
+            self.fade_canvas.finish()
+
+        w = self.width()
+        if w <= 0 and self.parentWidget():
+            w = self.parentWidget().width()
+        if w <= 0:
+            w = config.S(380)
+
+        if not animated or not self.isVisible() or self.width() <= 0:
+            self._current_mode = mode
+            if mode == "file":
+                self.resolve_container.hide()
+                self.file_container.show()
+                self.file_container.raise_()
+            else:
+                self.file_container.hide()
+                self.resolve_container.show()
+                self.resolve_container.raise_()
+            self.setFixedHeight(self.TOTAL_H)
+            force_sync_geometry(self)
+            return
+
+        # Snapshot current visual state
+        pix_from = self.grab()
+
+        # Switch visibility to target mode and capture pix_to
         self._current_mode = mode
         if mode == "file":
-            self.resolve_spacer.hide()
-            self.davinci_box.hide()
-            self.file_spacer.show()
-            self.drop_zone.show()
+            self.resolve_container.hide()
+            self.file_container.show()
+            self.file_container.raise_()
         else:
-            self.file_spacer.hide()
-            self.drop_zone.hide()
-            self.resolve_spacer.show()
-            self.davinci_box.show()
+            self.file_container.hide()
+            self.resolve_container.show()
+            self.resolve_container.raise_()
+
         self.setFixedHeight(self.TOTAL_H)
+        self.file_container.resize(w, self.TOTAL_H)
+        self.resolve_container.resize(w, self.TOTAL_H)
         force_sync_geometry(self)
+        pix_to = self.grab()
+
+        self.fade_canvas.setGeometry(0, 0, w, self.TOTAL_H)
+        self.fade_canvas.set_transition(pix_from, pix_to)
+
+        self._is_animating = True
+        duration = 350
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def _step(v: float):
+            self.fade_canvas.set_progress(v)
+
+        def _done():
+            self.fade_canvas.finish()
+            if mode == "file":
+                self.resolve_container.hide()
+                self.file_container.show()
+                self.file_container.raise_()
+            else:
+                self.file_container.hide()
+                self.resolve_container.show()
+                self.resolve_container.raise_()
+            force_sync_geometry(self)
+            self._is_animating = False
+
+        anim.valueChanged.connect(_step)
+        anim.finished.connect(_done)
+        self._anim = anim
+        anim.start()
 
 
 def update_source_combo_style(combo, mode: str = "file"):
@@ -1550,10 +1709,11 @@ def build_welcome_view(win) -> QWidget:
             if hasattr(win, 'btn_stop_bridge_1'):
                 win.btn_stop_bridge_1.setVisible(mode == "resolve" and is_bridge)
 
+            active_ws = win.welcome_stack.currentIndex() if hasattr(win, 'welcome_stack') and win.welcome_stack else 0
             if hasattr(win, 'source_area_0'):
-                win.source_area_0.set_mode(mode)
+                win.source_area_0.set_mode(mode, animated=(active_ws == 0))
             if hasattr(win, 'source_area_1'):
-                win.source_area_1.set_mode(mode)
+                win.source_area_1.set_mode(mode, animated=(active_ws == 1))
 
             if hasattr(win, 'welcome_stack') and win.welcome_stack:
                 for i in range(win.welcome_stack.count()):
@@ -1574,9 +1734,8 @@ def build_welcome_view(win) -> QWidget:
                     win.w_fs_resolve_group.show()
                 win.w_fs_hidden_info.hide()
 
-            active_ws = win.welcome_stack.currentIndex() if hasattr(win, 'welcome_stack') and win.welcome_stack else 0
             if active_ws == 1:
-                page.animate_y_to_content(150)
+                page.animate_y_to_content(350)
             if hasattr(win, '_sync_script_edit_height'):
                 win._sync_script_edit_height(animated=False)
 
