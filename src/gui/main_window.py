@@ -3010,25 +3010,105 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'btn_nav_script'): self.btn_nav_script.set_active(False)
         if hasattr(self, 'btn_nav_main'): self.btn_nav_main.set_active(False)
 
-        # 2. Switch directly to Page 2 (Interactive Transcript Editor)
-        self.go_to_page(2)
+        # 2. Switch stack to index 1 (Processing page with full-screen progress bar and hints)
+        self.go_to_page(1)
+        
+        # Reset progress bar UI
+        if hasattr(self, 'bar_processing'):
+            self.bar_processing.set_value(0)
+        if hasattr(self, 'lbl_processing_status'):
+            self.lbl_processing_status.setText(self.txt("txt_initializing_analysis"))
 
-        # Prepare canvas for streaming tokens
-        if hasattr(self, 'text_canvas'):
-            self.text_canvas.prepare_for_streaming()
+        # ── First-run hint: check if chosen model has been run before ────────────
+        raw_model_for_check = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
+        model_key = raw_model_for_check.split()[0].lower()
+        if model_key == 'large': model_key = 'large-v3'
+        
+        # Check for marker file
+        model_folder_name = f"models--Systran--faster-whisper-{model_key}"
+        import os
+        marker_path = os.path.join(self.engine.models_dir, model_folder_name, ".badwords_initialized")
+        _is_first_model_run = not os.path.exists(marker_path)
 
-        # Open right sidebar so user can see assembly panel & controls
-        if hasattr(self, '_panel_right') and not self._panel_right.isVisible():
-            self._toggle_activity("main_panel")
+        # Stop any existing hint timer / animations
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            self._hint_timer.stop()
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except Exception: pass
+            setattr(self, _aref, None)
 
-        # Disable Assemble button until transcription reaches 100%
-        if hasattr(self, 'btn_assemble'):
-            self.btn_assemble.set_assemble_enabled(False, self.txt("status_transcribing"))
+        if hasattr(self, 'lbl_first_run_hint'):
+            import random as _random
+            if _is_first_model_run:
+                _hint_keys = [
+                    'first_run_hint_1', 'first_run_hint_2', 'first_run_hint_3',
+                    'first_run_hint_4', 'first_run_hint_5', 'first_run_hint_6',
+                    'first_run_hint_7', 'first_run_hint_8', 'first_run_hint_9',
+                    'first_run_hint_10',
+                ]
+            else:
+                _hint_keys = [
+                    'analysis_hint_1', 'analysis_hint_2', 'analysis_hint_3',
+                    'analysis_hint_4', 'analysis_hint_5', 'analysis_hint_6',
+                    'analysis_hint_7', 'analysis_hint_8', 'analysis_hint_9',
+                    'analysis_hint_10',
+                ]
 
-        # Launch Top Dynamic Island with initial status
-        if hasattr(self, 'top_island'):
-            self.top_island.show_progress(self.txt("status_whisper_init"), percent=0)
+            _shuffled = _hint_keys[:]
+            _random.shuffle(_shuffled)
+            self._hint_cycle_idx = 0
+            self._hint_cycle_keys = _shuffled
 
+            def _fade_to_next_hint():
+                if not hasattr(self, 'lbl_first_run_hint'): return
+                if not hasattr(self, '_hint_opacity'): return
+
+                def _do_swap():
+                    try:
+                        key = self._hint_cycle_keys[
+                            self._hint_cycle_idx % len(self._hint_cycle_keys)
+                        ]
+                        self.lbl_first_run_hint.setText(self.txt(key))
+                        self._hint_cycle_idx += 1
+                    except Exception: pass
+                    # Fade in
+                    anim_in = QPropertyAnimation(self._hint_opacity, b"opacity")
+                    anim_in.setDuration(600)
+                    anim_in.setStartValue(0.0)
+                    anim_in.setEndValue(1.0)
+                    anim_in.setEasingCurve(QEasingCurve.OutQuad)
+                    anim_in.start()
+                    self._hint_anim_in = anim_in
+
+                anim_out = QPropertyAnimation(self._hint_opacity, b"opacity")
+                anim_out.setDuration(500)
+                anim_out.setStartValue(1.0)
+                anim_out.setEndValue(0.0)
+                anim_out.setEasingCurve(QEasingCurve.InQuad)
+                anim_out.finished.connect(_do_swap)
+                anim_out.start()
+                self._hint_anim_out = anim_out
+
+            # Show first hint immediately
+            first_key = _shuffled[0]
+            self.lbl_first_run_hint.setText(self.txt(first_key))
+            self._hint_cycle_idx = 1
+            self.lbl_first_run_hint.show()
+            anim_first_in = QPropertyAnimation(self._hint_opacity, b"opacity")
+            anim_first_in.setDuration(700)
+            anim_first_in.setStartValue(0.0)
+            anim_first_in.setEndValue(1.0)
+            anim_first_in.setEasingCurve(QEasingCurve.OutQuad)
+            anim_first_in.start()
+            self._hint_anim_in = anim_first_in
+
+            self._hint_timer = QTimer(self)
+            self._hint_timer.timeout.connect(_fade_to_next_hint)
+            self._hint_timer.start(10500)
 
         # 3. Gather settings
         raw_lang = self._combo_lang.text() if hasattr(self, '_combo_lang') else 'Auto'
@@ -3069,7 +3149,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             "source_file": source_file_path,
         }
 
-        
         # 4. Start QThread targeting self.engine.run_analysis_pipeline()
         import time
         self._transcription_start_time = time.time()
@@ -3082,19 +3161,75 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._analysis_worker.start()
 
     def _on_analysis_chunk_ready(self, chunk_info):
-        c_idx = chunk_info.get("idx", 0) + 1
-        tot = chunk_info.get("total", -1)
         pct = chunk_info.get("percent", -1)
+        words = chunk_info.get("words", [])
+
+        # Switch to Page 2 (Editor View) ONLY when Whisper outputs real transcribed text!
+        if self._stack.currentIndex() != 2:
+            # Stop hint rotation on Page 1
+            if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+                try: self._hint_timer.stop()
+                except Exception: pass
+                self._hint_timer = None
+            for _aref in ('_hint_anim_out', '_hint_anim_in'):
+                _a = getattr(self, _aref, None)
+                if _a is not None:
+                    try: _a.stop()
+                    except Exception: pass
+                setattr(self, _aref, None)
+            if hasattr(self, 'lbl_first_run_hint'):
+                self.lbl_first_run_hint.hide()
+                if hasattr(self, '_hint_opacity'):
+                    self._hint_opacity.setOpacity(0.0)
+
+            # Switch stack to index 2 (Editor page)
+            self.go_to_page(2)
+
+            # Prepare canvas for streaming tokens
+            if hasattr(self, 'text_canvas'):
+                self.text_canvas.prepare_for_streaming()
+
+            # Open left scenario panel and right main panel
+            if not (hasattr(self, '_panel_left') and self._panel_left.isVisible()):
+                self._toggle_activity("script_analysis")
+            if not (hasattr(self, '_panel_right') and self._panel_right.isVisible()):
+                self._toggle_activity("main_panel")
+
+            # Activate transcription mode on title bar
+            selected_tl = getattr(self, 'combo_tl_0', None)
+            selected_tl_name = selected_tl.text() if selected_tl else ""
+            selected_tracks_combo = getattr(self, 'combo_tr_0', None)
+            if not selected_tracks_combo:
+                tracks_str = self.txt("txt_all")
+            else:
+                tracks = list(selected_tracks_combo.selected_items)
+                if not tracks or (len(tracks) == len(selected_tracks_combo.options_list)):
+                    tracks_str = self.txt("txt_all")
+                else:
+                    tracks_str = ", ".join(sorted(tracks))
+            self._title_bar.activate_transcription_mode()
+            self._title_bar.set_source_info(selected_tl_name, tracks_str)
+
+            # Disable Assemble button until transcription reaches 100%
+            if hasattr(self, 'btn_assemble'):
+                self.btn_assemble.set_assemble_enabled(False, self.txt("status_transcribing"))
+
+            # Launch Top Dynamic Island with initial status
+            if hasattr(self, 'top_island'):
+                self.top_island.show_progress(self.txt("status_transcribing", "Transkrybowanie..."), percent=pct)
+
+        # Update top island percent
         if hasattr(self, 'top_island'):
-            self.top_island.update_chunk_info(c_idx, tot, pct)
-        if hasattr(self, 'text_canvas'):
-            self.text_canvas.append_chunk_stream(chunk_info)
+            self.top_island.update_percent(pct)
+
+        # Update words without scrolling viewport
+        if hasattr(self, 'text_canvas') and words:
+            self.text_canvas.load_streamed_words(words)
 
     def _on_analysis_progress(self, val):
         self._update_processing_progress(val)
         if hasattr(self, 'top_island') and getattr(self.top_island, '_state', '') == 'working':
-            self.top_island._percent_text = f"{val}%" if val >= 0 else ""
-            self.top_island.update()
+            self.top_island.update_percent(val)
 
     def _on_analysis_status(self, msg):
         if hasattr(self, 'lbl_processing_status'):
@@ -3103,6 +3238,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.top_island.set_status(msg)
 
     def _on_analysis_error(self, err):
+        # Stop hint rotation on Page 1
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            try: self._hint_timer.stop()
+            except Exception: pass
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except Exception: pass
+            setattr(self, _aref, None)
+        if hasattr(self, 'lbl_first_run_hint'):
+            self.lbl_first_run_hint.hide()
+
         if hasattr(self, 'top_island'):
             self.top_island.set_error(str(err))
         if hasattr(self, 'btn_assemble'):
@@ -3110,7 +3259,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText(f"Error: {err}")
 
+        # Restore Page 0 on error
+        self.go_to_page(0)
+        if hasattr(self, '_pre_analysis_panels_state'):
+            l_vis, r_vis = self._pre_analysis_panels_state
+            if hasattr(self, '_panel_left') and l_vis: self._panel_left.show()
+            if hasattr(self, '_panel_right') and r_vis: self._panel_right.show()
+
     def _on_analysis_finished(self, words_data, segments_data):
+        # Stop hint rotation
+        if hasattr(self, '_hint_timer') and self._hint_timer is not None:
+            try: self._hint_timer.stop()
+            except Exception: pass
+            self._hint_timer = None
+        for _aref in ('_hint_anim_out', '_hint_anim_in'):
+            _a = getattr(self, _aref, None)
+            if _a is not None:
+                try: _a.stop()
+                except Exception: pass
+            setattr(self, _aref, None)
+        if hasattr(self, 'lbl_first_run_hint'):
+            self.lbl_first_run_hint.hide()
+            if hasattr(self, '_hint_opacity'):
+                self._hint_opacity.setOpacity(0.0)
+
         if not words_data:
             if hasattr(self, 'top_island'):
                 self.top_island.set_error(self.txt("msg_analysis_failed"))
@@ -3837,8 +4009,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # Translation helper
     # ------------------------------------------------------------------
 
-    def txt(self, key: str, **kwargs) -> str:
-        return _txt(self.lang, key, **kwargs)
+    def txt(self, key: str, default: str = None, **kwargs) -> str:
+        return _txt(self.lang, key, default=default, **kwargs)
 
     # ------------------------------------------------------------------
     # Lifecycle

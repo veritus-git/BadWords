@@ -55,51 +55,38 @@ class TranscriptionCanvas(QWidget):
         self._calculate_layout()
         self.update()
 
+    def load_streamed_words(self, words_data: list):
+        """Loads chunked streamed words directly, calculating layout and strictly preserving scroll position."""
+        if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
+            self._stream_timer.stop()
+        self._stream_token_queue = []
+        self._is_streaming = True
+
+        # Capture user's scroll position so streamed text added below NEVER scrolls the view
+        scroll = getattr(self.main_window, 'scroll_area', None)
+        vbar = scroll.verticalScrollBar() if scroll else None
+        old_scroll_val = vbar.value() if vbar else 0
+
+        self.words_data = words_data
+        self._calculate_layout()
+
+        if vbar:
+            vbar.setValue(old_scroll_val)
+
+        self.update()
+
     def append_chunk_stream(self, chunk_payload: dict):
-        """Enqueues new words from an incoming sound island chunk with intelligent sentence continuation."""
-        new_words = chunk_payload.get("words", [])
-        if not new_words:
-            return
-
-        # Check intelligent island joining:
-        # If existing words or queued words don't end with terminal punctuation,
-        # and time gap is small, continue the current line/segment.
-        last_word = None
-        if self._stream_token_queue:
-            last_word = self._stream_token_queue[-1]
-        elif self.words_data:
-            last_word = self.words_data[-1]
-
-        first_new_word = new_words[0]
-        if last_word:
-            last_txt = last_word.get("text", "").strip()
-            ends_term = any(last_txt.endswith(p) for p in ('.', '?', '!', '...', '…'))
-            gap = first_new_word.get("start", 0.0) - last_word.get("end", 0.0)
-            if not ends_term and gap < 1.2:
-                first_new_word["is_segment_start"] = False
-            else:
-                first_new_word["is_segment_start"] = True
-        else:
-            first_new_word["is_segment_start"] = True
-
-        # Assign monotonic IDs
-        current_id = len(self.words_data) + len(self._stream_token_queue)
-        for w in new_words:
-            w["id"] = current_id
-            current_id += 1
-
-        self._stream_token_queue.extend(new_words)
-
-        if not self._stream_timer.isActive():
-            self._stream_timer.start()
+        """Streams chunk words. If words list provided, uses load_streamed_words."""
+        words = chunk_payload.get("words", [])
+        if words:
+            self.load_streamed_words(words)
 
     def _process_streaming_tick(self):
-        """Pops tokens from the streaming queue at intervals, updating layout and auto-scrolling."""
+        """Fallback tick handler without auto-scrolling."""
         if not self._stream_token_queue:
             self._stream_timer.stop()
             return
 
-        # Pop 2 words per tick for a smooth, natural reading pace (LLM stream effect)
         batch_size = 2
         popped = []
         for _ in range(batch_size):
@@ -107,19 +94,17 @@ class TranscriptionCanvas(QWidget):
                 popped.append(self._stream_token_queue.pop(0))
 
         if popped:
+            scroll = getattr(self.main_window, 'scroll_area', None)
+            vbar = scroll.verticalScrollBar() if scroll else None
+            old_scroll_val = vbar.value() if vbar else 0
+
             self.words_data.extend(popped)
             self._calculate_layout()
-            self.update()
 
-            # Auto-scroll: keep viewport following streaming text if user is near bottom
-            try:
-                scroll = getattr(self.main_window, 'scroll_area', None)
-                if scroll:
-                    vbar = scroll.verticalScrollBar()
-                    if vbar.maximum() - vbar.value() < 250 or (getattr(self.main_window, 'tgl_centered', None) and self.main_window.tgl_centered.isChecked()):
-                        vbar.setValue(vbar.maximum())
-            except Exception:
-                pass
+            if vbar:
+                vbar.setValue(old_scroll_val)
+
+            self.update()
 
     def finalize_streaming(self, final_words_data=None):
         """Flushes the stream queue and sets canonical finalized data."""
@@ -128,9 +113,17 @@ class TranscriptionCanvas(QWidget):
         self._stream_token_queue = []
         self._is_streaming = False
 
+        scroll = getattr(self.main_window, 'scroll_area', None)
+        vbar = scroll.verticalScrollBar() if scroll else None
+        old_scroll_val = vbar.value() if vbar else 0
+
         if final_words_data is not None:
             self.words_data = final_words_data
         self._calculate_layout()
+
+        if vbar:
+            vbar.setValue(old_scroll_val)
+
         self.update()
 
     def load_data(self, words_data):
@@ -138,8 +131,17 @@ class TranscriptionCanvas(QWidget):
             self._stream_timer.stop()
         self._stream_token_queue = []
         self._is_streaming = False
+
+        scroll = getattr(self.main_window, 'scroll_area', None)
+        vbar = scroll.verticalScrollBar() if scroll else None
+        old_scroll_val = vbar.value() if vbar else 0
+
         self.words_data = words_data
         self._calculate_layout()
+
+        if vbar:
+            vbar.setValue(old_scroll_val)
+
         self.update()
 
     def _get_visible_words(self):

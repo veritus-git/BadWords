@@ -9,7 +9,8 @@ MODULE: top_status_island.py
 ROLE: GUI Component
 DESCRIPTION:
 Dynamic top island status widget displayed under the title bar.
-Provides real-time, non-blocking feedback during transcription with smooth micro-animations.
+Shapes 1:1 identically to AudioToggleTab (inverted trapezoid with curved bezier shoulders),
+providing minimalist feedback during transcription with pure vector graphics (zero emojis).
 """
 
 from PySide6.QtWidgets import QWidget
@@ -26,9 +27,9 @@ from gui.vsync import get_refresh_interval_ms
 
 class TopStatusIsland(QWidget):
     """
-    A dynamic island widget floating right beneath the title bar.
-    Centered horizontally with automatic width adjustment based on content,
-    animated slide-in/slide-out, smooth width morphing, and pure vector rendering (zero emojis).
+    A dynamic island widget attached to the bottom edge of the title bar.
+    Shaped 1:1 like AudioToggleTab with smooth bezier shoulders, centered horizontally,
+    with automatic width adjustment, animated slide-in/out, and minimalist vector rendering.
     """
 
     def __init__(self, parent_frame, main_window):
@@ -39,22 +40,25 @@ class TopStatusIsland(QWidget):
         self.setObjectName("TopStatusIsland")
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet("background: transparent; border: none;")
 
         # State
         self._state = "idle"  # "idle", "working", "completed", "error"
         self._title_text = ""
-        self._subtitle_text = ""
         self._percent_text = ""
         
-        # Dimensions & animation values
-        self._current_width = float(config.S(220))
-        self._target_width = float(config.S(220))
-        self._island_height = float(config.S(30))
+        # Dimensions matching AudioToggleTab proportions
+        self._c1 = float(config.S(12.0))
+        self._c2 = float(config.S(15.0))
+        self._c3 = float(config.S(25.0))
+        self._island_height = float(config.S(24.0))
+
+        self._current_width = float(config.S(190))
+        self._target_width = float(config.S(190))
         self._pos_y = -self._island_height
-        self._opacity = 1.0
         self._spinner_angle = 0
 
-        # High-performance vsync timer for vector spinner animation
+        # Vsync timer for smooth vector spinner animation
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(get_refresh_interval_ms())
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
@@ -67,8 +71,8 @@ class TopStatusIsland(QWidget):
 
         # Y position slide animation
         self._pos_anim = QVariantAnimation(self)
-        self._pos_anim.setDuration(320)
-        self._pos_anim.setEasingCurve(QEasingCurve.OutBack)
+        self._pos_anim.setDuration(300)
+        self._pos_anim.setEasingCurve(QEasingCurve.OutCubic)
         self._pos_anim.valueChanged.connect(self._on_pos_anim_step)
 
         # Auto-dismiss timer for completion state
@@ -84,16 +88,12 @@ class TopStatusIsland(QWidget):
         self.setFixedWidth(int(self._current_width))
         self.hide()
 
-    # --- Property Getters/Setters for Animations ---
-
-    def _get_pos_y(self) -> float:
-        return self._pos_y
-
-    def _set_pos_y(self, val: float):
-        self._pos_y = float(val)
-        self._reposition()
-
-    pos_y = Property(float, _get_pos_y, _set_pos_y)
+    def _get_titlebar_bottom_y(self) -> float:
+        """Returns the bottom Y coordinate of the title bar."""
+        tb = getattr(self.main_window, '_title_bar', None)
+        if tb and tb.isVisible():
+            return float(tb.y() + tb.height())
+        return 0.0
 
     def _on_pos_anim_step(self, val):
         self._pos_y = float(val)
@@ -110,15 +110,8 @@ class TopStatusIsland(QWidget):
             self._spinner_angle = (self._spinner_angle + 6) % 360
             self.update()
 
-    def _get_target_y(self) -> float:
-        """Target Y position directly under the title bar."""
-        tb = getattr(self.main_window, '_title_bar', None)
-        if tb and tb.isVisible():
-            return float(tb.height() + config.S(6))
-        return float(config.S(6))
-
     def _reposition(self):
-        """Always centers horizontally inside the parent frame."""
+        """Always centers horizontally inside the parent frame at the current Y."""
         if not self.parent_frame:
             return
         pw = float(self.parent_frame.width())
@@ -131,24 +124,23 @@ class TopStatusIsland(QWidget):
         return super().eventFilter(watched, event)
 
     def _calculate_target_width(self) -> float:
-        """Calculates optimal capsule width based on current text tokens and font metrics."""
+        """Calculates optimal tab width based on text and shoulder curves."""
         font_name = config.UI_FONT_NAME
-        f_lbl = QFont(font_name, config.FS(9))
-        f_bold = QFont(font_name, config.FS(9), QFont.Bold)
+        f_lbl = QFont(font_name, config.FS(8.5))
+        f_bold = QFont(font_name, config.FS(8.5), QFont.Bold)
         fm_lbl = QFontMetrics(f_lbl)
         fm_bold = QFontMetrics(f_bold)
 
-        # Base padding: icon (20px) + margins (32px) + gaps (16px)
-        w = float(config.S(68))
+        icon_w = float(config.S(14.0))
+        icon_gap = float(config.S(8.0))
+        title_w = fm_lbl.horizontalAdvance(self._title_text) if self._title_text else 0
+        bullet_pct_w = (float(config.S(13.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
+        pad_x = float(config.S(18.0))
 
-        if self._title_text:
-            w += fm_lbl.horizontalAdvance(self._title_text)
-        if self._subtitle_text:
-            w += fm_bold.horizontalAdvance(self._subtitle_text) + float(config.S(16))  # Include bullet
-        if self._percent_text:
-            w += fm_bold.horizontalAdvance(self._percent_text) + float(config.S(16))   # Include bullet
-
-        return max(float(config.S(200)), w)
+        content_w = icon_w + icon_gap + title_w + bullet_pct_w + pad_x
+        # Total width = content + both curved shoulders (2 * c3)
+        total_w = content_w + (self._c3 * 2.0)
+        return max(float(config.S(160)), total_w)
 
     def _animate_to_target_width(self):
         new_target = self._calculate_target_width()
@@ -162,11 +154,10 @@ class TopStatusIsland(QWidget):
 
     # --- Public Control API ---
 
-    def show_progress(self, title: str, subtitle: str = "", percent: int = -1):
-        """Display the island with active spinning indicator and progress."""
+    def show_progress(self, title: str, percent: int = -1):
+        """Display the island with active spinning indicator and percentage."""
         self._state = "working"
         self._title_text = title
-        self._subtitle_text = subtitle
         self._percent_text = f"{percent}%" if percent >= 0 else ""
 
         if not self._spinner_timer.isActive():
@@ -176,14 +167,13 @@ class TopStatusIsland(QWidget):
         self.show()
         self.raise_()
 
-        # Slide down animation if not already visible
-        target_y = self._get_target_y()
-        if self._pos_y < 0:
+        target_y = self._get_titlebar_bottom_y()
+        if self._pos_y < target_y:
             if self._pos_anim.state() == QVariantAnimation.Running:
                 self._pos_anim.stop()
-            self._pos_anim.setStartValue(-self._island_height)
+            self._pos_anim.setStartValue(target_y - self._island_height)
             self._pos_anim.setEndValue(target_y)
-            self._pos_anim.setEasingCurve(QEasingCurve.OutBack)
+            self._pos_anim.setEasingCurve(QEasingCurve.OutCubic)
             self._pos_anim.start()
         else:
             self._pos_y = target_y
@@ -191,17 +181,15 @@ class TopStatusIsland(QWidget):
 
         self.update()
 
-    def update_chunk_info(self, current_chunk: int, total_chunks: int, percent: int = -1):
-        """Update progress for chunked transcription."""
-        lang_code = getattr(self.main_window, 'lang', 'en')
-        from gui.utils import _txt
-        chunk_word = _txt(lang_code, "lbl_island") if hasattr(self.main_window, 'txt') else "Island"
-        if not chunk_word or chunk_word.startswith("!"):
-            chunk_word = "Island"
+    def update_percent(self, percent: int):
+        """Minimalist progress update: updates the percentage badge."""
+        self._percent_text = f"{percent}%" if percent >= 0 else ""
+        self._animate_to_target_width()
+        self.update()
 
-        title = self.main_window.txt("status_transcribing") if hasattr(self.main_window, 'txt') else "Transcribing..."
-        subtitle = f"{chunk_word} {current_chunk}/{total_chunks}"
-        self.show_progress(title, subtitle, percent)
+    def update_chunk_info(self, c_idx: int = 0, tot: int = -1, pct: int = -1):
+        """Compatibility method for chunk stream updates; minimalist: shows percent only."""
+        self.update_percent(pct)
 
     def set_status(self, text: str):
         """Update the main title text."""
@@ -218,7 +206,6 @@ class TopStatusIsland(QWidget):
         self._title_text = message if message else (
             self.main_window.txt("msg_transcription_complete") if hasattr(self.main_window, 'txt') else "Complete"
         )
-        self._subtitle_text = ""
         self._percent_text = ""
 
         self._animate_to_target_width()
@@ -234,7 +221,6 @@ class TopStatusIsland(QWidget):
             self._spinner_timer.stop()
 
         self._title_text = f"Error: {err_msg}"
-        self._subtitle_text = ""
         self._percent_text = ""
 
         self._animate_to_target_width()
@@ -242,12 +228,13 @@ class TopStatusIsland(QWidget):
         self._dismiss_timer.start(4000)
 
     def slide_out(self):
-        """Smoothly slide the island back up under the title bar."""
+        """Smoothly slide the island back up behind the title bar."""
+        target_y = self._get_titlebar_bottom_y() - self._island_height
         if self._pos_anim.state() == QVariantAnimation.Running:
             self._pos_anim.stop()
         self._pos_anim.setStartValue(self._pos_y)
-        self._pos_anim.setEndValue(-self._island_height - 10)
-        self._pos_anim.setEasingCurve(QEasingCurve.InQuad)
+        self._pos_anim.setEndValue(target_y)
+        self._pos_anim.setEasingCurve(QEasingCurve.InCubic)
 
         def on_finished():
             self.hide()
@@ -259,6 +246,7 @@ class TopStatusIsland(QWidget):
         self._pos_anim.start()
 
     # --- Vector Rendering (QPainter) ---
+    # Shaped 1:1 like AudioToggleTab (inverted trapezoid with curved shoulders)
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -267,102 +255,103 @@ class TopStatusIsland(QWidget):
 
         w = float(self.width())
         h = float(self.height())
-        r = h / 2.0
+        c1 = self._c1
+        c2 = self._c2
+        c3 = self._c3
 
-        # 1. Background Pill: Dark glass (#18181a) with subtle translucent border
-        capsule_path = QPainterPath()
-        capsule_path.addRoundedRect(0.5, 0.5, w - 1.0, h - 1.0, r, r)
+        # 1. Inverted Trapezoid Path with curved shoulders (1:1 mirror of AudioToggleTab)
+        path = QPainterPath()
+        # Top-left corner attached flush to title bar
+        path.moveTo(0.0, 0.0)
+        # Left shoulder curves down to bottom edge
+        path.cubicTo(c1, 0.0, c2, h, c3, h)
+        # Flat bottom edge
+        path.lineTo(w - c3, h)
+        # Right shoulder curves back up to top edge
+        path.cubicTo(w - c2, h, w - c1, 0.0, w, 0.0)
+        path.closeSubpath()
 
-        bg_brush = QBrush(QColor(24, 24, 26, 245))
-        p.fillPath(capsule_path, bg_brush)
+        # Fill background (#191919) seamlessly matching app theme
+        bg_col = QColor("#191919")
+        p.fillPath(path, QBrush(bg_col))
 
-        # Border
-        border_col = QColor(255, 255, 255, 25) if self._state != "completed" else QColor(35, 165, 89, 80)
+        # Border outline along shoulders and bottom edge (top edge has no border for seamless connection)
+        border_col = QColor("#2a2a2a") if self._state != "completed" else QColor("#23a559")
+        border_path = QPainterPath()
+        border_path.moveTo(0.5, 0.0)
+        border_path.cubicTo(c1, 0.5, c2, h - 0.5, c3, h - 0.5)
+        border_path.lineTo(w - c3, h - 0.5)
+        border_path.cubicTo(w - c2, h - 0.5, w - c1, 0.5, w - 0.5, 0.0)
         p.setPen(QPen(border_col, 1.0))
-        p.drawPath(capsule_path)
+        p.drawPath(border_path)
 
-        # Subtle top inner highlight
-        highlight_path = QPainterPath()
-        highlight_path.moveTo(r, 1.5)
-        highlight_path.lineTo(w - r, 1.5)
-        p.setPen(QPen(QColor(255, 255, 255, 18), 1.0))
-        p.drawPath(highlight_path)
+        # 2. Typography & Text metrics
+        font_name = config.UI_FONT_NAME
+        f_lbl = QFont(font_name, config.FS(8.5))
+        f_bold = QFont(font_name, config.FS(8.5), QFont.Bold)
+        fm_lbl = QFontMetrics(f_lbl)
+        fm_bold = QFontMetrics(f_bold)
 
-        # 2. Vector Status Indicator (Zero emojis)
-        icon_cx = float(config.S(20))
+        icon_w = float(config.S(14.0))
+        icon_gap = float(config.S(8.0))
+        title_w = fm_lbl.horizontalAdvance(self._title_text) if self._title_text else 0
+        bullet_pct_w = (float(config.S(13.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
+        total_content_w = icon_w + icon_gap + title_w + bullet_pct_w
+
+        # Center inside flat bottom area [c3, w - c3]
+        flat_w = w - 2.0 * c3
+        start_x = c3 + max(0.0, (flat_w - total_content_w) / 2.0)
+
+        # 3. Vector Status Indicator (Zero emojis)
+        icon_cx = start_x + icon_w / 2.0
         icon_cy = h / 2.0
-        icon_r = float(config.S(6.5))
+        icon_r = float(config.S(5.0))
 
         if self._state == "working":
-            # Animated vector spinner arc
             p.save()
             p.translate(icon_cx, icon_cy)
             p.rotate(self._spinner_angle)
 
             arc_rect = QRectF(-icon_r, -icon_r, icon_r * 2.0, icon_r * 2.0)
-            spinner_pen = QPen(QColor("#23a559"), config.S(1.8), Qt.SolidLine, Qt.RoundCap)
+            spinner_pen = QPen(QColor("#23a559"), config.S(1.6), Qt.SolidLine, Qt.RoundCap)
             p.setPen(spinner_pen)
-            # 270 degrees arc
             p.drawArc(arc_rect, 0, 270 * 16)
             p.restore()
 
         elif self._state == "completed":
-            # Crisp green checkmark
-            check_pen = QPen(QColor("#2ecc71"), config.S(1.8), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            check_pen = QPen(QColor("#2ecc71"), config.S(1.6), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
             p.setPen(check_pen)
             check_path = QPainterPath()
-            check_path.moveTo(icon_cx - config.S(4.5), icon_cy)
-            check_path.lineTo(icon_cx - config.S(1.5), icon_cy + config.S(3.5))
-            check_path.lineTo(icon_cx + config.S(5.0), icon_cy - config.S(3.5))
+            check_path.moveTo(icon_cx - config.S(4.0), icon_cy)
+            check_path.lineTo(icon_cx - config.S(1.0), icon_cy + config.S(3.0))
+            check_path.lineTo(icon_cx + config.S(4.5), icon_cy - config.S(3.0))
             p.drawPath(check_path)
 
         elif self._state == "error":
-            # Red warning circle with exclamation
-            err_pen = QPen(QColor("#e74c3c"), config.S(1.8), Qt.SolidLine, Qt.RoundCap)
+            err_pen = QPen(QColor("#e74c3c"), config.S(1.6), Qt.SolidLine, Qt.RoundCap)
             p.setPen(err_pen)
             p.drawEllipse(QPointF(icon_cx, icon_cy), icon_r, icon_r)
-            p.drawLine(QPointF(icon_cx, icon_cy - icon_r + 3), QPointF(icon_cx, icon_cy + 1))
-            p.drawPoint(QPointF(icon_cx, icon_cy + icon_r - 2.5))
+            p.drawLine(QPointF(icon_cx, icon_cy - icon_r + 2.5), QPointF(icon_cx, icon_cy + 0.5))
+            p.drawPoint(QPointF(icon_cx, icon_cy + icon_r - 2.0))
 
-        # 3. Typography & Text layout
-        font_name = config.UI_FONT_NAME
-        f_lbl = QFont(font_name, config.FS(9))
-        f_bold = QFont(font_name, config.FS(9), QFont.Bold)
-        fm_lbl = QFontMetrics(f_lbl)
-        fm_bold = QFontMetrics(f_bold)
-
-        cur_x = float(config.S(34))
+        # 4. Text layout (minimalist: text + % only, NO Island X/X)
+        cur_x = start_x + icon_w + icon_gap
         text_y = (h + fm_lbl.ascent() - fm_lbl.descent()) / 2.0
 
-        # Title (Status label)
+        # Title (e.g. Transkrybowanie...)
         if self._title_text:
             p.setFont(f_lbl)
             p.setPen(QColor("#a2a2a8"))
             p.drawText(QPointF(cur_x, text_y), self._title_text)
-            cur_x += fm_lbl.horizontalAdvance(self._title_text)
+            cur_x += title_w
 
-        # Bullet separator
-        if self._subtitle_text or self._percent_text:
-            cur_x += float(config.S(6))
-            p.setFont(f_lbl)
-            p.setPen(QColor("#55555c"))
-            p.drawText(QPointF(cur_x, text_y), "•")
-            cur_x += float(config.S(10))
-
-        # Subtitle (Island 3/12)
-        if self._subtitle_text:
-            p.setFont(f_bold)
-            p.setPen(QColor("#ffffff"))
-            p.drawText(QPointF(cur_x, text_y), self._subtitle_text)
-            cur_x += fm_bold.horizontalAdvance(self._subtitle_text)
-
-        # Percent badge
+        # Percent badge (e.g. • 25%)
         if self._percent_text:
-            cur_x += float(config.S(6))
+            cur_x += float(config.S(4))
             p.setFont(f_lbl)
             p.setPen(QColor("#55555c"))
             p.drawText(QPointF(cur_x, text_y), "•")
-            cur_x += float(config.S(10))
+            cur_x += float(config.S(8))
 
             p.setFont(f_bold)
             p.setPen(QColor("#23a559"))
