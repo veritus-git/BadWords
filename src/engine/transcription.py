@@ -212,12 +212,12 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"  # Fix for Windows Non-Admin
 # FORCE CACHE DIR (Inside python script)
 os.environ["HF_HOME"] = {repr(self.models_dir)}
 os.environ["XDG_CACHE_HOME"] = {repr(self.models_dir)}
-{'''
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "4"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "4"
-''' if self.os_doc.is_mac else ""}
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
+os.environ["OPENBLAS_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["NUMEXPR_NUM_THREADS"] = "2"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
@@ -325,6 +325,12 @@ except Exception as e:
 
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
+        env["OMP_NUM_THREADS"] = "2"
+        env["OMP_WAIT_POLICY"] = "PASSIVE"
+        env["OPENBLAS_NUM_THREADS"] = "2"
+        env["MKL_NUM_THREADS"] = "2"
+        env["NUMEXPR_NUM_THREADS"] = "2"
+        env["VECLIB_MAXIMUM_THREADS"] = "2"
         
         if self.os_doc.is_linux and fw_device == "cuda":
             nvidia_libs_paths = []
@@ -353,12 +359,12 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
-{'''
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "4"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "4"
-''' if self.os_doc.is_mac else ""}
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
+os.environ["OPENBLAS_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["NUMEXPR_NUM_THREADS"] = "2"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
@@ -419,13 +425,11 @@ try:
     target_compute = {repr(compute_type)}
     
     # Decide how many parallel workers to use
-    cpu_threads_val = 4
+    cpu_threads_val = 2
     if target_device == "cpu":
-        # CPU Optimization: Prevent thread thrashing. 
-        # CTranslate2 uses 'cpu_threads' per worker. If we have 12 cores, 
-        # 3 workers * 4 threads = 12 concurrent threads. This is highly optimal.
+        # CPU Optimization: Prevent thread thrashing, leave headroom for OS/UI
         cpu_cores = multiprocessing.cpu_count()
-        workers = max(1, int(cpu_cores / cpu_threads_val))
+        workers = max(1, (cpu_cores - 2) // cpu_threads_val)
     else:
         # GPU (CUDA/MPS): 2 workers empirically proven to yield ~20% faster times 
         # (0:35 vs 0:42) by saturating CUDA cores while keeping VRAM usage safe for 'base' model.
@@ -578,12 +582,12 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
-{'''
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "4"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "4"
-''' if self.os_doc.is_mac else ""}
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
+os.environ["OPENBLAS_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["NUMEXPR_NUM_THREADS"] = "2"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
 
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
@@ -603,7 +607,7 @@ try:
         model_size, 
         device=target_device, 
         compute_type=target_compute, 
-        {'cpu_threads=4,' if self.os_doc.is_mac else ''}
+        cpu_threads=2,
         num_workers=1,
         download_root={repr(self.models_dir)}
     )
