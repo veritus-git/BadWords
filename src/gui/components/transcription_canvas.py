@@ -102,6 +102,7 @@ class TranscriptionCanvas(QWidget):
         if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
             self._stream_timer.stop()
         self._target_streamed_words = []
+        self._fading_tokens = []
         self.words_data = []
         self._cached_visible_words = []
         self._is_streaming = True
@@ -136,24 +137,31 @@ class TranscriptionCanvas(QWidget):
         target_len = len(target_words)
         curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
         now = time.time()
+        fade_dur = 0.18
+
+        if not hasattr(self, '_fading_tokens'):
+            self._fading_tokens = []
 
         # Check if all tokens revealed
         if curr_len >= target_len:
-            # Check if any tokens are still fading in (within 200ms)
-            still_fading = False
-            fading_rects = []
-            for w in self.words_data[-15:]:
-                if '_stream_reveal_time' in w:
-                    if now - w['_stream_reveal_time'] < 0.20:
-                        still_fading = True
-                        if '_rect' in w:
-                            fading_rects.append(w['_rect'])
-                    else:
+            # We still need to finish fading any tokens currently in transition
+            if self._fading_tokens:
+                fading_rects = []
+                remaining_fading = []
+                for w in self._fading_tokens:
+                    if '_rect' in w:
+                        fading_rects.append(w['_rect'])
+                    if now - w.get('_stream_reveal_time', 0) >= fade_dur:
+                        # Fade is complete: remove timestamp so it paints at 100% solid opacity
                         w.pop('_stream_reveal_time', None)
-            if still_fading and fading_rects:
-                top_y = min(r.top() for r in fading_rects) - 2
-                bot_y = max(r.bottom() for r in fading_rects) + 2
-                self.update(QRect(0, max(0, top_y), self.width(), (bot_y - top_y) + 4))
+                    else:
+                        remaining_fading.append(w)
+                self._fading_tokens = remaining_fading
+
+                if fading_rects:
+                    top_y = min(r.top() for r in fading_rects) - 4
+                    bot_y = max(r.bottom() for r in fading_rects) + 4
+                    self.update(QRect(0, max(0, top_y), self.width(), (bot_y - top_y) + 8))
             else:
                 self._stream_timer.stop()
             return
@@ -173,6 +181,7 @@ class TranscriptionCanvas(QWidget):
         if rewind_idx < curr_len:
             self.words_data = self.words_data[:rewind_idx]
             curr_len = rewind_idx
+            self._fading_tokens = [w for w in self._fading_tokens if w in self.words_data]
 
         # Rhythmic streamline pacing: smooth, steady token flow (1 token per tick, 2-3 if buffer builds up)
         lag = target_len - curr_len
@@ -187,6 +196,18 @@ class TranscriptionCanvas(QWidget):
         tokens_to_add = target_words[curr_len:next_len]
         if not tokens_to_add:
             return
+
+        # Collect dirty rects from existing fading tokens (advancing animation or completing to 1.0)
+        fading_rects = []
+        remaining_fading = []
+        for w in self._fading_tokens:
+            if '_rect' in w:
+                fading_rects.append(w['_rect'])
+            if now - w.get('_stream_reveal_time', 0) >= fade_dur:
+                w.pop('_stream_reveal_time', None)
+            else:
+                remaining_fading.append(w)
+        self._fading_tokens = remaining_fading
 
         # Layout ONLY the new tokens
         prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
@@ -203,11 +224,9 @@ class TranscriptionCanvas(QWidget):
             cx = 20
             cy = 20
 
-        min_dirty_y = cy
-        max_dirty_y = cy + line_height
-
         for w in tokens_to_add:
             w['_stream_reveal_time'] = now
+            self._fading_tokens.append(w)
 
             # Clean previous markers
             w.pop('_ts_rect', None)
@@ -243,6 +262,7 @@ class TranscriptionCanvas(QWidget):
                     w['_ts_calc_w'] = ts_w
 
                 w['_ts_rect'] = QRect(cx, cy, ts_w, metrics.height() + 4)
+                fading_rects.append(w['_ts_rect'])
                 cx += ts_w + space_w + 5
 
             # Word text & width
@@ -259,10 +279,8 @@ class TranscriptionCanvas(QWidget):
                 cy += line_height
 
             w['_rect'] = QRect(cx, cy, word_w, metrics.height() + 4)
+            fading_rects.append(w['_rect'])
             cx += word_w + space_w
-
-            if cy < min_dirty_y: min_dirty_y = cy
-            if (cy + line_height) > max_dirty_y: max_dirty_y = cy + line_height
 
             self.words_data.append(w)
 
@@ -273,15 +291,19 @@ class TranscriptionCanvas(QWidget):
         if needed_h > self.minimumHeight():
             self.setMinimumHeight(needed_h + 250)
 
-        # Repaint ONLY the dirty lines!
-        dirty_rect = QRect(0, max(0, min_dirty_y - 4), self.width(), (max_dirty_y - min_dirty_y) + line_height + 8)
-        self.update(dirty_rect)
+        # Repaint dirty region covering both new tokens and active fading tokens
+        if fading_rects:
+            top_y = min(r.top() for r in fading_rects) - 4
+            bot_y = max(r.bottom() for r in fading_rects) + 4
+            dirty_rect = QRect(0, max(0, top_y), self.width(), (bot_y - top_y) + 8)
+            self.update(dirty_rect)
 
     def finalize_streaming(self, final_words_data=None):
         """Flushes the stream queue and sets canonical finalized data."""
         if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
             self._stream_timer.stop()
         self._is_streaming = False
+        self._fading_tokens = []
 
         scroll = getattr(self.main_window, 'scroll_area', None)
         vbar = scroll.verticalScrollBar() if scroll else None
@@ -308,6 +330,7 @@ class TranscriptionCanvas(QWidget):
         if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
             self._stream_timer.stop()
         self._stream_token_queue = []
+        self._fading_tokens = []
         self._is_streaming = False
 
         scroll = getattr(self.main_window, 'scroll_area', None)
@@ -996,7 +1019,6 @@ class TranscriptionCanvas(QWidget):
                     alpha = min(1.0, max(0.0, age / fade_duration))
                 else:
                     alpha = 1.0
-                    w.pop('_stream_reveal_time', None)
 
             if alpha < 1.0:
                 p.setOpacity(alpha)
