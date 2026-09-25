@@ -117,7 +117,8 @@ class TranscriptionCanvas(QWidget):
             self.update()
 
         if not self._stream_timer.isActive():
-            self._stream_timer.start(28)
+            self._stream_settle_ticks = 0
+            self._stream_timer.start(33)
 
     def append_chunk_stream(self, chunk_payload: dict):
         """Streams chunk words. If words list provided, uses load_streamed_words."""
@@ -132,9 +133,17 @@ class TranscriptionCanvas(QWidget):
         curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
 
         if curr_len >= target_len:
-            self._stream_timer.stop()
-            return
+            settle = getattr(self, '_stream_settle_ticks', 0)
+            if settle < 6:
+                self._stream_settle_ticks = settle + 1
+                self.update()
+                return
+            else:
+                self._stream_timer.stop()
+                self._stream_settle_ticks = 0
+                return
 
+        self._stream_settle_ticks = 0
         lag = target_len - curr_len
         if lag > 30:
             step = 4
@@ -957,9 +966,6 @@ class TranscriptionCanvas(QWidget):
             p.setBrush(QColor("#ffffff"))
             for rect in active_underlines:
                 p.drawRoundedRect(rect, 1, 1)
-
-        if needs_fade_animation:
-            QTimer.singleShot(16, self.update)
 
     def _handle_mouse(self, pos):
         visible_words = self._cached_visible_words
