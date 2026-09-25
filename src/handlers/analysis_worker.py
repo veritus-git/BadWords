@@ -16,6 +16,7 @@ from PySide6.QtCore import QThread, Signal
 class AnalysisWorker(QThread):
     progress = Signal(int)
     status = Signal(str)
+    chunk_ready = Signal(dict)
     finished_ok = Signal(object, object)
     error = Signal(str)
 
@@ -31,7 +32,8 @@ class AnalysisWorker(QThread):
             words_data, segments_data = func(
                 self.settings,
                 callback_status=self.status.emit,
-                callback_progress=self.progress.emit
+                callback_progress=self.progress.emit,
+                callback_chunk=self.chunk_ready.emit
             )
             self.finished_ok.emit(words_data, segments_data)
         except Exception as e:

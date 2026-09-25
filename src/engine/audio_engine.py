@@ -308,7 +308,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 # Do not delete wav_path so it can be used for audio preview
 
 
-    def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None):
+    def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None, callback_chunk=None):
         def update_status(msg):
             if callback_status: callback_status(msg)
         def update_progress(val):
@@ -562,6 +562,54 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # Execute Faster-Whisper via Runner with RESOLVED parameters
             # Chunking is now always enabled by default if len(islands) > 1
             
+            def on_whisper_chunk(chunk_data):
+                if not callback_chunk:
+                    return
+                chunk_words = []
+                c_idx = chunk_data.get("idx", 0)
+                tot = chunk_data.get("total", -1)
+                pct = chunk_data.get("percent", -1)
+                st = chunk_data.get("start", 0.0)
+                en = chunk_data.get("end", 0.0)
+                
+                clean_bad = {re.sub(r'^[^\w]+|[^\w]+$', '', w.strip().lower()) for w in filler_words if w}
+                
+                for seg in chunk_data.get("segments", []):
+                    seg_s = seg.get("start", st)
+                    seg_e = seg.get("end", en)
+                    is_first = True
+                    for w in seg.get("words", []):
+                        raw_txt = w.get("word", "").strip()
+                        cl = re.sub(r'^[^\w]+|[^\w]+$', '', raw_txt.lower())
+                        if cl:
+                            is_b = cl in clean_bad
+                            w_obj = {
+                                "text": raw_txt,
+                                "start": w.get("start", seg_s),
+                                "end": w.get("end", seg_e),
+                                "selected": is_b,
+                                "status": "bad" if is_b else None,
+                                "is_filler": is_b,
+                                "seg_start": seg_s,
+                                "seg_end": seg_e,
+                                "is_segment_start": is_first,
+                                "type": "word",
+                                "id": 0,
+                                "chunk_idx": c_idx
+                            }
+                            if is_first:
+                                is_first = False
+                            chunk_words.append(w_obj)
+                            
+                callback_chunk({
+                    "idx": c_idx,
+                    "total": tot,
+                    "percent": pct,
+                    "start": st,
+                    "end": en,
+                    "words": chunk_words
+                })
+
             update_status(self.txt("status_whisper_init"))
             
             # Note: Bar remains indeterminate (from status_whisper_init above) until runner emits first progress
@@ -571,6 +619,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 initial_prompt=ai_initial_prompt,
                 progress_callback=whisper_live_progress,
                 islands=islands,
+                chunk_callback=on_whisper_chunk,
             )
             
             if not json_path:

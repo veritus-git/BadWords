@@ -2280,6 +2280,58 @@ class AssembleSplitButton(QFrame):
                 }}
             """)
 
+    def set_assemble_enabled(self, enabled: bool, custom_text: str = None):
+        """Enable or disable the Assemble button with appropriate visual dimming."""
+        self._is_assemble_enabled = enabled
+        self.btn_main.setEnabled(enabled)
+        self.btn_arrow.setEnabled(enabled)
+        
+        if custom_text is not None:
+            self.btn_main.setText(custom_text)
+        elif enabled:
+            if hasattr(self.parent_gui, 'txt'):
+                self.btn_main.setText(self.parent_gui.txt("btn_assemble"))
+            else:
+                self.btn_main.setText("Assemble")
+
+        r = config.S(4)
+        if not enabled:
+            self.setStyleSheet(f"""
+                QFrame#AssembleSplitButtonFrame {{
+                    background-color: #1a2a20;
+                    border-radius: {r}px;
+                    border: 1px solid #14221a;
+                }}
+            """)
+            self.btn_main.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: #5c7566;
+                    font-weight: bold;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: {config.FS(10)}pt;
+                    border: none;
+                    padding-left: {config.S(14)}px;
+                    padding-right: {config.S(10)}px;
+                    text-align: center;
+                }}
+            """)
+        else:
+            self.btn_main.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: #ffffff;
+                    font-weight: bold;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: {config.FS(10)}pt;
+                    border: none;
+                    padding-left: {config.S(14)}px;
+                    padding-right: {config.S(10)}px;
+                    text-align: center;
+                }}
+            """)
+            self.update_style()
+
 
 class TrackSquareCheckbox(QWidget):
     toggled = Signal(bool)

@@ -35,7 +35,109 @@ class TranscriptionCanvas(QWidget):
         # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
         self._cached_visible_words = []
 
+        # --- STREAMED CHUNK TRANSCRIPTION ENGINE (LLM-style reveal) ---
+        self._is_streaming = False
+        self._stream_token_queue = []
+        from PySide6.QtCore import QTimer
+        self._stream_timer = QTimer(self)
+        self._stream_timer.setInterval(22)  # Smooth 22ms reading pace
+        self._stream_timer.timeout.connect(self._process_streaming_tick)
+
+    def prepare_for_streaming(self):
+        """Prepares canvas for real-time streaming chunks."""
+        if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
+            self._stream_timer.stop()
+        self._stream_token_queue = []
+        self.words_data = []
+        self._cached_visible_words = []
+        self._is_streaming = True
+        self._last_dragged_id = -1
+        self._calculate_layout()
+        self.update()
+
+    def append_chunk_stream(self, chunk_payload: dict):
+        """Enqueues new words from an incoming sound island chunk with intelligent sentence continuation."""
+        new_words = chunk_payload.get("words", [])
+        if not new_words:
+            return
+
+        # Check intelligent island joining:
+        # If existing words or queued words don't end with terminal punctuation,
+        # and time gap is small, continue the current line/segment.
+        last_word = None
+        if self._stream_token_queue:
+            last_word = self._stream_token_queue[-1]
+        elif self.words_data:
+            last_word = self.words_data[-1]
+
+        first_new_word = new_words[0]
+        if last_word:
+            last_txt = last_word.get("text", "").strip()
+            ends_term = any(last_txt.endswith(p) for p in ('.', '?', '!', '...', '…'))
+            gap = first_new_word.get("start", 0.0) - last_word.get("end", 0.0)
+            if not ends_term and gap < 1.2:
+                first_new_word["is_segment_start"] = False
+            else:
+                first_new_word["is_segment_start"] = True
+        else:
+            first_new_word["is_segment_start"] = True
+
+        # Assign monotonic IDs
+        current_id = len(self.words_data) + len(self._stream_token_queue)
+        for w in new_words:
+            w["id"] = current_id
+            current_id += 1
+
+        self._stream_token_queue.extend(new_words)
+
+        if not self._stream_timer.isActive():
+            self._stream_timer.start()
+
+    def _process_streaming_tick(self):
+        """Pops tokens from the streaming queue at intervals, updating layout and auto-scrolling."""
+        if not self._stream_token_queue:
+            self._stream_timer.stop()
+            return
+
+        # Pop 2 words per tick for a smooth, natural reading pace (LLM stream effect)
+        batch_size = 2
+        popped = []
+        for _ in range(batch_size):
+            if self._stream_token_queue:
+                popped.append(self._stream_token_queue.pop(0))
+
+        if popped:
+            self.words_data.extend(popped)
+            self._calculate_layout()
+            self.update()
+
+            # Auto-scroll: keep viewport following streaming text if user is near bottom
+            try:
+                scroll = getattr(self.main_window, 'scroll_area', None)
+                if scroll:
+                    vbar = scroll.verticalScrollBar()
+                    if vbar.maximum() - vbar.value() < 250 or (getattr(self.main_window, 'tgl_centered', None) and self.main_window.tgl_centered.isChecked()):
+                        vbar.setValue(vbar.maximum())
+            except Exception:
+                pass
+
+    def finalize_streaming(self, final_words_data=None):
+        """Flushes the stream queue and sets canonical finalized data."""
+        if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
+            self._stream_timer.stop()
+        self._stream_token_queue = []
+        self._is_streaming = False
+
+        if final_words_data is not None:
+            self.words_data = final_words_data
+        self._calculate_layout()
+        self.update()
+
     def load_data(self, words_data):
+        if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
+            self._stream_timer.stop()
+        self._stream_token_queue = []
+        self._is_streaming = False
         self.words_data = words_data
         self._calculate_layout()
         self.update()
@@ -134,7 +236,8 @@ class TranscriptionCanvas(QWidget):
         from PySide6.QtGui import QFontMetrics, QFont
         from PySide6.QtCore import QRect
         
-        prefs = self.main_window.engine.load_preferences() or {}
+        engine = getattr(self.main_window, 'engine', None)
+        prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
         pref_size = config.FS(prefs.get('editor_font_size', 12))
         pref_lh = config.S(prefs.get('editor_line_height', 7))
@@ -439,7 +542,8 @@ class TranscriptionCanvas(QWidget):
         from PySide6.QtGui import QPainter, QColor, QFont, QPen
         from PySide6.QtCore import QRectF, Qt
         
-        prefs = self.main_window.engine.load_preferences() or {}
+        engine = getattr(self.main_window, 'engine', None)
+        prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
         pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
         pref_size = config.FS(prefs.get('editor_font_size', 12))
         active_font = QFont(pref_family, pref_size)
