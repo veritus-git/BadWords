@@ -283,8 +283,8 @@ class TopStatusIsland(QWidget):
         path.cubicTo(w - c2, h, w - c1, 0.0, w, 0.0)
         path.closeSubpath()
 
-        # Fill background - subtly darker than the title bar (#191919) to cut cleanly
-        bg_col = QColor("#111113")
+        # Fill background - slightly darker than the title bar (#191919) by just a couple shades
+        bg_col = QColor("#161616")
         p.fillPath(path, QBrush(bg_col))
 
         # Border outline along shoulders and bottom edge
@@ -293,7 +293,7 @@ class TopStatusIsland(QWidget):
         elif self._state == "error":
             border_col = QColor("#e74c3c")
         else:
-            border_col = QColor("#222225")
+            border_col = QColor("#262626")
         border_path = QPainterPath()
         border_path.moveTo(0.5, 0.0)
         border_path.cubicTo(c1, 0.5, c2, h - 0.5, c3, h - 0.5)

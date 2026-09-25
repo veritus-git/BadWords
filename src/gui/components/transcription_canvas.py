@@ -12,11 +12,12 @@ Main canvas displaying analyzed word segments.
 """
 
 
+import time
 from PySide6.QtWidgets import (
     QWidget
 )
 from PySide6.QtCore import (
-    Qt, QRect
+    Qt, QRect, QTimer
 )
 
 import config
@@ -35,13 +36,59 @@ class TranscriptionCanvas(QWidget):
         # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
         self._cached_visible_words = []
 
+        # --- Cached fonts, metrics and preferences to eliminate disk I/O in paint/layout ---
+        self._cached_prefs = {}
+        self._cached_editor_font = None
+        self._cached_metrics = None
+        self._cached_ts_font = None
+        self._cached_ts_metrics = None
+        self._cached_space_w = 0
+        self._cached_line_height = 0
+
         # --- STREAMED CHUNK TRANSCRIPTION ENGINE (LLM-style reveal) ---
         self._is_streaming = False
         self._stream_token_queue = []
-        from PySide6.QtCore import QTimer
         self._stream_timer = QTimer(self)
         self._stream_timer.setInterval(22)  # Smooth 22ms reading pace
         self._stream_timer.timeout.connect(self._process_streaming_tick)
+
+    def _get_font_and_metrics(self):
+        """Returns cached QFont, QFontMetrics, and layout metrics without reading disk."""
+        if self._cached_editor_font is None or self._cached_metrics is None:
+            engine = getattr(self.main_window, 'engine', None)
+            prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
+            self._cached_prefs = prefs
+            pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
+            pref_size = config.FS(prefs.get('editor_font_size', 12))
+            pref_lh = config.S(prefs.get('editor_line_height', 7))
+
+            from PySide6.QtGui import QFont, QFontMetrics
+            self._cached_editor_font = QFont(pref_family, pref_size)
+            self._cached_metrics = QFontMetrics(self._cached_editor_font)
+            self._cached_ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
+            self._cached_ts_metrics = QFontMetrics(self._cached_ts_font)
+            self._cached_space_w = self._cached_metrics.horizontalAdvance(" ") + 2
+            self._cached_line_height = self._cached_metrics.height() + pref_lh
+        return (
+            self._cached_prefs,
+            self._cached_editor_font,
+            self._cached_metrics,
+            self._cached_ts_font,
+            self._cached_ts_metrics,
+            self._cached_space_w,
+            self._cached_line_height
+        )
+
+    def invalidate_font_cache(self):
+        """Invalidates font metrics when preferences change."""
+        self._cached_editor_font = None
+        self._cached_metrics = None
+        self._cached_ts_font = None
+        self._cached_ts_metrics = None
+        if hasattr(self, 'words_data'):
+            for w in self.words_data:
+                w.pop('_calc_w', None)
+                w.pop('_ts_calc_w', None)
 
     def prepare_for_streaming(self):
         """Prepares canvas for real-time streaming chunks."""
@@ -62,6 +109,9 @@ class TranscriptionCanvas(QWidget):
 
         if not hasattr(self, 'words_data') or not self.words_data:
             init_count = min(1, len(words_data))
+            now = time.time()
+            for w in words_data[:init_count]:
+                w['_stream_reveal_time'] = now
             self.words_data = words_data[:init_count]
             self._calculate_layout()
             self.update()
@@ -76,7 +126,7 @@ class TranscriptionCanvas(QWidget):
             self.load_streamed_words(words)
 
     def _process_streaming_tick(self):
-        """Reveals tokens smoothly up to target_streamed_words with adaptive pace and NO auto-scrolling."""
+        """Reveals tokens smoothly up to target_streamed_words with adaptive pace, fade-in and NO auto-scrolling."""
         target_words = getattr(self, '_target_streamed_words', [])
         target_len = len(target_words)
         curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
@@ -96,6 +146,12 @@ class TranscriptionCanvas(QWidget):
             step = 1
 
         next_len = min(curr_len + step, target_len)
+
+        # Stamp newly revealed tokens with timestamp for smooth opacity fade-in
+        now = time.time()
+        for w in target_words[curr_len:next_len]:
+            if '_stream_reveal_time' not in w:
+                w['_stream_reveal_time'] = now
 
         scroll = getattr(self.main_window, 'scroll_area', None)
         vbar = scroll.verticalScrollBar() if scroll else None
@@ -125,6 +181,10 @@ class TranscriptionCanvas(QWidget):
             self.words_data = self._target_streamed_words
         self._target_streamed_words = []
 
+        if hasattr(self, 'words_data'):
+            for w in self.words_data:
+                w.pop('_stream_reveal_time', None)
+
         self._calculate_layout()
 
         if vbar:
@@ -143,6 +203,10 @@ class TranscriptionCanvas(QWidget):
         old_scroll_val = vbar.value() if vbar else 0
 
         self.words_data = words_data
+        if hasattr(self, 'words_data'):
+            for w in self.words_data:
+                w.pop('_stream_reveal_time', None)
+
         self._calculate_layout()
 
         if vbar:
@@ -244,11 +308,7 @@ class TranscriptionCanvas(QWidget):
         from PySide6.QtGui import QFontMetrics, QFont
         from PySide6.QtCore import QRect
         
-        engine = getattr(self.main_window, 'engine', None)
-        prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
-        pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
-        pref_size = config.FS(prefs.get('editor_font_size', 12))
-        pref_lh = config.S(prefs.get('editor_line_height', 7))
+        prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
         view_mode = prefs.get('view_mode', 'continuous')
         
         is_rtl = False
@@ -265,15 +325,6 @@ class TranscriptionCanvas(QWidget):
             meta_lang = self.words_data[0].get('meta_language')
             if isinstance(meta_lang, str) and (meta_lang.lower() in rtl_codes or meta_lang.lower() in rtl_english_names):
                 is_rtl = True
-                
-        active_font = QFont(pref_family, pref_size)
-        metrics = QFontMetrics(active_font)
-        ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
-        ts_metrics = QFontMetrics(ts_font)
-        
-        space_w = metrics.horizontalAdvance(" ") + 2
-        line_height = metrics.height() + pref_lh
-        
         max_w = self.width() - 40
         x = max_w if is_rtl else 20
         y = 20
@@ -505,7 +556,10 @@ class TranscriptionCanvas(QWidget):
                 
                 # Ensure timestamps stay isolated as LTR natively, using LTR Embedding, if in RTL mode.
                 w['_ts_text'] = f"\u202A\u2068{ts_text}\u2069\u202C" if is_rtl else ts_text
-                ts_w = ts_metrics.horizontalAdvance(w['_ts_text'])
+                ts_w = w.get('_ts_calc_w')
+                if ts_w is None:
+                    ts_w = ts_metrics.horizontalAdvance(w['_ts_text'])
+                    w['_ts_calc_w'] = ts_w
                 
                 if is_rtl:
                     x -= ts_w
@@ -520,13 +574,15 @@ class TranscriptionCanvas(QWidget):
             raw_text = "(...)" if is_inaudible else w.get('text', '')
             
             # Use BiDirectional formatting to perfectly resolve neutral chars (e.g. dots, numbers) in RTL.
-            # \u202B (RLE) sets the base direction to RTL.
-            # \u2068 (FSI) isolates the word so LTR chunks like "[x34]" keep their brackets unmirrored.
-            display_text = f"\u202B\u2068{raw_text}\u2069\u202C" if is_rtl else raw_text
+            display_text = w.get('_display_text')
+            if display_text is None:
+                display_text = f"\u202B\u2068{raw_text}\u2069\u202C" if is_rtl else raw_text
+                w['_display_text'] = display_text
             
-            w['_display_text'] = display_text  # Store visual text
-            
-            word_w = metrics.horizontalAdvance(display_text)
+            word_w = w.get('_calc_w')
+            if word_w is None:
+                word_w = metrics.horizontalAdvance(display_text)
+                w['_calc_w'] = word_w
             
             if is_rtl:
                 if x - word_w < 20 and x < max_w:
@@ -550,11 +606,9 @@ class TranscriptionCanvas(QWidget):
         from PySide6.QtGui import QPainter, QColor, QFont, QPen
         from PySide6.QtCore import QRectF, Qt
         
-        engine = getattr(self.main_window, 'engine', None)
-        prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
-        pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
-        pref_size = config.FS(prefs.get('editor_font_size', 12))
-        active_font = QFont(pref_family, pref_size)
+        prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
+        now = time.time()
+        fade_duration = 0.18
         
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
@@ -753,9 +807,17 @@ class TranscriptionCanvas(QWidget):
             bg, _, _ = get_base_bg_fg(w)
             brush = w.get('_search_brush', bg)
             if brush:
+                alpha = 1.0
+                if '_stream_reveal_time' in w:
+                    age = now - w['_stream_reveal_time']
+                    if age < fade_duration:
+                        alpha = min(1.0, max(0.0, age / fade_duration))
+                        p.setOpacity(alpha)
                 p.setBrush(brush)
                 expand = 6 if '_search_brush' in w else 3
                 p.drawRoundedRect(w['_rect'].adjusted(-expand, -1, expand, 1), 5, 5)
+                if alpha < 1.0:
+                    p.setOpacity(1.0)
 
         # PASS 2: Sharp Bridges
         # Iterate over the FULL cached list so bridges between an off-screen word and
@@ -809,18 +871,36 @@ class TranscriptionCanvas(QWidget):
                     p.setRenderHint(QPainter.Antialiasing, True)
                     
         # PASS 3: Timestamps & Text
-        ts_font = QFont(config.UI_FONT_NAME, 10)
+        ts_font = self._cached_ts_font or QFont(config.UI_FONT_NAME, 10)
         ts_color = QColor("#666666")
+        needs_fade_animation = False
         
         for w in visible_words:
             if w.get('is_script_bg'): continue
+
+            # Determine opacity for streaming token fade-in
+            alpha = 1.0
+            if '_stream_reveal_time' in w:
+                age = now - w['_stream_reveal_time']
+                if age < fade_duration:
+                    alpha = min(1.0, max(0.0, age / fade_duration))
+                    needs_fade_animation = True
+                else:
+                    alpha = 1.0
+                    w.pop('_stream_reveal_time', None)
+
+            if alpha < 1.0:
+                p.setOpacity(alpha)
             
             if '_ts_rect' in w:
                 p.setFont(ts_font)
                 p.setPen(ts_color)
                 p.drawText(w['_ts_rect'], Qt.AlignLeft | Qt.AlignVCenter, w.get('_ts_text', ''))
                 
-            if '_rect' not in w: continue
+            if '_rect' not in w:
+                if alpha < 1.0:
+                    p.setOpacity(1.0)
+                continue
             
             if w.get('is_script_word') or w.get('is_script_placeholder'):
                 font = QFont(active_font)
@@ -837,6 +917,8 @@ class TranscriptionCanvas(QWidget):
                     p.setPen(QColor(config.FG_COLOR))
                     
                 p.drawText(w['_rect'], Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
+                if alpha < 1.0:
+                    p.setOpacity(1.0)
                 continue
             
             _, fg, _ = get_base_bg_fg(w)
@@ -865,6 +947,9 @@ class TranscriptionCanvas(QWidget):
                 p.setPen(QPen(final_fg, 1.5))
                 mid_y = int(w['_rect'].center().y()) + 1
                 p.drawLine(int(w['_rect'].left()) + 4, mid_y, int(w['_rect'].right()) - 4, mid_y)
+
+            if alpha < 1.0:
+                p.setOpacity(1.0)
             
         # PASS 4: Active Underlines
         if active_underlines:
@@ -872,6 +957,9 @@ class TranscriptionCanvas(QWidget):
             p.setBrush(QColor("#ffffff"))
             for rect in active_underlines:
                 p.drawRoundedRect(rect, 1, 1)
+
+        if needs_fade_animation:
+            QTimer.singleShot(16, self.update)
 
     def _handle_mouse(self, pos):
         visible_words = self._cached_visible_words

@@ -578,7 +578,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     for w in seg.get("words", []):
                         accumulated_raw_words.append(w)
                 
-                chunked_words = self._chunk_raw_words(accumulated_raw_words, filler_words, _silence_prefs)
+                chunked_words = self._chunk_raw_words(accumulated_raw_words, filler_words, _silence_prefs, quick=True)
                 
                 callback_chunk({
                     "idx": c_idx,
@@ -732,7 +732,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         return sorted(list(set(final_list)), key=str.casefold)
 
 
-    def _chunk_raw_words(self, all_raw_words, filler_words, prefs):
+    def _chunk_raw_words(self, all_raw_words, filler_words, prefs, quick=False):
         """Pass 1 (hallucination compressor), Pass 2 (smart chunking with lookahead),
         and Pass 3 (word structures with segment boundaries) used for both
         dynamic live streaming and final transcript creation.
@@ -751,8 +751,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         # Pass 1: N-gram Hallucination Compressor
         raw_words = [w.copy() for w in all_raw_words]
         if raw_words:
+            start_i = max(0, len(raw_words) - 80) if quick else 0
             for n in range(1, 6):
-                i = 0
+                i = start_i
                 while i <= len(raw_words) - n * 2:
                     ngram = [clean_for_match(w.get('word', '')) for w in raw_words[i:i+n]]
                     if not any(ngram): 
