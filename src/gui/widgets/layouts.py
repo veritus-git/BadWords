@@ -99,6 +99,12 @@ class MainPanelWidget(QWidget):
         super().__init__(parent)
         self.layer1 = QWidget(self)
         self.layer2 = Layer2Overlay(self)
+        self.layer2.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched == self.layer2 and event.type() in (QEvent.LayoutRequest,):
+            self.resizeEvent(None)
+        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event):
         if event is not None:
@@ -107,7 +113,8 @@ class MainPanelWidget(QWidget):
         hint = self.layer2.sizeHint()
         if self.layer2.layout():
             hint = self.layer2.layout().sizeHint()
-        self.layer2.setGeometry(0, self.height() - hint.height(), self.width(), hint.height())
+        h = max(hint.height(), self.layer2.minimumSizeHint().height())
+        self.layer2.setGeometry(0, self.height() - h, self.width(), h)
         
         # Dynamic overlap check
         if event is None and hasattr(self, '_last_l1_hint'):
@@ -116,7 +123,7 @@ class MainPanelWidget(QWidget):
             l1_hint = self.layer1.layout().sizeHint().height() if self.layer1.layout() else 0
             self._last_l1_hint = l1_hint
             
-        overlap = (l1_hint + hint.height() + 20) > self.height()
+        overlap = (l1_hint + h + 20) > self.height()
         self.layer2.set_overlapping(overlap)
 
     def showEvent(self, event):

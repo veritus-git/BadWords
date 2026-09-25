@@ -116,7 +116,7 @@ class TopStatusIsland(QWidget):
         self.raise_()
         tb = getattr(self.main_window, '_title_bar', None)
         if tb and tb.parent() == self.parent():
-            self.stackUnder(tb)
+            tb.raise_()
 
     def _reposition(self):
         """Always centers horizontally inside the parent frame at the current Y."""
