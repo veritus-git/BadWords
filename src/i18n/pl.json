@@ -208,6 +208,8 @@
     "status_whisper_init": "Inicjalizacja transkrypcji...",
     "lbl_choose_recording_language": "Wybierz język nagrania",
     "status_transcribing": "Transkrybowanie...",
+    "lbl_island": "Wyspa",
+    "msg_transcription_complete": "Transkrypcja zakończona",
     "status_silence": "Wykrywanie ciszy...",
     "status_process": "Przetwarzanie...",
     "status_finalize": "Finalizowanie danych...",

@@ -291,7 +291,7 @@ except Exception as e:
 
     def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type,
                     filler_words_list=None, initial_prompt=None, progress_callback=None,
-                    islands=None):
+                    islands=None, chunk_callback=None):
         """
         Modified v11.0: Uses stable-ts (stable_whisper) with faster-whisper backend.
         FIXED v11.2: Injects portable bin path to OS PATH for sub-dependencies.
@@ -513,16 +513,39 @@ try:
             c_idx, c_segs = process_chunk(i, s, e)
             results_dict[c_idx] = c_segs
             completed += 1
+            chunk_payload = {{
+                "idx": c_idx,
+                "total": total_chunks,
+                "start": s,
+                "end": e,
+                "segments": c_segs,
+                "percent": int((completed)/total_chunks*100)
+            }}
+            print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
             print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {{executor.submit(process_chunk, i, s, e): i for i, (s, e) in enumerate(ISLANDS)}}
+            ready_chunks = {{}}
+            next_to_stream = 0
             for future in concurrent.futures.as_completed(futures):
                 c_idx, c_segs = future.result()
                 results_dict[c_idx] = c_segs
+                ready_chunks[c_idx] = c_segs
                 completed += 1
                 print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
-            print(f"CHUNK_PROGRESS: {{int(completed/total_chunks*100)}}", flush=True)
+                while next_to_stream in ready_chunks:
+                    st_s, st_e = ISLANDS[next_to_stream]
+                    chunk_payload = {{
+                        "idx": next_to_stream,
+                        "total": total_chunks,
+                        "start": st_s,
+                        "end": st_e,
+                        "segments": ready_chunks[next_to_stream],
+                        "percent": int((completed)/total_chunks*100)
+                    }}
+                    print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
+                    next_to_stream += 1
 
     # Assemble in order
     output_segments = []
@@ -628,6 +651,15 @@ try:
                 }})
         
         output_segments.append(seg_obj)
+        chunk_payload = {{
+            "idx": len(output_segments) - 1,
+            "total": -1,
+            "start": segment.start,
+            "end": segment.end,
+            "segments": [seg_obj],
+            "percent": progress_percent
+        }}
+        print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
         print(f"Segment processed: {{segment.start:.2f}}s")
 
     final_data = {{
@@ -674,11 +706,21 @@ except Exception as e:
             # Lines that are filtered from [RUNNER] log but still parsed for progress signals
             spam_markers = [
                 "Transcribe:", "Adjustment:", "Segment processed:",
-                "CHUNK_PROGRESS:", "[Chunked]",
+                "CHUNK_PROGRESS:", "CHUNK_STREAM:", "[Chunked]",
                 "Transcribing with faster-whisper",
                 "Detected language:", "Detected Language:",
             ]
             for line in iter(process.stdout.readline, ''):
+                if line.startswith("CHUNK_STREAM:"):
+                    try:
+                        raw_json = line[len("CHUNK_STREAM:"):].strip()
+                        chunk_data = json.loads(raw_json)
+                        if chunk_callback:
+                            chunk_callback(chunk_data)
+                    except Exception as e:
+                        log_error(f"Failed parsing CHUNK_STREAM: {e}")
+                    continue
+
                 if any(marker in line for marker in spam_markers):
                     # Standard stable-ts % (only parse if not in chunked mode to prevent bouncing)
                     if not use_chunking:
