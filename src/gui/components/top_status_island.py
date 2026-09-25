@@ -170,9 +170,13 @@ class TopStatusIsland(QWidget):
         self._percent_text = f"{percent}%" if percent >= 0 else ""
 
         if not self._spinner_timer.isActive():
-            self._spinner_timer.start()
+            self._spinner_timer.start(33)
 
-        self._animate_to_target_width()
+        # Set stable comfortable width (e.g. 215px) up front to avoid width morphing animation during transcription
+        self._target_width = max(float(config.S(215)), self._calculate_target_width())
+        self._current_width = self._target_width
+        self.setFixedWidth(int(self._current_width))
+
         self.show()
         self._ensure_z_order()
 
@@ -191,13 +195,9 @@ class TopStatusIsland(QWidget):
         self.update()
 
     def update_percent(self, percent: int):
-        """Minimalist progress update: updates the percentage badge."""
+        """Minimalist progress update: updates the percentage badge without morphing width."""
         self._percent_text = f"{percent}%" if percent >= 0 else ""
-        new_target = self._calculate_target_width()
-        if abs(new_target - self._current_width) > 6.0:
-            self._animate_to_target_width()
-        else:
-            self.update()
+        self.update()
 
     def update_chunk_info(self, c_idx: int = 0, tot: int = -1, pct: int = -1):
         """Compatibility method for chunk stream updates; minimalist: shows percent only."""
@@ -207,8 +207,11 @@ class TopStatusIsland(QWidget):
         """Update the main title text, stripping any redundant trailing percentage."""
         cleaned = re.sub(r'[\s:•–-]*\d+%\s*$', '', text).strip()
         self._title_text = cleaned
-        self._animate_to_target_width()
-        self.update()
+        new_w = max(float(config.S(215)), self._calculate_target_width())
+        if abs(new_w - self._current_width) > 15.0:
+            self._animate_to_target_width()
+        else:
+            self.update()
 
     def set_completed(self, message: str = ""):
         """Switch to completion state with green vector checkmark and auto-dismiss."""
@@ -220,8 +223,11 @@ class TopStatusIsland(QWidget):
             self.main_window.txt("msg_transcription_complete") if hasattr(self.main_window, 'txt') else "Complete"
         )
         self._percent_text = ""
-
-        self._animate_to_target_width()
+        new_w = max(float(config.S(215)), self._calculate_target_width())
+        self._target_width = new_w
+        self._current_width = new_w
+        self.setFixedWidth(int(self._current_width))
+        self._reposition()
         self.update()
 
         # Auto-slide out after 2.5 seconds
@@ -235,8 +241,11 @@ class TopStatusIsland(QWidget):
 
         self._title_text = f"Error: {err_msg}"
         self._percent_text = ""
-
-        self._animate_to_target_width()
+        new_w = max(float(config.S(215)), self._calculate_target_width())
+        self._target_width = new_w
+        self._current_width = new_w
+        self.setFixedWidth(int(self._current_width))
+        self._reposition()
         self.update()
         self._dismiss_timer.start(4000)
 
