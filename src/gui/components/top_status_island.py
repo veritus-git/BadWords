@@ -13,6 +13,7 @@ Shapes 1:1 identically to AudioToggleTab (inverted trapezoid with curved bezier 
 providing minimalist feedback during transcription with pure vector graphics (zero emojis).
 """
 
+import re
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import (
     Qt, QRectF, QPointF, QTimer, QVariantAnimation, QEasingCurve,
@@ -110,6 +111,13 @@ class TopStatusIsland(QWidget):
             self._spinner_angle = (self._spinner_angle + 6) % 360
             self.update()
 
+    def _ensure_z_order(self):
+        """Ensures the island stays above content views but strictly behind/under the title bar."""
+        self.raise_()
+        tb = getattr(self.main_window, '_title_bar', None)
+        if tb and tb.parent() == self.parent():
+            self.stackUnder(tb)
+
     def _reposition(self):
         """Always centers horizontally inside the parent frame at the current Y."""
         if not self.parent_frame:
@@ -117,6 +125,7 @@ class TopStatusIsland(QWidget):
         pw = float(self.parent_frame.width())
         x = (pw - self._current_width) / 2.0
         self.move(int(x), int(self._pos_y))
+        self._ensure_z_order()
 
     def eventFilter(self, watched, event):
         if watched == self.parent_frame and event.type() == QEvent.Resize:
@@ -124,7 +133,7 @@ class TopStatusIsland(QWidget):
         return super().eventFilter(watched, event)
 
     def _calculate_target_width(self) -> float:
-        """Calculates optimal tab width based on text and shoulder curves."""
+        """Calculates optimal tab width based on text and shoulder curves (no dot)."""
         font_name = config.UI_FONT_NAME
         f_lbl = QFont(font_name, config.FS(8.5))
         f_bold = QFont(font_name, config.FS(8.5), QFont.Bold)
@@ -134,10 +143,10 @@ class TopStatusIsland(QWidget):
         icon_w = float(config.S(14.0))
         icon_gap = float(config.S(8.0))
         title_w = fm_lbl.horizontalAdvance(self._title_text) if self._title_text else 0
-        bullet_pct_w = (float(config.S(13.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
+        pct_w = (float(config.S(8.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
         pad_x = float(config.S(18.0))
 
-        content_w = icon_w + icon_gap + title_w + bullet_pct_w + pad_x
+        content_w = icon_w + icon_gap + title_w + pct_w + pad_x
         # Total width = content + both curved shoulders (2 * c3)
         total_w = content_w + (self._c3 * 2.0)
         return max(float(config.S(160)), total_w)
@@ -157,7 +166,8 @@ class TopStatusIsland(QWidget):
     def show_progress(self, title: str, percent: int = -1):
         """Display the island with active spinning indicator and percentage."""
         self._state = "working"
-        self._title_text = title
+        cleaned_title = re.sub(r'[\s:•–-]*\d+%\s*$', '', title).strip()
+        self._title_text = cleaned_title
         self._percent_text = f"{percent}%" if percent >= 0 else ""
 
         if not self._spinner_timer.isActive():
@@ -165,7 +175,7 @@ class TopStatusIsland(QWidget):
 
         self._animate_to_target_width()
         self.show()
-        self.raise_()
+        self._ensure_z_order()
 
         target_y = self._get_titlebar_bottom_y()
         if self._pos_y < target_y:
@@ -192,8 +202,9 @@ class TopStatusIsland(QWidget):
         self.update_percent(pct)
 
     def set_status(self, text: str):
-        """Update the main title text."""
-        self._title_text = text
+        """Update the main title text, stripping any redundant trailing percentage."""
+        cleaned = re.sub(r'[\s:•–-]*\d+%\s*$', '', text).strip()
+        self._title_text = cleaned
         self._animate_to_target_width()
         self.update()
 
@@ -229,6 +240,7 @@ class TopStatusIsland(QWidget):
 
     def slide_out(self):
         """Smoothly slide the island back up behind the title bar."""
+        self._ensure_z_order()
         target_y = self._get_titlebar_bottom_y() - self._island_height
         if self._pos_anim.state() == QVariantAnimation.Running:
             self._pos_anim.stop()
@@ -271,12 +283,17 @@ class TopStatusIsland(QWidget):
         path.cubicTo(w - c2, h, w - c1, 0.0, w, 0.0)
         path.closeSubpath()
 
-        # Fill background (#191919) seamlessly matching app theme
-        bg_col = QColor("#191919")
+        # Fill background - subtly darker than the title bar (#191919) to cut cleanly
+        bg_col = QColor("#111113")
         p.fillPath(path, QBrush(bg_col))
 
-        # Border outline along shoulders and bottom edge (top edge has no border for seamless connection)
-        border_col = QColor("#2a2a2a") if self._state != "completed" else QColor("#23a559")
+        # Border outline along shoulders and bottom edge
+        if self._state == "completed":
+            border_col = QColor("#23a559")
+        elif self._state == "error":
+            border_col = QColor("#e74c3c")
+        else:
+            border_col = QColor("#222225")
         border_path = QPainterPath()
         border_path.moveTo(0.5, 0.0)
         border_path.cubicTo(c1, 0.5, c2, h - 0.5, c3, h - 0.5)
@@ -295,8 +312,8 @@ class TopStatusIsland(QWidget):
         icon_w = float(config.S(14.0))
         icon_gap = float(config.S(8.0))
         title_w = fm_lbl.horizontalAdvance(self._title_text) if self._title_text else 0
-        bullet_pct_w = (float(config.S(13.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
-        total_content_w = icon_w + icon_gap + title_w + bullet_pct_w
+        pct_w = (float(config.S(8.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
+        total_content_w = icon_w + icon_gap + title_w + pct_w
 
         # Center inside flat bottom area [c3, w - c3]
         flat_w = w - 2.0 * c3
@@ -334,7 +351,7 @@ class TopStatusIsland(QWidget):
             p.drawLine(QPointF(icon_cx, icon_cy - icon_r + 2.5), QPointF(icon_cx, icon_cy + 0.5))
             p.drawPoint(QPointF(icon_cx, icon_cy + icon_r - 2.0))
 
-        # 4. Text layout (minimalist: text + % only, NO Island X/X)
+        # 4. Text layout (minimalist: text + green % only, NO bullet dot)
         cur_x = start_x + icon_w + icon_gap
         text_y = (h + fm_lbl.ascent() - fm_lbl.descent()) / 2.0
 
@@ -345,14 +362,9 @@ class TopStatusIsland(QWidget):
             p.drawText(QPointF(cur_x, text_y), self._title_text)
             cur_x += title_w
 
-        # Percent badge (e.g. • 25%)
+        # Percent badge (e.g. 25% directly, NO bullet dot)
         if self._percent_text:
-            cur_x += float(config.S(4))
-            p.setFont(f_lbl)
-            p.setPen(QColor("#55555c"))
-            p.drawText(QPointF(cur_x, text_y), "•")
             cur_x += float(config.S(8))
-
             p.setFont(f_bold)
             p.setPen(QColor("#23a559"))
             p.drawText(QPointF(cur_x, text_y), self._percent_text)

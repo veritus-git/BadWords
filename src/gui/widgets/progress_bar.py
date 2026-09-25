@@ -79,22 +79,25 @@ class LiquidProgressBar(QWidget):
             self._anim.start()
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter, QColor, QLinearGradient
+        from PySide6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath
         from PySide6.QtCore import QRectF
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
 
-        r = float(config.S(4))
         rect = self.rect()
         w = float(rect.width())
         h = float(rect.height())
+        r = h / 2.0
+
+        track_path = QPainterPath()
+        track_path.addRoundedRect(QRectF(0, 0, w, h), r, r)
 
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#2b2b2b"))
-        p.drawRoundedRect(rect, r, r)
+        p.drawPath(track_path)
 
-        # Use fast rectangular clipping to avoid CPU-intensive QPainterPath vector clipping
-        p.setClipRect(rect)
+        # Clip all inner fills to the rounded track path so ends are always smoothly rounded
+        p.setClipPath(track_path)
 
         if self._indeterminate:
             pill_width = w * 0.25

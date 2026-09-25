@@ -47,7 +47,7 @@ class TranscriptionCanvas(QWidget):
         """Prepares canvas for real-time streaming chunks."""
         if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
             self._stream_timer.stop()
-        self._stream_token_queue = []
+        self._target_streamed_words = []
         self.words_data = []
         self._cached_visible_words = []
         self._is_streaming = True
@@ -56,24 +56,18 @@ class TranscriptionCanvas(QWidget):
         self.update()
 
     def load_streamed_words(self, words_data: list):
-        """Loads chunked streamed words directly, calculating layout and strictly preserving scroll position."""
-        if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
-            self._stream_timer.stop()
-        self._stream_token_queue = []
+        """Streams formatted words smoothly word-by-word like an LLM response."""
         self._is_streaming = True
+        self._target_streamed_words = words_data
 
-        # Capture user's scroll position so streamed text added below NEVER scrolls the view
-        scroll = getattr(self.main_window, 'scroll_area', None)
-        vbar = scroll.verticalScrollBar() if scroll else None
-        old_scroll_val = vbar.value() if vbar else 0
+        if not hasattr(self, 'words_data') or not self.words_data:
+            init_count = min(1, len(words_data))
+            self.words_data = words_data[:init_count]
+            self._calculate_layout()
+            self.update()
 
-        self.words_data = words_data
-        self._calculate_layout()
-
-        if vbar:
-            vbar.setValue(old_scroll_val)
-
-        self.update()
+        if not self._stream_timer.isActive():
+            self._stream_timer.start(28)
 
     def append_chunk_stream(self, chunk_payload: dict):
         """Streams chunk words. If words list provided, uses load_streamed_words."""
@@ -82,35 +76,43 @@ class TranscriptionCanvas(QWidget):
             self.load_streamed_words(words)
 
     def _process_streaming_tick(self):
-        """Fallback tick handler without auto-scrolling."""
-        if not self._stream_token_queue:
+        """Reveals tokens smoothly up to target_streamed_words with adaptive pace and NO auto-scrolling."""
+        target_words = getattr(self, '_target_streamed_words', [])
+        target_len = len(target_words)
+        curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
+
+        if curr_len >= target_len:
             self._stream_timer.stop()
             return
 
-        batch_size = 2
-        popped = []
-        for _ in range(batch_size):
-            if self._stream_token_queue:
-                popped.append(self._stream_token_queue.pop(0))
+        lag = target_len - curr_len
+        if lag > 30:
+            step = 4
+        elif lag > 15:
+            step = 3
+        elif lag > 6:
+            step = 2
+        else:
+            step = 1
 
-        if popped:
-            scroll = getattr(self.main_window, 'scroll_area', None)
-            vbar = scroll.verticalScrollBar() if scroll else None
-            old_scroll_val = vbar.value() if vbar else 0
+        next_len = min(curr_len + step, target_len)
 
-            self.words_data.extend(popped)
-            self._calculate_layout()
+        scroll = getattr(self.main_window, 'scroll_area', None)
+        vbar = scroll.verticalScrollBar() if scroll else None
+        old_scroll_val = vbar.value() if vbar else 0
 
-            if vbar:
-                vbar.setValue(old_scroll_val)
+        self.words_data = target_words[:next_len]
+        self._calculate_layout()
 
-            self.update()
+        if vbar:
+            vbar.setValue(old_scroll_val)
+
+        self.update()
 
     def finalize_streaming(self, final_words_data=None):
         """Flushes the stream queue and sets canonical finalized data."""
         if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
             self._stream_timer.stop()
-        self._stream_token_queue = []
         self._is_streaming = False
 
         scroll = getattr(self.main_window, 'scroll_area', None)
@@ -119,6 +121,10 @@ class TranscriptionCanvas(QWidget):
 
         if final_words_data is not None:
             self.words_data = final_words_data
+        elif hasattr(self, '_target_streamed_words') and self._target_streamed_words:
+            self.words_data = self._target_streamed_words
+        self._target_streamed_words = []
+
         self._calculate_layout()
 
         if vbar:

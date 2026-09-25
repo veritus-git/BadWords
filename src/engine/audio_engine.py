@@ -542,7 +542,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
             def whisper_live_progress(pct):
                 update_progress(int(pct))
-                update_status(f"{self.txt('status_transcribing')} {pct}%")
+                update_status(self.txt('status_transcribing'))
 
             # ── Silence detection BEFORE Whisper ─────────────────────────────
             # Results are reused both for island computation and _build_data_structure
