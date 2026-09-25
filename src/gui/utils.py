@@ -191,24 +191,30 @@ def _center_on_screen(widget: QWidget, w: int, h: int):
         widget.setGeometry(x, y, w, h)
 
 
-def _txt(lang: str, key: str, **kwargs) -> str:
-    """Return translation string for *key* in *lang*, falling back to 'en'."""
-    text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
+def _txt(lang: str, key: str, default: str = None, **kwargs) -> str:
+    """Return translation string for *key* in *lang*, falling back to 'en' or default."""
+    lang_dict = config.TRANS.get(lang, config.TRANS.get("en", {}))
+    en_dict = config.TRANS.get("en", {})
+    fallback = default if default is not None else key
+    text = lang_dict.get(key, en_dict.get(key, fallback))
     if kwargs:
-        return text.format(**kwargs)
+        try:
+            return text.format(**kwargs)
+        except Exception:
+            return text
     return text
 
 
-def _qwidget_txt(self, key: str, **kwargs) -> str:
+def _qwidget_txt(self, key: str, default: str = None, **kwargs) -> str:
     w = self.window()
     if hasattr(w, 'txt') and w != self:
         try:
-            res = w.txt(key, **kwargs)
+            res = w.txt(key, default=default, **kwargs)
             if res is not None:
                 return res
         except Exception:
             pass
-    return _txt("en", key, **kwargs)
+    return _txt("en", key, default=default, **kwargs)
 
 QWidget.txt = _qwidget_txt
 

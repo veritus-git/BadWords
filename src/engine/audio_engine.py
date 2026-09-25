@@ -562,52 +562,31 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # Execute Faster-Whisper via Runner with RESOLVED parameters
             # Chunking is now always enabled by default if len(islands) > 1
             
+            accumulated_raw_words = []
+            _silence_prefs = self.os_doc.get_all_prefs()
+
             def on_whisper_chunk(chunk_data):
                 if not callback_chunk:
                     return
-                chunk_words = []
                 c_idx = chunk_data.get("idx", 0)
                 tot = chunk_data.get("total", -1)
                 pct = chunk_data.get("percent", -1)
                 st = chunk_data.get("start", 0.0)
                 en = chunk_data.get("end", 0.0)
                 
-                clean_bad = {re.sub(r'^[^\w]+|[^\w]+$', '', w.strip().lower()) for w in filler_words if w}
-                
                 for seg in chunk_data.get("segments", []):
-                    seg_s = seg.get("start", st)
-                    seg_e = seg.get("end", en)
-                    is_first = True
                     for w in seg.get("words", []):
-                        raw_txt = w.get("word", "").strip()
-                        cl = re.sub(r'^[^\w]+|[^\w]+$', '', raw_txt.lower())
-                        if cl:
-                            is_b = cl in clean_bad
-                            w_obj = {
-                                "text": raw_txt,
-                                "start": w.get("start", seg_s),
-                                "end": w.get("end", seg_e),
-                                "selected": is_b,
-                                "status": "bad" if is_b else None,
-                                "is_filler": is_b,
-                                "seg_start": seg_s,
-                                "seg_end": seg_e,
-                                "is_segment_start": is_first,
-                                "type": "word",
-                                "id": 0,
-                                "chunk_idx": c_idx
-                            }
-                            if is_first:
-                                is_first = False
-                            chunk_words.append(w_obj)
-                            
+                        accumulated_raw_words.append(w)
+                
+                chunked_words = self._chunk_raw_words(accumulated_raw_words, filler_words, _silence_prefs)
+                
                 callback_chunk({
                     "idx": c_idx,
                     "total": tot,
                     "percent": pct,
                     "start": st,
                     "end": en,
-                    "words": chunk_words
+                    "words": chunked_words
                 })
 
             update_status(self.txt("status_whisper_init"))
@@ -753,41 +732,37 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         return sorted(list(set(final_list)), key=str.casefold)
 
 
-    def _build_data_structure(self, json_data, silence_ranges, filler_words, fps, 
-                              txt_inaudible="inaudible",
-                              expected_script=None, audio_duration=None):
-        prefs = self.os_doc.get_all_prefs()
-        temp_words = []
+    def _chunk_raw_words(self, all_raw_words, filler_words, prefs):
+        """Pass 1 (hallucination compressor), Pass 2 (smart chunking with lookahead),
+        and Pass 3 (word structures with segment boundaries) used for both
+        dynamic live streaming and final transcript creation.
+        """
+        import re
+
         def clean_word(txt):
-            # Strips leading and trailing punctuation, hyphens, and whitespace so e.g. 'mhm-', '...um...' normalize cleanly
             t = txt.strip().lower()
             return re.sub(r'^[^\w]+|[^\w]+$', '', t)
 
         dynamic_bad = {clean_word(w) for w in filler_words if clean_word(w)}
-        def clean_for_match(txt): return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
 
-        # --- PASS 1: N-GRAM HALLUCINATION COMPRESSOR ---
-        # Detects and compresses perfectly repeating consecutive phrases (from 1 to 15 words)
-        # into a single tile e.g. "I went to the store [x30]"
-        all_raw_words = []
-        for seg in json_data.get('segments', []):
-            for w in seg.get('words', []):
-                all_raw_words.append(w)
+        def clean_for_match(txt):
+            return re.sub(r'[^\w\s\'-]', '', txt.strip()).lower()
 
-        if all_raw_words:
-            # FIX OP-01: Reducing n-gram from 15 to 5 drastically reduces complexity
+        # Pass 1: N-gram Hallucination Compressor
+        raw_words = [w.copy() for w in all_raw_words]
+        if raw_words:
             for n in range(1, 6):
                 i = 0
-                while i <= len(all_raw_words) - n * 2:
-                    ngram = [clean_for_match(w['word']) for w in all_raw_words[i:i+n]]
+                while i <= len(raw_words) - n * 2:
+                    ngram = [clean_for_match(w.get('word', '')) for w in raw_words[i:i+n]]
                     if not any(ngram): 
                         i += 1
                         continue
                     
                     repeats = 1
                     curr_idx = i + n
-                    while curr_idx <= len(all_raw_words) - n:
-                        next_ngram = [clean_for_match(w['word']) for w in all_raw_words[curr_idx:curr_idx+n]]
+                    while curr_idx <= len(raw_words) - n:
+                        next_ngram = [clean_for_match(w.get('word', '')) for w in raw_words[curr_idx:curr_idx+n]]
                         if next_ngram == ngram:
                             repeats += 1
                             curr_idx += n
@@ -796,24 +771,20 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                             
                     threshold = 4 if n > 1 else 5
                     if repeats >= threshold:
-                        merged_word_text = " ".join(w['word'].strip() for w in all_raw_words[i : i+n])
-                        
-                        merged = all_raw_words[i].copy()
+                        merged_word_text = " ".join(w.get('word', '').strip() for w in raw_words[i : i+n])
+                        merged = raw_words[i].copy()
                         merged['word'] = f"{merged_word_text} [x{repeats}]"
-                        merged['end'] = all_raw_words[curr_idx - 1]['end']
+                        merged['end'] = raw_words[curr_idx - 1].get('end', merged.get('end', 0))
                         merged['_is_hallucination'] = True
-                        
-                        # Replace the entire repeating sequence with the single compressed dictionary
-                        all_raw_words[i : curr_idx] = [merged]
+                        raw_words[i : curr_idx] = [merged]
                     
                     i += 1
 
-        compressed_words = all_raw_words
+        compressed_words = raw_words
 
-        # --- PASS 2: SMART CHUNKING (Z LOOKAHEAD) ---
+        # Pass 2: Smart Chunking (Z-Lookahead)
         c_max = int(prefs.get('chunk_max_words', 30))
         c_look = int(prefs.get('chunk_lookahead', 3))
-        # GOLDEN fix: use chunk_min_words (word count) not chunk_min_chars (char count)
         c_min = int(prefs.get('chunk_min_words', prefs.get('chunk_min_chars', 7)))
         c_hard_limit = c_max + c_look
 
@@ -821,38 +792,28 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         curr_chunk = []
         for i, w in enumerate(compressed_words):
             curr_chunk.append(w)
-            
-            last_word_text = w['word'].strip()
+            last_word_text = w.get('word', '').strip()
             has_punct = last_word_text.endswith(('.', '?', '!'))
             should_break = False
             
-            # Absolute maximum hard limit to prevent infinite run-ons
             if len(curr_chunk) >= c_hard_limit:
                 should_break = True
             elif len(curr_chunk) >= c_max:
-                # GOLDEN fix: break if the CURRENT word has punctuation (not accumulated count).
-                # In src_old: `if has_punct: should_break = True` — per-word check.
                 if has_punct:
-                    should_break = True  # Break immediately if current word has punctuation
+                    should_break = True
                 else:
-                    # Look ahead up to remaining allowance (c_hard_limit - current_length)
                     allowance = c_hard_limit - len(curr_chunk)
                     lookahead_limit = min(allowance, len(compressed_words) - i - 1)
                     found_punct = False
-                    
                     for j in range(1, lookahead_limit + 1):
-                        next_w_text = compressed_words[i + j]['word'].strip()
+                        next_w_text = compressed_words[i + j].get('word', '').strip()
                         if next_w_text.endswith(('.', '?', '!')):
                             found_punct = True
                             break
-                    
-                    # If we didn't find any punctuation in the upcoming allowed words, break now.
-                    # If we DID find it, we keep going (should_break = False) until we hit it in next loops.
                     if not found_punct:
                         should_break = True
-            # GOLDEN fix: normal soft break — require current word has punct (has_punct), not cumulative count.
             elif len(curr_chunk) >= c_min and has_punct:
-                should_break = True  # Normal soft break mid-sentence
+                should_break = True
                 
             if should_break:
                 chunks.append(curr_chunk)
@@ -861,7 +822,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         if curr_chunk:
             chunks.append(curr_chunk)
 
-        # --- PASS 3: RAW DATA & FILLER WORDS ONLY ---
+        # Pass 3: Raw Data & Word Objects
+        temp_words = []
+        word_id = 0
         for chunk in chunks:
             if not chunk: continue
             
@@ -870,42 +833,57 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             is_first = True
             
             for w in chunk:
-                raw_txt = w['word'].strip()
+                raw_txt = w.get('word', '').strip()
                 cleaned = clean_word(raw_txt)
                 is_hallucination = w.get('_is_hallucination', False)
                 
                 if cleaned or is_hallucination:
                     is_bad = cleaned in dynamic_bad
-                    real_start = w['start']
-                    real_end = w['end']
+                    real_start = w.get('start', 0)
+                    real_end = w.get('end', 0)
                     
                     status = "bad" if is_bad else None
-                    
                     if is_hallucination:
-                        # Wymuszenie statusu bad przy skompresowanej halucynacji
                         status = "bad"
                         is_bad = True
 
                     w_obj = {
                         "text": raw_txt,
-                        "start": real_start, "end": real_end,
+                        "start": real_start,
+                        "end": real_end,
                         "selected": is_bad,
                         "status": status,
                         "is_filler": is_bad,
-                        "seg_start": seg_start, "seg_end": seg_end,
+                        "seg_start": seg_start,
+                        "seg_end": seg_end,
                         "is_segment_start": is_first,
                         "type": "word",
-                        "id": 0
+                        "id": word_id
                     }
+                    word_id += 1
                     
                     if is_hallucination:
-                        w_obj['_is_hallucination'] = True  # CRITICAL: Keep tag alive for Enforcer
+                        w_obj['_is_hallucination'] = True
                         w_obj['is_auto'] = True
                         w_obj['algo_status'] = 'bad'
                         w_obj['manual_status'] = 'bad'
                         
-                    if is_first: is_first = False
+                    if is_first:
+                        is_first = False
                     temp_words.append(w_obj)
+
+        return temp_words
+
+    def _build_data_structure(self, json_data, silence_ranges, filler_words, fps, 
+                              txt_inaudible="inaudible",
+                              expected_script=None, audio_duration=None):
+        prefs = self.os_doc.get_all_prefs()
+        all_raw_words = []
+        for seg in json_data.get('segments', []):
+            for w in seg.get('words', []):
+                all_raw_words.append(w)
+
+        temp_words = self._chunk_raw_words(all_raw_words, filler_words, prefs)
 
         # NOTE: Stretched-word inaudible detector removed (v14.1) — replaced by
         # gap-based inaudible detection below which has no false positives.

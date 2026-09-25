@@ -70,7 +70,7 @@ class AutoSaveManager:
                 media_inventory=bws_extras.get("media_inventory")
             )
             # Write metadata alongside for crash recovery
-            t_name = packet.get("transcription_source", {}).get("timeline_name", "")
+            t_name = (packet.get("transcription_source") or {}).get("timeline_name", "")
             meta = {
                 "timeline_name": t_name,
                 "project_name": t_name,
