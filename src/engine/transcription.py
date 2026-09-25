@@ -523,6 +523,8 @@ try:
             }}
             print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
             print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
+            if target_device == "cuda":
+                time.sleep(0.035)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {{executor.submit(process_chunk, i, s, e): i for i, (s, e) in enumerate(ISLANDS)}}
@@ -661,6 +663,8 @@ try:
         }}
         print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
         print(f"Segment processed: {{segment.start:.2f}}s")
+        if target_device == "cuda":
+            time.sleep(0.020)
 
     final_data = {{
         "segments": output_segments,
