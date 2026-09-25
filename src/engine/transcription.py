@@ -438,7 +438,7 @@ try:
         # CTranslate2 already fully utilizes GPU tensor cores within 1 worker.
         workers = 1
 
-    print(f"[Chunked] Loading model {model_size} on {target_device} ({target_compute}) with {workers} workers...")
+    print(f"[Chunked] Loading model {{model_size}} on {{target_device}} ({{target_compute}}) with {{workers}} workers...")
     model = WhisperModel(
         model_size, device=target_device, compute_type=target_compute,
         cpu_threads=cpu_threads_val, num_workers=workers,
