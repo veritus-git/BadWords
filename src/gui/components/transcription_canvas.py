@@ -118,11 +118,11 @@ class TranscriptionCanvas(QWidget):
 
         if not hasattr(self, '_stream_timer'):
             self._stream_timer = QTimer(self)
-            self._stream_timer.setInterval(33)
+            self._stream_timer.setInterval(40)
             self._stream_timer.timeout.connect(self._process_streaming_tick)
 
         if not self._stream_timer.isActive():
-            self._stream_timer.start(33)
+            self._stream_timer.start(40)
 
     def append_chunk_stream(self, chunk_payload: dict):
         """Streams chunk words. If words list provided, uses load_streamed_words."""
@@ -174,13 +174,11 @@ class TranscriptionCanvas(QWidget):
             self.words_data = self.words_data[:rewind_idx]
             curr_len = rewind_idx
 
-        # Adaptive pacing: smooth reading pace with catch-up
+        # Rhythmic streamline pacing: smooth, steady token flow (1 token per tick, 2-3 if buffer builds up)
         lag = target_len - curr_len
         if lag > 60:
-            step = 5
-        elif lag > 30:
             step = 3
-        elif lag > 10:
+        elif lag > 25:
             step = 2
         else:
             step = 1
