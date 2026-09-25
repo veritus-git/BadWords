@@ -59,9 +59,15 @@ class TopStatusIsland(QWidget):
         self._pos_y = -self._island_height
         self._spinner_angle = 0
 
-        # Vsync timer for smooth vector spinner animation
+        # Cached fonts and metrics to prevent allocating QFont / querying FreeType on every frame
+        self._f_lbl = QFont(config.UI_FONT_NAME, config.FS(8.5))
+        self._f_bold = QFont(config.UI_FONT_NAME, config.FS(8.5), QFont.Bold)
+        self._fm_lbl = QFontMetrics(self._f_lbl)
+        self._fm_bold = QFontMetrics(self._f_bold)
+
+        # Gentle 30 FPS timer for vector spinner animation (prevents timer flooding)
         self._spinner_timer = QTimer(self)
-        self._spinner_timer.setInterval(get_refresh_interval_ms())
+        self._spinner_timer.setInterval(33)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
 
         # Width morphing animation
@@ -107,8 +113,8 @@ class TopStatusIsland(QWidget):
         self.update()
 
     def _on_spinner_tick(self):
-        if self._state == "working":
-            self._spinner_angle = (self._spinner_angle + 6) % 360
+        if self._state == "working" and self.isVisible():
+            self._spinner_angle = (self._spinner_angle + 12) % 360
             self.update()
 
     def _ensure_z_order(self):
@@ -125,7 +131,6 @@ class TopStatusIsland(QWidget):
         pw = float(self.parent_frame.width())
         x = (pw - self._current_width) / 2.0
         self.move(int(x), int(self._pos_y))
-        self._ensure_z_order()
 
     def eventFilter(self, watched, event):
         if watched == self.parent_frame and event.type() == QEvent.Resize:
@@ -134,16 +139,10 @@ class TopStatusIsland(QWidget):
 
     def _calculate_target_width(self) -> float:
         """Calculates optimal tab width based on text and shoulder curves (no dot)."""
-        font_name = config.UI_FONT_NAME
-        f_lbl = QFont(font_name, config.FS(8.5))
-        f_bold = QFont(font_name, config.FS(8.5), QFont.Bold)
-        fm_lbl = QFontMetrics(f_lbl)
-        fm_bold = QFontMetrics(f_bold)
-
         icon_w = float(config.S(14.0))
         icon_gap = float(config.S(8.0))
-        title_w = fm_lbl.horizontalAdvance(self._title_text) if self._title_text else 0
-        pct_w = (float(config.S(8.0)) + fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
+        title_w = self._fm_lbl.horizontalAdvance(self._title_text) if self._title_text else 0
+        pct_w = (float(config.S(8.0)) + self._fm_bold.horizontalAdvance(self._percent_text)) if self._percent_text else 0
         pad_x = float(config.S(18.0))
 
         content_w = icon_w + icon_gap + title_w + pct_w + pad_x
@@ -194,8 +193,11 @@ class TopStatusIsland(QWidget):
     def update_percent(self, percent: int):
         """Minimalist progress update: updates the percentage badge."""
         self._percent_text = f"{percent}%" if percent >= 0 else ""
-        self._animate_to_target_width()
-        self.update()
+        new_target = self._calculate_target_width()
+        if abs(new_target - self._current_width) > 6.0:
+            self._animate_to_target_width()
+        else:
+            self.update()
 
     def update_chunk_info(self, c_idx: int = 0, tot: int = -1, pct: int = -1):
         """Compatibility method for chunk stream updates; minimalist: shows percent only."""
@@ -302,12 +304,11 @@ class TopStatusIsland(QWidget):
         p.setPen(QPen(border_col, 1.0))
         p.drawPath(border_path)
 
-        # 2. Typography & Text metrics
-        font_name = config.UI_FONT_NAME
-        f_lbl = QFont(font_name, config.FS(8.5))
-        f_bold = QFont(font_name, config.FS(8.5), QFont.Bold)
-        fm_lbl = QFontMetrics(f_lbl)
-        fm_bold = QFontMetrics(f_bold)
+        # 2. Typography & Text metrics (pre-cached)
+        f_lbl = self._f_lbl
+        f_bold = self._f_bold
+        fm_lbl = self._fm_lbl
+        fm_bold = self._fm_bold
 
         icon_w = float(config.S(14.0))
         icon_gap = float(config.S(8.0))

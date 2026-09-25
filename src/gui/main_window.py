@@ -2074,6 +2074,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not track_names:
             return []
         try:
+            import re
             indices = []
             for name in track_names:
                 # 1. Direct regex match on track numbers: A1, A2, A3, Audio 2, etc.
@@ -3255,11 +3256,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'top_island') and getattr(self.top_island, '_state', '') == 'working':
             self.top_island.set_status(msg)
 
-        # Immediately transition to Editor View the instant initialization finishes!
-        # Do not wait on Page 1 showing "Transcribing..." in the center while Whisper works on chunk 0.
+        # Transition to Editor View ONLY after initialization finishes and transcribing begins!
+        # From click analyze UP TO initialization end, it stays 1:1 on Page 1 like previous versions.
         transcribing_txt = self.txt("status_transcribing")
-        whisper_init_txt = self.txt("status_whisper_init")
-        if msg in (transcribing_txt, whisper_init_txt) or "transcrib" in msg.lower() or "transkryb" in msg.lower():
+        is_transcribing = (msg == transcribing_txt) or (
+            ("transcrib" in msg.lower() or "transkryb" in msg.lower()) and
+            ("init" not in msg.lower() and "inicjal" not in msg.lower())
+        )
+        if is_transcribing:
             self._prepare_editor_for_live_transcription(pct=0)
 
     def _on_analysis_error(self, err):
