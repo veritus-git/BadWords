@@ -33,23 +33,28 @@ class TranscriptionCanvas(QWidget):
         self.setCursor(Qt.ArrowCursor)
         self.setMouseTracking(True)
         self._last_dragged_id = -1
+        # Eliminate system background erase and double-buffering compositing stalls on X11/Linux
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+
         # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
         self._cached_visible_words = []
 
         # --- Cached fonts, metrics and preferences to eliminate disk I/O in paint/layout ---
         self._cached_prefs = {}
         self._cached_editor_font = None
+        self._cached_bold_font = None
         self._cached_metrics = None
         self._cached_ts_font = None
         self._cached_ts_metrics = None
         self._cached_space_w = 0
         self._cached_line_height = 0
 
-        # --- STREAMED CHUNK TRANSCRIPTION ENGINE (LLM-style reveal) ---
+        # --- STREAMED CHUNK TRANSCRIPTION ENGINE (High-Performance Incremental LLM-style) ---
         self._is_streaming = False
-        self._stream_token_queue = []
+        self._target_streamed_words = []
         self._stream_timer = QTimer(self)
-        self._stream_timer.setInterval(22)  # Smooth 22ms reading pace
+        self._stream_timer.setInterval(33)  # Calm ~30 FPS pacing
         self._stream_timer.timeout.connect(self._process_streaming_tick)
 
     def _get_font_and_metrics(self):
@@ -64,6 +69,7 @@ class TranscriptionCanvas(QWidget):
 
             from PySide6.QtGui import QFont, QFontMetrics
             self._cached_editor_font = QFont(pref_family, pref_size)
+            self._cached_bold_font = QFont(pref_family, pref_size, QFont.Bold)
             self._cached_metrics = QFontMetrics(self._cached_editor_font)
             self._cached_ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
             self._cached_ts_metrics = QFontMetrics(self._cached_ts_font)
@@ -82,6 +88,7 @@ class TranscriptionCanvas(QWidget):
     def invalidate_font_cache(self):
         """Invalidates font metrics when preferences change."""
         self._cached_editor_font = None
+        self._cached_bold_font = None
         self._cached_metrics = None
         self._cached_ts_font = None
         self._cached_ts_metrics = None
@@ -99,25 +106,22 @@ class TranscriptionCanvas(QWidget):
         self._cached_visible_words = []
         self._is_streaming = True
         self._last_dragged_id = -1
-        self._calculate_layout()
+        self.setMinimumHeight(400)
         self.update()
 
     def load_streamed_words(self, words_data: list):
-        """Streams formatted words smoothly word-by-word like an LLM response."""
+        """Receives new chunk data from background thread without blocking UI."""
+        if not words_data:
+            return
         self._is_streaming = True
         self._target_streamed_words = words_data
 
-        if not hasattr(self, 'words_data') or not self.words_data:
-            init_count = min(1, len(words_data))
-            now = time.time()
-            for w in words_data[:init_count]:
-                w['_stream_reveal_time'] = now
-            self.words_data = words_data[:init_count]
-            self._calculate_layout()
-            self.update()
+        if not hasattr(self, '_stream_timer'):
+            self._stream_timer = QTimer(self)
+            self._stream_timer.setInterval(33)
+            self._stream_timer.timeout.connect(self._process_streaming_tick)
 
         if not self._stream_timer.isActive():
-            self._stream_settle_ticks = 0
             self._stream_timer.start(33)
 
     def append_chunk_stream(self, chunk_payload: dict):
@@ -127,52 +131,153 @@ class TranscriptionCanvas(QWidget):
             self.load_streamed_words(words)
 
     def _process_streaming_tick(self):
-        """Reveals tokens smoothly up to target_streamed_words with adaptive pace, fade-in and NO auto-scrolling."""
+        """Incrementally reveals and lays out tokens. Zero full-document re-computation."""
         target_words = getattr(self, '_target_streamed_words', [])
         target_len = len(target_words)
         curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
+        now = time.time()
 
+        # Check if all tokens revealed
         if curr_len >= target_len:
-            settle = getattr(self, '_stream_settle_ticks', 0)
-            if settle < 6:
-                self._stream_settle_ticks = settle + 1
-                self.update()
-                return
+            # Check if any tokens are still fading in (within 200ms)
+            still_fading = False
+            fading_rects = []
+            for w in self.words_data[-15:]:
+                if '_stream_reveal_time' in w:
+                    if now - w['_stream_reveal_time'] < 0.20:
+                        still_fading = True
+                        if '_rect' in w:
+                            fading_rects.append(w['_rect'])
+                    else:
+                        w.pop('_stream_reveal_time', None)
+            if still_fading and fading_rects:
+                top_y = min(r.top() for r in fading_rects) - 2
+                bot_y = max(r.bottom() for r in fading_rects) + 2
+                self.update(QRect(0, max(0, top_y), self.width(), (bot_y - top_y) + 4))
             else:
                 self._stream_timer.stop()
-                self._stream_settle_ticks = 0
-                return
+            return
 
-        self._stream_settle_ticks = 0
+        # Check for tail divergence (if Whisper adjusted the last sentence boundary)
+        rewind_idx = curr_len
+        for check_idx in range(max(0, curr_len - 6), curr_len):
+            if check_idx < target_len:
+                tw = target_words[check_idx]
+                cw = self.words_data[check_idx]
+                if (tw.get('text') != cw.get('text') or
+                    tw.get('status') != cw.get('status') or
+                    tw.get('is_segment_start') != cw.get('is_segment_start')):
+                    rewind_idx = check_idx
+                    break
+
+        if rewind_idx < curr_len:
+            self.words_data = self.words_data[:rewind_idx]
+            curr_len = rewind_idx
+
+        # Adaptive pacing: smooth reading pace with catch-up
         lag = target_len - curr_len
-        if lag > 30:
-            step = 4
-        elif lag > 15:
+        if lag > 60:
+            step = 5
+        elif lag > 30:
             step = 3
-        elif lag > 6:
+        elif lag > 10:
             step = 2
         else:
             step = 1
 
         next_len = min(curr_len + step, target_len)
+        tokens_to_add = target_words[curr_len:next_len]
+        if not tokens_to_add:
+            return
 
-        # Stamp newly revealed tokens with timestamp for smooth opacity fade-in
-        now = time.time()
-        for w in target_words[curr_len:next_len]:
-            if '_stream_reveal_time' not in w:
-                w['_stream_reveal_time'] = now
+        # Layout ONLY the new tokens
+        prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
+        max_w = self.width() - 40
+        view_mode = prefs.get('view_mode', 'continuous')
+        precise_ts = prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])
 
-        scroll = getattr(self.main_window, 'scroll_area', None)
-        vbar = scroll.verticalScrollBar() if scroll else None
-        old_scroll_val = vbar.value() if vbar else 0
+        # Start cursor from the previous token if exists
+        if curr_len > 0 and '_rect' in self.words_data[-1]:
+            prev_rect = self.words_data[-1]['_rect']
+            cx = prev_rect.right() + space_w + 1
+            cy = prev_rect.top()
+        else:
+            cx = 20
+            cy = 20
 
-        self.words_data = target_words[:next_len]
-        self._calculate_layout()
+        min_dirty_y = cy
+        max_dirty_y = cy + line_height
 
-        if vbar:
-            vbar.setValue(old_scroll_val)
+        for w in tokens_to_add:
+            w['_stream_reveal_time'] = now
 
-        self.update()
+            # Clean previous markers
+            w.pop('_ts_rect', None)
+            w.pop('_ts_text', None)
+            w.pop('_separator_y', None)
+
+            # Segment boundary / paragraph start
+            if view_mode == 'segmented' and w.get('is_segment_start'):
+                if cx > 20:
+                    cy += line_height
+                if cy > 20:
+                    w['_separator_y'] = cy + 10
+                    cy += 20
+                cx = 20
+
+                # Formatted timestamp
+                secs = w.get('start', 0)
+                if precise_ts:
+                    m = int(secs // 60)
+                    s = int(secs % 60)
+                    ms = int((secs - int(secs)) * 1000)
+                    ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
+                else:
+                    total_s = int(round(secs))
+                    m = total_s // 60
+                    s = total_s % 60
+                    ts_text = f"[{m:02d}:{s:02d}]"
+
+                w['_ts_text'] = ts_text
+                ts_w = w.get('_ts_calc_w')
+                if ts_w is None:
+                    ts_w = ts_metrics.horizontalAdvance(ts_text)
+                    w['_ts_calc_w'] = ts_w
+
+                w['_ts_rect'] = QRect(cx, cy, ts_w, metrics.height() + 4)
+                cx += ts_w + space_w + 5
+
+            # Word text & width
+            is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
+            raw_text = "(...)" if is_inaudible else w.get('text', '')
+            w['_display_text'] = raw_text
+            word_w = w.get('_calc_w')
+            if word_w is None:
+                word_w = metrics.horizontalAdvance(raw_text)
+                w['_calc_w'] = word_w
+
+            if cx + word_w > max_w and cx > 20:
+                cx = 20
+                cy += line_height
+
+            w['_rect'] = QRect(cx, cy, word_w, metrics.height() + 4)
+            cx += word_w + space_w
+
+            if cy < min_dirty_y: min_dirty_y = cy
+            if (cy + line_height) > max_dirty_y: max_dirty_y = cy + line_height
+
+            self.words_data.append(w)
+
+        self._cached_visible_words = self.words_data
+
+        # Height expansion buffer: only update minimum height when needed, with 250px headroom
+        needed_h = cy + line_height + 40
+        if needed_h > self.minimumHeight():
+            self.setMinimumHeight(needed_h + 250)
+
+        # Repaint ONLY the dirty lines!
+        dirty_rect = QRect(0, max(0, min_dirty_y - 4), self.width(), (max_dirty_y - min_dirty_y) + line_height + 8)
+        self.update(dirty_rect)
 
     def finalize_streaming(self, final_words_data=None):
         """Flushes the stream queue and sets canonical finalized data."""
@@ -662,14 +767,19 @@ class TranscriptionCanvas(QWidget):
 
         p.setPen(Qt.NoPen)
 
-        # ── VIEWPORT CULLING ─────────────────────────────────────────────────────
-        # Use the pre-computed cached list — never call _get_visible_words() here.
-        # Build a smaller list of only those words whose _rect overlaps the visible
-        # viewport region. All rendering passes below use this culled list.
-        # The full cached list is kept so bridge-detection can peek at neighbours.
+        # ── VIEWPORT / DIRTY CULLING ─────────────────────────────────────────────
         all_visible = self._cached_visible_words
+        if not all_visible:
+            return
+        dirty = event.rect()
         clip = self._get_clip_rect()
-        visible_words = [w for w in all_visible if '_rect' not in w or clip.intersects(w['_rect'])]
+        target_clip = clip.intersected(dirty) if dirty.isValid() else clip
+        visible_words = [w for w in all_visible if '_rect' not in w or target_clip.intersects(w['_rect'])]
+        if not visible_words:
+            return
+
+        # Fill background of dirty rect (prevents tearing with WA_OpaquePaintEvent)
+        p.fillRect(dirty, QColor(config.BG_COLOR))
         # ────────────────────────────────────────────────────────────────────────
 
         # Oś Y separatorów (only in visible range)
@@ -828,19 +938,11 @@ class TranscriptionCanvas(QWidget):
                 if alpha < 1.0:
                     p.setOpacity(1.0)
 
-        # PASS 2: Sharp Bridges
-        # Iterate over the FULL cached list so bridges between an off-screen word and
-        # an on-screen word are never orphaned. We skip pairs where neither is in the
-        # visible set (fast path via a set of ids).
+        # PASS 2: Sharp Bridges (calculated directly on culled visible sequence)
         p.setPen(Qt.NoPen)
-        visible_ids = {id(w) for w in visible_words}
-        for i in range(len(all_visible) - 1):
-            w1 = all_visible[i]
-            w2 = all_visible[i+1]
-            # Skip pairs where neither word is on screen
-            if id(w1) not in visible_ids and id(w2) not in visible_ids:
-                continue
-            
+        for i in range(len(visible_words) - 1):
+            w1 = visible_words[i]
+            w2 = visible_words[i+1]
             if '_rect' not in w1 or '_rect' not in w2: continue
             if w1['_rect'].y() != w2['_rect'].y(): continue 
             
@@ -881,8 +983,9 @@ class TranscriptionCanvas(QWidget):
                     
         # PASS 3: Timestamps & Text
         ts_font = self._cached_ts_font or QFont(config.UI_FONT_NAME, 10)
+        bold_font = self._cached_bold_font or QFont(active_font.family(), active_font.pointSize(), QFont.Bold)
         ts_color = QColor("#666666")
-        needs_fade_animation = False
+        p.setFont(active_font)
         
         for w in visible_words:
             if w.get('is_script_bg'): continue
@@ -893,7 +996,6 @@ class TranscriptionCanvas(QWidget):
                 age = now - w['_stream_reveal_time']
                 if age < fade_duration:
                     alpha = min(1.0, max(0.0, age / fade_duration))
-                    needs_fade_animation = True
                 else:
                     alpha = 1.0
                     w.pop('_stream_reveal_time', None)
@@ -905,6 +1007,7 @@ class TranscriptionCanvas(QWidget):
                 p.setFont(ts_font)
                 p.setPen(ts_color)
                 p.drawText(w['_ts_rect'], Qt.AlignLeft | Qt.AlignVCenter, w.get('_ts_text', ''))
+                p.setFont(active_font)
                 
             if '_rect' not in w:
                 if alpha < 1.0:
@@ -912,14 +1015,9 @@ class TranscriptionCanvas(QWidget):
                 continue
             
             if w.get('is_script_word') or w.get('is_script_placeholder'):
-                font = QFont(active_font)
-                p.setFont(font)
-                
                 script_kind = w.get('script_kind')
                 if script_kind == "improv_gap":
                     p.setPen(QColor("#9a9a9a"))
-                    font.setItalic(True)
-                    p.setFont(font)
                 elif script_kind == "missing":
                     p.setPen(QColor(config.FG_COLOR))
                 else:
@@ -933,9 +1031,10 @@ class TranscriptionCanvas(QWidget):
             _, fg, _ = get_base_bg_fg(w)
             final_fg = w.get('_search_fg', fg)
             
-            font = QFont(active_font)
             if w.get('_is_bold') or w.get('_audio_active'):
-                font.setBold(True)
+                p.setFont(bold_font)
+            else:
+                p.setFont(active_font)
                 
             if w.get('_audio_active'):
                 p.setBrush(QColor("#ffffff"))
@@ -947,7 +1046,6 @@ class TranscriptionCanvas(QWidget):
             if w.get('is_assembled_cut'):
                 final_fg = QColor("#5a5a5a")
                 
-            p.setFont(font)
             p.setPen(final_fg)
             draw_rect = w['_rect'].adjusted(-20, 0, 20, 0) if w.get('_audio_active') else w['_rect']
             p.drawText(draw_rect, Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
