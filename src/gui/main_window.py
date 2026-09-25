@@ -3174,11 +3174,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._analysis_worker.error.connect(self._on_analysis_error)
         self._analysis_worker.start()
 
-    def _on_analysis_chunk_ready(self, chunk_info):
-        pct = chunk_info.get("percent", -1)
-        words = chunk_info.get("words", [])
-
-        # Switch to Page 2 (Editor View) ONLY when Whisper outputs real transcribed text!
+    def _prepare_editor_for_live_transcription(self, pct=0):
+        # Switch to Page 2 (Editor View) immediately when initialization completes!
         if self._stack.currentIndex() != 2:
             # Stop hint rotation on Page 1
             if hasattr(self, '_hint_timer') and self._hint_timer is not None:
@@ -3232,6 +3229,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'top_island'):
                 self.top_island.show_progress(self.txt("status_transcribing", "Transkrybowanie..."), percent=pct)
 
+    def _on_analysis_chunk_ready(self, chunk_info):
+        pct = chunk_info.get("percent", -1)
+        words = chunk_info.get("words", [])
+
+        # Ensure editor view is active
+        self._prepare_editor_for_live_transcription(pct=pct)
+
         # Update top island percent
         if hasattr(self, 'top_island'):
             self.top_island.update_percent(pct)
@@ -3250,6 +3254,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.lbl_processing_status.setText(msg)
         if hasattr(self, 'top_island') and getattr(self.top_island, '_state', '') == 'working':
             self.top_island.set_status(msg)
+
+        # Immediately transition to Editor View the instant initialization finishes!
+        # Do not wait on Page 1 showing "Transcribing..." in the center while Whisper works on chunk 0.
+        transcribing_txt = self.txt("status_transcribing")
+        whisper_init_txt = self.txt("status_whisper_init")
+        if msg in (transcribing_txt, whisper_init_txt) or "transcrib" in msg.lower() or "transkryb" in msg.lower():
+            self._prepare_editor_for_live_transcription(pct=0)
 
     def _on_analysis_error(self, err):
         # Stop hint rotation on Page 1
