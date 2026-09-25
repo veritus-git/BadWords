@@ -935,6 +935,41 @@ class ResolveHandler:
         
         return base_name, idx
 
+    def _resolve_target_timeline(self, timeline_name: str = None):
+        """
+        Locates the target timeline object and ensures it is active in DaVinci Resolve.
+        In DaVinci Resolve, GetItemListInTrack only returns clips for the currently active timeline.
+        """
+        if not self.project:
+            return None
+
+        curr_tl = None
+        try:
+            curr_tl = self.project.GetCurrentTimeline()
+        except Exception:
+            pass
+
+        if curr_tl and (not timeline_name or curr_tl.GetName() == timeline_name):
+            self.timeline = curr_tl
+            return curr_tl
+
+        count = self.project.GetTimelineCount() or 0
+        for i in range(1, count + 1):
+            tl = self.project.GetTimelineByIndex(i)
+            if tl and tl.GetName() == timeline_name:
+                try:
+                    self.project.SetCurrentTimeline(tl)
+                except Exception:
+                    pass
+                self.timeline = tl
+                return tl
+
+        if curr_tl:
+            self.timeline = curr_tl
+            return curr_tl
+
+        return None
+
     def get_selected_tracks_end_seconds(self, timeline_name, track_indices):
         """
         Returns the end time (in seconds, from position 0) of the last clip on the
@@ -976,13 +1011,7 @@ class ResolveHandler:
             return None
 
         try:
-            target_tl = None
-            count = self.project.GetTimelineCount()
-            for i in range(1, count + 1):
-                tl = self.project.GetTimelineByIndex(i)
-                if tl.GetName() == timeline_name:
-                    target_tl = tl
-                    break
+            target_tl = self._resolve_target_timeline(timeline_name)
             if not target_tl:
                 log_error(f"get_selected_tracks_end_seconds: timeline '{timeline_name}' not found.")
                 return None
@@ -1061,22 +1090,10 @@ class ResolveHandler:
                 log_error(f"get_direct_audio_info (bridge) error: {e}")
             return None
 
-        if not self.project or not self.timeline:
+        if not self.project:
             return None
 
-        # -- locate the target timeline --
-        target_tl = None
-        try:
-            count = self.project.GetTimelineCount()
-            for i in range(1, count + 1):
-                tl = self.project.GetTimelineByIndex(i)
-                if tl and tl.GetName() == timeline_name:
-                    target_tl = tl
-                    break
-        except Exception as e:
-            log_error(f"get_direct_audio_info: could not locate timeline: {e}")
-            return None
-
+        target_tl = self._resolve_target_timeline(timeline_name)
         if not target_tl:
             log_info(f"get_direct_audio_info: timeline '{timeline_name}' not found.")
             return None
@@ -1243,14 +1260,7 @@ class ResolveHandler:
             return None
 
         try:
-            target_tl = None
-            count = self.project.GetTimelineCount()
-            for i in range(1, count + 1):
-                tl = self.project.GetTimelineByIndex(i)
-                if tl and tl.GetName() == timeline_name:
-                    target_tl = tl
-                    break
-
+            target_tl = self._resolve_target_timeline(timeline_name)
             if not target_tl:
                 log_error(f"compute_timeline_fingerprint: timeline '{timeline_name}' not found.")
                 return None
@@ -3016,14 +3026,7 @@ class ResolveHandler:
         """
         if not self.project: return []
         
-        target_tl = None
-        count = self.project.GetTimelineCount()
-        for i in range(1, count + 1):
-            tl = self.project.GetTimelineByIndex(i)
-            if tl and tl.GetName() == timeline_name:
-                target_tl = tl
-                break
-                
+        target_tl = self._resolve_target_timeline(timeline_name)
         if not target_tl: return []
         
         a_track_count = target_tl.GetTrackCount("audio")
