@@ -2070,16 +2070,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             log_error(f"_on_timeline_selected error: {e}")
 
     def _track_names_to_indices(self, tl_name, track_names):
-        """Converts track name labels (e.g. {'A1', 'A3'}) to 1-based integer indices."""
+        """Converts track name labels (e.g. {'A1', 'A3', 'Audio 2', 'A2: Voice'}) to 1-based integer indices."""
         if not track_names:
             return []
         try:
-            all_tracks = self.engine.resolve_handler.get_audio_tracks(tl_name)
             indices = []
             for name in track_names:
-                if name in all_tracks:
-                    indices.append(all_tracks.index(name) + 1)
-            return sorted(indices)
+                # 1. Direct regex match on track numbers: A1, A2, A3, Audio 2, etc.
+                m = re.search(r'(?:A|Audio\s*)(\d+)', str(name), re.IGNORECASE)
+                if m:
+                    indices.append(int(m.group(1)))
+                else:
+                    # 2. Check full timeline track metadata (index, name)
+                    a_tracks, _ = self.engine.resolve_handler.get_timeline_tracks(tl_name)
+                    matched = False
+                    for idx, tname in a_tracks:
+                        if name in (tname, f"A{idx}", f"Audio {idx}"):
+                            indices.append(idx)
+                            matched = True
+                            break
+                    if not matched:
+                        m_any = re.search(r'\d+', str(name))
+                        if m_any:
+                            indices.append(int(m_any.group(0)))
+            return sorted(list(set(indices)))
         except Exception as e:
             from osdoc import log_error
             log_error(f"_track_names_to_indices error: {e}")
@@ -3392,6 +3406,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._last_analysis_time_raw = f"{mins}:{secs:02d}"
             self.lbl_analysis_duration.setText(self.txt("txt_analyzed_in").replace("{time}", self._last_analysis_time_raw))
             self.lbl_analysis_duration.setVisible(True)
+            if hasattr(self, 'p_main') and self.p_main:
+                self.p_main.resizeEvent(None)
 
 
     # ------------------------------------------------------------------

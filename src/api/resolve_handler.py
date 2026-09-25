@@ -779,46 +779,26 @@ class ResolveHandler:
         if not self.project:
             return []
         try:
-            target_tl = self.timeline
-
-            if timeline_name and (not target_tl or target_tl.GetName() != timeline_name):
-                count = self.project.GetTimelineCount()
-                for i in range(1, count + 1):
-                    tl = self.project.GetTimelineByIndex(i)
-                    if tl and tl.GetName() == timeline_name:
-                        target_tl = tl
-                        break
-
+            target_tl = self._resolve_target_timeline(timeline_name)
             if not target_tl:
                 return []
 
-            a_count = target_tl.GetTrackCount("audio")
-            populated = []
-            
-            # Resolve's SWIG objects might return None for unknown methods
+            a_count = target_tl.GetTrackCount("audio") or 0
             _get_name_fn = getattr(target_tl, "GetTrackName", None)
             
+            tracks = []
             for i in range(1, a_count + 1):
-                try:
-                    items = target_tl.GetItemListInTrack("audio", i)
-                    has_content = bool(items)
-                    if has_content:
-                        # Try to get the actual user-defined track name
-                        track_name = ""
-                        if callable(_get_name_fn):
-                            try:
-                                track_name = _get_name_fn("audio", i)
-                            except Exception:
-                                pass
-                                
-                        if not track_name:
-                            track_name = f"Audio {i}"
-                            
-                        populated.append(track_name)
-                except Exception:
-                    # If the call fails, skip this track safely
-                    pass
-            return populated
+                custom_name = ""
+                if callable(_get_name_fn):
+                    try:
+                        custom_name = _get_name_fn("audio", i)
+                    except Exception:
+                        pass
+                if custom_name and custom_name.strip() and custom_name.strip() not in (f"Audio {i}", f"A{i}"):
+                    tracks.append(f"A{i}: {custom_name.strip()}")
+                else:
+                    tracks.append(f"A{i}")
+            return tracks
 
         except Exception as e:
             log_error(f"get_audio_tracks error: {e}")
