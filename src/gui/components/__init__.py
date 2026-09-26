@@ -11,4 +11,7 @@ DESCRIPTION:
 Python package initialization file.
 """
 
-# gui/components
+from .waveform_timeline import WaveformTimelineWidget, WaveformWorker
+from .video_preview import VideoPreviewWidget
+
+__all__ = ["WaveformTimelineWidget", "WaveformWorker", "VideoPreviewWidget"]

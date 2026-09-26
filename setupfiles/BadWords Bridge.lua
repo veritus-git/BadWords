@@ -506,6 +506,7 @@ handlers.GetDirectAudioInfo = function(req)
                 end
                 clips[#clips + 1] = {
                     track_index = tr_idx,
+                    track_type = "audio",
                     name = clip_name,
                     start_frame = start_f,
                     end_frame = end_f,
@@ -513,6 +514,32 @@ handlers.GetDirectAudioInfo = function(req)
                     left_offset = left_offset,
                     file_path = file_path
                 }
+            end
+        end
+    end
+
+    -- Also inspect video tracks so BadWords Video Preview can discover the original footage file
+    local v_count = 0
+    pcall(function() v_count = tl:GetTrackCount("video") or 0 end)
+    for v_idx = 1, v_count do
+        local items = tl:GetItemListInTrack("video", v_idx)
+        if items then
+            for _, item in ipairs(items) do
+                local mp_item = item:GetMediaPoolItem()
+                if mp_item then
+                    local fp = mp_item:GetClipProperty("File Path") or ""
+                    if fp ~= "" then
+                        clips[#clips + 1] = {
+                            track_index = v_idx,
+                            track_type = "video",
+                            name = item:GetName() or "",
+                            start_frame = item:GetStart(),
+                            end_frame = item:GetEnd(),
+                            duration = item:GetDuration(),
+                            file_path = fp
+                        }
+                    end
+                end
             end
         end
     end

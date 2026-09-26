@@ -509,6 +509,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_script_edit_height(animated=False)
+        if hasattr(self, 'audio_preview') and self.audio_preview:
+            self.audio_preview.update_seek_margins()
 
     def animate_script_edit_height(self, target_h: int, duration: int = 260):
         if not hasattr(self, 'welcome_script_edit'):
@@ -759,7 +761,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         main_layout.addWidget(self._sidebar_right)
 
         # ── CSD: add content area under the title bar in the root frame ───────
-        self._root_layout.addWidget(main_container)
+        self._root_layout.addWidget(main_container, 1)
+
+        # ── Full-width Bottom Media Preview & Playback Dock ──────────────────
+        from gui.components.audio_preview import AudioPreviewWidget
+        self.audio_preview = AudioPreviewWidget(self._root_frame, self)
+        self.waveform_timeline = getattr(self.audio_preview, 'waveform_timeline', None)
+        self._root_layout.addWidget(self.audio_preview, 0)
+        self._main_h_splitter.splitterMoved.connect(lambda *_: self.audio_preview.update_seek_margins())
+
         self.setCentralWidget(self._root_frame)
 
 
@@ -790,6 +800,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             current_page = self._stack.currentWidget()
             if current_page and hasattr(current_page, 'resizeEvent'):
                 current_page.resizeEvent(None)
+            if hasattr(self, 'audio_preview') and self.audio_preview:
+                self.audio_preview.update_seek_margins()
         else:
             for widget in self.findChildren(SidebarButton):
                 if widget.is_right_side == target_btn.is_right_side:
@@ -852,6 +864,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 current_page = self._stack.currentWidget()
                 if current_page and hasattr(current_page, 'resizeEvent'):
                     current_page.resizeEvent(None)
+            if hasattr(self, 'audio_preview') and self.audio_preview:
+                self.audio_preview.update_seek_margins()
 
     def _save_sidebar_layout(self):
         prefs = self.engine.load_preferences() or {}
@@ -1026,6 +1040,23 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             tl_name = self._transcription_source.get("timeline_name")
         
         rh.jump_to_seconds(timestamp_s, timeline_name=tl_name, async_exec=True)
+
+    def _on_waveform_seek_requested(self, timestamp_s: float, sync_resolve: bool = False):
+        """
+        Handles playhead seek / scrubbing from the WaveformTimelineWidget.
+        Synchronizes the local BadWords audio player.
+        Only syncs DaVinci Resolve playhead if explicitly requested (e.g. Ctrl + Click).
+        """
+        # 1. Update local audio preview playback position
+        if hasattr(self, 'audio_preview') and self.audio_preview:
+            audio_pos_s = timestamp_s
+            if getattr(self.audio_preview, 'clean_ops', None):
+                audio_pos_s = self.audio_preview._original_to_audio_time(timestamp_s)
+            self.audio_preview.set_position_ms(int(audio_pos_s * 1000))
+
+        # 2. Update DaVinci Resolve playhead ONLY when explicitly requested via shortcut (Ctrl + Click)
+        if sync_resolve:
+            self._jump_playhead(timestamp_s)
 
     def _on_import_script(self):
         from PySide6.QtWidgets import QFileDialog
@@ -1248,7 +1279,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         import copy
         ch = self._chapters[target_idx]
-        self.text_canvas.load_data(copy.deepcopy(ch.get("words", [])))
+        ch_words = copy.deepcopy(ch.get("words", []))
+        self.text_canvas.load_data(ch_words)
+        
+        tl_name = ch.get("tl_name", "")
+        track_label = f"A1: {tl_name}" if tl_name else "A1: Timeline Audio"
+        if ch_words and ch_words[0].get("meta_audio_path") and hasattr(self, 'waveform_timeline') and self.waveform_timeline:
+            self.waveform_timeline.load_from_audio(ch_words[0]["meta_audio_path"], track_name=track_label)
+        elif hasattr(self, 'waveform_timeline') and self.waveform_timeline:
+            self.waveform_timeline.set_track_info(track_label)
         
         # Sync DaVinci
         prefs = self.engine.load_preferences() or {}
@@ -2475,6 +2514,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
             prefs['auto_cut_colors'] = auto_cut
         self.engine.save_preferences(prefs)
+        if hasattr(self, 'audio_preview') and hasattr(self.audio_preview, 'waveform_timeline'):
+            canvas = getattr(self, 'text_canvas', None)
+            words = canvas.words_data if canvas else []
+            self.audio_preview.waveform_timeline.set_words_data(words)
 
     def _save_top_toggles_prefs(self):
         prefs = self.engine.load_preferences() or {}
@@ -2482,6 +2525,27 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
         if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
         self.engine.save_preferences(prefs)
+        if hasattr(self, 'audio_preview') and hasattr(self.audio_preview, 'waveform_timeline'):
+            canvas = getattr(self, 'text_canvas', None)
+            words = canvas.words_data if canvas else []
+            self.audio_preview.waveform_timeline.set_words_data(words)
+
+    def _save_silence_toggles_prefs(self):
+        prefs = self.engine.load_preferences() or {}
+        if hasattr(self, 'tgl_silence_cut'):
+            v_cut = self.tgl_silence_cut.isChecked()
+            prefs['silence_cut'] = v_cut
+            prefs['ui_tgl_silence_cut'] = v_cut
+        if hasattr(self, 'tgl_silence_mark'):
+            v_mark = self.tgl_silence_mark.isChecked()
+            prefs['silence_mark'] = v_mark
+            prefs['ui_tgl_silence_mark'] = v_mark
+        self.engine.save_preferences(prefs)
+        if hasattr(self, 'audio_preview') and hasattr(self.audio_preview, 'waveform_timeline'):
+            canvas = getattr(self, 'text_canvas', None)
+            words = canvas.words_data if canvas else []
+            self.audio_preview.waveform_timeline.set_words_data(words)
+
     def _on_assemble(self):
         if getattr(self, '_is_live_transcribing', False):
             return
@@ -2820,6 +2884,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.show_hidden_start = True
             self.text_canvas.finalize_streaming(words_data)
             self._show_transcript_view()
+
+        if words_data and words_data[0].get("meta_audio_path") and hasattr(self, 'waveform_timeline') and self.waveform_timeline:
+            tl_name = self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else ""
+            track_label = f"A1: {tl_name}" if tl_name else "A1: Timeline Audio"
+            self.waveform_timeline.load_from_audio(words_data[0]["meta_audio_path"], track_name=track_label)
 
     def _on_more_accurate_toggled(self, checked: bool):
         self.engine.save_preferences({"ai_more_accurate": checked})
@@ -3269,6 +3338,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             # Lock actions requiring complete transcript during live streaming
             self._set_live_transcription_lock(True)
 
+            # Ensure timeline preview ribbon is visible and loaded from the start
+            active_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
+            if active_wav and os.path.exists(active_wav):
+                if hasattr(self, 'audio_preview') and self.audio_preview:
+                    self.audio_preview.show()
+                    self.audio_preview.content_widget.show()
+                    self.audio_preview.controls_widget.show()
+                    self.audio_preview.slider_seek.show()
+                    self.audio_preview._apply_modularity_state()
+                    if hasattr(self.audio_preview, 'waveform_timeline'):
+                        self.audio_preview.waveform_timeline.load_from_audio(
+                            active_wav,
+                            clip_name=f"A1: {selected_tl_name or 'Timeline Audio'}"
+                        )
+
             # Launch Top Dynamic Island with initial status
             if hasattr(self, 'top_island'):
                 self.top_island.show_progress(self.txt("status_transcribing", "Transkrybowanie..."), percent=pct)
@@ -3276,6 +3360,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _on_analysis_chunk_ready(self, chunk_info):
         pct = chunk_info.get("percent", -1)
         words = chunk_info.get("words", [])
+        chunk_audio = chunk_info.get("audio_path")
 
         # Ensure editor view is active
         self._prepare_editor_for_live_transcription(pct=pct)
@@ -3287,6 +3372,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Update words without scrolling viewport
         if hasattr(self, 'text_canvas') and words:
             self.text_canvas.load_streamed_words(words)
+
+        # Update waveform timeline live as chunks arrive!
+        if hasattr(self, 'waveform_timeline') and self.waveform_timeline:
+            if chunk_audio and not self.waveform_timeline._audio_path:
+                self.waveform_timeline.load_from_audio(chunk_audio)
+            if words:
+                self.waveform_timeline.set_words_data(words)
 
     def _on_analysis_progress(self, val):
         self._update_processing_progress(val)
@@ -3536,6 +3628,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.undo_manager.push(undo_action)
                 
             self.text_canvas.update()
+            if hasattr(self, 'waveform_timeline') and self.waveform_timeline:
+                self.waveform_timeline.set_words_data(self.text_canvas.words_data)
 
     def _on_add_custom_marker(self):
         from PySide6.QtWidgets import QApplication
@@ -3844,6 +3938,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         self._stack.setCurrentIndex(index)
         if index != 2:
+            if hasattr(self, 'audio_preview') and self.audio_preview:
+                self.audio_preview.hide()
             if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'deactivate_transcription_mode'):
                 self._title_bar.deactivate_transcription_mode()
             if getattr(self, '_is_mac', False):
@@ -3853,6 +3949,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._mac_menu_source.menuAction().setVisible(False)
                     self._mac_menu_edits.menuAction().setVisible(False)
         else:
+            if hasattr(self, 'audio_preview') and self.audio_preview:
+                self.audio_preview.check_audio_availability()
             if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'activate_transcription_mode'):
                 if getattr(self, '_transcription_source', None):
                     self._title_bar.activate_transcription_mode()

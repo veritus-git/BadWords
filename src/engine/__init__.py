@@ -12,5 +12,6 @@ Python package initialization file.
 """
 
 from .audio_engine import AudioEngine
+from .waveform import WaveformPeaks, WaveformExtractor
 
-__all__ = ["AudioEngine"]
+__all__ = ["AudioEngine", "WaveformPeaks", "WaveformExtractor"]

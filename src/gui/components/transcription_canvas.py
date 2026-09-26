@@ -1288,6 +1288,8 @@ class TranscriptionCanvas(QWidget):
             if action and action.get('changes'):
                 if hasattr(self.main_window, 'undo_manager'):
                     self.main_window.undo_manager.push(action)
+                if hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
+                    self.main_window.waveform_timeline.set_words_data(self.words_data)
             self._current_undo_action = None
 
 # ==========================================

@@ -35,6 +35,8 @@ class UndoManager:
         redo_action = self._apply_action(action)
         self.redo_stack.append(redo_action)
         self.canvas.update()
+        if hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
+            self.main_window.waveform_timeline.set_words_data(self.canvas.words_data)
         
         if hasattr(self.main_window, 'autosave_manager'):
             self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
@@ -45,6 +47,8 @@ class UndoManager:
         undo_action = self._apply_action(action)
         self.undo_stack.append(undo_action)
         self.canvas.update()
+        if hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
+            self.main_window.waveform_timeline.set_words_data(self.canvas.words_data)
         
         if hasattr(self.main_window, 'autosave_manager'):
             self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)

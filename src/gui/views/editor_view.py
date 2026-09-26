@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 import config
 from gui.components.transcription_canvas import TranscriptionCanvas
 from gui.components.audio_preview import AudioPreviewWidget
+from gui.components.waveform_timeline import WaveformTimelineWidget
 from gui.widgets.progress_bar import LiquidProgressBar
 
 
@@ -66,8 +67,5 @@ def build_editor_view(win) -> QWidget:
     win.editor_view_stack.addWidget(normal_editor_page)
     win.editor_view_stack.addWidget(win.sbs_loading_page)
     layout.addWidget(win.editor_view_stack)
-    
-    win.audio_preview = AudioPreviewWidget(page, win)
-    layout.addWidget(win.audio_preview)
     
     return page

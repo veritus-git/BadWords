@@ -117,7 +117,19 @@ def build_silence_panel(win) -> QFrame:
     
     l_silence.addStretch(1)
     
-    win.tgl_silence_cut.toggled.connect(lambda checked: win.tgl_silence_mark.setChecked(False) if checked else None)
-    win.tgl_silence_mark.toggled.connect(lambda checked: win.tgl_silence_cut.setChecked(False) if checked else None)
+    def _on_sil_cut_toggled(checked):
+        if checked:
+            win.tgl_silence_mark.setChecked(False)
+        if hasattr(win, '_save_silence_toggles_prefs'):
+            win._save_silence_toggles_prefs()
+
+    def _on_sil_mark_toggled(checked):
+        if checked:
+            win.tgl_silence_cut.setChecked(False)
+        if hasattr(win, '_save_silence_toggles_prefs'):
+            win._save_silence_toggles_prefs()
+
+    win.tgl_silence_cut.toggled.connect(_on_sil_cut_toggled)
+    win.tgl_silence_mark.toggled.connect(_on_sil_mark_toggled)
 
     return wrap_activity_panel(p_silence)
