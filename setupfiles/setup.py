@@ -1301,17 +1301,19 @@ def _detect_resolve_edition_info():
                         pass
 
         elif "mac" in PLAT or "darwin" in PLAT:
-            studio_app = "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app"
-            free_app = "/Applications/DaVinci Resolve/DaVinci Resolve.app"
+            candidate_apps = [
+                ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Free"),
+                ("/Applications/DaVinci Resolve.app", "Free"),
+            ]
             chosen_app = None
-            if os.path.isdir(studio_app):
-                info["installed"] = True
-                info["edition"] = "Studio"
-                chosen_app = studio_app
-            elif os.path.isdir(free_app):
-                info["installed"] = True
-                info["edition"] = "Free"
-                chosen_app = free_app
+            for app_path, ed in candidate_apps:
+                if os.path.isdir(app_path):
+                    info["installed"] = True
+                    info["edition"] = ed
+                    chosen_app = app_path
+                    break
 
             if chosen_app:
                 plist_path = os.path.join(chosen_app, "Contents", "Info.plist")
@@ -1320,7 +1322,13 @@ def _detect_resolve_edition_info():
                         import plistlib
                         with open(plist_path, "rb") as f:
                             pl = plistlib.load(f)
-                            info["version"] = pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or ""
+                            info["version"] = str(pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or "")
+                            bid = str(pl.get("CFBundleIdentifier") or "").lower()
+                            dname = str(pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or "").lower()
+                            if "studio" in bid or "studio" in dname:
+                                info["edition"] = "Studio"
+                            elif "resolve" in bid or "resolve" in dname:
+                                info["edition"] = "Free"
                     except Exception:
                         pass
 
@@ -1329,14 +1337,38 @@ def _detect_resolve_edition_info():
             resolve_bin = "/opt/resolve/bin/resolve"
             if os.path.isfile(resolve_bin):
                 info["installed"] = True
-                try:
-                    res = subprocess.run(["dpkg", "-l", "davinci-resolve-studio"], capture_output=True, text=True)
-                    if res.returncode == 0 and "davinci-resolve-studio" in res.stdout:
-                        info["edition"] = "Studio"
-                    else:
-                        info["edition"] = "Free"
-                except Exception:
-                    info["edition"] = "Free"
+                # Check documentation files in /opt/resolve/docs/
+                for doc_name in ("ReadMe.html", "Welcome.txt", "License.html"):
+                    doc_path = os.path.join("/opt/resolve/docs", doc_name)
+                    if os.path.isfile(doc_path):
+                        try:
+                            with open(doc_path, "r", encoding="utf-8", errors="ignore") as f:
+                                doc_content = f.read(65536)
+                            import re
+                            if re.search(r"DaVinci\s+Resolve\s+Studio", doc_content, re.IGNORECASE):
+                                info["edition"] = "Studio"
+                                break
+                            elif info["edition"] == "Unknown" and re.search(r"DaVinci\s+Resolve", doc_content, re.IGNORECASE):
+                                info["edition"] = "Free"
+                        except Exception:
+                            pass
+
+                # Check resolve -v output
+                if info["edition"] != "Studio" or not info["version"]:
+                    try:
+                        res = subprocess.run([resolve_bin, "-v"], capture_output=True, text=True, timeout=2)
+                        out = (res.stdout or "") + " " + (res.stderr or "")
+                        if "studio" in out.lower():
+                            info["edition"] = "Studio"
+                        elif info["edition"] == "Unknown" and "davinci resolve" in out.lower():
+                            info["edition"] = "Free"
+                        if not info["version"]:
+                            import re
+                            m = re.search(r"(\d+\.\d+(?:\.\d+)?)", out)
+                            if m:
+                                info["version"] = m.group(1)
+                    except Exception:
+                        pass
 
         if info["version"]:
             import re
@@ -1445,7 +1477,9 @@ else:
                 except: pass
 
     res_info = _detect_resolve_edition_info()
-    is_free_21_1 = (res_info["edition"] == "Free" and res_info["is_21_1_or_newer"])
+    is_studio = (res_info.get("edition") == "Studio")
+    is_free_21_1 = (not is_studio and res_info.get("is_21_1_or_newer", False))
+    debug_log(f"DaVinci Resolve deployment: is_studio={is_studio}, is_free_21_1={is_free_21_1}")
 
     # Locate BadWords Bridge.lua source
     bridge_lua_src = None
@@ -1477,28 +1511,53 @@ else:
         try:
             os.makedirs(rd, exist_ok=True)
 
-            # Copy BadWords Bridge.lua (for Free and as universal bridge)
-            if os.path.isfile(bridge_lua_src):
+            if is_studio:
+                # ── STUDIO EDITION ─────────────────────────────────────────────────────────────
+                # 1. BadWords Bridge.lua MUST NOT be installed. If present, delete it.
+                # 2. BadWords.py MUST be installed for native scripting.
                 target_lua = os.path.join(rd, "BadWords Bridge.lua")
-                shutil.copy2(bridge_lua_src, target_lua)
-                os.chmod(target_lua, 0o755)
-                debug_log(f"BadWords Bridge.lua written to: {target_lua}")
-                written = True
+                if os.path.exists(target_lua):
+                    try:
+                        os.remove(target_lua)
+                        debug_log(f"Removed BadWords Bridge.lua (Studio uses native external scripting): {target_lua}")
+                    except Exception:
+                        pass
 
-            # For Studio or Free < 21.1: write BadWords.py
-            if not is_free_21_1:
                 wp = os.path.join(rd, "BadWords.py")
                 with open(wp, "w", encoding="utf-8") as f:
                     f.write(wrapper_content)
                 os.chmod(wp, 0o755)
                 debug_log(f"BadWords.py written to: {wp}")
                 written = True
+
             else:
-                # On Free >= 21.1, ensure dead BadWords.py is removed
-                wp = os.path.join(rd, "BadWords.py")
-                if os.path.exists(wp):
-                    try: os.remove(wp)
-                    except Exception: pass
+                # ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
+                # 1. BadWords Bridge.lua MUST ALWAYS be installed!
+                # 2. BadWords.py:
+                #    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
+                #    - If Free < 21.1: Deploy BadWords.py.
+                if is_free_21_1:
+                    wp = os.path.join(rd, "BadWords.py")
+                    if os.path.exists(wp):
+                        try:
+                            os.remove(wp)
+                            debug_log(f"Removed BadWords.py (blocked in Resolve Free 21.1+): {wp}")
+                        except Exception:
+                            pass
+                else:
+                    wp = os.path.join(rd, "BadWords.py")
+                    with open(wp, "w", encoding="utf-8") as f:
+                        f.write(wrapper_content)
+                    os.chmod(wp, 0o755)
+                    debug_log(f"BadWords.py written to: {wp}")
+                    written = True
+
+                if bridge_lua_src and os.path.isfile(bridge_lua_src):
+                    target_lua = os.path.join(rd, "BadWords Bridge.lua")
+                    shutil.copy2(bridge_lua_src, target_lua)
+                    os.chmod(target_lua, 0o755)
+                    debug_log(f"BadWords Bridge.lua written to: {target_lua}")
+                    written = True
         except Exception as exc:
             debug_log(f"Could not write scripts to {rd}: {exc}")
 

@@ -1858,11 +1858,247 @@ const LEGACY_WRAPPER_NAMES: &[&str] = &[
 
 const BRIDGE_LUA_CODE: &str = include_str!("../../setupfiles/BadWords Bridge.lua");
 
-/// Deploys DaVinci Resolve scripts (BadWords.py and BadWords Bridge.lua), prioritizing user-level directories
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolveEdition {
+    Studio,
+    Free,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolveInfo {
+    pub installed: bool,
+    pub edition: ResolveEdition,
+    pub is_21_1_or_newer: bool,
+}
+
+fn is_version_at_least_21_1(ver: &str) -> bool {
+    let nums: Vec<u32> = ver
+        .split(|c: char| !c.is_ascii_digit())
+        .filter_map(|s| s.parse::<u32>().ok())
+        .collect();
+    if nums.is_empty() {
+        return false;
+    }
+    let major = nums[0];
+    let minor = if nums.len() > 1 { nums[1] } else { 0 };
+    (major > 21) || (major == 21 && minor >= 1)
+}
+
+#[cfg(target_os = "macos")]
+fn detect_resolve_info() -> ResolveInfo {
+    let mut info = ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    };
+
+    let candidates = [
+        ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", ResolveEdition::Studio),
+        ("/Applications/DaVinci Resolve Studio.app", ResolveEdition::Studio),
+        ("/Applications/DaVinci Resolve/DaVinci Resolve.app", ResolveEdition::Free),
+        ("/Applications/DaVinci Resolve.app", ResolveEdition::Free),
+    ];
+
+    let mut found_plist: Option<std::path::PathBuf> = None;
+    for (app_path, ed) in candidates {
+        let p = std::path::Path::new(app_path);
+        if p.is_dir() {
+            info.installed = true;
+            info.edition = ed;
+            let plist = p.join("Contents").join("Info.plist");
+            if plist.is_file() {
+                found_plist = Some(plist);
+                break;
+            }
+        }
+    }
+
+    if let Some(plist) = found_plist {
+        let plist_str = plist.to_string_lossy();
+        if let Ok(out) = std::process::Command::new("defaults")
+            .args(["read", &plist_str, "CFBundleIdentifier"])
+            .output()
+        {
+            let id = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            if id.contains("studio") {
+                info.edition = ResolveEdition::Studio;
+            } else if id.contains("resolve") {
+                info.edition = ResolveEdition::Free;
+            }
+        }
+
+        let mut ver_str = String::new();
+        if let Ok(out) = std::process::Command::new("defaults")
+            .args(["read", &plist_str, "CFBundleShortVersionString"])
+            .output()
+        {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                ver_str = s;
+            }
+        }
+        if ver_str.is_empty() {
+            if let Ok(out) = std::process::Command::new("defaults")
+                .args(["read", &plist_str, "CFBundleVersion"])
+                .output()
+            {
+                ver_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            }
+        }
+
+        if !ver_str.is_empty() {
+            info.is_21_1_or_newer = is_version_at_least_21_1(&ver_str);
+        }
+    }
+
+    if info.installed && info.edition == ResolveEdition::Unknown {
+        info.edition = ResolveEdition::Free;
+    }
+
+    info
+}
+
+#[cfg(target_os = "linux")]
+fn detect_resolve_info() -> ResolveInfo {
+    let mut info = ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    };
+
+    let bin = std::path::Path::new("/opt/resolve/bin/resolve");
+    if bin.is_file() {
+        info.installed = true;
+
+        for doc in &["ReadMe.html", "Welcome.txt", "License.html"] {
+            let doc_path = std::path::Path::new("/opt/resolve/docs").join(doc);
+            if let Ok(content) = std::fs::read_to_string(&doc_path) {
+                let lower = content.to_lowercase();
+                if lower.contains("davinci resolve studio") {
+                    info.edition = ResolveEdition::Studio;
+                    break;
+                } else if info.edition == ResolveEdition::Unknown && lower.contains("davinci resolve") {
+                    info.edition = ResolveEdition::Free;
+                }
+            }
+        }
+
+        if info.edition != ResolveEdition::Studio {
+            let lic_dir = std::path::Path::new("/opt/resolve/.license");
+            if lic_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(lic_dir) {
+                    if entries.flatten().any(|e| !e.file_name().to_string_lossy().starts_with('.')) {
+                        info.edition = ResolveEdition::Studio;
+                    }
+                }
+            }
+        }
+
+        if let Ok(out) = std::process::Command::new("/opt/resolve/bin/resolve").arg("-v").output() {
+            let text = String::from_utf8_lossy(&out.stdout).to_string() + " " + &String::from_utf8_lossy(&out.stderr);
+            let lower = text.to_lowercase();
+            if lower.contains("studio") {
+                info.edition = ResolveEdition::Studio;
+            } else if info.edition == ResolveEdition::Unknown && lower.contains("davinci resolve") {
+                info.edition = ResolveEdition::Free;
+            }
+
+            for token in text.split_whitespace() {
+                let cleaned = token.trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                if !cleaned.is_empty() && cleaned.contains('.') {
+                    let nums: Vec<&str> = cleaned.split('.').collect();
+                    if nums.len() >= 2 && nums[0].chars().all(|c| c.is_ascii_digit()) {
+                        info.is_21_1_or_newer = is_version_at_least_21_1(cleaned);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if info.installed && info.edition == ResolveEdition::Unknown {
+        info.edition = ResolveEdition::Free;
+    }
+
+    info
+}
+
+#[cfg(target_os = "windows")]
+fn detect_resolve_info() -> ResolveInfo {
+    let mut info = ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    };
+
+    let exe = std::path::Path::new(r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe");
+    if exe.is_file() {
+        info.installed = true;
+
+        let cmd = format!(
+            "(Get-Item -LiteralPath '{}').VersionInfo | Select-Object -Property ProductName,ProductVersion | ConvertTo-Json",
+            exe.display()
+        );
+        let mut process = os::create_hidden_command("powershell");
+        process.args(["-NoProfile", "-NonInteractive", "-Command", &cmd]);
+        if let Ok(out) = process.output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let lower = text.to_lowercase();
+            if lower.contains("studio") {
+                info.edition = ResolveEdition::Studio;
+            } else if lower.contains("davinci resolve") {
+                info.edition = ResolveEdition::Free;
+            }
+
+            for line in text.lines() {
+                if line.contains("ProductVersion") {
+                    if let Some((_, v)) = line.split_once(':') {
+                        let clean = v.trim().trim_matches(|c| c == '"' || c == ',' || c == '\'');
+                        info.is_21_1_or_newer = is_version_at_least_21_1(clean);
+                    }
+                }
+            }
+        }
+    }
+
+    if info.installed && info.edition == ResolveEdition::Unknown {
+        info.edition = ResolveEdition::Free;
+    }
+
+    info
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn detect_resolve_info() -> ResolveInfo {
+    ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    }
+}
+
+/// Deploys DaVinci Resolve scripts:
+/// - Studio: installs BadWords.py; removes BadWords Bridge.lua (native external scripting used)
+/// - Free >= 21.1: installs BadWords Bridge.lua; removes BadWords.py (API blocked)
+/// - Free < 21.1: installs BadWords Bridge.lua and BadWords.py
 pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
     let resolve_dirs = resolve_script_dirs();
+    let res_info = detect_resolve_info();
 
-    // 1. Clean up any existing / legacy wrappers across all candidate paths first
+    let is_studio = res_info.edition == ResolveEdition::Studio;
+    let is_free_21_1 = !is_studio && res_info.is_21_1_or_newer;
+
+    emit_log(
+        sender,
+        "INFO",
+        &format!(
+            "DaVinci Resolve: installed={}, edition={:?}, is_21_1+={}",
+            res_info.installed, res_info.edition, res_info.is_21_1_or_newer
+        ),
+    );
+
+    // 1. Clean up legacy wrappers across all candidate paths first
     for r_dir in &resolve_dirs {
         for leg in LEGACY_WRAPPER_NAMES {
             let leg_path = r_dir.join(leg);
@@ -1872,38 +2108,84 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
         }
     }
 
-    // 2. Write BadWords.py and BadWords Bridge.lua to the first writable directory (user dir prioritized)
     let wrapper_code = generate_davinci_wrapper(target_dir);
-    for r_dir in &resolve_dirs {
-        let _ = fs::create_dir_all(r_dir);
-        let wrapper_path = r_dir.join("BadWords.py");
-        let bridge_path = r_dir.join("BadWords Bridge.lua");
+    let mut any_deployed = false;
 
-        let mut deployed = false;
-
-        if fs::write(&wrapper_path, &wrapper_code).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
+    if is_studio {
+        // ── STUDIO EDITION ─────────────────────────────────────────────────────────────
+        // 1. BadWords Bridge.lua MUST NOT be installed. If present, delete it.
+        // 2. BadWords.py MUST be installed for native scripting.
+        for r_dir in &resolve_dirs {
+            let bridge_path = r_dir.join("BadWords Bridge.lua");
+            if bridge_path.exists() {
+                let _ = fs::remove_file(&bridge_path);
+                emit_log(sender, "OK", &format!("Removed BadWords Bridge.lua (Studio edition uses native scripting): {}", bridge_path.display()));
             }
-            emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
-            deployed = true;
         }
 
-        if fs::write(&bridge_path, BRIDGE_LUA_CODE).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&bridge_path, fs::Permissions::from_mode(0o755));
+        for r_dir in &resolve_dirs {
+            let _ = fs::create_dir_all(r_dir);
+            let wrapper_path = r_dir.join("BadWords.py");
+            if fs::write(&wrapper_path, &wrapper_code).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
+                any_deployed = true;
+                break; // Primary dir deployed
             }
-            emit_log(sender, "OK", &format!("DaVinci bridge created at: {}", bridge_path.display()));
-            deployed = true;
+        }
+    } else {
+        // ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
+        // 1. BadWords Bridge.lua MUST ALWAYS be installed!
+        // 2. BadWords.py:
+        //    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
+        //    - If Free < 21.1: Deploy BadWords.py.
+        if is_free_21_1 {
+            for r_dir in &resolve_dirs {
+                let wrapper_path = r_dir.join("BadWords.py");
+                if wrapper_path.exists() {
+                    let _ = fs::remove_file(&wrapper_path);
+                    emit_log(sender, "OK", &format!("Removed BadWords.py (blocked in Resolve Free 21.1+): {}", wrapper_path.display()));
+                }
+            }
+        } else {
+            for r_dir in &resolve_dirs {
+                let _ = fs::create_dir_all(r_dir);
+                let wrapper_path = r_dir.join("BadWords.py");
+                if fs::write(&wrapper_path, &wrapper_code).is_ok() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
+                    }
+                    emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
+                    break;
+                }
+            }
         }
 
-        if deployed {
-            return true;
+        // Deploy BadWords Bridge.lua (ALWAYS for Free)
+        for r_dir in &resolve_dirs {
+            let _ = fs::create_dir_all(r_dir);
+            let bridge_path = r_dir.join("BadWords Bridge.lua");
+            if fs::write(&bridge_path, BRIDGE_LUA_CODE).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&bridge_path, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("DaVinci bridge created at: {}", bridge_path.display()));
+                any_deployed = true;
+                break; // Primary dir deployed
+            }
         }
+    }
+
+    if any_deployed {
+        return true;
     }
 
     emit_log(sender, "WARN", "DaVinci Resolve directory not found; please launch DaVinci once to create scripts folder.");

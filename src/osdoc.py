@@ -730,7 +730,13 @@ class OSDoctor:
                         import plistlib
                         with open(plist_path, "rb") as f:
                             pl = plistlib.load(f)
-                            info["version"] = pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or ""
+                            info["version"] = str(pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or "")
+                            bid = str(pl.get("CFBundleIdentifier") or "").lower()
+                            dname = str(pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or "").lower()
+                            if "studio" in bid or "studio" in dname:
+                                info["edition"] = "Studio"
+                            elif "resolve" in bid or "resolve" in dname:
+                                info["edition"] = "Free"
                     except Exception as e:
                         log_warn(f"Failed to read Info.plist: {e}")
 
@@ -844,16 +850,14 @@ class OSDoctor:
                         except Exception:
                             pass
 
-                # 6. Fallback: check installed utility scripts:
-                # If BadWords.py exists and BadWords Bridge.lua does not, it's Studio
-                if info["edition"] == "Unknown":
-                    util_dirs = self.get_resolve_script_utility_dirs()
-                    has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
-                    has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
-                    if has_py and not has_lua:
-                        info["edition"] = "Studio"
-                    else:
-                        info["edition"] = "Free"
+        # Default unknown edition to "Free" if Resolve is installed or utility dirs exist
+        if info["edition"] == "Unknown":
+            if info["installed"]:
+                info["edition"] = "Free"
+            else:
+                util_dirs = self.get_resolve_script_utility_dirs()
+                if any(os.path.isdir(d) for d in util_dirs):
+                    info["edition"] = "Free"
 
         # Parse version tuple
         if info["version"]:
@@ -892,18 +896,103 @@ class OSDoctor:
                 unique.append(d)
         return unique
 
+    def generate_davinci_wrapper_content(self) -> str:
+        """Generates cross-platform BadWords.py wrapper script for DaVinci Resolve."""
+        install_str = self.install_dir.replace('\\', '/')
+        libs_str = os.path.join(self.install_dir, 'libs').replace('\\', '/')
+        main_script = os.path.join(self.install_dir, 'main.py').replace('\\', '/')
+        return f'''\
+import sys, os, traceback
+
+INSTALL_DIR = r'{install_str}'
+MAIN_SCRIPT = r'{main_script}'
+
+# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
+_candidates = [
+    r'{libs_str}',
+    os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+]
+
+_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
+if os.path.isdir(_v_lib):
+    try:
+        for _entry in os.listdir(_v_lib):
+            _sp = os.path.join(_v_lib, _entry, "site-packages")
+            if os.path.isdir(_sp) and _sp not in _candidates:
+                _candidates.append(_sp)
+    except Exception:
+        pass
+
+for _sp_dir in _candidates:
+    if os.path.isdir(_sp_dir):
+        if _sp_dir in sys.path:
+            sys.path.remove(_sp_dir)
+        sys.path.insert(0, _sp_dir)
+
+if INSTALL_DIR not in sys.path:
+    sys.path.append(INSTALL_DIR)
+
+# 2. Windows: register DLL search paths for PySide6 and shiboken6
+if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            for _pkg in ['PySide6', 'shiboken6']:
+                _p = os.path.join(_sp_dir, _pkg)
+                if os.path.isdir(_p):
+                    try: os.add_dll_directory(_p)
+                    except Exception: pass
+
+# 3. Linux: Preload Qt6 shared libraries if needed
+if sys.platform.startswith('linux'):
+    import ctypes
+    for _sp_dir in _candidates:
+        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+        if os.path.isdir(_qt_lib_dir):
+            _qt_preload = [
+                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+            ]
+            for _lib in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib)
+                if os.path.exists(_p):
+                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except OSError: pass
+            break
+
+# 4. Launch main script in-process (preserves DaVinci Resolve Free API connection)
+if os.path.exists(MAIN_SCRIPT):
+    try:
+        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+        gv = globals().copy()
+        gv['__file__'] = MAIN_SCRIPT
+        exec(code, gv)
+    except Exception as e:
+        print("Error:", e)
+        traceback.print_exc()
+else:
+    print("CRITICAL: script not found at", MAIN_SCRIPT)
+'''
+
     def sync_resolve_scripts(self, force: bool = False) -> None:
         """
         Auto-healing: ensures the correct scripts are installed in DaVinci Resolve.
-        Installs BadWords Bridge.lua (for Free and Studio) and BadWords.py so all
-        editions have seamless connection capability.
+        - DaVinci Resolve Studio:
+            * BadWords.py MUST be installed (uses native external scripting).
+            * BadWords Bridge.lua MUST NOT be installed (removed if present).
+        - DaVinci Resolve Free:
+            * BadWords Bridge.lua MUST ALWAYS be installed!
+            * If Free >= 21.1: BadWords.py MUST BE REMOVED (Blackmagic blocked external API).
+            * If Free < 21.1: BadWords.py CAN / SHOULD be installed.
         """
         try:
             info = self.get_resolve_installation_info()
-            if not info["installed"]:
+            util_dirs = self.get_resolve_script_utility_dirs()
+            if not util_dirs:
                 return
 
-            util_dirs = self.get_resolve_script_utility_dirs()
+            is_studio = (info["edition"] == "Studio")
+            is_free_21_1 = (not is_studio and info["is_21_1_or_newer"])
 
             # Robustly locate BadWords Bridge.lua source across all layouts
             lua_src = None
@@ -918,48 +1007,113 @@ class OSDoctor:
                     lua_src = cand
                     break
 
-            is_free_21_1 = (info["edition"] == "Free" and info["is_21_1_or_newer"])
+            wrapper_content = self.generate_davinci_wrapper_content()
 
-            primary_installed = False
-            for ud in util_dirs:
-                if not os.path.isdir(ud):
-                    continue
-
-                py_file = os.path.join(ud, "BadWords.py")
-                lua_file = os.path.join(ud, "BadWords Bridge.lua")
-
-                # If Free >= 21.1: remove dead BadWords.py
-                if is_free_21_1 and os.path.isfile(py_file):
-                    try:
-                        os.remove(py_file)
-                        log_info(f"[Auto-Healing] Removed deprecated BadWords.py for Resolve 21.1+ Free: {py_file}")
-                    except Exception as e:
-                        log_warn(f"[Auto-Healing] Could not remove {py_file}: {e}")
-
-                # Copy BadWords Bridge.lua to primary directory only; remove duplicates from secondary
-                if lua_src and os.path.isfile(lua_src):
-                    if not primary_installed:
+            if is_studio:
+                # ── STUDIO EDITION ─────────────────────────────────────────────────────────────
+                # 1. BadWords Bridge.lua is NOT needed and MUST NOT be installed. Remove if present.
+                # 2. BadWords.py MUST be installed for native scripting.
+                log_info(f"[Resolve Sync] Detected Studio edition (v{info.get('version', 'unknown')}). Removing Bridge.lua, ensuring BadWords.py.")
+                for ud in util_dirs:
+                    if not os.path.isdir(ud):
+                        continue
+                    lua_file = os.path.join(ud, "BadWords Bridge.lua")
+                    if os.path.isfile(lua_file):
                         try:
-                            should_copy = force or not os.path.isfile(lua_file)
-                            if not should_copy:
-                                if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
-                                    should_copy = True
-                            if should_copy:
-                                shutil.copy2(lua_src, lua_file)
-                                try: os.chmod(lua_file, 0o755)
-                                except Exception: pass
-                                log_info(f"[Auto-Healing] Installed BadWords Bridge.lua to: {lua_file}")
-                            primary_installed = True
+                            os.remove(lua_file)
+                            log_info(f"[Resolve Sync] Removed BadWords Bridge.lua from Studio setup: {lua_file}")
                         except Exception as e:
-                            log_warn(f"[Auto-Healing] Failed to sync BadWords Bridge.lua to {ud}: {e}")
-                    else:
-                        # Secondary directory — clean up duplicate to prevent multiple entries in Resolve menu
-                        if os.path.isfile(lua_file):
+                            log_warn(f"[Resolve Sync] Could not remove {lua_file}: {e}")
+
+                py_deployed = False
+                for ud in util_dirs:
+                    if not os.path.isdir(ud):
+                        try: os.makedirs(ud, exist_ok=True)
+                        except Exception: continue
+                    py_file = os.path.join(ud, "BadWords.py")
+                    if not py_deployed:
+                        try:
+                            should_write = force or not os.path.isfile(py_file)
+                            if should_write:
+                                with open(py_file, "w", encoding="utf-8") as f:
+                                    f.write(wrapper_content)
+                                try: os.chmod(py_file, 0o755)
+                                except Exception: pass
+                                log_info(f"[Resolve Sync] Installed BadWords.py for Studio at: {py_file}")
+                            py_deployed = True
+                        except Exception as e:
+                            log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
+
+            else:
+                # ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
+                # 1. BadWords Bridge.lua MUST ALWAYS be installed!
+                # 2. BadWords.py:
+                #    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
+                #    - If Free < 21.1: Ensure BadWords.py is installed.
+                log_info(f"[Resolve Sync] Detected Free edition (v{info.get('version', 'unknown')}, is_21_1+={is_free_21_1}). Ensuring Bridge.lua.")
+
+                # Handle BadWords.py
+                if is_free_21_1:
+                    for ud in util_dirs:
+                        if not os.path.isdir(ud):
+                            continue
+                        py_file = os.path.join(ud, "BadWords.py")
+                        if os.path.isfile(py_file):
                             try:
-                                os.remove(lua_file)
-                                log_info(f"[Auto-Healing] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
-                            except Exception:
-                                pass
+                                os.remove(py_file)
+                                log_info(f"[Resolve Sync] Removed BadWords.py for Resolve Free 21.1+: {py_file}")
+                            except Exception as e:
+                                log_warn(f"[Resolve Sync] Could not remove {py_file}: {e}")
+                else:
+                    py_deployed = False
+                    for ud in util_dirs:
+                        if not os.path.isdir(ud):
+                            try: os.makedirs(ud, exist_ok=True)
+                            except Exception: continue
+                        py_file = os.path.join(ud, "BadWords.py")
+                        if not py_deployed:
+                            try:
+                                should_write = force or not os.path.isfile(py_file)
+                                if should_write:
+                                    with open(py_file, "w", encoding="utf-8") as f:
+                                        f.write(wrapper_content)
+                                    try: os.chmod(py_file, 0o755)
+                                    except Exception: pass
+                                    log_info(f"[Resolve Sync] Installed BadWords.py for Free <21.1 at: {py_file}")
+                                py_deployed = True
+                            except Exception as e:
+                                log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
+
+                # Handle BadWords Bridge.lua (ALWAYS for Free)
+                primary_installed = False
+                for ud in util_dirs:
+                    if not os.path.isdir(ud):
+                        try: os.makedirs(ud, exist_ok=True)
+                        except Exception: continue
+
+                    lua_file = os.path.join(ud, "BadWords Bridge.lua")
+                    if lua_src and os.path.isfile(lua_src):
+                        if not primary_installed:
+                            try:
+                                should_copy = force or not os.path.isfile(lua_file)
+                                if not should_copy and os.path.isfile(lua_file):
+                                    if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
+                                        should_copy = True
+                                if should_copy:
+                                    shutil.copy2(lua_src, lua_file)
+                                    try: os.chmod(lua_file, 0o755)
+                                    except Exception: pass
+                                    log_info(f"[Resolve Sync] Installed BadWords Bridge.lua for Free at: {lua_file}")
+                                primary_installed = True
+                            except Exception as e:
+                                log_warn(f"[Resolve Sync] Failed to sync BadWords Bridge.lua to {ud}: {e}")
+                        else:
+                            # Secondary directory: remove duplicate so only 1 entry appears in Resolve menus
+                            if os.path.isfile(lua_file):
+                                try:
+                                    os.remove(lua_file)
+                                    log_info(f"[Resolve Sync] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
+                                except Exception: pass
         except Exception as e:
             log_warn(f"sync_resolve_scripts error: {e}")
 
