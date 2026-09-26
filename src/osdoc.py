@@ -543,6 +543,14 @@ class OSDoctor:
         log_info(f"Bin Dir (FFmpeg): {self.bin_dir}")
         log_info(f"VENV Python: {self.get_venv_python_path()}")
         log_info(f"NVIDIA Support Detected: {self.has_nvidia_support()}")
+        try:
+            topo = self.get_cpu_topology()
+            if topo.get("is_apple_silicon"):
+                log_info(f"CPU Topology: {topo.get('chip_name', 'Apple Silicon')} (P-cores: {topo.get('p_cores')}, E-cores: {topo.get('e_cores')}, Rosetta: {topo.get('is_rosetta')})")
+            else:
+                log_info(f"CPU Topology: {topo.get('chip_name', platform.machine())} (Physical: {topo.get('physical_cores')}, Logical: {topo.get('logical_cores')})")
+        except Exception:
+            pass
         log_info("="*30)
 
     # ==========================
@@ -1334,3 +1342,158 @@ class OSDoctor:
         HuggingFace hub will quickly skip the download if the model is already cached.
         """
         return True
+
+    def get_cpu_topology(self) -> dict:
+        """
+        Detects CPU topology, specifically handling Apple Silicon asymmetric cores
+        (Performance P-cores vs Efficiency E-cores across M1, M2, M3, M4, M5, Pro/Max/Ultra),
+        legacy Intel Macs (x86_64), Linux, and Windows.
+        """
+        import multiprocessing
+        logical = multiprocessing.cpu_count() or 1
+        topo = {
+            "logical_cores": logical,
+            "physical_cores": logical,
+            "p_cores": logical,
+            "e_cores": 0,
+            "is_apple_silicon": False,
+            "is_rosetta": False,
+            "chip_name": platform.processor() or platform.machine(),
+        }
+
+        if self.is_mac:
+            import subprocess
+            def _sysctl_int(param):
+                try:
+                    out = subprocess.check_output(["sysctl", "-n", param], stderr=subprocess.DEVNULL, text=True).strip()
+                    return int(out) if out.isdigit() else 0
+                except Exception:
+                    return 0
+
+            # Rosetta 2 check
+            topo["is_rosetta"] = (_sysctl_int("sysctl.proc_translated") == 1)
+
+            # Query Apple Silicon Performance vs Efficiency cores
+            # hw.perflevel0 = High Performance cores (P-cores)
+            # hw.perflevel1 = Power Efficiency cores (E-cores)
+            p_cores = _sysctl_int("hw.perflevel0.physicalcpu")
+            if p_cores == 0:
+                p_cores = _sysctl_int("hw.perflevel0.logicalcpu")
+            e_cores = _sysctl_int("hw.perflevel1.physicalcpu")
+            if e_cores == 0:
+                e_cores = _sysctl_int("hw.perflevel1.logicalcpu")
+
+            phys = _sysctl_int("hw.physicalcpu")
+
+            # Brand string (e.g. "Apple M4", "Apple M3 Pro", "Intel(R) Core(TM) i9...")
+            try:
+                brand = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], stderr=subprocess.DEVNULL, text=True).strip()
+                if brand:
+                    topo["chip_name"] = brand
+            except Exception:
+                pass
+
+            if p_cores > 0:
+                topo["is_apple_silicon"] = True
+                topo["p_cores"] = p_cores
+                topo["e_cores"] = e_cores
+                topo["physical_cores"] = phys if phys > 0 else (p_cores + e_cores)
+            elif platform.machine() == "arm64" or topo["is_rosetta"]:
+                topo["is_apple_silicon"] = True
+                topo["physical_cores"] = phys if phys > 0 else logical
+                # Fallback: base Apple Silicon chips typically feature 3-4 P-cores
+                topo["p_cores"] = max(2, min(4, logical // 2))
+                topo["e_cores"] = max(0, logical - topo["p_cores"])
+            else:
+                # Intel Mac (x86_64)
+                topo["is_apple_silicon"] = False
+                topo["physical_cores"] = phys if phys > 0 else max(1, logical // 2)
+                topo["p_cores"] = topo["physical_cores"]
+                topo["e_cores"] = 0
+        else:
+            # Linux / Windows
+            try:
+                import psutil
+                phys = psutil.cpu_count(logical=False)
+                if phys and phys > 0:
+                    topo["physical_cores"] = phys
+                    topo["p_cores"] = phys
+            except Exception:
+                topo["physical_cores"] = max(1, logical // 2 if logical > 2 else logical)
+                topo["p_cores"] = topo["physical_cores"]
+
+        return topo
+
+    def get_optimal_whisper_threading(self, device: str = "cpu") -> dict:
+        """
+        Computes optimal thread count and worker count for Faster-Whisper / CTranslate2.
+        Prevents thread thrashing, barrier stalls on asymmetric Apple Silicon cores (M1-M5),
+        and leaves enough headroom for the OS, DaVinci Resolve, and BadWords GUI.
+        """
+        topo = self.get_cpu_topology()
+
+        # 1. GPU (CUDA on Linux / Windows)
+        if "cuda" in device.lower() or "gpu" in device.lower():
+            return {
+                "cpu_threads": 2,
+                "workers": 2,
+                "env_threads": "2",
+                "reason": "GPU mode (CUDA saturated; 2 CPU helper threads optimal)"
+            }
+
+        # 2. Apple Silicon macOS (M1, M2, M3, M4, M5, Pro, Max, Ultra)
+        if topo.get("is_apple_silicon"):
+            p_cores = max(1, topo.get("p_cores", 4))
+            e_cores = topo.get("e_cores", 4)
+            # CRITICAL ARCHITECTURAL RULE FOR APPLE SILICON (M1-M5):
+            # In matrix multiplication (CTranslate2/OpenMP), if thread count exceeds P-cores,
+            # threads spill onto E-cores. Fast P-cores finish in 1.5ms and wait on slow E-cores (barrier stall).
+            # Restricting threads exclusively to P-cores yields up to 2-3x faster transcription!
+            # All E-cores stay 100% free for macOS WindowServer, DaVinci Resolve & BadWords GUI.
+            if p_cores <= 4:
+                # Base M1/M2/M3/M4 (3 or 4 P-cores):
+                # Use all available P-cores (the 4-6 E-cores keep UI completely lag-free)
+                threads = p_cores
+                workers = 1
+            elif p_cores <= 8:
+                # M1 Pro / M2 Pro / M3 Pro / M4 Pro (6 or 8 P-cores):
+                # 2 workers with p_cores // 2 threads each, or 1 worker with p_cores - 1 threads
+                threads = max(2, p_cores - 1)
+                workers = 2 if p_cores >= 6 else 1
+            else:
+                # M1/M2/M3/M4 Max / Ultra (10 to 24 P-cores):
+                # Cap threads at 8 to prevent memory bus saturation, 2 workers
+                threads = min(8, p_cores - 2)
+                workers = 2
+
+            return {
+                "cpu_threads": threads,
+                "workers": workers,
+                "env_threads": str(threads),
+                "reason": f"Apple Silicon ({topo.get('chip_name', 'ARM64')}): {threads} P-core threads ({workers} workers); {e_cores} E-cores reserved for OS/UI"
+            }
+
+        # 3. Intel Mac (x86_64)
+        if self.is_mac:
+            phys = max(1, topo.get("physical_cores", 4))
+            threads = max(1, phys - 1)
+            workers = 1 if phys <= 4 else 2
+            return {
+                "cpu_threads": threads,
+                "workers": workers,
+                "env_threads": str(threads),
+                "reason": f"Intel Mac: {threads} physical cores, leaving 1 core for OS/UI"
+            }
+
+        # 4. Linux / Windows on CPU
+        logical = topo.get("logical_cores", 4)
+        phys = topo.get("physical_cores", logical)
+        threads = max(1, min(phys, logical - 2))
+        workers = max(1, (logical - 2) // 2) if logical > 4 else 1
+        return {
+            "cpu_threads": threads,
+            "workers": workers,
+            "env_threads": str(threads),
+            "reason": f"CPU Mode: {threads} threads, {workers} workers, leaving 2 cores for UI/OS"
+        }
+
