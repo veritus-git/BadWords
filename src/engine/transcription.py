@@ -323,14 +323,20 @@ except Exception as e:
         if prefs.get('ai_repetition_penalty', 1.0) != 1.0:
             kwargs_str += f", repetition_penalty={repr(prefs.get('ai_repetition_penalty', 1.0))}"
 
+        import multiprocessing
+        cpu_cores_available = multiprocessing.cpu_count()
+        # On GPU (CUDA/MPS): 2 CPU threads is optimal (GPU computes 99.5% of weights, CPU only decodes audio & tokens).
+        # On CPU: dynamically scale to (cores - 2) so all cores are utilized while leaving 2 cores for UI and OS.
+        optimal_cpu_threads = "2" if fw_device == "cuda" else str(max(1, cpu_cores_available - 2))
+
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
-        env["OMP_NUM_THREADS"] = "2"
+        env["OMP_NUM_THREADS"] = optimal_cpu_threads
         env["OMP_WAIT_POLICY"] = "PASSIVE"
-        env["OPENBLAS_NUM_THREADS"] = "2"
-        env["MKL_NUM_THREADS"] = "2"
-        env["NUMEXPR_NUM_THREADS"] = "2"
-        env["VECLIB_MAXIMUM_THREADS"] = "2"
+        env["OPENBLAS_NUM_THREADS"] = optimal_cpu_threads
+        env["MKL_NUM_THREADS"] = optimal_cpu_threads
+        env["NUMEXPR_NUM_THREADS"] = optimal_cpu_threads
+        env["VECLIB_MAXIMUM_THREADS"] = optimal_cpu_threads
         
         if self.os_doc.is_linux and fw_device == "cuda":
             nvidia_libs_paths = []
@@ -359,12 +365,12 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
-os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_NUM_THREADS"] = {repr(optimal_cpu_threads)}
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
-os.environ["OPENBLAS_NUM_THREADS"] = "2"
-os.environ["MKL_NUM_THREADS"] = "2"
-os.environ["NUMEXPR_NUM_THREADS"] = "2"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
+os.environ["OPENBLAS_NUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["MKL_NUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["NUMEXPR_NUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(optimal_cpu_threads)}
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
@@ -582,12 +588,12 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
-os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_NUM_THREADS"] = {repr(optimal_cpu_threads)}
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
-os.environ["OPENBLAS_NUM_THREADS"] = "2"
-os.environ["MKL_NUM_THREADS"] = "2"
-os.environ["NUMEXPR_NUM_THREADS"] = "2"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
+os.environ["OPENBLAS_NUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["MKL_NUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["NUMEXPR_NUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(optimal_cpu_threads)}
 
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
@@ -600,14 +606,15 @@ try:
     model_size = {repr(model)}
     target_device = {repr(fw_device)}
     target_compute = {repr(compute_type)}
+    cpu_threads_cnt = {optimal_cpu_threads}
     
-    print(f"Loading Faster-Whisper: {{model_size}} on {{target_device}} ({{target_compute}})...")
+    print(f"Loading Faster-Whisper: {{model_size}} on {{target_device}} ({{target_compute}}) with {{cpu_threads_cnt}} CPU threads...")
     
     model = WhisperModel(
         model_size, 
         device=target_device, 
         compute_type=target_compute, 
-        cpu_threads=2,
+        cpu_threads=cpu_threads_cnt,
         num_workers=1,
         download_root={repr(self.models_dir)}
     )
