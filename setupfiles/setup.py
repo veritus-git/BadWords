@@ -1553,8 +1553,19 @@ else:
                     written = True
 
                 if bridge_lua_src and os.path.isfile(bridge_lua_src):
+                    with open(bridge_lua_src, "r", encoding="utf-8") as bf:
+                        b_code = bf.read()
+                    clean_inst = install_dir.replace('\\', '/')
+                    b_code = b_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+
+                    # Ensure bridge folder in install_dir exists
+                    bridge_dir = os.path.join(install_dir, "bridge")
+                    try: os.makedirs(bridge_dir, exist_ok=True)
+                    except Exception: pass
+
                     target_lua = os.path.join(rd, "BadWords Bridge.lua")
-                    shutil.copy2(bridge_lua_src, target_lua)
+                    with open(target_lua, "w", encoding="utf-8") as bf:
+                        bf.write(b_code)
                     os.chmod(target_lua, 0o755)
                     debug_log(f"BadWords Bridge.lua written to: {target_lua}")
                     written = True

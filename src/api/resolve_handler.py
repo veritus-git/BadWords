@@ -49,7 +49,7 @@ class ResolveHandler:
 
         # Hybrid backend: 'native' | 'bridge' | None
         self.backend = None
-        self.bridge_client = ResolveBridgeClient()
+        self.bridge_client = ResolveBridgeClient(install_dir=self.os_doc.install_dir if self.os_doc else None)
         self.bridge_project_name = ""
         self.bridge_timeline_name = ""
         self.bridge_start_frame = 0
