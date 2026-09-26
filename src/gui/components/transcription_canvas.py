@@ -106,9 +106,39 @@ class TranscriptionCanvas(QWidget):
         self.words_data = []
         self._cached_visible_words = []
         self._is_streaming = True
+        self._follow_tail_scroll = False
         self._last_dragged_id = -1
         self.setMinimumHeight(400)
+
+        # Hook scrollbar to track if user explicitly scrolled to the bottom
+        scroll = getattr(self.main_window, 'scroll_area', None)
+        if scroll and not getattr(self, '_scroll_signals_bound', False):
+            vbar = scroll.verticalScrollBar()
+            vbar.valueChanged.connect(self._on_vbar_value_changed)
+            vbar.rangeChanged.connect(self._on_vbar_range_changed)
+            self._scroll_signals_bound = True
+
         self.update()
+
+    def _on_vbar_value_changed(self, value):
+        if not getattr(self, '_is_streaming', False):
+            return
+        scroll = getattr(self.main_window, 'scroll_area', None)
+        if not scroll:
+            return
+        vbar = scroll.verticalScrollBar()
+        # If user scrolled to the very bottom (within 15px of max), latch follow-scroll
+        if vbar.maximum() > 0 and value >= vbar.maximum() - 15:
+            self._follow_tail_scroll = True
+        elif value < vbar.maximum() - 35:
+            # User scrolled up away from bottom, pause follow-scroll
+            self._follow_tail_scroll = False
+
+    def _on_vbar_range_changed(self, min_val, max_val):
+        if getattr(self, '_is_streaming', False) and getattr(self, '_follow_tail_scroll', False):
+            scroll = getattr(self.main_window, 'scroll_area', None)
+            if scroll:
+                scroll.verticalScrollBar().setValue(max_val)
 
     def load_streamed_words(self, words_data: list):
         """Receives new chunk data from background thread without blocking UI."""
@@ -290,6 +320,10 @@ class TranscriptionCanvas(QWidget):
         needed_h = cy + line_height + 40
         if needed_h > self.minimumHeight():
             self.setMinimumHeight(needed_h + 250)
+            if getattr(self, '_follow_tail_scroll', False):
+                scroll = getattr(self.main_window, 'scroll_area', None)
+                if scroll:
+                    scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
 
         # Repaint dirty region covering both new tokens and active fading tokens
         if fading_rects:
@@ -303,6 +337,7 @@ class TranscriptionCanvas(QWidget):
         if hasattr(self, '_stream_timer') and self._stream_timer.isActive():
             self._stream_timer.stop()
         self._is_streaming = False
+        self._follow_tail_scroll = False
         self._fading_tokens = []
 
         scroll = getattr(self.main_window, 'scroll_area', None)
@@ -332,6 +367,7 @@ class TranscriptionCanvas(QWidget):
         self._stream_token_queue = []
         self._fading_tokens = []
         self._is_streaming = False
+        self._follow_tail_scroll = False
 
         scroll = getattr(self.main_window, 'scroll_area', None)
         vbar = scroll.verticalScrollBar() if scroll else None
