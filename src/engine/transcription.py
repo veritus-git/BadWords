@@ -307,7 +307,8 @@ except Exception as e:
         runner_script_path = os.path.join(output_dir, f"fw_runner_{unique_name}.py")
 
         if model == "large": model = "large-v3"
-        fw_device = "cuda" if "GPU" in device_mode else "cpu"
+        # macOS never supports CUDA; force CPU on Darwin even if settings contain 'GPU'
+        fw_device = "cuda" if "GPU" in device_mode and not self.os_doc.is_mac else "cpu"
         
         prefs = self.os_doc.get_all_prefs()
 
@@ -323,14 +324,18 @@ except Exception as e:
         if prefs.get('ai_repetition_penalty', 1.0) != 1.0:
             kwargs_str += f", repetition_penalty={repr(prefs.get('ai_repetition_penalty', 1.0))}"
 
-        import multiprocessing
-        cpu_cores_available = multiprocessing.cpu_count()
-        # On GPU (CUDA/MPS): 2 CPU threads is optimal (GPU computes 99.5% of weights, CPU only decodes audio & tokens).
-        # On CPU: dynamically scale to (cores - 2) so all cores are utilized while leaving 2 cores for UI and OS.
-        optimal_cpu_threads = "2" if fw_device == "cuda" else str(max(1, cpu_cores_available - 2))
+        # Cross-platform CPU & GPU Threading Optimization:
+        # Handles Apple Silicon P-cores vs E-cores (M1-M5), Intel Macs, Linux, and Windows.
+        threading_info = self.os_doc.get_optimal_whisper_threading(device=fw_device)
+        optimal_cpu_threads = threading_info["env_threads"]
+        model_cpu_threads = threading_info["cpu_threads"]
+        worker_cnt = threading_info["workers"]
+        log_info(f"[WhisperThreading] {threading_info['reason']}")
 
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
+        env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+        env["KMP_BLOCKTIME"] = "0"
         env["OMP_NUM_THREADS"] = optimal_cpu_threads
         env["OMP_WAIT_POLICY"] = "PASSIVE"
         env["OPENBLAS_NUM_THREADS"] = optimal_cpu_threads
@@ -365,6 +370,8 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["KMP_BLOCKTIME"] = "0"
 os.environ["OMP_NUM_THREADS"] = {repr(optimal_cpu_threads)}
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 os.environ["OPENBLAS_NUM_THREADS"] = {repr(optimal_cpu_threads)}
@@ -430,18 +437,11 @@ try:
     target_device  = {repr(fw_device)}
     target_compute = {repr(compute_type)}
     
-    # Decide how many parallel workers to use
-    cpu_threads_val = 2
-    if target_device == "cpu":
-        # CPU Optimization: Prevent thread thrashing, leave headroom for OS/UI
-        cpu_cores = multiprocessing.cpu_count()
-        workers = max(1, (cpu_cores - 2) // cpu_threads_val)
-    else:
-        # GPU (CUDA/MPS): 2 workers empirically proven to yield ~20% faster times 
-        # (0:35 vs 0:42) by saturating CUDA cores while keeping VRAM usage safe for 'base' model.
-        workers = 2
+    # Optimal CPU / GPU workers & threads computed by OSDoctor
+    workers = {worker_cnt}
+    cpu_threads_val = {model_cpu_threads}
 
-    print(f"[Chunked] Loading model {{model_size}} on {{target_device}} ({{target_compute}}) with {{workers}} workers...")
+    print(f"[Chunked] Loading model {{model_size}} on {{target_device}} ({{target_compute}}) with {{workers}} workers ({{cpu_threads_val}} threads each)...")
     model = WhisperModel(
         model_size, device=target_device, compute_type=target_compute,
         cpu_threads=cpu_threads_val, num_workers=workers,
@@ -588,6 +588,8 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["KMP_BLOCKTIME"] = "0"
 os.environ["OMP_NUM_THREADS"] = {repr(optimal_cpu_threads)}
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 os.environ["OPENBLAS_NUM_THREADS"] = {repr(optimal_cpu_threads)}
@@ -606,16 +608,17 @@ try:
     model_size = {repr(model)}
     target_device = {repr(fw_device)}
     target_compute = {repr(compute_type)}
-    cpu_threads_cnt = {optimal_cpu_threads}
+    cpu_threads_cnt = {model_cpu_threads}
+    num_workers_cnt = {worker_cnt}
     
-    print(f"Loading Faster-Whisper: {{model_size}} on {{target_device}} ({{target_compute}}) with {{cpu_threads_cnt}} CPU threads...")
+    print(f"Loading Faster-Whisper: {{model_size}} on {{target_device}} ({{target_compute}}) with {{cpu_threads_cnt}} CPU threads ({{num_workers_cnt}} workers)...")
     
     model = WhisperModel(
         model_size, 
         device=target_device, 
         compute_type=target_compute, 
         cpu_threads=cpu_threads_cnt,
-        num_workers=1,
+        num_workers=num_workers_cnt,
         download_root={repr(self.models_dir)}
     )
 
