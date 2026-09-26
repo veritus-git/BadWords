@@ -2483,6 +2483,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
         self.engine.save_preferences(prefs)
     def _on_assemble(self):
+        if getattr(self, '_is_live_transcribing', False):
+            return
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data: return
 
         from PySide6.QtWidgets import QApplication
@@ -3175,6 +3177,48 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._analysis_worker.error.connect(self._on_analysis_error)
         self._analysis_worker.start()
 
+    def _set_live_transcription_lock(self, locked: bool):
+        """Locks all actions that require a complete transcript while keeping marking mode and options functional."""
+        self._is_live_transcribing = locked
+
+        # 1. Assemble Button (with custom locked text when locked, and smooth fade-in unlock)
+        if hasattr(self, 'btn_assemble'):
+            if locked:
+                self.btn_assemble.set_assemble_enabled(False, self.txt("status_transcribing"))
+            else:
+                self.btn_assemble.set_assemble_enabled(True)
+
+        # 2. Titlebar Menus: Export/Import Project and Chapters locked; Export txt / copy kept enabled
+        if hasattr(self, '_title_bar') and self._title_bar:
+            if hasattr(self._title_bar, 'btn_menu_project'):
+                self._title_bar.btn_menu_project.setEnabled(not locked)
+            if hasattr(self._title_bar, 'btn_menu_edit'):
+                self._title_bar.btn_menu_edit.setEnabled(not locked)
+
+        # 3. Left Script Panel: Re-analysis, import, and clearing locked during stream
+        if hasattr(self, 'btn_analyze_standalone'):
+            self.btn_analyze_standalone.setEnabled(not locked)
+        if hasattr(self, 'btn_analyze_compare'):
+            if locked:
+                self.btn_analyze_compare.setEnabled(False)
+            else:
+                has_text = bool(getattr(self, 'text_script', None) and self.text_script.toPlainText().strip())
+                self.btn_analyze_compare.setEnabled(has_text)
+        if hasattr(self, 'btn_side_by_side_compare'):
+            if locked:
+                self.btn_side_by_side_compare.setEnabled(False)
+            else:
+                has_text = bool(getattr(self, 'text_script', None) and self.text_script.toPlainText().strip())
+                self.btn_side_by_side_compare.setEnabled(has_text)
+        if hasattr(self, 'btn_import_script'):
+            self.btn_import_script.setEnabled(not locked)
+        if hasattr(self, 'btn_clear_script'):
+            self.btn_clear_script.setEnabled(not locked)
+        if hasattr(self, 'btn_clear_transcript'):
+            self.btn_clear_transcript.setEnabled(not locked)
+        if hasattr(self, 'text_script'):
+            self.text_script.setReadOnly(locked)
+
     def _prepare_editor_for_live_transcription(self, pct=0):
         # Switch to Page 2 (Editor View) immediately when initialization completes!
         if self._stack.currentIndex() != 2:
@@ -3222,9 +3266,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._title_bar.activate_transcription_mode()
             self._title_bar.set_source_info(selected_tl_name, tracks_str)
 
-            # Disable Assemble button until transcription reaches 100%
-            if hasattr(self, 'btn_assemble'):
-                self.btn_assemble.set_assemble_enabled(False, self.txt("status_transcribing"))
+            # Lock actions requiring complete transcript during live streaming
+            self._set_live_transcription_lock(True)
 
             # Launch Top Dynamic Island with initial status
             if hasattr(self, 'top_island'):
@@ -3283,8 +3326,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         if hasattr(self, 'top_island'):
             self.top_island.set_error(str(err))
-        if hasattr(self, 'btn_assemble'):
-            self.btn_assemble.set_assemble_enabled(True)
+        self._set_live_transcription_lock(False)
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText(f"Error: {err}")
 
@@ -3332,8 +3374,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'top_island'):
             self.top_island.set_completed(self.txt("msg_transcription_complete", "Transkrypcja zakończona"))
             
-        if hasattr(self, 'btn_assemble'):
-            self.btn_assemble.set_assemble_enabled(True)
+        self._set_live_transcription_lock(False)
         
         if not (hasattr(self, '_panel_left') and self._panel_left.isVisible()):
             self._toggle_activity("script_analysis")

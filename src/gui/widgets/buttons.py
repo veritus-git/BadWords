@@ -2150,13 +2150,22 @@ class AssembleArrowButton(QPushButton):
             self.update()
 
     def enterEvent(self, event):
-        self.hovered = True
-        self.update()
+        if not self.isEnabled():
+            p = self.parent()
+            if hasattr(p, '_show_locked_tooltip'):
+                p._show_locked_tooltip()
+        else:
+            self.hovered = True
+            self.update()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         self.hovered = False
         self.update()
+        if not self.isEnabled():
+            p = self.parent()
+            if hasattr(p, '_hide_locked_tooltip'):
+                p._hide_locked_tooltip()
         super().leaveEvent(event)
 
     def paintEvent(self, event):
@@ -2171,10 +2180,13 @@ class AssembleArrowButton(QPushButton):
         cx = w / 2.0
         cy = h / 2.0
 
-        if self.hovered:
-            p.fillRect(0, 0, int(w), int(h), QColor(255, 255, 255, 25))
+        if not self.isEnabled():
+            chevron_col = QColor("#555555")
+        else:
+            if self.hovered:
+                p.fillRect(0, 0, int(w), int(h), QColor(255, 255, 255, 25))
+            chevron_col = QColor("#ffffff") if self.hovered else QColor("#e0e0e0")
 
-        chevron_col = QColor("#ffffff") if self.hovered else QColor("#e0e0e0")
         pen_chevron = QPen(chevron_col, float(config.S(1.8)), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         p.setPen(pen_chevron)
 
@@ -2198,10 +2210,12 @@ class AssembleSplitButton(QFrame):
         super().__init__(parent)
         self.parent_gui = parent_gui
         self.is_open = False
+        self._is_assemble_enabled = True
         self.setFixedHeight(config.S(35))
 
         from PySide6.QtWidgets import QHBoxLayout, QPushButton, QFrame
-        from PySide6.QtCore import Qt
+        from PySide6.QtCore import Qt, QVariantAnimation, QEasingCurve
+        from PySide6.QtGui import QColor, QCursor
 
         self.setObjectName("AssembleSplitButtonFrame")
         self.update_style()
@@ -2226,7 +2240,7 @@ class AssembleSplitButton(QFrame):
                 text-align: center;
             }}
         """)
-        self.btn_main.clicked.connect(self.assembleClicked)
+        self.btn_main.clicked.connect(self._on_main_click)
 
         self.sep = QFrame()
         self.sep.setFixedWidth(config.S(1))
@@ -2242,7 +2256,65 @@ class AssembleSplitButton(QFrame):
         layout.addWidget(self.sep)
         layout.addWidget(self.btn_arrow)
 
+        # Unlock color animation (fade from #2a2a2a to #11703c in 250ms)
+        self._color_anim = QVariantAnimation(self)
+        self._color_anim.setDuration(250)
+        self._color_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._color_anim.valueChanged.connect(self._on_anim_color)
+        self._color_anim.finished.connect(self._on_anim_finished)
+
+        # Event filters for instant tooltip on hover when locked
+        self.installEventFilter(self)
+        self.btn_main.installEventFilter(self)
+        self.btn_arrow.installEventFilter(self)
+
+    def _show_locked_tooltip(self):
+        if not getattr(self, '_is_assemble_enabled', True) and hasattr(self.parent_gui, 'shared_tooltip'):
+            tt_text = (
+                self.parent_gui.txt("tt_assembly_locked_transcription")
+                if hasattr(self.parent_gui, 'txt')
+                else "Opcja zablokowana do czasu zakończenia transkrypcji"
+            )
+            from PySide6.QtGui import QCursor
+            self.parent_gui.shared_tooltip.show_global(tt_text, QCursor.pos())
+
+    def _hide_locked_tooltip(self):
+        if hasattr(self.parent_gui, 'shared_tooltip'):
+            self.parent_gui.shared_tooltip.hide()
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if not getattr(self, '_is_assemble_enabled', True):
+            if event.type() in (QEvent.Enter, QEvent.MouseMove):
+                self._show_locked_tooltip()
+            elif event.type() in (QEvent.Leave, QEvent.MouseButtonPress):
+                self._hide_locked_tooltip()
+        return super().eventFilter(obj, event)
+
+    def enterEvent(self, event):
+        if not getattr(self, '_is_assemble_enabled', True):
+            self._show_locked_tooltip()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hide_locked_tooltip()
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not getattr(self, '_is_assemble_enabled', True):
+            self._show_locked_tooltip()
+        super().mouseMoveEvent(event)
+
+    def _on_main_click(self):
+        if not self._is_assemble_enabled:
+            self._show_locked_tooltip()
+            return
+        self.assembleClicked.emit()
+
     def _on_arrow_click(self):
+        if not self._is_assemble_enabled:
+            self._show_locked_tooltip()
+            return
         self.set_open(not self.is_open)
         self.toggleDrawerClicked.emit()
 
@@ -2253,6 +2325,16 @@ class AssembleSplitButton(QFrame):
 
     def update_style(self):
         r = config.S(4)
+        if not getattr(self, '_is_assemble_enabled', True):
+            self.setStyleSheet(f"""
+                QFrame#AssembleSplitButtonFrame {{
+                    background-color: #2a2a2a;
+                    border-radius: {r}px;
+                    border: 1px solid #222222;
+                }}
+            """)
+            return
+
         if self.is_open:
             self.setStyleSheet(f"""
                 QFrame#AssembleSplitButtonFrame {{
@@ -2280,12 +2362,30 @@ class AssembleSplitButton(QFrame):
                 }}
             """)
 
+    def _on_anim_color(self, color):
+        r = config.S(4)
+        self.setStyleSheet(f"""
+            QFrame#AssembleSplitButtonFrame {{
+                background-color: {color.name()};
+                border-radius: {r}px;
+                border: 1px solid {color.name()};
+            }}
+        """)
+
+    def _on_anim_finished(self):
+        if self._is_assemble_enabled:
+            self.update_style()
+
     def set_assemble_enabled(self, enabled: bool, custom_text: str = None):
-        """Enable or disable the Assemble button with appropriate visual dimming."""
+        """Enable or disable the Assemble button with visual transition and dimming."""
+        was_disabled = not getattr(self, '_is_assemble_enabled', True)
         self._is_assemble_enabled = enabled
         self.btn_main.setEnabled(enabled)
         self.btn_arrow.setEnabled(enabled)
-        
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor
+
         if custom_text is not None:
             self.btn_main.setText(custom_text)
         elif enabled:
@@ -2296,17 +2396,22 @@ class AssembleSplitButton(QFrame):
 
         r = config.S(4)
         if not enabled:
+            self._color_anim.stop()
+            self._hide_locked_tooltip()
+            self.btn_main.setCursor(Qt.CursorShape.ForbiddenCursor)
+            self.btn_arrow.setCursor(Qt.CursorShape.ForbiddenCursor)
+            self.sep.setStyleSheet("background-color: #222222; border: none;")
             self.setStyleSheet(f"""
                 QFrame#AssembleSplitButtonFrame {{
-                    background-color: #1a2a20;
+                    background-color: #2a2a2a;
                     border-radius: {r}px;
-                    border: 1px solid #14221a;
+                    border: 1px solid #222222;
                 }}
             """)
             self.btn_main.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
-                    color: #5c7566;
+                    color: #555555;
                     font-weight: bold;
                     font-family: "{config.UI_FONT_NAME}";
                     font-size: {config.FS(10)}pt;
@@ -2316,7 +2421,12 @@ class AssembleSplitButton(QFrame):
                     text-align: center;
                 }}
             """)
+            self.btn_arrow.update()
         else:
+            self._hide_locked_tooltip()
+            self.btn_main.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.btn_arrow.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.sep.setStyleSheet("background-color: rgba(255, 255, 255, 0.3); border: none;")
             self.btn_main.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
@@ -2330,7 +2440,16 @@ class AssembleSplitButton(QFrame):
                     text-align: center;
                 }}
             """)
-            self.update_style()
+            self.btn_arrow.update()
+
+            if was_disabled:
+                # Trigger smooth fade-in animation from #2a2a2a to #11703c
+                self._color_anim.stop()
+                self._color_anim.setStartValue(QColor("#2a2a2a"))
+                self._color_anim.setEndValue(QColor("#11703c"))
+                self._color_anim.start()
+            else:
+                self.update_style()
 
 
 class TrackSquareCheckbox(QWidget):

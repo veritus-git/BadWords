@@ -146,6 +146,7 @@ class CustomTitleBar(QWidget):
         }}
         QPushButton:hover {{ background: #2b2b2b; color: #ffffff; }}
         QPushButton:pressed {{ background: #333333; color: #ffffff; }}
+        QPushButton:disabled {{ background: transparent; color: #555555; }}
     """
 
     # Signal emitted when the user picks an action from a menu dropdown

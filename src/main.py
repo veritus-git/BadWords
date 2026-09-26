@@ -15,6 +15,15 @@ import sys
 import os
 import traceback
 
+# --- Cross-platform OpenMP / BLAS threading caps (Windows, macOS, Linux) ---
+# Prevents worker threads from spin-waiting in while(true) loops and starving OS/UI
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
+
 # --- Hotfix for older Python versions (Resolve 20 + Python < 3.9) ---
 if sys.version_info < (3, 9):
     try:
@@ -35,14 +44,6 @@ if sys.platform.startswith('linux'):
     if 'QT_QPA_PLATFORMTHEME' in os.environ:
         del os.environ['QT_QPA_PLATFORMTHEME']
     os.environ.pop('QT_STYLE_OVERRIDE', None)
-
-    # Limit OpenMP / BLAS threading and force passive waiting so worker threads do not spin-wait at 100% CPU
-    os.environ.setdefault("OMP_NUM_THREADS", "2")
-    os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
-    os.environ.setdefault("MKL_NUM_THREADS", "2")
-    os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
-    os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
 
     try:
         import ctypes
