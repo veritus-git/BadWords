@@ -208,6 +208,8 @@
     "status_whisper_init": "Ініціалізація транскрипції...",
     "lbl_choose_recording_language": "Виберіть мову запису",
     "status_transcribing": "Транскрибування...",
+    "lbl_island": "Острівець",
+    "msg_transcription_complete": "Транскрипція завершена",
     "status_silence": "Виявлення тиші...",
     "status_process": "Обробка...",
     "status_finalize": "Завершення обробки даних...",

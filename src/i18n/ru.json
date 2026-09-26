@@ -200,6 +200,8 @@
     "status_whisper_init": "Инициализация транскрипции...",
     "lbl_choose_recording_language": "Выберите язык записи",
     "status_transcribing": "Транскрибирование...",
+    "lbl_island": "Островок",
+    "msg_transcription_complete": "Транскрипция завершена",
     "status_silence": "Обнаружение тишины...",
     "status_process": "Обработка...",
     "status_finalize": "Финализация данных...",

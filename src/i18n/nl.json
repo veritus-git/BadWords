@@ -208,6 +208,8 @@
     "status_whisper_init": "Transcriptie initialiseren...",
     "lbl_choose_recording_language": "Kies opnametaal",
     "status_transcribing": "Transcriberen...",
+    "lbl_island": "Eiland",
+    "msg_transcription_complete": "Transcriptie voltooid",
     "status_silence": "Stiltedetectie...",
     "status_process": "Verwerken...",
     "status_finalize": "Gegevens afronden...",

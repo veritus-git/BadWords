@@ -208,6 +208,8 @@
     "status_whisper_init": "Inicializando transcripción...",
     "lbl_choose_recording_language": "Elegir idioma de grabación",
     "status_transcribing": "Transcribiendo...",
+    "lbl_island": "Isla",
+    "msg_transcription_complete": "Transcripción completada",
     "status_silence": "Detección de silencio...",
     "status_process": "Procesando...",
     "status_finalize": "Finalizando datos...",
