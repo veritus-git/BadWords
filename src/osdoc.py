@@ -1599,17 +1599,30 @@ else:
             # threads spill onto E-cores. Fast P-cores finish in 1.5ms and wait on slow E-cores (barrier stall).
             # Restricting threads exclusively to P-cores yields up to 2-3x faster transcription!
             # All E-cores stay 100% free for macOS WindowServer, DaVinci Resolve & BadWords GUI.
-            # Parallel chunk workers:
-            # 2 parallel workers is the proven sweet spot across all Apple Silicon chips (M1-M5).
-            # It processes two audio chunks simultaneously in thread pool without serial bottleneck.
-            workers = 2
-            threads = 4 if p_cores >= 4 else p_cores
+            #
+            # DYNAMIC SCALING ACROSS ALL APPLE SILICON TIERS:
+            # - Base chips (M1/M2/M3/M4 with 3-4 P-cores, e.g. MacBook Air):
+            #     workers = 2, threads = min(4, p_cores)  (proven 49s benchmark on M2 Air)
+            # - Pro chips (M1-M4 Pro with 6-8 P-cores):
+            #     workers = 2, threads = max(3, p_cores // 2) (e.g. 8 P-cores -> 2 workers * 4 threads = 8 P-cores fully saturated)
+            # - Max & Ultra chips (M1-M4 Max / Ultra with 10-24 P-cores):
+            #     workers = min(4, max(2, p_cores // 4)), threads = max(3, p_cores // workers)
+            #     (e.g. 12 P-cores -> 3 workers * 4 threads = 12 P-cores; 16 P-cores -> 4 workers * 4 threads = 16 P-cores)
+            if p_cores <= 4:
+                workers = 2
+                threads = min(4, p_cores)
+            elif p_cores <= 8:
+                workers = 2
+                threads = max(3, p_cores // 2)
+            else:
+                workers = min(4, max(2, p_cores // 4))
+                threads = max(3, p_cores // workers)
 
             return {
                 "cpu_threads": threads,
                 "workers": workers,
                 "env_threads": str(threads),
-                "reason": f"Apple Silicon ({topo.get('chip_name', 'ARM64')}): {workers} parallel chunk workers with {threads} threads; {e_cores} E-cores reserved for OS/UI"
+                "reason": f"Apple Silicon ({topo.get('chip_name', 'ARM64')}): {workers} parallel chunk workers with {threads} threads each (total {workers*threads} P-threads saturating {p_cores} P-cores; {e_cores} E-cores reserved for OS/UI)"
             }
 
         # 3. Intel Mac (x86_64)
