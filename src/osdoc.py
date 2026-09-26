@@ -1095,12 +1095,23 @@ else:
                     if lua_src and os.path.isfile(lua_src):
                         if not primary_installed:
                             try:
-                                should_copy = force or not os.path.isfile(lua_file)
-                                if not should_copy and os.path.isfile(lua_file):
+                                with open(lua_src, "r", encoding="utf-8") as lf:
+                                    l_code = lf.read()
+                                clean_inst = self.install_dir.replace('\\', '/')
+                                l_code = l_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+
+                                # Ensure bridge folder inside BadWords install directory exists
+                                bridge_dir = os.path.join(self.install_dir, "bridge")
+                                try: os.makedirs(bridge_dir, exist_ok=True)
+                                except Exception: pass
+
+                                should_write = force or not os.path.isfile(lua_file)
+                                if not should_write and os.path.isfile(lua_file):
                                     if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
-                                        should_copy = True
-                                if should_copy:
-                                    shutil.copy2(lua_src, lua_file)
+                                        should_write = True
+                                if should_write:
+                                    with open(lua_file, "w", encoding="utf-8") as lf:
+                                        lf.write(l_code)
                                     try: os.chmod(lua_file, 0o755)
                                     except Exception: pass
                                     log_info(f"[Resolve Sync] Installed BadWords Bridge.lua for Free at: {lua_file}")

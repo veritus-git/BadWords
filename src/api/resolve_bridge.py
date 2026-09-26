@@ -28,7 +28,7 @@ import json
 import base64
 import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Union
 
 # Logger fallbacks
 try:
@@ -42,26 +42,69 @@ except ImportError:
 class ResolveBridgeClient:
     """Client for file-based IPC mailbox bridge to DaVinci Resolve Lua runner."""
 
-    def __init__(self):
+    def __init__(self, install_dir: Optional[Union[str, Path]] = None):
         self._lock = threading.Lock()
         self._counter = 0
-        self.mailbox_dir = self._get_mailbox_dir()
-        self.mailbox_dir.mkdir(parents=True, exist_ok=True)
+        self.install_dir = Path(install_dir) if install_dir else self._discover_install_dir()
+        self.mailbox_dir = self._get_mailbox_dir(self.install_dir)
+        try:
+            self.mailbox_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log_warn(f"Failed to create bridge mailbox dir at {self.mailbox_dir}: {e}")
+            self.mailbox_dir = self._get_fallback_mailbox_dir()
+            self.mailbox_dir.mkdir(parents=True, exist_ok=True)
+
         self.request_file = self.mailbox_dir / "request.lua"
         self.request_tmp = self.mailbox_dir / "request.tmp"
 
     @staticmethod
-    def _get_mailbox_dir() -> Path:
-        """Determines the cross-platform mailbox directory."""
+    def _discover_install_dir() -> Optional[Path]:
+        """Discovers the BadWords installation root directory."""
+        try:
+            import config
+            if hasattr(config, "INSTALL_DIR") and config.INSTALL_DIR:
+                p = Path(config.INSTALL_DIR)
+                if p.is_dir():
+                    return p
+        except Exception:
+            pass
+
+        try:
+            cur = Path(__file__).resolve()
+            for parent in cur.parents:
+                if (parent / "main.py").is_file():
+                    return parent
+        except Exception:
+            pass
+
+        try:
+            cwd = Path.cwd()
+            if (cwd / "main.py").is_file():
+                return cwd
+        except Exception:
+            pass
+
+        return None
+
+    @classmethod
+    def _get_mailbox_dir(cls, install_dir: Optional[Path] = None) -> Path:
+        """Determines the mailbox directory placed inside the BadWords installation directory."""
+        if install_dir and Path(install_dir).is_dir():
+            return Path(install_dir) / "bridge"
+        return cls._get_fallback_mailbox_dir()
+
+    @staticmethod
+    def _get_fallback_mailbox_dir() -> Path:
+        """Determines the fallback cross-platform mailbox directory in user data."""
         if sys.platform == "win32":
             base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
-            return Path(base) / "BadWords" / "resolve-bridge"
+            return Path(base) / "BadWords" / "bridge"
         elif sys.platform == "darwin":
-            return Path.home() / "Library" / "Application Support" / "BadWords" / "resolve-bridge"
+            return Path.home() / "Library" / "Application Support" / "BadWords" / "bridge"
         else:
             xdg = os.environ.get("XDG_DATA_HOME")
             base = Path(xdg) if xdg else Path.home() / ".local" / "share"
-            return base / "BadWords" / "resolve-bridge"
+            return base / "BadWords" / "bridge"
 
     @staticmethod
     def get_fusion_support_dir() -> Optional[Path]:

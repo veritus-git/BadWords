@@ -268,19 +268,40 @@ end
 local platform = detect_platform()
 local sep = (platform == "Windows") and "\\" or "/"
 
+-- Configuration: BadWords Installation Directory (injected by installer / auto-healer)
+local INSTALL_DIR = [[__BADWORDS_INSTALL_DIR__]]
+
 local function get_mailbox_dir()
+    -- 1. Primary: dedicated bridge folder inside BadWords installation directory
+    if INSTALL_DIR and INSTALL_DIR ~= "" and not INSTALL_DIR:find("^__") then
+        return INSTALL_DIR .. sep .. "bridge"
+    end
+
+    -- 2. Fallback: OS user data directory
     if platform == "Windows" then
-        return (os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\resolve-bridge"
+        return (os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge"
     elseif platform == "OSX" then
-        return (os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/resolve-bridge"
+        return (os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge"
     else
         return (os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share"))
-            .. "/BadWords/resolve-bridge"
+            .. "/BadWords/bridge"
+    end
+end
+
+local function get_fallback_request_file()
+    if platform == "Windows" then
+        return (os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge\\request.lua"
+    elseif platform == "OSX" then
+        return (os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge/request.lua"
+    else
+        return (os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share"))
+            .. "/BadWords/bridge/request.lua"
     end
 end
 
 local mailbox_dir = get_mailbox_dir()
 local request_file = mailbox_dir .. sep .. "request.lua"
+local fallback_request_file = get_fallback_request_file()
 
 local fu = rawget(_G, "fusion") or rawget(_G, "fu")
 if fu == nil then
@@ -1189,8 +1210,15 @@ local last_request_id = ""
 while not quitServer do
     bmd.wait(0.025)
 
+    local active_req_file = nil
     if bmd.fileexists(request_file) then
-        local chunk = loadfile(request_file)
+        active_req_file = request_file
+    elseif fallback_request_file and bmd.fileexists(fallback_request_file) then
+        active_req_file = fallback_request_file
+    end
+
+    if active_req_file then
+        local chunk = loadfile(active_req_file)
         local ok, req = false, nil
         if chunk then
             ok, req = pcall(chunk)
@@ -1227,7 +1255,7 @@ while not quitServer do
                 end
 
                 bridge_respond(req.id, result)
-                pcall(function() os.remove(request_file) end)
+                pcall(function() os.remove(active_req_file) end)
 
                 if control and control.quit then
                     quitServer = true

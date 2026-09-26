@@ -2078,6 +2078,12 @@ fn detect_resolve_info() -> ResolveInfo {
     }
 }
 
+/// Generates the BadWords Bridge Lua script with target_dir templated
+pub fn generate_davinci_bridge(target_dir: &Path) -> String {
+    let clean_target = target_dir.to_string_lossy().replace('\\', "/");
+    BRIDGE_LUA_CODE.replace("__BADWORDS_INSTALL_DIR__", &clean_target)
+}
+
 /// Deploys DaVinci Resolve scripts:
 /// - Studio: installs BadWords.py; removes BadWords Bridge.lua (native external scripting used)
 /// - Free >= 21.1: installs BadWords Bridge.lua; removes BadWords.py (API blocked)
@@ -2097,6 +2103,9 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
             res_info.installed, res_info.edition, res_info.is_21_1_or_newer
         ),
     );
+
+    // Ensure dedicated bridge mailbox directory inside target_dir exists
+    let _ = fs::create_dir_all(target_dir.join("bridge"));
 
     // 1. Clean up legacy wrappers across all candidate paths first
     for r_dir in &resolve_dirs {
@@ -2168,10 +2177,11 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
         }
 
         // Deploy BadWords Bridge.lua (ALWAYS for Free)
+        let bridge_code = generate_davinci_bridge(target_dir);
         for r_dir in &resolve_dirs {
             let _ = fs::create_dir_all(r_dir);
             let bridge_path = r_dir.join("BadWords Bridge.lua");
-            if fs::write(&bridge_path, BRIDGE_LUA_CODE).is_ok() {
+            if fs::write(&bridge_path, &bridge_code).is_ok() {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;

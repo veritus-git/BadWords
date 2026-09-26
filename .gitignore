@@ -13,6 +13,8 @@ badwords_debug.log
 src/saves/
 src/temp/
 src/models/
+bridge/
+src/bridge/
 .fuse_hidden*
 
 # binary executables
