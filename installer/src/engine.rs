@@ -1856,7 +1856,9 @@ const LEGACY_WRAPPER_NAMES: &[&str] = &[
     "BadWords.lua",
 ];
 
-/// Deploys exactly ONE DaVinci Resolve wrapper, prioritizing user-level directories to prevent duplicate menu entries
+const BRIDGE_LUA_CODE: &str = include_str!("../../setupfiles/BadWords Bridge.lua");
+
+/// Deploys DaVinci Resolve scripts (BadWords.py and BadWords Bridge.lua), prioritizing user-level directories
 pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
     let resolve_dirs = resolve_script_dirs();
 
@@ -1870,11 +1872,15 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
         }
     }
 
-    // 2. Write exactly ONE wrapper to the first writable directory (user dir prioritized)
+    // 2. Write BadWords.py and BadWords Bridge.lua to the first writable directory (user dir prioritized)
     let wrapper_code = generate_davinci_wrapper(target_dir);
     for r_dir in &resolve_dirs {
         let _ = fs::create_dir_all(r_dir);
         let wrapper_path = r_dir.join("BadWords.py");
+        let bridge_path = r_dir.join("BadWords Bridge.lua");
+
+        let mut deployed = false;
+
         if fs::write(&wrapper_path, &wrapper_code).is_ok() {
             #[cfg(unix)]
             {
@@ -1882,6 +1888,20 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
                 let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
             }
             emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
+            deployed = true;
+        }
+
+        if fs::write(&bridge_path, BRIDGE_LUA_CODE).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&bridge_path, fs::Permissions::from_mode(0o755));
+            }
+            emit_log(sender, "OK", &format!("DaVinci bridge created at: {}", bridge_path.display()));
+            deployed = true;
+        }
+
+        if deployed {
             return true;
         }
     }
@@ -1900,6 +1920,11 @@ pub fn remove_davinci_wrappers(sender: &EventSender) {
                 let _ = fs::remove_file(&p);
                 emit_log(sender, "OK", &format!("Removed DaVinci wrapper: {}", p.display()));
             }
+        }
+        let b = r_dir.join("BadWords Bridge.lua");
+        if b.exists() {
+            let _ = fs::remove_file(&b);
+            emit_log(sender, "OK", &format!("Removed DaVinci bridge: {}", b.display()));
         }
     }
 }

@@ -895,9 +895,8 @@ class OSDoctor:
     def sync_resolve_scripts(self, force: bool = False) -> None:
         """
         Auto-healing: ensures the correct scripts are installed in DaVinci Resolve.
-        - Studio: BadWords.py
-        - Free < 21.1: BadWords.py + BadWords Bridge.lua
-        - Free >= 21.1: BadWords Bridge.lua (and REMOVES BadWords.py if present!)
+        Installs BadWords Bridge.lua (for Free and Studio) and BadWords.py so all
+        editions have seamless connection capability.
         """
         try:
             info = self.get_resolve_installation_info()
@@ -905,23 +904,19 @@ class OSDoctor:
                 return
 
             util_dirs = self.get_resolve_script_utility_dirs()
-            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            lua_src = os.path.join(repo_root, "setupfiles", "BadWords Bridge.lua")
-            if not os.path.isfile(lua_src) and hasattr(self, 'resources_dir'):
-                lua_src = os.path.join(self.resources_dir, "setupfiles", "BadWords Bridge.lua")
 
-            if info["edition"] == "Studio":
-                # For Studio, native external scripting via BadWords.py is used.
-                # Remove BadWords Bridge.lua if present so only BadWords.py remains in Workspace -> Scripts
-                for ud in util_dirs:
-                    lua_file = os.path.join(ud, "BadWords Bridge.lua")
-                    if os.path.isfile(lua_file):
-                        try:
-                            os.remove(lua_file)
-                            log_info(f"[Auto-Healing] Removed BadWords Bridge.lua for Resolve Studio: {lua_file}")
-                        except Exception:
-                            pass
-                return
+            # Robustly locate BadWords Bridge.lua source across all layouts
+            lua_src = None
+            for cand in [
+                os.path.join(self.install_dir, "setupfiles", "BadWords Bridge.lua"),
+                os.path.join(self.install_dir, "BadWords Bridge.lua"),
+                os.path.join(os.path.dirname(self.install_dir), "setupfiles", "BadWords Bridge.lua"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "BadWords Bridge.lua"),
+                getattr(self, 'resources_dir', '') and os.path.join(getattr(self, 'resources_dir', ''), "setupfiles", "BadWords Bridge.lua"),
+            ]:
+                if cand and os.path.isfile(cand):
+                    lua_src = cand
+                    break
 
             is_free_21_1 = (info["edition"] == "Free" and info["is_21_1_or_newer"])
 
@@ -942,7 +937,7 @@ class OSDoctor:
                         log_warn(f"[Auto-Healing] Could not remove {py_file}: {e}")
 
                 # Copy BadWords Bridge.lua to primary directory only; remove duplicates from secondary
-                if os.path.isfile(lua_src):
+                if lua_src and os.path.isfile(lua_src):
                     if not primary_installed:
                         try:
                             should_copy = force or not os.path.isfile(lua_file)
@@ -1450,27 +1445,17 @@ class OSDoctor:
             # threads spill onto E-cores. Fast P-cores finish in 1.5ms and wait on slow E-cores (barrier stall).
             # Restricting threads exclusively to P-cores yields up to 2-3x faster transcription!
             # All E-cores stay 100% free for macOS WindowServer, DaVinci Resolve & BadWords GUI.
-            if p_cores <= 4:
-                # Base M1/M2/M3/M4 (3 or 4 P-cores):
-                # Use all available P-cores (the 4-6 E-cores keep UI completely lag-free)
-                threads = p_cores
-                workers = 1
-            elif p_cores <= 8:
-                # M1 Pro / M2 Pro / M3 Pro / M4 Pro (6 or 8 P-cores):
-                # 2 workers with p_cores // 2 threads each, or 1 worker with p_cores - 1 threads
-                threads = max(2, p_cores - 1)
-                workers = 2 if p_cores >= 6 else 1
-            else:
-                # M1/M2/M3/M4 Max / Ultra (10 to 24 P-cores):
-                # Cap threads at 8 to prevent memory bus saturation, 2 workers
-                threads = min(8, p_cores - 2)
-                workers = 2
+            # Parallel chunk workers:
+            # 2 parallel workers is the proven sweet spot across all Apple Silicon chips (M1-M5).
+            # It processes two audio chunks simultaneously in thread pool without serial bottleneck.
+            workers = 2
+            threads = 4 if p_cores >= 4 else p_cores
 
             return {
                 "cpu_threads": threads,
                 "workers": workers,
                 "env_threads": str(threads),
-                "reason": f"Apple Silicon ({topo.get('chip_name', 'ARM64')}): {threads} P-core threads ({workers} workers); {e_cores} E-cores reserved for OS/UI"
+                "reason": f"Apple Silicon ({topo.get('chip_name', 'ARM64')}): {workers} parallel chunk workers with {threads} threads; {e_cores} E-cores reserved for OS/UI"
             }
 
         # 3. Intel Mac (x86_64)

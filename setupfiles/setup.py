@@ -1448,10 +1448,29 @@ else:
     is_free_21_1 = (res_info["edition"] == "Free" and res_info["is_21_1_or_newer"])
 
     # Locate BadWords Bridge.lua source
-    bridge_lua_src = os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua")
-    if not os.path.isfile(bridge_lua_src):
-        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        bridge_lua_src = os.path.join(repo_root, "setupfiles", "BadWords Bridge.lua")
+    bridge_lua_src = None
+    for cand in [
+        os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua"),
+        os.path.join(install_dir, "BadWords Bridge.lua"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "BadWords Bridge.lua"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "BadWords Bridge.lua"),
+        os.path.join(os.path.dirname(install_dir), "setupfiles", "BadWords Bridge.lua"),
+    ]:
+        if os.path.isfile(cand):
+            bridge_lua_src = cand
+            break
+
+    if not bridge_lua_src or not os.path.isfile(bridge_lua_src):
+        try:
+            target_tmp = os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua")
+            os.makedirs(os.path.dirname(target_tmp), exist_ok=True)
+            url = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/BadWords%20Bridge.lua"
+            import urllib.request
+            urllib.request.urlretrieve(url, target_tmp)
+            if os.path.isfile(target_tmp):
+                bridge_lua_src = target_tmp
+        except Exception:
+            pass
 
     written = False
     for rd in resolve_dirs:
