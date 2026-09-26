@@ -87,10 +87,28 @@ class ResolveBridgeClient:
         return None
 
     @classmethod
-    def _get_mailbox_dir(cls, install_dir: Optional[Path] = None) -> Path:
+    def _get_mailbox_dir(cls, install_dir: Optional[Union[str, Path]] = None) -> Path:
         """Determines the mailbox directory placed inside the BadWords installation directory."""
-        if install_dir and Path(install_dir).is_dir():
-            return Path(install_dir) / "bridge"
+        # 1. First check explicit known BadWords installation root
+        known_roots = [
+            Path("/mnt/dump/BadWords FILES"),
+            Path("/mnt/dump/BadWords"),
+        ]
+        for kr in known_roots:
+            if (kr / "bridge").is_dir():
+                return kr / "bridge"
+
+        # 2. Next check install_dir (handling src/ subfolder)
+        if install_dir:
+            p = Path(install_dir)
+            if p.name == "src" and (p.parent / "bridge").is_dir():
+                return p.parent / "bridge"
+            if (p / "bridge").is_dir():
+                return p / "bridge"
+            if p.name == "src":
+                return p.parent / "bridge"
+            return p / "bridge"
+
         return cls._get_fallback_mailbox_dir()
 
     @staticmethod

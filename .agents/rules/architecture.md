@@ -1,5 +1,5 @@
 ---
-name: BadWords Architecture & Rules
+trigger: always_on
 description: Master architectural blueprint, directory tree, design patterns, and coding guidelines for the BadWords codebase. AI Agents MUST consult and strictly follow this document.
 ---
 
@@ -154,8 +154,6 @@ The codebase contains essential, battle-tested workarounds for cross-platform an
    - Falls back gracefully to frameless drag handles on Linux / macOS.
 5. **Global Event Filter & Hover Tooltips (`src/gui/dialogs/overlay.py`)**:
    - `GlobalAppFilter` clears focus on outside mouse clicks and debounces tooltip triggers (750ms) to prevent event-queue pileup.
-6. **Path Resolution Dual-Mode (`install_dir` vs Repo)**:
-   - In production, assets are installed flat or in `/icons`, `/layout`. In development, they reside in `assets/icons/`. Always use `osdoc.install_dir` or robust path fallbacks.
 
 ---
 
@@ -173,3 +171,5 @@ When working on this repository, you MUST follow these commandments:
 6. **Self-Verification Protocol**:
    - Always run `python3 -m compileall src` after making modifications.
    - Verify that imports work from root with `QT_QPA_PLATFORM=offscreen`.
+7. **Sync Installation Folder**:
+   - After every code modification in `src/`, always synchronize the corresponding files to the installation directory `/mnt/dump/BadWords FILES/` (excluding runtime files like `settings.json`, `user.json`, `temp/`, `models/`, `saves/`, `__pycache__/`, `venv/`).

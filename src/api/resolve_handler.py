@@ -1044,20 +1044,49 @@ class ResolveHandler:
                     raw_clips = res.get("clips", [])
                     if not raw_clips:
                         return None
-                    source_paths = set(c.get("file_path", "") for c in raw_clips if c.get("file_path"))
+                    # Filter for AUDIO tracks only!
+                    audio_clips = [c for c in raw_clips if c.get("track_type") == "audio" and c.get("file_path")]
+                    if not audio_clips:
+                        # Fallback if no audio tracks found, try video clips
+                        audio_clips = [c for c in raw_clips if c.get("file_path")]
+                    if not audio_clips:
+                        return None
+                    source_paths = set(c.get("file_path", "") for c in audio_clips if c.get("file_path"))
                     if len(source_paths) != 1:
                         return None
                     source_file = next(iter(source_paths))
                     if not os.path.isfile(source_file):
                         return None
                     fps = self.fps or 24.0
+
+                    # Deduplicate parallel audio tracks (e.g. A1 + A2 stereo pair covering same time)
+                    seen_intervals = set()
+                    unique_clips = []
+                    for c in audio_clips:
+                        key = (c.get("start_frame"), c.get("duration"), c.get("left_offset"))
+                        if key in seen_intervals:
+                            continue
+                        seen_intervals.add(key)
+                        unique_clips.append(c)
+
+                    # Sort unique clips by timeline start frame
+                    unique_clips.sort(key=lambda c: c.get("start_frame", 0))
+
+                    # If multiple clips exist, check for timeline overlap:
+                    for i in range(len(unique_clips) - 1):
+                        end_f = int(unique_clips[i].get("start_frame", 0)) + int(unique_clips[i].get("duration", 0))
+                        next_start_f = int(unique_clips[i+1].get("start_frame", 0))
+                        if end_f > next_start_f:
+                            log_info("get_direct_audio_info (bridge): overlapping audio clips on timeline, falling back to render.")
+                            return None
+
                     clips_seconds = [
                         {
                             "src_in_s": float(c.get("left_offset", 0)) / fps,
                             "duration_s": float(c.get("duration", 0)) / fps,
                             "file_path": c.get("file_path", ""),
                         }
-                        for c in raw_clips
+                        for c in unique_clips
                     ]
                     mode = "single_uncut" if len(clips_seconds) == 1 else "single_source_multicopy"
                     return {
@@ -1151,6 +1180,10 @@ class ResolveHandler:
                         duration    = int(item.GetDuration())
                         src_in_f    = int(item.GetLeftOffset())  # offset from media head
 
+                        clip_key = (abs_start, duration, src_in_f, fp)
+                        if any(c["src_in_f"] == src_in_f and (c["src_out_f"] - c["src_in_f"]) == duration and c["tl_start_f"] == (abs_start - tl_start_frame) for c in collected_clips):
+                            continue
+
                         collected_clips.append({
                             "src_in_f":   src_in_f,
                             "src_out_f":  src_in_f + duration,
@@ -1174,6 +1207,14 @@ class ResolveHandler:
 
             # Sort by timeline position
             collected_clips.sort(key=lambda c: c["tl_start_f"])
+
+            # Check for timeline overlap:
+            for i in range(len(collected_clips) - 1):
+                end_f = collected_clips[i]["tl_start_f"] + (collected_clips[i]["src_out_f"] - collected_clips[i]["src_in_f"])
+                next_start_f = collected_clips[i+1]["tl_start_f"]
+                if end_f > next_start_f:
+                    log_info("get_direct_audio_info: overlapping clips detected across tracks — render required.")
+                    return None
 
             # Convert frame counts to seconds for FFmpeg
             clips_seconds = [
@@ -2815,28 +2856,6 @@ class ResolveHandler:
                      f"{ok_count} ok from XML, {corrected} corrected via API"
                      + (f", {missed} unmatched (normal)" if missed else "."))
 
-            # Clean up any uncolored duplicate timeline with the exact same name
-            try:
-                cnt = self.project.GetTimelineCount() or 0
-                for i in range(cnt, 0, -1):
-                    t = self.project.GetTimelineByIndex(i)
-                    if t and t != target_tl and t.GetName() == tl_name:
-                        has_col = False
-                        for tt in ("video", "audio"):
-                            for tr in range(1, (t.GetTrackCount(tt) or 0) + 1):
-                                for it in (t.GetItemListInTrack(tt, tr) or []):
-                                    c = it.GetClipColor()
-                                    if c and c not in ("", "None", "null"):
-                                        has_col = True
-                                        break
-                                if has_col: break
-                            if has_col: break
-                        if not has_col:
-                            self.media_pool.DeleteTimelines([t])
-                            log_info(f"reapply_clip_colors: deleted uncolored duplicate timeline '{tl_name}'")
-            except Exception as del_err:
-                log_error(f"reapply_clip_colors: duplicate cleanup error: {del_err}")
-
         except Exception as e:
             log_error(f"reapply_clip_colors error: {e}")
 
@@ -3001,23 +3020,50 @@ class ResolveHandler:
                 self.resolve.OpenPage("edit")
     def get_timeline_source_files(self, timeline_name, track_indices=None):
         """
-        Returns a list of all unique file paths used by clips on the specified audio tracks.
-        This is purely for inventory purposes and does not fail on offline/FX clips.
+        Returns a list of all unique file paths used by clips on the specified timeline (audio and video).
+        Supports both direct Python API and Bridge IPC backend.
         """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetDirectAudioInfo", {
+                    "timeline_name": timeline_name,
+                    "track_indices": track_indices
+                }, timeout_secs=10.0)
+                if res and res.get("ok"):
+                    clips = res.get("clips", [])
+                    fps = [c.get("file_path") for c in clips if c.get("file_path")]
+                    return list(dict.fromkeys(fps))
+            except Exception as e:
+                log_error(f"get_timeline_source_files (bridge) error: {e}")
+            return []
+
         if not self.project: return []
         
         target_tl = self._resolve_target_timeline(timeline_name)
         if not target_tl: return []
         
-        a_track_count = target_tl.GetTrackCount("audio")
-        if a_track_count == 0: return []
-        
-        check_tracks = track_indices if track_indices else list(range(1, a_track_count + 1))
         source_paths = set()
         
+        # 1. Check audio tracks
+        a_track_count = target_tl.GetTrackCount("audio") or 0
+        check_tracks = track_indices if track_indices else list(range(1, a_track_count + 1))
         for ai in check_tracks:
             if not (1 <= ai <= a_track_count): continue
             items = target_tl.GetItemListInTrack("audio", ai)
+            for item in (items or []):
+                try:
+                    pool_item = item.GetMediaPoolItem()
+                    if pool_item:
+                        fp = pool_item.GetClipProperty("File Path")
+                        if fp:
+                            source_paths.add(fp)
+                except Exception:
+                    pass
+
+        # 2. Check video tracks for original video clips
+        v_track_count = target_tl.GetTrackCount("video") or 0
+        for vi in range(1, v_track_count + 1):
+            items = target_tl.GetItemListInTrack("video", vi)
             for item in (items or []):
                 try:
                     pool_item = item.GetMediaPoolItem()

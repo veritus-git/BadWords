@@ -230,6 +230,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 log_error("Fast Silence: render failed.")
                 return None, None
 
+            self.current_analysis_audio_path = wav_path
+            self.last_audio_path = wav_path
+
             update_progress(25)
 
             # STEP 1: Normalize — prepare audio for silence detection
@@ -586,7 +589,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     "percent": pct,
                     "start": st,
                     "end": en,
-                    "words": chunked_words
+                    "words": chunked_words,
+                    "audio_path": wav_path,
                 })
 
             update_status(self.txt("status_whisper_init"))
@@ -1027,11 +1031,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
     # 4. TIMELINE GENERATION LOGIC (BLOCK-BASED)
     # ==========================================
 
-    def calculate_timeline_structure(self, words_data, fps, settings):
+    def calculate_timeline_structure_with_cuts(self, words_data, fps, settings):
+        """
+        Calculates both the surviving timeline clips and the cut segments.
+        Returns: (surviving_ops, cut_ops)
+        where cut_ops contains segments that are ripple-deleted (silence cuts and color cuts).
+        """
         ops = []
-        if not words_data: return ops
+        cuts = []
+        if not words_data:
+            return ops, cuts
 
-        # Reverted to original logic, just changed default values according to user request
         offset_s = settings.get('offset', 0.133)
         pad_s = settings.get('ui_spin_pad', 0.0)
         snap_max_s = settings.get('snap_max', 0.25)
@@ -1041,7 +1051,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         do_show_inaudible = settings.get('show_inaudible', True)
         do_mark_inaudible = settings.get('mark_inaudible', False)
         do_show_typos = settings.get('show_typos', True)
-        auto_cut_colors = [c.lower() for c in settings.get('auto_cut_colors', [])]
+        raw_auto_cut = settings.get('auto_cut_colors', [])
+        auto_cut_colors = [c.lower() for c in raw_auto_cut] if isinstance(raw_auto_cut, list) else []
 
         def t2f(t): return int(round(t * fps))
         
@@ -1049,18 +1060,13 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         pad_f = int(round(pad_s * fps))
         snap_f = int(round(snap_max_s * fps))
 
-        # FIX #2 (TAIL SILENCE): Determine the true end of the source audio.
-        # words_data[0] may carry a 'meta_global_silence' list whose last element
-        # tells us where the detected audio actually ends. If that is absent, fall
-        # back to the 'end' field of the last word (works for FAST_SILENCE_TRACK
-        # which always spans the full timeline duration).
         raw_silence = words_data[0].get('meta_global_silence', None)
         _audio_end_s = words_data[-1].get('end', 0.0)
         if raw_silence:
             _audio_end_s = max(_audio_end_s, raw_silence[-1]['e'])
         audio_end_f = t2f(_audio_end_s)
 
-        # ── CAP to selected track duration (prevents long tail from other tracks) ──
+        # ── CAP to selected track duration ──
         audio_end_cap_s = settings.get("audio_end_cap_s")
         if audio_end_cap_s:
             cap_f = t2f(audio_end_cap_s)
@@ -1068,16 +1074,11 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             if cap_f < audio_end_f:
                 log_info(f"calculate_timeline_structure: capping audio_end_f {audio_end_f} → {cap_f}.")
                 audio_end_f = cap_f
-            else:
-                log_info(f"calculate_timeline_structure: cap ({cap_f}) >= audio_end_f ({audio_end_f}) — cap has no effect, check offset calculation!")
-            # Also trim raw_silence to not extend beyond cap
             if raw_silence:
                 raw_silence = [s for s in raw_silence if s['s'] < audio_end_cap_s]
-                # Clamp end of last partial silence block
                 if raw_silence and raw_silence[-1]['e'] > audio_end_cap_s:
                     raw_silence[-1] = dict(raw_silence[-1])
                     raw_silence[-1]['e'] = audio_end_cap_s
-            # Trim words_data entries whose start is beyond the cap
             words_data = [w for w in words_data if w.get('start', 0.0) < audio_end_cap_s]
 
         silence_blocks_for_snap = [w for w in words_data if w.get('type') == 'silence']
@@ -1089,15 +1090,12 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         for w in words_data:
             if w.get('type') == 'silence': continue
             is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
-            
-            # Fully ignore inaudible segments during timeline assembly
-            # if the first checkbox (show_inaudible) is disabled.
             if is_inaudible and not do_show_inaudible:
                 continue
-                
             processed_words.append(w)
 
-        if not processed_words: return []
+        if not processed_words:
+            return [], []
 
         for w in processed_words:
             status = w.get('status', 'normal')
@@ -1127,8 +1125,6 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             
             if i < len(chunks) - 1:
                 next_chunk_start = chunks[i+1]['words'][0]['start']
-                # We ADD offset_f because Whisper timestamps are typically early,
-                # and a positive offset_f shifts the cut later to align with real speech.
                 cut_f = t2f(next_chunk_start) + offset_f
                 
                 for s in silence_blocks_for_snap:
@@ -1144,9 +1140,6 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 if cut_f < block_start_f: cut_f = block_start_f + 1
                 block_end_f = cut_f
             else:
-                # FIX #2 (TAIL SILENCE): Last block must extend to the actual end
-                # of the source audio, not just the last word's timestamp.
-                # We NEVER exceed audio_end_f to avoid creating phantom fragments at the end.
                 raw_block_end = max(audio_end_f, t2f(chunk_end_w)) + pad_f
                 block_end_f = min(raw_block_end, audio_end_f)
             
@@ -1156,6 +1149,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 'type': chunk['status']
             })
             current_time_f = block_end_f
+
+        cut_ops = []
 
         if do_silence_cut or do_silence_mark:
             final_ops = []
@@ -1202,6 +1197,18 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 final_ops.extend(sub_segments)
             ops_raw = final_ops
 
+            if do_silence_cut:
+                # Record silence cuts for timeline preview visualization
+                for s_s, s_e in s_ranges:
+                    if s_e - s_s >= 2:
+                        cut_ops.append({
+                            's': s_s,
+                            'e': s_e,
+                            'start_s': s_s / fps,
+                            'end_s': s_e / fps,
+                            'cut_type': 'silence_cut'
+                        })
+
         ops_raw.sort(key=lambda x: x['s'])
         
         merged_ops = []
@@ -1216,11 +1223,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             merged_ops.append(curr)
             
         # Write exact final anchors back into EVERY source word.
-        # This allows the GUI to flawlessly jump to any word's start, even if it's in the middle of a clip,
-        # by predicting exactly where the cut would be if that word was a block start.
         for w in processed_words:
             w_start_f = t2f(w.get('start', 0.0)) + offset_f
-            
             for s in silence_blocks_for_snap:
                 s_start_f = t2f(s['start'])
                 s_end_f = t2f(s['end'])
@@ -1230,33 +1234,64 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 if abs(w_start_f - s_end_f) <= snap_f:
                     w_start_f = s_end_f
                     break
-                    
             if w_start_f < 0:
                 w_start_f = 0
             w['anchor_start'] = w_start_f / fps
-            
-        def get_color_for_type(op_type):
-            COLOR_MAP = {
-                "bad":          "Violet",
-                "repeat":       "Navy",
-                "typo":         "Olive",
-                "inaudible":    "Chocolate",
-                "silence_mark": "Tan"
-            }
-            c = COLOR_MAP.get(op_type)
-            if not c and str(op_type).startswith("custom_"):
-                c = op_type.split("_")[1]
-            return c.lower() if c else None
+
+        def normalize_color_aliases(name: str) -> set:
+            s = str(name).lower().strip()
+            if s in ("violet", "red", "bad"):
+                return {"violet", "red", "bad"}
+            if s in ("navy", "blue", "repeat"):
+                return {"navy", "blue", "repeat"}
+            if s in ("olive", "green", "typo"):
+                return {"olive", "green", "typo"}
+            if s in ("chocolate", "inaudible"):
+                return {"chocolate", "inaudible"}
+            if s in ("tan", "silence_mark", "silence"):
+                return {"tan", "silence_mark", "silence"}
+            if s.startswith("custom_"):
+                c = s.split("_", 1)[1].lower()
+                return {s, c}
+            return {s}
+
+        auto_cut_set = set()
+        for c in auto_cut_colors:
+            auto_cut_set.update(normalize_color_aliases(c))
 
         final_result = []
         for op in merged_ops:
-            op_c = get_color_for_type(op['type'])
-            if op_c and op_c in auto_cut_colors:
+            op_aliases = normalize_color_aliases(op['type'])
+            if op_aliases & auto_cut_set:
+                # Op is cut! Record it in cut_ops
+                primary_name = "red" if ("bad" in op_aliases or "red" in op_aliases or "violet" in op_aliases) else (
+                    "blue" if ("repeat" in op_aliases or "blue" in op_aliases or "navy" in op_aliases) else (
+                        "green" if ("typo" in op_aliases or "green" in op_aliases or "olive" in op_aliases) else op['type']
+                    )
+                )
+                cut_ops.append({
+                    's': op['s'],
+                    'e': op['e'],
+                    'start_s': op['s'] / fps,
+                    'end_s': op['e'] / fps,
+                    'cut_type': f"{primary_name}_cut"
+                })
                 continue
-            if op['e'] - op['s'] < 2: continue 
+
+            if op['e'] - op['s'] < 2:
+                continue
+
+            op['start_s'] = op['s'] / fps
+            op['end_s'] = op['e'] / fps
             final_result.append(op)
             
-        return final_result
+        cut_ops.sort(key=lambda x: x['s'])
+        return final_result, cut_ops
+
+    def calculate_timeline_structure(self, words_data, fps, settings):
+        """Calculates surviving timeline operations for assembly (legacy facade)."""
+        ops, _ = self.calculate_timeline_structure_with_cuts(words_data, fps, settings)
+        return ops
 
     # ==========================================
     # 5. PROJECT & DATA MANAGEMENT (Data Controller)
