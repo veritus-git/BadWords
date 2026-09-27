@@ -332,16 +332,34 @@ local function bridge_write(key, value)
 end
 
 local function bridge_ack(id)
-    bridge_write("Global.BadWordsBridge.Ack", id)
+    if not fu then return end
+    for _ = 1, 5 do
+        local ok = pcall(function()
+            fu:SetPrefs("Global.BadWordsBridge.Ack", id)
+            fu:SavePrefs()
+        end)
+        if ok then return end
+        bmd.wait(0.05)
+    end
 end
 
 local function bridge_respond(id, body_table)
+    if not fu then return end
     local body_json = json.encode(body_table or {})
     -- Escape non-ASCII bytes as \\uE0xx markers for ASCII safety
     local safe = body_json:gsub("[\128-\255]", function(c)
         return string.format("\\u%04x", 0xE000 + c:byte())
     end)
-    bridge_write("Global.BadWordsBridge.Response", id .. ":" .. base64_encode(safe))
+    local resp_str = id .. ":" .. base64_encode(safe)
+    for _ = 1, 5 do
+        local ok = pcall(function()
+            fu:SetPrefs("Global.BadWordsBridge.Ack", id)
+            fu:SetPrefs("Global.BadWordsBridge.Response", resp_str)
+            fu:SavePrefs()
+        end)
+        if ok then return end
+        bmd.wait(0.05)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -349,6 +367,26 @@ end
 -- ---------------------------------------------------------------------------
 local handlers = rawget(_G, "BadWordsBridgeHandlers") or {}
 _G.BadWordsBridgeHandlers = handlers
+
+local function resolve_and_activate_timeline(proj, timeline_name)
+    if not proj then return nil end
+    local cur = proj:GetCurrentTimeline()
+    if not timeline_name or timeline_name == "" then
+        return cur
+    end
+    if cur and cur:GetName() == timeline_name then
+        return cur
+    end
+    local count = proj:GetTimelineCount() or 0
+    for i = 1, count do
+        local t = proj:GetTimelineByIndex(i)
+        if t and t:GetName() == timeline_name then
+            pcall(function() proj:SetCurrentTimeline(t) end)
+            return t
+        end
+    end
+    return cur
+end
 
 handlers.Ping = function()
     return { ok = true, message = "Pong", platform = platform }
@@ -382,7 +420,16 @@ handlers.GetTimelineInfo = function(req)
         current_tl_name = current_tl:GetName() or ""
         fps = tonumber(current_tl:GetSetting("timelineFrameRate")) or 24.0
         start_frame = tonumber(current_tl:GetStartFrame()) or 0
+    else
+        pcall(function()
+            fps = tonumber(proj:GetSetting("timelineFrameRate")) or 24.0
+        end)
     end
+
+    local prod_name = ""
+    local ver_str = ""
+    pcall(function() prod_name = res_app:GetProductName() or "" end)
+    pcall(function() ver_str = res_app:GetVersionString() or "" end)
 
     return {
         ok = true,
@@ -390,7 +437,9 @@ handlers.GetTimelineInfo = function(req)
         current_timeline = current_tl_name,
         timelines = timelines,
         fps = fps,
-        start_frame = start_frame
+        start_frame = start_frame,
+        product_name = prod_name,
+        version = ver_str
     }
 end
 
@@ -400,18 +449,7 @@ handlers.GetAudioTracks = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = proj:GetCurrentTimeline()
-    if req and req.timeline_name and req.timeline_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == req.timeline_name then
-                tl = t
-                break
-            end
-        end
-    end
-
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local track_count = tl:GetTrackCount("audio") or 0
@@ -430,18 +468,7 @@ handlers.GetTimelineTracks = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = proj:GetCurrentTimeline()
-    if req and req.timeline_name and req.timeline_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == req.timeline_name then
-                tl = t
-                break
-            end
-        end
-    end
-
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local a_count = tl:GetTrackCount("audio") or 0
@@ -467,18 +494,7 @@ handlers.GetDirectAudioInfo = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = proj:GetCurrentTimeline()
-    if req and req.timeline_name and req.timeline_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == req.timeline_name then
-                tl = t
-                break
-            end
-        end
-    end
-
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local track_indices = req and req.track_indices
@@ -495,8 +511,8 @@ handlers.GetDirectAudioInfo = function(req)
             for _, item in ipairs(items) do
                 local clip_name = item:GetName() or ""
                 local start_f = item:GetStart()
-                local end_f = item:GetEnd()
                 local dur_f = item:GetDuration()
+                local end_f = (start_f and dur_f) and (start_f + dur_f) or (item:GetEnd() or 0)
                 local left_offset = 0
                 pcall(function() left_offset = item:GetLeftOffset() or 0 end)
                 local file_path = ""
@@ -687,18 +703,7 @@ handlers.ExportTimelineDrt = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = proj:GetCurrentTimeline()
-    if req and req.timeline_name and req.timeline_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == req.timeline_name then
-                tl = t
-                break
-            end
-        end
-    end
-
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
     local out_path = req and req.output_path
     if not out_path or out_path == "" then return { error = "output_path missing" } end
@@ -716,18 +721,7 @@ handlers.ExportTimelineXml = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = proj:GetCurrentTimeline()
-    if req and req.timeline_name and req.timeline_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == req.timeline_name then
-                tl = t
-                break
-            end
-        end
-    end
-
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
     local out_path = req and req.output_path
     if not out_path or out_path == "" then return { error = "output_path missing" } end
@@ -892,7 +886,9 @@ handlers.SetCurrentTimeline = function(req)
 
     local cur = proj:GetCurrentTimeline()
     if cur and cur:GetName() == tl_name then
-        return { ok = true, timeline_name = tl_name }
+        local sf = tonumber(cur:GetStartFrame()) or 0
+        local fps = tonumber(cur:GetSetting("timelineFrameRate")) or 24.0
+        return { ok = true, timeline_name = tl_name, start_frame = sf, fps = fps }
     end
 
     local count = proj:GetTimelineCount() or 0
@@ -901,7 +897,9 @@ handlers.SetCurrentTimeline = function(req)
         if tl and tl:GetName() == tl_name then
             local ok = pcall(function() proj:SetCurrentTimeline(tl) end)
             if ok then
-                return { ok = true, timeline_name = tl_name }
+                local sf = tonumber(tl:GetStartFrame()) or 0
+                local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
+                return { ok = true, timeline_name = tl_name, start_frame = sf, fps = fps }
             else
                 return { error = "SetCurrentTimeline failed" }
             end
@@ -1154,10 +1152,16 @@ handlers.DeleteClipsByColor = function(req)
     for _, tt in ipairs({"video", "audio"}) do
         local tc = target_tl:GetTrackCount(tt) or 0
         for i = 1, tc do
+            local track_color = ""
+            pcall(function() track_color = target_tl:GetTrackColor(tt, i) or "" end)
+            if not track_color or track_color == "" then
+                track_color = (tt == "video") and "Blue" or "Green"
+            end
             local items = target_tl:GetItemListInTrack(tt, i) or {}
             for _, item in ipairs(items) do
                 local c = item:GetClipColor()
-                if c and string.lower(c) == string.lower(color_name) then
+                local actual_color = (c and c ~= "") and c or track_color
+                if actual_color and string.lower(actual_color) == string.lower(color_name) then
                     table.insert(clips_to_delete, item)
                 end
             end
@@ -1180,18 +1184,7 @@ handlers.GetTimelineStructure = function(req)
     local pm = res_app:GetProjectManager()
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
-    local tl_name = req and req.timeline_name
-    local tl = proj:GetCurrentTimeline()
-    if tl_name and tl_name ~= "" then
-        local count = proj:GetTimelineCount() or 0
-        for i = 1, count do
-            local t = proj:GetTimelineByIndex(i)
-            if t and t:GetName() == tl_name then
-                tl = t
-                break
-            end
-        end
-    end
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
@@ -1257,7 +1250,6 @@ while not quitServer do
                 bmd.wait(0.025)
             else
                 last_request_id = req.id
-                bridge_ack(req.id)
 
                 local data = json.decode(req.body)
                 local result = nil

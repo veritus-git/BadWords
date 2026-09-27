@@ -64,7 +64,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 "-show_entries", "stream=r_frame_rate",
                 "-of", "default=noprint_wrappers=1:nokey=1", file_path
             ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3)
+            sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, 'get_subprocess_kwargs') else {}
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
             if res.returncode == 0 and res.stdout.strip():
                 val = res.stdout.strip()
                 if "/" in val:
@@ -565,7 +566,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # Execute Faster-Whisper via Runner with RESOLVED parameters
             # Chunking is now always enabled by default if len(islands) > 1
             
-            accumulated_raw_words = []
+            accumulated_chunks = {}
             _silence_prefs = self.os_doc.get_all_prefs()
 
             def on_whisper_chunk(chunk_data):
@@ -577,11 +578,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 st = chunk_data.get("start", 0.0)
                 en = chunk_data.get("end", 0.0)
                 
+                chunk_words = []
                 for seg in chunk_data.get("segments", []):
                     for w in seg.get("words", []):
-                        accumulated_raw_words.append(w)
+                        chunk_words.append(w)
+                accumulated_chunks[c_idx] = chunk_words
+
+                all_words = []
+                for idx in sorted(accumulated_chunks.keys()):
+                    all_words.extend(accumulated_chunks[idx])
                 
-                chunked_words = self._chunk_raw_words(accumulated_raw_words, filler_words, _silence_prefs, quick=True)
+                chunked_words = self._chunk_raw_words(all_words, filler_words, _silence_prefs, quick=True)
                 
                 callback_chunk({
                     "idx": c_idx,

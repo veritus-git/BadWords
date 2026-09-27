@@ -81,6 +81,7 @@ class TopStatusIsland(QWidget):
         self._pos_anim.setDuration(300)
         self._pos_anim.setEasingCurve(QEasingCurve.OutCubic)
         self._pos_anim.valueChanged.connect(self._on_pos_anim_step)
+        self._pos_anim.finished.connect(self._on_pos_anim_finished)
 
         # Auto-dismiss timer for completion state
         self._dismiss_timer = QTimer(self)
@@ -119,6 +120,8 @@ class TopStatusIsland(QWidget):
 
     def _ensure_z_order(self):
         """Ensures the island stays above content views but strictly behind/under the title bar."""
+        if not self.isVisible():
+            return
         self.raise_()
         tb = getattr(self.main_window, '_title_bar', None)
         if tb and tb.parent() == self.parent():
@@ -130,6 +133,8 @@ class TopStatusIsland(QWidget):
             return
         pw = float(self.parent_frame.width())
         x = (pw - self._current_width) / 2.0
+        if self._state in ("working", "completed") and self._pos_anim.state() != QVariantAnimation.Running:
+            self._pos_y = self._get_titlebar_bottom_y()
         self.move(int(x), int(self._pos_y))
 
     def eventFilter(self, watched, event):
@@ -197,6 +202,7 @@ class TopStatusIsland(QWidget):
     def update_percent(self, percent: int):
         """Minimalist progress update: updates the percentage badge without morphing width."""
         self._percent_text = f"{percent}%" if percent >= 0 else ""
+        self._ensure_z_order()
         self.update()
 
     def update_chunk_info(self, c_idx: int = 0, tot: int = -1, pct: int = -1):
@@ -207,6 +213,7 @@ class TopStatusIsland(QWidget):
         """Update the main title text, stripping any redundant trailing percentage."""
         cleaned = re.sub(r'[\s:•–-]*\d+%\s*$', '', text).strip()
         self._title_text = cleaned
+        self._ensure_z_order()
         new_w = max(float(config.S(215)), self._calculate_target_width())
         if abs(new_w - self._current_width) > 15.0:
             self._animate_to_target_width()
@@ -223,6 +230,7 @@ class TopStatusIsland(QWidget):
             self.main_window.txt("msg_transcription_complete") if hasattr(self.main_window, 'txt') else "Complete"
         )
         self._percent_text = ""
+        self._ensure_z_order()
         new_w = max(float(config.S(215)), self._calculate_target_width())
         self._target_width = new_w
         self._current_width = new_w
@@ -249,6 +257,14 @@ class TopStatusIsland(QWidget):
         self.update()
         self._dismiss_timer.start(4000)
 
+    def _on_pos_anim_finished(self):
+        target_y = self._get_titlebar_bottom_y()
+        if self._pos_y < target_y:
+            self.hide()
+            self._state = "idle"
+            if self._spinner_timer.isActive():
+                self._spinner_timer.stop()
+
     def slide_out(self):
         """Smoothly slide the island back up behind the title bar."""
         self._ensure_z_order()
@@ -258,14 +274,6 @@ class TopStatusIsland(QWidget):
         self._pos_anim.setStartValue(self._pos_y)
         self._pos_anim.setEndValue(target_y)
         self._pos_anim.setEasingCurve(QEasingCurve.InCubic)
-
-        def on_finished():
-            self.hide()
-            self._state = "idle"
-            if self._spinner_timer.isActive():
-                self._spinner_timer.stop()
-
-        self._pos_anim.finished.connect(on_finished)
         self._pos_anim.start()
 
     # --- Vector Rendering (QPainter) ---

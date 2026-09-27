@@ -289,6 +289,64 @@ except Exception as e:
         snapshots_dir = os.path.join(model_folder, "snapshots")
         return os.path.exists(snapshots_dir) and len(os.listdir(snapshots_dir)) > 0
 
+    def _get_cuda_preinit_code(self) -> str:
+        """
+        Standalone pre-init script snippet injected into faster-whisper runner scripts.
+        On Windows, discovers nvidia-cublas/cudnn/cuda_nvrtc bin folders, adds them via
+        os.add_dll_directory, prepends to PATH, and preloads cublas/cudnn DLLs via ctypes.CDLL.
+        On Linux, discovers nvidia lib directories and adds them to LD_LIBRARY_PATH.
+        """
+        return '''
+# --- NVIDIA CUDA / cuBLAS / cuDNN Dynamic DLL Injection ---
+import sys, os
+if sys.platform.startswith("win"):
+    _cuda_dirs = []
+    _sp_candidates = [
+        os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages"),
+        os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Lib", "site-packages"),
+    ] + [p for p in sys.path if "site-packages" in p]
+    for _sp in _sp_candidates:
+        _nv = os.path.join(_sp, "nvidia")
+        if os.path.isdir(_nv):
+            for _sub in ["cublas", "cudnn", "cuda_nvrtc", "cuda_runtime"]:
+                _b = os.path.join(_nv, _sub, "bin")
+                if os.path.isdir(_b) and _b not in _cuda_dirs:
+                    _cuda_dirs.append(os.path.abspath(_b))
+    if _cuda_dirs:
+        os.environ["PATH"] = os.pathsep.join(_cuda_dirs) + os.pathsep + os.environ.get("PATH", "")
+        if hasattr(os, "add_dll_directory"):
+            for _d in _cuda_dirs:
+                try:
+                    os.add_dll_directory(_d)
+                except Exception:
+                    pass
+        import ctypes
+        for _d in _cuda_dirs:
+            try:
+                for _f in os.listdir(_d):
+                    if _f.lower().endswith(".dll"):
+                        try:
+                            ctypes.CDLL(os.path.join(_d, _f))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+elif sys.platform.startswith("linux"):
+    _sp_candidates = [p for p in sys.path if "site-packages" in p]
+    _so_dirs = []
+    for _sp in _sp_candidates:
+        _nv = os.path.join(_sp, "nvidia")
+        if os.path.isdir(_nv):
+            for _root, _dirs, _files in os.walk(_nv):
+                if "lib" in _dirs:
+                    _p = os.path.abspath(os.path.join(_root, "lib"))
+                    if _p not in _so_dirs:
+                        _so_dirs.append(_p)
+    if _so_dirs:
+        _cur = os.environ.get("LD_LIBRARY_PATH", "")
+        os.environ["LD_LIBRARY_PATH"] = ":".join(_so_dirs) + ((":" + _cur) if _cur else "")
+'''
+
     def run_whisper(self, audio_path, model, lang, verbatim, device_mode, compute_type,
                     filler_words_list=None, initial_prompt=None, progress_callback=None,
                     islands=None, chunk_callback=None):
@@ -334,29 +392,32 @@ except Exception as e:
 
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
-        env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-        env["KMP_BLOCKTIME"] = "0"
-        env["OMP_NUM_THREADS"] = optimal_cpu_threads
-        env["OMP_WAIT_POLICY"] = "PASSIVE"
-        env["OPENBLAS_NUM_THREADS"] = optimal_cpu_threads
-        env["MKL_NUM_THREADS"] = optimal_cpu_threads
-        env["NUMEXPR_NUM_THREADS"] = optimal_cpu_threads
-        env["VECLIB_MAXIMUM_THREADS"] = optimal_cpu_threads
+        env["OMP_NUM_THREADS"] = str(optimal_cpu_threads)
+        env["MKL_NUM_THREADS"] = str(optimal_cpu_threads)
+        env["OPENBLAS_NUM_THREADS"] = str(optimal_cpu_threads)
+        env["NUMEXPR_NUM_THREADS"] = str(optimal_cpu_threads)
+        if self.os_doc.is_mac:
+            env["VECLIB_MAXIMUM_THREADS"] = str(optimal_cpu_threads)
         
-        if self.os_doc.is_linux and fw_device == "cuda":
-            nvidia_libs_paths = []
-            nvidia_base = os.path.join(self.libs_dir, "nvidia")
-            if os.path.exists(nvidia_base):
-                log_info(f"Scanning for NVIDIA libs in: {nvidia_base}")
-                for root, dirs, files in os.walk(nvidia_base):
-                    if 'lib' in dirs:
-                        lib_path = os.path.abspath(os.path.join(root, 'lib'))
-                        if lib_path not in nvidia_libs_paths:
-                            nvidia_libs_paths.append(lib_path)
-            if nvidia_libs_paths:
-                current_ld = env.get("LD_LIBRARY_PATH", "")
-                new_ld_paths = ":".join(nvidia_libs_paths)
-                env["LD_LIBRARY_PATH"] = f"{new_ld_paths}:{current_ld}"
+        if fw_device == "cuda":
+            if self.os_doc.is_win:
+                cuda_bins = self.os_doc.setup_cuda_dll_paths()
+                if cuda_bins:
+                    env["PATH"] = os.pathsep.join(cuda_bins) + os.pathsep + env.get("PATH", "")
+            elif self.os_doc.is_linux:
+                nvidia_libs_paths = []
+                nvidia_base = os.path.join(self.libs_dir, "nvidia")
+                if os.path.exists(nvidia_base):
+                    log_info(f"Scanning for NVIDIA libs in: {nvidia_base}")
+                    for root, dirs, files in os.walk(nvidia_base):
+                        if 'lib' in dirs:
+                            lib_path = os.path.abspath(os.path.join(root, 'lib'))
+                            if lib_path not in nvidia_libs_paths:
+                                nvidia_libs_paths.append(lib_path)
+                if nvidia_libs_paths:
+                    current_ld = env.get("LD_LIBRARY_PATH", "")
+                    new_ld_paths = ":".join(nvidia_libs_paths)
+                    env["LD_LIBRARY_PATH"] = f"{new_ld_paths}:{current_ld}"
 
         # ── Chunked mode: in-memory NumPy slicing ────────────────────────────
         use_chunking = islands is not None and len(islands) > 1
@@ -370,24 +431,24 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["KMP_BLOCKTIME"] = "0"
-os.environ["OMP_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
-os.environ["OPENBLAS_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["MKL_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["NUMEXPR_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["OMP_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+os.environ["MKL_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+os.environ["OPENBLAS_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+os.environ["NUMEXPR_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+{f'os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(str(optimal_cpu_threads))}' if self.os_doc.is_mac else ""}
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
+
+{self._get_cuda_preinit_code()}
+
 try:
     from faster_whisper import WhisperModel
     from faster_whisper.audio import decode_audio
     
     RAW_ISLANDS = {repr(islands)}
-    MAX_CLUSTER_DUR = 22.0
-    MIN_CLUSTER_DUR = 8.0
+    MAX_CLUSTER_DUR = 12.0
+    MIN_CLUSTER_DUR = 4.0
     MIN_SAFE_GAP = 0.5
     ISLANDS = []
     
@@ -395,10 +456,11 @@ try:
         i = 0
         while i < len(RAW_ISLANDS):
             c_start = RAW_ISLANDS[i][0]
+            curr_max_dur = 6.0 if i == 0 else MAX_CLUSTER_DUR
             
             J = []
             for j in range(i, len(RAW_ISLANDS)):
-                if RAW_ISLANDS[j][1] - c_start <= MAX_CLUSTER_DUR:
+                if RAW_ISLANDS[j][1] - c_start <= curr_max_dur:
                     J.append(j)
                 else:
                     break
@@ -459,6 +521,8 @@ try:
     progress_lock = threading.Lock()
     chunk_progress = {{i: 0.0 for i in range(total_chunks)}}
     total_audio_duration = sum(e - s for s, e in ISLANDS) if total_chunks > 0 else 1.0
+    stream_seq = [0]
+    is_sequential = (workers == 1 or target_device != "cpu")
     
     def process_chunk(idx, start_t, end_t):
         s_idx = int(start_t * 16000)
@@ -507,6 +571,21 @@ try:
                         "probability": getattr(w, 'probability', 1.0)
                     }})
             segs.append(seg_obj)
+
+            if is_sequential:
+                s_idx = stream_seq[0]
+                stream_seq[0] += 1
+                chunk_payload = {{
+                    "idx": s_idx,
+                    "total": -1,
+                    "start": seg_obj["start"],
+                    "end":   seg_obj["end"],
+                    "segments": [seg_obj],
+                    "percent": percent
+                }}
+                print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
+                if target_device == "cuda":
+                    time.sleep(0.015)
         
         with progress_lock:
             chunk_progress[idx] = end_t - start_t
@@ -518,23 +597,12 @@ try:
 
     # GPU processes sequentially (fastest due to zero threading overhead, yields 0:35)
     # CPU processes in parallel (scales with cores, yields 3:27 or better)
-    if workers == 1 or target_device != "cpu":
+    if is_sequential:
         for i, (s, e) in enumerate(ISLANDS):
             c_idx, c_segs = process_chunk(i, s, e)
             results_dict[c_idx] = c_segs
             completed += 1
-            chunk_payload = {{
-                "idx": c_idx,
-                "total": total_chunks,
-                "start": s,
-                "end": e,
-                "segments": c_segs,
-                "percent": int((completed)/total_chunks*100)
-            }}
-            print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
             print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
-            if target_device == "cuda":
-                time.sleep(0.035)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {{executor.submit(process_chunk, i, s, e): i for i, (s, e) in enumerate(ISLANDS)}}
@@ -545,7 +613,8 @@ try:
                 results_dict[c_idx] = c_segs
                 ready_chunks[c_idx] = c_segs
                 completed += 1
-                print(f"CHUNK_PROGRESS: {{int((completed)/total_chunks*100)}}", flush=True)
+                pct = int((completed)/total_chunks*100)
+                print(f"CHUNK_PROGRESS: {{pct}}", flush=True)
                 while next_to_stream in ready_chunks:
                     st_s, st_e = ISLANDS[next_to_stream]
                     chunk_payload = {{
@@ -554,7 +623,7 @@ try:
                         "start": st_s,
                         "end": st_e,
                         "segments": ready_chunks[next_to_stream],
-                        "percent": int((completed)/total_chunks*100)
+                        "percent": pct
                     }}
                     print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
                     next_to_stream += 1
@@ -588,18 +657,17 @@ os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["KMP_BLOCKTIME"] = "0"
-os.environ["OMP_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
-os.environ["OPENBLAS_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["MKL_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["NUMEXPR_NUM_THREADS"] = {repr(optimal_cpu_threads)}
-os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(optimal_cpu_threads)}
+os.environ["OMP_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+os.environ["MKL_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+os.environ["OPENBLAS_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+os.environ["NUMEXPR_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
+{f'os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(str(optimal_cpu_threads))}' if self.os_doc.is_mac else ""}
 
 libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
+
+{self._get_cuda_preinit_code()}
 
 try:
     # --- FASTER-WHISPER NATIVE INTEGRATION ---

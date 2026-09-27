@@ -26,6 +26,26 @@ os.environ.setdefault("MKL_NUM_THREADS", "2")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
 os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
 
+# --- Windows Subprocess Window Suppression (Guarantees zero console/window flashes) ---
+if sys.platform == "win32" or os.name == "nt":
+    try:
+        import subprocess
+        _orig_popen_init = subprocess.Popen.__init__
+        def _safe_popen_init(self, *args, **kwargs):
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            si = kwargs.get("startupinfo")
+            if si is None:
+                si = subprocess.STARTUPINFO()
+            si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
+            si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+            kwargs["startupinfo"] = si
+            if "stdin" not in kwargs or kwargs["stdin"] is None:
+                kwargs["stdin"] = subprocess.DEVNULL
+            return _orig_popen_init(self, *args, **kwargs)
+        subprocess.Popen.__init__ = _safe_popen_init
+    except Exception:
+        pass
+
 # --- Hotfix for older Python versions (Resolve 20 + Python < 3.9) ---
 if sys.version_info < (3, 9):
     try:

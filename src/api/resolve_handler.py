@@ -54,14 +54,14 @@ class ResolveHandler:
         self.bridge_timeline_name = ""
         self.bridge_start_frame = 0
         self.bridge_timelines = []
+        self._tracks_cache = {}
 
         # Dedicated async queue and worker to execute UI playhead/timeline requests without blocking Qt GUI
         self._async_queue = queue.Queue()
         self._async_thread = threading.Thread(target=self._async_worker, daemon=True, name="ResolveAsyncWorker")
         self._async_thread.start()
         
-        # Attempt to load script module
-        self._load_resolve_script_module()
+        # Connect to Resolve or Bridge
         self._connect()
 
     def _load_resolve_script_module(self):
@@ -79,13 +79,14 @@ class ResolveHandler:
     def _connect(self, silent: bool = False):
         """Establishes connection to the running Resolve instance."""
         try:
-            # 1. If DaVinciResolveScript was imported, request Resolve app object
-            if hasattr(self, 'bmd') and self.bmd:
-                try: self.resolve = self.bmd.scriptapp("Resolve")
-                except Exception: pass
-            
-            # 2. When run via Workspace -> Scripts in DaVinci Free/Studio, Resolve injects
-            #    'resolve' and/or 'bmd' directly into __main__ or builtins.
+            # Fast check: If Resolve is not running on the system, skip COM and Bridge entirely
+            if hasattr(self, 'os_doc') and self.os_doc and hasattr(self.os_doc, 'is_process_running'):
+                if not self.os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
+                    self.backend = None
+                    return
+
+            # 1. Embedded connection: When run via Workspace -> Scripts in DaVinci Free/Studio,
+            #    Resolve injects 'resolve' and/or 'bmd' directly into __main__ or builtins.
             if not self.resolve:
                 import __main__
                 if hasattr(__main__, "resolve") and __main__.resolve:
@@ -102,19 +103,37 @@ class ResolveHandler:
                     try: self.resolve = builtins.bmd.scriptapp("Resolve")
                     except Exception: pass
 
+            # 2. External scripting: ONLY attempt scriptapp("Resolve") on DaVinci Resolve Studio.
+            #    CRITICAL: DaVinci Resolve Free explicitly blocks external scripting.
+            #    Calling bmd.scriptapp("Resolve") on Free creates a temporary Win32 window (white bar
+            #    with BadWords icon) and hangs in fusionscript.dll holding the GIL, freezing the Qt UI!
+            #    Therefore, if edition != 'Studio', NEVER attempt external scripting. Connect ONLY via Bridge.
+            if not self.resolve:
+                edition_info = self.get_resolve_edition_info()
+                edition = edition_info.get("edition", "Unknown")
+                if edition == "Studio":
+                    if not hasattr(self, 'bmd') or not self.bmd:
+                        self._load_resolve_script_module()
+                    if hasattr(self, 'bmd') and self.bmd:
+                        try: self.resolve = self.bmd.scriptapp("Resolve")
+                        except Exception: pass
+
             if self.resolve:
                 self.project_manager = self.resolve.GetProjectManager()
-                self.project = self.project_manager.GetCurrentProject()
+                self.project = self.project_manager.GetCurrentProject() if self.project_manager else None
                 if self.project:
                     self.backend = 'native'
                     self.media_pool = self.project.GetMediaPool()
                     self.timeline = self.project.GetCurrentTimeline()
-                    self.fps = self.timeline.GetSetting("timelineFrameRate")
-                    # Handle string fps (e.g. "24.00")
-                    try: self.fps = float(self.fps)
-                    except (TypeError, ValueError) as e:
-                        if not silent:
-                            log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
+                    if self.timeline:
+                        self.fps = self.timeline.GetSetting("timelineFrameRate")
+                        # Handle string fps (e.g. "24.00")
+                        try: self.fps = float(self.fps)
+                        except (TypeError, ValueError) as e:
+                            if not silent:
+                                log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
+                            self.fps = 24.0
+                    else:
                         self.fps = 24.0
                     
                     log_info(f"Connected to Resolve (native). Project: {self.project.GetName()}, FPS: {self.fps}")
@@ -155,8 +174,7 @@ class ResolveHandler:
 
     def refresh_context(self, silent: bool = False):
         """Re-fetches current project/timeline in case user switched them."""
-        if not hasattr(self, 'bmd') or not self.bmd:
-            self._load_resolve_script_module()
+        self._tracks_cache = {}
         self._connect(silent=silent)
 
     def is_connected(self) -> bool:
@@ -736,7 +754,7 @@ class ResolveHandler:
         """
         if self.backend == 'bridge':
             try:
-                res = self.bridge_client.call("GetTimelineInfo", timeout_secs=5.0)
+                res = self.bridge_client.call("GetTimelineInfo", timeout_secs=2.0)
                 if res and res.get("ok"):
                     self.bridge_timelines = res.get("timelines", [])
                     self.bridge_project_name = res.get("project", "")
@@ -746,7 +764,19 @@ class ResolveHandler:
                     return self.bridge_timelines
             except Exception as e:
                 log_error(f"get_all_timelines (bridge) error: {e}")
+                if not self.bridge_client.is_bridge_alive(timeout_secs=0.25):
+                    self.backend = None
+                    self.bridge_project_name = ""
+                    self.bridge_timeline_name = ""
             return self.bridge_timelines
+
+        if self.project_manager:
+            try:
+                curr_proj = self.project_manager.GetCurrentProject()
+                if curr_proj:
+                    self.project = curr_proj
+            except Exception:
+                pass
 
         if not self.project:
             return []
@@ -767,13 +797,33 @@ class ResolveHandler:
         Returns a list of audio track labels for the specified timeline.
         """
         if self.backend == 'bridge':
+            if not hasattr(self, '_tracks_cache'):
+                self._tracks_cache = {}
+            cache_key = str(timeline_name or self.bridge_timeline_name or "")
+            if cache_key and cache_key in self._tracks_cache:
+                return self._tracks_cache[cache_key]
+
             try:
-                res = self.bridge_client.call("GetAudioTracks", {"timeline_name": timeline_name}, timeout_secs=5.0)
+                res = self.bridge_client.call("GetAudioTracks", {"timeline_name": timeline_name}, timeout_secs=2.0)
                 if res and res.get("ok"):
                     tracks = res.get("tracks", [])
-                    return [f"A{t.get('index', i+1)}" for i, t in enumerate(tracks)]
+                    res_tracks = []
+                    for i, t in enumerate(tracks):
+                        idx = t.get('index', i + 1)
+                        custom_name = (t.get('name') or "").strip()
+                        if custom_name and custom_name not in (f"Audio {idx}", f"A{idx}"):
+                            res_tracks.append(f"A{idx}: {custom_name}")
+                        else:
+                            res_tracks.append(f"A{idx}")
+                    if cache_key:
+                        self._tracks_cache[cache_key] = res_tracks
+                    return res_tracks
             except Exception as e:
                 log_error(f"get_audio_tracks (bridge) error: {e}")
+                if not self.bridge_client.is_bridge_alive(timeout_secs=0.25):
+                    self.backend = None
+                    self.bridge_project_name = ""
+                    self.bridge_timeline_name = ""
             return []
 
         if not self.project:
@@ -809,6 +859,12 @@ class ResolveHandler:
         Returns (audio_tracks, video_tracks) where each is a list of (index, name) tuples.
         Works across both native/Direct API and bridge backends.
         """
+        if not hasattr(self, '_tracks_cache'):
+            self._tracks_cache = {}
+        cache_key = f"tl_tracks_{timeline_name or self.bridge_timeline_name or ''}"
+        if cache_key in self._tracks_cache:
+            return self._tracks_cache[cache_key]
+
         if self.backend == 'bridge':
             try:
                 res = self.bridge_client.call("GetTimelineTracks", {
@@ -819,6 +875,7 @@ class ResolveHandler:
                                 for i, t in enumerate(res.get("audio_tracks", []))]
                     v_tracks = [(t.get("index", i + 1), t.get("name", f"Video {i+1}"))
                                 for i, t in enumerate(res.get("video_tracks", []))]
+                    self._tracks_cache[cache_key] = (a_tracks, v_tracks)
                     return a_tracks, v_tracks
             except Exception as e:
                 log_error(f"get_timeline_tracks (bridge) error: {e}")
@@ -877,7 +934,9 @@ class ResolveHandler:
         except Exception:
             pass
 
-        return audio_tracks, video_tracks
+        res = (audio_tracks, video_tracks)
+        self._tracks_cache[cache_key] = res
+        return res
 
 
     def get_next_badwords_edit_index(self, original_name):
@@ -975,6 +1034,8 @@ class ResolveHandler:
                     start_frame = int(res.get("start_frame") if res.get("start_frame") is not None else (self.bridge_start_frame or 0))
                     max_rel_frame = 0
                     for c in raw_clips:
+                        if c.get("track_type") and c.get("track_type") != "audio":
+                            continue
                         abs_end = int(c.get("end_frame", 0))
                         rel_end = abs_end - start_frame
                         if rel_end > max_rel_frame:

@@ -2006,24 +2006,104 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _populate_timeline_track_combos(self):
         """
         Queries the Resolve API for all timelines in the current project and
-        populates both timeline dropdowns (combo_tl_0 / combo_tl_1).
-        Called via QTimer.singleShot(800, ...) after __init__.
+        populates both timeline dropdowns (combo_tl_0 / combo_tl_1) asynchronously.
+        Guarantees zero UI lag / freezing on Windows.
         """
-        try:
-            rh = self.engine.resolve_handler
-            timelines = rh.get_all_timelines()
-            current_tl_name = rh.get_current_timeline_name()
+        from PySide6.QtCore import QThread, Signal
 
-            no_tl_label = self.txt("msg_no_timelines_detected")
+        if getattr(self, '_timeline_worker', None) and self._timeline_worker.isRunning():
+            return
 
-            if not timelines:
+        for btn in (getattr(self, 'btn_ref_tl0', None), getattr(self, 'btn_ref_tl1', None)):
+            if btn: btn.setEnabled(False)
+
+        class _TimelineWorker(QThread):
+            data_ready = Signal(list, str, dict)
+
+            def __init__(self, engine):
+                super().__init__()
+                self._engine = engine
+
+            def run(self):
+                try:
+                    rh = getattr(self._engine, 'resolve_handler', None)
+                    os_doc = getattr(self._engine, 'os_doc', None)
+                    if not rh:
+                        self.data_ready.emit([], "", {})
+                        return
+
+                    if os_doc and hasattr(os_doc, 'is_process_running'):
+                        if not os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
+                            self.data_ready.emit([], "", {})
+                            return
+
+                    if not rh.is_connected():
+                        rh.refresh_context(silent=True)
+
+                    if not rh.is_connected():
+                        self.data_ready.emit([], "", {})
+                        return
+
+                    tls = rh.get_all_timelines() or []
+                    cur_tl = rh.get_current_timeline_name() or ""
+                    tracks_map = {}
+                    if tls:
+                        init_tl = cur_tl if (cur_tl and cur_tl in tls) else tls[0]
+                        tracks_map[init_tl] = rh.get_audio_tracks(init_tl) or []
+
+                    self.data_ready.emit(tls, cur_tl, tracks_map)
+                except Exception:
+                    self.data_ready.emit([], "", {})
+
+        self._timeline_worker = _TimelineWorker(self.engine)
+
+        def _on_timelines_ready(timelines, current_tl_name, tracks_map):
+            try:
+                no_tl_label = self.txt("msg_no_timelines_detected")
+
+                if not timelines:
+                    for combo in (self.combo_tl_0, self.combo_tl_1):
+                        combo.options_list = [no_tl_label]
+                        combo.setText(no_tl_label)
+                    for track_combo in (self.combo_tr_0, self.combo_tr_1):
+                        track_combo.options_list = []
+                        track_combo.selected_items = set()
+                        track_combo.setText(self.txt("msg_no_audio_tracks_detected"))
+                    if hasattr(self, 'header_source_0') and self.header_source_0:
+                        self.header_source_0.update_status()
+                    if hasattr(self, 'header_source_1') and self.header_source_1:
+                        self.header_source_1.update_status()
+                    if hasattr(self, 'badge_resolve_0') and self.badge_resolve_0:
+                        self.badge_resolve_0.update_status()
+                    if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
+                        self.badge_resolve_1.update_status()
+                    return
+
+                # Order timelines so that currently active timeline in DaVinci is FIRST
+                if current_tl_name and current_tl_name in timelines:
+                    ordered_timelines = [current_tl_name] + [t for t in timelines if t != current_tl_name]
+                else:
+                    ordered_timelines = list(timelines)
+
+                # Populate timeline dropdowns, preserving existing selection if valid
                 for combo in (self.combo_tl_0, self.combo_tl_1):
-                    combo.options_list = [no_tl_label]
-                    combo.setText(no_tl_label)
-                for track_combo in (self.combo_tr_0, self.combo_tr_1):
-                    track_combo.options_list = []
-                    track_combo.selected_items = set()
-                    track_combo.setText(self.txt("msg_no_audio_tracks_detected"))
+                    current_sel = combo.text() if hasattr(combo, 'text') else ""
+                    combo.options_list = list(ordered_timelines)
+                    if current_sel and current_sel in ordered_timelines:
+                        display = current_sel
+                    else:
+                        display = ordered_timelines[0]
+                    combo.setText(display)
+
+                # Populate track dropdowns for the chosen timeline
+                init_tl = self.combo_tl_0.text() if (hasattr(self, 'combo_tl_0') and self.combo_tl_0.text() in ordered_timelines) else ordered_timelines[0]
+                init_tracks = tracks_map.get(init_tl)
+                if init_tracks is None:
+                    rh = getattr(self.engine, 'resolve_handler', None)
+                    init_tracks = rh.get_audio_tracks(init_tl) if rh else []
+                self._apply_audio_tracks_to_combo(init_tl, init_tracks, self.combo_tr_0)
+                self._apply_audio_tracks_to_combo(init_tl, init_tracks, self.combo_tr_1)
+
                 if hasattr(self, 'header_source_0') and self.header_source_0:
                     self.header_source_0.update_status()
                 if hasattr(self, 'header_source_1') and self.header_source_1:
@@ -2032,41 +2112,33 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self.badge_resolve_0.update_status()
                 if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
                     self.badge_resolve_1.update_status()
-                return
 
-            # Order timelines so that currently active timeline in DaVinci is FIRST
-            if current_tl_name and current_tl_name in timelines:
-                ordered_timelines = [current_tl_name] + [t for t in timelines if t != current_tl_name]
-            else:
-                ordered_timelines = list(timelines)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"_populate_timeline_track_combos ready error: {e}")
 
-            # Populate timeline dropdowns
-            for combo in (self.combo_tl_0, self.combo_tl_1):
-                combo.options_list = list(ordered_timelines)
-                display = ordered_timelines[0]
-                combo.setText(display)
+        def _on_worker_finished():
+            for btn in (getattr(self, 'btn_ref_tl0', None), getattr(self, 'btn_ref_tl1', None)):
+                if btn: btn.setEnabled(True)
 
-            # Populate track dropdowns for the default timeline
-            init_tl = ordered_timelines[0]
-            self._on_timeline_selected(init_tl, self.combo_tr_0)
-            self._on_timeline_selected(init_tl, self.combo_tr_1)
+        self._timeline_worker.data_ready.connect(_on_timelines_ready)
+        self._timeline_worker.finished.connect(_on_worker_finished)
+        self._timeline_worker.start()
 
-            if hasattr(self, 'header_source_0') and self.header_source_0:
-                self.header_source_0.update_status()
-            if hasattr(self, 'header_source_1') and self.header_source_1:
-                self.header_source_1.update_status()
-            if hasattr(self, 'badge_resolve_0') and self.badge_resolve_0:
-                self.badge_resolve_0.update_status()
-            if hasattr(self, 'badge_resolve_1') and self.badge_resolve_1:
-                self.badge_resolve_1.update_status()
-
-        except Exception as e:
-            from osdoc import log_error
-            log_error(f"_populate_timeline_track_combos error: {e}")
+    def _apply_audio_tracks_to_combo(self, tl_name, tracks, track_combo):
+        no_track_label = self.txt("msg_no_audio_tracks_detected")
+        if not tracks:
+            track_combo.options_list = []
+            track_combo.selected_items = set()
+            track_combo.setText(no_track_label)
+        else:
+            track_combo.options_list = list(tracks)
+            track_combo.selected_items = set(tracks)
+            track_combo.setText(self.txt("txt_all_tracks"))
 
     def _on_timeline_selected(self, tl_name, track_combo, mirror_tl_combo=None):
         """
-        Updates *track_combo* with audio tracks for *tl_name*, and optionally
+        Updates *track_combo* with audio tracks for *tl_name* asynchronously, and optionally
         mirrors the selection to *mirror_tl_combo*.
         """
         try:
@@ -2074,18 +2146,37 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 return
 
             rh = self.engine.resolve_handler
-            tracks = rh.get_audio_tracks(tl_name)
+            # Check tracks cache first for instant update
+            cached_tracks = getattr(rh, '_tracks_cache', {}).get(tl_name)
+            other_track_combo = self.combo_tr_1 if track_combo is getattr(self, 'combo_tr_0', None) else getattr(self, 'combo_tr_0', None)
 
-            no_track_label = self.txt("msg_no_audio_tracks_detected")
-
-            if not tracks:
-                track_combo.options_list = []
-                track_combo.selected_items = set()
-                track_combo.setText(no_track_label)
+            if cached_tracks:
+                self._apply_audio_tracks_to_combo(tl_name, cached_tracks, track_combo)
+                if other_track_combo:
+                    self._apply_audio_tracks_to_combo(tl_name, cached_tracks, other_track_combo)
             else:
-                track_combo.options_list = list(tracks)
-                track_combo.selected_items = set(tracks)
-                track_combo.setText(self.txt("txt_all_tracks"))
+                from PySide6.QtCore import QThread, Signal
+                class _TrackWorker(QThread):
+                    done = Signal(str, list)
+                    def __init__(self, handler, name):
+                        super().__init__()
+                        self.h = handler
+                        self.name = name
+                    def run(self):
+                        try:
+                            res = self.h.get_audio_tracks(self.name) or []
+                            self.done.emit(self.name, res)
+                        except Exception:
+                            self.done.emit(self.name, [])
+
+                worker = _TrackWorker(rh, tl_name)
+                def _on_track_done(name, tr):
+                    self._apply_audio_tracks_to_combo(name, tr, track_combo)
+                    if other_track_combo:
+                        self._apply_audio_tracks_to_combo(name, tr, other_track_combo)
+                worker.done.connect(_on_track_done)
+                worker.start()
+                self._track_query_worker = worker
 
             # Mirror the timeline selection to the other page's dropdown
             if mirror_tl_combo is not None:
@@ -3577,11 +3668,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self.showMaximized()
             return
         sg = screen.availableGeometry()
-        self.setGeometry(
-            sg.x() + (sg.width()  - w) // 2,
-            sg.y() + (sg.height() - h) // 2,
-            w, h
-        )
+        if not getattr(self, '_is_mac', False):
+            self.setGeometry(sg)
+            self.setWindowState(self.windowState() | Qt.WindowMaximized)
+        else:
+            self.setGeometry(
+                sg.x() + (sg.width()  - w) // 2,
+                sg.y() + (sg.height() - h) // 2,
+                w, h
+            )
         if show:
             if getattr(self, '_is_mac', False):
                 self.showFullScreen()
@@ -3937,6 +4032,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         Switch the central QStackedWidget to *index*.
         """
         self._stack.setCurrentIndex(index)
+        if hasattr(self, 'top_island') and getattr(self.top_island, 'isVisible', lambda: False)():
+            self.top_island._ensure_z_order()
         if index != 2:
             if hasattr(self, 'audio_preview') and self.audio_preview:
                 self.audio_preview.hide()
