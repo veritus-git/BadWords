@@ -17,10 +17,10 @@ vector SVG icons, and embedded Ubuntu font consistency across all platforms.
 """
 
 import os
-from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QPropertyAnimation, QRectF, QRect, QTimer, QCoreApplication, QEvent, QThread, Signal
+from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QPropertyAnimation, QRectF, QTimer, QCoreApplication, QEvent, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
-    QLineEdit, QTextEdit, QSpacerItem, QSizePolicy, QGraphicsOpacityEffect
+    QLineEdit, QTextEdit, QSizePolicy, QGraphicsOpacityEffect
 )
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QLinearGradient
 from PySide6.QtSvg import QSvgRenderer
@@ -1398,6 +1398,19 @@ def build_welcome_view(win) -> QWidget:
     else:
         win.current_source_type = "file" if is_standalone else "resolve"
 
+    opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
+    opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
+
+    def _on_stop_bridge():
+        if hasattr(win, 'engine') and hasattr(win.engine, 'resolve_handler'):
+            win.engine.resolve_handler.stop_bridge()
+        if hasattr(win, 'header_source_0'):
+            win.header_source_0.update_status()
+        if hasattr(win, 'header_source_1'):
+            win.header_source_1.update_status()
+        if hasattr(win, '_populate_timeline_track_combos'):
+            win._populate_timeline_track_combos()
+
     # Non-blocking auto-reconnect worker for standalone mode when Resolve is selected
     if is_standalone and not hasattr(win, '_resolve_auto_reconnect_timer'):
         class _ResolveReconnectWorker(QThread):
@@ -1418,7 +1431,8 @@ def build_welcome_view(win) -> QWidget:
 
         def _on_reconnect_detected():
             if hasattr(win, 'welcome_page') and win.welcome_page:
-                win.welcome_page.switch_source_animated("resolve")
+                if getattr(win, 'current_source_type', 'file') != "resolve":
+                    win.welcome_page.switch_source_animated("resolve")
             else:
                 win.current_source_type = "resolve"
             win._populate_timeline_track_combos()
@@ -1427,6 +1441,10 @@ def build_welcome_view(win) -> QWidget:
             if getattr(win, 'current_source_type', 'file') == 'resolve':
                 handler = getattr(win.engine, 'resolve_handler', None)
                 if handler and not handler.is_connected():
+                    os_doc = getattr(win.engine, 'os_doc', None)
+                    if os_doc and hasattr(os_doc, 'is_process_running'):
+                        if not os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
+                            return
                     if win._reconnect_worker is None or not win._reconnect_worker.isRunning():
                         win._reconnect_worker = _ResolveReconnectWorker(win.engine, win)
                         win._reconnect_worker.connected.connect(_on_reconnect_detected)
@@ -1434,7 +1452,7 @@ def build_welcome_view(win) -> QWidget:
 
         win._resolve_auto_reconnect_timer = QTimer(win)
         win._resolve_auto_reconnect_timer.timeout.connect(_check_auto_reconnect)
-        win._resolve_auto_reconnect_timer.start(2500)
+        win._resolve_auto_reconnect_timer.start(12000)
 
     page = WelcomePageView(win)
     win.welcome_page = page
@@ -1515,8 +1533,6 @@ def build_welcome_view(win) -> QWidget:
     win.combo_tr_0.setFixedHeight(config.S(30))
 
     if is_standalone:
-        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
-        opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
         win.combo_source_0 = CustomDropdown([opt_file, opt_dr])
         win.combo_source_0.setText(opt_file if win.current_source_type == "file" else opt_dr)
         win.combo_source_0.setFixedHeight(config.S(30))
@@ -1529,15 +1545,6 @@ def build_welcome_view(win) -> QWidget:
         _hbox_source_0.setContentsMargins(0, 0, 0, 0)
         _hbox_source_0.setSpacing(0)
         _hbox_source_0.addWidget(win.combo_source_0, 1)
-
-        def _on_stop_bridge():
-            win.engine.resolve_handler.stop_bridge()
-            if hasattr(win, 'header_source_0'):
-                win.header_source_0.update_status()
-            if hasattr(win, 'header_source_1'):
-                win.header_source_1.update_status()
-            if hasattr(win, '_populate_timeline_track_combos'):
-                win._populate_timeline_track_combos()
 
         win.btn_stop_bridge_0 = QPushButton(win.txt("btn_stop_bridge") if hasattr(win, 'txt') else "Stop Bridge")
         win.btn_stop_bridge_0.setFixedHeight(config.S(30))
@@ -1558,7 +1565,7 @@ def build_welcome_view(win) -> QWidget:
 
         win.btn_ref_source_0 = ReloadButton(size=30)
         win.btn_ref_source_0.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
-        win.btn_ref_source_0.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
+        win.btn_ref_source_0.clicked.connect(win._refresh_davinci_connection)
 
         win.source_actions_0 = SourceActionsBox(win.btn_stop_bridge_0, win.btn_ref_source_0)
         _hbox_source_0.addWidget(win.source_actions_0)
@@ -1884,7 +1891,7 @@ def build_welcome_view(win) -> QWidget:
 
         win.btn_ref_source_1 = ReloadButton(size=30)
         win.btn_ref_source_1.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
-        win.btn_ref_source_1.clicked.connect(lambda: (win._refresh_davinci_connection(), win._populate_timeline_track_combos()))
+        win.btn_ref_source_1.clicked.connect(win._refresh_davinci_connection)
 
         win.source_actions_1 = SourceActionsBox(win.btn_stop_bridge_1, win.btn_ref_source_1)
         _hbox_source_1.addWidget(win.source_actions_1)

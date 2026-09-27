@@ -266,6 +266,53 @@ class ResolveBridgeClient:
         except Exception:
             return False
 
+    @staticmethod
+    def _read_file_shared(path: Path) -> str:
+        """
+        Reads a file safely with full sharing permissions (read, write, delete)
+        on Windows to prevent ERROR_SHARING_VIOLATION or ERROR_ACCESS_DENIED
+        when DaVinci Resolve writes or replaces Fusion.prefs simultaneously.
+        """
+        path_str = str(path)
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+                GENERIC_READ = 0x80000000
+                FILE_SHARE_READ = 1
+                FILE_SHARE_WRITE = 2
+                FILE_SHARE_DELETE = 4
+                OPEN_EXISTING = 3
+                FILE_ATTRIBUTE_NORMAL = 0x80
+                INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+                k32 = ctypes.windll.kernel32
+                handle = k32.CreateFileW(
+                    path_str,
+                    GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    None,
+                    OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL,
+                    None
+                )
+                if handle != INVALID_HANDLE_VALUE:
+                    try:
+                        size = k32.GetFileSize(handle, None)
+                        if size > 0:
+                            buf = ctypes.create_string_buffer(size)
+                            bytes_read = wintypes.DWORD(0)
+                            if k32.ReadFile(handle, buf, size, ctypes.byref(bytes_read), None):
+                                return buf.raw[:bytes_read.value].decode("utf-8", errors="replace")
+                        return ""
+                    finally:
+                        k32.CloseHandle(handle)
+            except Exception:
+                pass
+
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+
     def call(self, func_name: str, args: Optional[Dict[str, Any]] = None, timeout_secs: float = 30.0) -> Dict[str, Any]:
         """
         Sends a request to the BadWords Lua bridge inside DaVinci Resolve and waits for response.
@@ -299,9 +346,9 @@ class ResolveBridgeClient:
                 except Exception as e:
                     raise IOError(f"Failed to write mailbox request: {e}")
 
-                # 2. Poll Fusion.prefs for Ack and Response
+                # 2. Poll Fusion.prefs for Response or Ack
                 deadline = time.time() + timeout_secs
-                poll_interval = 0.01
+                poll_interval = 0.035
                 acked = False
 
                 while time.time() < deadline:
@@ -309,18 +356,14 @@ class ResolveBridgeClient:
                     try:
                         if not prefs_path.is_file():
                             continue
-                        with open(prefs_path, "r", encoding="utf-8", errors="replace") as f:
-                            content = f.read()
+                        content = self._read_file_shared(prefs_path)
                     except Exception:
                         continue
 
-                    # Check for Ack
-                    if not acked:
-                        ack_val = self._extract_pref_value(content, "Ack")
-                        if ack_val == req_id:
-                            acked = True
+                    if not content:
+                        continue
 
-                    # Check for Response
+                    # Check for Response first
                     resp_val = self._extract_pref_value(content, "Response")
                     if resp_val and resp_val.startswith(f"{req_id}:"):
                         b64_part = resp_val[len(req_id) + 1:]
@@ -331,6 +374,12 @@ class ResolveBridgeClient:
                             return json.loads(json_str)
                         except Exception as e:
                             raise ValueError(f"Failed to parse bridge response: {e}")
+
+                    # Check for Ack
+                    if not acked:
+                        ack_val = self._extract_pref_value(content, "Ack")
+                        if ack_val == req_id:
+                            acked = True
 
                 # Timeout expired
                 if acked:

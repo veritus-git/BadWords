@@ -247,11 +247,15 @@ class FileDropZone(QWidget):
     def _probe_duration_str(self, file_path: str) -> str:
         """Quick ffprobe duration lookup (non-blocking / fast timeout)."""
         try:
+            from osdoc import get_subprocess_kwargs
             cmd = [
                 "ffprobe", "-v", "error", "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1", file_path
             ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=2)
+            res = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, timeout=2, **get_subprocess_kwargs()
+            )
             if res.returncode == 0 and res.stdout.strip():
                 dur_s = float(res.stdout.strip())
                 m = int(dur_s // 60)

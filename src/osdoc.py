@@ -24,6 +24,41 @@ import hashlib
 import ctypes
 
 # ==========================================
+# 0. WINDOWS SUBPROCESS SAFETY HOOK
+# ==========================================
+# Guarantees that ANY subprocess invoked anywhere in Python on Windows
+# NEVER creates a visible console window (conhost.exe).
+if sys.platform == "win32" or os.name == "nt":
+    try:
+        _orig_popen_init = subprocess.Popen.__init__
+        def _safe_popen_init(self, *args, **kwargs):
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            si = kwargs.get("startupinfo")
+            if si is None:
+                si = subprocess.STARTUPINFO()
+            si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
+            si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+            kwargs["startupinfo"] = si
+            if "stdin" not in kwargs or kwargs["stdin"] is None:
+                kwargs["stdin"] = subprocess.DEVNULL
+            return _orig_popen_init(self, *args, **kwargs)
+        subprocess.Popen.__init__ = _safe_popen_init
+    except Exception:
+        pass
+
+
+def get_subprocess_kwargs() -> dict:
+    """Module-level helper returning cross-platform hidden subprocess flags."""
+    if sys.platform == "win32" or os.name == "nt":
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
+        si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        cf = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        return {"startupinfo": si, "creationflags": cf, "stdin": subprocess.DEVNULL}
+    return {}
+
+
+# ==========================================
 # 1. LOGGING & STREAM PROXY
 # ==========================================
 
@@ -76,10 +111,19 @@ def log_info(msg):
 def log_error(msg):
     logging.error(msg)
     try:
-        print(f"[ERROR] {msg}", file=sys.__stderr__)
-        sys.__stderr__.flush()
+        if sys.__stderr__ is not None:
+            print(f"[ERROR] {msg}", file=sys.__stderr__)
+            sys.__stderr__.flush()
     except Exception:
         pass  # log_error: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
+
+def log_warn(msg):
+    logging.warning(msg)
+    try:
+        print(f"[WARN] {msg}")
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 # ==========================================
 # 2. OS DOCTOR CLASS
@@ -132,6 +176,10 @@ class OSDoctor:
         # Init Logging
         self._setup_logging()
         self._log_system_info()
+
+        # Windows-specific system bootstrapping: CUDA DLL injection
+        if self.is_win:
+            self.setup_cuda_dll_paths()
         
         # --- MIGRATE LEGACY CONFIG (pref.json → user.json + settings.json) ---
         self._migrate_legacy_config()
@@ -537,7 +585,7 @@ class OSDoctor:
     def _log_system_info(self):
         """Logs detailed system information for debugging."""
         log_info("="*30)
-        log_info(f"BadWords Session Started")
+        log_info("BadWords Session Started")
         log_info(f"OS: {self.os_type} {platform.release()}")
         log_info(f"Install Dir: {self.install_dir}")
         log_info(f"Bin Dir (FFmpeg): {self.bin_dir}")
@@ -688,25 +736,31 @@ class OSDoctor:
             exe_path = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe"
             if os.path.isfile(exe_path):
                 info["installed"] = True
-                if not info["version"]:
+                if not info["version"] or info["edition"] == "Unknown":
                     try:
-                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductVersion"]
-                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **self.get_subprocess_kwargs())
-                        if res.returncode == 0 and res.stdout.strip():
-                            info["version"] = res.stdout.strip()
-                    except Exception:
-                        pass
-                if info["edition"] == "Unknown":
-                    try:
-                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductName"]
-                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **self.get_subprocess_kwargs())
-                        if res.returncode == 0 and res.stdout.strip():
-                            prod_name = res.stdout.strip()
-                            info["edition"] = "Studio" if "Studio" in prod_name else "Free"
-                    except Exception:
-                        pass
+                        import ctypes
+                        from ctypes import wintypes
+                        v_size = ctypes.windll.version.GetFileVersionInfoSizeW(exe_path, None)
+                        if v_size:
+                            buf = ctypes.create_string_buffer(v_size)
+                            if ctypes.windll.version.GetFileVersionInfoW(exe_path, 0, v_size, buf):
+                                lp_trans = ctypes.c_void_p()
+                                u_len = wintypes.UINT()
+                                if ctypes.windll.version.VerQueryValueW(buf, r'\VarFileInfo\Translation', ctypes.byref(lp_trans), ctypes.byref(u_len)) and u_len.value >= 4:
+                                    trans = ctypes.cast(lp_trans, ctypes.POINTER(wintypes.WORD))
+                                    lang, cp = trans[0], trans[1]
+                                    lp_buf = ctypes.c_wchar_p()
+                                    if not info["version"]:
+                                        sub = f'\\StringFileInfo\\{lang:04x}{cp:04x}\\ProductVersion'
+                                        if ctypes.windll.version.VerQueryValueW(buf, sub, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
+                                            info["version"] = lp_buf.value.strip()
+                                    if info["edition"] == "Unknown":
+                                        sub_prod = f'\\StringFileInfo\\{lang:04x}{cp:04x}\\ProductName'
+                                        if ctypes.windll.version.VerQueryValueW(buf, sub_prod, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
+                                            prod_name = lp_buf.value.strip()
+                                            info["edition"] = "Studio" if "Studio" in prod_name else "Free"
+                    except Exception as e:
+                        log_warn(f"Fast Win32 version check error: {e}")
 
         elif self.is_mac:
             candidate_apps = [
@@ -933,15 +987,35 @@ for _sp_dir in _candidates:
 if INSTALL_DIR not in sys.path:
     sys.path.append(INSTALL_DIR)
 
-# 2. Windows: register DLL search paths for PySide6 and shiboken6
-if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
-    for _sp_dir in _candidates:
-        if os.path.isdir(_sp_dir):
-            for _pkg in ['PySide6', 'shiboken6']:
-                _p = os.path.join(_sp_dir, _pkg)
-                if os.path.isdir(_p):
-                    try: os.add_dll_directory(_p)
-                    except Exception: pass
+# 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
+if sys.platform.startswith('win'):
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
+    if hasattr(os, 'add_dll_directory'):
+        for _sp_dir in _candidates:
+            if os.path.isdir(_sp_dir):
+                for _pkg in ['PySide6', 'shiboken6']:
+                    _p = os.path.join(_sp_dir, _pkg)
+                    if os.path.isdir(_p):
+                        try: os.add_dll_directory(_p)
+                        except Exception: pass
+                _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                if os.path.isdir(_nv_dir):
+                    import ctypes
+                    for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                        _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                        if os.path.isdir(_bin_p):
+                            try:
+                                os.add_dll_directory(_bin_p)
+                                os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                for _f in os.listdir(_bin_p):
+                                    if _f.endswith('.dll'):
+                                        try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                        except Exception: pass
+                            except Exception: pass
 
 # 3. Linux: Preload Qt6 shared libraries if needed
 if sys.platform.startswith('linux'):
@@ -1152,6 +1226,9 @@ else:
                 try: os.chmod(portable_ffmpeg, 0o755)
                 except Exception as e:
                     log_error(f"get_ffmpeg_cmd: chmod failed on {portable_ffmpeg}: {e}")
+            if self.is_win:
+                log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")
+                return portable_ffmpeg
             if self._test_executable(portable_ffmpeg):
                 log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")
                 return portable_ffmpeg
@@ -1434,9 +1511,11 @@ else:
         fw_found = False
         
         if self.is_win:
-            try: import faster_whisper; fw_found = True # type: ignore
+            try:
+                import importlib.util
+                fw_found = importlib.util.find_spec("faster_whisper") is not None
             except Exception as e:
-                log_error(f"check_dependencies: błąd importu faster_whisper: {e}")
+                log_error(f"check_dependencies: błąd sprawdzania faster_whisper: {e}")
         else:
             # Check VENV content
             venv_lib = os.path.join(self.install_dir, "venv", "lib")
@@ -1495,6 +1574,128 @@ else:
             pass
 
         return os.path.exists("/usr/local/cuda") or shutil.which("nvcc") is not None
+
+    def setup_cuda_dll_paths(self) -> list:
+        """
+        Discovers all NVIDIA CUDA / cuBLAS / cuDNN / NVRTC DLL directories,
+        registers them with os.add_dll_directory, prepends them to os.environ["PATH"],
+        and preloads critical DLLs via ctypes.CDLL to guarantee CTranslate2 succeeds on Windows.
+        Returns the list of discovered DLL directories.
+        """
+        if not self.is_win:
+            return []
+        
+        discovered_bins = []
+        candidates = [
+            os.path.join(self.install_dir, "venv", "Lib", "site-packages"),
+            os.path.join(self.install_dir, "libs"),
+            os.path.join(sys.prefix, "Lib", "site-packages"),
+            os.path.join(sys.prefix, "lib", "site-packages"),
+        ]
+        for p in sys.path:
+            if "site-packages" in p and os.path.isdir(p) and p not in candidates:
+                candidates.append(p)
+                
+        for sp in candidates:
+            nv_base = os.path.join(sp, "nvidia")
+            if os.path.isdir(nv_base):
+                for sub in ["cublas", "cudnn", "cuda_nvrtc", "cuda_runtime"]:
+                    bin_dir = os.path.join(nv_base, sub, "bin")
+                    if os.path.isdir(bin_dir) and bin_dir not in discovered_bins:
+                        discovered_bins.append(os.path.abspath(bin_dir))
+                        
+        if discovered_bins:
+            # 1. Prepend to os.environ["PATH"]
+            current_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = os.pathsep.join(discovered_bins) + os.pathsep + current_path
+            
+            # 2. Add with os.add_dll_directory
+            if hasattr(os, "add_dll_directory"):
+                for bd in discovered_bins:
+                    try:
+                        os.add_dll_directory(bd)
+                    except Exception:
+                        pass
+                        
+            # 3. Preload all DLLs via ctypes so CTranslate2 LoadLibrary calls resolve immediately
+            import ctypes
+            for bd in discovered_bins:
+                try:
+                    for f in os.listdir(bd):
+                        if f.endswith(".dll"):
+                            try:
+                                ctypes.CDLL(os.path.join(bd, f))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            log_info(f"[CUDA] Successfully registered {len(discovered_bins)} NVIDIA DLL directories.")
+        return discovered_bins
+
+    def is_process_running(self, proc_names: list) -> bool:
+        """Fast cross-platform check whether any process matching the given names is running."""
+        try:
+            import psutil
+            names_lower = {n.lower() for n in proc_names}
+            for p in psutil.process_iter(['name']):
+                try:
+                    if p.info['name'] and p.info['name'].lower() in names_lower:
+                        return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            return False
+        except Exception:
+            pass
+
+        # Windows: Use native Toolhelp32 snapshot via ctypes (zero subprocesses, zero window flashes, 0.1ms)
+        if self.is_win:
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class PROCESSENTRY32W(ctypes.Structure):
+                    _fields_ = [
+                        ('dwSize', wintypes.DWORD),
+                        ('cntUsage', wintypes.DWORD),
+                        ('th32ProcessID', wintypes.DWORD),
+                        ('th32DefaultHeapID', ctypes.POINTER(ctypes.c_ulong)),
+                        ('th32ModuleID', wintypes.DWORD),
+                        ('cntThreads', wintypes.DWORD),
+                        ('th32ParentProcessID', wintypes.DWORD),
+                        ('pcPriClassBase', ctypes.c_long),
+                        ('dwFlags', wintypes.DWORD),
+                        ('szExeFile', ctypes.c_wchar * 260)
+                    ]
+
+                k32 = ctypes.windll.kernel32
+                h = k32.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS = 2
+                if h != -1:
+                    try:
+                        pe = PROCESSENTRY32W()
+                        pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+                        if k32.Process32FirstW(h, ctypes.byref(pe)):
+                            names_lower = {n.lower() for n in proc_names}
+                            while True:
+                                exe = pe.szExeFile.lower()
+                                if any(exe == n or exe == f'{n}.exe' for n in names_lower):
+                                    return True
+                                if not k32.Process32NextW(h, ctypes.byref(pe)):
+                                    break
+                    finally:
+                        k32.CloseHandle(h)
+                return False
+            except Exception:
+                return False
+        else:
+            try:
+                import subprocess
+                out = subprocess.check_output(
+                    ["ps", "-A", "-o", "comm="],
+                    stderr=subprocess.DEVNULL, text=True, errors="replace"
+                ).lower()
+                return any(n.lower() in out for n in proc_names)
+            except Exception:
+                return False
 
     def needs_manual_model_install(self):
         """
@@ -1649,14 +1850,26 @@ else:
             }
 
         # 4. Linux / Windows on CPU
+        # Avoid thread oversubscription! CTranslate2 already parallelizes matrix multiplication with OpenMP.
+        # Spawning too many workers duplicates model memory and causes severe cache thrashing on CPU.
         logical = topo.get("logical_cores", 4)
-        phys = topo.get("physical_cores", logical)
-        threads = max(1, min(phys, logical - 2))
-        workers = max(1, (logical - 2) // 2) if logical > 4 else 1
+        phys = max(1, topo.get("physical_cores", logical))
+        if phys <= 4:
+            workers = 1
+            threads = max(1, phys - 1)
+        elif phys <= 8:
+            # e.g. 6 cores (Ryzen 5 5500): 2 workers * 3 threads = 6 threads (saturating 100% of cores cleanly)
+            workers = 2
+            threads = max(2, phys // 2)
+        else:
+            # 10+ cores: 2-3 workers with 3-4 threads each
+            workers = min(3, max(2, phys // 4))
+            threads = max(3, phys // workers)
+
         return {
             "cpu_threads": threads,
             "workers": workers,
             "env_threads": str(threads),
-            "reason": f"CPU Mode: {threads} threads, {workers} workers, leaving 2 cores for UI/OS"
+            "reason": f"CPU Mode: {workers} workers with {threads} threads each (total {workers*threads} threads on {phys} physical cores; zero thrashing)"
         }
 

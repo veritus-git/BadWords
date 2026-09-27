@@ -17,7 +17,7 @@ import zipfile
 import copy
 import xml.etree.ElementTree as ET
 
-from osdoc import log_info, log_error
+from osdoc import log_info, log_error, get_subprocess_kwargs
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -779,7 +779,7 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
                 seg_path
             ]
 
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **get_subprocess_kwargs())
             if res.returncode != 0 or not os.path.exists(seg_path) or os.path.getsize(seg_path) == 0:
                 log_error(f"assemble_via_seamless_cut: segment {idx} failed (rc={res.returncode}): {res.stderr[-300:]}")
                 return False, f"Failed to cut segment {idx + 1}."
@@ -815,7 +815,7 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
             output_path
         ]
 
-        concat_res = subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        concat_res = subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **get_subprocess_kwargs())
         if concat_res.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             log_error(f"assemble_via_seamless_cut: concat failed (rc={concat_res.returncode}): {concat_res.stderr[-300:]}")
             return False, "Failed to concatenate segments."

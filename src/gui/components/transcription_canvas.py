@@ -149,11 +149,13 @@ class TranscriptionCanvas(QWidget):
 
         if not hasattr(self, '_stream_timer'):
             self._stream_timer = QTimer(self)
-            self._stream_timer.setInterval(40)
+            self._stream_timer.setInterval(20)
             self._stream_timer.timeout.connect(self._process_streaming_tick)
+        else:
+            self._stream_timer.setInterval(20)
 
         if not self._stream_timer.isActive():
-            self._stream_timer.start(40)
+            self._stream_timer.start(20)
 
     def append_chunk_stream(self, chunk_payload: dict):
         """Streams chunk words. If words list provided, uses load_streamed_words."""
@@ -167,7 +169,34 @@ class TranscriptionCanvas(QWidget):
         target_len = len(target_words)
         curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
         now = time.time()
-        fade_dur = 0.18
+
+        # Dynamic throughput adaptation: advance larger token clusters under high lag
+        # while keeping the fade animation silky and clearly visible (0.14s - 0.18s).
+        # Multiple tokens in each cluster fade in together in a graceful cascade!
+        lag = max(0, target_len - curr_len)
+        if lag > 150:
+            step = max(16, lag // 5)
+            fade_dur = 0.14
+        elif lag > 80:
+            step = max(10, lag // 6)
+            fade_dur = 0.14
+        elif lag > 40:
+            step = max(6, lag // 7)
+            fade_dur = 0.15
+        elif lag > 20:
+            step = 4
+            fade_dur = 0.15
+        elif lag > 8:
+            step = 3
+            fade_dur = 0.16
+        elif lag > 3:
+            step = 2
+            fade_dur = 0.17
+        else:
+            step = 1
+            fade_dur = 0.18
+
+        self._current_fade_dur = fade_dur
 
         if not hasattr(self, '_fading_tokens'):
             self._fading_tokens = []
@@ -212,15 +241,6 @@ class TranscriptionCanvas(QWidget):
             self.words_data = self.words_data[:rewind_idx]
             curr_len = rewind_idx
             self._fading_tokens = [w for w in self._fading_tokens if w in self.words_data]
-
-        # Rhythmic streamline pacing: smooth, steady token flow (1 token per tick, 2-3 if buffer builds up)
-        lag = target_len - curr_len
-        if lag > 60:
-            step = 3
-        elif lag > 25:
-            step = 2
-        else:
-            step = 1
 
         next_len = min(curr_len + step, target_len)
         tokens_to_add = target_words[curr_len:next_len]
@@ -339,6 +359,7 @@ class TranscriptionCanvas(QWidget):
         self._is_streaming = False
         self._follow_tail_scroll = False
         self._fading_tokens = []
+        self._current_fade_dur = 0.0
 
         scroll = getattr(self.main_window, 'scroll_area', None)
         vbar = scroll.verticalScrollBar() if scroll else None
@@ -779,7 +800,7 @@ class TranscriptionCanvas(QWidget):
         
         prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
         now = time.time()
-        fade_duration = 0.18
+        fade_duration = getattr(self, '_current_fade_dur', 0.16)
         
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)

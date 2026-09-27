@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
-from osdoc import log_info, log_error
+from osdoc import log_info, log_error, get_subprocess_kwargs
 
 
 @dataclass
@@ -260,6 +260,7 @@ class WaveformExtractor:
                     stderr=subprocess.DEVNULL,
                     check=True,
                     timeout=60,
+                    **get_subprocess_kwargs()
                 )
                 if res.stdout:
                     audio_data = np.frombuffer(res.stdout, dtype=np.int16).astype(np.float32) / 32768.0
