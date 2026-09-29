@@ -447,7 +447,7 @@ try:
     from faster_whisper.audio import decode_audio
     
     RAW_ISLANDS = {repr(islands)}
-    MAX_CLUSTER_DUR = 30.0
+    MAX_CLUSTER_DUR = 22.0
     MIN_CLUSTER_DUR = 8.0
     MIN_SAFE_GAP = 0.5
     ISLANDS = []
