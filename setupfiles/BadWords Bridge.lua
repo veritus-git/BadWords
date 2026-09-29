@@ -708,8 +708,10 @@ handlers.ExportTimelineDrt = function(req)
     local out_path = req and req.output_path
     if not out_path or out_path == "" then return { error = "output_path missing" } end
 
+    out_path = out_path:gsub("\\", "/")
     local export_type = res_app.EXPORT_DRT or 1
-    local ok = tl:Export(out_path, export_type)
+    local export_subtype = res_app.EXPORT_NONE or 0
+    local ok = tl:Export(out_path, export_type, export_subtype)
     local start_f = 0
     pcall(function() start_f = tl:GetStartFrame() or 0 end)
     return { ok = (ok == true or ok == 1), start_frame = start_f }
@@ -726,9 +728,11 @@ handlers.ExportTimelineXml = function(req)
     local out_path = req and req.output_path
     if not out_path or out_path == "" then return { error = "output_path missing" } end
 
+    out_path = out_path:gsub("\\", "/")
     -- Export FCP XML (constant is 3 in DaVinci Resolve)
     local export_type = res_app.EXPORT_FCP_7_XML or 3
-    local ok = tl:Export(out_path, export_type)
+    local export_subtype = res_app.EXPORT_NONE or 0
+    local ok = tl:Export(out_path, export_type, export_subtype)
     return { ok = (ok == true or ok == 1) }
 end
 
@@ -742,6 +746,7 @@ local function do_import_timeline_file(file_path, timeline_name)
     if not mp then return { error = "MediaPool not available" } end
 
     if not file_path or file_path == "" then return { error = "file_path missing" } end
+    file_path = file_path:gsub("\\", "/")
 
     -- Reset to root folder before import
     pcall(function()
@@ -1223,6 +1228,16 @@ print("[BadWords] Mailbox directory: " .. tostring(mailbox_dir))
 print("[BadWords] Platform: " .. tostring(platform))
 print("[BadWords] Bridge ready. Waiting for BadWords desktop app...")
 print("=======================================================")
+
+-- Signal bridge status to trigger QFileSystemWatcher immediately on BadWords app
+bridge_write("Global.BadWordsBridge.Status", "Online")
+pcall(function()
+    local f = io and io.open and io.open(mailbox_dir .. sep .. "bridge_status.json", "w")
+    if f then
+        f:write('{"status":"online"}')
+        f:close()
+    end
+end)
 
 local quitServer = false
 local last_request_id = ""

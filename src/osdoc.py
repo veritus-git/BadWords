@@ -956,7 +956,11 @@ class OSDoctor:
         libs_str = os.path.join(self.install_dir, 'libs').replace('\\', '/')
         main_script = os.path.join(self.install_dir, 'main.py').replace('\\', '/')
         return f'''\
-import sys, os, traceback
+import sys, os, traceback, builtins
+
+for _k in ("resolve", "bmd", "fusion", "fu"):
+    if _k in globals():
+        setattr(builtins, _k, globals()[_k])
 
 INSTALL_DIR = r'{install_str}'
 MAIN_SCRIPT = r'{main_script}'
@@ -1107,7 +1111,13 @@ else:
                     py_file = os.path.join(ud, "BadWords.py")
                     if not py_deployed:
                         try:
-                            should_write = force or not os.path.isfile(py_file)
+                            existing_content = ""
+                            if os.path.isfile(py_file):
+                                try:
+                                    with open(py_file, "r", encoding="utf-8") as f:
+                                        existing_content = f.read()
+                                except Exception: pass
+                            should_write = force or (existing_content != wrapper_content)
                             if should_write:
                                 with open(py_file, "w", encoding="utf-8") as f:
                                     f.write(wrapper_content)
@@ -1147,7 +1157,13 @@ else:
                         py_file = os.path.join(ud, "BadWords.py")
                         if not py_deployed:
                             try:
-                                should_write = force or not os.path.isfile(py_file)
+                                existing_content = ""
+                                if os.path.isfile(py_file):
+                                    try:
+                                        with open(py_file, "r", encoding="utf-8") as f:
+                                            existing_content = f.read()
+                                    except Exception: pass
+                                should_write = force or (existing_content != wrapper_content)
                                 if should_write:
                                     with open(py_file, "w", encoding="utf-8") as f:
                                         f.write(wrapper_content)
@@ -1639,7 +1655,9 @@ else:
             names_lower = {n.lower() for n in proc_names}
             for p in psutil.process_iter(['name']):
                 try:
-                    if p.info['name'] and p.info['name'].lower() in names_lower:
+                    pname = (p.info['name'] or '').lower()
+                    pbase = pname[:-4] if pname.endswith('.exe') else pname
+                    if pname in names_lower or pbase in names_lower or any(pbase == n for n in names_lower):
                         return True
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass

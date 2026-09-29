@@ -530,6 +530,12 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
 
     try:
         # ── Step 1: Export source timeline as .drt ────────────────────────────
+        # Resolve Free 21.1+ does not support DRT export via API/bridge and would hang/fail.
+        # Bypass DRT immediately so we jump straight to XML assembly without delay.
+        if hasattr(resolve_handler, 'is_free_21_1_or_newer') and resolve_handler.is_free_21_1_or_newer():
+            log_info("drt_assemble: Resolve Free 21.1+ detected — bypassing DRT export directly to XML fallback.")
+            return False, {}, None
+
         log_info(f"drt_assemble: exporting '{original_tl_name}' as .drt...")
         if resolve_handler.backend == 'bridge':
             export_ok, base_offset = resolve_handler.export_timeline_drt(original_tl_name, src_drt_path)

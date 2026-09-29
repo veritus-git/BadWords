@@ -141,21 +141,12 @@ class TranscriptionCanvas(QWidget):
                 scroll.verticalScrollBar().setValue(max_val)
 
     def load_streamed_words(self, words_data: list):
-        """Receives new chunk data from background thread without blocking UI."""
+        """Receives new chunk data from background thread and displays it immediately without UI lag."""
         if not words_data:
             return
         self._is_streaming = True
         self._target_streamed_words = words_data
-
-        if not hasattr(self, '_stream_timer'):
-            self._stream_timer = QTimer(self)
-            self._stream_timer.setInterval(20)
-            self._stream_timer.timeout.connect(self._process_streaming_tick)
-        else:
-            self._stream_timer.setInterval(20)
-
-        if not self._stream_timer.isActive():
-            self._stream_timer.start(20)
+        self._process_streaming_tick()
 
     def append_chunk_stream(self, chunk_payload: dict):
         """Streams chunk words. If words list provided, uses load_streamed_words."""
@@ -164,66 +155,10 @@ class TranscriptionCanvas(QWidget):
             self.load_streamed_words(words)
 
     def _process_streaming_tick(self):
-        """Incrementally reveals and lays out tokens. Zero full-document re-computation."""
+        """Incrementally reveals and lays out tokens immediately with zero lag."""
         target_words = getattr(self, '_target_streamed_words', [])
         target_len = len(target_words)
         curr_len = len(self.words_data) if hasattr(self, 'words_data') else 0
-        now = time.time()
-
-        # Dynamic throughput adaptation: advance larger token clusters under high lag
-        # while keeping the fade animation silky and clearly visible (0.14s - 0.18s).
-        # Multiple tokens in each cluster fade in together in a graceful cascade!
-        lag = max(0, target_len - curr_len)
-        if lag > 150:
-            step = max(16, lag // 5)
-            fade_dur = 0.14
-        elif lag > 80:
-            step = max(10, lag // 6)
-            fade_dur = 0.14
-        elif lag > 40:
-            step = max(6, lag // 7)
-            fade_dur = 0.15
-        elif lag > 20:
-            step = 4
-            fade_dur = 0.15
-        elif lag > 8:
-            step = 3
-            fade_dur = 0.16
-        elif lag > 3:
-            step = 2
-            fade_dur = 0.17
-        else:
-            step = 1
-            fade_dur = 0.18
-
-        self._current_fade_dur = fade_dur
-
-        if not hasattr(self, '_fading_tokens'):
-            self._fading_tokens = []
-
-        # Check if all tokens revealed
-        if curr_len >= target_len:
-            # We still need to finish fading any tokens currently in transition
-            if self._fading_tokens:
-                fading_rects = []
-                remaining_fading = []
-                for w in self._fading_tokens:
-                    if '_rect' in w:
-                        fading_rects.append(w['_rect'])
-                    if now - w.get('_stream_reveal_time', 0) >= fade_dur:
-                        # Fade is complete: remove timestamp so it paints at 100% solid opacity
-                        w.pop('_stream_reveal_time', None)
-                    else:
-                        remaining_fading.append(w)
-                self._fading_tokens = remaining_fading
-
-                if fading_rects:
-                    top_y = min(r.top() for r in fading_rects) - 4
-                    bot_y = max(r.bottom() for r in fading_rects) + 4
-                    self.update(QRect(0, max(0, top_y), self.width(), (bot_y - top_y) + 8))
-            else:
-                self._stream_timer.stop()
-            return
 
         # Check for tail divergence (if Whisper adjusted the last sentence boundary)
         rewind_idx = curr_len
@@ -240,26 +175,15 @@ class TranscriptionCanvas(QWidget):
         if rewind_idx < curr_len:
             self.words_data = self.words_data[:rewind_idx]
             curr_len = rewind_idx
-            self._fading_tokens = [w for w in self._fading_tokens if w in self.words_data]
 
-        next_len = min(curr_len + step, target_len)
-        tokens_to_add = target_words[curr_len:next_len]
+        if curr_len >= target_len:
+            return
+
+        tokens_to_add = target_words[curr_len:target_len]
         if not tokens_to_add:
             return
 
-        # Collect dirty rects from existing fading tokens (advancing animation or completing to 1.0)
-        fading_rects = []
-        remaining_fading = []
-        for w in self._fading_tokens:
-            if '_rect' in w:
-                fading_rects.append(w['_rect'])
-            if now - w.get('_stream_reveal_time', 0) >= fade_dur:
-                w.pop('_stream_reveal_time', None)
-            else:
-                remaining_fading.append(w)
-        self._fading_tokens = remaining_fading
-
-        # Layout ONLY the new tokens
+        # Layout new tokens
         prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
         max_w = self.width() - 40
         view_mode = prefs.get('view_mode', 'continuous')
@@ -274,10 +198,9 @@ class TranscriptionCanvas(QWidget):
             cx = 20
             cy = 20
 
-        for w in tokens_to_add:
-            w['_stream_reveal_time'] = now
-            self._fading_tokens.append(w)
+        dirty_rects = []
 
+        for w in tokens_to_add:
             # Clean previous markers
             w.pop('_ts_rect', None)
             w.pop('_ts_text', None)
@@ -289,6 +212,7 @@ class TranscriptionCanvas(QWidget):
                     cy += line_height
                 if cy > 20:
                     w['_separator_y'] = cy + 10
+                    dirty_rects.append(QRect(0, cy + 8, self.width(), 6))
                     cy += 20
                 cx = 20
 
@@ -312,7 +236,7 @@ class TranscriptionCanvas(QWidget):
                     w['_ts_calc_w'] = ts_w
 
                 w['_ts_rect'] = QRect(cx, cy, ts_w, metrics.height() + 4)
-                fading_rects.append(w['_ts_rect'])
+                dirty_rects.append(w['_ts_rect'])
                 cx += ts_w + space_w + 5
 
             # Word text & width
@@ -329,7 +253,7 @@ class TranscriptionCanvas(QWidget):
                 cy += line_height
 
             w['_rect'] = QRect(cx, cy, word_w, metrics.height() + 4)
-            fading_rects.append(w['_rect'])
+            dirty_rects.append(w['_rect'])
             cx += word_w + space_w
 
             self.words_data.append(w)
@@ -345,10 +269,10 @@ class TranscriptionCanvas(QWidget):
                 if scroll:
                     scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
 
-        # Repaint dirty region covering both new tokens and active fading tokens
-        if fading_rects:
-            top_y = min(r.top() for r in fading_rects) - 4
-            bot_y = max(r.bottom() for r in fading_rects) + 4
+        # Repaint dirty region covering both new tokens and separator lines
+        if dirty_rects:
+            top_y = min(r.top() for r in dirty_rects) - 4
+            bot_y = max(r.bottom() for r in dirty_rects) + 4
             dirty_rect = QRect(0, max(0, top_y), self.width(), (bot_y - top_y) + 8)
             self.update(dirty_rect)
 
@@ -852,28 +776,32 @@ class TranscriptionCanvas(QWidget):
         dirty = event.rect()
         clip = self._get_clip_rect()
         target_clip = clip.intersected(dirty) if dirty.isValid() else clip
-        visible_words = [w for w in all_visible if '_rect' not in w or target_clip.intersects(w['_rect'])]
-        if not visible_words:
-            return
 
         # Fill background of dirty rect (prevents tearing with WA_OpaquePaintEvent)
         p.fillRect(dirty, QColor(config.BG_COLOR))
         # ────────────────────────────────────────────────────────────────────────
 
-        # Oś Y separatorów (only in visible range)
+        # Oś Y separatorów (drawn unconditionally whenever sep_y is within visible clip range)
         p.setPen(QPen(QColor("#333333"), 1))
         is_sbs = getattr(self, 'is_sbs_mode', False)
-        for w in visible_words:
+        clip_top = target_clip.top() - 2
+        clip_bot = target_clip.bottom() + 2
+        for w in all_visible:
             if '_separator_y' in w:
                 sep_y = w['_separator_y']
-                if is_sbs:
-                    mid = self.width() // 2
-                    p.drawLine(20, sep_y, mid - 20, sep_y)
-                    p.drawLine(mid + 20, sep_y, self.width() - 20, sep_y)
-                else:
-                    p.drawLine(20, sep_y, self.width() - 20, sep_y)
-            
+                if clip_top <= sep_y <= clip_bot:
+                    if is_sbs:
+                        mid = self.width() // 2
+                        p.drawLine(20, sep_y, mid - 20, sep_y)
+                        p.drawLine(mid + 20, sep_y, self.width() - 20, sep_y)
+                    else:
+                        p.drawLine(20, sep_y, self.width() - 20, sep_y)
+
         p.setPen(Qt.NoPen)
+
+        visible_words = [w for w in all_visible if '_rect' not in w or target_clip.intersects(w['_rect'])]
+        if not visible_words:
+            return
         
         # 1. CZYSZCZENIE ŚMIECI PO POPRZEDNICH ITERACJACH
         # Only clear per-frame keys on the culled (visible) set — no reason to touch off-screen words

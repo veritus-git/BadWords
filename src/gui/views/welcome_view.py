@@ -1411,48 +1411,26 @@ def build_welcome_view(win) -> QWidget:
         if hasattr(win, '_populate_timeline_track_combos'):
             win._populate_timeline_track_combos()
 
-    # Non-blocking auto-reconnect worker for standalone mode when Resolve is selected
-    if is_standalone and not hasattr(win, '_resolve_auto_reconnect_timer'):
-        class _ResolveReconnectWorker(QThread):
-            connected = Signal()
+    # Zero-overhead event-driven bridge watcher (OS-level ReadDirectoryChangesW / inotify)
+    # Consumes 0% CPU, spawns zero subprocesses (no terminal popups), and zero GIL contention.
+    if is_standalone and not hasattr(win, '_bridge_file_watcher'):
+        from PySide6.QtCore import QFileSystemWatcher
+        win._bridge_file_watcher = QFileSystemWatcher(win)
 
-            def __init__(self, engine, parent=None):
-                super().__init__(parent)
-                self.engine = engine
+        handler = getattr(win.engine, 'resolve_handler', None)
+        if handler and hasattr(handler, 'bridge_client') and handler.bridge_client:
+            mb_dir = str(handler.bridge_client.mailbox_dir)
+            if os.path.isdir(mb_dir):
+                win._bridge_file_watcher.addPath(mb_dir)
 
-            def run(self):
-                handler = getattr(self.engine, 'resolve_handler', None)
-                if handler and not handler.is_connected():
-                    handler.refresh_context(silent=True)
-                    if handler.is_connected():
-                        self.connected.emit()
+        def _on_bridge_event(path):
+            h = getattr(win.engine, 'resolve_handler', None)
+            if h and not h.is_connected():
+                if hasattr(win, '_refresh_davinci_connection'):
+                    win._refresh_davinci_connection()
 
-        win._reconnect_worker = None
-
-        def _on_reconnect_detected():
-            if hasattr(win, 'welcome_page') and win.welcome_page:
-                if getattr(win, 'current_source_type', 'file') != "resolve":
-                    win.welcome_page.switch_source_animated("resolve")
-            else:
-                win.current_source_type = "resolve"
-            win._populate_timeline_track_combos()
-
-        def _check_auto_reconnect():
-            if getattr(win, 'current_source_type', 'file') == 'resolve':
-                handler = getattr(win.engine, 'resolve_handler', None)
-                if handler and not handler.is_connected():
-                    os_doc = getattr(win.engine, 'os_doc', None)
-                    if os_doc and hasattr(os_doc, 'is_process_running'):
-                        if not os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
-                            return
-                    if win._reconnect_worker is None or not win._reconnect_worker.isRunning():
-                        win._reconnect_worker = _ResolveReconnectWorker(win.engine, win)
-                        win._reconnect_worker.connected.connect(_on_reconnect_detected)
-                        win._reconnect_worker.start()
-
-        win._resolve_auto_reconnect_timer = QTimer(win)
-        win._resolve_auto_reconnect_timer.timeout.connect(_check_auto_reconnect)
-        win._resolve_auto_reconnect_timer.start(12000)
+        win._bridge_file_watcher.directoryChanged.connect(_on_bridge_event)
+        win._bridge_file_watcher.fileChanged.connect(_on_bridge_event)
 
     page = WelcomePageView(win)
     win.welcome_page = page
