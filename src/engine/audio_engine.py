@@ -969,7 +969,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 relevant.sort(key=lambda x: x['s'])
 
                 if not relevant:
-                    if (gap_end - gap_start) >= 0.5:  # v14.1: raised to 0.5s — gap must be significant
+                    if (gap_end - gap_start) >= 0.67:  # v14.2: 0.67s minimum (filters trailing breaths/decay)
                         final_words.append({
                             "start": gap_start, "end": gap_end,
                             "text": txt_inaudible,
@@ -982,7 +982,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                         valid_start = max(current_pos, s['s'])
                         valid_end = min(s['e'], gap_end)
                         
-                        if valid_start - current_pos >= 0.5:  # v14.1: 0.5s minimum
+                        if valid_start - current_pos >= 0.67:  # v14.2: 0.67s minimum
                              final_words.append({
                                 "start": current_pos, "end": valid_start,
                                 "text": txt_inaudible,
@@ -1001,7 +1001,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                             })
                             current_pos = valid_end
                     
-                    if gap_end - current_pos >= 0.5:
+                    if gap_end - current_pos >= 0.67:
                         final_words.append({
                             "start": current_pos, "end": gap_end,
                             "text": txt_inaudible,
