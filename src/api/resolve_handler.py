@@ -19,6 +19,7 @@ import threading
 import queue
 import json
 import hashlib
+import builtins
 
 from .resolve_bridge import ResolveBridgeClient
 
@@ -52,6 +53,8 @@ class ResolveHandler:
         self.bridge_client = ResolveBridgeClient(install_dir=self.os_doc.install_dir if self.os_doc else None)
         self.bridge_project_name = ""
         self.bridge_timeline_name = ""
+        self.bridge_product_name = ""
+        self.bridge_version = ""
         self.bridge_start_frame = 0
         self.bridge_timelines = []
         self._tracks_cache = {}
@@ -61,6 +64,9 @@ class ResolveHandler:
         self._async_thread = threading.Thread(target=self._async_worker, daemon=True, name="ResolveAsyncWorker")
         self._async_thread.start()
         
+        # Attempt to load script module
+        self._load_resolve_script_module()
+
         # Connect to Resolve or Bridge
         self._connect()
 
@@ -79,70 +85,81 @@ class ResolveHandler:
     def _connect(self, silent: bool = False):
         """Establishes connection to the running Resolve instance."""
         try:
-            # Fast check: If Resolve is not running on the system, skip COM and Bridge entirely
-            if hasattr(self, 'os_doc') and self.os_doc and hasattr(self.os_doc, 'is_process_running'):
-                if not self.os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
-                    self.backend = None
-                    return
+            edition_info = self.get_resolve_edition_info()
+            is_free_21_1 = (edition_info.get("edition") == "Free" and edition_info.get("is_21_1_or_newer", False))
 
-            # 1. Embedded connection: When run via Workspace -> Scripts in DaVinci Free/Studio,
-            #    Resolve injects 'resolve' and/or 'bmd' directly into __main__ or builtins.
-            if not self.resolve:
-                import __main__
-                if hasattr(__main__, "resolve") and __main__.resolve:
-                    self.resolve = __main__.resolve
-                elif hasattr(__main__, "bmd") and __main__.bmd:
-                    try: self.resolve = __main__.bmd.scriptapp("Resolve")
-                    except Exception: pass
+            # ══════════════════════════════════════════════════════════════════════
+            # 1. RESOLVE STARSZE NIŻ 21.1 ORAZ STUDIO (STARY SPOSÓB Z WERSJI 3.2.4)
+            # ══════════════════════════════════════════════════════════════════════
+            if not is_free_21_1:
+                # 1.1. Próba załadowania modułu bmd (jak w 3.2.4)
+                if not hasattr(self, 'bmd') or not self.bmd:
+                    self._load_resolve_script_module()
 
-            if not self.resolve:
-                import builtins
-                if hasattr(builtins, "resolve") and builtins.resolve:
-                    self.resolve = builtins.resolve
-                elif hasattr(builtins, "bmd") and builtins.bmd:
-                    try: self.resolve = builtins.bmd.scriptapp("Resolve")
-                    except Exception: pass
+                # 1.2. Pobranie obiektu Resolve przez bmd.scriptapp (jak w 3.2.4)
+                if hasattr(self, 'bmd') and self.bmd:
+                    try:
+                        self.resolve = self.bmd.scriptapp("Resolve")
+                    except Exception:
+                        pass
 
-            # 2. External scripting: ONLY attempt scriptapp("Resolve") on DaVinci Resolve Studio.
-            #    CRITICAL: DaVinci Resolve Free explicitly blocks external scripting.
-            #    Calling bmd.scriptapp("Resolve") on Free creates a temporary Win32 window (white bar
-            #    with BadWords icon) and hangs in fusionscript.dll holding the GIL, freezing the Qt UI!
-            #    Therefore, if edition != 'Studio', NEVER attempt external scripting. Connect ONLY via Bridge.
-            if not self.resolve:
-                edition_info = self.get_resolve_edition_info()
-                edition = edition_info.get("edition", "Unknown")
-                if edition == "Studio":
-                    if not hasattr(self, 'bmd') or not self.bmd:
-                        self._load_resolve_script_module()
-                    if hasattr(self, 'bmd') and self.bmd:
-                        try: self.resolve = self.bmd.scriptapp("Resolve")
-                        except Exception: pass
+                # 1.3. Fallback dla środowiska embedded: sprawdzenie __main__ i builtins (jak w 3.2.4)
+                if not self.resolve:
+                    import __main__
+                    if hasattr(__main__, "resolve") and getattr(__main__, "resolve"):
+                        self.resolve = getattr(__main__, "resolve")
+                    elif hasattr(builtins, "resolve") and getattr(builtins, "resolve"):
+                        self.resolve = getattr(builtins, "resolve")
 
-            if self.resolve:
-                self.project_manager = self.resolve.GetProjectManager()
-                self.project = self.project_manager.GetCurrentProject() if self.project_manager else None
-                if self.project:
-                    self.backend = 'native'
-                    self.media_pool = self.project.GetMediaPool()
-                    self.timeline = self.project.GetCurrentTimeline()
-                    if self.timeline:
-                        self.fps = self.timeline.GetSetting("timelineFrameRate")
-                        # Handle string fps (e.g. "24.00")
-                        try: self.fps = float(self.fps)
-                        except (TypeError, ValueError) as e:
-                            if not silent:
-                                log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
+                # 1.4. Dodatkowe sprawdzenie bmd lub fusion w __main__ / builtins
+                if not self.resolve:
+                    import __main__
+                    for container in (builtins, __main__):
+                        if hasattr(container, "bmd") and getattr(container, "bmd"):
+                            try:
+                                self.resolve = getattr(container, "bmd").scriptapp("Resolve")
+                                if self.resolve:
+                                    break
+                            except Exception:
+                                pass
+                        if hasattr(container, "fusion") and getattr(container, "fusion"):
+                            try:
+                                fu = getattr(container, "fusion")
+                                if hasattr(fu, "GetResolve"):
+                                    self.resolve = fu.GetResolve()
+                                    if self.resolve:
+                                        break
+                            except Exception:
+                                pass
+
+                # 1.5. Jeśli obiekt resolve został pobrany: inicjalizacja projektu
+                if self.resolve:
+                    self.project_manager = self.resolve.GetProjectManager()
+                    self.project = self.project_manager.GetCurrentProject() if self.project_manager else None
+                    if self.project:
+                        self.backend = 'native'
+                        self.media_pool = self.project.GetMediaPool()
+                        self.timeline = self.project.GetCurrentTimeline()
+                        if self.timeline:
+                            self.fps = self.timeline.GetSetting("timelineFrameRate")
+                            # Handle string fps (e.g. "24.00")
+                            try: self.fps = float(self.fps)
+                            except (TypeError, ValueError) as e:
+                                if not silent:
+                                    log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
+                                self.fps = 24.0
+                        else:
                             self.fps = 24.0
+                        
+                        log_info(f"Connected to Resolve (native 3.2.4). Project: {self.project.GetName()}, FPS: {self.fps}")
+                        return
                     else:
-                        self.fps = 24.0
-                    
-                    log_info(f"Connected to Resolve (native). Project: {self.project.GetName()}, FPS: {self.fps}")
-                    return
-                else:
-                    if not silent:
-                        log_error("No project is open in Resolve.")
-            
-            # 3. Fallback: Try Mailbox Bridge (for DaVinci Resolve Free / 21.1+)
+                        if not silent:
+                            log_error("No project is open in Resolve.")
+
+            # ══════════════════════════════════════════════════════════════════════
+            # 2. RESOLVE FREE 21.1+ (LUB FALLBACK DLA BRAKU POŁĄCZENIA NATYWNEGO)
+            # ══════════════════════════════════════════════════════════════════════
             if self.bridge_client.is_bridge_alive(timeout_secs=0.25):
                 try:
                     res = self.bridge_client.call("GetTimelineInfo", timeout_secs=2.0)
@@ -150,6 +167,8 @@ class ResolveHandler:
                         self.backend = 'bridge'
                         self.bridge_project_name = res.get("project", "")
                         self.bridge_timeline_name = res.get("current_timeline", "")
+                        self.bridge_product_name = res.get("product_name", "")
+                        self.bridge_version = res.get("version", "")
                         self.fps = float(res.get("fps", 24.0))
                         self.bridge_start_frame = int(res.get("start_frame", 0))
                         self.bridge_timelines = res.get("timelines", [])
@@ -162,11 +181,10 @@ class ResolveHandler:
             self.backend = None
             if not silent:
                 log_error("Could not connect to Resolve API object or Bridge.")
-                edition_info = self.get_resolve_edition_info()
-                if edition_info.get("edition") == "Studio":
-                    log_info("[Tip] DaVinci Resolve Studio: ensure Preferences > System > General > 'External scripting using' is set to 'Local'.")
+                if is_free_21_1:
+                    log_info("[Tip] DaVinci Resolve Free 21.1+: open DaVinci Resolve and run 'Workspace -> Scripts -> BadWords Bridge'.")
                 else:
-                    log_info("[Tip] DaVinci Resolve Free: open DaVinci Resolve and run 'Workspace -> Scripts -> BadWords Bridge'.")
+                    log_info("[Tip] Ensure DaVinci Resolve is running and a project is open.")
         except Exception as e:
             self.backend = None
             if not silent:
@@ -211,6 +229,30 @@ class ResolveHandler:
         if hasattr(self.os_doc, 'get_resolve_installation_info'):
             return self.os_doc.get_resolve_installation_info()
         return {"installed": False, "edition": "Unknown", "version": "", "is_21_1_or_newer": False}
+
+    def is_free_21_1_or_newer(self) -> bool:
+        """Returns True if running DaVinci Resolve Free 21.1 or newer."""
+        info = self.get_resolve_edition_info()
+        if info.get("installed"):
+            if info.get("edition") == "Free" and info.get("is_21_1_or_newer"):
+                return True
+            if info.get("edition") == "Studio":
+                return False
+        if self.backend == 'bridge':
+            prod = (getattr(self, 'bridge_product_name', '') or '').lower()
+            ver = getattr(self, 'bridge_version', '') or ''
+            is_studio = 'studio' in prod
+            if not is_studio and ver:
+                try:
+                    import re
+                    parts = [int(p) for p in re.findall(r'\d+', ver)]
+                    if parts and (parts[0] > 21 or (parts[0] == 21 and len(parts) > 1 and parts[1] >= 1)):
+                        return True
+                except Exception:
+                    pass
+            if info.get("edition") == "Free":
+                return True
+        return False
 
     def get_current_project_name(self) -> str:
         """Returns the active DaVinci Resolve project name, or empty string."""
@@ -759,6 +801,8 @@ class ResolveHandler:
                     self.bridge_timelines = res.get("timelines", [])
                     self.bridge_project_name = res.get("project", "")
                     self.bridge_timeline_name = res.get("current_timeline", "")
+                    self.bridge_product_name = res.get("product_name", "")
+                    self.bridge_version = res.get("version", "")
                     self.fps = float(res.get("fps", 24.0))
                     self.bridge_start_frame = int(res.get("start_frame", 0))
                     return self.bridge_timelines
@@ -1580,11 +1624,14 @@ class ResolveHandler:
         Returns (success: bool, start_frame: int).
         """
         if self.backend == 'bridge':
+            if self.is_free_21_1_or_newer():
+                log_info("export_timeline_drt: Resolve Free 21.1+ detected — bypassing DRT export directly to XML.")
+                return False, 0
             try:
                 res = self.bridge_client.call("ExportTimelineDrt", {
                     "timeline_name": timeline_name,
                     "output_path": output_path
-                }, timeout_secs=30.0)
+                }, timeout_secs=10.0)
                 if res and res.get("ok"):
                     return True, int(res.get("start_frame") or 0)
                 log_error(f"export_timeline_drt (bridge) failed: {res}")
@@ -1946,18 +1993,15 @@ class ResolveHandler:
 
                 ci_id_counter = [0]
 
+                has_normal_clips = any(item.find('file') is not None for item in original_items)
+
                 for ci in original_items:
-                    # ── Skip compound clips (nested sequence references) ───────────
-                    # Resolve's FCP7 XML export for complex timelines (multiple clips,
-                    # adjustment clips, etc.) adds an extra <clipitem> that wraps the
-                    # ENTIRE source timeline as a compound clip/nested sequence.
-                    # These have a <sequence> child instead of a normal <file> element.
-                    # Including them in the output causes:
-                    #   • A duplicate timeline item appearing in the BadWords Media Pool bin
-                    #   • A large green nested-sequence clip on the assembled timeline
-                    #   • Silent/incorrect audio segments (compound clip has internal timing)
-                    # Fix: detect and skip any clipitem that contains a <sequence> child.
-                    if ci.find('sequence') is not None:
+                    # ── Skip compound clips (nested sequence references) only when normal clips exist ──
+                    # If the track has normal file-backed clips, Resolve's XML export may include an extra
+                    # wrapper <clipitem> with a <sequence> child that duplicates the timeline.
+                    # BUT if the user's timeline is composed of a nested timeline (no normal file clips on track),
+                    # we must NOT skip it so the user can cut nested sequences and "Decompose in Place"!
+                    if has_normal_clips and ci.find('sequence') is not None:
                         continue
 
                     s_el  = ci.find('start')

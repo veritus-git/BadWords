@@ -447,8 +447,8 @@ try:
     from faster_whisper.audio import decode_audio
     
     RAW_ISLANDS = {repr(islands)}
-    MAX_CLUSTER_DUR = 12.0
-    MIN_CLUSTER_DUR = 4.0
+    MAX_CLUSTER_DUR = 30.0
+    MIN_CLUSTER_DUR = 8.0
     MIN_SAFE_GAP = 0.5
     ISLANDS = []
     
@@ -456,11 +456,10 @@ try:
         i = 0
         while i < len(RAW_ISLANDS):
             c_start = RAW_ISLANDS[i][0]
-            curr_max_dur = 6.0 if i == 0 else MAX_CLUSTER_DUR
             
             J = []
             for j in range(i, len(RAW_ISLANDS)):
-                if RAW_ISLANDS[j][1] - c_start <= curr_max_dur:
+                if RAW_ISLANDS[j][1] - c_start <= MAX_CLUSTER_DUR:
                     J.append(j)
                 else:
                     break
@@ -513,7 +512,7 @@ try:
     audio_array  = decode_audio({repr(audio_path)}, sampling_rate=16000)
     total_chunks = len(ISLANDS)
     print(f"[Chunked] {{total_chunks}} islands to process.")
-    print("CHUNK_PROGRESS: 0", flush=True)
+    print("[Chunked] Initializing transcription threads...", flush=True)
     
     results_dict = {{}}
     completed = 0
@@ -584,8 +583,6 @@ try:
                     "percent": percent
                 }}
                 print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
-                if target_device == "cuda":
-                    time.sleep(0.015)
         
         with progress_lock:
             chunk_progress[idx] = end_t - start_t
@@ -745,8 +742,6 @@ try:
         }}
         print(f"CHUNK_STREAM: {{json.dumps(chunk_payload)}}", flush=True)
         print(f"Segment processed: {{segment.start:.2f}}s")
-        if target_device == "cuda":
-            time.sleep(0.020)
 
     final_data = {{
         "segments": output_segments,

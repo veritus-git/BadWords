@@ -545,8 +545,13 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             update_progress(-1)  # Indeterminate bar during init
 
             def whisper_live_progress(pct):
-                update_progress(int(pct))
-                update_status(self.txt('status_transcribing'))
+                val = int(pct)
+                if val > 0:
+                    update_progress(val)
+                    update_status(self.txt('status_transcribing'))
+                else:
+                    update_progress(-1)
+                    update_status(self.txt('status_whisper_init'))
 
             # ── Silence detection BEFORE Whisper ─────────────────────────────
             # Results are reused both for island computation and _build_data_structure
@@ -601,6 +606,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 })
 
             update_status(self.txt("status_whisper_init"))
+            update_progress(-1)
             
             # Note: Bar remains indeterminate (from status_whisper_init above) until runner emits first progress
             json_path = self.run_whisper(
@@ -795,9 +801,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         compressed_words = raw_words
 
         # Pass 2: Smart Chunking (Z-Lookahead)
-        c_max = int(prefs.get('chunk_max_words', 30))
+        c_max = int(prefs.get('chunk_max_words', 15))
         c_look = int(prefs.get('chunk_lookahead', 3))
-        c_min = int(prefs.get('chunk_min_words', prefs.get('chunk_min_chars', 7)))
+        c_min = int(prefs.get('chunk_min_words', 7))
         c_hard_limit = c_max + c_look
 
         chunks = []
@@ -1871,30 +1877,38 @@ except Exception as e:
                     elif vmode == 'cust':
                         video_track_filter = track_config.get('video_custom', [])
 
-                log_info("assemble_timeline: TIER 1 — attempting DRT primary path...")
-                drt_ok, drt_colors, drt_name = assembler.assemble_via_drt(
-                    self.resolve_handler,
-                    original_tl_name,
-                    clean_ops,
-                    new_tl_name,
-                    audio_only_mode=audio_only_mode,
-                    audio_track_filter=audio_track_filter,
-                    video_track_filter=video_track_filter,
-                    preserve_track_order=preserve_track_order,
-                    temp_dir=temp_dir
-                )
+                # In DaVinci Resolve Free 21.1+, DRT export is blocked by Blackmagic and causes a 30s hang.
+                # Skip DRT immediately and go straight to XML assembly.
+                skip_drt = False
+                if hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer():
+                    log_info("assemble_timeline: Resolve Free 21.1+ detected — bypassing DRT path directly to TIER 2 XML.")
+                    skip_drt = True
 
-                if drt_ok and drt_name:
-                    drt_success = True
-                    drt_tl_name = drt_name
-                    log_info(f"assemble_timeline: DRT path succeeded → '{drt_tl_name}'")
+                if not skip_drt:
+                    log_info("assemble_timeline: TIER 1 — attempting DRT primary path...")
+                    drt_ok, drt_colors, drt_name = assembler.assemble_via_drt(
+                        self.resolve_handler,
+                        original_tl_name,
+                        clean_ops,
+                        new_tl_name,
+                        audio_only_mode=audio_only_mode,
+                        audio_track_filter=audio_track_filter,
+                        video_track_filter=video_track_filter,
+                        preserve_track_order=preserve_track_order,
+                        temp_dir=temp_dir
+                    )
 
-                    # Apply / verify clip colors
-                    set_status(self.txt("status_assembly_colors"))
-                    self.resolve_handler.reapply_clip_colors(drt_tl_name, drt_colors or {})
-                    new_tl_name = drt_tl_name
-                else:
-                    log_error("assemble_timeline: DRT path failed, falling to TIER 2 (XML)...")
+                    if drt_ok and drt_name:
+                        drt_success = True
+                        drt_tl_name = drt_name
+                        log_info(f"assemble_timeline: DRT path succeeded → '{drt_tl_name}'")
+
+                        # Apply / verify clip colors
+                        set_status(self.txt("status_assembly_colors"))
+                        self.resolve_handler.reapply_clip_colors(drt_tl_name, drt_colors or {})
+                        new_tl_name = drt_tl_name
+                    else:
+                        log_error("assemble_timeline: DRT path failed, falling to TIER 2 (XML)...")
 
             except Exception as drt_err:
                 log_error(f"assemble_timeline: DRT path exception: {drt_err}")

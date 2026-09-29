@@ -28,7 +28,7 @@ def build_processing_view(win) -> QWidget:
     layout = QVBoxLayout(page)
     layout.setAlignment(Qt.AlignCenter)
     
-    win.lbl_processing_status = QLabel(win.txt("lbl_initializing"), page)
+    win.lbl_processing_status = QLabel(win.txt("status_whisper_init", "Inicjalizowanie transkrypcji..."), page)
     win.lbl_processing_status.setAlignment(Qt.AlignCenter)
     win.lbl_processing_status.setStyleSheet(
         f"color: {config.NOTE_COL}; font-size: {config.FS(13)}pt;"

@@ -1391,7 +1391,11 @@ def _create_davinci_wrappers(install_dir, resolve_dirs):
     main_script = os.path.join(install_dir, "main.py").replace('\\', "/")
 
     wrapper_content = f'''\
-import sys, os, traceback
+import sys, os, traceback, builtins
+
+for _k in ("resolve", "bmd", "fusion", "fu"):
+    if _k in globals():
+        setattr(builtins, _k, globals()[_k])
 
 INSTALL_DIR = r'{install_str}'
 MAIN_SCRIPT = r'{main_script}'

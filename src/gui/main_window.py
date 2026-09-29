@@ -2032,12 +2032,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         self.data_ready.emit([], "", {})
                         return
 
-                    if os_doc and hasattr(os_doc, 'is_process_running'):
-                        if not os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
-                            self.data_ready.emit([], "", {})
-                            return
-
                     if not rh.is_connected():
+                        if os_doc and hasattr(os_doc, 'is_process_running'):
+                            if not os_doc.is_process_running(["Resolve", "resolve", "fuscript"]):
+                                self.data_ready.emit([], "", {})
+                                return
                         rh.refresh_context(silent=True)
 
                     if not rh.is_connected():
@@ -2294,7 +2293,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         self.go_to_page(1)
         if hasattr(self, 'bar_processing'):
-            self.bar_processing.set_value(0)
+            self.bar_processing.set_value(-1)
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText(self.txt("txt_initializing_fast_silence"))
 
@@ -2918,7 +2917,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _update_processing_progress(self, val: int):
         if hasattr(self, 'bar_processing'):
-            self.bar_processing.set_value(val)
+            if val <= 0:
+                self.bar_processing.set_value(-1)
+            else:
+                self.bar_processing.set_value(val)
 
     def _build_page_editor(self) -> QWidget:
         """Page 2 of the main stack: Interactive Transcript Editor screen."""
@@ -3192,9 +3194,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         # Reset progress bar UI
         if hasattr(self, 'bar_processing'):
-            self.bar_processing.set_value(0)
+            self.bar_processing.set_value(-1)
         if hasattr(self, 'lbl_processing_status'):
-            self.lbl_processing_status.setText(self.txt("txt_initializing_analysis"))
+            self.lbl_processing_status.setText(self.txt("status_whisper_init", "Inicjalizowanie transkrypcji..."))
 
         # ── First-run hint: check if chosen model has been run before ────────────
         raw_model_for_check = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
@@ -3453,8 +3455,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         words = chunk_info.get("words", [])
         chunk_audio = chunk_info.get("audio_path")
 
-        # Ensure editor view is active
-        self._prepare_editor_for_live_transcription(pct=pct)
+        if pct >= 0 and self._stack.currentIndex() == 1:
+            self._update_processing_progress(pct)
+
+        # Ensure editor view is active only when actual words arrive
+        if words and self._stack.currentIndex() != 2:
+            self._prepare_editor_for_live_transcription(pct=pct)
 
         # Update top island percent
         if hasattr(self, 'top_island'):
@@ -3465,11 +3471,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.text_canvas.load_streamed_words(words)
 
         # Update waveform timeline live as chunks arrive!
-        if hasattr(self, 'waveform_timeline') and self.waveform_timeline:
-            if chunk_audio and not self.waveform_timeline._audio_path:
-                self.waveform_timeline.load_from_audio(chunk_audio)
+        wf_tl = getattr(self, 'waveform_timeline', None)
+        if not wf_tl and hasattr(self, 'audio_preview') and hasattr(self.audio_preview, 'waveform_timeline'):
+            wf_tl = self.audio_preview.waveform_timeline
+        if wf_tl:
+            if chunk_audio and not getattr(wf_tl, '_audio_path', None):
+                wf_tl.load_from_audio(chunk_audio)
             if words:
-                self.waveform_timeline.set_words_data(words)
+                wf_tl.set_words_data(words)
 
     def _on_analysis_progress(self, val):
         self._update_processing_progress(val)
@@ -3481,16 +3490,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.lbl_processing_status.setText(msg)
         if hasattr(self, 'top_island') and getattr(self.top_island, '_state', '') == 'working':
             self.top_island.set_status(msg)
-
-        # Transition to Editor View ONLY after initialization finishes and transcribing begins!
-        # From click analyze UP TO initialization end, it stays 1:1 on Page 1 like previous versions.
-        transcribing_txt = self.txt("status_transcribing")
-        is_transcribing = (msg == transcribing_txt) or (
-            ("transcrib" in msg.lower() or "transkryb" in msg.lower()) and
-            ("init" not in msg.lower() and "inicjal" not in msg.lower())
-        )
-        if is_transcribing:
-            self._prepare_editor_for_live_transcription(pct=0)
 
     def _on_analysis_error(self, err):
         # Stop hint rotation on Page 1

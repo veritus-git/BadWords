@@ -14,6 +14,12 @@ Main entry point for the BadWords application.
 import sys
 import os
 import traceback
+import builtins
+
+# Propagate DaVinci Resolve embedded globals to builtins so all worker threads can access them
+for _k in ("resolve", "bmd", "fusion", "fu"):
+    if _k in globals() and not hasattr(builtins, _k):
+        setattr(builtins, _k, globals()[_k])
 
 # --- Cross-platform OpenMP / BLAS threading caps (Windows, macOS, Linux) ---
 # Prevents worker threads from spin-waiting in while(true) loops and starving OS/UI
