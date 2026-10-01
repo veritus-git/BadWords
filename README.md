@@ -27,6 +27,18 @@
 
 <br>
 
+> [!WARNING]
+> ### ⚠️ Compatibility Notice: DaVinci Resolve Free 21.1+
+> The current release (**v3.2.4**) does **not** work with **DaVinci Resolve Free 21.1+** due to external scripting and API restrictions introduced by Blackmagic Design in that update.
+> 
+> **To use BadWords right now, you must:**
+> * Use **DaVinci Resolve Studio** (all versions are fully supported), **OR**
+> * Downgrade to **DaVinci Resolve Free older than v21.1** (e.g. 21.0.3, 19.x, 18.x).
+> 
+> 🛠️ **Under Active Development:** I am actively working on the next major release (**v4.0**), which restores full connectivity for DaVinci Resolve Free 21.1+ through a dedicated IPC bridge. The update will be available soon!
+
+<br>
+
 ## <img src="repo/icons/info.svg" alt="Info" width="30" height="30" valign="text-bottom"> What is it?
 
 **BadWords** is a plugin-app for DaVinci Resolve built for anyone dealing with dialogue-heavy footage (podcasts, talking heads, gameplays). Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your workflow into an easy text-editing experience.
@@ -205,7 +217,7 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 
 ## <img src="repo/icons/user.svg" alt="About Me" width="30" height="30" valign="text-bottom"> A little about me & the project
 
-Hi! I am Simon - the 17 year old solo-developer of BadWords. This project started totally randomly. It wasn't planned, it wasn't supposed to become a full-on program. Heck! It wasn't supposed to even leave my computer... but somehow it became the biggest and most advanced project I've made.
+Hi! I am Simon - the 18 year old solo-developer of BadWords. This project started totally randomly. It wasn't planned, it wasn't supposed to become a full-on program. Heck! It wasn't supposed to even leave my computer... but somehow it became the biggest and most advanced project I've made.
 It's probably not the best, the fastest, the cleanest, or the most useful thing you'll see... but while making it, I realized that it could actually be useful not only to me - but for many others.
 So... I made it for everyone.
 It is still in development, it probably has a lot of bugs, "holes", crashes on edge-cases and unoptimized functions. So if you ever stumble upon any problems - feel free to open an Issue or contact me directly.
