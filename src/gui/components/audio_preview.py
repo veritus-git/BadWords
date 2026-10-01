@@ -809,27 +809,20 @@ class AudioPreviewWidget(QFrame):
             except Exception as _e:
                 pass
 
-        # Fallback 2: Check common workspace directories (/mnt/dump, etc.) for matching video footage
-        if not video_file:
-            search_dirs = []
-            if audio_path:
-                search_dirs.append(os.path.dirname(audio_path))
-                search_dirs.append(os.path.abspath(os.path.join(os.path.dirname(audio_path), "..")))
-            search_dirs.append("/mnt/dump")
-            for sdir in search_dirs:
-                if os.path.isdir(sdir):
-                    try:
-                        for fname in os.listdir(sdir):
-                            ext = os.path.splitext(fname)[1].lower()
-                            if ext in (".mov", ".mp4", ".m4v", ".mkv", ".webm"):
-                                cand = os.path.join(sdir, fname)
-                                if os.path.isfile(cand) and os.path.getsize(cand) > 1024 * 1024:
-                                    video_file = cand
-                                    break
-                        if video_file:
-                            break
-                    except Exception:
-                        pass
+        # Fallback 2: Check adjacent directory of audio_path for matching video footage
+        if not video_file and audio_path:
+            audio_dir = os.path.dirname(audio_path)
+            if os.path.isdir(audio_dir):
+                try:
+                    for fname in os.listdir(audio_dir):
+                        ext = os.path.splitext(fname)[1].lower()
+                        if ext in (".mov", ".mp4", ".m4v", ".mkv", ".webm"):
+                            cand = os.path.join(audio_dir, fname)
+                            if os.path.isfile(cand) and os.path.getsize(cand) > 1024 * 1024:
+                                video_file = cand
+                                break
+                except Exception:
+                    pass
 
         clip_name = os.path.basename(video_file) if video_file else (
             f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)

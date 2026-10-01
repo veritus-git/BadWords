@@ -346,8 +346,8 @@
     "txt_all": "Wszystko",
     "lbl_xml_preserve_track_order": "Zachowaj oryginalną kolejność ścieżek",
     "tt_xml_preserve_track_order": "Zachowuje oryginalne numery dla ścieżek audio jak i wideo (np. A3 zostaje na A3, V2 na V2). Jeśli wyłączone, ścieżki ułożą się po kolei od 1.",
-    "status_assembly_xml_build": "Budowanie montażu DRT...",
-    "status_assembly_xml_import": "Importowanie osi czasu DRT...",
+    "status_assembly_xml_build": "Budowanie montażu XML...",
+    "status_assembly_xml_import": "Importowanie osi czasu XML...",
     "status_assembly_colors": "Aplikowanie kolorów klipów...",
     "lbl_timestamp_precise": "Precyzyjne znaczniki czasu (ms)",
     "tt_timestamp_precise": "Wyświetla czas z dokładnością do milisekund.",
@@ -446,5 +446,10 @@
     "tt_source_info_studio": "<!-- raw -->Wybierz źródło multimediów: możesz edytować plik wideo/audio bezpośrednio z dysku lub użyć BadWords jako wtyczki do DaVinci Resolve (co pozwala na bezpośrednie nanoszenie cięć na osi czasu oraz kolorowanie klipów).<br><br><b>Połączenie z DaVinci Resolve Studio:</b><br>Możesz uruchomić BadWords bezpośrednio lub z poziomu DaVinci Resolve (poprzez <i>Workspace → Scripts → BadWords</i>). Upewnij się, że w DaVinci Resolve opcja <i>Preferences → System → General → External scripting using</i> jest ustawiona na <i>Local</i>.",
     "tt_source_info_not_installed": "<!-- raw -->Wybierz źródło multimediów: możesz edytować plik wideo/audio bezpośrednio z dysku lub użyć BadWords jako wtyczki do DaVinci Resolve (co pozwala na bezpośrednie nanoszenie cięć na osi czasu oraz kolorowanie klipów).<br><br><b>DaVinci Resolve:</b><br>Profesjonalny program do montażu wideo. Nie wykryto go w systemie – zalecamy pobranie DaVinci Resolve dla pełni funkcji integracji z osią czasu.",
     "tt_assembly_locked_transcription": "Opcja zablokowana do czasu zakończenia transkrypcji",
-    "lbl_timeline_ready": "A1: Oczekiwanie na ścieżkę audio"
+    "lbl_timeline_ready": "A1: Oczekiwanie na ścieżkę audio",
+    "status_importing_project": "Wczytywanie projektu...",
+    "lbl_force_xml_assembly": "Wymuś składanie przez XML",
+    "tt_force_xml_assembly": "Wymusza składanie osi czasu za pomocą FCP7 XML zamiast natywnego DRT. Przydatne do testowania składania XML lub na darmowym DaVinci Resolve 21.1+.",
+    "status_assembly_drt_build": "Budowanie montażu DRT...",
+    "status_assembly_drt_import": "Importowanie osi czasu DRT..."
 }

@@ -33,7 +33,10 @@ from gui.widgets.file_drop_zone import FileDropZone
 
 def is_embedded_in_resolve() -> bool:
     """Returns True if BadWords was launched from inside DaVinci Resolve (Workspace -> Scripts)."""
-    import sys
+    import sys, os
+    if os.environ.get("BADWORDS_EMBEDDED") == "1" or "--embedded" in sys.argv:
+        return True
+
     for mod_name in ('__main__', 'builtins'):
         mod = sys.modules.get(mod_name)
         if not mod:
@@ -1678,7 +1681,7 @@ def build_welcome_view(win) -> QWidget:
     win.script_layout.addSpacing(config.S(4))
 
     win.welcome_script_edit = QTextEdit()
-    win.welcome_script_edit.setFixedHeight(config.S(256))
+    win.welcome_script_edit.setFixedHeight(config.S(333) if is_standalone else config.S(267))
     win.welcome_script_edit.setAcceptRichText(False)
     win.welcome_script_edit.setStyleSheet(f"""
         QTextEdit {{
@@ -2086,6 +2089,8 @@ def build_welcome_view(win) -> QWidget:
 
         win.drop_zone_0.file_selected.connect(_sync_file_0)
         win.drop_zone_1.file_selected.connect(_sync_file_1)
+    else:
+        page.welcome_root.move(0, page._target_y(0, "resolve"))
 
     if hasattr(win, '_sync_script_edit_height'):
         QTimer.singleShot(0, win._sync_script_edit_height)

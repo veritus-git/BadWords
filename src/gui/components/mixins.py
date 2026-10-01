@@ -177,6 +177,18 @@ class FramelessWindowMixin:
             pass
 
     def showEvent(self, event):
+        # Cloak during initial window mapping on Windows to eliminate DWM standard NC frame white flash
+        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                if hwnd and not getattr(self, '_shown_once', False):
+                    self._shown_once = True
+                    val = ctypes.c_int(1)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)  # DWMWA_CLOAK
+            except Exception:
+                pass
+
         super().showEvent(event)
         if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
             try:
@@ -219,6 +231,9 @@ class FramelessWindowMixin:
                         hwnd, None, 0, 0, 0, 0,
                         0x0001 | 0x0002 | 0x0004 | 0x0020  # NOSIZE|NOMOVE|NOZORDER|FRAMECHANGED
                     )
+
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(35, self._dwm_uncloak)
                 if hwnd:
                     # ALL windows (root & popups): DWMWCP_DONOTROUND
                     # Removes Windows 11 rounded corners

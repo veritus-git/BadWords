@@ -89,27 +89,38 @@ class ResolveBridgeClient:
     @classmethod
     def _get_mailbox_dir(cls, install_dir: Optional[Union[str, Path]] = None) -> Path:
         """Determines the mailbox directory placed inside the BadWords installation directory."""
-        # 1. First check explicit known BadWords installation root
-        known_roots = [
-            Path("/mnt/dump/BadWords FILES"),
-            Path("/mnt/dump/BadWords"),
-        ]
-        for kr in known_roots:
-            if (kr / "bridge").is_dir():
-                return kr / "bridge"
-
-        # 2. Next check install_dir (handling src/ subfolder)
+        candidates = []
         if install_dir:
             p = Path(install_dir)
-            if p.name == "src" and (p.parent / "bridge").is_dir():
-                return p.parent / "bridge"
-            if (p / "bridge").is_dir():
-                return p / "bridge"
+            candidates.append(p / "bridge")
             if p.name == "src":
-                return p.parent / "bridge"
-            return p / "bridge"
+                candidates.append(p.parent / "bridge")
 
-        return cls._get_fallback_mailbox_dir()
+        candidates.extend([
+            Path("/mnt/dump/BadWords/src/bridge"),
+            Path("/mnt/dump/BadWords/bridge"),
+            Path("/mnt/dump/BadWords FILES/src/bridge"),
+            Path("/mnt/dump/BadWords FILES/bridge"),
+            cls._get_fallback_mailbox_dir(),
+        ])
+
+        # 1. Prioritize any candidate directory that currently has bridge_status.json (active Bridge)
+        for c in candidates:
+            if (c / "bridge_status.json").is_file():
+                return c
+
+        # 2. Prioritize existing directory
+        for c in candidates:
+            if c.is_dir():
+                return c
+
+        # 3. Create target in install_dir or fallback
+        target = candidates[0] if candidates else cls._get_fallback_mailbox_dir()
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            return target
+        except Exception:
+            return cls._get_fallback_mailbox_dir()
 
     @staticmethod
     def _get_fallback_mailbox_dir() -> Path:

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget, QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import (
-    Qt, QTimer, Signal, QObject, QEvent, QVariantAnimation, QEasingCurve, QPropertyAnimation
+    Qt, QTimer, Signal, QObject, QEvent, QVariantAnimation, QEasingCurve, QPropertyAnimation, QThread
 )
 from PySide6.QtGui import (
     QPixmap, QGuiApplication, 
@@ -73,12 +73,46 @@ from handlers.analysis_worker import AnalysisWorker
 from handlers.autosave_manager import AutoSaveManager
 from handlers.undo_manager import UndoManager
 
-_QLabel = QLabel
+class _ProjectImportWorker(QThread):
+    status_updated = Signal(str)
+    finished_success = Signal(dict, dict)
+    finished_error = Signal(str)
 
+    def __init__(self, engine, file_path):
+        super().__init__()
+        self.engine = engine
+        self.file_path = file_path
 
+    def run(self):
+        try:
+            self.status_updated.emit("Loading project...")
+            bws_extras = None
+            if self.file_path.endswith('.bws'):
+                state, _, bws_extras = self.engine.load_bws(self.file_path)
+            else:
+                state, _ = self.engine.load_project_state(self.file_path)
 
+            missing_media = []
+            if bws_extras and bws_extras.get("media_inventory"):
+                self.status_updated.emit("Checking media...")
+                missing_media, _ = self.engine.verify_media_inventory(bws_extras["media_inventory"])
 
+            if bws_extras and bws_extras.get("assembly_recipe") and bws_extras.get("audio_path"):
+                self.status_updated.emit("Preparing audio...")
+                temp_dir = self.engine.os_doc.get_temp_folder()
+                out_path = os.path.join(temp_dir, f"bws_assembled_{int(time.time())}.flac")
+                self.engine.execute_assembly_recipe(bws_extras["assembly_recipe"], bws_extras["audio_path"], out_path)
 
+            target_name = (state.get('transcription_source') or (state.get('settings') or {}).get('transcription_source') or {}).get("timeline_name", "")
+
+            meta = {
+                "bws_extras": bws_extras,
+                "missing_media": missing_media,
+                "target_name": target_name
+            }
+            self.finished_success.emit(state, meta)
+        except Exception as e:
+            self.finished_error.emit(str(e))
 
 
 class WorkspaceWarningOverlay(QFrame):
@@ -266,7 +300,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             init_h = config.CFG_WINDOW_H_BASE
         self.resize(init_w, init_h)
         self.setMinimumSize(config.S(330), config.S(400))
-        # NOTE: force_dark_titlebar removed — CSD owns the title bar.
+        from gui.views.welcome_view import is_embedded_in_resolve
+        self.is_standalone = not is_embedded_in_resolve()
 
         # --- Global QSS ---
         self.setStyleSheet(f"""
@@ -539,14 +574,31 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not hasattr(self, 'welcome_script_edit'):
             return
         try:
-            top_offset = config.S(22)
-            target_p_bottom = config.S(360)
-            target_h = target_p_bottom - top_offset
+            from PySide6.QtCore import QPoint
+            parent_ref = getattr(self, 'slider_widget', None)
+            ref_widget = getattr(self, 'tgl_more_accurate', None) or getattr(self, 'w_row_acc', None)
+            target_h = 0
+            if ref_widget and parent_ref and self.welcome_script_edit.parentWidget():
+                bottom_pt = ref_widget.mapTo(parent_ref, QPoint(0, ref_widget.height()))
+                top_y = self.welcome_script_edit.mapTo(parent_ref, QPoint(0, 0)).y()
+                if top_y <= 0:
+                    top_y = config.S(18) + config.S(4)
+                calc_h = bottom_pt.y() - top_y
+                if calc_h > config.S(50):
+                    target_h = calc_h
+
+            if not target_h:
+                is_standalone = getattr(self, 'is_standalone', True)
+                target_h = config.S(333) if is_standalone else config.S(267)
 
             if target_h > config.S(50):
-                self.welcome_script_edit.setFixedHeight(target_h)
-        except Exception:
-            pass
+                if animated and duration > 0:
+                    self.animate_script_edit_height(target_h, duration)
+                else:
+                    self.welcome_script_edit.setFixedHeight(target_h)
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_sync_script_edit_height error: {e}")
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -1235,8 +1287,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._main_h_splitter.setSizes(self._sbs_left_sizes)
 
     def _on_cut_now_clicked(self, color_name):
-        from gui import CustomMsgBox
-        
         # Always fetch the currently active timeline from DaVinci before cutting
         rh = getattr(self.engine, 'resolve_handler', None)
         if rh:
@@ -1477,6 +1527,19 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._media_inventory = media_inventory
 
             recipe = getattr(self, '_assembly_recipe', None)
+            xml_path = None
+            if not drt_path and getattr(self, 'resolve_handler', None) and getattr(self, '_transcription_source', None):
+                tl_name = self._transcription_source.get("timeline_name")
+                if tl_name:
+                    try:
+                        temp_dir = self.engine.os_doc.get_temp_folder()
+                        safe_name = "".join(c for c in tl_name if c.isalnum() or c in '_- ')
+                        cand_xml = os.path.join(temp_dir, f"bws_source_{safe_name.replace(' ', '_')}.xml")
+                        if self.resolve_handler.export_timeline_xml(tl_name, cand_xml):
+                            xml_path = cand_xml
+                    except Exception as xe:
+                        from osdoc import log_error as _le
+                        _le(f"_on_export_project: xml fallback export failed: {xe}")
 
             self.engine.save_bws(
                 path, packet, 
@@ -1484,8 +1547,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 drt_path=drt_path, 
                 assembly_recipe=recipe, 
                 timeline_fingerprint=timeline_fingerprint,
-                media_inventory=media_inventory
+                media_inventory=media_inventory,
+                xml_path=xml_path
             )
+            if xml_path and os.path.exists(xml_path):
+                try: os.remove(xml_path)
+                except Exception: pass
             
         self._show_temporary_status(self.txt("msg_transcript_exported"))
 
@@ -1612,6 +1679,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _on_import_project(self, override_path=None):
         try:
             from PySide6.QtWidgets import QFileDialog, QDialog
+            from PySide6.QtCore import QThread, Signal
             import os, time
             
             path = override_path
@@ -1627,17 +1695,75 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 )
                 
             if not path: return
-            
-            bws_extras = None
-            if path.endswith('.bws'):
-                state, _, bws_extras = self.engine.load_bws(path)
-            else:
-                state, _ = self.engine.load_project_state(path)
 
+            self._pre_import_stack_idx = self._stack.currentIndex() if hasattr(self, '_stack') else 0
 
-            from_main_window = False
-            if hasattr(self, '_stack') and self._stack.currentIndex() != 2:
-                from_main_window = True
+            # Switch to processing page with indeterminate liquid progress bar (-1)
+            import_txt = self.txt("status_importing_project") if hasattr(self, 'txt') else "Loading project..."
+            if hasattr(self, 'lbl_processing_status'):
+                self.lbl_processing_status.setText(import_txt)
+            if hasattr(self, 'lbl_first_run_hint'):
+                self.lbl_first_run_hint.hide()
+            if hasattr(self, 'bar_processing'):
+                self.bar_processing.set_value(-1)
+            if hasattr(self, 'go_to_page'):
+                self.go_to_page(1)
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+            self._import_worker = _ProjectImportWorker(self.engine, path)
+            def _on_import_status(s):
+                if hasattr(self, 'lbl_processing_status'):
+                    self.lbl_processing_status.setText(s)
+                self._show_temporary_status(s)
+            self._import_worker.status_updated.connect(_on_import_status)
+
+            def _on_import_err(err):
+                if hasattr(self, 'bar_processing'):
+                    self.bar_processing.set_value(0)
+                if hasattr(self, 'go_to_page'):
+                    self.go_to_page(getattr(self, '_pre_import_stack_idx', 0))
+                self._show_temporary_status(f"Import error: {err}")
+                dlg = CustomMsgBox(self, self.txt("lbl_error"), f"{self.txt('msg_load_project_failed')}:\n{err}", self.txt("btn_ok"))
+                dlg.exec()
+            self._import_worker.finished_error.connect(_on_import_err)
+            self._import_worker.finished_success.connect(self._apply_imported_project)
+            self._import_worker.start()
+
+        except Exception as e:
+            from osdoc import log_error as _le
+            _le(f"_on_import_project initialization error: {e}")
+
+    def _apply_imported_project(self, state: dict, meta: dict):
+        try:
+            if hasattr(self, 'bar_processing'):
+                self.bar_processing.set_value(0)
+            if hasattr(self, '_import_worker') and self._import_worker:
+                try:
+                    self._import_worker.wait(1000)
+                except Exception:
+                    pass
+                self._import_worker = None
+
+            from PySide6.QtWidgets import QDialog
+            bws_extras = meta.get("bws_extras")
+            missing_media = meta.get("missing_media", [])
+            target_name = meta.get("target_name", "")
+
+            # Safe main-thread timeline fingerprint matching
+            found_tl = None
+            is_exact = False
+            exists_by_name = False
+            if bws_extras and bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.is_connected():
+                try:
+                    found_tl, is_exact = self.resolve_handler.find_timeline_by_fingerprint(bws_extras["timeline_fingerprint"], preferred_name=target_name)
+                    if not (found_tl and is_exact) and target_name:
+                        exists_by_name = self.resolve_handler.timeline_exists(target_name)
+                except Exception as _fe:
+                    from osdoc import log_error as _le
+                    _le(f"fingerprint matching error: {_fe}")
+
+            from_main_window = getattr(self, '_pre_import_stack_idx', 0) != 2
 
             # --- Restore Source Snapshot ---
             imported_snapshot = state.get('transcription_source')
@@ -1651,8 +1777,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 tracks_str = self.txt('txt_all') if (not track_names or all_tl_tracks) else ', '.join(sorted(track_names))
             else:
                 tracks_str = self.txt('txt_all')
-                
-            # (Title bar update moved below popups)
 
             # --- Restore Analysis Time ---
             analysis_time = state.get('analysis_time', "")
@@ -1678,81 +1802,73 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._assembly_recipe = bws_extras.get("assembly_recipe")
                 self._media_inventory = bws_extras.get("media_inventory")
                 self._extracted_drt_path = bws_extras.get("drt_path")
+                self._extracted_xml_path = bws_extras.get("xml_path")
                 
                 # Check media inventory
-                if self._media_inventory:
-                    missing, _ = self.engine.verify_media_inventory(self._media_inventory)
-                    if missing:
-                        # Convert to markdown bullet list for a scrollable CustomMsgBox (using QLabel properties)
-                        # We just show a summary
-                        files_str = ""
-                        for m in missing[:5]:
-                            files_str += f"- {m.get('basename', 'Unknown')}\n"
-                        if len(missing) > 5:
-                            files_str += f"... [+ {len(missing)-5}]\n"
-                            
-                        msg_text = self.txt("bws_media_missing_desc").replace("{files}", files_str.strip())
+                if missing_media:
+                    files_str = ""
+                    for m in missing_media[:5]:
+                        files_str += f"- {m.get('basename', 'Unknown')}\n"
+                    if len(missing_media) > 5:
+                        files_str += f"... [+ {len(missing_media)-5}]\n"
                         
-                        msg_box = WorkspaceWarningOverlay(
-                            self._stack,
-                            self.txt("bws_media_missing_title"),
-                            msg_text,
-                            self.txt("bws_btn_continue"),
-                            btn_cancel_text=self.txt("btn_cancel")
-                        )
-                        res = msg_box.exec()
-                        if res != QDialog.Accepted:
-                            self.go_to_page(0)
-                            if hasattr(self, '_panel_left'): self._panel_left.hide()
-                            if hasattr(self, '_panel_right'): self._panel_right.hide()
-                            return
-                
+                    msg_text = self.txt("bws_media_missing_desc").replace("{files}", files_str.strip())
+                    
+                    msg_box = WorkspaceWarningOverlay(
+                        self._stack,
+                        self.txt("bws_media_missing_title"),
+                        msg_text,
+                        self.txt("bws_btn_continue"),
+                        btn_cancel_text=self.txt("btn_cancel")
+                    )
+                    res = msg_box.exec()
+                    if res != QDialog.Accepted:
+                        self.go_to_page(getattr(self, '_pre_import_stack_idx', 0))
+                        if hasattr(self, '_panel_left'): self._panel_left.hide()
+                        if hasattr(self, '_panel_right'): self._panel_right.hide()
+                        return
+            
                 # Check timeline fingerprint
                 if bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.is_connected():
-                    found_tl, is_exact = self.resolve_handler.find_timeline_by_fingerprint(bws_extras["timeline_fingerprint"])
-                    
-                    # Target name from snapshot
-                    target_name = (self._transcription_source or {}).get("timeline_name", "")
-                    
                     if found_tl and is_exact:
                         if target_name and target_name != found_tl:
-                            # Automatically update the name to match the new exact fingerprint match
                             self._transcription_source["timeline_name"] = found_tl
                             if hasattr(self, '_title_bar'):
                                 self._title_bar.set_source_info(found_tl, tracks_str)
                     else:
-                        # No exact match. Does it exist by name?
-                        exists_by_name = self.resolve_handler.timeline_exists(target_name)
+                        cand_import_path = self._extracted_drt_path or getattr(self, '_extracted_xml_path', None)
                         if exists_by_name:
-                            # It exists but fingerprint differs
                             msg_box = WorkspaceWarningOverlay(
                                 self._stack,
                                 self.txt("bws_timeline_changed_title"),
                                 self.txt("bws_timeline_changed_desc").format(tl=target_name),
                                 self.txt("bws_btn_continue"),
-                                btn_reject_text=self.txt("bws_btn_import_drt") if self._extracted_drt_path else None,
+                                btn_reject_text=self.txt("bws_btn_import_drt") if cand_import_path else None,
                                 btn_cancel_text=self.txt("btn_cancel")
                             )
                             res = msg_box.exec()
                             if res == -1:  # Cancel
-                                self.go_to_page(0)
+                                self.go_to_page(getattr(self, '_pre_import_stack_idx', 0))
                                 if hasattr(self, '_panel_left'): self._panel_left.hide()
                                 if hasattr(self, '_panel_right'): self._panel_right.hide()
                                 return
-                            if res != QDialog.Accepted:
-                                if self._extracted_drt_path:
-                                    new_name = f"imported '{target_name}'"
+                            if res != QDialog.Accepted and cand_import_path:
+                                new_name = f"imported '{target_name}'"
+                                imp_ok = False
+                                actual_name = None
+                                if self._extracted_drt_path and not (self.resolve_handler and hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer()):
                                     imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
-                                    if imp_ok:
-                                        final_name = actual_name or new_name
-                                        self._transcription_source["timeline_name"] = final_name
-                                        if hasattr(self, '_title_bar'):
-                                            self._title_bar.set_source_info(final_name, tracks_str)
-                                else:
-                                    return
+                                elif getattr(self, '_extracted_xml_path', None):
+                                    imp_ok = self.resolve_handler.import_timeline_xml(self._extracted_xml_path, new_name)
+                                    actual_name = new_name
+
+                                if imp_ok:
+                                    final_name = actual_name or new_name
+                                    self._transcription_source["timeline_name"] = final_name
+                                    if hasattr(self, '_title_bar'):
+                                        self._title_bar.set_source_info(final_name, tracks_str)
                         else:
-                            # Doesn't exist at all
-                            if self._extracted_drt_path:
+                            if cand_import_path:
                                 msg_box = WorkspaceWarningOverlay(
                                     self._stack,
                                     self.txt("bws_missing_timeline_title"),
@@ -1762,24 +1878,25 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                 )
                                 res = msg_box.exec()
                                 if res == -1:
-                                    self.go_to_page(0)
+                                    self.go_to_page(getattr(self, '_pre_import_stack_idx', 0))
                                     if hasattr(self, '_panel_left'): self._panel_left.hide()
                                     if hasattr(self, '_panel_right'): self._panel_right.hide()
                                     return
                                 if res == QDialog.Accepted:
                                     new_name = f"imported '{target_name}'"
-                                    imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
+                                    imp_ok = False
+                                    actual_name = None
+                                    if self._extracted_drt_path and not (self.resolve_handler and hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer()):
+                                        imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
+                                    elif getattr(self, '_extracted_xml_path', None):
+                                        imp_ok = self.resolve_handler.import_timeline_xml(self._extracted_xml_path, new_name)
+                                        actual_name = new_name
+
                                     if imp_ok:
                                         final_name = actual_name or new_name
                                         self._transcription_source["timeline_name"] = final_name
                                         if hasattr(self, '_title_bar'):
                                             self._title_bar.set_source_info(final_name, tracks_str)
-
-                # Recreate assembled audio if needed
-                if self._assembly_recipe and bws_extras.get("audio_path"):
-                    temp_dir = self.engine.os_doc.get_temp_folder()
-                    out_path = os.path.join(temp_dir, f"bws_assembled_{int(time.time())}.flac")
-                    self.engine.execute_assembly_recipe(self._assembly_recipe, bws_extras["audio_path"], out_path)
                     
             # --- Restore SBS Cache ---
             sbs_cache = state.get('sbs_cache')
@@ -1823,7 +1940,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._title_bar.chapter_dropdown.setText(self._chapters[self._current_chapter_idx]['name'])
                 self._title_bar.update_dropdown_placement()
                 
-            if hasattr(self, 'audio_preview'):
+            if hasattr(self, 'audio_preview') and not from_main_window:
                 self.audio_preview.check_audio_availability()
 
             # Rebuild title from snapshot using new title bar mode
@@ -2301,7 +2418,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         selected_tl = getattr(self, 'combo_tl_1', None)
         selected_tl_name = selected_tl.text() if selected_tl else ""
         no_tl = self.txt("msg_no_timelines_detected")
-        if selected_tl_name == no_tl:
+        select_txt = self.txt("txt_select", "Wybierz...")
+        valid_tls = getattr(selected_tl, 'options_list', []) if selected_tl else []
+
+        if not is_file_source:
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if not rh or not rh.is_connected():
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_resolve_not_connected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+            if not selected_tl_name or selected_tl_name in (no_tl, select_txt, "Select...") or (valid_tls and selected_tl_name not in valid_tls):
+                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_no_timelines_detected"), self.txt("btn_ok"))
+                dlg.exec()
+                return
+
+        if selected_tl_name == no_tl or selected_tl_name == select_txt:
             selected_tl_name = ""
 
         selected_tracks_combo = getattr(self, 'combo_tr_1', None)
@@ -2787,6 +2918,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_assembly_success(self, new_tl_name, clean_ops):
         if hasattr(self, 'go_to_page'): self.go_to_page(2)
+        if getattr(self, 'resolve_handler', None) and new_tl_name:
+            try:
+                self.resolve_handler.set_current_timeline(new_tl_name)
+            except Exception:
+                pass
         
         # Audio preview mapping
         if hasattr(self, 'audio_preview') and getattr(self, '_assembly_prefs', None):
@@ -3172,7 +3308,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             selected_tl = getattr(self, 'combo_tl_0', None)
             selected_tl_name = selected_tl.text() if selected_tl else ""
             no_tl = self.txt("msg_no_timelines_detected")
-            if not selected_tl_name or selected_tl_name == no_tl:
+            select_txt = self.txt("txt_select", "Wybierz...")
+            valid_tls = getattr(selected_tl, 'options_list', []) if selected_tl else []
+            if not selected_tl_name or selected_tl_name in (no_tl, select_txt, "Select...") or (valid_tls and selected_tl_name not in valid_tls):
                 dlg = CustomMsgBox(self, "BadWords", self.txt("msg_no_timelines_detected"), self.txt("btn_ok"))
                 dlg.exec()
                 return
@@ -3512,12 +3650,19 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'lbl_processing_status'):
             self.lbl_processing_status.setText(f"Error: {err}")
 
+        from osdoc import log_error
+        from gui.dialogs.msgbox import CustomMsgBox
+        log_error(f"_on_analysis_error: {err}")
+
         # Restore Page 0 on error
         self.go_to_page(0)
         if hasattr(self, '_pre_analysis_panels_state'):
             l_vis, r_vis = self._pre_analysis_panels_state
             if hasattr(self, '_panel_left') and l_vis: self._panel_left.show()
             if hasattr(self, '_panel_right') and r_vis: self._panel_right.show()
+
+        dlg = CustomMsgBox(self, self.txt("msg_analysis_failed", "Błąd analizy"), str(err), self.txt("btn_ok", "OK"))
+        dlg.exec()
 
     def _on_analysis_finished(self, words_data, segments_data):
         # Stop hint rotation

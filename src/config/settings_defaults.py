@@ -107,6 +107,9 @@ DEFAULT_SETTINGS = {
     # False (default): audio tracks are re-mapped sequentially (A1, A2, A3...)
     # True: original source track indices are preserved in the output timeline
     "xml_preserve_track_order": False,
+    # False (default): automatically select DRT on Studio / <21.1 and XML on Free 21.1+
+    # True: always assemble using the FCP7 XML pipeline regardless of Resolve version
+    "force_xml_assembly": False,
     # ── Transcript timestamps ───────────────────────────────────────────────
     # False (default): timestamps rounded to nearest second, e.g. [01:08]
     # True: full millisecond precision, e.g. [01:07.986]

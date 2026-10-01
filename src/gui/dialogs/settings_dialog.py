@@ -1379,6 +1379,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
                  False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=True))
 
+        # Force XML assembly toggle — directly below preserve track order
+        self.tgl_force_xml_assembly = ToggleSwitch()
+        self.tgl_force_xml_assembly.setChecked(
+            bool(_bot_prefs.get("force_xml_assembly",
+                                _cfg_bot.DEFAULT_SETTINGS["force_xml_assembly"])),
+            animated=False
+        )
+        self.tgl_force_xml_assembly.toggled.connect(
+            lambda checked: self.engine.save_preferences({"force_xml_assembly": checked})
+        )
+        w_force_xml = QWidget()
+        l_force_xml = QHBoxLayout(w_force_xml)
+        l_force_xml.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_force_xml.addStretch()
+        l_force_xml.addWidget(self._get_info_icon("tt_force_xml_assembly"))
+        l_force_xml.addSpacing(config.S(8))
+        l_force_xml.addWidget(self.tgl_force_xml_assembly)
+        self._add_row(form_bottom, self.txt("lbl_force_xml_assembly"), w_force_xml,
+                 False, lambda v: self.tgl_force_xml_assembly.setChecked(v, animated=True))
+
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
         self.tgl_timestamp_precise = ToggleSwitch()
         self.tgl_timestamp_precise.setChecked(
@@ -2498,6 +2518,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
             'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
+            'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
             'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
             'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
             'auto_update_on_start':   self._safe_get('tgl_auto_update_on_start', old_prefs.get('auto_update_on_start', False), 'isChecked'),
@@ -2598,6 +2619,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 
         self._safe_set('chk_sync_davinci', _g('sync_davinci_chapter', True), 'setChecked')
         self._safe_set('tgl_xml_preserve_track_order', _g('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'setChecked')
+        self._safe_set('tgl_force_xml_assembly', _g('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'setChecked')
         self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
         self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')
         self._safe_set('tgl_auto_update_on_start', _g('auto_update_on_start', False), 'setChecked')

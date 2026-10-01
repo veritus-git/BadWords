@@ -35,8 +35,13 @@ class AnalysisWorker(QThread):
                 callback_progress=self.progress.emit,
                 callback_chunk=self.chunk_ready.emit
             )
+            if words_data is None and segments_data is None:
+                raise RuntimeError("Analysis pipeline failed to produce results.")
             self.finished_ok.emit(words_data, segments_data)
         except Exception as e:
+            import traceback
+            from osdoc import log_error
+            log_error(f"AnalysisWorker error: {e}\n{traceback.format_exc()}")
             self.error.emit(str(e))
 
 
