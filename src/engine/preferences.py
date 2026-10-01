@@ -228,7 +228,8 @@ class PreferencesMixin:
         return segments
 
     def save_bws(self, file_path, data_packet, audio_path=None, drt_path=None,
-                 assembly_recipe=None, timeline_fingerprint=None, media_inventory=None):
+                 assembly_recipe=None, timeline_fingerprint=None, media_inventory=None,
+                 xml_path=None):
         """
         Save project as .bws archive (ZIP-based).
 
@@ -237,6 +238,7 @@ class PreferencesMixin:
             manifest.json          — archive metadata, fingerprints, file inventory
             audio/source.flac       — source audio converted to FLAC (preview-only)
             timeline/source.drt    — original unedited DaVinci timeline (optional)
+            timeline/source.xml    — fallback timeline XML (for Resolve Free 21.1+)
             recipes/assembly_ops.json — FFmpeg recipe to recreate assembled audio
         """
         import zipfile
@@ -302,6 +304,11 @@ class PreferencesMixin:
                 if drt_path and os.path.exists(drt_path):
                     zf.write(drt_path, 'timeline/source.drt', compress_type=zipfile.ZIP_STORED)
                     manifest["files"]["timeline/source.drt"] = {"size": os.path.getsize(drt_path)}
+
+                # timeline/source.xml (compressed XML fallback)
+                if xml_path and os.path.exists(xml_path):
+                    zf.write(xml_path, 'timeline/source.xml', compress_type=zipfile.ZIP_DEFLATED)
+                    manifest["files"]["timeline/source.xml"] = {"size": os.path.getsize(xml_path)}
 
                 # recipes/assembly_ops.json (compressed)
                 if assembly_recipe:
@@ -378,6 +385,13 @@ class PreferencesMixin:
                     with zf.open('timeline/source.drt') as src, open(drt_path, 'wb') as dst:
                         shutil.copyfileobj(src, dst)
 
+                # 4b. Extract XML to temp (Resolve Free 21.1+ fallback)
+                xml_path = None
+                if 'timeline/source.xml' in namelist:
+                    xml_path = os.path.join(bws_extract_dir, 'source.xml')
+                    with zf.open('timeline/source.xml') as src, open(xml_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+
                 # 5. Read assembly recipe
                 if 'recipes/assembly_ops.json' in namelist:
                     assembly_recipe = json.loads(zf.read('recipes/assembly_ops.json'))
@@ -392,6 +406,7 @@ class PreferencesMixin:
             bws_extras = {
                 "audio_path": audio_path,
                 "drt_path": drt_path,
+                "xml_path": xml_path,
                 "assembly_recipe": assembly_recipe,
                 "manifest": manifest,
                 "media_inventory": manifest.get("media_inventory", []),
@@ -404,6 +419,7 @@ class PreferencesMixin:
             log_info(f"load_bws: loaded from {file_path} "
                      f"(audio={'yes' if audio_path else 'no'}, "
                      f"drt={'yes' if drt_path else 'no'}, "
+                     f"xml={'yes' if xml_path else 'no'}, "
                      f"recipe={'yes' if assembly_recipe else 'no'})")
 
             return project_state, segments, bws_extras

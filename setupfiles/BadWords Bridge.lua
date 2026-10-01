@@ -271,37 +271,42 @@ local sep = (platform == "Windows") and "\\" or "/"
 -- Configuration: BadWords Installation Directory (injected by installer / auto-healer)
 local INSTALL_DIR = [[__BADWORDS_INSTALL_DIR__]]
 
-local function get_mailbox_dir()
-    -- 1. Primary: dedicated bridge folder inside BadWords installation directory
+local function get_all_mailbox_dirs()
+    local dirs = {}
+    local seen = {}
+    local function add(d)
+        if d and d ~= "" and not seen[d] then
+            seen[d] = true
+            table.insert(dirs, d)
+        end
+    end
+
     if INSTALL_DIR and INSTALL_DIR ~= "" and not INSTALL_DIR:find("^__") then
-        return INSTALL_DIR .. sep .. "bridge"
+        add(INSTALL_DIR .. sep .. "bridge")
+        add(INSTALL_DIR .. sep .. ".." .. sep .. "bridge")
     end
 
-    -- 2. Fallback: OS user data directory
     if platform == "Windows" then
-        return (os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge"
+        add((os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge")
+        add([[C:\ProgramData\BadWords\bridge]])
     elseif platform == "OSX" then
-        return (os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge"
+        add((os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge")
     else
-        return (os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share"))
-            .. "/BadWords/bridge"
+        add("/mnt/dump/BadWords/src/bridge")
+        add("/mnt/dump/BadWords/bridge")
+        add("/mnt/dump/BadWords FILES/src/bridge")
+        add("/mnt/dump/BadWords FILES/bridge")
+        local xdg = os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share")
+        add(xdg .. "/BadWords/bridge")
     end
+
+    return dirs
 end
 
-local function get_fallback_request_file()
-    if platform == "Windows" then
-        return (os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge\\request.lua"
-    elseif platform == "OSX" then
-        return (os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge/request.lua"
-    else
-        return (os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share"))
-            .. "/BadWords/bridge/request.lua"
-    end
-end
-
-local mailbox_dir = get_mailbox_dir()
+local all_mailbox_dirs = get_all_mailbox_dirs()
+local mailbox_dir = all_mailbox_dirs[1] or (INSTALL_DIR .. sep .. "bridge")
 local request_file = mailbox_dir .. sep .. "request.lua"
-local fallback_request_file = get_fallback_request_file()
+local fallback_request_file = ((platform == "Windows") and ((os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge\\request.lua") or ((os.getenv("HOME") or "") .. "/.local/share/BadWords/bridge/request.lua"))
 
 local fu = rawget(_G, "fusion") or rawget(_G, "fu")
 if fu == nil then
@@ -736,6 +741,160 @@ handlers.ExportTimelineXml = function(req)
     return { ok = (ok == true or ok == 1) }
 end
 
+handlers.CreateNestedTimeline = function(req)
+    local app = res_app or rawget(_G, "resolve") or (bmd and bmd.scriptapp and bmd.scriptapp("Resolve"))
+    if not app then return { error = "Resolve API object not available" } end
+    local pm = app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+
+    local src_name = req and req.source_timeline_name
+    local new_name = req and req.new_timeline_name
+    if not src_name or src_name == "" then return { error = "source_timeline_name missing" } end
+    if not new_name or new_name == "" then return { error = "new_timeline_name missing" } end
+
+    -- 1. Ensure source timeline exists
+    local src_tl = resolve_and_activate_timeline(proj, src_name)
+    if not src_tl then return { error = "Source timeline '" .. src_name .. "' not found" } end
+
+    -- 2. Find the MediaPoolItem representing this timeline in Media Pool
+    local function find_tl_item_recursive(folder, name)
+        local clips = folder:GetClipList() or {}
+        for _, c in ipairs(clips) do
+            local p = c:GetClipProperty() or {}
+            if p["Type"] == "Timeline" and c:GetName() == name then
+                return c
+            end
+        end
+        local sub_folders = folder:GetSubFolderList() or {}
+        for _, sf in ipairs(sub_folders) do
+            local found = find_tl_item_recursive(sf, name)
+            if found then return found end
+        end
+        return nil
+    end
+
+    local root = mp:GetRootFolder()
+    local src_item = find_tl_item_recursive(root, src_name)
+    if not src_item then
+        -- Fallback: check if any clip with this name exists in root or subfolders
+        local function find_any_clip(folder, name)
+            local clips = folder:GetClipList() or {}
+            for _, c in ipairs(clips) do
+                if c:GetName() == name then return c end
+            end
+            local sub_folders = folder:GetSubFolderList() or {}
+            for _, sf in ipairs(sub_folders) do
+                local found = find_any_clip(sf, name)
+                if found then return found end
+            end
+            return nil
+        end
+        src_item = find_any_clip(root, src_name)
+    end
+
+    if not src_item then
+        return { error = "MediaPoolItem for timeline '" .. src_name .. "' not found in Media Pool" }
+    end
+
+    -- 3. Create empty timeline and append source timeline as single nested clip
+    local new_tl = mp:CreateEmptyTimeline(new_name)
+    if not new_tl then
+        return { error = "CreateEmptyTimeline failed for '" .. new_name .. "'" }
+    end
+
+    proj:SetCurrentTimeline(new_tl)
+    local appended = mp:AppendToTimeline({ src_item })
+
+    local v_count = new_tl:GetTrackCount("video") or 0
+    local a_count = new_tl:GetTrackCount("audio") or 0
+
+    return {
+        ok = true,
+        timeline_name = new_name,
+        video_tracks = v_count,
+        audio_tracks = a_count
+    }
+end
+
+handlers.AssembleNestedTimeline = function(req)
+    local app = res_app or rawget(_G, "resolve") or (bmd and bmd.scriptapp and bmd.scriptapp("Resolve"))
+    if not app then return { error = "Resolve API object not available" } end
+    local pm = app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+
+    local src_name = req and req.source_timeline_name
+    local new_name = req and req.new_timeline_name
+    local ops = req and req.ops or {}
+    if not src_name or src_name == "" then return { error = "source_timeline_name missing" } end
+    if not new_name or new_name == "" then return { error = "new_timeline_name missing" } end
+    if #ops == 0 then return { error = "ops array is empty" } end
+
+    local function find_tl_item_recursive(folder, name)
+        local clips = folder:GetClipList() or {}
+        for _, c in ipairs(clips) do
+            local p = c:GetClipProperty() or {}
+            if p["Type"] == "Timeline" and c:GetName() == name then
+                return c
+            end
+        end
+        local sub_folders = folder:GetSubFolderList() or {}
+        for _, sf in ipairs(sub_folders) do
+            local found = find_tl_item_recursive(sf, name)
+            if found then return found end
+        end
+        return nil
+    end
+
+    local root = mp:GetRootFolder()
+    local src_item = find_tl_item_recursive(root, src_name)
+    if not src_item then
+        for _, c in ipairs(root:GetClipList() or {}) do
+            if c:GetName() == src_name then src_item = c; break end
+        end
+    end
+
+    if not src_item then
+        return { error = "MediaPoolItem for timeline '" .. tostring(src_name) .. "' not found in Media Pool" }
+    end
+
+    local new_tl = mp:CreateEmptyTimeline(new_name)
+    if not new_tl then
+        return { error = "CreateEmptyTimeline failed for '" .. tostring(new_name) .. "'" }
+    end
+
+    proj:SetCurrentTimeline(new_tl)
+
+    local clip_infos = {}
+    for _, op in ipairs(ops) do
+        local sf = math.floor(op.s or op.startFrame or 0)
+        local ef = math.floor(op.e or op.endFrame or 0)
+        if ef > sf then
+            table.insert(clip_infos, {
+                mediaPoolItem = src_item,
+                startFrame = sf,
+                endFrame = ef
+            })
+        end
+    end
+
+    if #clip_infos == 0 then
+        return { error = "No valid clip segments to append" }
+    end
+
+    local appended = mp:AppendToTimeline(clip_infos)
+    return {
+        ok = true,
+        timeline_name = new_name,
+        appended_count = #clip_infos
+    }
+end
+
 local function do_import_timeline_file(file_path, timeline_name)
     if not res_app then return { error = "Resolve API object not available" } end
     local pm = res_app:GetProjectManager()
@@ -754,6 +913,37 @@ local function do_import_timeline_file(file_path, timeline_name)
         if rf then mp:SetCurrentFolder(rf) end
     end)
 
+    -- Clean up any uncolored stale duplicate with the same target name before import
+    if timeline_name and timeline_name ~= "" then
+        pcall(function()
+            local total_tls = proj:GetTimelineCount() or 0
+            for i = total_tls, 1, -1 do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t:GetName() == timeline_name then
+                    local has_colors = false
+                    for _, tt in ipairs({"video", "audio"}) do
+                        local tc = t:GetTrackCount(tt) or 0
+                        for tr = 1, tc do
+                            local items = t:GetItemListInTrack(tt, tr) or {}
+                            for _, it in ipairs(items) do
+                                local c = it:GetClipColor()
+                                if c and c ~= "" and c ~= "None" and c ~= "null" then
+                                    has_colors = true
+                                    break
+                                end
+                            end
+                            if has_colors then break end
+                        end
+                        if has_colors then break end
+                    end
+                    if not has_colors then
+                        pcall(function() mp:DeleteTimelines({ t }) end)
+                    end
+                end
+            end
+        end)
+    end
+
     local is_drt = string.lower(file_path):match("%.drt$") ~= nil
     local initial_count = proj:GetTimelineCount() or 0
     local imported = nil
@@ -767,11 +957,18 @@ local function do_import_timeline_file(file_path, timeline_name)
         if timeline_name and timeline_name ~= "" then
             import_options = {
                 timelineName = timeline_name,
-                importSourceClips = true
+                importSourceClips = false
             }
         end
         if import_options then
             local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path, import_options) end)
+            if ok and res then imported = res end
+        end
+        if not imported and timeline_name and timeline_name ~= "" then
+            -- Fallback with importSourceClips = true if media files are not yet in pool
+            local ok, res = pcall(function()
+                return mp:ImportTimelineFromFile(file_path, { timelineName = timeline_name, importSourceClips = true })
+            end)
             if ok and res then imported = res end
         end
         local current_count = proj:GetTimelineCount() or 0
@@ -1231,13 +1428,15 @@ print("=======================================================")
 
 -- Signal bridge status to trigger QFileSystemWatcher immediately on BadWords app
 bridge_write("Global.BadWordsBridge.Status", "Online")
-pcall(function()
-    local f = io and io.open and io.open(mailbox_dir .. sep .. "bridge_status.json", "w")
-    if f then
-        f:write('{"status":"online"}')
-        f:close()
-    end
-end)
+for _, d in ipairs(all_mailbox_dirs) do
+    pcall(function()
+        local f = io and io.open and io.open(d .. sep .. "bridge_status.json", "w")
+        if f then
+            f:write('{"status":"online"}')
+            f:close()
+        end
+    end)
+end
 
 local quitServer = false
 local last_request_id = ""
@@ -1246,9 +1445,14 @@ while not quitServer do
     bmd.wait(0.025)
 
     local active_req_file = nil
-    if bmd.fileexists(request_file) then
-        active_req_file = request_file
-    elseif fallback_request_file and bmd.fileexists(fallback_request_file) then
+    for _, d in ipairs(all_mailbox_dirs) do
+        local cand = d .. sep .. "request.lua"
+        if bmd.fileexists(cand) then
+            active_req_file = cand
+            break
+        end
+    end
+    if not active_req_file and fallback_request_file and bmd.fileexists(fallback_request_file) then
         active_req_file = fallback_request_file
     end
 

@@ -63,6 +63,9 @@ int main(int argc, char *argv[]) {
     char **saved_argv = (char **)malloc((argc + 1) * sizeof(char *));
     for (int i = 0; i < argc; i++) {
         saved_argv[i] = strdup(argv[i] ? argv[i] : "");
+        if (strcmp(saved_argv[i], "--embedded") == 0) {
+            setenv("BADWORDS_EMBEDDED", "1", 1);
+        }
     }
     saved_argv[argc] = NULL;
 

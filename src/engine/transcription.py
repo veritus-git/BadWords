@@ -182,6 +182,13 @@ import sys
 import os
 import re
 
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
+
 # Force tqdm to render progress bar even if not in terminal
 class FakeTTY:
     def __init__(self, stream):
@@ -427,6 +434,13 @@ elif sys.platform.startswith("linux"):
 import sys, os, json, time
 import numpy as np
 
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
+
 os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -647,6 +661,13 @@ import sys
 import os
 import json
 import time
+
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
 
 # FIXED v11.2: Force include portable bin in PATH for stable-ts subprocess calls
 os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")

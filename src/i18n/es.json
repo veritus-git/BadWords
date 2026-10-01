@@ -346,8 +346,8 @@
     "txt_all": "Todo",
     "lbl_xml_preserve_track_order": "Preservar orden original de las pistas",
     "tt_xml_preserve_track_order": "Mantiene los números de pista originales tanto para audio como para video (ej. A3 sigue siendo A3, V2 sigue siendo V2). Si se desactiva, las pistas se colocan desde 1.",
-    "status_assembly_xml_build": "Construyendo montaje DRT...",
-    "status_assembly_xml_import": "Importando línea de tiempo DRT...",
+    "status_assembly_xml_build": "Construyendo montaje XML...",
+    "status_assembly_xml_import": "Importando timeline XML...",
     "status_assembly_colors": "Aplicando colores a los clips...",
     "lbl_timestamp_precise": "Marcas de tiempo precisas (ms)",
     "tt_timestamp_precise": "Muestra las marcas de tiempo con precisión de\nmilisegundos.",
@@ -445,5 +445,11 @@
     "tt_source_info_free": "<!-- raw -->Selecciona el origen de medios: puedes editar un archivo de audio/vídeo directamente desde el disco o usar BadWords como complemento para DaVinci Resolve (lo que permite aplicar cortes directamente en la línea de tiempo y colorear clips).<br><br><b>Conexión DaVinci Resolve:</b><br>Abre DaVinci Resolve y ejecuta <i>Workspace → Scripts → BadWords Bridge</i>. También puedes iniciar BadWords directamente desde DaVinci Resolve (mediante <i>Workspace → Scripts → BadWords</i>), pero esta opción solo está disponible para versiones de DaVinci Resolve anteriores a 21.1.",
     "tt_source_info_studio": "<!-- raw -->Selecciona el origen de medios: puedes editar un archivo de audio/vídeo directamente desde el disco o usar BadWords como complemento para DaVinci Resolve (lo que permite aplicar cortes directamente en la línea de tiempo y colorear clips).<br><br><b>Conexión DaVinci Resolve Studio:</b><br>Puedes iniciar BadWords directamente o desde DaVinci Resolve (mediante <i>Workspace → Scripts → BadWords</i>). Asegúrate de que en DaVinci Resolve <i>Preferences → System → General → External scripting using</i> esté configurado en <i>Local</i>.",
     "tt_source_info_not_installed": "<!-- raw -->Selecciona el origen de medios: puedes editar un archivo de audio/vídeo directamente desde el disco o usar BadWords como complemento para DaVinci Resolve (lo que permite aplicar cortes directamente en la línea de tiempo y colorear clips).<br><br><b>DaVinci Resolve:</b><br>Software profesional de edición de vídeo. No detectado en este sistema; se recomienda descargar DaVinci Resolve para una integración completa con la línea de tiempo.",
-    "tt_assembly_locked_transcription": "Esta opción está bloqueada hasta que finalice la transcripción"
+    "tt_assembly_locked_transcription": "Esta opción está bloqueada hasta que finalice la transcripción",
+    "status_importing_project": "Cargando proyecto...",
+    "lbl_force_xml_assembly": "Forzar ensamblado por XML",
+    "tt_force_xml_assembly": "Fuerza el ensamblado de la línea de tiempo usando la canalización XML FCP7 en lugar del DRT nativo.",
+    "status_assembly_drt_build": "Construyendo montaje DRT...",
+    "status_assembly_drt_import": "Importando timeline DRT...",
+    "lbl_timeline_ready": "A1: Listo para audio de la línea de tiempo"
 }

@@ -346,8 +346,8 @@
     "txt_all": "Tudo",
     "lbl_xml_preserve_track_order": "Preservar a ordem original das faixas",
     "tt_xml_preserve_track_order": "Mantém os números das faixas originais tanto para áudio quanto para vídeo (ex. A3 continua A3, V2 continua V2). Caso contrário, as faixas são colocadas a partir de 1.",
-    "status_assembly_xml_build": "Construindo montagem DRT...",
-    "status_assembly_xml_import": "Importando timeline DRT...",
+    "status_assembly_xml_build": "Construindo montagem XML...",
+    "status_assembly_xml_import": "Importando timeline XML...",
     "status_assembly_colors": "Aplicando cores aos clipes...",
     "lbl_timestamp_precise": "Marcas de tempo precisas (ms)",
     "tt_timestamp_precise": "Mostra os tempos com precisão de milissegundos.",
@@ -445,5 +445,11 @@
     "tt_source_info_free": "<!-- raw -->Escolha a fonte de mídia: pode editar um ficheiro de áudio/vídeo diretamente do disco ou usar o BadWords como plugin para o DaVinci Resolve (permitindo aplicar cortes diretamente na timeline e colorir clipes).<br><br><b>Ligação DaVinci Resolve:</b><br>Abra o DaVinci Resolve e execute <i>Workspace → Scripts → BadWords Bridge</i>. Também pode iniciar o BadWords diretamente a partir do DaVinci Resolve (através de <i>Workspace → Scripts → BadWords</i>), mas esta opção só está disponível para versões do DaVinci Resolve anteriores à 21.1.",
     "tt_source_info_studio": "<!-- raw -->Escolha a fonte de mídia: pode editar um ficheiro de áudio/vídeo diretamente do disco ou usar o BadWords como plugin para o DaVinci Resolve (permitindo aplicar cortes diretamente na timeline e colorir clipes).<br><br><b>Ligação DaVinci Resolve Studio:</b><br>Pode iniciar o BadWords diretamente ou a partir do DaVinci Resolve (através de <i>Workspace → Scripts → BadWords</i>). Certifique-se de que no DaVinci Resolve <i>Preferences → System → General → External scripting using</i> está definido como <i>Local</i>.",
     "tt_source_info_not_installed": "<!-- raw -->Escolha a fonte de mídia: pode editar um ficheiro de áudio/vídeo diretamente do disco ou usar o BadWords como plugin para o DaVinci Resolve (permitindo aplicar cortes diretamente na timeline e colorir clipes).<br><br><b>DaVinci Resolve:</b><br>Software profissional de edição de vídeo. Não detetado neste sistema – descarregar o DaVinci Resolve é recomendado para obter a integração total com a timeline.",
-    "tt_assembly_locked_transcription": "Esta opção está bloqueada até que a transcrição seja concluída"
+    "tt_assembly_locked_transcription": "Esta opção está bloqueada até que a transcrição seja concluída",
+    "status_importing_project": "Carregando projeto...",
+    "lbl_force_xml_assembly": "Forçar montagem por XML",
+    "tt_force_xml_assembly": "Força a montagem da linha do tempo usando o pipeline XML FCP7 em vez do DRT nativo.",
+    "status_assembly_drt_build": "Construindo montagem DRT...",
+    "status_assembly_drt_import": "Importando timeline DRT...",
+    "lbl_timeline_ready": "A1: Pronto para áudio da timeline"
 }

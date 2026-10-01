@@ -40,10 +40,28 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         self.ffmpeg_cmd = self.os_doc.get_ffmpeg_cmd() or "ffmpeg"
         
         # Determine path to local libs for subprocess injection
-        self.libs_dir = os.path.abspath(os.path.join(self.os_doc.install_dir, "libs"))
-        
-        # Define local models directory (in install folder)
-        self.models_dir = os.path.join(self.os_doc.install_dir, "models")
+        cand_libs = [
+            os.path.abspath(os.path.join(self.os_doc.install_dir, "libs")),
+            os.path.abspath(os.path.join(os.path.dirname(self.os_doc.install_dir), "libs")),
+            "/mnt/dump/BadWords FILES/libs",
+        ]
+        self.libs_dir = cand_libs[0]
+        for lb in cand_libs:
+            if os.path.isdir(lb):
+                self.libs_dir = lb
+                break
+
+        cand_models = [
+            os.path.join(self.os_doc.install_dir, "models"),
+            os.path.join(os.path.dirname(self.os_doc.install_dir), "models"),
+            "/mnt/dump/BadWords FILES/models",
+        ]
+        self.models_dir = cand_models[0]
+        for m in cand_models:
+            if os.path.isdir(m) and any(e.startswith("models--") for e in os.listdir(m)):
+                self.models_dir = m
+                break
+
         try:
             os.makedirs(self.models_dir, exist_ok=True)
         except Exception as e:
@@ -145,7 +163,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             threshold_db = settings.get('threshold_db', -42.0)
             padding_s    = settings.get('padding_s', 0.05)
 
-            unique_id = f"BW_FSC_{int(time.time())}"
+            unique_id = f"BW_FSC_{os.getpid()}_{int(time.time())}_{random.randint(1000, 9999)}"
             update_status(self.txt("status_render"))
             update_progress(10)
 
@@ -427,7 +445,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
             txt_inaudible = "inaudible"
             
-            unique_id = f"BW_{int(time.time())}"
+            unique_id = f"BW_{os.getpid()}_{int(time.time())}_{random.randint(1000, 9999)}"
             update_progress(10)
 
             temp_dir = self.os_doc.get_temp_folder()
@@ -1484,6 +1502,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 log_error(f"export_source_drt: timeline '{timeline_name}' not found.")
                 return None
 
+            if hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer():
+                log_info("export_source_drt: Resolve Free 21.1+ detected — DRT export blocked by Blackmagic.")
+                return None
+
             export_type = getattr(self.resolve_handler.resolve, 'EXPORT_DRT', None)
             if export_type is None:
                 log_info("export_source_drt: EXPORT_DRT not available in this Resolve version.")
@@ -1832,6 +1854,10 @@ except Exception as e:
             # ── NAME FOR NEW TIMELINE ─────────────────────────────────────────
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
             new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
+            safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in new_tl_name)
+
+            temp_dir = self.os_doc.get_temp_folder()
+            os.makedirs(temp_dir, exist_ok=True)
 
             # ── LOAD SETTINGS ─────────────────────────────────────────────────
             import config
@@ -1842,6 +1868,23 @@ except Exception as e:
             ))
             # auto_del is already baked into clean_ops by calculate_timeline_structure().
             # No need to pass it further down the XML pipeline.
+
+            audio_track_filter = None
+            video_track_filter = None
+
+            track_config = source_snapshot.get('assembly_track_config')
+            if track_config:
+                amode = track_config.get('audio_mode', 'all')
+                if amode == 'tr':
+                    audio_track_filter = track_indices if track_indices else None
+                elif amode == 'cust':
+                    audio_track_filter = track_config.get('audio_custom', [])
+
+                vmode = track_config.get('video_mode', 'all')
+                if vmode == 'none':
+                    video_track_filter = []
+                elif vmode == 'cust':
+                    video_track_filter = track_config.get('video_custom', [])
 
             # ══════════════════════════════════════════════════════════════════
             # TIER 1 — PRIMARY: NATIVE .drt ASSEMBLY
@@ -1854,37 +1897,21 @@ except Exception as e:
             try:
                 import assembler
 
-                set_status(self.txt("status_assembly_xml_build"))
-                set_progress(-1)
-
-                temp_dir = self.os_doc.get_temp_folder()
-                os.makedirs(temp_dir, exist_ok=True)
-                
-                audio_track_filter = None
-                video_track_filter = None
-                
-                track_config = source_snapshot.get('assembly_track_config')
-                if track_config:
-                    amode = track_config.get('audio_mode', 'all')
-                    if amode == 'tr':
-                        audio_track_filter = track_indices if track_indices else None
-                    elif amode == 'cust':
-                        audio_track_filter = track_config.get('audio_custom', [])
-                    
-                    vmode = track_config.get('video_mode', 'all')
-                    if vmode == 'none':
-                        video_track_filter = []
-                    elif vmode == 'cust':
-                        video_track_filter = track_config.get('video_custom', [])
-
                 # In DaVinci Resolve Free 21.1+, DRT export is blocked by Blackmagic and causes a 30s hang.
                 # Skip DRT immediately and go straight to XML assembly.
+                # Also skip DRT if user explicitly enabled force_xml_assembly or BADWORDS_FORCE_XML=1.
                 skip_drt = False
-                if hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer():
+                force_xml = bool(prefs.get("force_xml_assembly", False)) or (os.environ.get("BADWORDS_FORCE_XML") == "1")
+                if force_xml:
+                    log_info("assemble_timeline: force_xml_assembly active — bypassing DRT path directly to XML.")
+                    skip_drt = True
+                elif hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer():
                     log_info("assemble_timeline: Resolve Free 21.1+ detected — bypassing DRT path directly to TIER 2 XML.")
                     skip_drt = True
 
                 if not skip_drt:
+                    set_status(self.txt("status_assembly_drt_build"))
+                    set_progress(-1)
                     log_info("assemble_timeline: TIER 1 — attempting DRT primary path...")
                     drt_ok, drt_colors, drt_name = assembler.assemble_via_drt(
                         self.resolve_handler,
@@ -1895,7 +1922,8 @@ except Exception as e:
                         audio_track_filter=audio_track_filter,
                         video_track_filter=video_track_filter,
                         preserve_track_order=preserve_track_order,
-                        temp_dir=temp_dir
+                        temp_dir=temp_dir,
+                        status_cb=lambda step: set_status(self.txt("status_assembly_drt_import")) if step == "import" else None
                     )
 
                     if drt_ok and drt_name:
@@ -1916,29 +1944,21 @@ except Exception as e:
                 log_error(_tb.format_exc())
 
             # ──────────────────────────────────────────────────────────────────
-            # TIER 2 — FALLBACK #1: FCP7 XML EXPORT → CUT → IMPORT
-            # Used when DRT path fails (e.g. EXPORT_DRT not available,
-            # or .drt import returned None).
+            # TIER 2 — FCP7 XML ASSEMBLY
+            # Exports source timeline XML, slices clips at subframe precision,
+            # and re-imports the assembled cut timeline cleanly without nesting.
             # ──────────────────────────────────────────────────────────────────
-            xml_success  = False
-            xml_tl_name  = None
-            src_xml_path = ""  # initialised before try so finally block can reference them
-            cut_xml_path = ""
+            xml_success = False
+            xml_tl_name = None
 
             if not drt_success:
-
+                src_xml_path = os.path.join(temp_dir, f"bw_src_{safe_name}.xml")
+                cut_xml_path = os.path.join(temp_dir, f"bw_cut_{safe_name}.xml")
                 try:
-                    temp_dir = self.os_doc.get_temp_folder()
-                    os.makedirs(temp_dir, exist_ok=True)
-                    safe_name = "".join(c for c in new_tl_name if c.isalnum() or c in '_-')
-                    src_xml_path = os.path.join(temp_dir, f"bw_src_{safe_name}.xml")
-                    cut_xml_path = os.path.join(temp_dir, f"bw_cut_{safe_name}.xml")
-
-                    # Step 1: Export source timeline XML (Resolve native, all clip types)
                     set_status(self.txt("status_assembly_xml_build"))
                     set_progress(-1)
                     time.sleep(0.05)
-                    log_info("assemble_timeline: TIER 2 — attempting FCP7 XML fallback...")
+                    log_info("assemble_timeline: TIER 2 — attempting FCP7 XML path...")
                     export_ok = self.resolve_handler.export_timeline_xml(
                         original_tl_name, src_xml_path
                     )
@@ -1946,9 +1966,16 @@ except Exception as e:
                     if not export_ok:
                         log_error("assemble_timeline: source XML export failed.")
                     else:
-                        # Step 2: Apply op-cuts to the exported XML
+                        # Get the authoritative timeline start frame from Resolve API
+                        # (same as DRT path uses target_tl.GetStartFrame())
+                        tl_start_frame = self.resolve_handler.get_timeline_start_frame()
                         ok_cut, color_schedule = self.resolve_handler.apply_ops_cuts_to_timeline_xml(
-                            src_xml_path, clean_ops, cut_xml_path, audio_only_mode=audio_only_mode
+                            src_xml_path, clean_ops, cut_xml_path,
+                            audio_only_mode=audio_only_mode,
+                            tl_start_frame=tl_start_frame,
+                            audio_track_filter=audio_track_filter,
+                            video_track_filter=video_track_filter,
+                            preserve_track_order=preserve_track_order
                         )
                         time.sleep(0.05)
 
@@ -1962,36 +1989,36 @@ except Exception as e:
                                     xml_tl_name = new_tl_name
                                     xml_success = True
                                     log_info(f"assemble_timeline: XML import OK (bridge) → '{xml_tl_name}'")
-
-                                    # Apply / verify clip colors
                                     set_status(self.txt("status_assembly_colors"))
                                     self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
                                     new_tl_name = xml_tl_name
                                 else:
                                     log_error("assemble_timeline: import_timeline_xml (bridge) failed.")
                             else:
-                                # CRITICAL: Reset current folder to Root before import.
                                 root_folder = self.resolve_handler.media_pool.GetRootFolder()
                                 if root_folder:
                                     self.resolve_handler.media_pool.SetCurrentFolder(root_folder)
 
                                 import_options = {
                                     "timelineName": new_tl_name,
-                                    "importSourceClips": True
+                                    "importSourceClips": False
                                 }
-
                                 new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
                                     cut_xml_path,
                                     import_options,
                                 )
+                                if not new_tl:
+                                    import_options["importSourceClips"] = True
+                                    new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
+                                        cut_xml_path,
+                                        import_options,
+                                    )
                                 time.sleep(0.05)
 
                                 if new_tl:
                                     actual_name = new_tl.GetName()
                                     log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
                                     xml_tl_name = actual_name
-
-                                    # Move timeline into BadWords/ root bin
                                     bw_bin = self.resolve_handler.get_badwords_root_bin()
                                     if bw_bin:
                                         try:
@@ -2000,41 +2027,49 @@ except Exception as e:
                                             )
                                             if tl_item:
                                                 self.resolve_handler.media_pool.MoveClips([tl_item], bw_bin)
-                                                log_info(f"assemble_timeline: moved '{actual_name}' → BadWords/")
-                                            else:
-                                                log_error("assemble_timeline: timeline item not found in pool")
                                         except Exception as move_err:
-                                            log_error(f"assemble_timeline: MoveClips error: {move_err}")
+                                            log_warn(f"assemble_timeline: MoveClips error: {move_err}")
 
-                                    # Apply / verify clip colors
                                     set_status(self.txt("status_assembly_colors"))
                                     self.resolve_handler.reapply_clip_colors(xml_tl_name, color_schedule)
-
                                     xml_success = True
                                     new_tl_name = xml_tl_name
                                 else:
                                     log_error("assemble_timeline: ImportTimelineFromFile returned None.")
                         else:
                             log_error("assemble_timeline: apply_ops_cuts_to_timeline_xml failed.")
-
                 except Exception as xml_err:
                     log_error(f"assemble_timeline: XML path exception: {xml_err}")
                     import traceback as _tb
                     log_error(_tb.format_exc())
                 finally:
-                    # Cleanup temp XMLs
-                    for _p in (src_xml_path, cut_xml_path):
+                    for _p in [src_xml_path, cut_xml_path]:
                         try:
-                            if os.path.exists(_p):
-                                os.remove(_p)
-                        except Exception:
-                            pass
+                            if os.path.exists(_p): os.remove(_p)
+                        except Exception: pass
 
             # ──────────────────────────────────────────────────────────────────
-            # TIER 3 — EMERGENCY FALLBACK: AppendToTimeline
-            # Triggered ONLY if both DRT and XML paths completely failed.
+            # TIER 3 — FALLBACK: Nested Timeline Slice Assembly
+            # Triggered ONLY if DRT and XML paths failed.
             # ──────────────────────────────────────────────────────────────────
+            tier3_success = False
             if not drt_success and not xml_success:
+                try:
+                    log_info(f"assemble_timeline: TIER 3 — Fallback nested slice assembly for '{original_tl_name}' -> '{new_tl_name}'...")
+                    ok_nested = self.resolve_handler.assemble_nested_timeline(original_tl_name, new_tl_name, clean_ops)
+                    if ok_nested:
+                        tier3_success = True
+                        log_info(f"assemble_timeline: Nested assembly OK → '{new_tl_name}'")
+                    else:
+                        log_error("assemble_timeline: assemble_nested_timeline fallback failed.")
+                except Exception as nested_err:
+                    log_error(f"assemble_timeline: Nested assembly exception: {nested_err}")
+
+            # ──────────────────────────────────────────────────────────────────
+            # TIER 4 — EMERGENCY FALLBACK: Legacy AppendToTimeline
+            # Triggered ONLY if DRT, XML, and Nested paths failed.
+            # ──────────────────────────────────────────────────────────────────
+            if not drt_success and not xml_success and not tier3_success:
                 log_error("assemble_timeline: !! EMERGENCY FALLBACK — AppendToTimeline !!")
                 log_error("assemble_timeline: XML path failed. Using legacy method.")
 
@@ -2090,12 +2125,14 @@ except Exception as e:
                 new_tl_name = fb_tl_name
                 log_info(f"assemble_timeline: Fallback succeeded → '{new_tl_name}'")
 
-            # ── Return to Edit page & cleanup ─────────────────────────────────
+            # ── Activate newly assembled timeline & return to Edit page ──────
             try:
-                if self.resolve_handler.resolve:
+                if new_tl_name and self.resolve_handler:
+                    self.resolve_handler.set_current_timeline(new_tl_name)
+                if self.resolve_handler and self.resolve_handler.resolve:
                     self.resolve_handler.resolve.OpenPage("edit")
-            except Exception:
-                pass
+            except Exception as nav_err:
+                log_error(f"assemble_timeline: post-assembly navigation error: {nav_err}")
 
             import gc
             gc.collect()

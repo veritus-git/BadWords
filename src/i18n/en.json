@@ -346,8 +346,8 @@
     "txt_all": "All",
     "lbl_xml_preserve_track_order": "Preserve original tracks order",
     "tt_xml_preserve_track_order": "Maintains original track numbers for both audio and video tracks (e.g. A3 stays A3, V2 stays V2). If disabled, tracks are placed sequentially starting from 1.",
-    "status_assembly_xml_build": "Building DRT assembly...",
-    "status_assembly_xml_import": "Importing DRT timeline...",
+    "status_assembly_xml_build": "Building XML assembly...",
+    "status_assembly_xml_import": "Importing XML timeline...",
     "status_assembly_colors": "Applying clip colors...",
     "lbl_timestamp_precise": "Precise timestamps (ms)",
     "tt_timestamp_precise": "Shows timestamps with millisecond precision.",
@@ -446,5 +446,10 @@
     "tt_source_info_studio": "<!-- raw -->Choose media source: you can edit an audio/video file directly from your disk, or use BadWords as a plugin for DaVinci Resolve (which enables applying cuts directly onto the timeline and color-coding clips).<br><br><b>DaVinci Resolve Studio Connection:</b><br>You can launch BadWords directly or from inside DaVinci Resolve (via <i>Workspace → Scripts → BadWords</i>). Ensure that in DaVinci Resolve <i>Preferences → System → General → External scripting using</i> is set to <i>Local</i>.",
     "tt_source_info_not_installed": "<!-- raw -->Choose media source: you can edit an audio/video file directly from your disk, or use BadWords as a plugin for DaVinci Resolve (which enables applying cuts directly onto the timeline and color-coding clips).<br><br><b>DaVinci Resolve:</b><br>Professional video editing software. Not detected on this system – downloading DaVinci Resolve is recommended for full timeline integration.",
     "tt_assembly_locked_transcription": "This option is locked until transcription is complete",
-    "lbl_timeline_ready": "A1: Ready for timeline audio"
+    "lbl_timeline_ready": "A1: Ready for timeline audio",
+    "status_importing_project": "Loading project...",
+    "lbl_force_xml_assembly": "Force XML Timeline Assembly",
+    "tt_force_xml_assembly": "Forces timeline assembly to use the FCP7 XML pipeline instead of native DRT. Useful for testing XML assembly or on Resolve 21.1+ Free.",
+    "status_assembly_drt_build": "Building DRT assembly...",
+    "status_assembly_drt_import": "Importing DRT timeline..."
 }

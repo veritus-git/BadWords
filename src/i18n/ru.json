@@ -338,8 +338,8 @@
     "txt_all": "Все",
     "lbl_xml_preserve_track_order": "Сохранить исходный порядок дорожек",
     "tt_xml_preserve_track_order": "Сохраняет исходные номера для аудио и видео дорожек (напр. A3 остается A3, V2 остается V2). Иначе дорожки размещаются начиная с 1.",
-    "status_assembly_xml_build": "Создание DRT монтажа...",
-    "status_assembly_xml_import": "Импорт DRT таймлайна...",
+    "status_assembly_xml_build": "Создание XML монтажа...",
+    "status_assembly_xml_import": "Импорт XML таймлайна...",
     "status_assembly_colors": "Применение цветов клипов...",
     "lbl_timestamp_precise": "Точные метки времени (мс)",
     "tt_timestamp_precise": "Показывает метки времени с точностью до миллисекунд.",
@@ -445,5 +445,11 @@
     "tt_source_info_free": "<!-- raw -->Выберите источник медиа: вы можете редактировать аудио/видеофайл напрямую с диска или использовать BadWords как плагин для DaVinci Resolve (что позволяет вносить нарезку прямо на таймлайн и раскрашивать клипы).<br><br><b>Подключение к DaVinci Resolve:</b><br>Откройте DaVinci Resolve и запустите <i>Workspace → Scripts → BadWords Bridge</i>. Вы также можете запустить BadWords напрямую из DaVinci Resolve (через <i>Workspace → Scripts → BadWords</i>), но эта возможность доступна только для версий DaVinci Resolve старее 21.1.",
     "tt_source_info_studio": "<!-- raw -->Выберите источник медиа: вы можете редактировать аудио/видеофайл напрямую с диска или использовать BadWords как плагин для DaVinci Resolve (что позволяет вносить нарезку прямо на таймлайн и раскрашивать клипы).<br><br><b>Подключение к DaVinci Resolve Studio:</b><br>Вы можете запустить BadWords напрямую или из DaVinci Resolve (через <i>Workspace → Scripts → BadWords</i>). Убедитесь, что в DaVinci Resolve параметр <i>Preferences → System → General → External scripting using</i> установлен на <i>Local</i>.",
     "tt_source_info_not_installed": "<!-- raw -->Выберите источник медиа: вы можете редактировать аудио/видеофайл напрямую с диска или использовать BadWords как плагин для DaVinci Resolve (что позволяет вносить нарезку прямо на таймлайн и раскрашивать клипы).<br><br><b>DaVinci Resolve:</b><br>Профессиональная программа для монтажа видео. Не обнаружена в системе – для полной интеграции с таймлайном рекомендуется установить DaVinci Resolve.",
-    "tt_assembly_locked_transcription": "Эта опция заблокирована до завершения транскрипции"
+    "tt_assembly_locked_transcription": "Эта опция заблокирована до завершения транскрипции",
+    "status_importing_project": "Загрузка проекта...",
+    "lbl_force_xml_assembly": "Принудительная сборка через XML",
+    "tt_force_xml_assembly": "Принудительно выполняет сборку таймлайна через FCP7 XML вместо нативного DRT.",
+    "status_assembly_drt_build": "Создание DRT монтажа...",
+    "status_assembly_drt_import": "Импорт DRT таймлайна...",
+    "lbl_timeline_ready": "A1: Готов для аудио таймлайна"
 }

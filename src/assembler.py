@@ -78,20 +78,77 @@ def repack_drt(unpacked_root_dir, output_drt_path):
     log_info(f"repack_drt: wrote {output_drt_path}")
 
 
-def find_seq_container_xml(unpacked_timeline_dir):
+def find_seq_container_xml(unpacked_timeline_dir, target_tl_name=None):
     """
     Locate the SeqContainer XML file inside the unpacked timeline dir.
-    Returns the absolute path to the XML file.
+    When multiple SeqContainer XMLs exist (e.g. compound clips, nested sequences),
+    identifies the exact SeqContainer for target_tl_name via MpFolder.xml/project.xml.
     """
     seq_dir = os.path.join(unpacked_timeline_dir, "SeqContainer")
     if not os.path.isdir(seq_dir):
         raise FileNotFoundError(
             f"SeqContainer directory not found in {unpacked_timeline_dir}"
         )
-    for fname in os.listdir(seq_dir):
-        if fname.endswith('.xml'):
-            return os.path.join(seq_dir, fname)
-    raise FileNotFoundError(f"No XML file found in {seq_dir}")
+    xml_files = [f for f in os.listdir(seq_dir) if f.endswith('.xml')]
+    if not xml_files:
+        raise FileNotFoundError(f"No XML file found in {seq_dir}")
+    if len(xml_files) == 1 or not target_tl_name:
+        return os.path.join(seq_dir, xml_files[0])
+
+    import re
+
+    # Search MpFolder.xml and project.xml for target_tl_name
+    for root_dir, dirs, files in os.walk(unpacked_timeline_dir):
+        for fname in files:
+            if fname.endswith('.xml') and root_dir != seq_dir:
+                fpath = os.path.join(root_dir, fname)
+                try:
+                    with open(fpath, 'r', encoding='utf-8', errors='ignore') as xf:
+                        content = xf.read()
+                    if target_tl_name not in content:
+                        continue
+
+                    idx = 0
+                    needle = f'<Name>{target_tl_name}</Name>'
+                    while True:
+                        idx = content.find(needle, idx)
+                        if idx == -1:
+                            break
+                        chunk = content[idx:idx + 5000]
+                        # Look for hex-encoded SeqRef: 005300650071005200650066 (SeqRef in utf-16-be)
+                        seq_ref_pos = chunk.find('005300650071005200650066')
+                        if seq_ref_pos != -1:
+                            raw_hex = chunk[seq_ref_pos:seq_ref_pos + 400]
+                            try:
+                                decoded = bytes.fromhex(raw_hex).decode('utf-16-be', errors='ignore')
+                                m = re.search(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', decoded)
+                                if m:
+                                    cand = os.path.join(seq_dir, f"{m.group(0).lower()}.xml")
+                                    if os.path.isfile(cand):
+                                        log_info(f"find_seq_container_xml: resolved '{target_tl_name}' via SeqRef -> {cand}")
+                                        return cand
+                            except Exception:
+                                pass
+
+                        # Match via <Sm2Sequence DbId="...">
+                        m_seq = re.search(r'<Sm2Sequence[^>]+DbId="([^"]+)"', chunk)
+                        if m_seq:
+                            seq_id = m_seq.group(1)
+                            for xf_name in xml_files:
+                                cand_path = os.path.join(seq_dir, xf_name)
+                                with open(cand_path, 'r', encoding='utf-8', errors='ignore') as sc:
+                                    if seq_id in sc.read():
+                                        log_info(f"find_seq_container_xml: resolved '{target_tl_name}' via sequence DbId -> {cand_path}")
+                                        return cand_path
+                        idx += len(needle)
+                except Exception as e:
+                    log_error(f"find_seq_container_xml scan error in {fpath}: {e}")
+
+    # Fallback to the largest XML file (the main sequence is virtually always larger than compound clips)
+    largest_file = max(xml_files, key=lambda f: os.path.getsize(os.path.join(seq_dir, f)))
+    cand_fallback = os.path.join(seq_dir, largest_file)
+    log_info(f"find_seq_container_xml: fallback by size -> {cand_fallback}")
+    return cand_fallback
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -506,7 +563,7 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
                      new_tl_name, audio_only_mode=False,
                      audio_track_filter=None, video_track_filter=None,
                      preserve_track_order=False,
-                     temp_dir=None):
+                     temp_dir=None, status_cb=None):
     """
     Full DRT assembly pipeline — direct vertical slicing.
 
@@ -577,7 +634,7 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
 
         # ── Step 2: Unpack .drt ───────────────────────────────────────────────
         timeline_dir = unpack_drt(src_drt_path, unpack_dir)
-        seq_xml = find_seq_container_xml(timeline_dir)
+        seq_xml = find_seq_container_xml(timeline_dir, original_tl_name)
         log_info(f"drt_assemble: SeqContainer at {seq_xml}")
 
         # ── Step 3: Apply ops cuts ────────────────────────────────────────────
@@ -593,6 +650,12 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
         # ── Step 4: Repack as .drt ────────────────────────────────────────────
         repack_drt(unpack_dir, cut_drt_path)
         time.sleep(0.05)
+
+        if status_cb:
+            try:
+                status_cb("import")
+            except Exception:
+                pass
 
         if resolve_handler.backend == 'bridge':
             log_info("drt_assemble: importing modified .drt via bridge...")

@@ -232,26 +232,33 @@ class ResolveHandler:
 
     def is_free_21_1_or_newer(self) -> bool:
         """Returns True if running DaVinci Resolve Free 21.1 or newer."""
-        info = self.get_resolve_edition_info()
-        if info.get("installed"):
-            if info.get("edition") == "Free" and info.get("is_21_1_or_newer"):
-                return True
-            if info.get("edition") == "Studio":
-                return False
+        import re
+
+        # 1. Authoritative check via active Bridge connection (live Resolve instance)
         if self.backend == 'bridge':
             prod = (getattr(self, 'bridge_product_name', '') or '').lower()
             ver = getattr(self, 'bridge_version', '') or ''
             is_studio = 'studio' in prod
-            if not is_studio and ver:
+            if is_studio:
+                return False
+            if ver:
                 try:
-                    import re
                     parts = [int(p) for p in re.findall(r'\d+', ver)]
-                    if parts and (parts[0] > 21 or (parts[0] == 21 and len(parts) > 1 and parts[1] >= 1)):
-                        return True
+                    if parts:
+                        major = parts[0]
+                        minor = parts[1] if len(parts) > 1 else 0
+                        return (major > 21) or (major == 21 and minor >= 1)
                 except Exception:
                     pass
+
+        # 2. Local system / native inspection
+        info = self.get_resolve_edition_info()
+        if info.get("installed"):
+            if info.get("edition") == "Studio":
+                return False
             if info.get("edition") == "Free":
-                return True
+                return bool(info.get("is_21_1_or_newer"))
+
         return False
 
     def get_current_project_name(self) -> str:
@@ -1774,14 +1781,81 @@ class ResolveHandler:
                 log_error("import_timeline_xml: media_pool not available.")
                 return False
 
-            import_options = {"importSourceClips": True}
+            root_folder = self.media_pool.GetRootFolder()
+            if root_folder:
+                self.media_pool.SetCurrentFolder(root_folder)
+
+            import_options = {"importSourceClips": False}
             if timeline_name:
                 import_options["timelineName"] = timeline_name
 
             new_tl = self.media_pool.ImportTimelineFromFile(xml_path, import_options)
+            if not new_tl:
+                import_options["importSourceClips"] = True
+                new_tl = self.media_pool.ImportTimelineFromFile(xml_path, import_options)
             return bool(new_tl is not None)
         except Exception as e:
             log_error(f"import_timeline_xml error: {e}")
+            return False
+
+    def assemble_nested_timeline(self, source_timeline_name: str, new_timeline_name: str, ops: list) -> bool:
+        """
+        TIER 3 fallback: Assembles a new timeline by slicing the source timeline as a nested MediaPoolItem.
+        """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("AssembleNestedTimeline", {
+                    "source_timeline_name": source_timeline_name,
+                    "new_timeline_name": new_timeline_name,
+                    "ops": ops
+                }, timeout_secs=60.0)
+                if res and res.get("ok"):
+                    if new_timeline_name not in self.bridge_timelines:
+                        self.bridge_timelines.append(new_timeline_name)
+                    return True
+                log_error(f"assemble_nested_timeline (bridge) failed: {res}")
+                return False
+            except Exception as e:
+                log_error(f"assemble_nested_timeline (bridge) error: {e}")
+                return False
+
+        try:
+            if not self.media_pool or not self.project:
+                log_error("assemble_nested_timeline: media_pool or project not available.")
+                return False
+
+            root = self.media_pool.GetRootFolder()
+            src_item = self.find_timeline_item_recursive(root, source_timeline_name)
+            if not src_item:
+                for c in (root.GetClipList() or []):
+                    if c.GetName() == source_timeline_name:
+                        src_item = c
+                        break
+            if not src_item:
+                log_error(f"assemble_nested_timeline: source timeline item '{source_timeline_name}' not found in Media Pool.")
+                return False
+
+            new_tl = self.media_pool.CreateEmptyTimeline(new_timeline_name)
+            if not new_tl:
+                log_error(f"assemble_nested_timeline: CreateEmptyTimeline failed for '{new_timeline_name}'.")
+                return False
+
+            self.project.SetCurrentTimeline(new_tl)
+            clip_infos = []
+            for op in ops:
+                sf = int(op.get('s', op.get('startFrame', 0)))
+                ef = int(op.get('e', op.get('endFrame', 0)))
+                if ef > sf:
+                    clip_infos.append({
+                        "mediaPoolItem": src_item,
+                        "startFrame": sf,
+                        "endFrame": ef
+                    })
+            if not clip_infos:
+                return False
+            return bool(self.media_pool.AppendToTimeline(clip_infos))
+        except Exception as e:
+            log_error(f"assemble_nested_timeline error: {e}")
             return False
 
     def filter_xml_tracks(self, input_path, output_path, track_indices):
@@ -1891,7 +1965,7 @@ class ResolveHandler:
             log_error(f"filter_xml_tracks error: {e}")
             return False
 
-    def apply_ops_cuts_to_timeline_xml(self, xml_path, ops, output_path, audio_only_mode=False):
+    def apply_ops_cuts_to_timeline_xml(self, xml_path, ops, output_path, audio_only_mode=False, tl_start_frame=None, audio_track_filter=None, video_track_filter=None, preserve_track_order=False):
         """
         Takes Resolve's NATIVE FCP7 XML export of a timeline and applies the
         BadWords op-cuts to it, producing a new XML ready for import.
@@ -1904,9 +1978,10 @@ class ResolveHandler:
 
         ALGORITHM:
         - ops is a sorted list of {'s': int, 'e': int, 'type': str} in 0-based frames.
-        - Each clipitem's <start>/<end> are absolute timeline frames (e.g. 216000-based).
-        - We subtract tl_start_frame to work in 0-based space, apply cuts, then write
-          destination positions starting from 0 (Resolve sets its own timecode on import).
+        - In FCP7 XML, clipitem <start>/<end> are almost always 0-based relative to the sequence start.
+        - We detect if clipitems are already 0-based (min_abs_start < tl_start_frame):
+          If so, xml_base_offset = 0 (we do NOT subtract or add tl_start_frame, which would cause huge gaps).
+          If min_abs_start >= tl_start_frame and tl_start_frame > 0, xml_base_offset = tl_start_frame.
         - For each clipitem that overlaps with kept ops: emit one clipitem per op-overlap,
           adjusting <in>/<out>/<start>/<end>/<duration> accordingly.
         - Returns (success: bool, color_schedule: dict)
@@ -1931,11 +2006,13 @@ class ResolveHandler:
             tree = ET.parse(xml_path)
             root = tree.getroot()
 
-            # ── 1. Determine tl_start_frame from the first clipitem's <start> and op offset ──
-            # Resolve exports absolute frame numbers. ops use 0-based (relative) frames.
-            # We detect tl_start by finding the minimum <start> value across all clipitems
-            # and cross-checking with ops[0]['s']. If ops start at 0 and the minimum
-            # clipitem start is 216000, then tl_start_frame = 216000.
+            # ── 1. Determine xml_base_offset ──────────────────────────────────────────────
+            if tl_start_frame is None:
+                try:
+                    tl_start_frame = self.get_timeline_start_frame() or 0
+                except Exception:
+                    tl_start_frame = 0
+
             min_abs_start = None
             for ci in root.iter('clipitem'):
                 s_el = ci.find('start')
@@ -1947,23 +2024,77 @@ class ResolveHandler:
                     except ValueError:
                         pass
 
-            tl_start_frame = min_abs_start if min_abs_start is not None else 0
-            log_info(f"apply_ops_cuts: tl_start_frame={tl_start_frame}, ops={len(ops)}, audio_only_mode={audio_only_mode}")
+            if min_abs_start is not None and min_abs_start >= tl_start_frame and tl_start_frame > 0:
+                xml_base_offset = tl_start_frame
+            else:
+                xml_base_offset = 0
 
-            # ── 1.5. Pre-scan for audio file IDs ──────────────────────────────────────────
-            audio_file_ids = set()
+            log_info(f"apply_ops_cuts: tl_start_frame={tl_start_frame}, xml_base_offset={xml_base_offset}, "
+                     f"min_abs_start={min_abs_start}, ops={len(ops)}, audio_only_mode={audio_only_mode}, "
+                     f"preserve_order={preserve_track_order}")
+
+            # ── 1.5. Build Master File Registry ───────────────────────────────────────────
+            # In FCP7 XML, the first clipitem defines the master <file id="..."> with pathurl
+            # and full media info. Subsequent clips use shallow <file id="..."/> references.
+            # We index all file IDs so shallow references know their real media path.
+            file_registry = {}  # fid -> {'elem': copy.deepcopy(file_el), 'has_valid_file': bool, 'is_audio': bool}
             for file_el in root.iter('file'):
+                fid = file_el.get('id')
+                if not fid:
+                    continue
                 path_el = file_el.find('pathurl')
-                if path_el is not None and path_el.text:
-                    ext = os.path.splitext(path_el.text.strip())[1].lower()
-                    if ext in _AUDIO_EXTS:
-                        fid = file_el.get('id')
-                        if fid: audio_file_ids.add(fid)
+                if path_el is not None and path_el.text and path_el.text.strip():
+                    raw = path_el.text.strip()
+                    has_file = False
+                    if raw.startswith('file://'):
+                        import urllib.parse as _up
+                        fs_path = _up.unquote(raw[len('file://'):])
+                        if fs_path.startswith('localhost/'):
+                            fs_path = fs_path[len('localhost'):]
+                        if not os.path.exists(fs_path) and fs_path.startswith('/') \
+                                and len(fs_path) > 2 and fs_path[2] == ':':
+                            fs_path = fs_path[1:]
+                        if os.path.exists(fs_path):
+                            has_file = True
+                    is_aud = False
+                    if has_file:
+                        ext = os.path.splitext(raw)[1].lower()
+                        is_aud = (ext in _AUDIO_EXTS)
+                    file_registry[fid] = {
+                        'elem': copy.deepcopy(file_el),
+                        'has_valid_file': has_file,
+                        'is_audio': is_aud
+                    }
+
+            # ── 1.6. Track Filtering ──────────────────────────────────────────────────────
+            def _filter_section_tracks(section_el, keep_indices, preserve_order):
+                if keep_indices is None or section_el is None:
+                    return
+                tracks = list(section_el.findall('track'))
+                for i, tr in enumerate(tracks):
+                    if (i + 1) not in keep_indices:
+                        if preserve_order or (i == 0 and not keep_indices):
+                            for ci in list(tr):
+                                if ci.tag in ('clipitem', 'generatoritem'):
+                                    tr.remove(ci)
+                        else:
+                            section_el.remove(tr)
+
+            for video_sec in root.iter('video'):
+                if audio_only_mode:
+                    for tr in video_sec.findall('track'):
+                        for ci in list(tr):
+                            if ci.tag in ('clipitem', 'generatoritem'):
+                                tr.remove(ci)
+                elif video_track_filter is not None:
+                    _filter_section_tracks(video_sec, video_track_filter, preserve_track_order)
+
+            if audio_track_filter is not None:
+                for audio_sec in root.iter('audio'):
+                    _filter_section_tracks(audio_sec, audio_track_filter, preserve_track_order)
 
             # ── 2. Build dest_offset lookup: for a 0-based src frame, return dest frame ──
-            # Pre-build sorted ops list
             sorted_ops = sorted(ops, key=lambda x: x['s'])
-            # Build cumulative dest offsets: dest_offset[i] = sum of durations of ops[0..i-1]
             dest_offsets = []
             acc = 0
             for op in sorted_ops:
@@ -1983,24 +2114,17 @@ class ResolveHandler:
 
             # ── 3. Process all tracks ──────────────────────────────────────────────────────
             color_schedule = {}  # dest_start → color|None
+            ci_id_counter = [0]
+            emitted_fids = set()
 
             for track in root.iter('track'):
-                # Collect all clipitems in the track
-                original_items = list(track.findall('clipitem'))
-                # Remove them all — we'll re-add the cut versions
+                original_items = [ci for ci in track if ci.tag in ('clipitem', 'generatoritem')]
                 for ci in original_items:
                     track.remove(ci)
-
-                ci_id_counter = [0]
 
                 has_normal_clips = any(item.find('file') is not None for item in original_items)
 
                 for ci in original_items:
-                    # ── Skip compound clips (nested sequence references) only when normal clips exist ──
-                    # If the track has normal file-backed clips, Resolve's XML export may include an extra
-                    # wrapper <clipitem> with a <sequence> child that duplicates the timeline.
-                    # BUT if the user's timeline is composed of a nested timeline (no normal file clips on track),
-                    # we must NOT skip it so the user can cut nested sequences and "Decompose in Place"!
                     if has_normal_clips and ci.find('sequence') is not None:
                         continue
 
@@ -2017,20 +2141,19 @@ class ResolveHandler:
                     except (ValueError, TypeError):
                         continue
 
-
                     # Convert to 0-based
-                    src_s = abs_s - tl_start_frame
-                    src_e = abs_e - tl_start_frame
+                    src_s = abs_s - xml_base_offset
+                    src_e = abs_e - xml_base_offset
                     orig_dur = src_e - src_s
 
                     # Source in/out (media head offsets)
                     try:    src_in  = int(in_el.text)  if in_el  is not None and in_el.text  else 0
                     except (ValueError, AttributeError) as e:
-                        log_error(f"filter_xml_tracks: failed to parse src_in '{in_el.text if in_el is not None else None}': {e}")
+                        log_error(f"apply_ops_cuts: failed to parse src_in '{in_el.text if in_el is not None else None}': {e}")
                         src_in  = 0
                     try:    src_out = int(out_el.text) if out_el is not None and out_el.text else src_in + orig_dur
                     except (ValueError, AttributeError) as e:
-                        log_error(f"filter_xml_tracks: failed to parse src_out '{out_el.text if out_el is not None else None}': {e}")
+                        log_error(f"apply_ops_cuts: failed to parse src_out '{out_el.text if out_el is not None else None}': {e}")
                         src_out = src_in + orig_dur
 
                     # Find all op-overlaps for this clipitem
@@ -2040,21 +2163,24 @@ class ResolveHandler:
                         if overlap_e <= overlap_s:
                             continue
 
-                        # Position within source clip where this overlap starts
                         clip_offset = overlap_s - src_s
                         seg_dur     = overlap_e - overlap_s
 
-                        new_dest_s = dest_offsets[i] + (overlap_s - op['s'])
+                        new_dest_rel = dest_offsets[i] + (overlap_s - op['s'])
+                        new_dest_s = new_dest_rel + xml_base_offset
                         new_dest_e = new_dest_s + seg_dur
                         new_src_in  = src_in  + clip_offset
                         new_src_out = new_src_in + seg_dur
 
-                        # Clone the clipitem for this segment
                         new_ci = copy.deepcopy(ci)
                         ci_id_counter[0] += 1
                         new_ci.set('id', f"bw-ci-{ci_id_counter[0]}")
 
-                        # Patch start / end / duration / in / out
+                        # Remove stale links referencing original uncut IDs
+                        for l in list(new_ci.findall('link')):
+                            new_ci.remove(l)
+
+                        orig_ci_dur = ci.findtext('duration')
                         def _set(el_name, val):
                             el = new_ci.find(el_name)
                             if el is None:
@@ -2063,98 +2189,75 @@ class ResolveHandler:
 
                         _set('start',    new_dest_s)
                         _set('end',      new_dest_e)
-                        _set('duration', seg_dur)
+                        if orig_ci_dur:
+                            _set('duration', orig_ci_dur)
+                        else:
+                            _set('duration', seg_dur)
                         _set('in',       new_src_in)
                         _set('out',      new_src_out)
 
-                        # ── Strip invalid file references ──────────────────────────────
-                        # Non-file-backed clips (adjustment clips, generators, etc.) have
-                        # a <pathurl> pointing to an internal Resolve resource that doesn't
-                        # exist as a normal filesystem file.  When importSourceClips:True is
-                        # used, Resolve tries to import every <file><pathurl> it finds —
-                        # if any pathurl is unresolvable, the ENTIRE ImportTimelineFromFile
-                        # returns None, causing offline media on all clips.
-                        # Fix: remove <file> from non-file-backed clips so Resolve skips
-                        # them during source-clip import but still creates the clip
-                        # structure from the clipitem's other attributes (start/end/duration).
                         file_el = new_ci.find('file')
                         if file_el is not None:
-                            pathurl_el = file_el.find('pathurl')
-                            if pathurl_el is not None and pathurl_el.text:
-                                raw = pathurl_el.text.strip()
-                                if raw.startswith('file://'):
-                                    import urllib.parse as _up
-                                    fs_path = _up.unquote(raw[len('file://'):])
-                                    if fs_path.startswith('localhost/'):
-                                        fs_path = fs_path[len('localhost'):]
-                                    # 'file:///home/...' → fs_path='/home/...' ✓
-                                    # 'file:///' on Windows gives '/C:/...' → normalise
-                                    if not os.path.exists(fs_path) and fs_path.startswith('/') \
-                                            and len(fs_path) > 2 and fs_path[2] == ':':
-                                        fs_path = fs_path[1:]  # Windows: strip leading /
-                                    if not os.path.exists(fs_path):
-                                        # Non-existent path → adjustment clip / generator
-                                        # We CANNOT strip the <file> element while keeping <clipitem> because FCP7 XML 
-                                        # requires video clipitems to have a file reference.
-                                        # But leaving resolve:// crashes importSourceClips:True.
-                                        # SOLUTION: Convert the <clipitem> to a <generatoritem> and remove <file>.
-                                        new_ci.tag = 'generatoritem'
-                                        new_ci.remove(file_el)
-                                    else:
-                                        # Audio patch: if file is .wav/.mp3, ensure <mediatype>audio</mediatype> exists
-                                        # Resolve exports omit this, causing Media Offline on re-import
-                                        ext = os.path.splitext(fs_path)[1].lower()
-                                        if ext in _AUDIO_EXTS:
-                                            mt_el = file_el.find('mediatype')
-                                            if mt_el is None:
-                                                ET.SubElement(file_el, 'mediatype').text = 'audio'
-                                else:
-                                    # Non file:// scheme (resolve://, etc.)
-                                    new_ci.tag = 'generatoritem'
+                            fid = file_el.get('id')
+                            reg = file_registry.get(fid)
+                            if reg and reg['has_valid_file']:
+                                # REAL PHYSICAL MEDIA FILE on disk!
+                                new_ci.tag = 'clipitem'
+                                if fid not in emitted_fids:
+                                    # First time this file ID is emitted in XML: provide full master definition
+                                    emitted_fids.add(fid)
                                     new_ci.remove(file_el)
-                        is_audio_file = False
-                        f_el = new_ci.find('file')
-                        if f_el is not None:
-                            path_el = f_el.find('pathurl')
-                            if path_el is not None and path_el.text:
-                                ext = os.path.splitext(path_el.text.strip())[1].lower()
-                                if ext in _AUDIO_EXTS:
-                                    is_audio_file = True
+                                    new_ci.append(copy.deepcopy(reg['elem']))
+                                else:
+                                    # Subsequent occurrence: shallow reference <file id="..."/>
+                                    for c in list(file_el):
+                                        file_el.remove(c)
                             else:
-                                fid = f_el.get('id')
-                                if fid in audio_file_ids:
-                                    is_audio_file = True
-
-                        # Fix for Mono/Left-channel bug on re-import:
-                        # ONLY remove <trackindex> from <sourcetrack> if the clip points to a strictly audio file (.wav/.mp3).
-                        # Removing the whole <sourcetrack> causes Resolve to fail the XML import!
-                        # By removing just <trackindex>, we keep XML valid but prevent Resolve from forcing Mono Channel 1.
-                        if is_audio_file:
-                            for st_el in new_ci.findall('sourcetrack'):
-                                idx_el = st_el.find('trackindex')
-                                if idx_el is not None:
-                                    st_el.remove(idx_el)
+                                # Non-physical file (compound clip, generator, title, solid)
+                                new_ci.tag = 'generatoritem'
+                                new_ci.remove(file_el)
+                                for st in list(new_ci.findall('sourcetrack')):
+                                    new_ci.remove(st)
 
                         track.append(new_ci)
+                        color_schedule[new_dest_rel] = op_color_for_src(op['s'])
 
-                        # Record color for this dest position
-                        color_schedule[new_dest_s] = op_color_for_src(op['s'])
+            # ── 3.5. Track Packing (when preserve_track_order is False) ───────────
+            if not preserve_track_order:
+                for section_tag in ('video', 'audio'):
+                    for sec in root.iter(section_tag):
+                        tracks = list(sec.findall('track'))
+                        if audio_only_mode and section_tag == 'video':
+                            for tr in tracks[1:]:
+                                sec.remove(tr)
+                            continue
+                        # A track is non-empty if it contains ANY clipitem or generatoritem
+                        non_empty = [tr for tr in tracks if any(ci.tag in ('clipitem', 'generatoritem') for ci in tr)]
+                        if non_empty:
+                            for tr in tracks:
+                                if tr not in non_empty:
+                                    sec.remove(tr)
+                        elif len(tracks) > 1:
+                            for tr in tracks[1:]:
+                                sec.remove(tr)
 
-
-            # ── 4. Patch sequence <duration> and <out> ─────────────────────────────────────
+            # ── 4. Patch sequence <duration>, <in> and <out> ──────────────────────────────
             for seq in root.findall('.//sequence'):
                 def _patch(tag, val):
                     el = seq.find(tag)
-                    if el is not None:
-                        el.text = str(val)
+                    if el is None:
+                        el = ET.SubElement(seq, tag)
+                    el.text = str(val)
                 _patch('duration', total_dest_frames)
-                _patch('out',      total_dest_frames)
+                if xml_base_offset > 0:
+                    _patch('in',  xml_base_offset)
+                    _patch('out', xml_base_offset + total_dest_frames)
+                else:
+                    _patch('in',  -1)
+                    _patch('out', -1)
                 break
 
             # ── 5. Inject dummy video block for pure audio timelines ───────────────────
-            # If the timeline was pure audio (like an .mp4 used only for audio), Resolve 
-            # exports NO <video> block. Re-importing this with importSourceClips:True 
-            # causes a fatal internal crash because Resolve expects a video block for .mp4.
             if audio_only_mode:
                 for media_el in root.findall('.//media'):
                     if media_el.find('video') is None:
@@ -2163,7 +2266,6 @@ class ResolveHandler:
                         sc_el = ET.SubElement(format_el, 'samplecharacteristics')
                         ET.SubElement(sc_el, 'width').text = '1920'
                         ET.SubElement(sc_el, 'height').text = '1080'
-                        # Insert at the beginning of media_el
                         media_el.insert(0, video_el)
 
             # ── 6. Write output XML ────────────────────────────────────────────────────────
@@ -2173,7 +2275,7 @@ class ResolveHandler:
                 f.write(raw)
 
             log_info(f"apply_ops_cuts: wrote {output_path} "
-                     f"(tl_start={tl_start_frame}, total_dest={total_dest_frames}f, "
+                     f"(tl_start={tl_start_frame}, xml_base={xml_base_offset}, total_dest={total_dest_frames}f, "
                      f"color_entries={len(color_schedule)})")
             return True, color_schedule
 

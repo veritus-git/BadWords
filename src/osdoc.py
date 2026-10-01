@@ -1038,16 +1038,54 @@ if sys.platform.startswith('linux'):
                     except OSError: pass
             break
 
-# 4. Launch main script in-process (preserves DaVinci Resolve Free API connection)
+# 4. Launch main script
+def _launch_external():
+    import subprocess
+    clean_env = os.environ.copy()
+    clean_env["BADWORDS_EMBEDDED"] = "1"
+    if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
+        clean_paths = [p for p in clean_env['LD_LIBRARY_PATH'].split(os.pathsep) if 'resolve' not in p.lower()]
+        clean_env['LD_LIBRARY_PATH'] = os.pathsep.join(clean_paths)
+    for cand in [
+        os.path.join(INSTALL_DIR, 'BadWords'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords'),
+        os.path.join(INSTALL_DIR, 'BadWords.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords.exe'),
+    ]:
+        if os.path.isfile(cand) and (sys.platform.startswith('win') or os.access(cand, os.X_OK)):
+            try:
+                subprocess.Popen([cand, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+                print("[BadWords] Launched standalone binary:", cand)
+                return True
+            except Exception:
+                pass
+    py_bin = sys.executable or 'python3'
+    if sys.platform.startswith('win'):
+        pyw = os.path.join(os.path.dirname(py_bin), 'pythonw.exe')
+        if os.path.isfile(pyw):
+            py_bin = pyw
+    subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+    print("[BadWords] Launched external process:", MAIN_SCRIPT)
+    return True
+
 if os.path.exists(MAIN_SCRIPT):
-    try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy()
-        gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
-    except Exception as e:
-        print("Error:", e)
-        traceback.print_exc()
+    os.environ["BADWORDS_EMBEDDED"] = "1"
+    if "--embedded" not in sys.argv:
+        sys.argv.append("--embedded")
+    # On Linux, DaVinci Resolve's host process has already loaded Qt5 into memory,
+    # causing PySide6 (Qt6) dlopen conflicts in-process. Launch externally on Linux.
+    if sys.platform.startswith('linux'):
+        _launch_external()
+    else:
+        try:
+            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+            gv = globals().copy()
+            gv['__file__'] = MAIN_SCRIPT
+            exec(code, gv)
+        except Exception as e:
+            print("[BadWords] In-process execution failed:", e)
+            print("[BadWords] Falling back to external process launch...")
+            _launch_external()
 else:
     print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
@@ -1055,13 +1093,8 @@ else:
     def sync_resolve_scripts(self, force: bool = False) -> None:
         """
         Auto-healing: ensures the correct scripts are installed in DaVinci Resolve.
-        - DaVinci Resolve Studio:
-            * BadWords.py MUST be installed (uses native external scripting).
-            * BadWords Bridge.lua MUST NOT be installed (removed if present).
-        - DaVinci Resolve Free:
-            * BadWords Bridge.lua MUST ALWAYS be installed!
-            * If Free >= 21.1: BadWords.py MUST BE REMOVED (Blackmagic blocked external API).
-            * If Free < 21.1: BadWords.py CAN / SHOULD be installed.
+        - BadWords.py: ALWAYS installed in Workspace -> Scripts so user can launch BadWords embedded.
+        - BadWords Bridge.lua: ALWAYS installed for Free edition (and also available for Studio bridge).
         """
         try:
             info = self.get_resolve_installation_info()
@@ -1087,134 +1120,73 @@ else:
 
             wrapper_content = self.generate_davinci_wrapper_content()
 
-            if is_studio:
-                # ── STUDIO EDITION ─────────────────────────────────────────────────────────────
-                # 1. BadWords Bridge.lua is NOT needed and MUST NOT be installed. Remove if present.
-                # 2. BadWords.py MUST be installed for native scripting.
-                log_info(f"[Resolve Sync] Detected Studio edition (v{info.get('version', 'unknown')}). Removing Bridge.lua, ensuring BadWords.py.")
-                for ud in util_dirs:
-                    if not os.path.isdir(ud):
-                        continue
-                    lua_file = os.path.join(ud, "BadWords Bridge.lua")
-                    if os.path.isfile(lua_file):
-                        try:
-                            os.remove(lua_file)
-                            log_info(f"[Resolve Sync] Removed BadWords Bridge.lua from Studio setup: {lua_file}")
-                        except Exception as e:
-                            log_warn(f"[Resolve Sync] Could not remove {lua_file}: {e}")
-
-                py_deployed = False
-                for ud in util_dirs:
-                    if not os.path.isdir(ud):
-                        try: os.makedirs(ud, exist_ok=True)
-                        except Exception: continue
-                    py_file = os.path.join(ud, "BadWords.py")
-                    if not py_deployed:
-                        try:
-                            existing_content = ""
-                            if os.path.isfile(py_file):
-                                try:
-                                    with open(py_file, "r", encoding="utf-8") as f:
-                                        existing_content = f.read()
-                                except Exception: pass
-                            should_write = force or (existing_content != wrapper_content)
-                            if should_write:
-                                with open(py_file, "w", encoding="utf-8") as f:
-                                    f.write(wrapper_content)
-                                try: os.chmod(py_file, 0o755)
-                                except Exception: pass
-                                log_info(f"[Resolve Sync] Installed BadWords.py for Studio at: {py_file}")
-                            py_deployed = True
-                        except Exception as e:
-                            log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
-
-            else:
-                # ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
-                # 1. BadWords Bridge.lua MUST ALWAYS be installed!
-                # 2. BadWords.py:
-                #    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
-                #    - If Free < 21.1: Ensure BadWords.py is installed.
-                log_info(f"[Resolve Sync] Detected Free edition (v{info.get('version', 'unknown')}, is_21_1+={is_free_21_1}). Ensuring Bridge.lua.")
-
-                # Handle BadWords.py
-                if is_free_21_1:
-                    for ud in util_dirs:
-                        if not os.path.isdir(ud):
-                            continue
-                        py_file = os.path.join(ud, "BadWords.py")
+            # 1. ALWAYS install BadWords.py so BadWords can be launched from Resolve's Scripts menu!
+            py_deployed = False
+            for ud in util_dirs:
+                if not os.path.isdir(ud):
+                    try: os.makedirs(ud, exist_ok=True)
+                    except Exception: continue
+                py_file = os.path.join(ud, "BadWords.py")
+                if not py_deployed:
+                    try:
+                        existing_content = ""
                         if os.path.isfile(py_file):
                             try:
-                                os.remove(py_file)
-                                log_info(f"[Resolve Sync] Removed BadWords.py for Resolve Free 21.1+: {py_file}")
-                            except Exception as e:
-                                log_warn(f"[Resolve Sync] Could not remove {py_file}: {e}")
-                else:
-                    py_deployed = False
-                    for ud in util_dirs:
-                        if not os.path.isdir(ud):
-                            try: os.makedirs(ud, exist_ok=True)
-                            except Exception: continue
-                        py_file = os.path.join(ud, "BadWords.py")
-                        if not py_deployed:
-                            try:
-                                existing_content = ""
-                                if os.path.isfile(py_file):
-                                    try:
-                                        with open(py_file, "r", encoding="utf-8") as f:
-                                            existing_content = f.read()
-                                    except Exception: pass
-                                should_write = force or (existing_content != wrapper_content)
-                                if should_write:
-                                    with open(py_file, "w", encoding="utf-8") as f:
-                                        f.write(wrapper_content)
-                                    try: os.chmod(py_file, 0o755)
-                                    except Exception: pass
-                                    log_info(f"[Resolve Sync] Installed BadWords.py for Free <21.1 at: {py_file}")
-                                py_deployed = True
-                            except Exception as e:
-                                log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
+                                with open(py_file, "r", encoding="utf-8") as f:
+                                    existing_content = f.read()
+                            except Exception: pass
+                        should_write = force or (existing_content != wrapper_content)
+                        if should_write:
+                            with open(py_file, "w", encoding="utf-8") as f:
+                                f.write(wrapper_content)
+                            try: os.chmod(py_file, 0o755)
+                            except Exception: pass
+                            log_info(f"[Resolve Sync] Installed BadWords.py at: {py_file}")
+                        py_deployed = True
+                    except Exception as e:
+                        log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
 
-                # Handle BadWords Bridge.lua (ALWAYS for Free)
-                primary_installed = False
-                for ud in util_dirs:
-                    if not os.path.isdir(ud):
-                        try: os.makedirs(ud, exist_ok=True)
-                        except Exception: continue
+            # 2. BadWords Bridge.lua handling
+            primary_installed = False
+            for ud in util_dirs:
+                if not os.path.isdir(ud):
+                    try: os.makedirs(ud, exist_ok=True)
+                    except Exception: continue
 
-                    lua_file = os.path.join(ud, "BadWords Bridge.lua")
-                    if lua_src and os.path.isfile(lua_src):
-                        if not primary_installed:
-                            try:
-                                with open(lua_src, "r", encoding="utf-8") as lf:
-                                    l_code = lf.read()
-                                clean_inst = self.install_dir.replace('\\', '/')
-                                l_code = l_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+                lua_file = os.path.join(ud, "BadWords Bridge.lua")
+                if lua_src and os.path.isfile(lua_src):
+                    if not primary_installed:
+                        try:
+                            with open(lua_src, "r", encoding="utf-8") as lf:
+                                l_code = lf.read()
+                            clean_inst = self.install_dir.replace('\\', '/')
+                            l_code = l_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
 
-                                # Ensure bridge folder inside BadWords install directory exists
-                                bridge_dir = os.path.join(self.install_dir, "bridge")
-                                try: os.makedirs(bridge_dir, exist_ok=True)
+                            # Ensure bridge folder inside BadWords install directory exists
+                            bridge_dir = os.path.join(self.install_dir, "bridge")
+                            try: os.makedirs(bridge_dir, exist_ok=True)
+                            except Exception: pass
+
+                            should_write = force or not os.path.isfile(lua_file)
+                            if not should_write and os.path.isfile(lua_file):
+                                if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
+                                    should_write = True
+                            if should_write:
+                                with open(lua_file, "w", encoding="utf-8") as lf:
+                                    lf.write(l_code)
+                                try: os.chmod(lua_file, 0o755)
                                 except Exception: pass
-
-                                should_write = force or not os.path.isfile(lua_file)
-                                if not should_write and os.path.isfile(lua_file):
-                                    if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
-                                        should_write = True
-                                if should_write:
-                                    with open(lua_file, "w", encoding="utf-8") as lf:
-                                        lf.write(l_code)
-                                    try: os.chmod(lua_file, 0o755)
-                                    except Exception: pass
-                                    log_info(f"[Resolve Sync] Installed BadWords Bridge.lua for Free at: {lua_file}")
-                                primary_installed = True
-                            except Exception as e:
-                                log_warn(f"[Resolve Sync] Failed to sync BadWords Bridge.lua to {ud}: {e}")
-                        else:
-                            # Secondary directory: remove duplicate so only 1 entry appears in Resolve menus
-                            if os.path.isfile(lua_file):
-                                try:
-                                    os.remove(lua_file)
-                                    log_info(f"[Resolve Sync] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
-                                except Exception: pass
+                                log_info(f"[Resolve Sync] Installed BadWords Bridge.lua at: {lua_file}")
+                            primary_installed = True
+                        except Exception as e:
+                            log_warn(f"[Resolve Sync] Failed to sync BadWords Bridge.lua to {ud}: {e}")
+                    else:
+                        # Secondary directory: remove duplicate so only 1 entry appears in Resolve menus
+                        if os.path.isfile(lua_file):
+                            try:
+                                os.remove(lua_file)
+                                log_info(f"[Resolve Sync] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
+                            except Exception: pass
         except Exception as e:
             log_warn(f"sync_resolve_scripts error: {e}")
 
@@ -1468,11 +1440,30 @@ else:
             return icon_path
         return None
 
-    def cleanup_temp(self):
+    def cleanup_temp(self, max_age_seconds: int = 3600):
+        """
+        Safely clears stale temporary files older than max_age_seconds (default 1 hour).
+        Preserves active temp files being read/rendered by parallel instances or threads.
+        """
         try:
-            if os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
+            if not os.path.exists(self.temp_dir):
                 os.makedirs(self.temp_dir, exist_ok=True)
+                return
+            now = time.time()
+            for root, dirs, files in os.walk(self.temp_dir, topdown=False):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    try:
+                        if now - os.path.getmtime(fp) > max_age_seconds:
+                            os.remove(fp)
+                    except Exception:
+                        pass
+                for d in dirs:
+                    dp = os.path.join(root, d)
+                    try:
+                        os.rmdir(dp)
+                    except Exception:
+                        pass
         except Exception as e:
             log_error(f"cleanup_temp: failed to clear temp directory {self.temp_dir}: {e}")
 
@@ -1486,31 +1477,70 @@ else:
         On Windows, prefers pythonw.exe (windowless GUI subsystem) when prefer_windowless is True
         to guarantee zero console windows or flashes.
         """
+        cand_roots = [
+            self.install_dir,
+            os.path.dirname(self.install_dir),
+            "/mnt/dump/BadWords FILES",
+            r"C:\Program Files\BadWords",
+            r"C:\BadWords",
+        ]
+
         # --- WINDOWS VENV FIX ---
         if self.is_win:
-            venv_scripts = os.path.join(self.install_dir, "venv", "Scripts")
-            venv_pythonw = os.path.join(venv_scripts, "pythonw.exe")
-            venv_python = os.path.join(venv_scripts, "python.exe")
+            for root in cand_roots:
+                if not root or not os.path.isdir(root):
+                    continue
+                venv_scripts = os.path.join(root, "venv", "Scripts")
+                venv_bw = os.path.join(venv_scripts, "BadWords.exe")
+                venv_pythonw = os.path.join(venv_scripts, "pythonw.exe")
+                venv_python = os.path.join(venv_scripts, "python.exe")
 
-            if prefer_windowless and os.path.exists(venv_pythonw):
-                return venv_pythonw
-            if os.path.exists(venv_python):
-                return venv_python
-            if os.path.exists(venv_pythonw):
-                return venv_pythonw
-            
-            # Fallback (Should typically not be reached if installed correctly)
+                if os.path.exists(venv_bw):
+                    return venv_bw
+
+                base_src = venv_pythonw if os.path.exists(venv_pythonw) else (venv_python if os.path.exists(venv_python) else None)
+                if base_src:
+                    try:
+                        shutil.copy2(base_src, venv_bw)
+                        ico_path = os.path.join(root, "assets", "icons", "icon_default.ico")
+                        if not os.path.isfile(ico_path):
+                            ico_path = os.path.join(root, "icons", "icon_default.ico")
+                        if os.path.isfile(ico_path):
+                            try:
+                                from setupfiles.pe_patcher import patch_exe_icon
+                                patch_exe_icon(venv_bw, ico_path)
+                            except Exception:
+                                pass
+                        if os.path.exists(venv_bw):
+                            return venv_bw
+                    except Exception:
+                        pass
+
+                if prefer_windowless and os.path.exists(venv_pythonw):
+                    return venv_pythonw
+                if os.path.exists(venv_python):
+                    return venv_python
+                if os.path.exists(venv_pythonw):
+                    return venv_pythonw
+
             if prefer_windowless and shutil.which("pythonw"):
                 return "pythonw"
             return "python"
-        
-        # --- LINUX VENV FIX ---
-        # In Self-Contained mode, VENV is inside install_dir
-        venv_python = os.path.join(self.install_dir, "venv", "bin", "python3")
-        
-        if os.path.exists(venv_python): return venv_python
-        
-        # Fallback to system python
+
+        # --- LINUX / MACOS VENV FIX ---
+        for root in cand_roots:
+            if not root or not os.path.isdir(root):
+                continue
+            venv_python = os.path.join(root, "venv", "bin", "python3")
+            if os.path.exists(venv_python):
+                return venv_python
+
+        if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+            cand = os.path.join(sys.prefix, "bin", "python3")
+            if os.path.exists(cand):
+                return cand
+
+        # Fallback to current running Python executable
         return sys.executable
 
     def check_dependencies(self):

@@ -215,22 +215,61 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 
 ---
 
-## <img src="repo/icons/launch.svg" alt="Launching" width="30" height="30" valign="text-bottom"> Launching in DaVinci Resolve
+## <img src="repo/icons/launch.svg" alt="Launching" width="30" height="30" valign="text-bottom"> Launching & Compatibility by DaVinci Version
 
-* **DaVinci Resolve Studio (Any version):**
-  * **Option A:** Launch BadWords from your Desktop / Start Menu. It connects automatically.
-  * **Option B:** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords**.
+Depending on whether you use **DaVinci Resolve Studio** or **DaVinci Resolve Free**, and which version you have installed, here is how you can launch and connect BadWords:
 
-* **DaVinci Resolve Free (v21.1+):**
-  1. Open DaVinci Resolve and navigate to a project timeline.
-  2. Click **Workspace** → **Scripts** → **BadWords Bridge** (once per Resolve session).
-  3. Launch BadWords from your Desktop / Start Menu. It will connect automatically via the Bridge!
+* **DaVinci Resolve Studio (Any version):**  
+  *Full functionality with zero limitations.*
+  * **Option A (Desktop App):** Launch BadWords directly from your Desktop / Start Menu or terminal. Ensure that in DaVinci Resolve *Preferences → System → General*, **External scripting using** is set to **Local**. BadWords connects automatically via native IPC.
+  * **Option B (Embedded Mode):** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords** to launch it directly within Resolve.
+  * **Timeline Assembly:** Uses the 100% native `.drt` pipeline (preserves all Color Page grades, Fusion comps, Fairlight FX, and plugins).
 
-* **DaVinci Resolve Free (older than v21.1):**
-  * Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords** (launches embedded).
-  * *Or launch from your Desktop using `BadWords Bridge`.*
+* **DaVinci Resolve Free (v21.0 and older):**  
+  *External scripting is locked by Blackmagic in the free edition, but embedded execution works.*
+  * **Option A (Embedded Mode):** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords**.
+  * **Option B (Bridge Mode):** In Resolve, click **Workspace** → **Scripts** → **BadWords Bridge**, then launch BadWords from your Desktop / Start Menu.
+  * **Timeline Assembly:** Native `.drt` assembly is fully supported and preserves all timeline features.
 
-> **Important:** Your *first launch*, *first transcription*, and *first analysis* will take considerably longer than usual as the AI model completes its initial setup for your hardware. **All subsequent transcriptions are much faster.** <br>
+* **DaVinci Resolve Free (v21.1+):**  
+  *In v21.1+, Blackmagic blocked both external scripting AND direct embedded Python scripts in the free edition.*
+  * **Bridge Mode (The only way to connect):**
+    1. Open DaVinci Resolve and load your project.
+    2. Click **Workspace** → **Scripts** → **BadWords Bridge** (runs once per Resolve session).
+    3. Launch BadWords from your Desktop or Start Menu - it connects automatically using the Lua bridge!
+  * **Timeline Assembly:** Because Blackmagic also disabled `.drt` script exports in Free 21.1+, BadWords automatically falls back to its robust **FCP7 XML assembly pipeline**.
+
+---
+
+### <img src="repo/icons/workflow.svg" alt="Assembly Pipeline" width="24" height="24" valign="text-bottom"> Timeline Assembly: Native DRT vs. XML Fallback
+
+> [!NOTE]
+> **Studio vs. Free 21.1+ Note:**  
+> DaVinci Resolve Studio users (and Free users on version <21.1) always enjoy 100% native `.drt` assembly.  
+> The fallback to the **FCP7 XML pipeline** applies **strictly to DaVinci Resolve Free 21.1+** due to Blackmagic's scripting restrictions.
+
+| Timeline Element / Feature | Native .drt Pipeline<br>*(Studio & Free <21.1)* | FCP7 XML Pipeline<br>*(Free 21.1+ Fallback)* |
+| :--- | :---: | :---: |
+| **Cuts, Ripple-Cut & In/Out Points** | ✅ 100% frame-accurate | ✅ 100% frame-accurate |
+| **Multi-Track Video & Audio** *(V1, V2..., A1, A2...)* | ✅ Fully Preserved | ✅ Fully Preserved |
+| **Media Files & Audio Waveforms** | ✅ Fully Preserved | ✅ Fully Preserved |
+| **Proxy Media & Playback** | ✅ Fully Supported *(Playback → Prefer Proxies)* | ✅ Fully Supported *(Seamless relink to existing Media Pool proxies)* |
+| **Clip Marker Colors on Timeline** | ✅ Preserved & Re-applied | ✅ Preserved & Re-applied |
+| **Basic Transforms** *(Position, Zoom, Crop, Opacity)* | ✅ Fully Preserved | ✅ Fully Preserved |
+| **Fractional Frame Rates** *(23.976, 29.97, 59.94 fps)* | ✅ 100% Frame-Accurate | ✅ 100% Frame-Accurate (Zero Drift) |
+| **Track Filtering & Selection** | ✅ Fully Supported | ✅ Fully Supported |
+| **Color Page Grading & Node Trees** | ✅ **100% Preserved** *(Nodes, LUTs, Qualifiers)* | ⚠️ **Not Carried Over** *(Clips point to raw source files; grade after cutting or use Remote Grades)* |
+| **Fusion Page Compositions on Clips** | ✅ **100% Preserved** | ⚠️ **Not Carried Over** *(XML specification does not support Fusion nodes)* |
+| **Fairlight Audio FX & VST Plugins** | ✅ **100% Preserved** *(EQ, Dynamics, VST)* | ⚠️ **Not Carried Over** |
+| **Resolve OFX & Neural Engine** *(Magic Mask, Blur)* | ✅ **100% Preserved** | ⚠️ **Not Carried Over** |
+| **Compound Clips & Nested Timelines** | ✅ **100% Preserved** | ⚠️ May be flattened or imported as blank generators |
+
+> [!TIP]
+> **Summary:**  
+> If you run BadWords on **raw footage (A-roll, talking-head videos, raw podcasts, interviews, gameplays)** before color grading and applying VFX — **the XML pipeline works seamlessly and you won't notice any difference compared to `.drt`**.  
+> If you have already created complex Color node trees or Fusion animations on your clips prior to rough-cutting, those Resolve-specific nodes are preserved in Studio (via `.drt`), but cannot be transferred across XML.
+
+> **Important:** Your *first launch*, *first transcription*, and *first analysis* will take considerably longer than usual as the AI model completes its initial setup for your hardware. **All subsequent transcriptions are typically much faster.** <br>
 > **Note:** Whisper models perform best with English and major European languages. Other languages are supported but might yield lower precision.
 
 ---

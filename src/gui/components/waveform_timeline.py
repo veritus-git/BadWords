@@ -81,19 +81,24 @@ class WaveformWorker(QThread):
 
     def run(self):
         try:
+            if self.isInterruptionRequested():
+                return
             peaks = WaveformExtractor.extract_from_file(
                 self.audio_path,
                 points_per_second=self.points_per_second,
                 cache_dir=self.cache_dir,
                 ffmpeg_cmd=self.ffmpeg_cmd,
             )
+            if self.isInterruptionRequested():
+                return
             if peaks is not None and peaks.num_points > 0:
                 self.peaks_ready.emit(peaks, self.audio_path)
             else:
                 self.error.emit(f"Failed to generate waveform for {self.audio_path}")
         except Exception as e:
-            log_error(f"WaveformWorker error: {e}")
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                log_error(f"WaveformWorker error: {e}")
+                self.error.emit(str(e))
 
 
 class WaveformTimelineWidget(QWidget):
@@ -283,10 +288,17 @@ class WaveformTimelineWidget(QWidget):
         if self.main_window and hasattr(self.main_window, "engine"):
             ffmpeg_cmd = getattr(self.main_window.engine, "ffmpeg_cmd", "ffmpeg")
 
-        # Terminate any previous background worker
+        # Safely detach any previous background worker without killing thread
         if self._worker is not None and self._worker.isRunning():
-            self._worker.terminate()
-            self._worker.wait(100)
+            try:
+                self._worker.peaks_ready.disconnect()
+            except Exception:
+                pass
+            try:
+                self._worker.error.disconnect()
+            except Exception:
+                pass
+            self._worker.requestInterruption()
 
         self._worker = WaveformWorker(
             audio_path=audio_path,
