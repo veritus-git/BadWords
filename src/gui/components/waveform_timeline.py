@@ -360,6 +360,8 @@ class WaveformTimelineWidget(QWidget):
         surviving_ops, cut_ops = self.main_window.engine.calculate_timeline_structure_with_cuts(
             self._words_data, fps, prefs
         )
+        if hasattr(self.main_window, '_update_color_legend'):
+            self.main_window._update_color_legend(surviving_ops, cut_ops)
 
         raw_segments = []
         for op in surviving_ops:
