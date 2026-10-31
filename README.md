@@ -1,6 +1,11 @@
 # <img src="repo/banner.svg" alt="BadWords Logo" height="52" valign="middle" />&nbsp;
 **Cleaner Timelines, Faster. Simpler Rough-Cutting for DaVinci Resolve.**
 
+> [!NOTE]
+> **This is a fork** of [veritus-git/BadWords](https://github.com/veritus-git/BadWords) by Szymon Wolarz, not affiliated with the original project. It adds Apple Silicon GPU transcription, live silence tuning, a colour legend, cuts shown in the transcript, and an AI story round trip, plus several fixes. **[See every difference from the original →](FORK.md)**
+>
+> The installation commands below install the original BadWords, not this fork.
+
 <br>
 
 <p align="center">
