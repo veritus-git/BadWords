@@ -2700,12 +2700,13 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             log_info("Legacy PyTorch installation detected. Uninstalling to save disk space...")
             _pip_run("uninstall", "-y", "torch", "torchaudio", "-q", label="Uninstalling PyTorch")
 
+        # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
         if is_update:
             log_info("Upgrading core dependencies...")
-            _pip_run("install", "--upgrade", "faster-whisper", "pypdf", "-q",
+            _pip_run("install", "--upgrade", "faster-whisper", "av<19", "pypdf", "-q",
                      label="Upgrading Whisper / PyPDF")
         else:
-            pkg_list = ["faster-whisper", "pypdf"]
+            pkg_list = ["faster-whisper", "av<19", "pypdf"]
             if has_nvidia and nvidia_pkgs:
                 pkg_list.extend(nvidia_pkgs.split())
             _pip_run("install", *pkg_list, "-q",

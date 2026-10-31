@@ -1223,7 +1223,8 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
         emit_log(sender, "INFO", "Installing faster-whisper and pypdf...");
         run_pip_install_streaming(
             &v_py,
-            &["faster-whisper", "pypdf"],
+            // av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
+            &["faster-whisper", "av<19", "pypdf"],
             78,
             85,
             "Installing AI speech engine...",
