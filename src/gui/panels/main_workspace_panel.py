@@ -92,6 +92,27 @@ def build_main_workspace_panel(win) -> QFrame:
     layout_assemble_group.setContentsMargins(0, 0, 0, 0)
     layout_assemble_group.setSpacing(0)
 
+    # Story mode (issue #8): visible while an imported AI edit drives the next Assemble
+    win.story_banner = QFrame()
+    win.story_banner.setObjectName("StoryBanner")
+    win.story_banner.setStyleSheet(f"""
+        QFrame#StoryBanner {{ background-color: #1d2a22; border: 1px solid #2f6b45;
+                              border-radius: {config.S(4)}px; margin-bottom: {config.S(6)}px; }}
+    """)
+    l_story = QHBoxLayout(win.story_banner)
+    l_story.setContentsMargins(config.S(8), config.S(6), config.S(8), config.S(6))
+    l_story.setSpacing(config.S(8))
+    win.lbl_story = QLabel("")
+    win.lbl_story.setWordWrap(True)
+    win.lbl_story.setStyleSheet(f"color: #cfe8d6; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+    win.btn_story_clear = QPushButton(win.txt("btn_story_clear"))
+    win.btn_story_clear.setCursor(Qt.PointingHandCursor)
+    win.btn_story_clear.clicked.connect(win._clear_story)
+    l_story.addWidget(win.lbl_story, 1)
+    l_story.addWidget(win.btn_story_clear)
+    win.story_banner.setVisible(False)
+    layout_assemble_group.addWidget(win.story_banner)
+
     win.btn_assemble = AssembleSplitButton(win.txt("btn_assemble"), win)
     layout_assemble_group.addWidget(win.btn_assemble)
 
