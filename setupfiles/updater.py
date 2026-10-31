@@ -1161,7 +1161,8 @@ def main():
             subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True, **_sp_hidden_kwargs())
 
         info("Upgrading core dependencies (faster-whisper, pypdf, PySide6)...")
-        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "pypdf", "PySide6"], 
+        # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
+        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "av<19", "pypdf", "PySide6"],
                            capture_output=True, text=True, **_sp_hidden_kwargs())
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:

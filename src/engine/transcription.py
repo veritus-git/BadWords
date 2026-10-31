@@ -296,6 +296,31 @@ except Exception as e:
         snapshots_dir = os.path.join(model_folder, "snapshots")
         return os.path.exists(snapshots_dir) and len(os.listdir(snapshots_dir)) > 0
 
+    def _get_av_compat_code(self) -> str:
+        """
+        Standalone snippet injected into faster-whisper runner scripts.
+        PyAV 19 removed the `metadata_errors` kwarg from av.open(), but faster-whisper
+        (<= 1.2.1) still passes it in decode_audio(). Installers pin av<19; this shim keeps
+        existing installs that already pulled av 19 working until they are updated.
+        """
+        return '''
+# --- PyAV 19+ compatibility (faster-whisper passes removed `metadata_errors` kwarg) ---
+try:
+    import av as _av
+    _av_open_orig = _av.open
+    def _av_open_compat(*args, **kwargs):
+        try:
+            return _av_open_orig(*args, **kwargs)
+        except TypeError:
+            if "metadata_errors" not in kwargs:
+                raise
+            kwargs.pop("metadata_errors")
+            return _av_open_orig(*args, **kwargs)
+    _av.open = _av_open_compat
+except Exception:
+    pass
+'''
+
     def _get_cuda_preinit_code(self) -> str:
         """
         Standalone pre-init script snippet injected into faster-whisper runner scripts.
@@ -455,6 +480,7 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
 {self._get_cuda_preinit_code()}
+{self._get_av_compat_code()}
 
 try:
     from faster_whisper import WhisperModel
@@ -686,6 +712,7 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
 {self._get_cuda_preinit_code()}
+{self._get_av_compat_code()}
 
 try:
     # --- FASTER-WHISPER NATIVE INTEGRATION ---
