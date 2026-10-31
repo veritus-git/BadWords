@@ -1324,6 +1324,21 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         ops, _ = self.calculate_timeline_structure_with_cuts(words_data, fps, settings)
         return ops
 
+    def apply_story(self, ops, settings, fps):
+        """Story mode (issue #8): keep only the clips of an imported AI edit, in its order.
+        settings['story_clips'] comes from the GUI and is never saved to prefs."""
+        clips = settings.get('story_clips')
+        if not clips:
+            return ops
+        import algorithms
+        story_ops = algorithms.apply_story_order(
+            ops, clips, fps, offset=float(settings.get('offset', 0.133)),
+            keep_source_order=bool(settings.get('story_keep_source_order', False)))
+        log_info(f"apply_story: {len(clips)} clips -> {len(story_ops)} ops "
+                 f"({sum(o['e'] - o['s'] for o in story_ops) / fps:.1f}s), "
+                 f"source order={bool(settings.get('story_keep_source_order', False))}")
+        return story_ops
+
     # ==========================================
     # 5. PROJECT & DATA MANAGEMENT (Data Controller)
     # ==========================================
@@ -1764,6 +1779,7 @@ except Exception as e:
                 fps = self._get_file_fps(source_file)
                 calc_settings = dict(settings)
                 clean_ops = self.calculate_timeline_structure(words_data, fps, calc_settings)
+                clean_ops = self.apply_story(clean_ops, settings, fps)
 
                 base, ext = os.path.splitext(source_file)
                 output_path = settings.get("output_path") or f"{base}_cut{ext}"
@@ -1849,6 +1865,7 @@ except Exception as e:
             if audio_end_cap_s:
                 calc_settings["audio_end_cap_s"] = audio_end_cap_s
             clean_ops = self.calculate_timeline_structure(words_data, fps, calc_settings)
+            clean_ops = self.apply_story(clean_ops, settings, fps)
             time.sleep(0.05)
 
             # ── NAME FOR NEW TIMELINE ─────────────────────────────────────────

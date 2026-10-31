@@ -206,6 +206,24 @@ def _filter_tracks(track_vec, keep_indices, preserve_order=False):
                 track_vec.remove(el)
 
 
+def _sort_items_by_start(items_el):
+    """Stable sort of a track's <Element> wrappers by their clip <Start>."""
+    def _start(wrapper):
+        for tag in _CLIP_TAGS:
+            clip_el = wrapper.find(tag)
+            if clip_el is not None:
+                try:
+                    return int(clip_el.find('Start').text)
+                except (AttributeError, TypeError, ValueError):
+                    return -1
+        return -1
+    wrappers = list(items_el.findall('Element'))
+    for w in wrappers:
+        items_el.remove(w)
+    for w in sorted(wrappers, key=_start):
+        items_el.append(w)
+
+
 def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_mode=False, audio_track_filter=None, video_track_filter=None, preserve_track_order=False):
     """
     Apply BadWords ops cuts to the SeqContainer XML in-place.
@@ -237,7 +255,9 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
                  f"fps={fps}, audio_only={audio_only_mode}, preserve_order={preserve_track_order}")
 
         # ── 2. Build sorted ops and cumulative dest offsets ───────────────────
-        sorted_ops = sorted(ops, key=lambda x: x['s'])
+        # Story mode (issue #8) tags ops with 'order'; plain ops keep source order.
+        sorted_ops = sorted(ops, key=lambda x: (x.get('order', 0), x['s']))
+        story_order = any('order' in op for op in sorted_ops)
         dest_offsets = []
         acc = 0
         for op in sorted_ops:
@@ -370,6 +390,10 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
 
                             # Record color schedule
                             color_schedule[new_dest_rel] = _op_color(op)
+
+                    if story_order:
+                        # Reordered clips were emitted per source clip; keep each track in timeline order
+                        _sort_items_by_start(items_el)
 
         # ── 3b. Track Packing (when preserve_track_order is False) ─────────────
         # If preserve_track_order is False: remove all empty tracks (tracks with no clips),
@@ -804,7 +828,7 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
 
     # 1. Calculate kept time ranges in seconds
     keep_segments = []
-    for op in sorted(ops, key=lambda x: x['s']):
+    for op in sorted(ops, key=lambda x: (x.get('order', 0), x['s'])):
         start_s = max(0.0, float(op['s']) / fps)
         end_s = max(0.0, float(op['e']) / fps)
         dur_s = end_s - start_s
