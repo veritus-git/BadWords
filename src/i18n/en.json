@@ -185,6 +185,7 @@
     "status_check_model": "Checking model...",
     "status_downloading_model": "Downloading model...",
     "status_downloading_pct": "Downloading model: {pct}%",
+    "msg_model_download_failed": "The Whisper model '{model}' is not on this computer yet and could not be downloaded from Hugging Face.\n\nCheck that you are online and that no firewall (e.g. Little Snitch) is blocking DaVinci Resolve or BadWords, then try again. You can also place the model files manually in:\n{path}",
     "first_run_hint_1": "First launch takes a little longer — the AI is caching its weights locally.",
     "first_run_hint_2": "Warming up the local AI engine. Future runs will be much faster!",
     "first_run_hint_3": "The AI is unpacking its virtual bags on your drive. Just a moment.",

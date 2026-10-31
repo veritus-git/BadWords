@@ -31,7 +31,7 @@ from osdoc import log_info, log_error
 
 from .preferences import PreferencesMixin
 from .audio_extraction import AudioExtractionMixin
-from .transcription import TranscriptionMixin
+from .transcription import TranscriptionMixin, ModelDownloadError
 
 class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
     def __init__(self, os_doctor, resolve_handler):
@@ -557,7 +557,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 )
                 if not dl_ok:
                     log_error("Model download/verification failed. Cannot proceed.")
-                    return None, None
+                    raise ModelDownloadError(
+                        self.txt("msg_model_download_failed", model=model, path=self.models_dir)
+                    )
             
             update_status(self.txt("status_whisper_init"))
             update_progress(-1)  # Indeterminate bar during init
@@ -727,6 +729,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             return words_data, segments_data
 
 
+        except ModelDownloadError:
+            # User-actionable: let it reach AnalysisWorker so the GUI shows the message
+            raise
         except Exception as e:
             log_error(f"Pipeline Critical Error: {traceback.format_exc()}")
             return None, None

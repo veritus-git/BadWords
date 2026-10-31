@@ -185,6 +185,7 @@
     "status_check_model": "Vérification du modèle...",
     "status_downloading_model": "Téléchargement du modèle...",
     "status_downloading_pct": "Téléchargement du modèle : {pct}%",
+    "msg_model_download_failed": "Le modèle Whisper '{model}' n'est pas encore sur cet ordinateur et n'a pas pu être téléchargé depuis Hugging Face.\n\nVérifiez votre connexion internet et qu'aucun pare-feu (ex. Little Snitch) ne bloque DaVinci Resolve ou BadWords, puis réessayez. Vous pouvez aussi placer les fichiers du modèle manuellement dans :\n{path}",
     "first_run_hint_1": "Le premier lancement prend un peu plus de temps — l'IA met en cache ses poids localement.",
     "first_run_hint_2": "Préchauffage du moteur IA local. Les prochaines exécutions seront beaucoup plus rapides !",
     "first_run_hint_3": "L'IA déballe ses valises virtuelles sur votre disque. Un instant.",
