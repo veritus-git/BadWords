@@ -1062,6 +1062,58 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
     # 4. TIMELINE GENERATION LOGIC (BLOCK-BASED)
     # ==========================================
 
+    def tune_silence_ranges(self, s_ranges, settings, fps, audio_end_f):
+        """
+        Editor-facing smoothing of silence cuts, applied live (no re-analysis):
+          silence_cut_pct  - remove only the longest pauses, up to this % of total pause time
+          silence_min_clip - never leave a kept piece shorter than this (s) between two pauses
+          silence_keep     - leave this much (s) of every removed pause in place
+        s_ranges: list of (start_f, end_f). Returns the tuned list, sorted by start.
+        """
+        def _num(key, default):
+            try:
+                return float(settings.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        pct = min(100.0, max(0.0, _num('silence_cut_pct', 100.0)))
+        min_clip_f = int(round(max(0.0, _num('silence_min_clip', 0.0)) * fps))
+        keep_f = int(round(max(0.0, _num('silence_keep', 0.0)) * fps))
+        ranges = sorted(r for r in s_ranges if r[1] > r[0])
+
+        if pct < 100.0 and ranges:
+            budget = sum(e - s for s, e in ranges) * pct / 100.0
+            picked, acc = set(), 0
+            for r in sorted(ranges, key=lambda r: r[1] - r[0], reverse=True):
+                if acc >= budget:
+                    break
+                picked.add(r)
+                acc += r[1] - r[0]
+            ranges = [r for r in ranges if r in picked]
+
+        if min_clip_f > 0:
+            kept = []
+            for r in ranges:
+                kept.append(r)
+                # A short kept piece between two pauses is a jumpy micro-cut:
+                # cut only the longer pause of the pair, then re-check backwards.
+                while len(kept) >= 2 and kept[-1][0] - kept[-2][1] < min_clip_f:
+                    a, b = kept[-2], kept[-1]
+                    kept[-2:] = [a if (a[1] - a[0]) >= (b[1] - b[0]) else b]
+            ranges = kept
+
+        if keep_f > 0:
+            half = keep_f // 2
+            shrunk = []
+            for s, e in ranges:
+                ns = s + half if s > 0 else s
+                ne = e - (keep_f - half) if e < audio_end_f else e
+                if ne - ns >= 2:
+                    shrunk.append((ns, ne))
+            ranges = shrunk
+
+        return ranges
+
     def calculate_timeline_structure_with_cuts(self, words_data, fps, settings):
         """
         Calculates both the surviving timeline clips and the cut segments.
@@ -1187,14 +1239,21 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             final_ops = []
             s_ranges = []
             
+            # Raising "Min silence duration" applies live; lowering it below the
+            # value used during analysis needs a new analysis (ranges are already filtered).
+            try:
+                min_sil_s = max(0.2, float(settings.get('silence_min_dur', 0.2)))
+            except (TypeError, ValueError):
+                min_sil_s = 0.2
             if raw_silence is not None:
                 for s in raw_silence:
-                    if (s['e'] - s['s']) < 0.2: continue
+                    if (s['e'] - s['s']) < min_sil_s: continue
                     s_ranges.append((t2f(s['s']), t2f(s['e'])))
             else:
                 for s in silence_blocks_for_snap:
-                    if (s['end'] - s['start']) < 0.2: continue 
+                    if (s['end'] - s['start']) < min_sil_s: continue
                     s_ranges.append((t2f(s['start']), t2f(s['end'])))
+            s_ranges = self.tune_silence_ranges(s_ranges, settings, fps, audio_end_f)
             
             ops_raw.sort(key=lambda x: x['s'])
             
