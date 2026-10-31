@@ -763,11 +763,14 @@ class OSDoctor:
                         log_warn(f"Fast Win32 version check error: {e}")
 
         elif self.is_mac:
+            # Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
+            # Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
+            # edition apart. Keep it "Unknown" so the native (Studio) connection is still tried.
             candidate_apps = [
                 ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
                 ("/Applications/DaVinci Resolve Studio.app", "Studio"),
-                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Free"),
-                ("/Applications/DaVinci Resolve.app", "Free"),
+                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Unknown"),
+                ("/Applications/DaVinci Resolve.app", "Unknown"),
             ]
             chosen_app = None
             for app_path, ed in candidate_apps:
@@ -789,8 +792,6 @@ class OSDoctor:
                             dname = str(pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or "").lower()
                             if "studio" in bid or "studio" in dname:
                                 info["edition"] = "Studio"
-                            elif "resolve" in bid or "resolve" in dname:
-                                info["edition"] = "Free"
                     except Exception as e:
                         log_warn(f"Failed to read Info.plist: {e}")
 
@@ -904,8 +905,10 @@ class OSDoctor:
                         except Exception:
                             pass
 
-        # Default unknown edition to "Free" if Resolve is installed or utility dirs exist
-        if info["edition"] == "Unknown":
+        # Default unknown edition to "Free" if Resolve is installed or utility dirs exist.
+        # Not on macOS: Studio and Free share the same app bundle there (see above), and
+        # guessing "Free" makes _connect() skip the native Studio connection entirely.
+        if info["edition"] == "Unknown" and not self.is_mac:
             if info["installed"]:
                 info["edition"] = "Free"
             else:
