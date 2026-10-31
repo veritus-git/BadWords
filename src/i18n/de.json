@@ -185,6 +185,7 @@
     "status_check_model": "Modell wird überprüft...",
     "status_downloading_model": "Modell wird heruntergeladen...",
     "status_downloading_pct": "Modell wird heruntergeladen: {pct}%",
+    "msg_model_download_failed": "Das Whisper-Modell '{model}' ist noch nicht auf diesem Computer und konnte nicht von Hugging Face heruntergeladen werden.\n\nPrüfe deine Internetverbindung und ob eine Firewall (z. B. Little Snitch) DaVinci Resolve oder BadWords blockiert, und versuche es erneut. Du kannst die Modelldateien auch manuell ablegen in:\n{path}",
     "first_run_hint_1": "Der erste Start dauert etwas länger — die KI speichert ihre Gewichte lokal.",
     "first_run_hint_2": "Lokale KI-Engine wird aufgewärmt. Zukünftige Starts werden viel schneller sein!",
     "first_run_hint_3": "Die KI packt ihre virtuellen Koffer auf Ihrer Festplatte aus. Einen Moment bitte.",

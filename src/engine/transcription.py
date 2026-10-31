@@ -29,6 +29,12 @@ import config
 import algorithms
 from osdoc import log_info, log_error
 
+
+class ModelDownloadError(RuntimeError):
+    """Raised when a Whisper model is missing locally and cannot be downloaded.
+    Carries a user-facing message, so the pipeline lets it through to the GUI."""
+
+
 class TranscriptionMixin:
     def _get_system_ram_gb(self):
         try:
@@ -259,7 +265,7 @@ except Exception as e:
             )
             
             if status_callback:
-                status_callback(f"Pobieranie modelu {model_name}...")
+                status_callback(self.txt("status_downloading_model"))
             if progress_callback:
                 progress_callback(-1)
 
@@ -268,13 +274,11 @@ except Exception as e:
                 if line_s:
                     log_info(f"[FW-DL] {line_s}")
                     if status_callback and ("downloading" in line_s.lower() or "dl-start" in line_s.lower()):
-                        status_callback(f"Pobieranie modelu {model_name}...")
+                        status_callback(self.txt("status_downloading_model"))
 
             process.wait()
             if process.returncode == 0:
                 log_info(f"Model {model_name} ready.")
-                if status_callback:
-                    status_callback(f"Model {model_name} gotowy.")
                 return True
             else:
                 log_error(f"Model download failed (return code {process.returncode})")
