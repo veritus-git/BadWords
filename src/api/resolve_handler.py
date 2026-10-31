@@ -678,7 +678,38 @@ class ResolveHandler:
 
         return target_file if render_ok else None
 
+    def _collect_clips_by_color(self, tl, color_name):
+        clips = []
+        for track_type in ["video", "audio"]:
+            count = tl.GetTrackCount(track_type)
+            for i in range(1, count + 1):
+                items = tl.GetItemListInTrack(track_type, i)
+                if not items: continue
+
+                # Check track color if clip has no explicit color
+                try:
+                    track_color = tl.GetTrackColor(track_type, i)
+                except Exception:
+                    track_color = ""
+
+                if not track_color:
+                    track_color = "Blue" if track_type == "video" else "Green"
+
+                for item in items:
+                    c = item.GetClipColor()
+                    # If clip has no explicit color, it inherits from track
+                    actual_color = c if c else track_color
+
+                    if actual_color and actual_color.lower() == color_name.lower():
+                        clips.append(item)
+        return clips
+
     def delete_clips_by_color(self, color_name, new_timeline=True):
+        """
+        Deletes all clips of `color_name` from the active timeline (or a duplicate of it).
+        Returns {"ok": bool, "deleted": int, "timeline_name": str, "error": str|None}
+        so the GUI can tell the user what actually happened (including 0 clips found).
+        """
         if self.backend == 'bridge':
             try:
                 res = self.bridge_client.call("DeleteClipsByColor", {
@@ -687,15 +718,24 @@ class ResolveHandler:
                 }, timeout_secs=15.0)
                 if res and res.get("ok"):
                     self.bridge_timeline_name = res.get("timeline_name", self.bridge_timeline_name)
-                    return True
-                return False
+                    return {"ok": True, "deleted": int(res.get("deleted", 0)),
+                            "timeline_name": res.get("timeline_name", ""), "error": None}
+                err = (res or {}).get("error") or "Bridge did not respond"
+                return {"ok": False, "deleted": 0, "timeline_name": (res or {}).get("timeline_name", ""), "error": err}
             except Exception as e:
                 log_error(f"delete_clips_by_color (bridge) error: {e}")
-                return False
+                return {"ok": False, "deleted": 0, "timeline_name": "", "error": str(e)}
 
-        if not self.project or not self.timeline: return False
-        
+        if not self.project or not self.timeline:
+            return {"ok": False, "deleted": 0, "timeline_name": "", "error": "No active timeline"}
+
         target_tl = self.timeline
+
+        # Nothing to cut: report it, and don't leave an identical "- Cut X" duplicate behind
+        if not self._collect_clips_by_color(target_tl, color_name):
+            log_info(f"No clips found with color {color_name}.")
+            return {"ok": True, "deleted": 0, "timeline_name": target_tl.GetName(), "error": None}
+
         try:
             if new_timeline:
                 new_name = f"{target_tl.GetName()} - Cut {color_name}"
@@ -757,45 +797,27 @@ class ResolveHandler:
         except Exception as e:
             log_error(f"Error during duplication attempt: {e}")
 
-        # Collect clips matching color
-        clips_to_delete = []
-        for track_type in ["video", "audio"]:
-            count = target_tl.GetTrackCount(track_type)
-            for i in range(1, count + 1):
-                items = target_tl.GetItemListInTrack(track_type, i)
-                if not items: continue
-                
-                # Check track color if clip has no explicit color
-                try:
-                    track_color = target_tl.GetTrackColor(track_type, i)
-                except Exception:
-                    track_color = ""
-                
-                if not track_color:
-                    track_color = "Blue" if track_type == "video" else "Green"
-                
-                for item in items:
-                    c = item.GetClipColor()
-                    # If clip has no explicit color, it inherits from track
-                    actual_color = c if c else track_color
-                    
-                    if actual_color and actual_color.lower() == color_name.lower():
-                        clips_to_delete.append(item)
-                        
+        # Collect clips matching color (again: a duplicated timeline has its own items)
+        clips_to_delete = self._collect_clips_by_color(target_tl, color_name)
+        tl_name = target_tl.GetName()
+
         if not clips_to_delete:
             log_info(f"No clips found with color {color_name}.")
-            return True
-            
+            return {"ok": True, "deleted": 0, "timeline_name": tl_name, "error": None}
+
         try:
             # timeline.DeleteClips(clipList, bool_ripple)
             res = target_tl.DeleteClips(clips_to_delete, True)
             if not res:
                 log_error("DeleteClips returned False. Trying without ripple.")
-                target_tl.DeleteClips(clips_to_delete, False)
-            return True
+                res = target_tl.DeleteClips(clips_to_delete, False)
+            if not res:
+                log_error("DeleteClips returned False without ripple too.")
+                return {"ok": False, "deleted": 0, "timeline_name": tl_name, "error": "DaVinci Resolve refused to delete the clips"}
+            return {"ok": True, "deleted": len(clips_to_delete), "timeline_name": tl_name, "error": None}
         except Exception as e:
             log_error(f"delete_clips_by_color error: {e}")
-            return False
+            return {"ok": False, "deleted": 0, "timeline_name": tl_name, "error": str(e)}
 
     def get_all_timelines(self):
         """
