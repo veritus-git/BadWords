@@ -2215,6 +2215,14 @@ def _ai_tc(seconds):
     return f"{int(seconds // 3600)}:{int(seconds % 3600 // 60):02d}:{seconds % 60:04.1f}"
 
 
+# Titles and abbreviations that end in a dot but never end a sentence ("Mr. Smith")
+_AI_ABBREVIATIONS = {
+    "mr.", "mrs.", "ms.", "mx.", "dr.", "prof.", "st.", "sr.", "jr.", "rev.", "fr.", "sgt.", "lt.", "col.", "gen.",
+    "capt.", "gov.", "sen.", "rep.", "pres.", "vs.", "e.g.", "i.e.", "mt.", "ave.",
+    "mme.", "mlle.", "hr.", "sra.", "srta.", "dott.", "sig.", "ks.",
+}
+
+
 def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_words=40, offset=0.133):
     """
     Plain-text transcript of what survives the cuts, meant to be pasted into an LLM.
@@ -2259,7 +2267,7 @@ def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_w
         if mid_edit is None:
             continue  # cut
         cur.append((text, start, end, max(0.0, mid_edit - (mid - start)), len(spoken) - 1))
-        if text[-1] in '.?!…' or len(cur) >= max_words:
+        if (text[-1] in '.?!…' and text.lower().lstrip('"\'(“‘') not in _AI_ABBREVIATIONS) or len(cur) >= max_words:
             groups.append(cur)
             cur = []
     if cur:
