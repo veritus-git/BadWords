@@ -40,6 +40,9 @@ class TranscriptionCanvas(QWidget):
         # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
         self._cached_visible_words = []
 
+        # word id -> 'cut' (next Assemble drops it) or 'jump' (a pause before it is cut out)
+        self._cut_preview = {}
+
         # --- Cached fonts, metrics and preferences to eliminate disk I/O in paint/layout ---
         self._cached_prefs = {}
         self._cached_editor_font = None
@@ -329,6 +332,12 @@ class TranscriptionCanvas(QWidget):
             vbar.setValue(old_scroll_val)
 
         self.update()
+
+    def set_cut_preview(self, preview):
+        """preview: {word id: 'cut' | 'jump'} from the current cut settings."""
+        if preview != self._cut_preview:
+            self._cut_preview = preview
+            self.update()
 
     def _get_visible_words(self):
         """Returns a filtered list of only the words that should physically render.
@@ -736,6 +745,8 @@ class TranscriptionCanvas(QWidget):
             'inaudible': (QColor(config.WORD_INAUDIBLE_BG), QColor(config.WORD_INAUDIBLE_FG))
         }
         
+        cut_preview = self._cut_preview
+
         def get_status(w):
             s = w.get('status')
             if s == 'inaudible' and hasattr(self.main_window, 'tgl_mark_inaudible') and not self.main_window.tgl_mark_inaudible.isChecked():
@@ -763,6 +774,12 @@ class TranscriptionCanvas(QWidget):
                     r = int(bg.red() * 0.2 + 30 * 0.8)
                     g = int(bg.green() * 0.2 + 30 * 0.8)
                     b = int(bg.blue() * 0.2 + 30 * 0.8)
+                    bg = QColor(r, g, b, 255)
+                elif cut_preview.get(w.get('id')) == 'cut':
+                    # Will be cut: dim, but keep enough colour to tell why
+                    r = int(bg.red() * 0.45 + 30 * 0.55)
+                    g = int(bg.green() * 0.45 + 30 * 0.55)
+                    b = int(bg.blue() * 0.45 + 30 * 0.55)
                     bg = QColor(r, g, b, 255)
                 return bg, fg, False
             return None, QColor(config.WORD_NORMAL_FG), True
@@ -1048,17 +1065,27 @@ class TranscriptionCanvas(QWidget):
                 p.drawRoundedRect(active_rect, 6, 6)
                 final_fg = QColor("#222222")
                 
+            preview_state = cut_preview.get(w.get('id'))
+            is_cut = w.get('is_assembled_cut') or preview_state == 'cut'
             if w.get('is_assembled_cut'):
                 final_fg = QColor("#5a5a5a")
+            elif is_cut and not w.get('_audio_active'):
+                final_fg = QColor("#8a8a8a")
                 
             p.setPen(final_fg)
             draw_rect = w['_rect'].adjusted(-20, 0, 20, 0) if w.get('_audio_active') else w['_rect']
             p.drawText(draw_rect, Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
             
-            if w.get('is_assembled_cut'):
+            if is_cut:
                 p.setPen(QPen(final_fg, 1.5))
                 mid_y = int(w['_rect'].center().y()) + 1
                 p.drawLine(int(w['_rect'].left()) + 4, mid_y, int(w['_rect'].right()) - 4, mid_y)
+            elif preview_state == 'jump':
+                # Cut pause: a thin razor mark in the gap before the word
+                r = w['_rect']
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor("#e5534b"))
+                p.drawRoundedRect(QRectF(r.left() - space_w / 2.0 - 1, r.top(), 2, r.height()), 1, 1)
 
             if alpha < 1.0:
                 p.setOpacity(1.0)
