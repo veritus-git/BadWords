@@ -369,6 +369,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._mac_action_export_txt.triggered.connect(self._on_export_transcript_txt)
             self._mac_action_copy = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_clipboard"))
             self._mac_action_copy.triggered.connect(self._on_copy_transcript_clipboard)
+            self._mac_menu_transcript.addSeparator()
+            self._mac_action_copy_ai = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_ai_transcript"))
+            self._mac_action_copy_ai.triggered.connect(self._on_copy_ai_transcript)
+            self._mac_action_export_ai = self._mac_menu_transcript.addAction(self.txt("titlebar_export_ai_transcript"))
+            self._mac_action_export_ai.triggered.connect(self._on_export_ai_transcript)
             self._mac_menu_transcript.menuAction().setVisible(False)
 
             # Source Info Menu
