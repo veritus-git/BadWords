@@ -1300,7 +1300,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         ret = box.exec()
         if ret == 2: return
         new_timeline = (ret == 1)
-        self.engine.api_delete_clips_by_color(color_name, new_timeline)
+        res = self.engine.api_delete_clips_by_color(color_name, new_timeline) or {}
+
+        # Always report the outcome: a silent 0-clip cut looked like "delete does nothing"
+        tl_name = res.get("timeline_name", "")
+        if not res.get("ok"):
+            msg_title = self.txt("msg_warning")
+            msg = self.txt("msg_cut_result_failed").format(error=res.get("error") or "?")
+        elif res.get("deleted", 0) == 0:
+            msg_title = self.txt("msg_warning")
+            msg = self.txt("msg_cut_result_none").format(
+                color=localized_color_name, tl=tl_name,
+                assemble=self.txt("btn_assemble"), original=self.txt("titlebar_original"))
+        else:
+            msg_title = self.txt("msg_success")
+            msg = self.txt("msg_cut_result_deleted").format(count=res["deleted"], color=localized_color_name, tl=tl_name)
+        CustomMsgBox(self, msg_title, msg, self.txt("btn_ok")).exec()
 
     def _on_analyze_standalone(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:

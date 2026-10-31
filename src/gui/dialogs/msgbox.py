@@ -97,15 +97,17 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
+        # With a Cancel button, Esc / window close must mean Cancel (2), not "No" (0)
+        self._has_cancel = bool(btn_cancel_text)
         if btn_cancel_text:
             btn_cancel = QPushButton(btn_cancel_text)
             btn_cancel.clicked.connect(lambda: self.done(2))
             btn_layout.addWidget(btn_cancel)
             btn_layout.addSpacing(config.S(10))
-            
+
         if btn_no_text:
             btn_no = QPushButton(btn_no_text)
-            btn_no.clicked.connect(self.reject)
+            btn_no.clicked.connect(lambda: self.done(QDialog.Rejected))
             btn_layout.addWidget(btn_no)
             btn_layout.addSpacing(config.S(10))
             
@@ -125,6 +127,13 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
             self.move(x, y)
         else:
             _center_on_screen(self, self.width(), self.height())
+
+    def reject(self):
+        # Esc key and window close route through reject()
+        if getattr(self, '_has_cancel', False):
+            self.done(2)
+        else:
+            super().reject()
 
     def is_checkbox_checked(self) -> bool:
         return self.chk_box.isChecked() if getattr(self, 'chk_box', None) is not None else False
