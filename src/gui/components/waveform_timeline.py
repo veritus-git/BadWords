@@ -364,6 +364,8 @@ class WaveformTimelineWidget(QWidget):
             self.main_window._update_silence_stats(surviving_ops, cut_ops, total_dur)
         if hasattr(self.main_window, '_update_color_legend'):
             self.main_window._update_color_legend(surviving_ops, cut_ops)
+        if hasattr(self.main_window, '_update_text_cut_preview'):
+            self.main_window._update_text_cut_preview(surviving_ops)
 
         raw_segments = []
         for op in surviving_ops:

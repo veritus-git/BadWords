@@ -3042,6 +3042,34 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     return name
         return None
 
+    def _update_text_cut_preview(self, surviving_ops):
+        """Show in the text view what the next Assemble removes: dropped words are struck
+        through, and a mark sits where a pause between kept words is cut out.
+        Fed by the waveform preview, so both views come from the same cut calculation."""
+        import bisect
+        canvas = getattr(self, 'text_canvas', None)
+        if canvas is None or not hasattr(canvas, 'set_cut_preview'):
+            return
+        offset = float((self.engine.load_preferences() or {}).get('offset', 0.133))
+        spans = sorted((op['start_s'], op['end_s']) for op in surviving_ops)
+        starts = [s for s, _ in spans]
+        preview, prev = {}, None
+        for w in canvas.words_data or []:
+            if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible') or 'id' not in w:
+                continue
+            # Same rule as Assemble: a word stays when its middle lands inside a kept clip
+            t = (w.get('start', 0.0) + w.get('end', 0.0)) / 2.0 + offset
+            i = bisect.bisect_right(starts, t) - 1
+            if i < 0 or t >= spans[i][1]:
+                preview[w['id']] = 'cut'
+                prev = None
+                continue
+            if prev is not None and i != prev and any(
+                    spans[k + 1][0] - spans[k][1] > 1e-3 for k in range(prev, i)):
+                preview[w['id']] = 'jump'
+            prev = i
+        canvas.set_cut_preview(preview)
+
     def _update_color_legend(self, surviving_ops, cut_ops):
         """Summarise which colours the next Assemble keeps (as coloured clips) or leaves out.
         Fed by the waveform preview, which runs the same cut calculation as Assemble."""
