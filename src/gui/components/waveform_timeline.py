@@ -360,6 +360,8 @@ class WaveformTimelineWidget(QWidget):
         surviving_ops, cut_ops = self.main_window.engine.calculate_timeline_structure_with_cuts(
             self._words_data, fps, prefs
         )
+        if hasattr(self.main_window, '_update_silence_stats'):
+            self.main_window._update_silence_stats(surviving_ops, cut_ops, total_dur)
 
         raw_segments = []
         for op in surviving_ops:
