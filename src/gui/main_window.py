@@ -3354,10 +3354,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # ── First-run hint: check if chosen model has been run before ────────────
         raw_model_for_check = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
         model_key = raw_model_for_check.split()[0].lower()
+        if "Turbo" in raw_model_for_check: model_key = 'large-v3-turbo'
         if model_key == 'large': model_key = 'large-v3'
-        
-        # Check for marker file
-        model_folder_name = f"models--Systran--faster-whisper-{model_key}"
+
+        # Check for marker file (MLX engine keeps its own model folder; Auto/GPU use it on Apple Silicon)
+        _dev = (self.engine.load_preferences() or {}).get('device', 'auto').upper()
+        _use_mlx = self.engine.use_mlx_for("GPU" if _dev in ("AUTO", "GPU") else "CPU")
+        model_folder_name = self.engine.model_cache_folder(model_key, _use_mlx)
         import os
         marker_path = os.path.join(self.engine.models_dir, model_folder_name, ".badwords_initialized")
         _is_first_model_run = not os.path.exists(marker_path)
