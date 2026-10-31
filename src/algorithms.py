@@ -2208,3 +2208,76 @@ def build_side_by_side_alignment(script_text, words_data):
             merged_rows.append(row)
 
     return merged_rows
+
+
+def _ai_tc(seconds):
+    seconds = max(0.0, seconds)
+    return f"{int(seconds // 3600)}:{int(seconds % 3600 // 60):02d}:{seconds % 60:04.1f}"
+
+
+def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_words=40, offset=0.133):
+    """
+    Plain-text transcript of what survives the cuts, meant to be pasted into an LLM.
+    One sentence per line with a stable ID, its time in the edit and in the source
+    recording, and its word count:  [S001 | edit 0:00:03.2 | src 0:01:12.4 | 14w] text
+
+    kept_ops: surviving ops from calculate_timeline_structure_with_cuts (source frames,
+    laid end to end in source order, exactly as Assemble builds the timeline).
+    offset: the same cut-point offset Assemble applied (settings 'offset'), so a word counts
+    as kept exactly when Assemble kept it.
+    Returns (text, sentences); each sentence keeps its source range for later reassembly.
+    """
+    import bisect
+
+    ops = sorted(kept_ops or [], key=lambda o: o['s'])
+    starts = [o['s'] for o in ops]
+    dest, acc = [], 0
+    for o in ops:
+        dest.append(acc)
+        acc += o['e'] - o['s']
+    edit_total = acc / fps if fps else 0.0
+
+    def edit_time(t):
+        f = t * fps
+        i = bisect.bisect_right(starts, f) - 1
+        if i < 0 or f >= ops[i]['e']:
+            return None
+        return (dest[i] + f - ops[i]['s']) / fps
+
+    groups, cur = [], []
+    for w in words_data:
+        if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible'):
+            continue
+        text = (w.get('text') or '').strip()
+        if not text:
+            continue
+        start, end = w.get('start', 0.0), w.get('end', 0.0)
+        mid = (start + end) / 2.0
+        mid_edit = edit_time(mid + offset)
+        if mid_edit is None:
+            continue  # cut
+        cur.append((text, start, end, max(0.0, mid_edit - (mid - start))))
+        if text[-1] in '.?!…' or len(cur) >= max_words:
+            groups.append(cur)
+            cur = []
+    if cur:
+        groups.append(cur)
+
+    width = max(3, len(str(len(groups))))
+    sentences, lines = [], []
+    for n, g in enumerate(groups, 1):
+        sid = f"S{n:0{width}d}"
+        body = " ".join(t for t, _, _, _ in g)
+        sentences.append({"id": sid, "text": body, "src_start": g[0][1], "src_end": g[-1][2],
+                          "edit_start": g[0][3], "words": len(g)})
+        lines.append(f"[{sid} | edit {_ai_tc(g[0][3])} | src {_ai_tc(g[0][1])} | {len(g)}w] {body}")
+
+    header = [
+        f"# BadWords transcript after cuts: {title}".rstrip(),
+        f"# Edit length {_ai_tc(edit_total)}, {len(sentences)} sentences."
+        + (f" Removed before export: {', '.join(removed)}." if removed else ""),
+        "# Each line: [ID | time in the edit | time in the source recording | word count] sentence.",
+        "# Times are h:mm:ss.s from the start. Refer to sentences by ID (e.g. S012).",
+        "",
+    ]
+    return "\n".join(header + lines) + "\n", sentences
