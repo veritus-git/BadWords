@@ -2721,6 +2721,21 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         else:
             log_info("PySide6 already installed.")
 
+        # Apple Silicon: GPU transcription engine (mlx-whisper), used for Device Auto/GPU.
+        # Installed without PyTorch: torch is only used by mlx-whisper's model converter, not for
+        # transcription (~630 MB saved). Optional: if it fails, BadWords keeps using the CPU engine.
+        import platform
+        if ("mac" in PLAT or "darwin" in PLAT) and platform.machine().lower() == "arm64":
+            mlx_ok = _pip_run("install", "--upgrade", "--no-deps", "mlx-whisper", "-q",
+                              label="Installing Apple GPU engine (MLX)")
+            mlx_ok = mlx_ok and _pip_run("install", "--upgrade", "mlx", "numba", "scipy", "tiktoken",
+                                         "more-itertools", "tqdm", "huggingface_hub", "-q",
+                                         label="Installing MLX dependencies")
+            if mlx_ok:
+                log_ok("Apple GPU engine (MLX) installed.")
+            else:
+                log_warn("Apple GPU engine (MLX) could not be installed. Transcription will use the CPU.")
+
         # ── Comprehensive Package Verification & Auto-Recovery ──
         console.print()
         log_step("Verifying installed packages (faster-whisper, PySide6, pypdf)...")

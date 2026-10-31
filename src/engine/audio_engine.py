@@ -355,6 +355,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 if self.os_doc.has_nvidia_support():
                     device_mode = "GPU"
                     log_info("Auto Mode: Detected NVIDIA libs. Using GPU.")
+                elif self.mlx_available():
+                    device_mode = "GPU"
+                    log_info("Auto Mode: Apple Silicon with MLX. Using GPU (mlx-whisper).")
                 else:
                     device_mode = "CPU"
                     log_info("Auto Mode: No NVIDIA libs found. Using CPU.")
@@ -547,13 +550,15 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # Switch to Indeterminate during model check phase
             update_progress(-1)
 
-            # Check/Download logic for Faster-Whisper
-            if not self.check_model_exists(model):
+            # Check/Download logic (faster-whisper or, on Apple Silicon GPU, mlx-whisper weights)
+            use_mlx = self.use_mlx_for(device_mode)
+            if not self.check_model_exists(model, use_mlx):
                 update_status(self.txt("status_downloading_model"))
                 dl_ok = self.download_whisper_model_interactive(
                     model,
                     progress_callback=update_progress,
                     status_callback=update_status,
+                    use_mlx=use_mlx,
                 )
                 if not dl_ok:
                     log_error("Model download/verification failed. Cannot proceed.")
@@ -701,8 +706,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 
                 # Mark model as successfully used via a marker file
                 try:
-                    _hist_key = model if model != "large" else "large-v3"
-                    model_folder_name = f"models--Systran--faster-whisper-{_hist_key}"
+                    model_folder_name = self.model_cache_folder(model, use_mlx)
                     model_folder_path = os.path.join(self.models_dir, model_folder_name)
                     if os.path.exists(model_folder_path):
                         marker_path = os.path.join(model_folder_path, ".badwords_initialized")

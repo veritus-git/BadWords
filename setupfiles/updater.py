@@ -1178,6 +1178,18 @@ def main():
             subprocess.run([venv_pip, "install", "--upgrade", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"], capture_output=True, **_sp_hidden_kwargs())
             info("CUDA 12 acceleration libraries ready.")
 
+        # Apple Silicon GPU engine (mlx-whisper), without PyTorch (only its model converter needs torch)
+        import platform
+        if sys.platform == "darwin" and platform.machine() == "arm64":
+            info("Apple Silicon detected. Installing/upgrading the Apple GPU engine (MLX)...")
+            r1 = subprocess.run([venv_pip, "install", "--upgrade", "--no-deps", "mlx-whisper"], capture_output=True, **_sp_hidden_kwargs())
+            r2 = subprocess.run([venv_pip, "install", "--upgrade", "mlx", "numba", "scipy", "tiktoken",
+                                 "more-itertools", "tqdm", "huggingface_hub"], capture_output=True, **_sp_hidden_kwargs())
+            if r1.returncode == 0 and r2.returncode == 0:
+                info("Apple GPU engine ready.")
+            else:
+                warn("Apple GPU engine could not be installed. Transcription will use the CPU.")
+
         log("Python packages upgraded.")
     else:
         warn("venv pip not found — skipping package upgrade.")

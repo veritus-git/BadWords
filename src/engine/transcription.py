@@ -35,6 +35,45 @@ class ModelDownloadError(RuntimeError):
     Carries a user-facing message, so the pipeline lets it through to the GUI."""
 
 
+# Apple Silicon GPU engine (mlx-whisper): same Whisper weights as the faster-whisper models,
+# converted for MLX. Keys match the model names used by run_whisper().
+MLX_MODEL_REPOS = {
+    "tiny":           "mlx-community/whisper-tiny-mlx",
+    "base":           "mlx-community/whisper-base-mlx",
+    "small":          "mlx-community/whisper-small-mlx",
+    "medium":         "mlx-community/whisper-medium-mlx",
+    "large-v3":       "mlx-community/whisper-large-v3-mlx",
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+}
+
+
+def cluster_sound_islands(raw, max_dur=22.0, min_dur=8.0, min_gap=0.5):
+    """Groups sound islands into 8-22 s clusters, splitting at the widest safe gaps.
+    Same rules as the chunked faster-whisper runner (RAW_ISLANDS -> ISLANDS). Each cluster is
+    transcribed separately, which re-applies the verbatim initial prompt across the recording
+    (Whisper only applies it to the first 30 s window of a transcribe() call)."""
+    clusters = []
+    i = 0
+    while i < len(raw):
+        c_start = raw[i][0]
+        J = []
+        for j in range(i, len(raw)):
+            if raw[j][1] - c_start > max_dur:
+                break
+            J.append(j)
+        J = J or [i]
+        if J[-1] == len(raw) - 1:
+            best_j = J[-1]
+        else:
+            gap = lambda j: raw[j + 1][0] - raw[j][1]
+            safe = [j for j in J if gap(j) >= min_gap]
+            optimal = [j for j in safe if raw[j][1] - c_start >= min_dur]
+            best_j = max(optimal or safe or J, key=gap)
+        clusters.append((c_start, raw[best_j][1]))
+        i = best_j + 1
+    return clusters
+
+
 class TranscriptionMixin:
     def _get_system_ram_gb(self):
         try:
@@ -179,10 +218,19 @@ class TranscriptionMixin:
     def _get_python_executable(self):
         return self.os_doc.get_venv_python_path()
 
-    def download_whisper_model_interactive(self, model_name, progress_callback=None, status_callback=None):
-        log_info(f"Starting interactive download for Faster-Whisper model: {model_name}")
+    def download_whisper_model_interactive(self, model_name, progress_callback=None, status_callback=None, use_mlx=False):
+        log_info(f"Starting interactive download for {'MLX' if use_mlx else 'Faster-Whisper'} model: {model_name}")
         if model_name == "large": model_name = "large-v3"
-        
+        if use_mlx:
+            mlx_repo = MLX_MODEL_REPOS.get(model_name, MLX_MODEL_REPOS["large-v3"])
+            dl_code = (f'from huggingface_hub import snapshot_download\n'
+                       f'    print("Downloading {mlx_repo}...")\n'
+                       f'    snapshot_download({mlx_repo!r}, cache_dir={self.models_dir!r})')
+        else:
+            dl_code = (f'from faster_whisper import download_model\n'
+                       f'    print("Downloading {model_name}...")\n'
+                       f'    download_model("{model_name}", cache_dir={self.models_dir!r})')
+
         script_content = f"""
 import sys
 import os
@@ -237,9 +285,7 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
 
 try:
     print("DL-START: Target dir " + {repr(self.models_dir)})
-    from faster_whisper import download_model
-    print("Downloading {model_name}...")
-    download_model("{model_name}", cache_dir={repr(self.models_dir)})
+    {dl_code}
     print("Download Complete.")
 except Exception as e:
     print(f"Error: {{e}}")
@@ -294,11 +340,107 @@ except Exception as e:
 
 
 
-    def check_model_exists(self, model_name):
-        if model_name == "large": model_name = "large-v3"
-        model_folder = os.path.join(self.models_dir, f"models--Systran--faster-whisper-{model_name}")
+    def check_model_exists(self, model_name, use_mlx=False):
+        model_folder = os.path.join(self.models_dir, self.model_cache_folder(model_name, use_mlx))
         snapshots_dir = os.path.join(model_folder, "snapshots")
         return os.path.exists(snapshots_dir) and len(os.listdir(snapshots_dir)) > 0
+
+    # ── Apple Silicon GPU engine (mlx-whisper) ───────────────────────────────
+
+    def mlx_available(self) -> bool:
+        """True on Apple Silicon (native, not Rosetta) when mlx + mlx-whisper are installed in libs."""
+        if not self.os_doc.is_mac or platform.machine() != "arm64":
+            return False
+        return all(os.path.isdir(os.path.join(self.libs_dir, pkg)) for pkg in ("mlx", "mlx_whisper"))
+
+    def use_mlx_for(self, device_mode) -> bool:
+        """GPU on a Mac means the MLX engine (CUDA doesn't exist there). Falls back to CPU if missing."""
+        return "GPU" in str(device_mode).upper() and self.mlx_available()
+
+    def model_cache_folder(self, model_name, use_mlx=False) -> str:
+        """Hugging Face cache folder name of a model inside models_dir."""
+        if model_name == "large": model_name = "large-v3"
+        if use_mlx:
+            return "models--" + MLX_MODEL_REPOS.get(model_name, MLX_MODEL_REPOS["large-v3"]).replace("/", "--")
+        return f"models--Systran--faster-whisper-{model_name}"
+
+    def _get_mlx_runner_code(self, audio_path, model, lang, initial_prompt_str, islands, json_output_path, prefs) -> str:
+        """
+        Runner script for the Apple Silicon GPU engine (mlx-whisper).
+        Speaks the same protocol as the chunked faster-whisper runner ("[Chunked] Island",
+        CHUNK_PROGRESS, CHUNK_STREAM, FW_ERROR, final JSON) so run_whisper() and the GUI don't
+        change. Transcribes the same sound-island clusters with the same verbatim prompt.
+        mlx-whisper decodes greedily: beam_size/patience/penalties don't apply.
+        """
+        repo = MLX_MODEL_REPOS.get(model, MLX_MODEL_REPOS["large-v3"])
+        clusters = cluster_sound_islands(islands) if islands else None
+        return f"""
+import sys, os, json, time
+
+os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")  # mlx-whisper decodes audio with ffmpeg
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["HF_HOME"] = {repr(self.models_dir)}
+libs_dir = {repr(self.libs_dir)}
+if os.path.exists(libs_dir) and libs_dir not in sys.path:
+    sys.path.insert(0, libs_dir)
+
+try:
+    from huggingface_hub import snapshot_download
+    import mlx_whisper
+    from mlx_whisper.audio import load_audio, SAMPLE_RATE
+
+    print("[Chunked] Loading MLX model {repo} on Apple GPU...", flush=True)
+    model_path = snapshot_download({repr(repo)}, cache_dir={repr(self.models_dir)})
+    audio = load_audio({repr(audio_path)})
+    total_dur = audio.shape[0] / SAMPLE_RATE
+    ISLANDS = {repr(clusters)} or [(0.0, total_dur)]
+    total_chunks = len(ISLANDS)
+    total_audio = sum(e - s for s, e in ISLANDS) or 1.0
+    print(f"[Chunked] {{total_chunks}} islands to process.", flush=True)
+
+    output_segments, done_audio = [], 0.0
+    for idx, (start_t, end_t) in enumerate(ISLANDS):
+        chunk = audio[int(start_t * SAMPLE_RATE):int(end_t * SAMPLE_RATE)]
+        segs = []
+        if chunk.shape[0] > 0:
+            print(f"[Chunked] Island {{idx+1}}/{{total_chunks}}: {{start_t:.2f}}s—{{end_t:.2f}}s", flush=True)
+            result = mlx_whisper.transcribe(
+                chunk,
+                path_or_hf_repo=model_path,
+                language={repr(lang) if lang != "Auto" else "None"},
+                initial_prompt={repr(initial_prompt_str)} or None,
+                condition_on_previous_text={repr(prefs.get('ai_condition_on_prev', False))},
+                temperature={repr(prefs.get('ai_temperature', 0.0))},
+                no_speech_threshold={repr(prefs.get('ai_no_speech_threshold', 0.6))},
+                logprob_threshold={repr(prefs.get('ai_logprob_threshold', -1.0))},
+                compression_ratio_threshold={repr(prefs.get('ai_compression_ratio_threshold', 2.4))},
+                word_timestamps=True,
+                verbose=None,
+            )
+            for seg in result.get("segments", []):
+                segs.append({{
+                    "start": seg["start"] + start_t,
+                    "end":   seg["end"] + start_t,
+                    "text":  seg["text"],
+                    "words": [{{"word": w["word"], "start": w["start"] + start_t, "end": w["end"] + start_t,
+                                "probability": w.get("probability", 1.0)}} for w in seg.get("words", [])],
+                }})
+        output_segments.extend(segs)
+        done_audio += end_t - start_t
+        pct = int(done_audio / total_audio * 100)
+        print(f"CHUNK_PROGRESS: {{pct}}", flush=True)
+        payload = {{"idx": idx, "total": total_chunks, "start": start_t, "end": end_t, "segments": segs, "percent": pct}}
+        print(f"CHUNK_STREAM: {{json.dumps(payload)}}", flush=True)
+
+    with open({repr(json_output_path)}, "w", encoding="utf-8") as f:
+        json.dump({{"segments": output_segments, "language": {repr(lang)}}}, f)
+    print("Transcription Done.")
+except Exception as e:
+    print(f"FW_ERROR: {{e}}")
+    import traceback; traceback.print_exc()
+    sys.exit(1)
+"""
 
     def _get_av_compat_code(self) -> str:
         """
@@ -457,7 +599,12 @@ elif sys.platform.startswith("linux"):
 
         # ── Chunked mode: in-memory NumPy slicing ────────────────────────────
         use_chunking = islands is not None and len(islands) > 1
-        if use_chunking:
+        if self.use_mlx_for(device_mode):
+            log_info(f"[MLX] Apple Silicon GPU engine: {MLX_MODEL_REPOS.get(model, MLX_MODEL_REPOS['large-v3'])}, "
+                     f"{len(islands) if islands else 0} sound islands.")
+            script_content = self._get_mlx_runner_code(audio_path, model, lang, initial_prompt_str,
+                                                       islands, json_output_path, prefs)
+        elif use_chunking:
             log_info(f"[Chunked] {len(islands)} sound islands → in-memory NumPy slicing.")
             script_content = f"""
 import sys, os, json, time
@@ -818,7 +965,7 @@ except Exception as e:
         cmd = [python_exec, "-u", runner_script_path]
         env["PYTHONUNBUFFERED"] = "1"
         
-        log_info(f"Running Whisper Runner (Faster-Whisper). Script: {runner_script_path}")
+        log_info(f"Running Whisper Runner ({'MLX, Apple GPU' if self.use_mlx_for(device_mode) else 'Faster-Whisper'}). Script: {runner_script_path}")
         
         try:
             whisper_start = time.time()
