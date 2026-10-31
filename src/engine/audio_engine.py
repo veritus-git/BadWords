@@ -1330,7 +1330,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
     def api_delete_clips_by_color(self, color_name, new_timeline=True):
         if self.resolve_handler:
-            self.resolve_handler.delete_clips_by_color(color_name, new_timeline)
+            return self.resolve_handler.delete_clips_by_color(color_name, new_timeline)
+        return {"ok": False, "deleted": 0, "timeline_name": "", "error": "DaVinci Resolve not connected"}
 
     # ==========================================
     # 5b. BWS PROJECT ARCHIVE (v2)
