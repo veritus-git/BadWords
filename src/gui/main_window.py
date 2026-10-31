@@ -341,6 +341,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._title_bar.projectImportRequested.connect(self._on_import_project)
         self._title_bar.transcriptExportTxtRequested.connect(self._on_export_transcript_txt)
         self._title_bar.transcriptCopyRequested.connect(self._on_copy_transcript_clipboard)
+        self._title_bar.aiTranscriptCopyRequested.connect(self._on_copy_ai_transcript)
+        self._title_bar.aiTranscriptExportRequested.connect(self._on_export_ai_transcript)
         self._root_layout.addWidget(self._title_bar)
         self.top_island = TopStatusIsland(parent_frame=self._root_frame, main_window=self)
 
@@ -1629,6 +1631,70 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             f.write(text)
 
         # Brief notification
+        self._show_temporary_status(self.txt("msg_transcript_exported"))
+
+    _AI_COLOR_NAMES = {"Violet": "red (errors/fillers)", "Navy": "blue (retakes)",
+                       "Olive": "green (script differences)", "Tan": "silence", "Chocolate": "inaudible"}
+
+    def _live_cut_prefs(self):
+        """Prefs exactly as the next Assemble will use them (saved prefs + current panel toggles)."""
+        prefs = dict(self.engine.load_preferences() or {})
+        for attr, key in (('tgl_silence_cut', 'silence_cut'), ('tgl_silence_mark', 'silence_mark'),
+                          ('tgl_show_inaudible', 'show_inaudible'), ('tgl_mark_inaudible', 'mark_inaudible'),
+                          ('tgl_show_typos', 'show_typos')):
+            if hasattr(self, attr):
+                prefs[key] = getattr(self, attr).isChecked()
+        if hasattr(self, 'color_cut_buttons'):
+            prefs['auto_cut_colors'] = [c for c, b in self.color_cut_buttons.items() if b.isChecked()]
+        return prefs
+
+    def _build_ai_transcript(self):
+        """Transcript of the edit after the current cuts, with sentence IDs and timecodes.
+        Derived from the transcript and the same cut calculation as Assemble, so it needs
+        no re-transcription and every sentence still points back to the source."""
+        import algorithms
+        canvas = getattr(self, 'text_canvas', None)
+        if not canvas or not canvas.words_data:
+            return None, []
+        prefs = self._live_cut_prefs()
+        rh = getattr(self.engine, 'resolve_handler', None)
+        fps = getattr(rh, 'fps', None) or 24.0
+        ops, _ = self.engine.calculate_timeline_structure_with_cuts(
+            [dict(w) for w in canvas.words_data], fps, prefs)
+        removed = [self._AI_COLOR_NAMES.get(c, c.lower()) for c in prefs.get('auto_cut_colors', [])]
+        if prefs.get('silence_cut'):
+            removed.append("silence")
+        snap = getattr(self, '_transcription_source', None) or {}
+        return algorithms.build_ai_transcript(
+            canvas.words_data, ops, fps, title=snap.get('timeline_name', ''), removed=removed,
+            offset=prefs.get('offset', 0.133))
+
+    def _on_copy_ai_transcript(self):
+        text, sentences = self._build_ai_transcript()
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        self._show_temporary_status(self.txt("msg_ai_transcript_copied").format(count=len(sentences)))
+
+    def _on_export_ai_transcript(self):
+        text, _ = self._build_ai_transcript()
+        if not text:
+            return
+        from PySide6.QtWidgets import QFileDialog
+        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        os.makedirs(saves_dir, exist_ok=True)
+        snap = getattr(self, '_transcription_source', None) or {}
+        timeline_name = snap.get('timeline_name') or "Transcript"
+        safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.txt("titlebar_export_ai_transcript"),
+            os.path.join(saves_dir, f"BadWords_{safe_name}_ai_transcript.txt"),
+            "Text Files (*.txt)"
+        )
+        if not path:
+            return
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
         self._show_temporary_status(self.txt("msg_transcript_exported"))
 
     def _on_copy_transcript_clipboard(self):
