@@ -36,6 +36,21 @@ def build_assembly_panel(win) -> QFrame:
         win._pin_buttons[fav_id] = btn
         return btn
     
+    # Colours in this edit: what each colour means, how much of it there is, and
+    # whether the next Assemble leaves it out. Rows are filled by win._render_color_legend().
+    lbl_legend = QLabel(win.txt("legend_title"))
+    lbl_legend.setStyleSheet("font-weight: bold;")
+    l_assembly.addWidget(lbl_legend)
+    win.legend_layout = QVBoxLayout()
+    win.legend_layout.setSpacing(config.S(8))
+    l_assembly.addLayout(win.legend_layout)
+    win._legend_signature = None
+    win._render_color_legend({})
+    div_legend = QFrame()
+    div_legend.setFixedHeight(config.S(1))
+    div_legend.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+    l_assembly.addWidget(div_legend)
+
     row_show_inaudible = QHBoxLayout()
     row_show_inaudible.setSpacing(config.S(8))
     lbl_show_inaud = QLabel(win.txt("lbl_show_inaudible_fragments"))

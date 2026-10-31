@@ -15,7 +15,8 @@ import platform
 import os
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget, QRadioButton, QButtonGroup
+    QApplication, QMainWindow, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget, QRadioButton, QButtonGroup,
+    QCheckBox
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QObject, QEvent, QVariantAnimation, QEasingCurve, QPropertyAnimation, QThread
@@ -34,9 +35,9 @@ from gui.widgets.splitters import GripSplitter
 # -------------------------------
 
 
-# ==========================================
+# ===================================
 # QFRAMELESSWINDOW — NATIVE CSD LIBRARY
-# ==========================================
+# ===================================
 # On Windows, use the battle-tested qframelesswindow library for proper
 # Aero Snap, DWM shadows, resize, drag-detach, and snap layouts.
 # Linux/macOS keep the existing manual code (it works fine there).
@@ -46,15 +47,15 @@ _BaseDialog = QDialog
 
 
 
-# ==========================================
+# ===================================
 # CONSTANTS
-# ==========================================
+# ===================================
 RTL_CODES = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'}  # Right-To-Left Languages
 
 
-# ==========================================
+# ===================================
 # HELPERS
-# ==========================================
+# ===================================
 
 _QPushButton = QPushButton
 
@@ -2856,6 +2857,133 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         pct = int(round(100.0 * secs / total_dur)) if total_dur > 0 else 0
         lbl.setText(self.txt(key).format(
             count=len(spans), removed=f"{int(secs // 60)}:{int(secs % 60):02d}", pct=pct))
+
+    # ── Colour legend ───────────────────────────────────────────────────────
+    _LEGEND_OP_KEYS = {"bad": "Violet", "repeat": "Navy", "typo": "Olive",
+                       "inaudible": "Chocolate", "silence_mark": "Tan"}
+    _LEGEND_CUT_KEYS = {"red_cut": "Violet", "blue_cut": "Navy", "green_cut": "Olive",
+                        "inaudible_cut": "Chocolate", "silence_cut": "Tan"}
+    _LEGEND_MEANINGS = {"Violet": "legend_meaning_bad", "Navy": "legend_meaning_repeat",
+                        "Olive": "legend_meaning_typo", "Tan": "legend_meaning_silence",
+                        "Chocolate": "legend_meaning_inaudible"}
+
+    def _legend_key(self, type_name, is_cut):
+        """Map an op type (kept) or cut_type (removed) to its Resolve colour name."""
+        t = str(type_name or "")
+        table = self._LEGEND_CUT_KEYS if is_cut else self._LEGEND_OP_KEYS
+        if t in table:
+            return table[t]
+        if is_cut and t.endswith("_cut"):
+            t = t[:-4]
+        if t.startswith("custom_"):
+            c = t.split("_", 1)[1].lower()
+            for name in config.RESOLVE_COLORS_HEX:
+                if name.lower() == c:
+                    return name
+        return None
+
+    def _update_color_legend(self, surviving_ops, cut_ops):
+        """Summarise which colours the next Assemble keeps (as coloured clips) or leaves out.
+        Fed by the waveform preview, which runs the same cut calculation as Assemble."""
+        if not hasattr(self, 'legend_layout'):
+            return
+        stats = {}
+        for ops, is_cut, field in ((surviving_ops, False, 'type'), (cut_ops, True, 'cut_type')):
+            for op in ops:
+                key = self._legend_key(op.get(field), is_cut)
+                if not key:
+                    continue
+                st = stats.setdefault(key, [0, 0.0, 0, 0.0])
+                i = 2 if is_cut else 0
+                st[i] += 1
+                st[i + 1] += max(0.0, float(op.get('end_s', 0.0)) - float(op.get('start_s', 0.0)))
+        sig = tuple(sorted((k, v[0], round(v[1], 1), v[2], round(v[3], 1)) for k, v in stats.items()))
+        if sig == getattr(self, '_legend_signature', None):
+            return
+        self._legend_signature = sig
+        # Deferred: this can run inside a toggle handler of a row we are about to rebuild
+        QTimer.singleShot(0, lambda s=stats: self._render_color_legend(s))
+
+    def _render_color_legend(self, stats):
+        import html
+        lay = getattr(self, 'legend_layout', None)
+        if lay is None:
+            return
+        while lay.count():
+            item = lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        if not stats:
+            empty = QLabel(self.txt("legend_empty"))
+            empty.setWordWrap(True)
+            empty.setStyleSheet(f"color: #808080; font-size: {config.FS(9)}pt;")
+            lay.addWidget(empty)
+            return
+
+        markers = {}
+        for cm in (self.engine.load_preferences() or {}).get('custom_markers', []) or []:
+            if cm.get('name') and cm.get('color'):
+                markers.setdefault(cm['color'].lower(), []).append(cm['name'])
+        cut_buttons = getattr(self, 'color_cut_buttons', {})
+
+        def _dur(s):
+            return f"{int(s // 60)}:{int(s % 60):02d}"
+
+        for key, hex_col in config.RESOLVE_COLORS_HEX.items():
+            if key not in stats:
+                continue
+            kept_n, kept_s, cut_n, cut_s = stats[key]
+            name = self.txt(f"resolve_color_{key.lower()}")
+            if key in self._LEGEND_MEANINGS:
+                meaning = self.txt(self._LEGEND_MEANINGS[key])
+            else:
+                meaning = ", ".join(markers.get(key.lower(), [])) or self.txt("legend_meaning_custom")
+            parts = []
+            if kept_n:
+                parts.append(self.txt("legend_kept").format(count=kept_n, dur=_dur(kept_s)))
+            if cut_n:
+                parts.append(self.txt("legend_removed").format(count=cut_n, dur=_dur(cut_s)))
+            if name.lower() != key.lower():
+                parts.append(self.txt("legend_resolve_name").format(color=key))
+
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(config.S(8))
+            swatch = QLabel()
+            swatch.setFixedSize(config.S(12), config.S(12))
+            swatch.setStyleSheet(f"background: {hex_col}; border-radius: {config.S(2)}px;")
+            h.addWidget(swatch, 0, Qt.AlignTop)
+            text = QLabel(f"<b>{html.escape(name)}</b> · {html.escape(meaning)}"
+                          f"<br><span style='color:#808080'>{html.escape(' · '.join(parts))}</span>")
+            text.setWordWrap(True)
+            h.addWidget(text, 1)
+
+            cb = QCheckBox(self.txt("legend_remove"))
+            if key == "Tan" and hasattr(self, 'tgl_silence_cut'):
+                cb.setChecked(self.tgl_silence_cut.isChecked())
+                cb.setToolTip(self.txt("tt_legend_remove"))
+            elif key in cut_buttons:
+                cb.setChecked(cut_buttons[key].isChecked())
+                cb.setToolTip(self.txt("tt_legend_remove"))
+            else:
+                cb.setEnabled(False)
+                cb.setToolTip(self.txt("tt_legend_not_removable"))
+            cb.toggled.connect(lambda c, k=key: self._on_legend_remove_toggled(k, c))
+            h.addWidget(cb, 0, Qt.AlignTop)
+            lay.addWidget(row)
+
+    def _on_legend_remove_toggled(self, key, checked):
+        """Legend checkbox = the colour's auto-cut (A) button, or the silence cut/mark toggles."""
+        if key == "Tan":
+            if checked and hasattr(self, 'tgl_silence_cut'):
+                self.tgl_silence_cut.setChecked(True)
+            elif not checked and hasattr(self, 'tgl_silence_mark'):
+                self.tgl_silence_mark.setChecked(True)
+            return
+        btn = getattr(self, 'color_cut_buttons', {}).get(key)
+        if btn is not None and btn.isChecked() != checked:
+            btn.setChecked(checked)
 
     def _on_assemble(self):
         if getattr(self, '_is_live_transcribing', False):
