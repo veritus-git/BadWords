@@ -286,16 +286,11 @@ Depending on whether you use **DaVinci Resolve Studio** or **DaVinci Resolve Fre
 
 ---
 
-## <img src="repo/icons/user.svg" alt="About Me" width="30" height="30" valign="text-bottom"> A little about me & the project
+## <img src="repo/icons/user.svg" alt="Support the original author" width="30" height="30" valign="text-bottom"> Support the young coder this project originated from
 
-Hi! I am Simon - the 18 year old solo-developer of BadWords. This project started totally randomly. It wasn't planned, it wasn't supposed to become a full-on program. Heck! It wasn't supposed to even leave my computer... but somehow it became the biggest and most advanced project I've made.
-It's probably not the best, the fastest, the cleanest, or the most useful thing you'll see... but while making it, I realized that it could actually be useful not only to me - but for many others.
-So... I made it for everyone.
-It is still in development, it probably has a lot of bugs, "holes", crashes on edge-cases and unoptimized functions. So if you ever stumble upon any problems - feel free to open an Issue or contact me directly.
-Just by using BadWords and sending feedback, you are contributing to this project's community :)
+BadWords was created by **Simon (Szymon Wolarz)**, an 18-year-old solo developer, who started it as a side project for himself and then made it available to everyone. This fork builds on his work.
 
-**Support the Project!**  
-If BadWords saved you even a bit of time, consider buying me a coffee. It helps me maintain the project between school and life!
+If BadWords saved you time, please support him directly. It helps him keep the original project going between school and life:
 
 <a href="https://www.buymeacoffee.com/BadWords" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Bribe%20me%20with%20coffee&emoji=%E2%98%95&slug=BadWords&button_colour=0b8e46&font_colour=ffffff&font_family=Inter&outline_colour=ffffff&coffee_colour=FFFFFF" alt="Bribe Me With Coffee" height="50px"/></a>
 
@@ -304,6 +299,8 @@ If BadWords saved you even a bit of time, consider buying me a coffee. It helps 
 ## <img src="repo/icons/users.svg" alt="Contribute & Contact" width="30" height="30" valign="text-bottom"> Contribute & Contact
 
 This is an open-source project. Feel free to open issues or pull requests to improve the tool!
+
+Problems with this fork's own changes (listed in [FORK.md](FORK.md)): please open an issue on [this fork](https://github.com/Boris-Edu/BadWords/issues). For the original BadWords, use the links below to reach Simon.
 
 [![Reddit](https://img.shields.io/badge/Reddit-FF4500?style=for-the-badge&logo=reddit&logoColor=white)](https://www.reddit.com/message/compose/?to=KoxSwYT)
 [![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:badwords.git@gmail.com)
