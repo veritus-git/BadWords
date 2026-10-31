@@ -79,17 +79,54 @@ def build_silence_panel(win) -> QFrame:
     win.spin_silence_min_dur.setStyleSheet(_sil_input_style)
     win.spin_silence_min_dur.setToolTip(
         "Minimum duration (in seconds) for a gap to be classified as silence. "
-        "Lower = more sensitive. Applies to both standalone and post-transcript modes."
+        "Lower = more sensitive. Applies to both standalone and post-transcript modes. "
+        "Raising it updates the cuts immediately; lowering it below the value used "
+        "during analysis needs a new analysis."
     )
     _rst_min = ReloadButton(size=30)
     _rst_min.clicked.connect(lambda: (
         win.spin_silence_min_dur.setText("0.2"),
-        win._save_single_pref('silence_min_dur', 0.2)
+        win._save_single_pref('silence_min_dur', 0.2),
+        win._refresh_cut_preview()
     ))
+
+    def _tuning_field(key, default, lo, hi, tooltip_key):
+        edit = QLineEdit()
+        edit.setText(str(_sil_prefs.get(key, default)))
+        edit.setFixedWidth(config.S(68))
+        edit.setFixedHeight(config.INPUT_HEIGHT)
+        edit.setStyleSheet(_sil_input_style)
+        edit.setToolTip(win.txt(tooltip_key))
+
+        def _commit(value=None):
+            if value is None:
+                try:
+                    value = float(edit.text().replace(',', '.'))
+                except ValueError:
+                    value = default
+            value = min(hi, max(lo, value))
+            edit.setText(str(value))
+            win._save_single_pref(key, value)
+            win._refresh_cut_preview()
+
+        edit.editingFinished.connect(_commit)
+        rst = ReloadButton(size=30)
+        rst.clicked.connect(lambda: _commit(default))
+        return edit, rst
+
+    win.spin_silence_cut_pct, _rst_pct = _tuning_field(
+        'silence_cut_pct', 100.0, 0.0, 100.0, "tt_silence_cut_pct")
+    win.spin_silence_min_clip, _rst_clip = _tuning_field(
+        'silence_min_clip', 0.0, 0.0, 30.0, "tt_silence_min_clip")
+    win.spin_silence_keep, _rst_keep = _tuning_field(
+        'silence_keep', 0.0, 0.0, 5.0, "tt_silence_keep")
 
     l_silence.addLayout(_sil_row(win.txt("lbl_threshold_db"), win.spin_thresh, _rst_thresh))
     l_silence.addLayout(_sil_row(win.txt("lbl_padding_s"), win.spin_pad, _rst_pad))
     l_silence.addLayout(_sil_row(win.txt("lbl_min_silence_dur"), win.spin_silence_min_dur, _rst_min))
+    l_silence.addLayout(_sil_row(win.txt("lbl_silence_cut_pct"), win.spin_silence_cut_pct, _rst_pct))
+    l_silence.addLayout(_sil_row(win.txt("lbl_silence_min_clip"), win.spin_silence_min_clip, _rst_clip))
+    l_silence.addLayout(_sil_row(win.txt("lbl_silence_keep"), win.spin_silence_keep, _rst_keep))
 
     row_silence_cut = QHBoxLayout()
     lbl_cut = QLabel(win.txt("lbl_detect_and_cut_silence"))
@@ -114,6 +151,12 @@ def build_silence_panel(win) -> QFrame:
     win.tgl_silence_mark = ToggleSwitch()
     row_silence_mark.addWidget(win.tgl_silence_mark)
     l_silence.addLayout(row_silence_mark)
+    
+    # Live readout of what the current settings do (filled by the waveform preview)
+    win.lbl_silence_stats = QLabel("")
+    win.lbl_silence_stats.setWordWrap(True)
+    win.lbl_silence_stats.setStyleSheet(f"color: #8a8a8a; font-size: {config.FS(9)}pt;")
+    l_silence.addWidget(win.lbl_silence_stats)
     
     l_silence.addStretch(1)
     
