@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<title>StoryCraft</title>
+<defs>
+<linearGradient id="arc" x1="164" y1="102" x2="348" y2="410" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a855f7"/></linearGradient>
+<linearGradient id="hot" x1="112" y1="0" x2="348" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a855f7"/></linearGradient>
+<linearGradient id="tile" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1a1b2e"/><stop offset="1" stop-color="#0b0b14"/></linearGradient>
+<linearGradient id="rim" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#22d3ee" stop-opacity="0.55"/><stop offset="1" stop-color="#a855f7" stop-opacity="0.55"/></linearGradient>
+</defs>
+<path d="M 344 148 C 322 116 288 102 252 102 C 198 102 164 134 164 178 C 164 226 204 242 256 256 C 308 270 348 288 348 336 C 348 382 312 410 260 410 C 218 410 186 394 166 362" fill="none" stroke="url(#arc)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="190" y="210" width="150" height="17" rx="8.5" fill="#d9dbee"/>
+<rect x="128" y="246" width="196" height="17" rx="8.5" fill="url(#hot)"/>
+<rect x="204" y="282" width="150" height="17" rx="8.5" fill="#d9dbee"/>
+<rect x="289" y="180" width="6" height="142" rx="3" fill="#ffffff"/>
+<circle cx="292" cy="174" r="11" fill="#ffffff"/>
+</svg>

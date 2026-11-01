@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StoryCraft for DaVinci Resolve</title>
+<meta name="description" content="StoryCraft turns an unscripted interview into a story inside DaVinci Resolve: it transcribes, cleans up, helps you or your AI build the edit, and hands Resolve a finished timeline. Free and open source.">
+<meta name="theme-color" content="#0b0b14">
+<meta property="og:title" content="StoryCraft for DaVinci Resolve">
+<meta property="og:description" content="Turn an unscripted interview into a story, inside DaVinci Resolve.">
+<meta property="og:image" content="assets/brand/icon-512.png">
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/brand/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=7">
+</head>
+<body>
+
+<header class="nav">
+  <a class="nav-brand" href="#top" aria-label="StoryCraft home"><img src="assets/brand/storycraft-wordmark.svg" alt="StoryCraft" height="26"></a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#screens">Screenshots</a>
+    <a href="#features">Features</a>
+    <a href="#ai">AI</a>
+    <a href="#install">Install</a>
+    <a href="#contact">Contact</a>
+  </nav>
+  <a class="btn btn-small" href="https://github.com/Boris-Edu/StoryCraft">GitHub</a>
+</header>
+
+<main id="top">
+
+<!-- ── Hero ─────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-glow" aria-hidden="true"></div>
+  <img class="hero-mark" src="assets/brand/storycraft-mark.svg" alt="" width="104" height="104">
+  <p class="eyebrow">For DaVinci Resolve · Free and open source</p>
+  <h1>Your interview,<br><span class="grad">already a story.</span></h1>
+  <p class="lede">StoryCraft turns unscripted footage into text, cleans out what you'd cut anyway, and helps you (or your AI) arrange the moments that matter. Then it hands Resolve a finished timeline.</p>
+  <div class="hero-cta">
+    <a class="btn" href="#install">Get StoryCraft</a>
+    <a class="btn btn-ghost" href="#how">See the workflow</a>
+  </div>
+  <ol class="flow-pills" aria-label="The workflow">
+    <li>Transcribe</li><li>Clean up</li><li>Compose</li><li>Send to Resolve</li>
+  </ol>
+</section>
+
+<!-- ── Why ──────────────────────────────────────────── -->
+<section class="why wrap">
+  <p class="why-quote">The best interviews have no script. They're also the slowest to edit: hours of footage, a few moments that matter, and a story hidden somewhere between them.</p>
+  <p class="why-answer">StoryCraft does the sorting so you can do the storytelling.</p>
+</section>
+
+<!-- ── How it works (animated) ──────────────────────── -->
+<section id="how" class="how wrap">
+  <div class="section-head">
+    <p class="eyebrow">How it works</p>
+    <h2>Four steps, one window</h2>
+    <p class="section-lede">An example interview with a bicycle mechanic, from raw footage to a two-minute story. Click a step, or let it play.</p>
+  </div>
+
+  <div class="how-grid">
+    <ol class="steps" role="tablist" aria-label="Workflow steps">
+      <li><button class="step" role="tab" data-step="0" aria-selected="true">
+        <span class="step-num">1</span>
+        <span class="step-text"><b>Transcribe</b><span>Whisper on your Mac's GPU, or Resolve's own transcription with speaker detection. Saved, so you never wait twice.</span></span>
+        <span class="step-progress" aria-hidden="true"></span>
+      </button></li>
+      <li><button class="step" role="tab" data-step="1" aria-selected="false">
+        <span class="step-num">2</span>
+        <span class="step-text"><b>Clean up</b><span>Fillers, stutters, self-corrections, echoes and loud coughs are found and cut. You review what the AI found and keep what you like.</span></span>
+        <span class="step-progress" aria-hidden="true"></span>
+      </button></li>
+      <li><button class="step" role="tab" data-step="2" aria-selected="false">
+        <span class="step-num">3</span>
+        <span class="step-text"><b>Compose with AI</b><span>Ask for a two-minute story. The AI picks the moments, StoryCraft checks the edit flows, and the blocks land on your story board.</span></span>
+        <span class="step-progress" aria-hidden="true"></span>
+      </button></li>
+      <li><button class="step" role="tab" data-step="3" aria-selected="false">
+        <span class="step-num">4</span>
+        <span class="step-text"><b>Send to Resolve</b><span>Play the edit first. Then a new timeline appears in a StoryCraft bin, with crossfades and markers. Your source stays untouched.</span></span>
+        <span class="step-progress" aria-hidden="true"></span>
+      </button></li>
+    </ol>
+
+    <div class="stage" aria-live="polite">
+      <div class="stage-bar">
+        <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="stage-title" id="stage-title">StoryCraft · Workshop interview</span>
+        <button class="stage-pause" type="button" aria-label="Pause the animation">Pause</button>
+      </div>
+
+      <!-- Scene 1: transcribe -->
+      <div class="scene" data-scene="0" aria-label="Transcribing the interview">
+        <div class="wave" data-wave aria-hidden="true"><span class="wave-head" data-at="0" data-cls="run"></span></div>
+        <div class="status-chip"><span class="spin" aria-hidden="true"></span>Transcribing on the Apple Silicon GPU
+          <b class="pct"><span data-at="0" data-cls="count">0</span>%</b></div>
+        <div class="transcript">
+          <p class="line" data-at="500"><time>0:00</time> Um, so I, I started fixing bikes in my garage.</p>
+          <p class="line" data-at="1300"><time>0:07</time> A neighbour brought me a broken one. Broken one.</p>
+          <p class="line" data-at="2100"><time>0:12</time> <span class="sound">sound without words</span></p>
+          <p class="line" data-at="2700"><time>0:14</time> It changed everything. You know? Changed everything.</p>
+          <p class="line" data-at="3500"><time>0:21</time> Now kids come by after school to learn.</p>
+        </div>
+      </div>
+
+      <!-- Scene 2: clean up -->
+      <div class="scene" data-scene="1" aria-label="Cleaning up the transcript">
+        <div class="clean" data-at="3900" data-cls="go">
+          <div class="transcript">
+            <p class="line show"><time>0:00</time> <span class="cut filler" data-at="700">Um, </span>so <span class="cut retake" data-at="1100">I, </span>I started fixing bikes in my garage.</p>
+            <p class="line show"><time>0:07</time> A neighbour brought me a broken one.<span class="cut retake" data-at="1600"> Broken one.</span></p>
+            <p class="line show gone-line"><time>0:12</time> <span class="cut sound loud" data-at="2100">sound without words · +15 dB</span></p>
+            <p class="line show"><time>0:14</time> It changed everything.<span class="cut retake" data-at="2600"> You know? Changed everything.</span></p>
+            <p class="line show"><time>0:21</time> Now kids come by after school to learn.</p>
+          </div>
+          <aside class="found">
+            <p class="found-title">What the AI found</p>
+            <p class="found-row" data-at="700"><i class="sw red"></i>Fillers<b>1</b></p>
+            <p class="found-row" data-at="1100"><i class="sw blue"></i>Repeats &amp; restarts<b>3</b></p>
+            <p class="found-row" data-at="2100"><i class="sw cocoa"></i>Loud sounds<b>1 cut</b></p>
+            <p class="found-row" data-at="3000"><i class="sw tan"></i>Pauses<b>−0:41</b></p>
+            <p class="found-total" data-at="3500">4:12 <span aria-hidden="true">→</span> <b>3:20</b> after cuts</p>
+          </aside>
+        </div>
+      </div>
+
+      <!-- Scene 3: compose with AI -->
+      <div class="scene" data-scene="2" aria-label="Building the story with AI">
+        <div class="compose">
+          <div class="chat">
+            <p class="bubble user" data-at="200">Build a 2-minute story from this interview.</p>
+            <p class="tool" data-at="1000"><span class="tick ok"></span><code>get_transcript</code> 38 moments</p>
+            <p class="tool" data-at="1700"><span class="tick warn"></span><code>check_edit</code> 2:31 · clips 3 and 5 make the same point</p>
+            <p class="tool" data-at="2600"><span class="tick ok"></span><code>check_edit</code> 1:58 · the edit flows</p>
+            <p class="tool" data-at="3200"><span class="tick ok"></span><code>apply_edit</code> on the story board</p>
+            <p class="bubble reply" data-at="3700">Opens in the garage, the first bike, what changed, the kids, and ends on why it matters.</p>
+          </div>
+          <div class="board" data-at="2600" data-cls="sorted-meter">
+            <div class="board-head"><span>Story board</span><span class="target">Target 2:00 · <b><span class="t-a" data-at="1700" data-cls="hide">—</span><span data-at="2600" data-cls="hide"><span class="t-b" data-at="1700">2:31</span></span><span class="t-c" data-at="2600">1:58</span></b></span></div>
+            <div class="meter"><span data-at="1700" data-cls="over"></span></div>
+            <div class="blocks">
+              <div class="block" style="--from:0;--to:0" data-at="2600" data-cls="sorted"><i style="--c:#22d3ee"></i>The garage<em>0:14</em></div>
+              <div class="block" style="--from:1;--to:3" data-at="2600" data-cls="sorted"><i style="--c:#60a5fa"></i>Kids after school<em>0:21</em></div>
+              <div class="block" style="--from:2;--to:1" data-at="2600" data-cls="sorted"><i style="--c:#818cf8"></i>The first bike<em>0:26</em></div>
+              <div class="block" style="--from:3;--to:2" data-at="2600" data-cls="sorted"><i style="--c:#a78bfa"></i>It changed everything<em>0:17</em></div>
+              <div class="block drop" style="--from:4;--to:5" data-at="1700" data-cls="flag"><i style="--c:#c084fc"></i>Changed everything, again<em>0:33</em></div>
+              <div class="block" style="--from:5;--to:4" data-at="2600" data-cls="sorted"><i style="--c:#a855f7"></i>Why it matters<em>0:40</em></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 4: send to Resolve -->
+      <div class="scene" data-scene="3" aria-label="Sending the edit to DaVinci Resolve">
+        <div class="resolve">
+          <aside class="pool">
+            <p class="pool-title">Media Pool</p>
+            <p class="bin">Master</p>
+            <p class="item">Workshop interview</p>
+            <p class="bin open" data-at="400">StoryCraft</p>
+            <p class="item new" data-at="900">Workshop interview StoryCraft Edit 1</p>
+          </aside>
+          <div class="tl">
+            <div class="ruler"><span>00:00</span><span>00:30</span><span>01:00</span><span>01:30</span><span>02:00</span></div>
+            <div class="track"><b>V1</b><div class="lane">
+              <span class="clip v" style="--x:0;--w:12" data-at="1000"></span>
+              <span class="clip v" style="--x:12;--w:22" data-at="1250"></span>
+              <span class="clip v" style="--x:34;--w:14" data-at="1500"></span>
+              <span class="clip v" style="--x:48;--w:18" data-at="1750"></span>
+              <span class="clip v" style="--x:66;--w:34" data-at="2000"></span>
+              <span class="marker" style="--x:34" data-at="2600" title="Jump cut"></span>
+            </div></div>
+            <div class="track"><b>A1</b><div class="lane">
+              <span class="clip a" style="--x:0;--w:12" data-at="1000"></span>
+              <span class="clip a" style="--x:12;--w:22" data-at="1250"></span>
+              <span class="clip a" style="--x:34;--w:14" data-at="1500"></span>
+              <span class="clip a" style="--x:48;--w:18" data-at="1750"></span>
+              <span class="clip a" style="--x:66;--w:34" data-at="2000"></span>
+              <span class="fade" style="--x:12" data-at="2300"></span><span class="fade" style="--x:34" data-at="2350"></span>
+              <span class="fade" style="--x:48" data-at="2400"></span><span class="fade" style="--x:66" data-at="2450"></span>
+            </div></div>
+            <span class="playhead" data-at="3000" data-cls="run"></span>
+            <p class="marker-note" data-at="2700"><i></i>Jump cut · cover with a punch-in or B-roll</p>
+          </div>
+        </div>
+        <p class="toast" data-at="3300"><span class="tick ok"></span>Sent: 5 clips, 1:58 · 4 crossfades · 1 jump-cut marker · source timeline unchanged</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Screenshots ──────────────────────────────────── -->
+<section id="screens" class="screens wrap">
+  <div class="section-head">
+    <p class="eyebrow">The app</p>
+    <h2>See it for real</h2>
+    <p class="section-lede">Screenshots of StoryCraft at 1920 × 1080, with an invented interview. Click a picture to see it full size.</p>
+  </div>
+  <div class="screens-bar">
+    <div class="tabs screens-tabs" role="tablist" aria-label="Screens">
+      <button class="tab" role="tab" aria-selected="true" data-shot="clean-up">Clean up</button>
+      <button class="tab" role="tab" aria-selected="false" data-shot="story-board">Story board</button>
+      <button class="tab" role="tab" aria-selected="false" data-shot="start">Start</button>
+      <button class="tab" role="tab" aria-selected="false" data-shot="settings">Settings</button>
+    </div>
+    <div class="tabs mode-tabs" role="group" aria-label="Theme">
+      <button class="tab" aria-pressed="true" data-mode="dark">Dark</button>
+      <button class="tab" aria-pressed="false" data-mode="light">Light</button>
+    </div>
+  </div>
+  <figure class="shot">
+    <button class="shot-open" type="button" aria-label="Open the screenshot full size">
+      <img id="shot-img" src="assets/shots/clean-up.jpg?v=2" width="1920" height="1080" alt="StoryCraft cleaning up a transcript: fillers and repeats marked, a loud sound cut, the inspector showing what the AI found" loading="lazy">
+    </button>
+    <figcaption id="shot-caption">Clean up: fillers, repeats and a loud cough found and marked; the inspector shows what the AI found and what each colour does in Resolve.</figcaption>
+  </figure>
+</section>
+<dialog class="lightbox" id="lightbox" aria-label="Screenshot">
+  <form method="dialog"><button class="lightbox-close" aria-label="Close">×</button></form>
+  <img id="lightbox-img" src="" alt="">
+</dialog>
+
+<!-- ── Features ─────────────────────────────────────── -->
+<section id="features" class="features wrap">
+  <div class="section-head">
+    <p class="eyebrow">What it does for you</p>
+    <h2>The tedious part, handled</h2>
+  </div>
+  <div class="cards">
+    <article class="card">
+      <h3>Cuts what you'd cut anyway</h3>
+      <p>"Um", "I think I think", a sentence started twice, the same line said again, a lone "yeah": found and cut, keeping the final, fuller version.</p>
+    </article>
+    <article class="card">
+      <h3>Hears what isn't speech</h3>
+      <p>Every cough, knock or background voice is measured against the speaker. The loud ones go; you listen to the rest and keep or cut each one.</p>
+    </article>
+    <article class="card">
+      <h3>A story board, not a timeline</h3>
+      <p>The transcript as blocks you drag into any order, with a target length and a clarity score on each one, so you build the story by meaning.</p>
+    </article>
+    <article class="card">
+      <h3>Cuts that sound natural</h3>
+      <p>Cut points land on the quietest moment, never inside a word, and never one word before a sentence ends. Pauses stay even.</p>
+    </article>
+    <article class="card">
+      <h3>Watch before you send</h3>
+      <p>Play the edit, cuts and all, inside StoryCraft. Resolve only gets a timeline when you're happy with it.</p>
+    </article>
+    <article class="card">
+      <h3>Ready for the edit bay</h3>
+      <p>A new timeline in a StoryCraft bin, with crossfades on every join and markers where the picture jumps or a sound needs a listen.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ── AI ───────────────────────────────────────────── -->
+<section id="ai" class="ai wrap">
+  <div class="section-head">
+    <p class="eyebrow">Bring your own AI</p>
+    <h2>Any chat AI, or Claude directly</h2>
+    <p class="section-lede">StoryCraft doesn't need an account or a subscription. It prepares the interview for an AI, then checks the answer before anything reaches your story board.</p>
+  </div>
+  <div class="ai-grid">
+    <article class="ai-card">
+      <p class="ai-tag">Copy and paste</p>
+      <h3>Works with any chat AI</h3>
+      <ol class="loop">
+        <li><b>Copy for AI</b> gives the transcript in moments, with the editing rules and your target length.</li>
+        <li>Paste it into the chat AI you already use and ask for a story.</li>
+        <li><b>Import AI edit</b> checks the answer: length, clips that start mid-thought, two clips making the same point, parts you marked Avoid.</li>
+        <li>Anything off? StoryCraft writes the fix request for you to paste back.</li>
+      </ol>
+    </article>
+    <article class="ai-card">
+      <p class="ai-tag">Built-in MCP server</p>
+      <h3>Claude builds it in the open window</h3>
+      <svg class="loop-diagram" viewBox="0 0 320 150" role="img" aria-label="Claude reads the transcript, checks its edit until it flows, then applies it to the story board">
+        <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+        <path class="flow" d="M60 75 C 110 15, 210 15, 260 75 C 210 135, 110 135, 60 75" fill="none" stroke="url(#g)" stroke-width="2"/>
+        <g class="node"><circle cx="60" cy="75" r="30"/><text x="60" y="72">Read</text><text x="60" y="86" class="sub">transcript</text></g>
+        <g class="node"><circle cx="160" cy="30" r="26"/><text x="160" y="27">Check</text><text x="160" y="41" class="sub">the edit</text></g>
+        <g class="node"><circle cx="260" cy="75" r="30"/><text x="260" y="72">Fix</text><text x="260" y="86" class="sub">until it flows</text></g>
+        <g class="node"><circle cx="160" cy="120" r="26"/><text x="160" y="117">Apply</text><text x="160" y="131" class="sub">story board</text></g>
+      </svg>
+      <p>Ask Claude Desktop or Claude Code for "a 2-minute story from this interview". It reads, checks and fixes its own edit, then puts it on your story board, and sends it to Resolve if you ask. Your Claude app asks before each step.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ── Privacy ──────────────────────────────────────── -->
+<section class="privacy wrap">
+  <div class="privacy-inner">
+    <h2>Your footage stays yours</h2>
+    <ul class="ticks">
+      <li>Transcription runs on your computer, or in Resolve itself.</li>
+      <li>No telemetry, no account, no server: StoryCraft sends nothing anywhere.</li>
+      <li>The AI only sees what you paste into it, or what you let Claude read.</li>
+      <li>Your source timeline is never changed. Every edit is a new timeline.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ── Install ──────────────────────────────────────── -->
+<section id="install" class="install wrap">
+  <div class="section-head">
+    <p class="eyebrow">Install</p>
+    <h2>One command</h2>
+    <p class="section-lede">Paste it into a terminal. The installer puts StoryCraft in its own folder, adds it to Resolve's <b>Workspace → Scripts</b> menu, and can update, repair or uninstall it later.</p>
+  </div>
+  <div class="tabs" role="tablist" aria-label="Operating system">
+    <button class="tab" role="tab" aria-selected="true" data-os="mac">macOS</button>
+    <button class="tab" role="tab" aria-selected="false" data-os="win">Windows</button>
+    <button class="tab" role="tab" aria-selected="false" data-os="linux">Linux</button>
+  </div>
+  <div class="cmd" data-os="mac"><code>curl -fsSL "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/mac-setup.sh" | bash</code><button class="copy" type="button">Copy</button></div>
+  <div class="cmd" data-os="win" hidden><code>irm "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/windows-setup.ps1" | iex</code><button class="copy" type="button">Copy</button></div>
+  <div class="cmd" data-os="linux" hidden><code>curl -fsSL "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/linux-setup.sh" | bash</code><button class="copy" type="button">Copy</button></div>
+  <ul class="reqs">
+    <li><b>DaVinci Resolve</b> or <b>Resolve Studio</b> (not the App Store version). Resolve's own transcription needs Studio 21.1+.</li>
+    <li>About 4 GB of space, plus 1–5 GB for speech models.</li>
+    <li>Built and tested on macOS with Apple Silicon. Windows and Linux use the same installer but are untested.</li>
+    <li>The scripts are plain text on <a href="https://github.com/Boris-Edu/StoryCraft/tree/fork/setupfiles">GitHub</a>: read them before you run them.</li>
+  </ul>
+</section>
+
+<!-- ── Contact ──────────────────────────────────────── -->
+<section id="contact" class="contact wrap">
+  <div class="contact-inner">
+    <p class="eyebrow">Get in touch</p>
+    <h2>I'd love to hear from you</h2>
+    <p class="contact-lede">StoryCraft is a personal project, and it gets better with every message. Found a bug, hit a problem, have an idea or a comment? Tell me. And if you edit interviews, make documentaries or just like the idea, I'd be glad to connect.</p>
+    <div class="contact-grid">
+      <a class="contact-card" href="mailto:boris@dessimond.com?subject=StoryCraft%20bug%20report&amp;body=What%20happened%3A%0A%0AWhat%20I%20expected%3A%0A%0AmacOS%20%2F%20Windows%20%2F%20Linux%2C%20DaVinci%20Resolve%20version%3A%0A">
+        <span class="contact-icon" aria-hidden="true">!</span>
+        <b>Report a bug</b>
+        <span>Something broke or behaved oddly. A few lines on what happened help a lot.</span>
+      </a>
+      <a class="contact-card" href="mailto:boris@dessimond.com?subject=StoryCraft%20feedback">
+        <span class="contact-icon" aria-hidden="true">✦</span>
+        <b>Share feedback</b>
+        <span>Ideas, comments, what you'd change, what you love. All of it is welcome.</span>
+      </a>
+      <a class="contact-card" href="mailto:boris@dessimond.com?subject=Hello%20from%20a%20StoryCraft%20user">
+        <span class="contact-icon" aria-hidden="true">✉</span>
+        <b>Say hello</b>
+        <span>Working on interviews or stories too? Let's connect.</span>
+      </a>
+    </div>
+    <p class="contact-alt">Or write directly to <a href="mailto:boris@dessimond.com">boris@dessimond.com</a>. Prefer GitHub? Open an <a href="https://github.com/Boris-Edu/StoryCraft/issues">issue</a>.</p>
+  </div>
+</section>
+
+<!-- ── Credits ──────────────────────────────────────── -->
+<section class="credits wrap">
+  <div class="credits-inner">
+    <p class="eyebrow">Built on BadWords</p>
+    <h2>If you want to help the original developer</h2>
+    <p>StoryCraft is a fork of <a href="https://github.com/veritus-git/BadWords">BadWords</a>, which <b>Szymon Wolarz</b> built as a solo developer and shared under the MIT licence. The transcription, the Resolve connection and the timeline assembly all started there. If StoryCraft saves you time, please support him directly.</p>
+    <div class="hero-cta">
+      <a class="btn btn-coffee" href="https://www.buymeacoffee.com/BadWords">Buy him a coffee</a>
+      <a class="btn btn-ghost" href="https://github.com/veritus-git/BadWords">Star BadWords on GitHub</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer wrap">
+  <img src="assets/brand/storycraft-glyph.svg" alt="" width="28" height="28">
+  <p>StoryCraft · <a href="https://github.com/Boris-Edu/StoryCraft">GitHub</a> · <a href="mailto:boris@dessimond.com">Contact</a> · <a href="https://github.com/Boris-Edu/StoryCraft/blob/fork/LICENSE">MIT licence</a></p>
+  <p class="fine">Not affiliated with Blackmagic Design or with the BadWords project. DaVinci Resolve is a trademark of Blackmagic Design. The interview in the animation is an invented example.</p>
+</footer>
+
+<script src="app.js?v=8"></script>
+</body>
+</html>
