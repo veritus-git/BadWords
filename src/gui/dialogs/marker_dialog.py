@@ -11,6 +11,8 @@ DESCRIPTION:
 Dialog for creating and editing custom timeline markers.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidget, QFrame, QGraphicsDropShadowEffect
@@ -82,7 +84,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
 
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setColor(qc(0, 0, 0, 150))
         shadow.setOffset(0, 4)
         self.inner_frame.setGraphicsEffect(shadow)
         main_layout.addWidget(self.inner_frame)

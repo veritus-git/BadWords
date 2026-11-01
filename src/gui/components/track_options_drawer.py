@@ -131,12 +131,19 @@ class TrackOptionsDrawer(QWidget):
             w._lbl = lbl
             return w
 
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
-
-        self.w_a_tr = make_toggle_row(self.parent_gui.txt("dlg_transcription_tracks"), self.tgl_a_tr)
-        inner_layout.addWidget(self.w_a_tr)
-
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_a_cust))
+        # One choice per track type (the three switches stay as hidden state, they exclude each other)
+        from gui.widgets.segmented import SegmentedChoice
+        t = self.parent_gui.txt
+        self.seg_audio = SegmentedChoice([("all", t("seg_tracks_all")), ("tr", t("seg_tracks_transcribed")),
+                                          ("cust", t("seg_tracks_custom"))], "all", compact=True)
+        self.seg_audio.changed.connect(lambda v: {"all": self.tgl_a_all, "tr": self.tgl_a_tr, "cust": self.tgl_a_cust}[v].setChecked(True))
+        inner_layout.addWidget(self.seg_audio)
+        rows = [make_toggle_row(t("dlg_all_tracks"), self.tgl_a_all)]
+        self.w_a_tr = make_toggle_row(t("dlg_transcription_tracks"), self.tgl_a_tr)
+        rows += [self.w_a_tr, make_toggle_row(t("dlg_custom_selection"), self.tgl_a_cust)]
+        for r in rows:
+            r.setVisible(False)
+            inner_layout.addWidget(r)
 
         # Query project audio & video tracks
         audio_tracks, video_tracks = self._get_project_tracks()
@@ -164,9 +171,14 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_v_none = ToggleSwitch()
         self.tgl_v_cust = ToggleSwitch()
 
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_no_tracks"), self.tgl_v_none))
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
+        self.seg_video = SegmentedChoice([("all", t("seg_tracks_all")), ("none", t("seg_tracks_none")),
+                                          ("cust", t("seg_tracks_custom"))], "all", compact=True)
+        self.seg_video.changed.connect(lambda v: {"all": self.tgl_v_all, "none": self.tgl_v_none, "cust": self.tgl_v_cust}[v].setChecked(True))
+        inner_layout.addWidget(self.seg_video)
+        for r in (make_toggle_row(t("dlg_all_tracks"), self.tgl_v_all), make_toggle_row(t("dlg_no_tracks"), self.tgl_v_none),
+                  make_toggle_row(t("dlg_custom_selection"), self.tgl_v_cust)):
+            r.setVisible(False)
+            inner_layout.addWidget(r)
 
         self.w_v_cust_list = _FlowListWidget()
         self.w_v_cust_list.setMaximumHeight(0)
@@ -190,7 +202,18 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_v_none.toggled.connect(lambda c: self._update_v_radios('none', c))
         self.tgl_v_cust.toggled.connect(lambda c: self._update_v_radios('cust', c))
 
+        # Keep the segmented choices in step with the switches (load_config and other code set those)
+        def _sync_segments(*_):
+            a = "cust" if self.tgl_a_cust.isChecked() else ("tr" if self.tgl_a_tr.isChecked() else "all")
+            v = "cust" if self.tgl_v_cust.isChecked() else ("none" if self.tgl_v_none.isChecked() else "all")
+            self.seg_audio.set_value(a)
+            self.seg_video.set_value(v)
+            self.seg_audio.buttons["tr"].setEnabled(self.w_a_tr.isEnabled())
+        for tg in (self.tgl_a_all, self.tgl_a_tr, self.tgl_a_cust, self.tgl_v_all, self.tgl_v_none, self.tgl_v_cust):
+            tg.toggled.connect(_sync_segments)
+
         self.load_config()
+        _sync_segments()
 
     def get_drawer_height(self) -> int:
         return self.height()

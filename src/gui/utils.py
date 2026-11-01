@@ -119,8 +119,16 @@ def get_layout_dir() -> str:
 
 
 def get_layout_icon_path(icon_name: str) -> str:
-    """Returns path to a specific layout image asset."""
+    """Returns path to a specific layout image asset (the dark-stroke set, layout-light, on a light theme)."""
     layout_dir = get_layout_dir()
+    try:
+        from gui import theme
+        if theme.is_light():
+            light = os.path.join(layout_dir + "-light", icon_name)
+            if os.path.exists(light):
+                return light
+    except Exception:
+        pass
     return os.path.join(layout_dir, icon_name)
 
 

@@ -57,6 +57,8 @@ class PreferencesMixin:
         Asynchronously sends a telemetry ping to PostHog.
         Only sends with user consent and only once per version.
         """
+        if not getattr(config, "TELEMETRY_ENABLED", True):
+            return
         try:
             # 1. Check opt-in flag — account for string parsing from JSON
             opt_in = self.os_doc.get_telemetry_pref("telemetry_opt_in")

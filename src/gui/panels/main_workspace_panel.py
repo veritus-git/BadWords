@@ -22,7 +22,7 @@ from gui.widgets.layouts import MainPanelWidget
 from gui.widgets.labels import QLabel
 from gui.widgets.buttons import QPushButton, AssembleSplitButton
 from gui.components.track_options_drawer import TrackOptionsDrawer
-from .script_panel import wrap_activity_panel
+from .script_panel import wrap_activity_panel, panel_card
 
 
 def build_main_workspace_panel(win) -> QFrame:
@@ -35,7 +35,9 @@ def build_main_workspace_panel(win) -> QFrame:
     
     # Top Section (Markers)
     row_marking_title = QHBoxLayout()
-    row_marking_title.addWidget(QLabel(win.txt("lbl_marking_mode")))
+    lbl_markers = QLabel(win.txt("lbl_marking_mode"))
+    lbl_markers.setStyleSheet(f"font-size: {config.FS(12)}pt; font-weight: bold; background: transparent;")
+    row_marking_title.addWidget(lbl_markers)
     row_marking_title.addStretch()
     win.btn_clear_transcript = QPushButton()
     win.btn_clear_transcript.setFixedSize(config.S(26), config.S(26))
@@ -52,10 +54,16 @@ def build_main_workspace_panel(win) -> QFrame:
     win.btn_clear_transcript.clicked.connect(win._on_clear_transcript)
     row_marking_title.addWidget(win.btn_clear_transcript)
     l_main.addLayout(row_marking_title)
-    
+    lbl_markers_sub = QLabel(win.txt("sub_markers"))
+    lbl_markers_sub.setWordWrap(True)
+    lbl_markers_sub.setStyleSheet(f"color: #8a8a8a; font-size: {config.FS(9)}pt; background: transparent;")
+    l_main.addWidget(lbl_markers_sub)
+
+    card_markers, l_card_markers = panel_card(6)
     win.markers_layout = QVBoxLayout()
     win.markers_layout.setSpacing(config.S(4))
-    l_main.addLayout(win.markers_layout)
+    l_card_markers.addLayout(win.markers_layout)
+    l_main.addWidget(card_markers)
     
     win.btn_add_custom_marker = QPushButton(win.txt("lbl_add_custom_marker"))
     win.btn_add_custom_marker.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -64,7 +72,7 @@ def build_main_workspace_panel(win) -> QFrame:
         QPushButton:hover {{ color: #ffffff; }}
     """)
     win.btn_add_custom_marker.clicked.connect(win._on_add_custom_marker)
-    l_main.addWidget(win.btn_add_custom_marker)
+    l_card_markers.addWidget(win.btn_add_custom_marker)
     
     l_main.addStretch(1)
     
@@ -113,13 +121,33 @@ def build_main_workspace_panel(win) -> QFrame:
     win.story_banner.setVisible(False)
     layout_assemble_group.addWidget(win.story_banner)
 
+    # Send to Resolve lives in the workflow bar above the transcript. This split button stays as the
+    # object other code locks/unlocks, hidden; its track options open from a plain toggle instead.
     win.btn_assemble = AssembleSplitButton(win.txt("btn_assemble"), win)
+    win.btn_assemble.setVisible(False)
     layout_assemble_group.addWidget(win.btn_assemble)
+
+    win.btn_track_options = QPushButton("▸  " + win.txt("btn_track_options"))
+    win.btn_track_options.setCursor(Qt.PointingHandCursor)
+    win.btn_track_options.setStyleSheet(f"""
+        QPushButton {{ background: transparent; border: none; color: #9a9a9a; text-align: left;
+            padding: {config.S(4)}px 0; font-size: {config.FS(9)}pt; font-weight: bold; }}
+        QPushButton:hover {{ color: #ffffff; }}
+    """)
+    layout_assemble_group.addWidget(win.btn_track_options)
 
     win.w_track_options = TrackOptionsDrawer(win, win.engine)
     layout_assemble_group.addWidget(win.w_track_options)
     QTimer.singleShot(60, win.w_track_options.warmup)
-    win.btn_assemble.toggleDrawerClicked.connect(lambda: [win.w_track_options.toggle_expand(), p_main.resizeEvent(None)])
+
+    def _toggle_track_options():
+        win.w_track_options.toggle_expand()
+        arrow = "▾  " if win.w_track_options.is_expanded else "▸  "
+        win.btn_track_options.setText(arrow + win.txt("btn_track_options"))
+        p_main.resizeEvent(None)
+    win._toggle_track_options = _toggle_track_options
+    win.btn_track_options.clicked.connect(_toggle_track_options)
+    win.btn_assemble.toggleDrawerClicked.connect(_toggle_track_options)
 
     l_layer2.addLayout(layout_assemble_group)
     

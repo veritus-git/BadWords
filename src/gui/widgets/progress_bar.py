@@ -11,6 +11,8 @@ DESCRIPTION:
 Custom progress bars with animation support.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
@@ -93,7 +95,7 @@ class LiquidProgressBar(QWidget):
         track_path.addRoundedRect(QRectF(0, 0, w, h), r, r)
 
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#2b2b2b"))
+        p.setBrush(qc("#2b2b2b"))
         p.drawPath(track_path)
 
         # Clip all inner fills to the rounded track path so ends are always smoothly rounded
@@ -104,8 +106,8 @@ class LiquidProgressBar(QWidget):
             x_pos = self._indet_offset * (w + pill_width) - pill_width
 
             grad = QLinearGradient(x_pos, 0, x_pos + pill_width, 0)
-            grad.setColorAt(0.0, QColor("#1a7a3e"))
-            grad.setColorAt(1.0, QColor("#b8d035"))
+            grad.setColorAt(0.0, qc("#1a7a3e"))
+            grad.setColorAt(1.0, qc("#b8d035"))
 
             p.setBrush(grad)
             p.drawRoundedRect(QRectF(x_pos, 0, pill_width, h), r, r)
@@ -115,8 +117,8 @@ class LiquidProgressBar(QWidget):
                 fill_rect = QRectF(0, 0, fill_width, h)
 
                 grad = QLinearGradient(0, 0, fill_width, 0)
-                grad.setColorAt(0.0, QColor("#1a7a3e"))
-                grad.setColorAt(1.0, QColor("#b8d035"))
+                grad.setColorAt(0.0, qc("#1a7a3e"))
+                grad.setColorAt(1.0, qc("#b8d035"))
 
                 p.setBrush(grad)
                 p.drawRoundedRect(fill_rect, r, r)

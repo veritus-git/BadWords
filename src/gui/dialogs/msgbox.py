@@ -11,6 +11,8 @@ DESCRIPTION:
 Custom frameless message box dialog for alerts and confirmations.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QGraphicsDropShadowEffect
 from PySide6.QtGui import QColor
@@ -56,7 +58,7 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setColor(qc(0, 0, 0, 150))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
         

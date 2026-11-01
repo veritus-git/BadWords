@@ -12,6 +12,8 @@ Paste an AI answer that lists sentence IDs from the AI-ready transcript; preview
 resulting edit and hand it to the next Assemble (story mode, issue #8).
 """
 
+from gui.theme import qc
+
 import html
 
 from PySide6.QtCore import Qt
@@ -36,17 +38,23 @@ def _mmss(seconds):
 class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
     """
     Usage:
-        dlg = StoryImportDialog(parent, lang, sentences, duration_fn, note='')
+        dlg = StoryImportDialog(parent, lang, sentences, duration_fn, note='', target_s=None)
         if dlg.exec() == QDialog.Accepted:
             dlg.result_story  # {'clips': [...], 'keep_source_order': bool, 'duration': float}
     duration_fn(clips, keep_source_order) -> seconds the assembled edit would last.
+    target_s: the story board's target length, for the flow check.
+    The answer may use moment IDs (M12) as well as sentence IDs. What breaks the flow is listed
+    under the preview, with a ready-made follow-up to paste back to the AI.
     """
     MAX_PREVIEW_CLIPS = 8
 
-    def __init__(self, parent, lang, sentences, duration_fn, note=""):
+    def __init__(self, parent, lang, sentences, duration_fn, note="", target_s=None):
         super().__init__(parent)
         self._lang = lang
         self._sentences = sentences
+        self._moments = algorithms.moment_ranges(sentences)
+        self._target_s = target_s
+        self._fix_prompt = ""
         self._duration_fn = duration_fn
         self._clips = []
         self.result_story = None
@@ -65,6 +73,7 @@ class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
             QLabel#lbl_note {{ color: #e0b050; font-size: {config.FS(9)}pt; }}
             QLabel#lbl_preview {{ color: #ffffff; font-weight: bold; font-size: {config.FS(10)}pt; }}
             QLabel#lbl_clips {{ color: #b0b0b0; font-size: {config.FS(9)}pt; }}
+            QLabel#lbl_check {{ font-size: {config.FS(9)}pt; }}
             QPlainTextEdit {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
@@ -100,7 +109,7 @@ class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
 
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setColor(qc(0, 0, 0, 150))
         shadow.setOffset(0, 4)
         self.inner_frame.setGraphicsEffect(shadow)
         main_layout.addWidget(self.inner_frame)
@@ -155,6 +164,20 @@ class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
         self._lbl_clips.setTextFormat(Qt.RichText)
         content_layout.addWidget(self._lbl_clips)
 
+        self._lbl_check = QLabel("", content)
+        self._lbl_check.setObjectName("lbl_check")
+        self._lbl_check.setWordWrap(True)
+        self._lbl_check.setTextFormat(Qt.RichText)
+        content_layout.addWidget(self._lbl_check)
+        fix_row = QHBoxLayout()
+        self._btn_fix = QPushButton(_txt(lang, "btn_story_copy_fix"), content)
+        self._btn_fix.setToolTip(_txt(lang, "tt_story_copy_fix"))
+        self._btn_fix.setCursor(Qt.PointingHandCursor)
+        self._btn_fix.clicked.connect(self._copy_fix)
+        fix_row.addWidget(self._btn_fix)
+        fix_row.addStretch()
+        content_layout.addLayout(fix_row)
+
         self._chk_source_order = QCheckBox(_txt(lang, "story_keep_order"), content)
         self._chk_source_order.setToolTip(_txt(lang, "tt_story_keep_order"))
         self._chk_source_order.toggled.connect(self._refresh)
@@ -174,7 +197,8 @@ class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
 
         # Most people copy the AI answer right before opening this
         clip_text = QApplication.clipboard().text() or ""
-        if algorithms.parse_story_answer(clip_text, len(sentences))[0] and "# BadWords transcript" not in clip_text:
+        own = ("# BadWords transcript" in clip_text) or ("# StoryCraft transcript" in clip_text)
+        if algorithms.parse_story_answer(clip_text, len(sentences), self._moments)[0] and not own:
             self._edit.setPlainText(clip_text)
         self._edit.textChanged.connect(self._refresh)
         self._refresh()
@@ -184,11 +208,13 @@ class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
         _center_on_screen(self, self.width(), self.height())
 
     def _refresh(self):
-        picks, unknown = algorithms.parse_story_answer(self._edit.toPlainText(), len(self._sentences))
+        picks, unknown = algorithms.parse_story_answer(self._edit.toPlainText(), len(self._sentences), self._moments)
         self._clips = algorithms.story_clips(picks, self._sentences)
         if not self._clips:
             self._lbl_preview.setText(_txt(self._lang, "story_none"))
             self._lbl_clips.setText("")
+            self._lbl_check.setText("")
+            self._btn_fix.hide()
             self._btn_ok.setEnabled(False)
             return
 
@@ -210,8 +236,28 @@ class StoryImportDialog(FramelessWindowMixin, _BaseDialog):
             rows.append(f'<span style="color:#e0b050">'
                         f'{html.escape(_txt(self._lang, "story_unknown").format(ids=shown_ids))}</span>')
         self._lbl_clips.setText("<br>".join(rows))
+        self._show_check(keep)
         self._btn_ok.setEnabled(self._duration > 0)
         self.adjustSize()
+
+    def _show_check(self, keep_source_order):
+        clips = sorted(self._clips, key=lambda c: c["first"]) if keep_source_order else self._clips
+        issues = algorithms.check_story(clips, self._sentences, self._duration, self._target_s)
+        self._fix_prompt = algorithms.story_fix_prompt(issues)
+        if not issues:
+            self._lbl_check.setText(f'<span style="color:#3fb950">{html.escape(_txt(self._lang, "story_check_ok"))}</span>')
+            self._btn_fix.hide()
+            return
+        rows = [html.escape(_txt(self._lang, f"story_issue_{code}").format(**detail)) for code, detail in issues]
+        self._lbl_check.setText('<span style="color:#e0b050">' + "<br>".join(rows) + "</span>")
+        self._btn_fix.setText(_txt(self._lang, "btn_story_copy_fix"))
+        self._btn_fix.show()
+
+    def _copy_fix(self):
+        if self._fix_prompt:
+            QApplication.clipboard().setText(self._fix_prompt)
+            self._btn_fix.setText(_txt(self._lang, "msg_story_fix_copied"))
+            self._btn_fix.setMinimumWidth(self._btn_fix.sizeHint().width())
 
     def _on_ok(self):
         if not self._clips:

@@ -3,7 +3,7 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # ============================================================
-#  BadWords Installer  —  Cross-Platform GUI (Rich Terminal)
+#  StoryCraft Installer  —  Cross-Platform GUI (Rich Terminal)
 # ============================================================
 import argparse, hashlib, os, shutil, subprocess, sys, tempfile, threading, time
 
@@ -60,7 +60,29 @@ def _sp_hidden_kwargs():
     return kwargs
 
 # ── Platform helpers ─────────────────────────────────────────
-APP_NAME = "BadWords"
+APP_NAME = "StoryCraft"
+# StoryCraft installs from the fork's own GitHub repo. The original app (BadWords) is never detected,
+# changed, moved, repaired or removed. STORYCRAFT_GH_* override the GitHub addresses (local stand-in tests).
+REPO = "Boris-Edu/StoryCraft"
+DEFAULT_BRANCH = "fork"
+GH_WEB = os.environ.get("STORYCRAFT_GH_WEB", "https://github.com")
+GH_API = os.environ.get("STORYCRAFT_GH_API", "https://api.github.com")
+GH_RAW = os.environ.get("STORYCRAFT_GH_RAW", "https://raw.githubusercontent.com")
+LEGACY_APP_NAMES = ("BadWords",)
+UA = f"{APP_NAME}-Installer/2.0 ({GH_WEB}/{REPO})"
+
+
+def _is_storycraft_dir(d):
+    """True only for a StoryCraft install: its config says APP_NAME = "StoryCraft"."""
+    import re as _re
+    for c in (os.path.join(d, "config", "app_constants.py"), os.path.join(d, "src", "config", "app_constants.py")):
+        try:
+            with open(c, encoding="utf-8") as f:
+                if _re.search(r'^APP_NAME\s*=\s*["\']StoryCraft["\']', f.read(), _re.M):
+                    return True
+        except OSError:
+            pass
+    return False
 
 def _get_app_version():
     candidates = [
@@ -97,7 +119,11 @@ def _default_install_dir():
 
 def _resolve_script_dirs():
     """Return all plausible DaVinci Resolve Scripts/Utility dirs on this system.
-    Windows has many installation variants; we probe all of them."""
+    Windows has many installation variants; we probe all of them.
+    STORYCRAFT_RESOLVE_SCRIPT_DIRS (os.pathsep-separated) replaces them (sandboxed tests)."""
+    _override = os.environ.get("STORYCRAFT_RESOLVE_SCRIPT_DIRS")
+    if _override:
+        return [p for p in _override.split(os.pathsep) if p]
     results = []
 
     if PLAT.startswith("win"):
@@ -328,7 +354,7 @@ def _find_compatible_system_python():
     return None
 
 def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
-    """Check if critical BadWords dependencies can be imported cleanly in the venv.
+    """Check if critical StoryCraft dependencies can be imported cleanly in the venv.
     Uses importlib.util.find_spec to be 100% robust against headless Linux / CI environments
     where GUI display libraries (e.g. libGL) may not be present for QtWidgets."""
     missing = []
@@ -747,13 +773,13 @@ def _resize(w=TERM_W, h=TERM_H):
         sys.stdout.flush()
     time.sleep(0.2)
 
-def _set_title(title="BadWords Setup"):
+def _set_title(title="StoryCraft Setup"):
     """Set the terminal window title."""
     if os.name == "nt":
         os.system(f"title {title}")
     elif "mac" in PLAT or "darwin" in PLAT:
-        # macOS terminal natively appends process name, which we already set to "BadWords Setup" via bash.
-        # Setting ANSI title here creates a duplicate like "BadWords Setup — BadWords Setup".
+        # macOS terminal natively appends process name, which we already set to "StoryCraft Setup" via bash.
+        # Setting ANSI title here creates a duplicate like "StoryCraft Setup — StoryCraft Setup".
         pass
     else:
         sys.stdout.write(f"\033]0;{title}\007")
@@ -765,7 +791,7 @@ def clear():
 def header():
     clear()
     console.print()
-    console.print(Text("BadWords Installer", style="bold white"), justify="center", no_wrap=True)
+    console.print(Text("StoryCraft Installer", style="bold white"), justify="center", no_wrap=True)
     console.print(Text("Cross-Platform Setup  —  Linux / Windows / macOS", style="dim"), justify="center", no_wrap=True)
     console.print()
     console.print(Text(f"{PAD}Tip: For a fresh install or update, choose [1] and press Enter at every prompt.", style="green"), no_wrap=True)
@@ -776,15 +802,15 @@ def menu():
     console.print()
     items = [
         ("[1]", "bold green",  "Standard Install / Update",
-         "Install or update BadWords. Keeps your settings and models."),
+         "Install or update StoryCraft. Keeps your settings and models."),
         ("[2]", "bold cyan",   "Repair Installation",
          "Replace core files only. Keeps your settings and models."),
         ("[3]", "bold blue",   "Move Installation",
-         "Relocate BadWords to a different folder."),
+         "Relocate StoryCraft to a different folder."),
         ("[4]", "bold yellow", "Complete Reset",
          "Delete EVERYTHING and reinstall from scratch."),
         ("[5]", "bold red",    "Uninstall",
-         "Remove BadWords completely from this system."),
+         "Remove StoryCraft completely from this system."),
     ]
     for key, style, name, desc in items:
         t = Text(no_wrap=True)
@@ -967,127 +993,70 @@ def download(url, dest):
     return False
 
 def get_latest_tag(force_main=False):
-    """Return (tag, zip_url, source_repo). Uses release asset ZIP (stable structure)."""
+    """Return (tag, zip_url, source_repo): the latest release of the StoryCraft repo (source zip)."""
     if force_main:
-        return "main", "https://github.com/veritus-git/BadWords/archive/refs/heads/main.zip", "GitHub (dev)"
+        return DEFAULT_BRANCH, f"{GH_WEB}/{REPO}/archive/refs/heads/{DEFAULT_BRANCH}.zip", "GitHub (dev)"
     import json, urllib.request
-
-    def _pick_asset_url(assets, tag):
-        if PLAT.startswith("win"):
-            kws = ["windows", "win"]
-        elif "darwin" in PLAT or "mac" in PLAT:
-            kws = ["linux", "mac", "macos"]   # macOS uses Linux zip
-        else:
-            kws = ["linux"]
-        for kw in kws:
-            for a in assets:
-                if kw in a["name"].lower() and a["name"].endswith(".zip"):
-                    return a["browser_download_url"]
-        for a in assets:
-            if a["name"].endswith(".zip"):
-                return a["browser_download_url"]
-        return f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip"
-
-    GH_API = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
-    UA     = "BadWords-Installer/2.0 (https://github.com/veritus-git/BadWords)"
-
-    # --- Try urllib first (with proper User-Agent GitHub requires) ---
+    api = f"{GH_API}/repos/{REPO}/releases/latest"
     try:
-        req = urllib.request.Request(GH_API, headers={"User-Agent": UA})
+        req = urllib.request.Request(api, headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.load(r)
-            tag  = data.get("tag_name", "")
+            tag = json.load(r).get("tag_name", "")
             if tag:
-                return tag, _pick_asset_url(data.get("assets", []), tag), "GitHub"
+                return tag, f"{GH_WEB}/{REPO}/archive/refs/tags/{tag}.zip", "GitHub"
     except Exception:
         pass
-
-    # --- Fallback: ask curl/wget to call the API (handles SSL quirks on macOS) ---
+    # curl handles SSL quirks on some macOS Pythons
     try:
-        import subprocess as _sp
-        _hdrs = ["-H", f"User-Agent: {UA}", "-H", "Accept: application/vnd.github+json"]
         if shutil.which("curl"):
-            r = _sp.run(["curl", "-fsSL", "--max-time", "15"] + _hdrs + [GH_API],
-                        capture_output=True, text=True)
+            r = subprocess.run(["curl", "-fsSL", "--max-time", "15", "-H", f"User-Agent: {UA}",
+                                "-H", "Accept: application/vnd.github+json", api], capture_output=True, text=True)
             if r.returncode == 0 and r.stdout:
-                data = json.loads(r.stdout)
-                tag  = data.get("tag_name", "")
+                tag = json.loads(r.stdout).get("tag_name", "")
                 if tag:
-                    return tag, _pick_asset_url(data.get("assets", []), tag), "GitHub"
+                    return tag, f"{GH_WEB}/{REPO}/archive/refs/tags/{tag}.zip", "GitHub"
     except Exception:
         pass
-
-    # --- GitLab fallback ---
-    try:
-        GL_API = "https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases"
-        req = urllib.request.Request(GL_API, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.load(r)
-            if isinstance(data, list) and data:
-                tag = data[0]["tag_name"]
-                return tag, f"https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip", "GitLab"
-    except Exception:
-        pass
-
-    return "main", "", ""
+    return DEFAULT_BRANCH, "", ""
 
 def fetch_git_branches():
-    """Fetches list of git branch names from GitHub / GitLab."""
-    UA = "BadWords-Installer/2.0 (https://github.com/veritus-git/BadWords)"
-    GH_BRANCHES = "https://api.github.com/repos/veritus-git/BadWords/branches"
+    """Branch names of the StoryCraft repo."""
     import json, urllib.request
-
+    api = f"{GH_API}/repos/{REPO}/branches"
     try:
-        req = urllib.request.Request(GH_BRANCHES, headers={"User-Agent": UA})
+        req = urllib.request.Request(api, headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.load(r)
-            if isinstance(data, list):
-                branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
-                if branches:
-                    return branches
+            branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+            if branches:
+                return branches
     except Exception:
         pass
-
     if shutil.which("curl"):
         try:
-            r = subprocess.run(["curl", "-fsSL", "--max-time", "10", "-H", f"User-Agent: {UA}", GH_BRANCHES],
+            r = subprocess.run(["curl", "-fsSL", "--max-time", "10", "-H", f"User-Agent: {UA}", api],
                                capture_output=True, text=True)
             if r.returncode == 0 and r.stdout:
-                data = json.loads(r.stdout)
-                if isinstance(data, list):
-                    branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
-                    if branches:
-                        return branches
-        except Exception:
-            pass
-
-    # GitLab fallback
-    try:
-        GL_BRANCHES = "https://gitlab.com/api/v4/projects/badwords%2FBadWords/repository/branches"
-        req = urllib.request.Request(GL_BRANCHES, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.load(r)
-            if isinstance(data, list):
-                branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                branches = [b["name"] for b in json.loads(r.stdout) if isinstance(b, dict) and "name" in b]
                 if branches:
                     return branches
-    except Exception:
-        pass
-
-    return ["main", "dev-v4"]
+        except Exception:
+            pass
+    return [DEFAULT_BRANCH]
 
 def detect_existing_install(default_dir, resolve_script_dirs):
-    """Detect existing installation via system registration (Registry/.desktop), Resolve wrappers, or default dir."""
+    """Detect an existing StoryCraft installation via system registration (Registry/.desktop), Resolve wrappers,
+    or the default dir. A folder only counts when it is StoryCraft (_is_storycraft_dir): never the original app's."""
     # 1. Windows Registry check
     if PLAT.startswith("win"):
         try:
             import winreg
             for root_key in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
                 try:
-                    with winreg.OpenKey(root_key, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords") as key:
+                    with winreg.OpenKey(root_key, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\StoryCraft") as key:
                         val, _ = winreg.QueryValueEx(key, "InstallLocation")
                         if val and os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
-                            return os.path.abspath(val)
+                            if _is_storycraft_dir(val): return os.path.abspath(val)
                 except Exception:
                     pass
         except Exception:
@@ -1096,9 +1065,9 @@ def detect_existing_install(default_dir, resolve_script_dirs):
     # 2. Linux .desktop check
     if PLAT.startswith("linux"):
         home = os.path.expanduser("~")
-        for df in [os.path.join(home, ".local", "share", "applications", "badwords.desktop"),
-                   os.path.join(home, ".local", "share", "applications", "BadWords.desktop"),
-                   "/usr/share/applications/badwords.desktop"]:
+        for df in [os.path.join(home, ".local", "share", "applications", "storycraft.desktop"),
+                   os.path.join(home, ".local", "share", "applications", "StoryCraft.desktop"),
+                   "/usr/share/applications/storycraft.desktop"]:
             if os.path.isfile(df):
                 try:
                     with open(df, encoding="utf-8") as f:
@@ -1106,15 +1075,15 @@ def detect_existing_install(default_dir, resolve_script_dirs):
                             if line.startswith("Path="):
                                 p = line.split("=", 1)[1].strip()
                                 if os.path.isdir(p) and os.path.isfile(os.path.join(p, "main.py")):
-                                    return os.path.abspath(p)
+                                    if _is_storycraft_dir(p): return os.path.abspath(p)
                 except Exception:
                     pass
 
     # 3. macOS App Bundle check
     if "darwin" in PLAT or "mac" in PLAT:
         home = os.path.expanduser("~")
-        for app_dir in [os.path.join(home, "Applications", "BadWords.app"), "/Applications/BadWords.app"]:
-            cfg = os.path.join(app_dir, "Contents", "Resources", "BadWords.cfg")
+        for app_dir in [os.path.join(home, "Applications", "StoryCraft.app"), "/Applications/StoryCraft.app"]:
+            cfg = os.path.join(app_dir, "Contents", "Resources", "StoryCraft.cfg")
             if os.path.isfile(cfg):
                 try:
                     with open(cfg, encoding="utf-8") as f:
@@ -1123,10 +1092,10 @@ def detect_existing_install(default_dir, resolve_script_dirs):
                             if line.startswith("INSTALL_DIR="):
                                 p = line.split("=", 1)[1].strip()
                                 if os.path.isdir(p) and (os.path.isfile(os.path.join(p, "main.py")) or os.path.isfile(os.path.join(p, "src", "main.py"))):
-                                    return os.path.abspath(p)
+                                    if _is_storycraft_dir(p): return os.path.abspath(p)
                 except Exception:
                     pass
-            launcher = os.path.join(app_dir, "Contents", "MacOS", "BadWords")
+            launcher = os.path.join(app_dir, "Contents", "MacOS", "StoryCraft")
             if os.path.isfile(launcher):
                 try:
                     with open(launcher, encoding="utf-8") as f:
@@ -1135,17 +1104,17 @@ def detect_existing_install(default_dir, resolve_script_dirs):
                             if line.startswith("cd \"") and line.endswith("\""):
                                 p = line[4:-1]
                                 if os.path.isdir(p) and os.path.isfile(os.path.join(p, "main.py")):
-                                    return os.path.abspath(p)
+                                    if _is_storycraft_dir(p): return os.path.abspath(p)
                 except Exception:
                     pass
 
     # 4. Resolve wrappers check
     for resolve_dir in resolve_script_dirs:
-        for wf in [os.path.join(resolve_dir, "BadWords.py"),
-                   os.path.join(resolve_dir, "Badwords.py"),
-                   os.path.join(resolve_dir, "BadWords (Linux).py"),
-                   os.path.join(resolve_dir, "BadWords (Mac).py"),
-                   os.path.join(resolve_dir, "BadWords (Windows).py")]:
+        for wf in [os.path.join(resolve_dir, "StoryCraft.py"),
+                   os.path.join(resolve_dir, "Storycraft.py"),
+                   os.path.join(resolve_dir, "StoryCraft (Linux).py"),
+                   os.path.join(resolve_dir, "StoryCraft (Mac).py"),
+                   os.path.join(resolve_dir, "StoryCraft (Windows).py")]:
             if not os.path.isfile(wf):
                 continue
             try:
@@ -1155,15 +1124,43 @@ def detect_existing_install(default_dir, resolve_script_dirs):
                         if line.startswith("INSTALL_DIR"):
                             val = line.split("=", 1)[1].strip().strip("r\"'")
                             if os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
-                                return os.path.abspath(val)
+                                if _is_storycraft_dir(val): return os.path.abspath(val)
             except Exception:
                 pass
 
     # 5. Default directory check
     if os.path.isdir(default_dir) and os.path.isfile(os.path.join(default_dir, "main.py")):
-        return os.path.abspath(default_dir)
+        if _is_storycraft_dir(default_dir): return os.path.abspath(default_dir)
 
     return None
+
+def _reuse_existing_models(install_dir):
+    """A new StoryCraft install with no models yet links to the models an existing BadWords install already
+    downloaded (several GB), instead of downloading them again. The original folder is only read: never
+    moved, changed or removed. macOS / Linux (symlink); Windows downloads as usual."""
+    if PLAT.startswith("win"):
+        return
+    target = os.path.join(install_dir, "models")
+    if os.path.islink(target) or (os.path.isdir(target) and os.listdir(target)):
+        return
+    home = os.path.expanduser("~")
+    if "darwin" in PLAT or "mac" in PLAT:
+        base = os.path.join(home, "Library", "Application Support")
+    else:
+        base = os.path.join(home, ".local", "share")
+    for legacy in LEGACY_APP_NAMES:
+        for cand in (os.path.join(base, legacy, "models"), os.path.join(base, f"{legacy}-dev", legacy, "models")):
+            real = os.path.realpath(cand)
+            try:
+                if os.path.isdir(real) and os.listdir(real):
+                    if os.path.isdir(target):
+                        os.rmdir(target)  # empty
+                    os.symlink(real, target)
+                    log_ok(f"Reusing downloaded transcription models from {real}")
+                    return
+            except OSError as e:
+                log_warn(f"Could not link existing models ({e}); they will be downloaded when needed.")
+                return
 
 def two_way_sync(src_paths, dst, protected_files, protected_dirs):
     for src in src_paths:
@@ -1227,7 +1224,7 @@ def _clean_legacy_inno_setup(install_dir):
                         try:
                             with winreg.OpenKey(key, sk_name) as sk:
                                 display_name, _ = winreg.QueryValueEx(sk, "DisplayName")
-                                if "BadWords" in str(display_name):
+                                if "StoryCraft" in str(display_name):
                                     to_delete.append(p + "\\" + sk_name)
                         except Exception: pass
             except Exception:
@@ -1303,7 +1300,7 @@ def _detect_resolve_edition_info():
         elif "mac" in PLAT or "darwin" in PLAT:
             # Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
             # Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
-            # edition apart. Keep it "Unknown" so deployment doesn't remove BadWords.py.
+            # edition apart. Keep it "Unknown" so deployment doesn't remove StoryCraft.py.
             candidate_apps = [
                 ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
                 ("/Applications/DaVinci Resolve Studio.app", "Studio"),
@@ -1386,7 +1383,7 @@ def _detect_resolve_edition_info():
     return info
 
 def _create_davinci_wrappers(install_dir, resolve_dirs):
-    """Generates and writes DaVinci Resolve scripts (BadWords.py and/or BadWords Bridge.lua)."""
+    """Generates and writes DaVinci Resolve scripts (StoryCraft.py and/or StoryCraft Bridge.lua)."""
     install_str = install_dir.replace('\\', "/")
     libs_str    = os.path.join(install_dir, "libs").replace('\\', "/")
     main_script = os.path.join(install_dir, "main.py").replace('\\', "/")
@@ -1467,11 +1464,7 @@ if os.path.exists(MAIN_SCRIPT):
 else:
     print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
-    legacy_names = [
-        "Badwords.py", "BadWords (Linux).py",
-        "BadWords (Mac).py", "BadWords (macOS).py", "BadWords (Windows).py",
-        "BadWords_Launcher.py", "BadWords.lua"
-    ]
+    legacy_names = []  # BadWords.py & co. belong to the original app: never removed
 
     # Clean old wrappers from ALL candidate script locations
     for rd in resolve_dirs:
@@ -1483,18 +1476,18 @@ else:
 
     res_info = _detect_resolve_edition_info()
     is_studio = (res_info.get("edition") == "Studio")
-    # Only a confirmed Free 21.1+ drops BadWords.py; "Unknown" deploys both BadWords.py and the Bridge
+    # Only a confirmed Free 21.1+ drops StoryCraft.py; "Unknown" deploys both StoryCraft.py and the Bridge
     is_free_21_1 = (res_info.get("edition") == "Free" and res_info.get("is_21_1_or_newer", False))
     debug_log(f"DaVinci Resolve deployment: is_studio={is_studio}, is_free_21_1={is_free_21_1}")
 
-    # Locate BadWords Bridge.lua source
+    # Locate StoryCraft Bridge.lua source
     bridge_lua_src = None
     for cand in [
-        os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua"),
-        os.path.join(install_dir, "BadWords Bridge.lua"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "BadWords Bridge.lua"),
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "BadWords Bridge.lua"),
-        os.path.join(os.path.dirname(install_dir), "setupfiles", "BadWords Bridge.lua"),
+        os.path.join(install_dir, "setupfiles", "StoryCraft Bridge.lua"),
+        os.path.join(install_dir, "StoryCraft Bridge.lua"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "StoryCraft Bridge.lua"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "StoryCraft Bridge.lua"),
+        os.path.join(os.path.dirname(install_dir), "setupfiles", "StoryCraft Bridge.lua"),
     ]:
         if os.path.isfile(cand):
             bridge_lua_src = cand
@@ -1502,9 +1495,9 @@ else:
 
     if not bridge_lua_src or not os.path.isfile(bridge_lua_src):
         try:
-            target_tmp = os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua")
+            target_tmp = os.path.join(install_dir, "setupfiles", "StoryCraft Bridge.lua")
             os.makedirs(os.path.dirname(target_tmp), exist_ok=True)
-            url = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/BadWords%20Bridge.lua"
+            url = f"{GH_RAW}/{REPO}/{DEFAULT_BRANCH}/setupfiles/StoryCraft%20Bridge.lua"
             import urllib.request
             urllib.request.urlretrieve(url, target_tmp)
             if os.path.isfile(target_tmp):
@@ -1519,61 +1512,61 @@ else:
 
             if is_studio:
                 # ── STUDIO EDITION ─────────────────────────────────────────────────────────────
-                # 1. BadWords Bridge.lua MUST NOT be installed. If present, delete it.
-                # 2. BadWords.py MUST be installed for native scripting.
-                target_lua = os.path.join(rd, "BadWords Bridge.lua")
+                # 1. StoryCraft Bridge.lua MUST NOT be installed. If present, delete it.
+                # 2. StoryCraft.py MUST be installed for native scripting.
+                target_lua = os.path.join(rd, "StoryCraft Bridge.lua")
                 if os.path.exists(target_lua):
                     try:
                         os.remove(target_lua)
-                        debug_log(f"Removed BadWords Bridge.lua (Studio uses native external scripting): {target_lua}")
+                        debug_log(f"Removed StoryCraft Bridge.lua (Studio uses native external scripting): {target_lua}")
                     except Exception:
                         pass
 
-                wp = os.path.join(rd, "BadWords.py")
+                wp = os.path.join(rd, "StoryCraft.py")
                 with open(wp, "w", encoding="utf-8") as f:
                     f.write(wrapper_content)
                 os.chmod(wp, 0o755)
-                debug_log(f"BadWords.py written to: {wp}")
+                debug_log(f"StoryCraft.py written to: {wp}")
                 written = True
 
             else:
                 # ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
-                # 1. BadWords Bridge.lua MUST ALWAYS be installed!
-                # 2. BadWords.py:
-                #    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
-                #    - If Free < 21.1: Deploy BadWords.py.
+                # 1. StoryCraft Bridge.lua MUST ALWAYS be installed!
+                # 2. StoryCraft.py:
+                #    - If Free >= 21.1: REMOVE StoryCraft.py (API blocked).
+                #    - If Free < 21.1: Deploy StoryCraft.py.
                 if is_free_21_1:
-                    wp = os.path.join(rd, "BadWords.py")
+                    wp = os.path.join(rd, "StoryCraft.py")
                     if os.path.exists(wp):
                         try:
                             os.remove(wp)
-                            debug_log(f"Removed BadWords.py (blocked in Resolve Free 21.1+): {wp}")
+                            debug_log(f"Removed StoryCraft.py (blocked in Resolve Free 21.1+): {wp}")
                         except Exception:
                             pass
                 else:
-                    wp = os.path.join(rd, "BadWords.py")
+                    wp = os.path.join(rd, "StoryCraft.py")
                     with open(wp, "w", encoding="utf-8") as f:
                         f.write(wrapper_content)
                     os.chmod(wp, 0o755)
-                    debug_log(f"BadWords.py written to: {wp}")
+                    debug_log(f"StoryCraft.py written to: {wp}")
                     written = True
 
                 if bridge_lua_src and os.path.isfile(bridge_lua_src):
                     with open(bridge_lua_src, "r", encoding="utf-8") as bf:
                         b_code = bf.read()
                     clean_inst = install_dir.replace('\\', '/')
-                    b_code = b_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+                    b_code = b_code.replace("__STORYCRAFT_INSTALL_DIR__", clean_inst)
 
                     # Ensure bridge folder in install_dir exists
                     bridge_dir = os.path.join(install_dir, "bridge")
                     try: os.makedirs(bridge_dir, exist_ok=True)
                     except Exception: pass
 
-                    target_lua = os.path.join(rd, "BadWords Bridge.lua")
+                    target_lua = os.path.join(rd, "StoryCraft Bridge.lua")
                     with open(target_lua, "w", encoding="utf-8") as bf:
                         bf.write(b_code)
                     os.chmod(target_lua, 0o755)
-                    debug_log(f"BadWords Bridge.lua written to: {target_lua}")
+                    debug_log(f"StoryCraft Bridge.lua written to: {target_lua}")
                     written = True
         except Exception as exc:
             debug_log(f"Could not write scripts to {rd}: {exc}")
@@ -1626,11 +1619,11 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
         icon_png = os.path.join(install_dir, "icons", "icon_default.png")
 
     if os.name == "nt":
-        badwords_exe = os.path.join(install_dir, "BadWords.exe")
+        badwords_exe = os.path.join(install_dir, "StoryCraft.exe")
         if not os.path.isfile(badwords_exe):
-            setup_cand = os.path.join(install_dir, "setupfiles", "windows", "BadWords.exe")
-            bootstrap_cand = os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe")
-            repo_cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "BadWords.exe")
+            setup_cand = os.path.join(install_dir, "setupfiles", "windows", "StoryCraft.exe")
+            bootstrap_cand = os.path.join(os.environ.get("LOCALAPPDATA", ""), "StoryCraft-bootstrap", "StoryCraft.exe")
+            repo_cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "StoryCraft.exe")
             if os.path.isfile(setup_cand):
                 _unblock_file_windows(setup_cand)
                 try: shutil.copy2(setup_cand, badwords_exe)
@@ -1647,11 +1640,7 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
                 try:
                     import urllib.request
                     app_ver = _get_app_version(install_dir)
-                    urls = [
-                        "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
-                        f"https://github.com/veritus-git/BadWords/releases/download/v{app_ver}/BadWords.exe",
-                        f"https://github.com/veritus-git/BadWords/releases/download/{app_ver}/BadWords.exe",
-                    ]
+                    urls = []  # StoryCraft has no prebuilt .exe: the script launcher is used
                     for url in urls:
                         try:
                             urllib.request.urlretrieve(url, badwords_exe)
@@ -1683,9 +1672,9 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
 
         ps_commands = ["$ws = New-Object -ComObject WScript.Shell;"]
         if create_desktop:
-            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{target_path}'; $s1.Arguments = '{args_str}'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{shortcut_icon}'; $s1.Description = 'BadWords'; $s1.Save();")
+            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\StoryCraft.lnk'); $s1.TargetPath = '{target_path}'; $s1.Arguments = '{args_str}'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{shortcut_icon}'; $s1.Description = 'StoryCraft'; $s1.Save();")
         if create_menu:
-            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Description = 'BadWords'; $s2.Save();")
+            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\StoryCraft.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Description = 'StoryCraft'; $s2.Save();")
         
         full_script = " ".join(ps_commands)
         subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True, **_sp_hidden_kwargs())
@@ -1695,9 +1684,9 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
         try:
             import winreg
             hkcu = winreg.HKEY_CURRENT_USER
-            key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords"
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\StoryCraft"
             key = winreg.CreateKey(hkcu, key_path)
-            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "BadWords")
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "StoryCraft")
             winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, APP_VERSION)
             winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Szymon Wolarz")
             winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, str(install_dir))
@@ -1705,13 +1694,13 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             setup_script = os.path.join(install_dir, "setupfiles", "setup.py")
             py_bin = os.path.join(install_dir, "venv", "Scripts", "python.exe")
             winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, f'"{py_bin}" "{setup_script}" --uninstall')
-            winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, "https://github.com/veritus-git/BadWords")
+            winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, f"{GH_WEB}/{REPO}")
             winreg.CloseKey(key)
         except Exception as e:
             debug_log(f"Registry registration error: {e}")
 
     elif sys.platform.startswith("linux"):
-        launcher_bin = os.path.join(install_dir, "BadWords")
+        launcher_bin = os.path.join(install_dir, "StoryCraft")
         launcher_c = os.path.join(install_dir, "setupfiles", "linux", "launcher.c")
         if not os.path.isfile(launcher_c) and 'repo_root' in locals() and repo_root:
             launcher_c = os.path.join(repo_root, "setupfiles", "linux", "launcher.c")
@@ -1732,7 +1721,7 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
             exec_line = f'Exec="{launcher_bin}" %U'
             local_bin = os.path.join(home, ".local", "bin")
             if os.path.isdir(local_bin):
-                bin_link = os.path.join(local_bin, "badwords")
+                bin_link = os.path.join(local_bin, "storycraft")
                 try:
                     if os.path.islink(bin_link) or os.path.exists(bin_link):
                         os.unlink(bin_link)
@@ -1747,20 +1736,20 @@ def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
 
         desktop_content = f"""[Desktop Entry]
 Type=Application
-Name=BadWords
+Name=StoryCraft
 Comment=AI Automated Profanity & Silence Detection for DaVinci Resolve
 {exec_line}
 Path={install_dir}
 Icon={icon_png}
 Terminal=false
 Categories=AudioVideo;AudioVideoEditing;
-StartupWMClass=BadWords
+StartupWMClass=StoryCraft
 Keywords=davinci;resolve;subtitles;ai;whisper;
 """
         apps_dir = os.path.join(home, ".local", "share", "applications")
         os.makedirs(apps_dir, exist_ok=True)
         try:
-            with open(os.path.join(apps_dir, "badwords.desktop"), "w", encoding="utf-8") as f:
+            with open(os.path.join(apps_dir, "storycraft.desktop"), "w", encoding="utf-8") as f:
                 f.write(desktop_content)
         except Exception:
             pass
@@ -1768,7 +1757,7 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
         if create_desktop:
             dt_dir = os.path.join(home, "Desktop")
             if os.path.exists(dt_dir):
-                dt_file = os.path.join(dt_dir, "badwords.desktop")
+                dt_file = os.path.join(dt_dir, "storycraft.desktop")
                 try:
                     with open(dt_file, "w", encoding="utf-8") as f:
                         f.write(desktop_content)
@@ -1781,7 +1770,7 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
 
     elif sys.platform == "darwin":
         home = os.path.expanduser("~")
-        app_dir = os.path.join(home, "Applications", "BadWords.app")
+        app_dir = os.path.join(home, "Applications", "StoryCraft.app")
         contents = os.path.join(app_dir, "Contents")
         macos = os.path.join(contents, "MacOS")
         resources = os.path.join(contents, "Resources")
@@ -1800,15 +1789,15 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>BadWords</string>
+    <string>StoryCraft</string>
     <key>CFBundleIconFile</key>
     <string>icon.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.veritus.badwords</string>
+    <string>com.storycraft.app</string>
     <key>CFBundleName</key>
-    <string>BadWords</string>
+    <string>StoryCraft</string>
     <key>CFBundleDisplayName</key>
-    <string>BadWords</string>
+    <string>StoryCraft</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -1828,7 +1817,7 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
                 f.write(plist_content)
         except Exception: pass
 
-        # Write BadWords.cfg in Resources
+        # Write StoryCraft.cfg in Resources
         python_bin = os.path.join(install_dir, "venv", "bin", "python3")
         if not os.path.isfile(python_bin):
             python_bin = os.path.join(install_dir, "venv", "bin", "python")
@@ -1846,7 +1835,7 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
         except Exception:
             pass
 
-        cfg_path = os.path.join(resources, "BadWords.cfg")
+        cfg_path = os.path.join(resources, "StoryCraft.cfg")
         try:
             with open(cfg_path, "w", encoding="utf-8") as f:
                 f.write(f"INSTALL_DIR={install_dir}\n")
@@ -1858,7 +1847,7 @@ Keywords=davinci;resolve;subtitles;ai;whisper;
             pass
 
         # Build / Compile native Mach-O launcher
-        launcher_path = os.path.join(macos, "BadWords")
+        launcher_path = os.path.join(macos, "StoryCraft")
         launcher_c = os.path.join(install_dir, "setupfiles", "macos", "launcher.c")
         if not os.path.isfile(launcher_c) and 'repo_root' in locals() and repo_root:
             launcher_c = os.path.join(repo_root, "setupfiles", "macos", "launcher.c")
@@ -1909,7 +1898,7 @@ exec "$PY" "$MAIN_PY" "$@"
         if create_desktop:
             dt_dir = os.path.join(home, "Desktop")
             if os.path.isdir(dt_dir):
-                dt_link = os.path.join(dt_dir, "BadWords.app")
+                dt_link = os.path.join(dt_dir, "StoryCraft.app")
                 try:
                     if os.path.islink(dt_link): os.unlink(dt_link)
                     elif os.path.exists(dt_link):
@@ -1924,13 +1913,13 @@ def _remove_os_shortcuts(install_dir=None):
     if os.name == "nt":
         try:
             home = os.path.expanduser("~")
-            dt_lnk = os.path.join(home, "Desktop", "BadWords.lnk")
+            dt_lnk = os.path.join(home, "Desktop", "StoryCraft.lnk")
             if os.path.exists(dt_lnk):
                 try: os.remove(dt_lnk)
                 except: pass
             appdata = os.environ.get("APPDATA")
             if appdata:
-                prog_lnk = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "BadWords.lnk")
+                prog_lnk = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "StoryCraft.lnk")
                 if os.path.exists(prog_lnk):
                     try: os.remove(prog_lnk)
                     except: pass
@@ -1938,7 +1927,7 @@ def _remove_os_shortcuts(install_dir=None):
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
             try:
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-                winreg.DeleteKey(key, "BadWords")
+                winreg.DeleteKey(key, "StoryCraft")
                 winreg.CloseKey(key)
             except Exception:
                 pass
@@ -1946,16 +1935,26 @@ def _remove_os_shortcuts(install_dir=None):
             pass
     elif sys.platform.startswith("linux"):
         home = os.path.expanduser("~")
-        for p in [os.path.join(home, ".local", "share", "applications", "badwords.desktop"),
-                  os.path.join(home, "Desktop", "badwords.desktop")]:
+        for p in [os.path.join(home, ".local", "share", "applications", "storycraft.desktop"),
+                  os.path.join(home, "Desktop", "storycraft.desktop")]:
             if os.path.exists(p):
                 try: os.remove(p)
                 except Exception: pass
+    elif sys.platform == "darwin":
+        # StoryCraft.app (its own bundle only) and the Desktop alias to it
+        home = os.path.expanduser("~")
+        app = os.path.join(home, "Applications", f"{APP_NAME}.app")
+        if os.path.isdir(app) and not os.path.islink(app):
+            shutil.rmtree(app, ignore_errors=True)
+        alias = os.path.join(home, "Desktop", f"{APP_NAME}.app")
+        if os.path.islink(alias):
+            try: os.remove(alias)
+            except Exception: pass
 
 def _launch_badwords(install_dir):
     try:
         if os.name == "nt":
-            badwords_exe = os.path.join(install_dir, "BadWords.exe")
+            badwords_exe = os.path.join(install_dir, "StoryCraft.exe")
             CREATE_NEW_PROCESS_GROUP = 0x00000200
             DETACHED_PROCESS = 0x00000008
             CREATE_NO_WINDOW = 0x08000000
@@ -1986,11 +1985,11 @@ def _launch_badwords(install_dir):
                 )
                 return True
         elif "darwin" in PLAT or "mac" in PLAT:
-            app_path = os.path.expanduser("~/Applications/BadWords.app")
+            app_path = os.path.expanduser("~/Applications/StoryCraft.app")
             if os.path.isdir(app_path):
                 subprocess.Popen(["open", app_path], close_fds=True)
                 return True
-            mach_launcher = os.path.join(install_dir, "BadWords")
+            mach_launcher = os.path.join(install_dir, "StoryCraft")
             if os.path.isfile(mach_launcher) and os.access(mach_launcher, os.X_OK):
                 subprocess.Popen([mach_launcher], cwd=install_dir, start_new_session=True, close_fds=True)
                 return True
@@ -2012,7 +2011,7 @@ def _launch_badwords(install_dir):
                 )
                 return True
         else:
-            elf_launcher = os.path.join(install_dir, "BadWords")
+            elf_launcher = os.path.join(install_dir, "StoryCraft")
             if os.path.isfile(elf_launcher) and os.access(elf_launcher, os.X_OK):
                 subprocess.Popen(
                     [elf_launcher],
@@ -2024,7 +2023,7 @@ def _launch_badwords(install_dir):
                     close_fds=True
                 )
                 return True
-            local_bin = os.path.expanduser("~/.local/bin/badwords")
+            local_bin = os.path.expanduser("~/.local/bin/storycraft")
             if os.path.isfile(local_bin) and os.access(local_bin, os.X_OK):
                 subprocess.Popen(
                     [local_bin],
@@ -2054,7 +2053,7 @@ def _launch_badwords(install_dir):
                 )
                 return True
     except Exception as e:
-        debug_log(f"Failed to launch BadWords: {e}")
+        debug_log(f"Failed to launch StoryCraft: {e}")
     return False
 
 
@@ -2167,7 +2166,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
     libs_link = os.path.join(install_dir, "libs")
     models_dir = os.path.join(install_dir, "models")
     bin_dir   = os.path.join(install_dir, "bin")
-    log_file  = os.path.join(install_dir, "badwords_debug.log")
+    log_file  = os.path.join(install_dir, "storycraft_debug.log")
     
     global _DEBUG_LOG_FILE
     _DEBUG_LOG_FILE = log_file
@@ -2220,7 +2219,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
             # Support both archive structures:
             # A) asset ZIP: src/main.py  (flat, no top-level subfolder)
-            # B) source ZIP: BadWords-2.0.3/src/main.py  (GitHub auto-archive)
+            # B) source ZIP: StoryCraft-4.0.1/src/main.py  (GitHub auto-archive)
             top_dirs = [d for d in os.listdir(tmp_dl)
                         if os.path.isdir(os.path.join(tmp_dl, d))
                         and d not in ("__MACOSX", "repo.zip")]
@@ -2312,7 +2311,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         log_ok("Target directory reset to clean state.")
 
         # Clean previous user logs on install/update so logs start fresh
-        for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
+        for _log_name in ["storycraft_debug.log", "storycraft.log", "storycraft_setup.log", "setup.log"]:
             _lf = os.path.join(install_dir, _log_name)
             if os.path.isfile(_lf):
                 try: os.remove(_lf)
@@ -2539,7 +2538,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             elif "mac" in PLAT or "darwin" in PLAT:
                 console.print()
                 log_warn("System Python framework (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
-                console.print(Text(f"{PAD}BadWords cannot integrate with DaVinci Resolve without the official Python.", style="bold yellow"), no_wrap=True)
+                console.print(Text(f"{PAD}StoryCraft cannot integrate with DaVinci Resolve without the official Python.", style="bold yellow"), no_wrap=True)
                 console.print(Text(f"{PAD}Setup will now download and install the official Python 3.12 from python.org.", style="cyan"), no_wrap=True)
                 console.print(Text(f"{PAD}This is a safe, standard installation, but it requires your Mac password.", style="bold red"), no_wrap=True)
                 pause("Press Enter to proceed with the Python installation...")
@@ -2705,10 +2704,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
         if is_update:
             log_info("Upgrading core dependencies...")
-            _pip_run("install", "--upgrade", "faster-whisper", "av<19", "pypdf", "-q",
+            _pip_run("install", "--upgrade", "faster-whisper", "av<19", "pypdf", "onnxruntime", "huggingface_hub", "certifi", "-q",
                      label="Upgrading Whisper / PyPDF")
         else:
-            pkg_list = ["faster-whisper", "av<19", "pypdf"]
+            pkg_list = ["faster-whisper", "av<19", "pypdf", "onnxruntime", "huggingface_hub", "certifi"]
             if has_nvidia and nvidia_pkgs:
                 pkg_list.extend(nvidia_pkgs.split())
             _pip_run("install", *pkg_list, "-q",
@@ -2725,7 +2724,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         # Apple Silicon: GPU transcription engine (mlx-whisper), used for Device Auto/GPU.
         # Installed without PyTorch: torch is only used by mlx-whisper's model converter, not for
-        # transcription (~630 MB saved). Optional: if it fails, BadWords keeps using the CPU engine.
+        # transcription (~630 MB saved). Optional: if it fails, StoryCraft keeps using the CPU engine.
         import platform
         if ("mac" in PLAT or "darwin" in PLAT) and platform.machine().lower() == "arm64":
             mlx_ok = _pip_run("install", "--upgrade", "--no-deps", "mlx-whisper", "-q",
@@ -2737,6 +2736,8 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 log_ok("Apple GPU engine (MLX) installed.")
             else:
                 log_warn("Apple GPU engine (MLX) could not be installed. Transcription will use the CPU.")
+
+        _reuse_existing_models(install_dir)
 
         # ── Comprehensive Package Verification & Auto-Recovery ──
         console.print()
@@ -2828,7 +2829,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 from setupfiles.pe_patcher import ensure_badwords_exe
                 ensure_badwords_exe(install_dir)
             except Exception as e:
-                debug_log(f"ensure_badwords_exe error: {e}")
+                debug_log(f"ensure_storycraft_exe error: {e}")
 
         # ── DaVinci Resolve wrapper ───────────────────────────
         console.print()
@@ -2841,7 +2842,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             log_ok("DaVinci Resolve wrapper installed.")
             # Show where wrappers were placed
             for rd in resolve_dirs:
-                wp = os.path.join(rd, "BadWords.py")
+                wp = os.path.join(rd, "StoryCraft.py")
                 if os.path.isfile(wp):
                     log_info(f"  → {wp}")
         else:
@@ -2883,21 +2884,21 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             console.print(Text(f"{PAD}   1. Python was installed in the background.", style="yellow"), no_wrap=True)
             console.print(Text(f"{PAD}   2. You MUST restart DaVinci Resolve to detect it", style="bold yellow"), no_wrap=True)
             console.print(Text(f"{PAD}      If that fails, a reboot might be required", style="bold yellow"), no_wrap=True)
-            console.print(Text(f"{PAD}   3. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
+            console.print(Text(f"{PAD}   3. Find the script in: Workspace -> Scripts -> StoryCraft", style="yellow"), no_wrap=True)
         else:
             console.print(Text(f"{PAD}   1. A restart of DaVinci Resolve might be required.", style="yellow"), no_wrap=True)
-            console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
+            console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> StoryCraft", style="yellow"), no_wrap=True)
         if ARGS.non_interactive or ARGS.no_launch:
             return
 
-        console.print(Text(f"{PAD}Launch BadWords now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
+        console.print(Text(f"{PAD}Launch StoryCraft now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
         sys.stdout.flush()
         launched = False
         try:
             launch_ans = readline_with_esc()
             if launch_ans.strip().lower() != "n":
                 if _launch_badwords(install_dir):
-                    log_ok("BadWords launched.")
+                    log_ok("StoryCraft launched.")
                     launched = True
         except UserCancelled:
             pass
@@ -2946,12 +2947,12 @@ def option_repair(preset_path=None):
             install_dir = wrapper_dir
         else:
             log_warn("No wrapper detected. Falling back to deep scan...")
-            sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+            sp_scan = Spinner("Deep-scanning system for StoryCraft installations").start()
             found_dirs = _deep_search_badwords()
             sp_scan.done(ok=True)
             if not found_dirs:
                 console.print()
-                log_err("No BadWords installation found to repair.")
+                log_err("No StoryCraft installation found to repair.")
                 if not ARGS.non_interactive:
                     pause()
                 return
@@ -2980,7 +2981,7 @@ def option_repair(preset_path=None):
     log_step(f"Cleaning core files in: {install_dir}")
     
     # Files/folders to KEEP
-    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json", "venv", ".python_auto_installed", ".no_self_upgrade"}
+    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "storycraft_debug.log", "dev.json", "venv", ".python_auto_installed", ".no_self_upgrade"}
     
     sp_rm = Spinner("Removing core components").start()
     errors = []
@@ -3044,12 +3045,12 @@ def option_move():
         install_dir = wrapper_dir
     else:
         log_warn("No wrapper detected — falling back to deep scan...")
-        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+        sp_scan = Spinner("Deep-scanning system for StoryCraft installations").start()
         found_dirs = _deep_search_badwords()
         sp_scan.done(ok=True)
         if not found_dirs:
             console.print()
-            log_err("No BadWords installation found to move.")
+            log_err("No StoryCraft installation found to move.")
             pause()
             return
         install_dir = found_dirs[0]
@@ -3345,7 +3346,7 @@ def option_move():
     # ── Done ─────────────────────────────────────────
     console.print()
     console.print(Text(f"{PAD}+ MOVE SUCCESSFUL!", style="bold blue"), no_wrap=True)
-    console.print(Text(f"{PAD}  BadWords is now at: {new_path}", style="blue"), no_wrap=True)
+    console.print(Text(f"{PAD}  StoryCraft is now at: {new_path}", style="blue"), no_wrap=True)
     console.print()
     pause(f"{PAD}Press Enter to exit...")
 
@@ -3355,32 +3356,32 @@ def option_move():
 
 # ── Option 5 — Uninstall (Deep Search) ───────────────────────
 
-# Signature files unique to a BadWords installation.
+# Signature files of an installation (plus the StoryCraft check in _is_badwords_dir).
 # If a directory contains at least _BW_MATCH_MIN of these, it's ours.
 _BW_SIGNATURES = frozenset({
     "main.py", "engine.py", "api.py", "algorithms.py", "algorythms.py",
     "assembler.py", "gui.py", "osdoc.py", "config.py",
-    "engine", "api", "gui", "config", "i18n", "handlers", "BadWords.exe", "BadWords"
+    "engine", "api", "gui", "config", "i18n", "handlers", "StoryCraft.exe", "StoryCraft"
 })
-_BW_MATCH_MIN = 3   # >=3 of signatures = confirmed BadWords dir
+_BW_MATCH_MIN = 3   # >=3 of signatures = confirmed install dir
 
 
 def _is_badwords_dir(d):
-    """Return True if directory d contains enough BadWords signature files."""
+    """Return True if directory d contains enough StoryCraft signature files."""
     try:
         contents = set(os.listdir(d))
     except OSError:
         return False
-    return len(_BW_SIGNATURES & contents) >= _BW_MATCH_MIN
+    return len(_BW_SIGNATURES & contents) >= _BW_MATCH_MIN and _is_storycraft_dir(d)
 
 
 def _deep_search_badwords():
     """
-    Scan well-known OS-specific locations for BadWords installation dirs.
+    Scan well-known OS-specific locations for StoryCraft installation dirs.
     Strategy (2-level walk to stay fast):
-      1. Any immediate child named 'badwords' (case-insensitive) + verified with signatures
+      1. Any immediate child named 'storycraft' (case-insensitive) + verified with signatures
       2. Any immediate child (any name) containing >=3 signature files
-      3. Any grandchild named 'badwords' + verified with signatures
+      3. Any grandchild named 'storycraft' + verified with signatures
       4. Any grandchild (any name) containing >=3 signature files
     Returns a sorted list of unique absolute directory paths.
     """
@@ -3428,7 +3429,7 @@ def _deep_search_badwords():
                 continue
 
             # Level-1: name match OR signature match
-            if name1.lower() == "badwords":
+            if name1.lower() == "storycraft":
                 if _is_badwords_dir(path1):
                     found.add(os.path.abspath(path1))
             elif _is_badwords_dir(path1):
@@ -3440,9 +3441,9 @@ def _deep_search_badwords():
                     path2 = os.path.join(path1, name2)
                     if not os.path.isdir(path2):
                         continue
-                    if name2.lower() == "badwords" and _is_badwords_dir(path2):
+                    if name2.lower() == "storycraft" and _is_badwords_dir(path2):
                         found.add(os.path.abspath(path2))
-                    elif name2.lower() != "badwords" and _is_badwords_dir(path2):
+                    elif name2.lower() != "storycraft" and _is_badwords_dir(path2):
                         found.add(os.path.abspath(path2))
             except OSError:
                 pass
@@ -3452,7 +3453,7 @@ def _deep_search_badwords():
 
 def option_uninstall():
     header()
-    console.print(Text(f"{PAD}-- Uninstall BadWords --", style="bold red"), no_wrap=True)
+    console.print(Text(f"{PAD}-- Uninstall StoryCraft --", style="bold red"), no_wrap=True)
     console.print()
 
     resolve_dirs = _resolve_script_dirs()
@@ -3467,7 +3468,7 @@ def option_uninstall():
         log_warn("No wrapper detected (may be corrupted or already removed).")
 
     # Deep search across popular OS locations
-    sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+    sp_scan = Spinner("Deep-scanning system for StoryCraft installations").start()
     found_dirs = _deep_search_badwords()
     sp_scan.done(ok=True)
 
@@ -3478,18 +3479,18 @@ def option_uninstall():
 
     if not all_install_dirs:
         console.print()
-        log_warn("No BadWords installation found anywhere on this system.")
+        log_warn("No StoryCraft installation found anywhere on this system.")
         log_info(f"Default location checked: {default_dir}")
         pause()
         return
 
     # Show what was found
     console.print()
-    console.print(Text(f"{PAD}Found {len(all_install_dirs)} BadWords installation(s):", style="bold white"), no_wrap=True)
+    console.print(Text(f"{PAD}Found {len(all_install_dirs)} StoryCraft installation(s):", style="bold white"), no_wrap=True)
     for d in all_install_dirs:
         console.print(Text(f"{PAD}  * {d}", style="red"), no_wrap=True)
     console.print()
-    console.print(Text(f"{PAD}Additionally, ALL BadWords wrappers will be removed from", style="white"), no_wrap=True)
+    console.print(Text(f"{PAD}Additionally, ALL StoryCraft wrappers will be removed from", style="white"), no_wrap=True)
     console.print(Text(f"{PAD}every DaVinci Resolve script directory on this system.", style="white"), no_wrap=True)
     console.print()
     console.print(Text(f"{PAD}This removes EVERYTHING -- app files, venv, models, settings.", style="bold red"), no_wrap=True)
@@ -3519,7 +3520,7 @@ def option_uninstall():
             
     if python_auto_installed:
         console.print()
-        console.print(Text(f"{PAD}BadWords installer previously downloaded Python 3.12 for its operation.", style="bold yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}StoryCraft installer previously downloaded Python 3.12 for its operation.", style="bold yellow"), no_wrap=True)
         console.print(Text(f"{PAD}Do you wish to uninstall Python 3.12 as well?", style="bold yellow"), no_wrap=True)
         console.print(Text(f"{PAD}  [yes] - Uninstalls Python 3.12 from your system.", style="yellow"), no_wrap=True)
         console.print(Text(f"{PAD}  [no]  - Leaves Python 3.12 (safe if you use it for other apps).", style="yellow"), no_wrap=True)
@@ -3563,7 +3564,7 @@ def option_uninstall():
     # Done summary
     console.print()
     console.print(Text(f"{PAD}+ UNINSTALL SUCCESSFUL!", style="bold green"), no_wrap=True)
-    console.print(Text(f"{PAD}  BadWords has been completely removed from this system.", style="green"), no_wrap=True)
+    console.print(Text(f"{PAD}  StoryCraft has been completely removed from this system.", style="green"), no_wrap=True)
     console.print()
     pause(f"{PAD}Press Enter to exit...")
 
@@ -3576,6 +3577,7 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
     Called by both option_uninstall() and option_reset().
     Returns a list of error strings (empty = all OK).
     """
+    kept_saves = []
     errors = []
 
     # Step 1: Remove DaVinci Resolve wrappers
@@ -3587,7 +3589,7 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
             continue
         for root, dirs, files in os.walk(scripts_dir):
             for fname in files:
-                if fname.startswith("BadWords") and fname.endswith(".py"):
+                if fname.startswith("StoryCraft") and fname.endswith((".py", ".lua")):
                     wp = os.path.join(root, fname)
                     try:
                         os.remove(wp)
@@ -3629,21 +3631,35 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
                     (func)(path)
                 except Exception:
                     pass
-            # Python 3.12+ uses onexc=, older versions use onerror=
-            try:
-                shutil.rmtree(install_dir, onexc=_make_writable_uninstall)
-            except TypeError:
-                shutil.rmtree(install_dir, onerror=_make_writable_uninstall)  # noqa: deprecated
-            
-            # Robust OS-level fallback if Python's rmtree fails on tricky symlinks/permissions
-            if os.path.exists(install_dir):
-                if os.name == "nt":
-                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", install_dir], capture_output=True, **_sp_hidden_kwargs())
-                else:
-                    subprocess.run(["rm", "-rf", install_dir], capture_output=True)
-            
-            if os.path.exists(install_dir):
-                raise OSError("Directory is locked or contains undeletable files.")
+            def _rm(path):
+                if os.path.islink(path) or os.path.isfile(path):
+                    os.remove(path)  # a link (e.g. models shared with another install) is removed, never followed
+                    return
+                # Python 3.12+ uses onexc=, older versions use onerror=
+                try:
+                    shutil.rmtree(path, onexc=_make_writable_uninstall)
+                except TypeError:
+                    shutil.rmtree(path, onerror=_make_writable_uninstall)  # noqa: deprecated
+                # Robust OS-level fallback if Python's rmtree fails on tricky symlinks/permissions
+                if os.path.exists(path):
+                    if os.name == "nt":
+                        subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", path], capture_output=True, **_sp_hidden_kwargs())
+                    else:
+                        subprocess.run(["rm", "-rf", path], capture_output=True)
+
+            # The user's transcripts, stories and backups (saves/) stay: only the app is removed
+            saves = os.path.join(install_dir, "saves")
+            if os.path.isdir(saves) and os.listdir(saves):
+                for item in os.listdir(install_dir):
+                    if item != "saves":
+                        _rm(os.path.join(install_dir, item))
+                kept_saves.append(saves)
+                if any(i != "saves" for i in os.listdir(install_dir)):
+                    raise OSError("Directory is locked or contains undeletable files.")
+            else:
+                _rm(install_dir)
+                if os.path.exists(install_dir):
+                    raise OSError("Directory is locked or contains undeletable files.")
                 
             sp.done(ok=True)
         except Exception as e:
@@ -3652,6 +3668,8 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
             errors.append(f"{install_dir}: {e}")
             # Removed log_err to prevent duplicated UI spam; caller handles printing the errors.
 
+    for saves in kept_saves:
+        log_info(f"Your transcripts and stories were kept: {saves}")
     return errors
 
 
@@ -3660,7 +3678,7 @@ def option_reset(preset_path=None):
     header()
     console.print(Text(f"{PAD}── Complete Reset ──", style="bold yellow"), no_wrap=True)
     console.print()
-    console.print(Text(f"{PAD}This will completely delete ALL BadWords files, including:", style="yellow"), no_wrap=True)
+    console.print(Text(f"{PAD}This will completely delete ALL StoryCraft files, including:", style="yellow"), no_wrap=True)
     console.print(Text(f"{PAD}  * Downloaded Whisper models", style="dim"), no_wrap=True)
     console.print(Text(f"{PAD}  * Application settings and preferences", style="dim"), no_wrap=True)
     console.print(Text(f"{PAD}  * Project saves (.bws)", style="dim"), no_wrap=True)
@@ -3686,7 +3704,7 @@ def option_reset(preset_path=None):
             log_warn("No wrapper detected (will still deep-scan for leftovers).")
 
         # Deep search
-        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+        sp_scan = Spinner("Deep-scanning system for StoryCraft installations").start()
         found_dirs = _deep_search_badwords()
         sp_scan.done(ok=True)
 
@@ -3744,7 +3762,7 @@ def option_reset(preset_path=None):
 
     # ── Phase 2: Fresh install ────────────────────────────────
     console.print()
-    console.print(Text(f"{PAD}[ Phase 2 / 2 ]  Installing BadWords from scratch...", style="bold cyan"), no_wrap=True)
+    console.print(Text(f"{PAD}[ Phase 2 / 2 ]  Installing StoryCraft from scratch...", style="bold cyan"), no_wrap=True)
     console.print()
 
     if not (preset_path or (ARGS.non_interactive and ARGS.install)):
@@ -3776,11 +3794,11 @@ def main():
         script_dir = os.path.dirname(os.path.abspath(__file__))
         repo_dir = os.path.dirname(script_dir)
         for cand in [
-            os.path.join(script_dir, "windows", "BadWords.exe"),
-            os.path.join(repo_dir, "BadWords.exe"),
-            os.path.join(repo_dir, "badwords-setup-windows.exe"),
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe"),
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords-Setup.exe"),
+            os.path.join(script_dir, "windows", "StoryCraft.exe"),
+            os.path.join(repo_dir, "StoryCraft.exe"),
+            os.path.join(repo_dir, "storycraft-setup-windows.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "StoryCraft-bootstrap", "StoryCraft.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "StoryCraft-bootstrap", "StoryCraft-Setup.exe"),
         ]:
             if os.path.isfile(cand):
                 _unblock_file_windows(cand)
@@ -3806,7 +3824,7 @@ def main():
 
     # One-time setup: resize + title + lock scrollbar + Quick Edit
     _resize()
-    _set_title("BadWords Setup")
+    _set_title("StoryCraft Setup")
     _set_scrollbar(False)
     _win_enable_quick_edit()  # allow mouse text selection & copy at all times
     while True:
@@ -3847,7 +3865,7 @@ def main():
                         br_idx = int(br_input) - 1
                         if 0 <= br_idx < len(branches):
                             chosen_branch = branches[br_idx]
-                            br_url = f"https://github.com/veritus-git/BadWords/archive/refs/heads/{chosen_branch}.zip"
+                            br_url = f"{GH_WEB}/{REPO}/archive/refs/heads/{chosen_branch}.zip"
                             option_install_update(is_dev=True, branch_url=br_url, branch_name=chosen_branch)
                         else:
                             console.print(Text(f"{PAD}Invalid choice. Returning to menu.", style="red"), no_wrap=True)

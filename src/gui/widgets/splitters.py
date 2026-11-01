@@ -11,6 +11,8 @@ DESCRIPTION:
 Custom splitters for resizable GUI panels.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
@@ -60,7 +62,7 @@ class GripHandle(QSplitterHandle):
         h = self.height()
         is_left_handle = (self == self.splitter().handle(1))
         
-        painter.fillRect(0, 0, w, h, QColor("#212121"))
+        painter.fillRect(0, 0, w, h, qc("#212121"))
         
         line_w = 1 + int(self._anim_val * 2)
         x = (w - line_w) if is_left_handle else 0

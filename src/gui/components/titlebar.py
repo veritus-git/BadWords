@@ -157,6 +157,15 @@ class CustomTitleBar(QWidget):
     aiTranscriptExportRequested = Signal()
     aiStoryImportRequested = Signal()
 
+    def set_resolve_status(self, connected: bool, text: str):
+        from gui.theme import qc
+        dot = qc("#23a559").name() if connected else "#777777"
+        self.lbl_resolve_status.setText(f"<span style='color:{dot}'>●</span>&nbsp; {text}")
+        self.lbl_resolve_status.setStyleSheet(
+            f"color: #a0a0a0; font-size: {config.FS(8.5)}pt; background: #222222; border: 1px solid #333333;"
+            f" border-radius: {config.S(10)}px; padding: {config.S(2)}px {config.S(10)}px;")
+        self.lbl_resolve_status.show()
+
     def __init__(self, window: QWidget, lang: str, parent=None):
         super().__init__(parent)
         self._win  = window
@@ -236,6 +245,13 @@ class CustomTitleBar(QWidget):
         lay.addWidget(self._menu_container)
 
         lay.addStretch()
+
+        # Resolve connection, as a small chip (main window keeps it current)
+        self.lbl_resolve_status = QLabel("", self)
+        self.lbl_resolve_status.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl_resolve_status.hide()
+        lay.addWidget(self.lbl_resolve_status)
+        lay.addSpacing(config.S(10))
 
         # ── CENTERED source info label (replaces old left-aligned title after transcription) ──
         self._lbl_source_info = QLabel(self)

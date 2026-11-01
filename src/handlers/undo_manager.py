@@ -54,6 +54,10 @@ class UndoManager:
             self.main_window.autosave_manager.schedule(self.main_window._build_autosave_payload)
 
     def _apply_action(self, action):
+        if action.get('type') == 'words':
+            current = self.canvas.words_data
+            self.canvas.load_data(action['words'])
+            return {"type": "words", "words": current, "changes": {"_": 1}}
         reverse_changes = {}
         id_map = {wo['id']: wo for wo in self.canvas.words_data}
         layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
@@ -68,7 +72,8 @@ class UndoManager:
                 'manual_status': word_obj.get('manual_status'),
                 'algo_status': word_obj.get('algo_status'),
                 'is_auto': word_obj.get('is_auto'),
-                'selected': word_obj.get('selected')
+                'selected': word_obj.get('selected'),
+                'overlay_suppressed': word_obj.get('overlay_suppressed', False)
             }
 
             # Apply restored state
@@ -78,7 +83,7 @@ class UndoManager:
                 word_obj['algo_status'] = state.get('algo_status')
             word_obj['is_auto'] = state.get('is_auto')
             word_obj['selected'] = state.get('selected')
-            word_obj['overlay_suppressed'] = True
+            word_obj['overlay_suppressed'] = state.get('overlay_suppressed', True)
 
             if layer_engine:
                 layer_engine(word_obj)

@@ -2,18 +2,18 @@
 # Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # ============================================================
-#  BadWords Windows Bootstrapper v4.0
-#  Run with: irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1" | iex
+#  StoryCraft Windows Bootstrapper v4.0
+#  Run with: irm "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/windows-setup.ps1" | iex
 # ============================================================
 
 $ErrorActionPreference = "Continue"
 
-$RepoOwner        = "veritus-git"
-$RepoName         = "BadWords"
-$Tag              = if ($env:BADWORDS_TAG) { $env:BADWORDS_TAG } else { "latest" }
-$BinName          = "badwords-setup-windows.exe"
+$RepoOwner        = "Boris-Edu"
+$RepoName         = "StoryCraft"
+$Tag              = if ($env:STORYCRAFT_TAG) { $env:STORYCRAFT_TAG } else { "latest" }
+$BinName          = "storycraft-setup-windows.exe"
 $INSTALLER_URL    = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/setupfiles/setup.py"
-$INSTALLER_URL_FB = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
+$INSTALLER_URL_FB = "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/setup.py"
 $EMBED_URL        = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip"
 $GETPIP_URL       = "https://bootstrap.pypa.io/get-pip.py"
 
@@ -22,16 +22,16 @@ $ScriptDir = ""
 if ($MyInvocation.MyCommand.Path) {
     $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
-$LocalBin     = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\release\badwords-installer.exe" } else { "" }
-$LocalDebug   = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\debug\badwords-installer.exe" } else { "" }
+$LocalBin     = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\release\storycraft-installer.exe" } else { "" }
+$LocalDebug   = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\target\debug\storycraft-installer.exe" } else { "" }
 $LocalSetup   = if ($ScriptDir) { Join-Path $ScriptDir "setup.py" } else { "" }
 $LocalRepo    = if ($ScriptDir) { Split-Path -Parent $ScriptDir } else { "" }
 
 # -- Directories -----------------------------------------------
-$CacheDir   = Join-Path $env:LOCALAPPDATA "BadWords-bootstrap"
+$CacheDir   = Join-Path $env:LOCALAPPDATA "StoryCraft-bootstrap"
 $EmbedPyDir = Join-Path $CacheDir "python"
 $EmbedPyExe = Join-Path $EmbedPyDir "python.exe"
-$TargetExe  = Join-Path $CacheDir "BadWords-Setup.exe"
+$TargetExe  = Join-Path $CacheDir "StoryCraft-Setup.exe"
 $BW_TMP     = Join-Path ([System.IO.Path]::GetTempPath()) ("bw_bs_" + [System.Guid]::NewGuid().ToString("N").Substring(0,8))
 
 New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
@@ -40,8 +40,8 @@ New-Item -ItemType Directory -Path $BW_TMP -Force | Out-Null
 # -- Helper: Run Rich Terminal Python Fallback -----------------
 function Invoke-PythonFallback() {
     Clear-Host
-    Write-Host "PS C:\Users\User> irm `"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1`" | iex" -ForegroundColor White
-    Write-Host "Downloading BadWords Setup..." -ForegroundColor Cyan
+    Write-Host "PS C:\Users\User> irm `"https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/windows-setup.ps1`" | iex" -ForegroundColor White
+    Write-Host "Downloading StoryCraft Setup..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " [!] Windows Security Notice:" -ForegroundColor Yellow
@@ -138,13 +138,13 @@ function Invoke-PythonFallback() {
         }
 
         # 4. Launch setup.py in CMD / Windows Terminal
-        Write-Host "Launching BadWords Rich Setup..." -ForegroundColor Green
+        Write-Host "Launching StoryCraft Rich Setup..." -ForegroundColor Green
         $PyArg = "`"$SetupPy`" --platform windows --bootstrap-python `"$EmbedPyExe`""
         if ($LocalRepo -and (Test-Path $LocalSetup)) {
             $PyArg += " --local-repo `"$LocalRepo`""
         }
         $CmdLine = "set PYTHONPATH=$PkgDir&& `"$EmbedPyExe`" $PyArg"
-        $CmdArgs = "/c title BadWords Setup && mode con cols=88 lines=30 && $CmdLine"
+        $CmdArgs = "/c title StoryCraft Setup && mode con cols=88 lines=30 && $CmdLine"
 
         $wt = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\wt.exe"
         if (Test-Path $wt) {
@@ -172,8 +172,8 @@ function Start-NativeExecutable($exePath, $arguments) {
     Clear-FileZoneIdentifier $exePath
     $parent = Split-Path -Parent $exePath
     if ($parent) {
-        Clear-FileZoneIdentifier (Join-Path $parent "BadWords.exe")
-        Clear-FileZoneIdentifier (Join-Path $parent "badwords-setup-windows.exe")
+        Clear-FileZoneIdentifier (Join-Path $parent "StoryCraft.exe")
+        Clear-FileZoneIdentifier (Join-Path $parent "storycraft-setup-windows.exe")
     }
     try {
         if ($arguments -and $arguments.Count -gt 0) {
@@ -190,16 +190,16 @@ function Start-NativeExecutable($exePath, $arguments) {
 }
 
 # 0. Force fallback check (for testing or explicitly requested CLI mode)
-if ($env:BADWORDS_FORCE_FALLBACK -or ($args -and ($args -contains "--fallback" -or $args -contains "--cli"))) {
+if ($env:STORYCRAFT_FORCE_FALLBACK -or ($args -and ($args -contains "--fallback" -or $args -contains "--cli"))) {
     Invoke-PythonFallback
 }
 
 # 1. Try local compiled or placed binary first (if inside repo clone or working dir)
-$LocalRootBin = if ($ScriptDir) { Join-Path $ScriptDir "..\badwords-setup-windows.exe" } else { "" }
+$LocalRootBin = if ($ScriptDir) { Join-Path $ScriptDir "..\storycraft-setup-windows.exe" } else { "" }
 if ($LocalRootBin -and (Test-Path $LocalRootBin)) {
     Start-NativeExecutable $LocalRootBin $args
 }
-$CwdBin = Join-Path (Get-Location).Path "badwords-setup-windows.exe"
+$CwdBin = Join-Path (Get-Location).Path "storycraft-setup-windows.exe"
 if ($CwdBin -and (Test-Path $CwdBin)) {
     Start-NativeExecutable $CwdBin $args
 }
@@ -211,7 +211,7 @@ if ($LocalDebug -and (Test-Path $LocalDebug)) {
 }
 $CargoToml = if ($ScriptDir) { Join-Path $ScriptDir "..\installer\Cargo.toml" } else { "" }
 if ($CargoToml -and (Test-Path $CargoToml) -and (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
-    Write-Host "Compiling and launching BadWords Setup via cargo..." -ForegroundColor Cyan
+    Write-Host "Compiling and launching StoryCraft Setup via cargo..." -ForegroundColor Cyan
     if ($args -and $args.Count -gt 0) {
         cargo run --release --manifest-path "$CargoToml" -- $args
     } else {
@@ -221,7 +221,7 @@ if ($CargoToml -and (Test-Path $CargoToml) -and (Get-Command "cargo" -ErrorActio
 }
 
 # 2. Remote download binary
-Write-Host "Downloading BadWords Setup..." -ForegroundColor Cyan
+Write-Host "Downloading StoryCraft Setup..." -ForegroundColor Cyan
 
 $DownloadUrl = if ($Tag -eq "latest") {
     "https://github.com/$RepoOwner/$RepoName/releases/latest/download/$BinName"
@@ -237,27 +237,27 @@ try {
 } catch {
     try {
         $ApiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
-        $Releases = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing -Headers @{"User-Agent"="BadWords-Bootstrapper"}
+        $Releases = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing -Headers @{"User-Agent"="StoryCraft-Bootstrapper"}
         $Asset = $Releases | ForEach-Object { $_.assets } | Where-Object { $_.name -like "*windows*.exe" -or $_.name -eq $BinName } | Select-Object -First 1
         if ($Asset) {
             Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $TargetExe -UseBasicParsing
             $Downloaded = $true
         }
-        $LauncherAsset = $Releases | ForEach-Object { $_.assets } | Where-Object { $_.name -eq "BadWords.exe" } | Select-Object -First 1
+        $LauncherAsset = $Releases | ForEach-Object { $_.assets } | Where-Object { $_.name -eq "StoryCraft.exe" } | Select-Object -First 1
         if ($LauncherAsset) {
-            $TargetLauncher = Join-Path $CacheDir "BadWords.exe"
+            $TargetLauncher = Join-Path $CacheDir "StoryCraft.exe"
             Invoke-WebRequest -Uri $LauncherAsset.browser_download_url -OutFile $TargetLauncher -UseBasicParsing -ErrorAction SilentlyContinue
         }
     } catch {}
 }
 
-# Download BadWords.exe native launcher directly if available
+# Download StoryCraft.exe native launcher directly if available
 $LauncherUrl = if ($Tag -eq "latest") {
-    "https://github.com/$RepoOwner/$RepoName/releases/latest/download/BadWords.exe"
+    "https://github.com/$RepoOwner/$RepoName/releases/latest/download/StoryCraft.exe"
 } else {
-    "https://github.com/$RepoOwner/$RepoName/releases/download/$Tag/BadWords.exe"
+    "https://github.com/$RepoOwner/$RepoName/releases/download/$Tag/StoryCraft.exe"
 }
-$TargetLauncher = Join-Path $CacheDir "BadWords.exe"
+$TargetLauncher = Join-Path $CacheDir "StoryCraft.exe"
 try {
     Invoke-WebRequest -Uri $LauncherUrl -OutFile $TargetLauncher -UseBasicParsing -ErrorAction SilentlyContinue
 } catch {}

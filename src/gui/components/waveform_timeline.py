@@ -16,6 +16,8 @@ cut range hatching (solid vs hatched), High-DPI scaling, and bidirectional playh
 
 from __future__ import annotations
 
+from gui.theme import qc
+
 import os
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -41,21 +43,21 @@ from osdoc import log_info, log_error
 
 # DaVinci Resolve solid timeline clip colors (matching DaVinci Edit / Fairlight page)
 RESOLVE_CLIP_COLORS = {
-    "normal": QColor("#2f614d"),       # DaVinci Fairlight Green
-    "bad": QColor("#8c3450"),          # DaVinci Violet / Pink (Errors / Bad Takes)
-    "red": QColor("#8c3450"),
-    "violet": QColor("#8c3450"),
-    "repeat": QColor("#2b5278"),       # DaVinci Navy / Blue (Retakes)
-    "blue": QColor("#2b5278"),
-    "navy": QColor("#2b5278"),
-    "typo": QColor("#356844"),         # DaVinci Olive (Typo)
-    "green": QColor("#356844"),
-    "olive": QColor("#356844"),
-    "silence_mark": QColor("#8a7154"), # DaVinci Tan (Silence marked)
-    "tan": QColor("#8a7154"),
-    "silence": QColor("#8a7154"),
-    "inaudible": QColor("#5e3518"),    # DaVinci Chocolate (Inaudible)
-    "chocolate": QColor("#5e3518"),
+    "normal": qc("#2f614d"),       # DaVinci Fairlight Green
+    "bad": qc("#8c3450"),          # DaVinci Violet / Pink (Errors / Bad Takes)
+    "red": qc("#8c3450"),
+    "violet": qc("#8c3450"),
+    "repeat": qc("#2b5278"),       # DaVinci Navy / Blue (Retakes)
+    "blue": qc("#2b5278"),
+    "navy": qc("#2b5278"),
+    "typo": qc("#356844"),         # DaVinci Olive (Typo)
+    "green": qc("#356844"),
+    "olive": qc("#356844"),
+    "silence_mark": qc("#8a7154"), # DaVinci Tan (Silence marked)
+    "tan": qc("#8a7154"),
+    "silence": qc("#8a7154"),
+    "inaudible": qc("#5e3518"),    # DaVinci Chocolate (Inaudible)
+    "chocolate": qc("#5e3518"),
 }
 CUT_VOID_COLOR = QColor("#0e0e0e")
 
@@ -366,6 +368,8 @@ class WaveformTimelineWidget(QWidget):
             self.main_window._update_color_legend(surviving_ops, cut_ops)
         if hasattr(self.main_window, '_update_text_cut_preview'):
             self.main_window._update_text_cut_preview(surviving_ops)
+        if hasattr(self.main_window, '_update_edit_playlist'):
+            self.main_window._update_edit_playlist(surviving_ops, fps)
 
         raw_segments = []
         for op in surviving_ops:
@@ -643,7 +647,7 @@ class WaveformTimelineWidget(QWidget):
 
         # 1. Dark container background
         bg_container = QRectF(0, 0, w, h)
-        painter.fillRect(bg_container, QColor("#141414"))
+        painter.fillRect(bg_container, qc("#141414"))
 
         # 2. Fairlight Audio Clip Ribbon
         clip_path = QPainterPath()
@@ -657,10 +661,14 @@ class WaveformTimelineWidget(QWidget):
         t_end = t_start + vis_dur
 
         # 3. Draw Solid Timeline Segments (DaVinci Resolve Style Solid Colors)
+        # Classic keeps Resolve's Fairlight green; the other themes put plain clips on their own surface
+        from gui import theme as _theme
+        modern = _theme.current() != "classic"
+        plain_clip = qc("#232323") if modern else RESOLVE_CLIP_COLORS["normal"]
         segments = self._timeline_segments
         if not segments:
             # Default normal Fairlight clip
-            painter.fillRect(clip_rect, RESOLVE_CLIP_COLORS["normal"])
+            painter.fillRect(clip_rect, plain_clip)
         else:
             for seg in segments:
                 if seg["end_s"] <= t_start or seg["start_s"] >= t_end:
@@ -674,18 +682,19 @@ class WaveformTimelineWidget(QWidget):
 
                 if seg["is_cut"]:
                     painter.fillRect(seg_rect, CUT_VOID_COLOR)
-                    painter.fillRect(seg_rect, QBrush(QColor(22, 22, 22), Qt.BDiagPattern))
+                    painter.fillRect(seg_rect, QBrush(qc(22, 22, 22), Qt.BDiagPattern))
                 else:
-                    painter.fillRect(seg_rect, seg["color"])
+                    seg_col = plain_clip if (modern and seg.get("type") == "normal") else seg["color"]
+                    painter.fillRect(seg_rect, seg_col)
                     # Subtle top highlight
-                    painter.setPen(QPen(seg["color"].lighter(112), 1.0))
+                    painter.setPen(QPen(seg_col.lighter(112), 1.0))
                     painter.drawLine(QPointF(x0, ry), QPointF(x1, ry))
                     # Subtle bottom shadow
-                    painter.setPen(QPen(seg["color"].darker(118), 1.0))
+                    painter.setPen(QPen(seg_col.darker(118), 1.0))
                     painter.drawLine(QPointF(x0, ry + rh), QPointF(x1, ry + rh))
 
                 # Vertical divider seam at cut point
-                painter.setPen(QPen(QColor(16, 16, 16), 1.0))
+                painter.setPen(QPen(qc(16, 16, 16), 1.0))
                 painter.drawLine(QPointF(x0, ry), QPointF(x0, ry + rh))
                 painter.drawLine(QPointF(x1, ry), QPointF(x1, ry + rh))
 
@@ -694,7 +703,7 @@ class WaveformTimelineWidget(QWidget):
         half_h = (rh / 2.0) * 0.88
 
         # 0dB midline (subtle dark line matching DaVinci Fairlight Screenshot 3)
-        midline_pen = QPen(QColor(15, 35, 25, 120), 1.0, Qt.SolidLine)
+        midline_pen = QPen(qc(15, 35, 25, 120), 1.0, Qt.SolidLine)
         painter.setPen(midline_pen)
         painter.drawLine(QPointF(rx, mid_y), QPointF(rx + rw, mid_y))
 
@@ -748,13 +757,14 @@ class WaveformTimelineWidget(QWidget):
                 for pt in reversed(bot_pts):
                     wf_poly.append(pt)
 
-                # Solid filled continuous silhouette in crisp off-white / pale mint (#f0fcf6)
+                # Solid filled continuous silhouette: pale mint (Classic) or the theme accent
+                wave_col = qc(config.BTN_BG).lighter(118) if modern else qc("#f0fcf6")
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor("#f0fcf6")))
+                painter.setBrush(QBrush(wave_col))
                 painter.drawPolygon(wf_poly)
 
                 # Clean razor center trace across silence/quiet portions
-                painter.setPen(QPen(QColor("#f0fcf6"), 1.0))
+                painter.setPen(QPen(wave_col, 1.0))
                 painter.drawLine(QPointF(rx, mid_y), QPointF(rx + rw, mid_y))
 
             # Mask cut voids & diagonal hatching over the waveform in cut segments
@@ -770,16 +780,16 @@ class WaveformTimelineWidget(QWidget):
                 seg_w = max(1.0, x1 - x0)
                 seg_rect = QRectF(x0, ry, seg_w, rh)
 
-                painter.fillRect(seg_rect, QColor(14, 14, 14, 235))
-                painter.fillRect(seg_rect, QBrush(QColor(0, 0, 0, 210), Qt.BDiagPattern))
-                painter.setPen(QPen(QColor(10, 10, 10, 255), 1.0))
+                painter.fillRect(seg_rect, qc(14, 14, 14, 235))
+                painter.fillRect(seg_rect, QBrush(qc(0, 0, 0, 210), Qt.BDiagPattern))
+                painter.setPen(QPen(qc(10, 10, 10, 255), 1.0))
                 painter.drawLine(QPointF(x0, ry), QPointF(x0, ry + rh))
                 painter.drawLine(QPointF(x1, ry), QPointF(x1, ry + rh))
 
             painter.restore()
         else:
             # Subtle waiting text
-            painter.setPen(QColor("#4e735b"))
+            painter.setPen(qc("#4e735b"))
             placeholder_font = QFont(config.UI_FONT_NAME, config.FS(9))
             placeholder_font.setItalic(True)
             painter.setFont(placeholder_font)
@@ -788,7 +798,7 @@ class WaveformTimelineWidget(QWidget):
             painter.restore()
 
         # Ribbon outer border
-        border_pen = QPen(QColor("#1b3b2c"), 1.0)
+        border_pen = QPen(qc("#1b3b2c"), 1.0)
         painter.setPen(border_pen)
         painter.drawPath(clip_path)
 
@@ -813,11 +823,11 @@ class WaveformTimelineWidget(QWidget):
 
         badge_path = QPainterPath()
         badge_path.addRoundedRect(badge_rect, config.S(3), config.S(3))
-        painter.fillPath(badge_path, QColor(10, 22, 15, 210))
-        painter.setPen(QPen(QColor("#245437"), 1.0))
+        painter.fillPath(badge_path, qc(10, 22, 15, 210))
+        painter.setPen(QPen(qc("#245437"), 1.0))
         painter.drawPath(badge_path)
 
-        painter.setPen(QColor("#c8e6d2"))
+        painter.setPen(qc("#c8e6d2"))
         painter.drawText(badge_rect, Qt.AlignCenter, clip_label)
 
         painter.end()
@@ -907,14 +917,14 @@ class WaveformTimelineWidget(QWidget):
                 playhead_x = rx + (pct * rw)
 
                 # Vertical red line through the clip
-                line_pen = QPen(QColor("#ff3b30"), config.S(1.8))
+                line_pen = QPen(qc("#ff3b30"), config.S(1.8))
                 painter.setPen(line_pen)
                 painter.drawLine(QPointF(playhead_x, ry), QPointF(playhead_x, ry + rh))
 
                 # Top red circular marker (radius ~4.5px, matching Screenshot 1!)
                 marker_radius = float(config.S(4.5))
-                painter.setPen(QPen(QColor("#c0392b"), 1.0))
-                painter.setBrush(QBrush(QColor("#ff3b30")))
+                painter.setPen(QPen(qc("#c0392b"), 1.0))
+                painter.setBrush(QBrush(qc("#ff3b30")))
                 painter.drawEllipse(QPointF(playhead_x, ry + marker_radius), marker_radius, marker_radius)
 
             # Optional scrubbing time tooltip
@@ -943,11 +953,11 @@ class WaveformTimelineWidget(QWidget):
 
                 tip_path = QPainterPath()
                 tip_path.addRoundedRect(tip_rect, config.S(3), config.S(3))
-                painter.fillPath(tip_path, QColor(0, 0, 0, 210))
-                painter.setPen(QPen(QColor("#ff3b30"), 1.0))
+                painter.fillPath(tip_path, qc(0, 0, 0, 210))
+                painter.setPen(QPen(qc("#ff3b30"), 1.0))
                 painter.drawPath(tip_path)
 
-                painter.setPen(QColor("#ffffff"))
+                painter.setPen(qc("#ffffff"))
                 painter.drawText(tip_rect, Qt.AlignCenter, tc_str)
 
     def mousePressEvent(self, event) -> None:

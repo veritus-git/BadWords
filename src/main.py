@@ -324,6 +324,9 @@ def _run_auto_update_if_needed(os_doc, splash=None):
             splash.set_status(text)
             QApplication.processEvents()
 
+    if not getattr(config, "CHECK_ORIGINAL_UPDATES", True):
+        return  # fork: never install the original project's releases over it
+
     # Read prefs without importing gui/Qt
     prefs_path = os.path.join(os_doc.install_dir, 'settings.json')
     try:
@@ -522,7 +525,15 @@ def main():
             app.setWindowIcon(app_icon)
 
 
-        app.setStyleSheet(config.scrollbar_qss(8))
+        # Colour theme (StoryCraft / Graphite / Midnight / Studio): installed before any widget exists.
+        # Marker and Resolve clip colours are protected, they mean something.
+        from gui import theme
+        _wave_clip_colors = ("#2f614d", "#8c3450", "#2b5278", "#356844", "#8a7154")
+        theme.install((os_doc.get_all_prefs() or {}).get('ui_theme'),
+                      protected=list(config.RESOLVE_COLORS_HEX.values()) +
+                      [getattr(config, k) for k in dir(config) if k.startswith('WORD_')] + list(_wave_clip_colors),
+                      ui_font_name=config.UI_FONT_NAME)
+        theme.set_app_stylesheet(app, config.scrollbar_qss(8))
 
         # 3. Create controller (holds all GUI references → GC-safe)
         _controller = AppController(os_doc)

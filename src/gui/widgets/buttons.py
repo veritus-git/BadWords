@@ -11,6 +11,8 @@ DESCRIPTION:
 Custom button widgets tailored for the application interface.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
@@ -165,7 +167,7 @@ class QPushButton(_QPushButton):
                 if qc.isValid():
                     color = qc
         if color.name() == "#000000" or color.lightness() < 40:
-            color = QColor(config.FG_COLOR)
+            color = qc(config.FG_COLOR)
 
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
@@ -305,7 +307,7 @@ class MarqueeRadioButton(_QRadioButton):
 
         color = opt.palette.buttonText().color()
         if color.name() == "#000000" or color.lightness() < 40:
-            color = QColor(config.FG_COLOR)
+            color = qc(config.FG_COLOR)
         if self._mq_alpha < 1.0:
             color.setAlphaF(max(0.0, min(1.0, self._mq_alpha)))
         painter.setPen(color)
@@ -642,7 +644,7 @@ class ToggleSwitch(QWidget):
 
         # Internal animation states
         self._thumb_x = float(config.S(2))
-        self._bg_color = QColor("#555555")
+        self._bg_color = qc("#555555")
         
         # Animators
         self._anim_group = QPropertyAnimation(self, b"thumb_x", self)
@@ -682,7 +684,7 @@ class ToggleSwitch(QWidget):
         if animated:
             self._update_animation()
         else:
-            self._bg_color = QColor("#1ed760") if checked else QColor("#555555")
+            self._bg_color = qc("#1ed760") if checked else qc("#555555")
             thumb_size = config.S(16)
             self._thumb_x = float(self.width() - thumb_size - config.S(2)) if checked else float(config.S(2))
             self.update()
@@ -702,7 +704,7 @@ class ToggleSwitch(QWidget):
         
         thumb_size = config.S(16)
         end_x = float(self.width() - thumb_size - config.S(2)) if self._is_checked else float(config.S(2))
-        end_color = QColor("#1ed760") if self._is_checked else QColor("#555555")
+        end_color = qc("#1ed760") if self._is_checked else qc("#555555")
         
         self._anim_group.setDuration(180)
         self._anim_group.setEasingCurve(QEasingCurve.InOutQuad)
@@ -721,9 +723,10 @@ class ToggleSwitch(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         
-        # Draw background capsule
+        # Draw background capsule (at rest, in the current theme's colours: a theme switch shows at once)
         p.setPen(Qt.NoPen)
-        p.setBrush(self._bg_color)
+        animating = self._color_anim.state() == QPropertyAnimation.Running
+        p.setBrush(self._bg_color if animating else (qc("#1ed760") if self._is_checked else qc("#555555")))
         rect = QRect(0, 0, self.width(), self.height())
         p.drawRoundedRect(rect, config.S(10), config.S(10))
         
@@ -960,11 +963,11 @@ class AnimatedPlayerButton(QPushButton):
             
             # Draw circle with 1px inset for clean antialiasing
             if self.isDown():
-                bg = QColor("#cccccc")
+                bg = qc("#cccccc")
             elif getattr(self, '_hovered', False):
-                bg = QColor("#e0e0e0")
+                bg = qc("#e0e0e0")
             else:
-                bg = QColor("#ffffff")
+                bg = qc("#ffffff")
             painter.setBrush(bg)
             painter.setPen(Qt.NoPen)
             r = self.rect().adjusted(1, 1, -1, -1)
@@ -1063,8 +1066,8 @@ class AudioToggleTab(QPushButton):
         path.closeSubpath()
         
         # Fill matches the player background (#191919) seamlessly! Hover gives subtle highlight.
-        bg_col = QColor("#262626") if self.hovered else QColor("#191919")
-        border_col = QColor("#444444") if self.hovered else QColor("#2a2a2a")
+        bg_col = qc("#262626") if self.hovered else qc("#191919")
+        border_col = qc("#444444") if self.hovered else qc("#2a2a2a")
         
         p.fillPath(path, QBrush(bg_col))
         
@@ -1083,7 +1086,7 @@ class AudioToggleTab(QPushButton):
         cx = w / 2.0
         cy = h / 2.0
         
-        chevron_col = QColor("#ffffff") if self.hovered else QColor("#999999")
+        chevron_col = qc("#ffffff") if self.hovered else qc("#999999")
         pen_chevron = QPen(chevron_col, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         p.setPen(pen_chevron)
         
@@ -1289,15 +1292,15 @@ class CustomDropdown(QPushButton):
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
-        rad = config.S(4) if is_large else config.S(3)
+        rad = config.S(6) if is_large else config.S(5)
         h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
             QPushButton {{
-                background-color: #1e1e1e;
+                background-color: #2a2a2a;
                 color: #d4d4d4;
                 text-align: {align_str};
                 padding: 0px {pad_x}px;
-                border: 1px solid #3a3a3a;
+                border: 1px solid transparent;
                 border-radius: {rad}px;
                 min-height: {h}px;
                 max-height: {h}px;
@@ -1331,9 +1334,9 @@ class CustomDropdown(QPushButton):
         popup.hideEvent = _popup_hide
         popup.setStyleSheet(f"""
             QFrame {{
-                background-color: #1e1e1e;
-                border: 1px solid #444;
-                border-radius: {config.S(3)}px;
+                background-color: #262626;
+                border: 1px solid #333333;
+                border-radius: {config.S(6)}px;
                 padding: 0px;
                 margin: 0px;
             }}
@@ -1747,12 +1750,12 @@ class MultiSelectDropdown(QPushButton):
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
-        rad = config.S(4) if is_large else config.S(3)
+        rad = config.S(6) if is_large else config.S(5)
         h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
             QPushButton {{
-                background-color: #1e1e1e; color: #d4d4d4; text-align: left;
-                padding: 0px {pad_x}px; border: 1px solid #3a3a3a;
+                background-color: #2a2a2a; color: #d4d4d4; text-align: left;
+                padding: 0px {pad_x}px; border: 1px solid transparent;
                 border-radius: {rad}px;
                 min-height: {h}px; max-height: {h}px; height: {h}px;
                 font-family: "{config.UI_FONT_NAME}"; font-size: {fs}pt;
@@ -1915,15 +1918,15 @@ class SearchableDropdown(QPushButton):
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
-        rad = config.S(4) if is_large else config.S(3)
+        rad = config.S(6) if is_large else config.S(5)
         h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
             QPushButton {{
-                background-color: #1e1e1e;
+                background-color: #2a2a2a;
                 color: #d4d4d4;
                 text-align: {align_str};
                 padding: 0px {pad_x}px;
-                border: 1px solid #3a3a3a;
+                border: 1px solid transparent;
                 border-radius: {rad}px;
                 min-height: {h}px;
                 max-height: {h}px;
@@ -1960,9 +1963,9 @@ class SearchableDropdown(QPushButton):
         self.popup.hideEvent = _popup_hide
         self.popup.setStyleSheet(f"""
             QFrame {{
-                background-color: #1e1e1e;
-                border: 1px solid #444;
-                border-radius: {config.S(3)}px;
+                background-color: #262626;
+                border: 1px solid #333333;
+                border-radius: {config.S(6)}px;
                 padding: 0px;
                 margin: 0px;
             }}
@@ -2181,11 +2184,11 @@ class AssembleArrowButton(QPushButton):
         cy = h / 2.0
 
         if not self.isEnabled():
-            chevron_col = QColor("#555555")
+            chevron_col = qc("#555555")
         else:
             if self.hovered:
-                p.fillRect(0, 0, int(w), int(h), QColor(255, 255, 255, 25))
-            chevron_col = QColor("#ffffff") if self.hovered else QColor("#e0e0e0")
+                p.fillRect(0, 0, int(w), int(h), qc(255, 255, 255, 25))
+            chevron_col = qc("#ffffff") if self.hovered else qc("#e0e0e0")
 
         pen_chevron = QPen(chevron_col, float(config.S(1.8)), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         p.setPen(pen_chevron)
@@ -2445,8 +2448,8 @@ class AssembleSplitButton(QFrame):
             if was_disabled:
                 # Trigger smooth fade-in animation from #2a2a2a to #11703c
                 self._color_anim.stop()
-                self._color_anim.setStartValue(QColor("#2a2a2a"))
-                self._color_anim.setEndValue(QColor("#11703c"))
+                self._color_anim.setStartValue(qc("#2a2a2a"))
+                self._color_anim.setEndValue(qc("#11703c"))
                 self._color_anim.start()
             else:
                 self.update_style()

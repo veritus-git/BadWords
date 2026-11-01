@@ -270,7 +270,7 @@ class ResolveBridgeClient:
         return "".join(chars)
 
     def is_bridge_alive(self, timeout_secs: float = 0.25) -> bool:
-        """Quick check if DaVinci Resolve BadWords Bridge is alive and responding."""
+        """Quick check if DaVinci Resolve StoryCraft Bridge is alive and responding."""
         try:
             res = self.call("Ping", timeout_secs=timeout_secs)
             return bool(res and (res.get("message") == "Pong" or res.get("ok")))
@@ -398,7 +398,7 @@ class ResolveBridgeClient:
                 else:
                     raise TimeoutError(
                         f"DaVinci Resolve did not acknowledge request '{func_name}'. "
-                        f"Ensure DaVinci Resolve is running and 'Workspace -> Scripts -> BadWords Bridge' has been launched."
+                        f"Ensure DaVinci Resolve is running and 'Workspace -> Scripts -> StoryCraft Bridge' has been launched."
                     )
             finally:
                 # Always remove request.lua so Resolve idle loop does not keep parsing it

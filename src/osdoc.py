@@ -157,7 +157,10 @@ class OSDoctor:
         self.settings_file = os.path.join(self.install_dir, 'settings.json')
         # Legacy path for one-time migration
         self.legacy_pref_file = os.path.join(self.install_dir, 'pref.json')
-        self.saves_dir = os.path.join(self.app_data_dir, "saves")
+        # Transcripts, stories, backups and autosave live in the user's own StoryCraft folder,
+        # outside the install (moved there once from <install>/saves)
+        self.saves_dir = self._user_saves_dir()
+        self._migrate_saves(os.path.join(self.app_data_dir, "saves"))
         
         # Fallback check
         if not os.access(self.install_dir, os.W_OK):
@@ -954,7 +957,7 @@ class OSDoctor:
         return unique
 
     def generate_davinci_wrapper_content(self) -> str:
-        """Generates cross-platform BadWords.py wrapper script for DaVinci Resolve."""
+        """Generates cross-platform StoryCraft.py wrapper script for DaVinci Resolve."""
         install_str = self.install_dir.replace('\\', '/')
         libs_str = os.path.join(self.install_dir, 'libs').replace('\\', '/')
         main_script = os.path.join(self.install_dir, 'main.py').replace('\\', '/')
@@ -1096,8 +1099,8 @@ else:
     def sync_resolve_scripts(self, force: bool = False) -> None:
         """
         Auto-healing: ensures the correct scripts are installed in DaVinci Resolve.
-        - BadWords.py: ALWAYS installed in Workspace -> Scripts so user can launch BadWords embedded.
-        - BadWords Bridge.lua: ALWAYS installed for Free edition (and also available for Studio bridge).
+        - StoryCraft.py: ALWAYS installed in Workspace -> Scripts so user can launch BadWords embedded.
+        - StoryCraft Bridge.lua: ALWAYS installed for Free edition (and also available for Studio bridge).
         """
         try:
             info = self.get_resolve_installation_info()
@@ -1108,14 +1111,14 @@ else:
             is_studio = (info["edition"] == "Studio")
             is_free_21_1 = (not is_studio and info["is_21_1_or_newer"])
 
-            # Robustly locate BadWords Bridge.lua source across all layouts
+            # Robustly locate StoryCraft Bridge.lua source across all layouts
             lua_src = None
             for cand in [
-                os.path.join(self.install_dir, "setupfiles", "BadWords Bridge.lua"),
-                os.path.join(self.install_dir, "BadWords Bridge.lua"),
-                os.path.join(os.path.dirname(self.install_dir), "setupfiles", "BadWords Bridge.lua"),
-                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "BadWords Bridge.lua"),
-                getattr(self, 'resources_dir', '') and os.path.join(getattr(self, 'resources_dir', ''), "setupfiles", "BadWords Bridge.lua"),
+                os.path.join(self.install_dir, "setupfiles", "StoryCraft Bridge.lua"),
+                os.path.join(self.install_dir, "StoryCraft Bridge.lua"),
+                os.path.join(os.path.dirname(self.install_dir), "setupfiles", "StoryCraft Bridge.lua"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "StoryCraft Bridge.lua"),
+                getattr(self, 'resources_dir', '') and os.path.join(getattr(self, 'resources_dir', ''), "setupfiles", "StoryCraft Bridge.lua"),
             ]:
                 if cand and os.path.isfile(cand):
                     lua_src = cand
@@ -1123,13 +1126,13 @@ else:
 
             wrapper_content = self.generate_davinci_wrapper_content()
 
-            # 1. ALWAYS install BadWords.py so BadWords can be launched from Resolve's Scripts menu!
+            # 1. ALWAYS install StoryCraft.py so BadWords can be launched from Resolve's Scripts menu!
             py_deployed = False
             for ud in util_dirs:
                 if not os.path.isdir(ud):
                     try: os.makedirs(ud, exist_ok=True)
                     except Exception: continue
-                py_file = os.path.join(ud, "BadWords.py")
+                py_file = os.path.join(ud, "StoryCraft.py")
                 if not py_deployed:
                     try:
                         existing_content = ""
@@ -1144,19 +1147,19 @@ else:
                                 f.write(wrapper_content)
                             try: os.chmod(py_file, 0o755)
                             except Exception: pass
-                            log_info(f"[Resolve Sync] Installed BadWords.py at: {py_file}")
+                            log_info(f"[Resolve Sync] Installed StoryCraft.py at: {py_file}")
                         py_deployed = True
                     except Exception as e:
-                        log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
+                        log_warn(f"[Resolve Sync] Could not write StoryCraft.py to {ud}: {e}")
 
-            # 2. BadWords Bridge.lua handling
+            # 2. StoryCraft Bridge.lua handling
             primary_installed = False
             for ud in util_dirs:
                 if not os.path.isdir(ud):
                     try: os.makedirs(ud, exist_ok=True)
                     except Exception: continue
 
-                lua_file = os.path.join(ud, "BadWords Bridge.lua")
+                lua_file = os.path.join(ud, "StoryCraft Bridge.lua")
                 if lua_src and os.path.isfile(lua_src):
                     if not primary_installed:
                         try:
@@ -1179,16 +1182,16 @@ else:
                                     lf.write(l_code)
                                 try: os.chmod(lua_file, 0o755)
                                 except Exception: pass
-                                log_info(f"[Resolve Sync] Installed BadWords Bridge.lua at: {lua_file}")
+                                log_info(f"[Resolve Sync] Installed StoryCraft Bridge.lua at: {lua_file}")
                             primary_installed = True
                         except Exception as e:
-                            log_warn(f"[Resolve Sync] Failed to sync BadWords Bridge.lua to {ud}: {e}")
+                            log_warn(f"[Resolve Sync] Failed to sync StoryCraft Bridge.lua to {ud}: {e}")
                     else:
                         # Secondary directory: remove duplicate so only 1 entry appears in Resolve menus
                         if os.path.isfile(lua_file):
                             try:
                                 os.remove(lua_file)
-                                log_info(f"[Resolve Sync] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
+                                log_info(f"[Resolve Sync] Removed duplicate StoryCraft Bridge.lua from secondary dir: {lua_file}")
                             except Exception: pass
         except Exception as e:
             log_warn(f"sync_resolve_scripts error: {e}")
@@ -1421,6 +1424,37 @@ else:
         os.makedirs(self.temp_dir, exist_ok=True)
         return self.temp_dir
         
+    def _user_saves_dir(self):
+        if self.is_mac:
+            base = os.path.join(self.home_dir, "Library", "Application Support")
+        elif self.is_win:
+            base = os.environ.get("APPDATA") or os.path.join(self.home_dir, "AppData", "Roaming")
+        else:
+            base = os.environ.get("XDG_DATA_HOME") or os.path.join(self.home_dir, ".local", "share")
+        return os.path.join(base, "StoryCraft", "saves")
+
+    def _migrate_saves(self, old):
+        """Move <install>/saves into the StoryCraft folder (a rename on the same disk); entries already
+        there are left alone, and nothing is deleted."""
+        import shutil
+        try:
+            if not os.path.isdir(old) or os.path.abspath(old) == os.path.abspath(self.saves_dir):
+                return
+            if not os.path.exists(self.saves_dir):
+                os.makedirs(os.path.dirname(self.saves_dir), exist_ok=True)
+                shutil.move(old, self.saves_dir)
+                return
+            for name in os.listdir(old):
+                src, dst = os.path.join(old, name), os.path.join(self.saves_dir, name)
+                if not os.path.exists(dst):
+                    shutil.move(src, dst)
+                elif os.path.isdir(src) and os.path.isdir(dst):
+                    for sub in os.listdir(src):
+                        if not os.path.exists(os.path.join(dst, sub)):
+                            shutil.move(os.path.join(src, sub), os.path.join(dst, sub))
+        except Exception as e:
+            print(f"[StoryCraft] saves not moved: {e}")
+
     def get_saves_folder(self):
         os.makedirs(self.saves_dir, exist_ok=True)
         return self.saves_dir

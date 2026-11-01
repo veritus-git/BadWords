@@ -32,3 +32,7 @@ target/
 **/target/
 dist/
 installer/target/
+
+# Local tooling
+.claude/
+tools/asr_benchmark/build/

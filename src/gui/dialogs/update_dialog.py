@@ -11,8 +11,11 @@ DESCRIPTION:
 Update checker worker thread and notification dialog for new releases.
 """
 
+from gui.theme import qc
+
 import os
 import sys
+import re
 import threading
 import subprocess
 import tempfile
@@ -40,6 +43,7 @@ class UpdateCheckThread(QThread):
         Args: (latest_version, github_release_url, gitlab_release_url)
     """
     update_available = Signal(str, str, str)
+    status = Signal(str)  # "update" | "up_to_date" | "no_releases" | "offline"
 
     _cached_result: tuple | None = None
     _checked: bool = False
@@ -57,10 +61,13 @@ class UpdateCheckThread(QThread):
     @staticmethod
     def _parse_version(tag: str):
         tag = tag.strip().lstrip('v').lstrip('V')
-        try:
-            return tuple(int(x) for x in tag.split('.'))
-        except ValueError:
-            return (0,)
+        parts = []
+        for x in tag.split('.'):
+            m = re.match(r"\d+", x)
+            if not m:
+                break
+            parts.append(int(m.group(0)))
+        return tuple(parts) or (0,)
 
     @staticmethod
     def _fetch_json(url: str, timeout: int = 8):
@@ -73,6 +80,19 @@ class UpdateCheckThread(QThread):
 
     def run(self):
         from osdoc import log_info, log_error
+        import config as _cfg
+
+        repo = getattr(_cfg, "UPDATE_REPO", None)
+        if repo:
+            # StoryCraft: its own GitHub releases only
+            api = os.environ.get("STORYCRAFT_GH_API", "https://api.github.com")
+            web = os.environ.get("STORYCRAFT_GH_WEB", "https://github.com")
+            self._GH_API = f"{api}/repos/{repo}/releases/latest"
+            self._GH_PAGE = f"{web}/{repo}/releases/latest"
+            self._GL_API = None
+        elif not getattr(_cfg, "CHECK_ORIGINAL_UPDATES", True):
+            log_info("[UpdateCheck] Skipped: no update source configured.")
+            return
 
         if UpdateCheckThread._lock is None:
             UpdateCheckThread._lock = threading.Lock()
@@ -86,10 +106,13 @@ class UpdateCheckThread(QThread):
                 if self._parse_version(latest_display) > current_tuple:
                     log_info(f"[UpdateCheck] (cached) New version available: {latest_display}")
                     self.update_available.emit(latest_display, gh_page, gl_page)
+                    self.status.emit("update")
                 else:
                     log_info(f"[UpdateCheck] (cached) Already up-to-date ({self._current}).")
+                    self.status.emit("up_to_date")
             else:
                 log_info("[UpdateCheck] (cached) No version info available.")
+                self.status.emit(getattr(UpdateCheckThread, "_cached_status", "offline"))
             return
 
         with UpdateCheckThread._lock:
@@ -105,14 +128,17 @@ class UpdateCheckThread(QThread):
                 return
 
             latest_tag = None
+            no_release = False
             try:
                 data = self._fetch_json(self._GH_API)
                 latest_tag = data.get("tag_name", "").strip()
                 log_info(f"[UpdateCheck] GitHub latest tag: {latest_tag!r}")
             except Exception as e:
-                log_error(f"[UpdateCheck] GitHub API failed: {e}")
+                no_release = getattr(e, "code", None) == 404  # the repo has no release yet
+                log_error(f"[UpdateCheck] GitHub API failed: {e}") if not no_release else \
+                    log_info("[UpdateCheck] No release published yet.")
 
-            if not latest_tag:
+            if not latest_tag and self._GL_API:
                 try:
                     data = self._fetch_json(self._GL_API)
                     if isinstance(data, list) and data:
@@ -127,8 +153,11 @@ class UpdateCheckThread(QThread):
             UpdateCheckThread._checked = True
 
             if not latest_tag:
-                log_error("[UpdateCheck] Could not retrieve latest version from any source.")
+                if not no_release:
+                    log_error("[UpdateCheck] Could not retrieve latest version from any source.")
                 UpdateCheckThread._cached_result = None
+                UpdateCheckThread._cached_status = "no_releases" if no_release else "offline"
+                self.status.emit(UpdateCheckThread._cached_status)
                 return
 
             latest_tuple   = self._parse_version(latest_tag)
@@ -138,15 +167,27 @@ class UpdateCheckThread(QThread):
                 log_info(f"[UpdateCheck] New version available: {latest_display} (current: {self._current})")
                 UpdateCheckThread._cached_result = (latest_display, self._GH_PAGE, self._GL_PAGE)
                 self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE)
+                self.status.emit("update")
             else:
                 log_info(f"[UpdateCheck] Already up-to-date ({self._current}).")
                 UpdateCheckThread._cached_result = None
+                UpdateCheckThread._cached_status = "up_to_date"
+                self.status.emit("up_to_date")
+
+
+def update_install_supported(install_dir):
+    """The updater can install here: StoryCraft has one, and this isn't a development copy."""
+    return (getattr(config, "UPDATE_INSTALL_SUPPORTED", True)
+            and not os.path.exists(os.path.join(install_dir or "", ".storycraft_dev")))
 
 
 class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
     """Custom frameless update-notification dialog."""
-    _UPDATE_SCRIPT    = 'https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/updater.py'
-    _UPDATE_SCRIPT_GL = 'https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/updater.py'
+    # StoryCraft's updater, from its own repo (STORYCRAFT_GH_RAW points it at a local stand-in for tests)
+    _UPDATE_SCRIPT    = (f"{os.environ.get('STORYCRAFT_GH_RAW', 'https://raw.githubusercontent.com')}/"
+                         f"{getattr(config, 'UPDATE_REPO', 'Boris-Edu/StoryCraft')}/"
+                         f"{getattr(config, 'UPDATE_BRANCH', 'fork')}/setupfiles/updater.py")
+    _UPDATE_SCRIPT_GL = _UPDATE_SCRIPT
 
     _update_done = Signal(bool, str)
 
@@ -208,7 +249,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
 
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(config.S(32))
-        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setColor(qc(0, 0, 0, 160))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
         outer.addWidget(self.inner_frame)
@@ -328,10 +369,10 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
                         continue
 
                 if not script_content:
-                    self._update_done.emit(False, "Could not download update script from GitHub or GitLab.")
+                    self._update_done.emit(False, "Could not download the StoryCraft updater from GitHub.")
                     return
 
-                fd, tmp_script = tempfile.mkstemp(suffix='.py', prefix='bw_update_')
+                fd, tmp_script = tempfile.mkstemp(suffix='.py', prefix='sc_update_')
                 with os.fdopen(fd, 'wb') as f:
                     f.write(script_content)
 

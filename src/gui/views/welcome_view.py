@@ -16,19 +16,84 @@ Adheres strictly to the BadWords design system: dark aesthetics, zero emojis,
 vector SVG icons, and embedded Ubuntu font consistency across all platforms.
 """
 
+from gui.theme import qc
+
 import os
 from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QPropertyAnimation, QRectF, QTimer, QCoreApplication, QEvent, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QLineEdit, QTextEdit, QSizePolicy, QGraphicsOpacityEffect
 )
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QLinearGradient
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QLinearGradient, QFont
 from PySide6.QtSvg import QSvgRenderer
 
 import config
 from gui.utils import get_play_icon, get_layout_icon_path
 from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectDropdown, ToggleSwitch, ReloadButton
 from gui.widgets.file_drop_zone import FileDropZone
+
+
+# ── Start screen look (StoryCraft) ────────────────────────────────────────────
+# Written in the classic palette: gui/theme.py maps the greys and the green to the active theme.
+# The brand gradient (cyan -> violet) and its ink text are fixed and pass through untranslated.
+CARD_BG = "#262626"        # the soft settings cards: a step above the page background
+SURFACE_BG = "#2a2a2a"     # quiet (secondary) buttons, the mode switch track
+SURFACE_HOVER = "#333333"
+LABEL_FG = "#a3a3a3"       # field labels
+MUTED_FG = "#8a8a8a"       # taglines, hints
+BRAND_INK = "#0b0b14"      # text on the brand gradient
+_GRAD = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {0}, stop:1 {1})"
+
+
+def card_radius() -> int:
+    return config.S(16)
+
+
+def card_qss(name: str = "WelcomeCard") -> str:
+    return f"QWidget#{name} {{ background-color: {CARD_BG}; border: none; border-radius: {card_radius()}px; }}"
+
+
+def label_qss(color: str = LABEL_FG, size: float = 9.0) -> str:
+    return (f"color: {color}; font-size: {config.FS(size)}pt; font-weight: 500;"
+            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;")
+
+
+def field_label(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setFixedHeight(config.S(18))
+    lbl.setStyleSheet(label_qss())
+    return lbl
+
+
+def primary_button_qss(selector: str = "QPushButton", radius: int = None, pad_x: int = None, size: float = 10.5) -> str:
+    """The one primary action of a screen: the brand gradient with ink text."""
+    r = config.S(10) if radius is None else radius
+    px = config.S(28) if pad_x is None else pad_x
+    return f"""
+        {selector} {{
+            background: {_GRAD.format('#22d3ee', '#a855f7')}; color: {BRAND_INK};
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(size)}pt; font-weight: 600;
+            border: none; border-radius: {r}px; padding: 0 {px}px;
+        }}
+        {selector}:hover {{ background: {_GRAD.format('#4fdcf1', '#b878f9')}; }}
+        {selector}:pressed {{ background: {_GRAD.format('#1bb8d1', '#9446e0')}; }}
+        {selector}:disabled {{ background: {SURFACE_BG}; color: {MUTED_FG}; }}
+    """
+
+
+def secondary_button_qss(selector: str = "QPushButton", radius: int = None, pad_x: int = None, size: float = 10.0) -> str:
+    """Quiet actions next to the primary one: a soft surface, no outline."""
+    r = config.S(10) if radius is None else radius
+    px = config.S(20) if pad_x is None else pad_x
+    return f"""
+        {selector} {{
+            background-color: {SURFACE_BG}; color: {config.FG_COLOR};
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(size)}pt; font-weight: 500;
+            border: none; border-radius: {r}px; padding: 0 {px}px;
+        }}
+        {selector}:hover {{ background-color: {SURFACE_HOVER}; }}
+        {selector}:pressed {{ background-color: #262626; }}
+    """
 
 
 def is_embedded_in_resolve() -> bool:
@@ -115,7 +180,18 @@ class _WorkspaceFadeCanvas(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        painter.fillRect(self.rect(), QColor(config.BG_COLOR))
+        painter.fillRect(self.rect(), qc(config.BG_COLOR))
+        # The page's brand light continues under the transition, so nothing flashes
+        page = self.parentWidget()
+        while page is not None and not isinstance(page, WelcomePageView):
+            page = page.parentWidget()
+        if page is not None:
+            from PySide6.QtCore import QPoint
+            off = self.mapTo(page, QPoint(0, 0))
+            painter.save()
+            painter.translate(-off.x(), -off.y())
+            page.paint_backdrop(painter)
+            painter.restore()
 
         p = self.progress
         w = self.width()
@@ -141,37 +217,73 @@ class _WorkspaceFadeCanvas(QWidget):
 
 class WelcomeBrandingWidget(QWidget):
     """
-    Renders the authentic vector 'BadWords' branding logo in Helvetica Neue
-    consistently across all platforms from badwords-welcome-branding.svg.
+    The start screen's header: the app mark (gui/brand.py), the app name (config.APP_NAME)
+    and a one-line tagline, drawn in code so it follows the colour theme.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("welcome_title")
-        svg_path = get_layout_icon_path("badwords-welcome-branding.svg")
-        self.renderer = QSvgRenderer(svg_path, self)
-        s = self.renderer.defaultSize()
-        self.aspect = float(s.width()) / float(max(1, s.height())) if not s.isEmpty() else 6.046
-        target_h = config.S(36)
-        target_w = int(target_h * self.aspect)
-        self.setFixedSize(target_w, target_h)
+        from gui.utils import _txt
+        self._tagline = _txt("en", "splash_tagline")
+        try:
+            prefs_lang = parent.window().lang if parent is not None and hasattr(parent.window(), "lang") else None
+            if prefs_lang:
+                self._tagline = _txt(prefs_lang, "splash_tagline")
+        except Exception:
+            pass
+        # A centred lock-up: the mark, the wordmark under it, the tagline under that
+        self._mark = config.S(52)
+        self._word_px = config.S(38)
+        self._gap_mark = config.S(14)
+        self._gap_tag = config.S(6)
+        from gui import brand
+        from PySide6.QtGui import QFontMetricsF
+        _, tag_f = self._fonts()
+        fm_w = QFontMetricsF(brand.wordmark_font(self._word_px))
+        fm_t = QFontMetricsF(tag_f)
+        self._word_h = fm_w.ascent() + fm_w.descent() * 0.4
+        self._word_ascent = fm_w.ascent()
+        self._tag_h = fm_t.height()
+        text_w = max(brand.wordmark_width(self._word_px), fm_t.horizontalAdvance(self._tagline))
+        h = self._mark + self._gap_mark + self._word_h + self._gap_tag + self._tag_h
+        self.setFixedSize(int(text_w) + config.S(24), int(round(h)) + config.S(2))
+
+    def _fonts(self):
+        name_f = QFont(self.font())
+        name_f.setPointSizeF(config.FS(24))
+        name_f.setWeight(QFont.Bold)
+        tag_f = QFont(self.font())
+        tag_f.setPointSizeF(config.FS(10.5))
+        return name_f, tag_f
 
     def sizeHint(self) -> QSize:
-        h = config.S(36)
-        return QSize(int(h * self.aspect), h)
+        return self.size()
 
     def paintEvent(self, event):
+        from PySide6.QtCore import QRectF
+        from gui import brand
+        from gui.theme import qc
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.SmoothPixmapTransform)
-        if self.renderer.isValid():
-            self.renderer.render(p, self.rect())
+        w = float(self.width())
+        brand.draw_mark(p, QRectF((w - self._mark) / 2.0, 0, self._mark, self._mark))
+        y = self._mark + self._gap_mark
+        word_w = brand.wordmark_width(self._word_px)
+        # "Story" in the theme's brightest text colour (also reads on a light theme), "Craft" in the brand gradient
+        brand.draw_wordmark(p, (w - word_w) / 2.0, y + self._word_ascent, self._word_px, solid=qc("#f0f0f0").name())
+        y += self._word_h + self._gap_tag
+        _, tag_f = self._fonts()
+        p.setFont(tag_f)
+        p.setPen(qc(MUTED_FG))
+        p.drawText(QRectF(0, y, w, self._tag_h + config.S(2)), Qt.AlignHCenter | Qt.AlignTop, self._tagline)
+        p.end()
 
 
 class AnimatedUnderlineGlowModeSwitch(QWidget):
     """
-    Mode switcher with continuous gray baseline, active green segment,
-    upward soft flame gradient, and smooth cubic bezier animation.
-    Aligned flush with inputs below.
+    Mode switcher (Transcript | Silence Detection): a soft pill track with a sliding thumb
+    under the active mode (smooth cubic animation). Same width as the settings card below.
+    The class name is kept for the code that refers to it.
     """
     def __init__(self, tab1_text: str, tab2_text: str, parent=None):
         super().__init__(parent)
@@ -180,15 +292,17 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         self.on_change = None
         self._anim = None
 
+        self._inset = config.S(4)
+        self.setFixedHeight(config.S(40))
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(self._inset, self._inset, self._inset, self._inset)
         lay.setSpacing(0)
 
         self.btn1 = QPushButton(tab1_text)
         self.btn2 = QPushButton(tab2_text)
         for btn in (self.btn1, self.btn2):
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setFixedHeight(config.S(30))
+            btn.setFixedHeight(config.S(40) - 2 * self._inset)
 
         self.btn1.clicked.connect(lambda: self.set_index(0, trigger_callback=True))
         self.btn2.clicked.connect(lambda: self.set_index(1, trigger_callback=True))
@@ -231,56 +345,46 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
         anim.start()
 
     def update_styles(self):
-        self.btn1.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {"#ffffff" if self.active_idx == 0 else "#777777"};
-                font-family: "{config.UI_FONT_NAME}";
-                font-weight: {"bold" if self.active_idx == 0 else "normal"};
-                font-size: {config.FS(9.5)}pt;
-                padding-bottom: {config.S(4)}px;
-            }}
-            QPushButton:hover {{
-                color: {"#ffffff" if self.active_idx == 0 else "#bbbbbb"};
-            }}
-        """)
-        self.btn2.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {"#ffffff" if self.active_idx == 1 else "#777777"};
-                font-family: "{config.UI_FONT_NAME}";
-                font-weight: {"bold" if self.active_idx == 1 else "normal"};
-                font-size: {config.FS(9.5)}pt;
-                padding-bottom: {config.S(4)}px;
-            }}
-            QPushButton:hover {{
-                color: {"#ffffff" if self.active_idx == 1 else "#bbbbbb"};
-            }}
-        """)
+        for i, btn in enumerate((self.btn1, self.btn2)):
+            active = self.active_idx == i
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    color: {"#ececec" if active else MUTED_FG};
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-weight: {"600" if active else "500"};
+                    font-size: {config.FS(9.5)}pt;
+                }}
+                QPushButton:hover {{
+                    color: {"#ececec" if active else "#c4c4c4"};
+                }}
+            """)
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w = float(self.width())
         h = float(self.height())
-        half_w = w / 2.0
+        ins = float(self._inset)
 
-        p.setPen(QPen(QColor("#333333"), 1.0))
-        p.drawLine(0, int(h - 1), int(w), int(h - 1))
+        p.setPen(Qt.NoPen)
+        p.setBrush(qc(CARD_BG))
+        p.drawRoundedRect(QRectF(0, 0, w, h), h / 2.0, h / 2.0)
 
-        cur_left = self._anim_pos * half_w
-        active_rect = QRectF(cur_left, 0, half_w, h - 1)
-
-        grad = QLinearGradient(0, h, 0, 0)
-        grad.setColorAt(0.0, QColor(26, 122, 62, 75))
-        grad.setColorAt(0.45, QColor(26, 122, 62, 20))
-        grad.setColorAt(1.0, QColor(26, 122, 62, 0))
-        p.fillRect(active_rect, grad)
-
-        p.setPen(QPen(QColor("#1a7a3e"), 2.0))
-        p.drawLine(int(active_rect.left()), int(h - 1), int(active_rect.right()), int(h - 1))
+        half_w = (w - 2 * ins) / 2.0
+        th = h - 2 * ins
+        thumb = QRectF(ins + self._anim_pos * half_w, ins, half_w, th)
+        p.setBrush(qc(SURFACE_HOVER))
+        p.drawRoundedRect(thumb, th / 2.0, th / 2.0)
+        # A short brand-gradient glint under the active label
+        from gui import brand
+        gw = min(config.S(28), half_w * 0.3)
+        gx = thumb.center().x() - gw / 2.0
+        gy = thumb.bottom() - config.S(5)
+        p.setBrush(brand.gradient(gx, gx + gw))
+        p.drawRoundedRect(QRectF(gx, gy, gw, config.S(2)), config.S(1), config.S(1))
+        p.end()
 
 
 class _StatusDotWidget(QWidget):
@@ -297,7 +401,7 @@ class _StatusDotWidget(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        c = QColor("#38c172") if self._connected else QColor("#e05555")
+        c = qc("#38c172") if self._connected else qc("#e05555")
         p.setBrush(c)
         p.setPen(Qt.NoPen)
         p.drawEllipse(0, 0, config.S(8), config.S(8))
@@ -323,10 +427,7 @@ class SourceHeaderWidget(QWidget):
 
         self.lbl_title = QLabel(win.txt("src_source") if hasattr(win, 'txt') else "Źródło")
         self.lbl_title.setFixedHeight(config.S(18))
-        self.lbl_title.setStyleSheet(
-            f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
-            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
-        )
+        self.lbl_title.setStyleSheet(label_qss())
         lay.addWidget(self.lbl_title)
 
         # Info icon moved right next to Source text, matching Model info icon
@@ -485,8 +586,8 @@ class SourceHeaderWidget(QWidget):
                 elif ed_info.get("edition") != "Free":
                     if hasattr(rh, 'os_doc') and rh.os_doc:
                         util_dirs = rh.os_doc.get_resolve_script_utility_dirs()
-                        has_py = any(os.path.isfile(os.path.join(d, "BadWords.py")) for d in util_dirs if os.path.isdir(d))
-                        has_lua = any(os.path.isfile(os.path.join(d, "BadWords Bridge.lua")) for d in util_dirs if os.path.isdir(d))
+                        has_py = any(os.path.isfile(os.path.join(d, "StoryCraft.py")) for d in util_dirs if os.path.isdir(d))
+                        has_lua = any(os.path.isfile(os.path.join(d, "StoryCraft Bridge.lua")) for d in util_dirs if os.path.isdir(d))
                         if has_py and not has_lua:
                             is_studio = True
 
@@ -528,13 +629,14 @@ class DavinciSourceBox(QWidget):
 class _SourceFadeCanvas(QWidget):
     """
     Renders a hardware-accelerated sequential Fade Out -> Fade In transition.
-    Renders on a solid background matching config.BG_COLOR to completely eliminate
-    double alpha-blending, brightness flashes, and color glitches, matching
+    Renders on a solid background matching the settings card it sits in (bg_color) to
+    eliminate double alpha-blending, brightness flashes, and color glitches, matching
     _WorkspaceFadeCanvas 1:1.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.bg_color = CARD_BG
         self.pix_from = None
         self.pix_to = None
         self.progress = 0.0
@@ -565,7 +667,7 @@ class _SourceFadeCanvas(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        painter.fillRect(self.rect(), QColor(config.BG_COLOR))
+        painter.fillRect(self.rect(), qc(self.bg_color))  # the card it sits on
 
         p = self.progress
         w = self.width()
@@ -1017,6 +1119,29 @@ def update_source_combo_style(combo, mode: str = "file"):
 
 
 class WelcomePageView(QWidget):
+    def paint_backdrop(self, p: QPainter):
+        """A faint cyan / violet light around the logo and the card (StoryCraft colours)."""
+        from PySide6.QtGui import QRadialGradient
+        from PySide6.QtCore import QPointF
+        from gui import brand
+        title = getattr(self.win if hasattr(self, "win") else None, "welcome_title", None)
+        cx = self.width() / 2
+        cy = (title.mapTo(self, title.rect().center()).y() if title is not None and title.isVisible() else self.height() * 0.22)
+        for dx, dy, col, alpha, reach in ((-config.S(170), config.S(40), brand.CYAN, 24, config.S(460)),
+                                          (config.S(190), config.S(120), brand.VIOLET, 30, config.S(520))):
+            g = QRadialGradient(QPointF(cx + dx, cy + dy), reach)
+            c0 = QColor(col); c0.setAlpha(alpha)
+            c1 = QColor(col); c1.setAlpha(0)
+            g.setColorAt(0.0, c0)
+            g.setColorAt(1.0, c1)
+            p.fillRect(self.rect(), g)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        self.paint_backdrop(p)
+        p.end()
+        super().paintEvent(event)
+
     """
     Welcome / Configuration screen (Page 0 of the main stack).
     Manages smooth Y-axis vertical centering of both workspaces,
@@ -1033,7 +1158,7 @@ class WelcomePageView(QWidget):
         self._y_anim = None
 
         self.H_HEADER = config.S(110)
-        self.H_MAX_CONTENT = config.S(540)
+        self.H_MAX_CONTENT = config.S(600)
 
         self.welcome_root = QWidget(self)
         self.welcome_root.setObjectName("welcome_root")
@@ -1044,7 +1169,7 @@ class WelcomePageView(QWidget):
         self.root_layout.setSpacing(0)
         self.root_layout.setAlignment(Qt.AlignTop)
 
-        # ── 1. Branding Logo (BadWords) ───────────────────────────────────────
+        # ── 1. Branding (mark, wordmark, tagline) ─────────────────────────────
         win.welcome_title = WelcomeBrandingWidget(self.welcome_root)
         h_title = QHBoxLayout()
         h_title.setContentsMargins(0, 0, 0, 0)
@@ -1053,7 +1178,8 @@ class WelcomePageView(QWidget):
         h_title.addWidget(win.welcome_title)
         h_title.addStretch()
         self.root_layout.addLayout(h_title)
-        self.root_layout.addSpacing(config.S(24))
+        gap_title = config.S(28)
+        self.root_layout.addSpacing(gap_title)
 
         # ── 2. Mode Switcher (Transcript | Silence Detection) ─────────────────
         win.welcome_mode_switch = AnimatedUnderlineGlowModeSwitch(
@@ -1061,7 +1187,7 @@ class WelcomePageView(QWidget):
             win.txt("msg_standalone_silence"),
             self.welcome_root
         )
-        win.welcome_mode_switch.setFixedWidth(config.S(325))
+        win.welcome_mode_switch.setFixedWidth(config.S(325) + 2 * config.S(20))
         h_mode = QHBoxLayout()
         h_mode.setContentsMargins(0, 0, 0, 0)
         h_mode.setSpacing(0)
@@ -1069,7 +1195,10 @@ class WelcomePageView(QWidget):
         h_mode.addWidget(win.welcome_mode_switch)
         h_mode.addStretch()
         self.root_layout.addLayout(h_mode)
-        self.root_layout.addSpacing(config.S(20))
+        gap_switch = config.S(16)
+        self.root_layout.addSpacing(gap_switch)
+        # The header's real height (used to centre the whole screen vertically)
+        self.H_HEADER = win.welcome_title.height() + gap_title + win.welcome_mode_switch.height() + gap_switch
 
         # ── 3. Workspace Stack Area ───────────────────────────────────────────
         self.workspace_container = QWidget(self.welcome_root)
@@ -1131,6 +1260,22 @@ class WelcomePageView(QWidget):
         is_standalone = getattr(self.win, 'is_standalone', True)
         if source_type is None:
             source_type = getattr(self.win, 'current_source_type', 'file')
+
+        # Measure the workspace's content (cards + buttons) so the screen centres on what is drawn
+        content_h = 0
+        try:
+            stack = getattr(self.win, 'welcome_stack', None)
+            page_w = stack.widget(idx) if stack is not None else None
+            if page_w is not None and page_w.layout() is not None:
+                content_h = page_w.layout().sizeHint().height()
+                area = getattr(self.win, 'silence_options_area', None)
+                if idx == 1 and area is not None and content_h > 0:
+                    # Mid-switch the options area still has its old height: count the one it is heading to
+                    content_h += area._calc_target_height(source_type) - area.minimumHeight()
+        except Exception:
+            content_h = 0
+        if content_h > config.S(100):
+            return self.H_HEADER + content_h
 
         if not is_standalone:
             content_h = config.S(322) if idx == 0 else config.S(404)
@@ -1442,15 +1587,20 @@ def build_welcome_view(win) -> QWidget:
         row_l = QVBoxLayout()
         row_l.setContentsMargins(0, 0, 0, 0)
         row_l.setSpacing(config.S(4))
-        lbl = QLabel(label_text)
-        lbl.setFixedHeight(config.S(18))
-        lbl.setStyleSheet(
-            f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
-            f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
-        )
-        row_l.addWidget(lbl)
+        row_l.addWidget(field_label(label_text))
         row_l.addWidget(widget)
         return row_l
+
+    # Stop Bridge (Resolve source only): a quiet surface button that turns red while pressed
+    _stop_bridge_qss = f"""
+        QPushButton {{
+            background-color: {SURFACE_BG}; color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}";
+            font-size: {config.FS(8.5)}pt; font-weight: 500; border: none; border-radius: {config.S(6)}px;
+            padding: 0 {config.S(8)}px;
+        }}
+        QPushButton:hover {{ background-color: {SURFACE_HOVER}; }}
+        QPushButton:pressed {{ background-color: #702525; color: #ffffff; }}
+    """
 
     # ═══════════════════════════════════════════════════════════════
     # PAGE 0: TRANSCRIPTION WORKSPACE
@@ -1471,11 +1621,17 @@ def build_welcome_view(win) -> QWidget:
 
     # ── Left Column: Settings Container (325px + shake padding) ──────────────
     pad = config.S(10)
+    # The settings sit in one card (StoryCraft look); its padding also leaves room for the "shake" hint
+    card_pad = config.S(20)
+    card_pad_y = config.S(22)
+    gap_field = config.S(16)   # between the fields of a card
     win.settings_container = QWidget()
-    win.settings_container.setFixedWidth(config.S(325) + 2 * pad)
-    win.settings_container.setStyleSheet("background: transparent;")
+    win.settings_container.setObjectName("WelcomeCard")
+    win.settings_container.setAttribute(Qt.WA_StyledBackground, True)
+    win.settings_container.setFixedWidth(config.S(325) + 2 * card_pad)
+    win.settings_container.setStyleSheet(card_qss())
     win.settings_layout = QVBoxLayout(win.settings_container)
-    win.settings_layout.setContentsMargins(pad, 0, pad, 0)
+    win.settings_layout.setContentsMargins(card_pad, card_pad_y, card_pad, card_pad_y)
     win.settings_layout.setSpacing(0)
     win.settings_layout.setAlignment(Qt.AlignTop)
     win.slider_layout.addWidget(win.settings_container)
@@ -1490,12 +1646,7 @@ def build_welcome_view(win) -> QWidget:
     _vbox_tl0 = QVBoxLayout()
     _vbox_tl0.setContentsMargins(0, 0, 0, 0)
     _vbox_tl0.setSpacing(config.S(4))
-    _lbl_tl0 = QLabel(win.txt("lbl_timeline_selection"))
-    _lbl_tl0.setFixedHeight(config.S(18))
-    _lbl_tl0.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
-        f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
-    )
+    _lbl_tl0 = field_label(win.txt("lbl_timeline_selection"))
     _hbox_tl0 = QHBoxLayout()
     _hbox_tl0.setContentsMargins(0, 0, 0, 0)
     _hbox_tl0.setSpacing(config.S(4))
@@ -1532,16 +1683,8 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_0.setMinimumWidth(config.S(85))
         win.btn_stop_bridge_0.setMaximumWidth(config.S(125))
         win.btn_stop_bridge_0.setCursor(Qt.PointingHandCursor)
-        win.btn_stop_bridge_0.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu BadWords Bridge w DaVinci Resolve")
-        win.btn_stop_bridge_0.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(8.5)}pt; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
-                padding: 0 {config.S(6)}px;
-            }}
-            QPushButton:hover {{ background-color: #383838; color: #ffffff; border-color: #505050; }}
-            QPushButton:pressed {{ background-color: #702525; color: #ffffff; border-color: #903030; }}
-        """)
+        win.btn_stop_bridge_0.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu StoryCraft Bridge w DaVinci Resolve")
+        win.btn_stop_bridge_0.setStyleSheet(_stop_bridge_qss)
         win.btn_stop_bridge_0.clicked.connect(_on_stop_bridge)
 
         win.btn_ref_source_0 = ReloadButton(size=30)
@@ -1563,14 +1706,14 @@ def build_welcome_view(win) -> QWidget:
         win.source_area_0 = SourceAreaWidget(win.drop_zone_0, win.davinci_box_0, initial_mode=win.current_source_type)
         win.source_area_0.set_mode(win.current_source_type)
         win.settings_layout.addWidget(win.source_area_0)
-        win.settings_layout.addSpacing(config.S(14))
+        win.settings_layout.addSpacing(gap_field)
 
     else:
         # Embedded DaVinci Resolve mode: exact original layout
         win.settings_layout.addLayout(_vbox_tl0)
-        win.settings_layout.addSpacing(config.S(14))
+        win.settings_layout.addSpacing(gap_field)
         win.settings_layout.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_0))
-        win.settings_layout.addSpacing(config.S(14))
+        win.settings_layout.addSpacing(gap_field)
 
     # ── 2. Language Selection ─────────────────────────────────────────────────
     lang_items = list(config.SUPPORTED_LANGUAGES.values())
@@ -1582,7 +1725,32 @@ def build_welcome_view(win) -> QWidget:
     win._combo_lang.setText(display_name if display_name in lang_items else placeholder)
     win._combo_lang.valueChanged.connect(lambda v: win.engine.save_preferences({"lang": v}))
     win.settings_layout.addLayout(_row(win.txt("lbl_lang"), win._combo_lang))
-    win.settings_layout.addSpacing(config.S(14))
+    win.settings_layout.addSpacing(gap_field)
+
+    # ── 2b. Who transcribes: Whisper here, or Resolve's own transcription (with speakers) ──
+    from gui.widgets.segmented import SegmentedChoice
+    win.seg_tx_source = SegmentedChoice(
+        [("whisper", win.txt("tx_source_whisper")), ("resolve", win.txt("tx_source_resolve"))],
+        current=prefs.get('transcript_source', 'whisper'))
+    win.seg_tx_source.setToolTip(win.txt("tt_tx_source"))
+    win.seg_tx_source.changed.connect(lambda v: win.engine.save_preferences({"transcript_source": v}))
+    # On the start screen the choice reads as a quiet segmented field (the gradient is kept for Analyze)
+    _segs = list(win.seg_tx_source.buttons.values())
+    for i, b in enumerate(_segs):
+        r_l = config.S(4) if i == 0 else 0
+        r_r = config.S(4) if i == len(_segs) - 1 else 0
+        b.setStyleSheet(f"""
+            QPushButton {{ background: #1e1e1e; color: {MUTED_FG}; border: 1px solid #3a3a3a;
+                border-top-left-radius: {r_l}px; border-bottom-left-radius: {r_l}px;
+                border-top-right-radius: {r_r}px; border-bottom-right-radius: {r_r}px;
+                padding: 0 {config.S(10)}px; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500; }}
+            QPushButton:hover {{ color: #c4c4c4; }}
+            QPushButton:checked {{ background: #3a3a3a; color: #ececec; border-color: #3a3a3a; font-weight: 600; }}
+            QPushButton:disabled {{ color: #5a5a5a; }}
+            QPushButton:checked:disabled {{ background: #2e2e2e; color: {MUTED_FG}; }}
+        """)
+    win.settings_layout.addLayout(_row(win.txt("lbl_tx_source"), win.seg_tx_source))
+    win.settings_layout.addSpacing(gap_field)
 
     # ── 3. Model Selection ────────────────────────────────────────────────────
     model_items = [
@@ -1610,12 +1778,7 @@ def build_welcome_view(win) -> QWidget:
     row_model_lbl = QHBoxLayout()
     row_model_lbl.setContentsMargins(0, 0, 0, 0)
     row_model_lbl.setSpacing(config.S(5))
-    lbl_model = QLabel(win.txt("lbl_model"))
-    lbl_model.setFixedHeight(config.S(18))
-    lbl_model.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
-        f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
-    )
+    lbl_model = field_label(win.txt("lbl_model"))
     row_model_lbl.addWidget(lbl_model)
     row_model_lbl.addWidget(info_model)
     row_model_lbl.addStretch()
@@ -1627,7 +1790,7 @@ def build_welcome_view(win) -> QWidget:
     vbox_model.addWidget(win._combo_model)
 
     win.settings_layout.addLayout(vbox_model)
-    win.settings_layout.addSpacing(config.S(14))
+    win.settings_layout.addSpacing(gap_field)
 
     # ── 4. More Accurate Mode Toggle ──────────────────────────────────────────
     win.tgl_more_accurate = ToggleSwitch()
@@ -1635,7 +1798,7 @@ def build_welcome_view(win) -> QWidget:
     win.tgl_more_accurate.toggled.connect(win._on_more_accurate_toggled)
 
     lbl_acc = QLabel(win.txt("lbl_more_accurate"))
-    lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt;")
+    lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500; background: transparent;")
 
     info_acc = win._create_info_icon("tt_more_accurate")
 
@@ -1664,19 +1827,18 @@ def build_welcome_view(win) -> QWidget:
     win.script_container_layout.setContentsMargins(config.S(16), 0, pad, 0)
     win.script_container_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
 
+    # The script sits in its own card, level with the settings card (same top, same bottom)
     win.script_content_widget = QWidget()
+    win.script_content_widget.setObjectName("WelcomeScriptCard")
+    win.script_content_widget.setAttribute(Qt.WA_StyledBackground, True)
+    win.script_content_widget.setStyleSheet(card_qss("WelcomeScriptCard"))
     win.script_content_widget.setFixedWidth(config.S(325))
     win.script_layout = QVBoxLayout(win.script_content_widget)
-    win.script_layout.setContentsMargins(0, 0, 0, 0)
+    win.script_layout.setContentsMargins(config.S(18), card_pad_y, config.S(18), card_pad_y)
     win.script_layout.setSpacing(0)
     win.script_layout.setAlignment(Qt.AlignTop)
 
-    _lbl_script = QLabel(win.txt("lbl_script"))
-    _lbl_script.setFixedHeight(config.S(18))
-    _lbl_script.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
-        f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
-    )
+    _lbl_script = field_label(win.txt("lbl_script"))
     win.script_layout.addWidget(_lbl_script)
     win.script_layout.addSpacing(config.S(4))
 
@@ -1696,7 +1858,7 @@ def build_welcome_view(win) -> QWidget:
     win.script_container_layout.addWidget(win.script_content_widget)
     win.slider_layout.addWidget(win.script_container)
 
-    w_settings = config.S(325) + 2 * pad
+    w_settings = win.settings_container.width()  # the card (fixed width)
     w_initial_slider = (w_settings + target_script_w) if is_more_accurate else w_settings
     win.slider_widget.setFixedWidth(w_initial_slider)
 
@@ -1708,66 +1870,44 @@ def build_welcome_view(win) -> QWidget:
     l_trans.addLayout(h_slider)
 
     # ── Action Buttons ────────────────────────────────────────────────────────
-    l_trans.addSpacing(config.S(18))
+    l_trans.addSpacing(config.S(24))
 
     btn_row_t = QHBoxLayout()
     btn_row_t.setContentsMargins(0, 0, 0, 0)
     btn_row_t.setSpacing(0)
+    h_btn = config.S(42)
 
     btn_import = QPushButton(win.txt("btn_import_project"))
     btn_import.setObjectName("btn_ghost")
     btn_import.setCursor(Qt.PointingHandCursor)
-    btn_import.setFixedHeight(config.S(30))
-    btn_import.setStyleSheet(f"""
-        QPushButton#btn_ghost {{
-            background-color: #1e1e1e; color: {config.FG_COLOR};
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt;
-            border: 1px solid #3a3a3a; border-radius: {config.S(4)}px; padding: 0 {config.S(14)}px;
-        }}
-        QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
-        QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
-    """)
+    btn_import.setFixedHeight(h_btn)
+    btn_import.setStyleSheet(secondary_button_qss("QPushButton#btn_ghost"))
     btn_import.clicked.connect(win._on_import_project)
     btn_row_t.addWidget(btn_import)
 
     btn_analyze = QPushButton(win.txt("btn_analyze"))
     btn_analyze.setObjectName("btn_primary")
-    btn_analyze.setIcon(get_play_icon(config.S(12), "#ffffff", 1.5))
+    btn_analyze.setIcon(get_play_icon(config.S(12), BRAND_INK, 1.5))
     btn_analyze.setIconSize(QSize(config.S(12), config.S(12)))
     btn_analyze.setCursor(Qt.PointingHandCursor)
-    btn_analyze.setFixedHeight(config.S(30))
-    btn_analyze.setStyleSheet(f"""
-        QPushButton#btn_primary {{
-            background-color: {config.BTN_BG}; color: #ffffff;
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
-            border: none; border-radius: {config.S(4)}px; padding: 0 {config.S(18)}px;
-        }}
-        QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
-        QPushButton#btn_primary:pressed {{ background-color: #176e38; }}
-    """)
+    btn_analyze.setFixedHeight(h_btn)
+    btn_analyze.setMinimumWidth(config.S(180))
+    btn_analyze.setStyleSheet(primary_button_qss("QPushButton#btn_primary"))
     btn_analyze.clicked.connect(win._on_start_analysis)
-    btn_row_t.addSpacing(config.S(8))
+    btn_row_t.addSpacing(config.S(10))
     btn_row_t.addWidget(btn_analyze)
 
     win.btn_import_welcome_script = QPushButton(win.txt("btn_import_script"))
     win.btn_import_welcome_script.setObjectName("btn_ghost")
     win.btn_import_welcome_script.setCursor(Qt.PointingHandCursor)
-    win.btn_import_welcome_script.setFixedHeight(config.S(30))
-    win.btn_import_welcome_script.setStyleSheet(f"""
-        QPushButton#btn_ghost {{
-            background-color: #1e1e1e; color: {config.FG_COLOR};
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt;
-            border: 1px solid #3a3a3a; border-radius: {config.S(4)}px; padding: 0 {config.S(12)}px;
-        }}
-        QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
-        QPushButton#btn_ghost:pressed {{ background-color: #3a3d3e; }}
-    """)
+    win.btn_import_welcome_script.setFixedHeight(h_btn)
+    win.btn_import_welcome_script.setStyleSheet(secondary_button_qss("QPushButton#btn_ghost"))
     win.btn_import_welcome_script.clicked.connect(win._on_import_script)
 
     win.btn_import_wrapper = QWidget()
     win.btn_import_wrapper.setStyleSheet("background: transparent;")
     wrapper_l = QHBoxLayout(win.btn_import_wrapper)
-    wrapper_l.setContentsMargins(config.S(8), 0, 0, 0)
+    wrapper_l.setContentsMargins(config.S(10), 0, 0, 0)
     wrapper_l.setSpacing(0)
     wrapper_l.addWidget(win.btn_import_welcome_script)
     btn_row_t.addWidget(win.btn_import_wrapper)
@@ -1780,6 +1920,30 @@ def build_welcome_view(win) -> QWidget:
     btn_row_t_centered.addStretch()
 
     l_trans.addLayout(btn_row_t_centered)
+
+    # This timeline was transcribed before: open it instead of transcribing again
+    win.btn_open_saved = QPushButton("")
+    win.btn_open_saved.setObjectName("btn_open_saved")
+    win.btn_open_saved.setCursor(Qt.PointingHandCursor)
+    win.btn_open_saved.setFixedHeight(config.S(34))
+    # A quiet pill in the accent colour: an alternative to Analyze, not a second primary
+    win.btn_open_saved.setStyleSheet(f"""
+        QPushButton#btn_open_saved {{
+            background-color: transparent; color: {config.BTN_BG};
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: 600;
+            border: none; border-radius: {config.S(17)}px; padding: 0 {config.S(18)}px;
+        }}
+        QPushButton#btn_open_saved:hover {{ background-color: {SURFACE_BG}; }}
+        QPushButton#btn_open_saved:pressed {{ background-color: #262626; }}
+    """)
+    win.btn_open_saved.clicked.connect(lambda: win._open_saved_transcript())
+    win.btn_open_saved.setVisible(False)
+    row_saved = QHBoxLayout()
+    row_saved.setContentsMargins(0, config.S(12), 0, 0)
+    row_saved.addStretch()
+    row_saved.addWidget(win.btn_open_saved)
+    row_saved.addStretch()
+    l_trans.addLayout(row_saved)
     l_trans.addStretch()
 
     win.welcome_stack.addWidget(p_transcription)
@@ -1794,15 +1958,17 @@ def build_welcome_view(win) -> QWidget:
     p_silence_outer_layout.setSpacing(0)
 
     p_silence = QWidget()
-    p_silence.setFixedWidth(config.S(325) + 2 * pad)
-    p_silence.setStyleSheet("background: transparent;")
+    p_silence.setObjectName("WelcomeCard")
+    p_silence.setAttribute(Qt.WA_StyledBackground, True)
+    p_silence.setFixedWidth(config.S(325) + 2 * config.S(20))
+    p_silence.setStyleSheet(card_qss())
     l_fast = QVBoxLayout(p_silence)
-    l_fast.setContentsMargins(pad, 0, pad, 0)
+    l_fast.setContentsMargins(card_pad, card_pad_y, card_pad, card_pad_y)
     l_fast.setSpacing(0)
     l_fast.setAlignment(Qt.AlignTop)
 
     p_silence_outer_layout.addStretch()
-    p_silence_outer_layout.addWidget(p_silence)
+    p_silence_outer_layout.addWidget(p_silence, 0, Qt.AlignTop)  # the card hugs its content
     p_silence_outer_layout.addStretch()
 
     # ── 1. Source Selection & Controls (Fast Silence) ─────────────────────────
@@ -1814,12 +1980,7 @@ def build_welcome_view(win) -> QWidget:
     _vbox_tl1 = QVBoxLayout()
     _vbox_tl1.setContentsMargins(0, 0, 0, 0)
     _vbox_tl1.setSpacing(config.S(4))
-    _lbl_tl1 = QLabel(win.txt("lbl_timeline_selection"))
-    _lbl_tl1.setFixedHeight(config.S(18))
-    _lbl_tl1.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
-        f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
-    )
+    _lbl_tl1 = field_label(win.txt("lbl_timeline_selection"))
     _hbox_tl1 = QHBoxLayout()
     _hbox_tl1.setContentsMargins(0, 0, 0, 0)
     _hbox_tl1.setSpacing(config.S(4))
@@ -1858,16 +2019,8 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_1.setMinimumWidth(config.S(85))
         win.btn_stop_bridge_1.setMaximumWidth(config.S(125))
         win.btn_stop_bridge_1.setCursor(Qt.PointingHandCursor)
-        win.btn_stop_bridge_1.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu BadWords Bridge w DaVinci Resolve")
-        win.btn_stop_bridge_1.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(8.5)}pt; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
-                padding: 0 {config.S(6)}px;
-            }}
-            QPushButton:hover {{ background-color: #383838; color: #ffffff; border-color: #505050; }}
-            QPushButton:pressed {{ background-color: #702525; color: #ffffff; border-color: #903030; }}
-        """)
+        win.btn_stop_bridge_1.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu StoryCraft Bridge w DaVinci Resolve")
+        win.btn_stop_bridge_1.setStyleSheet(_stop_bridge_qss)
         win.btn_stop_bridge_1.clicked.connect(_on_stop_bridge)
 
         win.btn_ref_source_1 = ReloadButton(size=30)
@@ -1889,14 +2042,14 @@ def build_welcome_view(win) -> QWidget:
         win.source_area_1 = SourceAreaWidget(win.drop_zone_1, win.davinci_box_1, initial_mode=win.current_source_type)
         win.source_area_1.set_mode(win.current_source_type)
         l_fast.addWidget(win.source_area_1)
-        l_fast.addSpacing(config.S(14))
+        l_fast.addSpacing(gap_field)
 
     else:
         # Embedded DaVinci Resolve mode: exact original layout
         l_fast.addLayout(_vbox_tl1)
-        l_fast.addSpacing(config.S(14))
+        l_fast.addSpacing(gap_field)
         l_fast.addLayout(_row(win.txt("lbl_tracks_selection"), win.combo_tr_1))
-        l_fast.addSpacing(config.S(14))
+        l_fast.addSpacing(gap_field)
 
     # ── 2. Silence Threshold Inputs ───────────────────────────────────────────
     h_in = config.S(30) - 2
@@ -1919,10 +2072,7 @@ def build_welcome_view(win) -> QWidget:
         vbox = QVBoxLayout()
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(config.S(4))
-        lbl = QLabel(lbl_text)
-        lbl.setFixedHeight(config.S(18))
-        lbl.setStyleSheet(f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500; font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;")
-        vbox.addWidget(lbl)
+        vbox.addWidget(field_label(lbl_text))
         hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(config.S(4))
@@ -1939,14 +2089,14 @@ def build_welcome_view(win) -> QWidget:
     win.input_fs_thresh.setStyleSheet(input_style)
     win.input_fs_thresh.setFixedHeight(config.S(30))
     l_fast.addLayout(_row_rst(win.txt("lbl_silence_threshold_db"), win.input_fs_thresh, "-42.0"))
-    l_fast.addSpacing(config.S(10))
+    l_fast.addSpacing(config.S(12))
 
     win.input_fs_pad = QLineEdit()
     win.input_fs_pad.setText(str(prefs.get('ui_spin_pad', 0.1)))
     win.input_fs_pad.setStyleSheet(input_style)
     win.input_fs_pad.setFixedHeight(config.S(30))
     l_fast.addLayout(_row_rst(win.txt("lbl_padding_s"), win.input_fs_pad, "0.1"))
-    l_fast.addSpacing(config.S(10))
+    l_fast.addSpacing(config.S(12))
 
     win.input_fs_min_dur = QLineEdit()
     win.input_fs_min_dur.setText(str(prefs.get('silence_min_dur', 0.2)))
@@ -1965,7 +2115,7 @@ def build_welcome_view(win) -> QWidget:
     row_fs_cut = QHBoxLayout(win.w_fs_cut)
     row_fs_cut.setContentsMargins(0, 0, 0, 0)
     lbl_fs_cut = QLabel(win.txt("lbl_cut_silence_directly"))
-    lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; background: transparent;")
+    lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500; background: transparent;")
     row_fs_cut.addWidget(lbl_fs_cut)
     row_fs_cut.addStretch()
     info_fs_cut = win._create_info_icon("tt_cut_silence_directly")
@@ -1980,7 +2130,7 @@ def build_welcome_view(win) -> QWidget:
     row_fs_mark = QHBoxLayout(win.w_fs_mark)
     row_fs_mark.setContentsMargins(0, 0, 0, 0)
     lbl_fs_mark = QLabel(win.txt("lbl_mark_silence_with_color"))
-    lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; background: transparent;")
+    lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500; background: transparent;")
     row_fs_mark.addWidget(lbl_fs_mark)
     row_fs_mark.addStretch()
     info_fs_mark = win._create_info_icon("tt_mark_silence_with_color")
@@ -2006,8 +2156,8 @@ def build_welcome_view(win) -> QWidget:
     row_fs_hidden.setSpacing(config.S(6))
     lbl_why_hidden = QLabel(win.txt("lbl_why_options_hidden") if hasattr(win, 'txt') else "Dlaczego niektóre opcje są ukryte?")
     lbl_why_hidden.setStyleSheet(
-        f"color: #9e9e9e; font-family: '{config.UI_FONT_NAME}'; "
-        f"font-size: {config.FS(9.0)}pt; font-style: italic; background: transparent; padding: 0;"
+        f"color: {MUTED_FG}; font-family: '{config.UI_FONT_NAME}'; "
+        f"font-size: {config.FS(9.0)}pt; background: transparent; padding: 0;"
     )
     row_fs_hidden.addWidget(lbl_why_hidden)
     info_why = win._create_info_icon("tt_why_silence_options_hidden")
@@ -2021,7 +2171,7 @@ def build_welcome_view(win) -> QWidget:
     )
     l_fast.addWidget(win.silence_options_area)
 
-    l_fast.addSpacing(config.S(16))
+    l_fast.addSpacing(config.S(20))
 
     win.tgl_fs_cut.toggled.connect(lambda c: win.tgl_fs_mark.setChecked(False) if c else None)
     win.tgl_fs_mark.toggled.connect(lambda c: win.tgl_fs_cut.setChecked(False) if c else None)
@@ -2031,25 +2181,18 @@ def build_welcome_view(win) -> QWidget:
     # ── 4. Run Detection Button ───────────────────────────────────────────────
     btn_row_fs = QHBoxLayout()
     btn_row_fs.setContentsMargins(0, 0, 0, 0)
-    btn_row_fs.addStretch()
 
     win.btn_run_fs = QPushButton(win.txt("btn_run_standalone_silence"))
     win.btn_run_fs.setCursor(Qt.PointingHandCursor)
-    win.btn_run_fs.setFixedHeight(config.S(30))
+    # The one action of this card: full width, in the brand gradient
+    win.btn_run_fs.setIcon(get_play_icon(config.S(12), BRAND_INK, 1.5))
+    win.btn_run_fs.setIconSize(QSize(config.S(12), config.S(12)))
+    win.btn_run_fs.setFixedHeight(config.S(42))
     win.btn_run_fs.setMinimumWidth(config.S(110))
-    win.btn_run_fs.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-    win.btn_run_fs.setStyleSheet(f"""
-        QPushButton {{
-            background-color: {config.BTN_BG}; color: #ffffff;
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
-            border: none; border-radius: {config.S(4)}px; padding: 0 {config.S(14)}px;
-        }}
-        QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}
-        QPushButton:pressed {{ background-color: #176e38; }}
-    """)
+    win.btn_run_fs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    win.btn_run_fs.setStyleSheet(primary_button_qss(pad_x=config.S(16), size=10.0))
     win.btn_run_fs.clicked.connect(win._on_fast_silence)
     btn_row_fs.addWidget(win.btn_run_fs)
-    btn_row_fs.addStretch()
 
     l_fast.addLayout(btn_row_fs)
     l_fast.addStretch()

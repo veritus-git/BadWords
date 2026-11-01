@@ -79,4 +79,4 @@ def build_fillers_panel(win) -> QFrame:
     
     l_fillers.addStretch(1)
     
-    return wrap_activity_panel(p_fillers)
+    return wrap_activity_panel(p_fillers, scroll=True)

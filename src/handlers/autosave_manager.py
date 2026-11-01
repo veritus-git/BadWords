@@ -69,6 +69,13 @@ class AutoSaveManager:
                 timeline_fingerprint=bws_extras.get("timeline_fingerprint"),
                 media_inventory=bws_extras.get("media_inventory")
             )
+            # Keep this timeline's transcript too, so reopening it needs no new transcription
+            try:
+                from handlers import timeline_store
+                timeline_store.save(self._engine, packet)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"Timeline transcript save failed: {e}")
             # Write metadata alongside for crash recovery
             t_name = (packet.get("transcription_source") or {}).get("timeline_name", "")
             meta = {

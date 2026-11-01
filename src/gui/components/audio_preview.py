@@ -18,6 +18,8 @@ Integrates:
 
 from __future__ import annotations
 
+from gui.theme import qc
+
 import os
 import time
 import subprocess
@@ -80,7 +82,7 @@ class PreviewToggleBtn(QPushButton):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        color = QColor("#2ecc71") if self.isChecked() else QColor("#707070")
+        color = qc("#2ecc71") if self.isChecked() else qc("#707070")
         w = float(self.width())
         h = float(self.height())
 
@@ -139,18 +141,19 @@ class AudioPreviewWidget(QFrame):
                 border: none;
             }}
             QWidget#AudioContent {{
-                background: transparent;
+                background-color: #212121;
                 border: none;
+                border-radius: {config.S(14)}px;
             }}
             QWidget#TabContainer {{
                 background: transparent;
                 border: none;
             }}
             QWidget#AudioControls {{
-                background-color: #191919;
+                background: transparent;
             }}
             QWidget#MediaContainer {{
-                background-color: #191919;
+                background: transparent;
             }}
             QWidget {{
                 background: transparent;
@@ -267,15 +270,17 @@ class AudioPreviewWidget(QFrame):
         """)
 
         dock_layout = QVBoxLayout(self)
-        dock_layout.setContentsMargins(0, 0, 0, 0)
+        # A floating card: a margin all round, rounded corners (QWidget#AudioContent)
+        dock_layout.setContentsMargins(config.S(12), config.S(4), config.S(12), config.S(12))
         dock_layout.setSpacing(0)
 
         # 1. Main Collapsible Content Container
         self.content_widget = QWidget()
         self.content_widget.setObjectName("AudioContent")
         self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setContentsMargins(0, config.S(6), 0, 0)
         self.content_layout.setSpacing(0)
+        self.content_widget.setAttribute(Qt.WA_StyledBackground, True)
         dock_layout.addWidget(self.content_widget)
 
         # 2. Floating Toggle Tab (wysepka)
@@ -368,6 +373,24 @@ class AudioPreviewWidget(QFrame):
         self.btn_toggle_video.setToolTip(self.main_window.txt("tt_toggle_video", "Toggle Video Preview") if self.main_window else "Toggle Video Preview")
         self.btn_toggle_video.clicked.connect(self.toggle_video_preview)
         left_layout.addWidget(self.btn_toggle_video)
+
+        # Play edit: play the edit as Assemble will build it (cuts skipped, AI order kept)
+        _t = self.main_window.txt if self.main_window else (lambda k, d=None: d or k)
+        self.btn_play_edit = QPushButton(_t("btn_play_edit"))
+        self.btn_play_edit.setCheckable(True)
+        self.btn_play_edit.setCursor(Qt.PointingHandCursor)
+        self.btn_play_edit.setToolTip(_t("tt_play_edit"))
+        self.btn_play_edit.setFixedHeight(config.S(24))
+        self.btn_play_edit.setStyleSheet(f"""
+            QPushButton {{ background: #2a2a2a; color: #c0c0c0; border: 1px solid transparent;
+                border-radius: {config.S(12)}px; padding: 0 {config.S(12)}px; font-size: {config.FS(9)}pt; }}
+            QPushButton:hover {{ color: #ffffff; background: #323232; }}
+            QPushButton:checked {{ background: rgba(168, 85, 247, 0.20); color: #ffffff; border-color: #a855f7; font-weight: bold; }}
+            QPushButton:disabled {{ color: #555; border-color: #333; }}
+        """)
+        self.btn_play_edit.toggled.connect(self._on_play_edit_toggled)
+        self.btn_play_edit.toggled.connect(lambda _on: self._update_play_edit_label())
+        left_layout.addWidget(self.btn_play_edit)
 
         left_layout.addStretch()
 
@@ -467,6 +490,26 @@ class AudioPreviewWidget(QFrame):
         self._source_audio_path = None
         self._source_video_path = None
         self.clean_ops = None
+
+        # Play edit: kept source ranges (seconds) in play order, and the one playing now
+        self.edit_mode = False
+        self._edit_segments = []
+        self._edit_idx = -1
+        # Smooth Play edit: a rendered preview of the edit replaces the jumping source once ready
+        self._preview_job = None
+        self._preview_on = False
+        self._preview_map = []        # [(preview_start_s, source_start_s, source_end_s), ...]
+        self._pending_switch = None   # (position_s, keep_playing) applied once the new source loads
+        self._preview_debounce = QTimer(self)
+        self._preview_debounce.setSingleShot(True)
+        self._preview_debounce.setInterval(800)
+        self._preview_debounce.timeout.connect(self._start_preview_render)
+        self._preview_poll = QTimer(self)
+        self._preview_poll.setInterval(200)
+        self._preview_poll.timeout.connect(self._poll_preview_render)
+        self.player.mediaStatusChanged.connect(self._on_media_status_for_switch)
+        # While paused, nothing else re-syncs once a seek lands
+        self.player.positionChanged.connect(self._on_position_changed_paused)
 
         self.hide()
 
@@ -824,6 +867,15 @@ class AudioPreviewWidget(QFrame):
                 except Exception:
                     pass
 
+        # The player shows the video only when that file IS the timeline: one source clip, same length.
+        # A timeline cut from several clips (e.g. an assembled edit) plays its own rendered audio instead;
+        # otherwise clicks past the first clip's end were clamped and the sound wasn't the edit.
+        if video_file and not self._video_matches_timeline(video_file, audio_path, source_files):
+            video_file = None
+            self._video_note = "multi"
+        else:
+            self._video_note = None
+
         clip_name = os.path.basename(video_file) if video_file else (
             f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)
         )
@@ -840,15 +892,42 @@ class AudioPreviewWidget(QFrame):
         if video_file:
             self.video_preview_widget.show_placeholder(False)
         else:
-            self.video_preview_widget.show_placeholder(True, "Audio Only")
+            note = (self.main_window.txt("video_multi_clip") if self.main_window else "Several clips: audio only") if getattr(self, "_video_note", None) == "multi" else "Audio Only"
+            self.video_preview_widget.show_placeholder(True, note)
 
         # Configure Waveform Timeline Ribbon
         self.waveform_timeline.load_from_audio(audio_path, clip_name=clip_name)
         self.waveform_timeline.set_words_data(words)
 
+    def _video_matches_timeline(self, video_file: str, audio_path: str, source_files) -> bool:
+        """True when the video can stand in for the timeline: a single source clip as long as the timeline audio."""
+        videos = {os.path.normcase(f) for f in (source_files or []) if f and os.path.splitext(f)[1].lower() in
+                  (".mov", ".mp4", ".m4v", ".mkv", ".avi", ".webm")}
+        if len(videos) > 1:
+            return False
+        cache = getattr(self, "_duration_cache", None)
+        if cache is None:
+            cache = self._duration_cache = {}
+        engine = getattr(self.main_window, "engine", None)
+        def _dur(p):
+            if p not in cache:
+                try:
+                    cache[p] = float(engine._get_audio_duration(p)) if engine else None
+                except Exception:
+                    cache[p] = None
+            return cache[p]
+        dv, da = _dur(video_file), _dur(audio_path)
+        if not dv or not da:
+            return len(videos) == 1
+        return abs(dv - da) <= 1.5
+
     def load_assembled_audio(self, assembled_audio_path: str, clean_ops: List[Dict[str, Any]]) -> None:
         """Switches playback to the newly assembled timeline audio."""
         if os.path.exists(assembled_audio_path):
+            self._cancel_preview_render()
+            self._preview_on = False
+            self._preview_map = []
+            self._pending_switch = None
             self.original_audio_path = assembled_audio_path
             self.clean_ops = clean_ops
             self.player.setSource(QUrl.fromLocalFile(assembled_audio_path))
@@ -877,6 +956,7 @@ class AudioPreviewWidget(QFrame):
 
     def set_position_ms(self, ms: int, force_word_idx: Optional[int] = None) -> None:
         self.player.setPosition(ms)
+        self._pending_seek = (ms / 1000.0, time.time())
         self._start_pos_s = ms / 1000.0
         self._real_start_time = time.time()
 
@@ -887,16 +967,227 @@ class AudioPreviewWidget(QFrame):
         self.waveform_timeline.set_playhead_time(self._start_pos_s)
         self.sync_playback()
 
+    # -------------------------------------------------------------------------
+    # Play edit
+    # -------------------------------------------------------------------------
+
+    def set_edit_segments(self, segments) -> None:
+        """segments: [(start_s, end_s), ...] of the source, in the order the edit plays them."""
+        segments = list(segments or [])
+        if segments == self._edit_segments:
+            return
+        self._edit_segments = segments
+        self._edit_idx = -1
+        self.btn_play_edit.setEnabled(bool(segments))
+        if not segments and self.btn_play_edit.isChecked():
+            self.btn_play_edit.setChecked(False)
+            return
+        if self.edit_mode:
+            # The edit changed: jump in the source again until the new preview is ready
+            if self._preview_on:
+                self._leave_preview()
+            self._preview_debounce.start()
+
+    def _on_play_edit_toggled(self, checked: bool) -> None:
+        self.edit_mode = bool(checked)
+        self._edit_idx = -1
+        if not checked:
+            self._cancel_preview_render()
+            if self._preview_on:
+                self._leave_preview()
+            self._update_play_edit_label()
+            return
+        if self._edit_segments and self.player.playbackState() != QMediaPlayer.PlayingState:
+            # Start from the beginning of the edit unless the playhead already sits inside it
+            if self._locate_edit_segment(self._get_audio_t(), inside_only=True) is None:
+                self._edit_seek(self._edit_segments[0][0])
+        self._start_preview_render()
+
+    # --- Smooth preview -----------------------------------------------------
+
+    def _update_play_edit_label(self, pct=None) -> None:
+        _t = self.main_window.txt if self.main_window else (lambda k, d=None: d or k)
+        text = ("●  " if self.edit_mode else "") + _t("btn_play_edit")
+        if pct is not None:
+            text += f" · {int(pct * 100)}%"
+        self.btn_play_edit.setText(text)
+
+    def _cancel_preview_render(self) -> None:
+        self._preview_debounce.stop()
+        self._preview_poll.stop()
+        if self._preview_job is not None:
+            self._preview_job.cancel()
+            self._preview_job = None
+
+    def _start_preview_render(self) -> None:
+        self._cancel_preview_render()
+        source = self._source_audio_path
+        if not (self.edit_mode and self._edit_segments and source and os.path.exists(source)) or self.clean_ops:
+            return
+        try:
+            from engine.edit_preview import EditPreviewRender
+            engine = getattr(self.main_window, "engine", None)
+            ffmpeg = getattr(engine, "ffmpeg_cmd", None) or "ffmpeg"
+            cache_root = engine.os_doc.get_temp_folder() if engine is not None else os.path.dirname(source)
+            self._preview_job = EditPreviewRender(ffmpeg, source, self._edit_segments, cache_root)
+            self._preview_job.start()
+            self._preview_poll.start()
+        except Exception as e:
+            log_error(f"Play edit: preview render could not start: {e}")
+            self._preview_job = None
+
+    def _poll_preview_render(self) -> None:
+        job = self._preview_job
+        if job is None:
+            self._preview_poll.stop()
+            return
+        if job.error:
+            log_error(f"Play edit: preview render failed ({job.error}); jumping in the source instead")
+            self._cancel_preview_render()
+            self._update_play_edit_label()
+            return
+        if not job.done:
+            self._update_play_edit_label(job.progress)
+            return
+        self._preview_poll.stop()
+        self._preview_job = None
+        self._update_play_edit_label()
+        if self.edit_mode and not self.clean_ops and os.path.exists(job.output):
+            self._enter_preview(job.output, job.timeline)
+
+    def _enter_preview(self, path: str, timeline) -> None:
+        playing = self.player.playbackState() == QMediaPlayer.PlayingState
+        src_t = self._get_audio_t()
+        self._preview_map = list(timeline)
+        self._preview_on = True
+        log_info(f"Play edit: smooth preview ready ({len(timeline)} pieces)")
+        self._switch_source(path, self._source_to_preview(src_t), playing)
+
+    def _leave_preview(self) -> None:
+        playing = self.player.playbackState() == QMediaPlayer.PlayingState
+        src_t = self._preview_to_source(self._get_audio_t())
+        self._preview_on = False
+        self._preview_map = []
+        self._edit_idx = -1
+        if self._source_audio_path:
+            self._switch_source(self._source_audio_path, src_t, playing)
+
+    def _switch_source(self, path: str, pos_s: float, keep_playing: bool) -> None:
+        self.player.stop()  # let the old source shut down before the new one opens
+        # Applied once the NEW source reports LoadingMedia -> LoadedMedia (stop() emits the old one's status)
+        self._pending_switch = [max(0.0, pos_s), keep_playing, False]
+        self.player.setSource(QUrl.fromLocalFile(path))
+
+    def _on_media_status_for_switch(self, status) -> None:
+        if self._pending_switch is None:
+            return
+        if status == QMediaPlayer.LoadingMedia:
+            self._pending_switch[2] = True
+            return
+        if self._pending_switch[2] and status in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia):
+            pos_s, keep_playing, _ = self._pending_switch
+            self._pending_switch = None
+            self._edit_seek(pos_s)
+            if keep_playing:
+                self.player.play()
+                self._start_pos_s = pos_s
+                self._real_start_time = time.time()
+
+    def _preview_to_source(self, t: float) -> float:
+        for p0, s, e in self._preview_map:
+            if t < p0 + (e - s):
+                return s + max(0.0, t - p0)
+        return self._preview_map[-1][2] if self._preview_map else t
+
+    def _source_to_preview(self, t: float) -> float:
+        for p0, s, e in self._preview_map:
+            if s <= t < e:
+                return p0 + (t - s)
+        later = [(s, p0) for p0, s, e in self._preview_map if s > t]
+        if later:
+            return min(later)[1]
+        if self._preview_map:
+            p0, s, e = self._preview_map[-1]
+            return p0 + (e - s)
+        return t
+
+    def seek_source_time(self, t: float, force_word_idx: Optional[int] = None) -> None:
+        """Seek to a time of the source recording, whatever the player is showing right now.
+        A spot outside the edit means the user wants the recording itself: Play edit turns off."""
+        if (self.edit_mode and self._edit_segments and not self.clean_ops
+                and self._locate_edit_segment(t, inside_only=True) is None):
+            self.btn_play_edit.setChecked(False)  # leaves the preview (source switch pending)
+            if self._pending_switch is not None:
+                self._pending_switch[0] = max(0.0, t)
+                self.waveform_timeline.set_playhead_time(t)
+                return
+        if self.clean_ops:
+            t = self._original_to_audio_time(t)
+        elif self._preview_on:
+            t = self._source_to_preview(t)
+        self.set_position_ms(int(t * 1000), force_word_idx=force_word_idx)
+
+    def _locate_edit_segment(self, t: float, inside_only: bool = False):
+        for i, (s, e) in enumerate(self._edit_segments):
+            if s - 0.01 <= t < e:
+                return i
+        if inside_only:
+            return None
+        later = [(s, i) for i, (s, e) in enumerate(self._edit_segments) if s > t]
+        return min(later)[1] if later else None
+
+    def _edit_seek(self, t: float) -> None:
+        self.player.setPosition(int(round(t * 1000)))
+        self._start_pos_s = t
+        self._real_start_time = time.time()
+
+    def _follow_edit(self) -> None:
+        """Called every playback tick: jump over removed parts and on to the next clip."""
+        segs = self._edit_segments
+        t = self._get_audio_t()
+        i = self._edit_idx
+        if not (0 <= i < len(segs)) or t < segs[i][0] - 0.25 or t > segs[i][1] + 0.25:
+            # Just started, or the user moved the playhead: pick up from there
+            i = self._locate_edit_segment(t)
+            if i is None:
+                self.player.pause()
+                self._edit_idx = -1
+                return
+            self._edit_idx = i
+            if t < segs[i][0]:
+                self._edit_seek(segs[i][0])
+            return
+        if t >= segs[i][1] - 0.02:
+            if i + 1 >= len(segs):
+                self.player.pause()
+                self._edit_idx = -1
+                return
+            self._edit_idx = i + 1
+            self._edit_seek(segs[i + 1][0])
+
     def _get_audio_t(self) -> float:
         if self.player.playbackState() != QMediaPlayer.PlayingState:
-            return self.player.position() / 1000.0
+            pos = self.player.position() / 1000.0
+            # A seek in a video file lands a moment later: until then the player still reports the old
+            # position, which would pull the playhead back from where the user clicked
+            pending = getattr(self, "_pending_seek", None)
+            if pending:
+                target, issued = pending
+                if abs(pos - target) > 0.05 and time.time() - issued < 2.0:
+                    return target
+                self._pending_seek = None
+            return pos
         return getattr(self, "_start_pos_s", 0.0) + (time.time() - getattr(self, "_real_start_time", 0.0)) * self.player.playbackRate()
+
+    def _on_position_changed_paused(self, _ms) -> None:
+        if self.player.playbackState() != QMediaPlayer.PlayingState and not getattr(self.waveform_timeline, "_is_scrubbing", False):
+            self.sync_playback()
 
     def toggle_play(self) -> None:
         if self.player.playbackState() == QMediaPlayer.PlayingState:
             self.player.pause()
         else:
-            self._start_pos_s = self.player.position() / 1000.0
+            self._start_pos_s = self._get_audio_t()  # the clicked spot, even if the seek hasn't landed yet
             self._real_start_time = time.time()
             self.player.play()
             self.update_timer.start()
@@ -1008,10 +1299,11 @@ class AudioPreviewWidget(QFrame):
 
     def _on_waveform_seek_requested(self, timestamp_s: float, sync_resolve: bool = False) -> None:
         """Receives playhead click/scrub from WaveformTimelineWidget for 60 FPS local playback and video sync."""
-        audio_pos_s = timestamp_s
         if self.clean_ops:
-            audio_pos_s = self._original_to_audio_time(timestamp_s)
-        self.set_position_ms(int(audio_pos_s * 1000))
+            # The ribbon shows the assembled audio: the click is already in its time, no conversion
+            self.set_position_ms(int(timestamp_s * 1000))
+        else:
+            self.seek_source_time(timestamp_s)
         if sync_resolve and self.main_window and hasattr(self.main_window, "_jump_playhead"):
             self.main_window._jump_playhead(timestamp_s)
 
@@ -1077,8 +1369,14 @@ class AudioPreviewWidget(QFrame):
         if not canvas or not getattr(canvas, "words_data", None):
             return
 
+        if (self.edit_mode and self._edit_segments and not self.clean_ops and not self._preview_on
+                and self.player.playbackState() == QMediaPlayer.PlayingState):
+            self._follow_edit()
+
         audio_t = max(0.0, self._get_audio_t())
         orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t
+        if self._preview_on:
+            orig_t = self._preview_to_source(audio_t)
 
         dur = self.player.duration() / 1000.0
         self.lbl_timecode.setText(self._format_timecode(orig_t))
@@ -1087,8 +1385,16 @@ class AudioPreviewWidget(QFrame):
         if not self._seek_dragging and dur > 0:
             self.slider_seek.setValue(int(audio_t / dur * 1000))
 
-        # Synchronize Waveform Timeline playhead
-        self.waveform_timeline.set_playhead_time(audio_t)
+        # Synchronize Waveform Timeline playhead (the ribbon always shows the source while previewing)
+        self.waveform_timeline.set_playhead_time(orig_t if self._preview_on else audio_t)
+
+        # Story board: highlight the block that's playing (a few times a second is plenty)
+        now = time.time()
+        if not self.clean_ops and now - getattr(self, "_board_tick", 0.0) > 0.2:
+            self._board_tick = now
+            board = getattr(self.main_window, "story_board", None)
+            if board is not None:
+                board.set_playing_time(orig_t if self.player.playbackState() == QMediaPlayer.PlayingState else None)
 
         # Word highlighting
         found_idx = -1

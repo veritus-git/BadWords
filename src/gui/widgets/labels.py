@@ -11,6 +11,8 @@ DESCRIPTION:
 Custom text label widgets.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
@@ -48,9 +50,9 @@ class QLabel(_QLabel):
             m = re.search(r'color:\s*([^;]+);', ss)
             if m:
                 c = QColor(m.group(1).strip())
-                if c.isValid() and c != QColor("#000000"):
+                if c.isValid() and c != qc("#000000"):
                     return c
-        return QColor("#ffffff")
+        return qc("#ffffff")
 
     def _mq_get_text(self):
         t = super().text()
@@ -369,9 +371,9 @@ class MarqueeLabel(QLabel):
         fm = self.fontMetrics()
 
         if self._hovered and self._is_truncated() and self._mq_timer.isActive():
-            p.setPen(QColor("#ffffff"))
+            p.setPen(qc("#ffffff"))
             p.drawText(int(-self._mq_pos), fm.ascent() + (self.height() - fm.height()) // 2, self._full_text)
         else:
             elided = fm.elidedText(self._full_text, Qt.ElideRight, max(1, self.width()))
-            p.setPen(QColor("#d4d4d4"))
+            p.setPen(qc("#d4d4d4"))
             p.drawText(0, fm.ascent() + (self.height() - fm.height()) // 2, elided)

@@ -11,6 +11,7 @@ DESCRIPTION:
 Engine managing audio processing and playback.
 """
 
+import bisect
 import os
 import sys
 import json
@@ -330,6 +331,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 # Do not delete wav_path so it can be used for audio preview
 
 
+    def _measure_sounds(self, words_data):
+        """Loudness of the sounds without words, against the voice (algorithms.measure_sounds)."""
+        try:
+            from engine import speakers
+            audio = speakers.load_audio(getattr(self, 'ffmpeg_cmd', 'ffmpeg'), words_data[0]['meta_audio_path'])
+            n = len(algorithms.measure_sounds(words_data, audio))
+            if n:
+                log_info(f"Sounds: {n} much louder than the voice (cut)")
+        except Exception as e:
+            log_error(f"Sound loudness skipped: {e}")
+
     def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None, callback_chunk=None):
         def update_status(msg):
             if callback_status: callback_status(msg)
@@ -552,7 +564,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
             # Check/Download logic (faster-whisper or, on Apple Silicon GPU, mlx-whisper weights)
             use_mlx = self.use_mlx_for(device_mode)
-            if not self.check_model_exists(model, use_mlx):
+            use_resolve_tx = (settings.get('transcript_source') == 'resolve' and not source_file and self.resolve_handler)
+            if not use_resolve_tx and not self.check_model_exists(model, use_mlx):
                 update_status(self.txt("status_downloading_model"))
                 dl_ok = self.download_whisper_model_interactive(
                     model,
@@ -630,22 +643,55 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     "audio_path": wav_path,
                 })
 
-            update_status(self.txt("status_whisper_init"))
-            update_progress(-1)
-            
-            # Note: Bar remains indeterminate (from status_whisper_init above) until runner emits first progress
-            json_path = self.run_whisper(
-                target_wav, model, lang, True, device_mode, fw_compute,
-                filler_words,
-                initial_prompt=ai_initial_prompt,
-                progress_callback=whisper_live_progress,
-                islands=islands,
-                chunk_callback=on_whisper_chunk,
-            )
-            
-            if not json_path:
-                log_error("Whisper failed.")
-                return None, None
+            resolve_data = None
+            if use_resolve_tx:
+                # Resolve's own transcription (with its speaker detection) instead of Whisper
+                update_status(self.txt("status_resolve_tx_read"))
+                prefs_now = self.load_preferences() or {}
+                def _tx_status(n, total):
+                    update_status(self.txt("status_resolve_tx_clip").format(n=n, total=total))
+                try:
+                    resolve_data, extra = self.resolve_handler.get_resolve_transcript(
+                        settings.get('timeline_name'), settings.get('track_indices'),
+                        speakers=settings.get('resolve_speakers', True),
+                        done_ids=prefs_now.get('resolve_speaker_done', []), status=_tx_status)
+                except Exception as e:
+                    resolve_data, extra = None, str(e)
+                if resolve_data is None:
+                    log_error(f"Resolve transcription not used: {extra}. Falling back to Whisper.")
+                else:
+                    if extra:
+                        prefs_now['resolve_speaker_done'] = list(dict.fromkeys((prefs_now.get('resolve_speaker_done') or []) + extra))[-2000:]
+                        self.save_preferences(prefs_now)
+                    n_words = sum(len(s["words"]) for s in resolve_data["segments"])
+                    n_spk = len({w.get("speaker") for s in resolve_data["segments"] for w in s["words"] if w.get("speaker")})
+                    log_info(f"Resolve transcription: {n_words} words, {n_spk} speaker(s)")
+                    json_path = os.path.join(self.os_doc.get_temp_folder(), f"resolve_tx_{int(time.time())}.json")
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(resolve_data, f)
+
+            if resolve_data is None:
+                if use_resolve_tx and not self.check_model_exists(model, use_mlx):
+                    update_status(self.txt("status_downloading_model"))
+                    if not self.download_whisper_model_interactive(model, progress_callback=update_progress,
+                                                                   status_callback=update_status, use_mlx=use_mlx):
+                        raise ModelDownloadError(self.txt("msg_model_download_failed", model=model, path=self.models_dir))
+                update_status(self.txt("status_whisper_init"))
+                update_progress(-1)
+
+                # Note: Bar remains indeterminate (from status_whisper_init above) until runner emits first progress
+                json_path = self.run_whisper(
+                    target_wav, model, lang, True, device_mode, fw_compute,
+                    filler_words,
+                    initial_prompt=ai_initial_prompt,
+                    progress_callback=whisper_live_progress,
+                    islands=islands,
+                    chunk_callback=on_whisper_chunk,
+                )
+
+                if not json_path:
+                    log_error("Whisper failed.")
+                    return None, None
 
             # silence_ranges already computed above — reused here for data structure
             
@@ -674,6 +720,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             if final_audio and os.path.exists(final_audio) and words_data:
                 words_data[0]['meta_audio_path'] = final_audio
                 # Do not delete final_audio so it can be used for audio preview
+                self._measure_sounds(words_data)
             
             if words_data:
                 update_status(self.txt("status_finalize"))
@@ -905,6 +952,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                         "type": "word",
                         "id": word_id
                     }
+                    if w.get('probability') is not None:
+                        w_obj['prob'] = round(float(w['probability']), 3)  # Whisper's confidence, for clarity scores
+                    if w.get('speaker'):
+                        w_obj['speaker'] = w['speaker']  # from Resolve's speaker detection
                     word_id += 1
                     
                     if is_hallucination:
@@ -918,6 +969,59 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     temp_words.append(w_obj)
 
         return temp_words
+
+    def transcribe_passage(self, audio_path, t0, t1, settings, fps=24.0):
+        """Transcribe [t0, t1] (seconds) of audio_path again with the same model, device, prompt and
+        filler list as a full analysis. Returns word dicts on the original time base (only the words
+        whose middle falls inside the passage; the 0.25 s margins just give Whisper context)."""
+        lang = settings.get('lang')
+        if isinstance(lang, str) and lang.lower() == "auto":
+            lang = None
+        raw_model = settings.get('model', 'medium')
+        model = "large-v3-turbo" if "turbo" in raw_model.lower() else raw_model.split()[0].lower()
+        raw_device = settings.get('device', 'Auto')
+        if isinstance(raw_device, str) and raw_device.lower() == "auto":
+            device_mode = "GPU" if (self.os_doc.has_nvidia_support() or self.mlx_available()) else "CPU"
+        else:
+            device_mode = str(raw_device).upper()
+        prefs = self.os_doc.get_all_prefs()
+        compute = prefs.get('ai_compute_type', '') or 'int8'
+        if compute.lower() == 'auto':
+            compute = 'int8'
+        prompt = config.get_whisper_prompt_for_lang(lang, prefs.get('ai_initial_prompt', '').strip())
+        fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
+
+        start = max(0.0, float(t0) - 0.25)
+        dur = float(t1) + 0.25 - start
+        clip = os.path.join(self.os_doc.get_temp_folder(), f"passage_{int(time.time() * 1000)}.wav")
+        subprocess.run([self.ffmpeg_cmd, "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", audio_path,
+                        "-ac", "1", "-ar", "16000", clip], check=True, capture_output=True)
+        try:
+            json_path = self.run_whisper(clip, model, lang, True, device_mode, compute, fillers,
+                                         initial_prompt=prompt, islands=[(0.0, dur)])
+            if not json_path:
+                return None
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            words, _ = self._build_data_structure(data, [], fillers, fps, "inaudible", audio_duration=dur)
+        finally:
+            try:
+                os.remove(clip)
+            except OSError:
+                pass
+        out = []
+        for w in words or []:
+            if w.get('type') == 'silence':
+                continue
+            for k in ('start', 'end', 'anchor_start'):
+                if k in w and w[k] is not None:
+                    w[k] = float(w[k]) + start
+            mid = (w.get('start', 0.0) + w.get('end', 0.0)) / 2.0
+            if t0 - 0.05 <= mid <= t1 + 0.05:
+                w.pop('meta_audio_path', None)
+                w.pop('meta_global_silence', None)
+                out.append(w)
+        return out
 
     def _build_data_structure(self, json_data, silence_ranges, filler_words, fps, 
                               txt_inaudible="inaudible",
@@ -1051,6 +1155,13 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 first_good_found = True
 
         for i, w in enumerate(final_words): w['id'] = i
+        try:
+            if (self.load_preferences() or {}).get('auto_stammers', True):
+                n = len(algorithms.mark_stammers(final_words))
+                if n:
+                    log_info(f"Repeated words: {n} marked as Retake (the last copy stays)")
+        except Exception as e:
+            log_error(f"Repeated words detection failed: {e}")
         if final_words:
             final_words[0]['meta_global_silence'] = raw_global_silence
             if 'language' in json_data:
@@ -1071,13 +1182,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
     # 4. TIMELINE GENERATION LOGIC (BLOCK-BASED)
     # ==========================================
 
-    def tune_silence_ranges(self, s_ranges, settings, fps, audio_end_f):
+    def tune_silence_ranges(self, s_ranges, settings, fps, audio_end_f, word_spans=()):
         """
         Editor-facing smoothing of silence cuts, applied live (no re-analysis):
           silence_cut_pct  - remove only the longest pauses, up to this % of total pause time
+                             (with a story, of the pause time inside the story's clips:
+                             pauses in parts the story doesn't use don't take up the budget)
           silence_min_clip - never leave a kept piece shorter than this (s) between two pauses
           silence_keep     - leave this much (s) of every removed pause in place
-        s_ranges: list of (start_f, end_f). Returns the tuned list, sorted by start.
+          story_tight_pauses - with a story, also cut every pause with no word in it
+        s_ranges: list of (start_f, end_f); word_spans: (start_f, end_f) of the transcribed words.
+        Returns the tuned list, sorted by start.
         """
         def _num(key, default):
             try:
@@ -1090,15 +1205,40 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         keep_f = int(round(max(0.0, _num('silence_keep', 0.0)) * fps))
         ranges = sorted(r for r in s_ranges if r[1] > r[0])
 
+        clips = settings.get('story_clips')
+        empty = set()
+        if clips and settings.get('story_tight_pauses', True) and pct < 100.0 and ranges:
+            # A story keeps only short, even pauses (no room for a voice in the background): every
+            # pause with no word in it goes. One that covers most of a word may be quiet speech,
+            # so it stays under the budget below.
+            spans = sorted(word_spans)
+            starts = [s for s, _ in spans]
+            longest = max((e - s for s, e in spans), default=0)
+
+            def has_word(r):
+                k = bisect.bisect_left(starts, r[0] - longest)
+                while k < len(spans) and spans[k][0] < r[1]:
+                    s, e = spans[k]
+                    if min(e, r[1]) - max(s, r[0]) >= max(2, (e - s) / 2):
+                        return True
+                    k += 1
+                return False
+            empty = {r for r in ranges if not has_word(r)}
         if pct < 100.0 and ranges:
-            budget = sum(e - s for s, e in ranges) * pct / 100.0
-            picked, acc = set(), 0
-            for r in sorted(ranges, key=lambda r: r[1] - r[0], reverse=True):
-                if acc >= budget:
+            inside = lambda r: r[1] - r[0]
+            if clips:
+                off = _num('offset', 0.133)
+                wins = [(int(round((c['cut_start'] + off) * fps)), int(round((c['cut_end'] + off) * fps))) for c in clips]
+                inside = lambda r: sum(max(0, min(r[1], b) - max(r[0], a)) for a, b in wins)
+            budget = sum(inside(r) for r in ranges) * pct / 100.0
+            picked, acc = set(empty), sum(inside(r) for r in empty)
+            for r in sorted(ranges, key=inside, reverse=True):
+                if acc >= budget or inside(r) <= 0:
                     break
                 picked.add(r)
-                acc += r[1] - r[0]
-            ranges = [r for r in ranges if r in picked]
+                acc += inside(r)
+            # Pauses outside the story are not in the edit anyway: cut them all
+            ranges = [r for r in ranges if r in picked or inside(r) <= 0]
 
         if min_clip_f > 0:
             kept = []
@@ -1218,14 +1358,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             if i < len(chunks) - 1:
                 next_chunk_start = chunks[i+1]['words'][0]['start']
                 cut_f = t2f(next_chunk_start) + offset_f
+                lo_f = t2f(chunk_end_w)
                 
+                # Snap onto a silence edge in THIS gap only: never past the next word (that kept a
+                # filler followed by a pause: the cut before it jumped onto the pause after it)
                 for s in silence_blocks_for_snap:
                     s_start_f = t2f(s['start'])
                     s_end_f = t2f(s['end'])
-                    if abs(cut_f - s_start_f) <= snap_f:
+                    if lo_f <= s_start_f <= cut_f and abs(cut_f - s_start_f) <= snap_f:
                         cut_f = s_start_f
                         break
-                    if abs(cut_f - s_end_f) <= snap_f:
+                    if lo_f <= s_end_f <= cut_f and abs(cut_f - s_end_f) <= snap_f:
                         cut_f = s_end_f
                         break
                 
@@ -1262,7 +1405,30 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 for s in silence_blocks_for_snap:
                     if (s['end'] - s['start']) < min_sil_s: continue
                     s_ranges.append((t2f(s['start']), t2f(s['end'])))
-            s_ranges = self.tune_silence_ranges(s_ranges, settings, fps, audio_end_f)
+            if settings.get('story_clips') and settings.get('story_tight_pauses', True):
+                # A story drops a noise between two sentences (a cough, a voice in the background) with the
+                # pauses around it: the whole gap between the two words becomes one pause (no word in it,
+                # so it is cut). A noise inside a sentence may be a word the transcript missed: kept.
+                gaps, prev, noise = [], None, False
+                for w in words_data:
+                    if w.get('type') == 'word':
+                        if noise and prev is not None:
+                            gaps.append((t2f(prev['end']), t2f(w['start'])))
+                        prev, noise = w, False
+                    elif (w.get('is_inaudible') or w.get('type') == 'inaudible') and prev is not None:
+                        noise = noise or (prev.get('text') or '').rstrip().rstrip('"\')”’').endswith(('.', '?', '!'))
+                for g0, g1 in gaps:
+                    if g1 - g0 < 2:
+                        continue
+                    rest = []
+                    for r0, r1 in s_ranges:
+                        if r0 < g0:
+                            rest.append((r0, min(r1, g0)))
+                        if r1 > g1:
+                            rest.append((max(r0, g1), r1))
+                    s_ranges = sorted([r for r in rest if r[1] > r[0]] + [(g0, g1)])
+            spans = [(t2f(w['start']), t2f(w['end'])) for w in words_data if w.get('type') == 'word']
+            s_ranges = self.tune_silence_ranges(s_ranges, settings, fps, audio_end_f, spans)
             
             ops_raw.sort(key=lambda x: x['s'])
             
@@ -1307,6 +1473,31 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                             'end_s': s_e / fps,
                             'cut_type': 'silence_cut'
                         })
+
+        # A sound much louder than the voice (a cough, a knock: measured by algorithms.measure_sounds)
+        # is cut wherever it is, whatever the pause setting; Keep it / Cut it (No voice: Review) decides.
+        cut_loud = settings.get('cut_loud_sounds', True)
+        loud = [(t2f(w['start']), t2f(w['end'])) for w in words_data
+                if (w.get('sound_choice') or ('cut' if cut_loud and w.get('loud') else '')) == 'cut']
+        if loud:
+            kept = []
+            for op in ops_raw:
+                pieces = [op]
+                for a, b in loud:
+                    rest = []
+                    for p in pieces:
+                        if b <= p['s'] or a >= p['e']:
+                            rest.append(p)
+                            continue
+                        if a > p['s']:
+                            rest.append(dict(p, e=a))
+                        if b < p['e']:
+                            rest.append(dict(p, s=b))
+                    pieces = rest
+                kept.extend(pieces)
+            ops_raw = kept
+            cut_ops.extend({'s': a, 'e': b, 'start_s': a / fps, 'end_s': b / fps, 'cut_type': 'sound_cut'}
+                           for a, b in loud if b - a >= 2)
 
         ops_raw.sort(key=lambda x: x['s'])
         
@@ -1357,6 +1548,11 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         auto_cut_set = set()
         for c in auto_cut_colors:
             auto_cut_set.update(normalize_color_aliases(c))
+        # "Keep": colours whose parts stay in the edit as ordinary (uncoloured) clips
+        plain_set = set()
+        for c in settings.get('plain_colors', []) or []:
+            plain_set.update(normalize_color_aliases(c))
+        plain_set -= auto_cut_set
 
         final_result = []
         for op in merged_ops:
@@ -1378,6 +1574,19 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 continue
 
             if op['e'] - op['s'] < 2:
+                continue
+
+            if op_aliases & plain_set:
+                op['plain_parts'] = [(op['type'], op['s'], op['e'])]  # remembered for the colour legend
+                op['type'] = 'normal'
+
+            prev = final_result[-1] if final_result else None
+            if (prev is not None and prev['type'] == 'normal' and op['type'] == 'normal' and prev['e'] == op['s']
+                    and (prev.get('plain_parts') or op.get('plain_parts'))):
+                # A "Keep" part touching ordinary speech plays on in one clip: no extra edit point
+                prev['e'] = op['e']
+                prev['end_s'] = op['e'] / fps
+                prev['plain_parts'] = prev.get('plain_parts', []) + op.get('plain_parts', [])
                 continue
 
             op['start_s'] = op['s'] / fps
@@ -1939,14 +2148,13 @@ except Exception as e:
 
             # ── NAME FOR NEW TIMELINE ─────────────────────────────────────────
             clean_name, next_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
-            new_tl_name = f"{clean_name} BadWords Edit {next_idx}"
+            new_tl_name = f"{clean_name} {config.EDIT_SUFFIX} {next_idx}"
             safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in new_tl_name)
 
             temp_dir = self.os_doc.get_temp_folder()
             os.makedirs(temp_dir, exist_ok=True)
 
             # ── LOAD SETTINGS ─────────────────────────────────────────────────
-            import config
             prefs = self.os_doc.get_all_prefs()
             preserve_track_order = bool(prefs.get(
                 "xml_preserve_track_order",
@@ -2192,7 +2400,7 @@ except Exception as e:
 
                 # Re-compute edit name (may have been taken if XML partially worked)
                 fb_name, fb_idx = self.resolve_handler.get_next_badwords_edit_index(original_tl_name)
-                fb_tl_name = f"{fb_name} BadWords Edit {fb_idx}"
+                fb_tl_name = f"{fb_name} {config.EDIT_SUFFIX} {fb_idx}"
 
                 def fb_progress(current, total):
                     set_progress(int((current / max(1, total)) * 100))
@@ -2215,6 +2423,16 @@ except Exception as e:
             try:
                 if new_tl_name and self.resolve_handler:
                     self.resolve_handler.set_current_timeline(new_tl_name)
+                    try:
+                        set_status(self.txt("status_polish"))
+                        sound_marks = algorithms.sound_markers(
+                            words_data, clean_ops, fps, float(settings.get('offset', 0.133))) \
+                            if settings.get('mark_sounds', True) else None
+                        self.resolve_handler.polish_timeline(
+                            crossfade_frames=int(settings.get('crossfade_frames', 2) or 0),
+                            mark_jumps=bool(settings.get('mark_jump_cuts', True)), sound_marks=sound_marks)
+                    except Exception as pol_err:
+                        log_error(f"assemble_timeline: polish skipped: {pol_err}")
                 if self.resolve_handler and self.resolve_handler.resolve:
                     self.resolve_handler.resolve.OpenPage("edit")
             except Exception as nav_err:

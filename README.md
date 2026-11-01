@@ -1,309 +1,96 @@
-# <img src="repo/banner.svg" alt="BadWords Logo" height="52" valign="middle" />&nbsp;
-**Cleaner Timelines, Faster. Simpler Rough-Cutting for DaVinci Resolve.**
+<p align="center"><img src="assets/brand/storycraft-lockup.svg" alt="StoryCraft for DaVinci Resolve" height="96"></p>
+
+<p align="center"><b>Turn an unscripted interview into a story, inside DaVinci Resolve.</b><br>
+More information, and the workflow in pictures: <a href="https://storycraft.outerbeam.com"><b>storycraft.outerbeam.com</b></a></p>
 
 > [!NOTE]
-> **This is a fork** of [veritus-git/BadWords](https://github.com/veritus-git/BadWords) by Szymon Wolarz, not affiliated with the original project. It adds Apple Silicon GPU transcription, live silence tuning, a colour legend, cuts shown in the transcript, and an AI story round trip, plus several fixes. **[See every difference from the original →](FORK.md)**
->
-> The installation commands below install the original BadWords, not this fork.
+> StoryCraft is a fork of [BadWords](https://github.com/veritus-git/BadWords) by Szymon Wolarz. It is not affiliated with the original project. BadWords' own documentation lives [in its repository](https://github.com/veritus-git/BadWords#readme).
 
-<br>
+## Why StoryCraft
 
-<p align="center">
-  <img src="repo/preview.png" alt="BadWords Preview" width="100%">
-</p>
+I edit video for fun, and what I love most is interviewing people with nothing prepared: no script, no questions sent ahead, just a conversation. The hard part comes afterwards: going through the footage, finding the moments that matter and building them into a story. It's fun, but it takes a lot of time, and that's where AI can help.
 
-<br>
+I looked for a tool that did exactly that and couldn't find one. BadWords came closest: it turns your footage into editable text inside DaVinci Resolve. StoryCraft is my version of it, built around one flow: **Clean up → Compose → Send to Resolve**.
 
-<p align="center">
-  <a href="#windows"><img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0wIDBoMTEuMzc3djExLjM3Mkgwem0xMi42MjMgMEgyNHYxMS4zNzJIMTIuNjIzek0wIDEyLjYyM2gxMS4zNzdWMjRIMHptMTIuNjIzIDBIMjRWMjRIMTIuNjIzeiIvPjwvc3ZnPg==" alt="Windows"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="#macos"><img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="#linux-any-distro"><img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux"><img src="https://img.shields.io/badge/SUPPORTED_✅-333333?style=for-the-badge" alt="Supported"></a>
-</p>
+## What StoryCraft adds
 
-<p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/INSTALLATION-333333?style=for-the-badge&logo=gnubash&logoColor=white"><img src="https://img.shields.io/badge/QUICK_SETUP-168f4d?style=for-the-badge" alt="Quick Setup"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="docs/USER_GUIDE.md"><img src="https://img.shields.io/badge/DOCUMENTATION-333333?style=for-the-badge&logo=gitbook&logoColor=white"><img src="https://img.shields.io/badge/USER_MANUAL-168f4d?style=for-the-badge" alt="User Manual"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://buymeacoffee.com/badwords" target="_blank"><img src="https://img.shields.io/badge/SUPPORT-333333?style=for-the-badge&logo=buymeacoffee&logoColor=FFFFFF"><img src="https://img.shields.io/badge/BUY_ME_A_COFFEE-168f4d?style=for-the-badge" alt="Buy Me A Coffee"></a>
-</p>
+**Cleaner cuts, automatically**
+- **Repeats:** words said twice ("I think I think"), self-corrections (the speaker starts a phrase, stops and starts again) and sentences that only echo the one before are cut; the final, fuller version stays. Lone "Yeah." / "Mhm." answers go too.
+- **Sounds without words:** each cough, knock or background voice is measured against the speaker's voice. One much louder than any word is cut wherever it is; **Listen to sounds** plays the others one by one, with **Keep it / Cut it**.
+- **Pauses:** Keep / Mark / Cut, and how much to remove, applied live. Inside a story, gaps with no words (a voice in the background) are removed.
+- **Cut points** land on the quietest moment, never inside a word, and a clip never stops one or two words before its sentence ends.
+- **Avoid** marker for parts you don't want used, and **second speaker** detection that marks the interviewer.
 
-<br>
+**Build the story**
+- **Story board:** the transcript as blocks you drag into any order, with a target length and a clarity score on each block (how clearly it was spoken and recorded).
+- **Any chat AI:** *Copy for AI* gives the transcript grouped into moments, with editing rules. *Import AI edit* checks the answer (length, clips that start mid-thought, two clips making the same point, a name repeated in every clip, Avoid parts, hard-to-hear parts) and writes a fix request to paste back.
+- **Claude, directly:** with the built-in MCP server, Claude reads the transcript, checks its own edit until it flows, puts it on the story board and, if you ask, sends it to Resolve ([setup below](#build-a-story-with-claude)).
+- **Review cuts:** a cut-by-cut review (what is said either side, jumps, loudness changes) that the AI uses to improve the order and the cut points.
 
-## <img src="repo/icons/info.svg" alt="Info" width="30" height="30" valign="text-bottom"> What is it?
+**Watch, then send**
+- **Play edit:** watch the edit, cuts and all, inside StoryCraft before Resolve gets anything.
+- **Send to Resolve:** a new timeline, "*name* StoryCraft Edit N", in a **StoryCraft** bin, with short audio crossfades on every cut, Yellow **Jump cut** markers where the picture jumps within the same shot, and Cocoa **Sound** markers on the sounds the edit keeps. Your source timeline is never changed.
 
-**BadWords** is a plugin-app for DaVinci Resolve built for anyone dealing with dialogue-heavy footage (podcasts, talking heads, gameplays). Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your workflow into an easy text-editing experience.
+**Transcription**
+- Whisper on the Apple Silicon GPU, or **Resolve's own transcription** with speaker detection (DaVinci Resolve Studio 21.1+).
+- Each timeline's transcript is saved and reopens without transcribing again. Transcripts and stories are kept in your own StoryCraft folder (on a Mac: `~/Library/Application Support/StoryCraft`).
 
-It uses local AI (Faster-Whisper) to give you a full transcript of your audio. You can then color-code mistakes, compare it against your original script, and with one click, send the processed timeline back to Resolve — complete with markers and cuts. 
+**Yours alone**
+- No telemetry, no report form, no account: StoryCraft sends nothing anywhere. Updates are checked against this repository's releases only.
+- Its own name, look and installer, so it sits next to an installed BadWords without touching it.
 
-BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the final polishing to you.
+Every change, with its status, is listed in [FORK.md](FORK.md).
 
-## <img src="repo/icons/sparkles.svg" alt="Key Features" width="30" height="30" valign="text-bottom"> Key Features
+## Install
 
-Here is what makes BadWords stand out from other editing tools:
+Paste the command for your system into a terminal. It downloads StoryCraft's installer from this repository; the installer puts StoryCraft in its own folder, adds `StoryCraft.app` (macOS) and the Resolve menu entry **Workspace → Scripts → StoryCraft**. Run the same command again later to update, repair or uninstall (uninstalling keeps your saved transcripts and stories).
 
-* **True Verbatim Transcription:** BadWords uses heavily customized prompt engineering, parameters, and chunking with Faster-Whisper to force the AI into true "verbatim" mode. It catches every tiny stutter, 'um', and false start with a precision unmatched in the open-source space. What you hear is exactly what you see in the text, making it incredibly easy to spot deviations visually. And if the audio is completely garbled, it conveniently marks it as `(...)` (Inaudible) for you to check manually.
+**macOS**
+```bash
+curl -fsSL "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/mac-setup.sh" | bash
+```
 
-* **Smart Script Comparison:** If you record based on a script, this feature is a massive time saver. Paste your original script into BadWords, and the advanced algorithm will instantly compare it against your recorded audio. The magic here is that it visually highlights *only* the noteworthy fragments that differ from your script - like spontaneous deviations or repeated retakes. By instantly seeing what went wrong, you don't have to listen to the entire audio track anymore. You can completely skip the perfect 1:1 matches and focus your attention *only* on the parts that actually need editing! (Plus, it automatically scrapes technical terms from your script to feed to the AI, dramatically improving transcription accuracy on technical terms).
-
-* **IDE-Like Text-Based Editing:** Say goodbye to endlessly scrubbing through DaVinci Resolve timelines. BadWords shifts the entire editing paradigm by letting you edit your video exactly like a text document in an IDE. You simply read the transcript, visually highlight the mistakes with different colors, and hit "Assemble". The app instantly translates your text-based changes into perfect, frame-accurate cuts directly on your timeline.
-
-* **Convenient Silence Detection:** Yes, DaVinci Resolve now has its own silence cutter, but BadWords does it differently. Before scanning for silence, BadWords automatically normalizes the audio in the background. This means speech volume is leveled out, making the default silence threshold (-42dB) incredibly precise without you having to tweak it for every single project - just flip a switch. It even features "island absorption": random short noises like a desk bump or a quick cough get swallowed up and cut out as silence anyway.
-
-## <img src="repo/icons/workflow.svg" alt="How it works" width="30" height="30" valign="text-bottom"> How it works
-
-1. **Select & Transcribe:** Launch BadWords directly from Resolve, pick your audio tracks, and hit Analyze. The AI transcribes everything.
-2. **Edit like a Document:** Your audio opens as text in an IDE-inspired editor. You (or the algorithm) can paint words with different colors:
-   * **Red** — Filler words / obvious mistakes to remove
-   * **Blue** — Retakes / duplicates
-   * **Green** — Typos / close matches
-3. **Compare to Script or Analyze Standalone:** If you have an original script, BadWords can automatically compare it against your transcript to highlight deviations. No script? No problem! Use the Standalone Analysis to automatically detect stutters, false starts, and retakes from the raw audio.
-4. **Assemble Timeline:** Once you're done playing with the text, hit Assemble. BadWords automatically generates a **brand new, clean timeline** inside Resolve with all your cuts and color markers applied perfectly.
-
-<p align="center">
-  <img src="repo/heatmap_preview.png" alt="BadWords Heatmap" width="85%">
-</p>
-
-## <img src="repo/icons/circle-check.svg" alt="Why BadWords" width="30" height="30" valign="text-bottom"> Why use BadWords?
-
-- **Massive Time Saver:** Turns hours of manual clicking and scrubbing into a quick visual review. The silence detection alone is highly precise and will save you tons of time.
-- **100% Local & Private:** No cloud processing, no subscriptions, no data harvesting. All processing happens entirely on your own hardware (except for optional, anonymous telemetry).
-- **Non-Destructive Versioning:** BadWords never edits your original timeline. Every time you click "Assemble", it creates a new timeline copy.
-- **Timeline Heatmap Approach:** AI isn't perfect; it might miss tiny stutters. That's why BadWords is designed to give you an overview (a "heatmap") of your clip qualities using Resolve's native colorful markers, letting you finalize the cuts manually exactly where needed.
-
----
-
-## <img src="repo/icons/flame.svg" alt="What's New" width="30" height="30" valign="text-bottom"> What's New in 3.2?
-
-Version 3.2 is another massive update. I dug deep into the core code to fix some of the most annoying bugs and completely rewrote how BadWords builds your final timeline. Here is what I managed to put together:
-
-* **Audio Preview:** You can finally hear how a specific word sounds right inside the transcript! I added a small built-in player so there's no more guessing if a cut is correct. It is not perfect, as it doesnt light up words exactly when they are spoken, but instead it shows where Whisper thinks the words are and what are its boundaries.
-* **Project Saves (.bws) & AutoSave:** BadWords now has its own `.bws` file extension so you can properly save your work. I also built a background AutoSave. If the app randomly crashes, you won't lose everything - it will give you an option to restore your session when you reopen it!
-* **New Timeline Assembly (.drt):** I remade the assembly process from the ground up. BadWords now manipulates DaVinci's native `.drt` file. This means complex timelines finally work without breaking things like adjustment clips or proxies! (Clip linking still sadly breaks during assembly, and for what I can see there is no fix for it because of Davinci Resolve nature but maybe I will find out the way in the feature)
-* **Track Selection Menu:** I added a track selection menu where you can choose exactly which audio and video tracks BadWords should use when putting together the final timeline.
-* **Engine v2 & Performance Boost:** I completely revamped the core transcription engine! By removing the heavy PyTorch dependency and fully transitioning to pure `faster-whisper`, the installation size is now much smaller (around 4GB without models). Plus, CPU transcription is significantly optimized - reaching up to 1.7x real-time speed even on large models (before it was around 1x real-time speed)!
-* **Ultra Precise Chunking by Default:** The `Ultra precise (chunking)` mode is now the absolute default processing method! Since BadWords relies solely on perfect verbatim transcription, this decision was crucial - only chunking can consistently offer the extreme level of precision and accuracy required to catch every tiny detail.
-* **Maximized Cutting Precision:** I dug deep into the core cutting logic to purge outdated hardcoded values and introduced a global temporal offset. While achieving true sub-50ms accuracy is still a challenge, these optimizations push BadWords' verbatim cutting precision to the absolute edge of what's currently possible on the market!
-* **Advanced Color Cutting:** You now have the ultimate flexibility during the Assembly phase. The 'Assembly' page has been extended so you can choose to cut and manipulate every single marker color exactly how you want.
-* **Quality of Life & Fixes:**
-  * **Precision & Navigation Fixes:** Fixed the annoying audio preview temporal drift and resolved inaccuracies with the "Jump to Word" feature
-  * **Installer Updates:** Updated the installer and updater to handle the new lightweight dependencies seamlessly, and removed old unused legacy installers.
-  * **UI & Settings Fixes:** Fixed a small bug with the Turbo Large model, adjusted the marquee effect function, and squashed various small bugs across the UI and settings.
-  * **Silence Detection Fix:** Fixed a bug that left unmarked "islands" of silence at the very start and end of the audio.
-  * **Mac UI Fixes:** Made UI more spacious and switched the rendering engine on macOS as attempt to fix the weird bugs and glitches. Altough it still has some problems. I would really appreciate a pull request if you know how to fix it!
-
----
-
-<a id="installation"></a>
-## <img src="repo/icons/wrench.svg" alt="Installation & Setup" width="30" height="30" valign="text-bottom"> Installation & Setup
-
-I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. You don't need to manually download zip files, configure Python paths, or install dependencies - the setup handles everything automatically.
-
-In version 4.0, BadWords features a **brand new Graphical User Interface** for easier and more accessible instalation process - **it's as easy as it gets!**
-
-### <img src="repo/icons/download.svg" alt="Installation Process" width="24" height="24" valign="text-bottom"> The Installation Process
-
-1. **Copy the command** for your specific operating system from the [section below](#-option-1-automated-setup-commands-recommended).
-2. **Paste the command** into your terminal (PowerShell on Windows, Terminal on macOS/Linux) and press **Enter**.
-3. The **BadWords Setup** window will appear
-4. Skip Welcome Screen with `Enter`, then **select `1`** (you can click with your mouse or simply press **`1`** on your keyboard).
-
-<p align="center">
-  <img src="repo/gui_setup_preview.png" alt="BadWords GUI Setup Preview" width="70%">
-</p>
-
-5. **Confirm the install path** (~4GB for core files + AI models), or browse/type in a custom destination path.
-6. Wait for the setup to finish. When it's done you can simply Launch BadWords as normal desktop app or open it from DaVinci Resolve: **Workspace** → **Scripts** → **BadWords**
-
-<br>
-
-> As you can see on the screenshot above, the installer menu gives you **5** other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, *Reinstall* or completely *Uninstall* BadWords!
-
-> [!NOTE]
-> ### 🛡️ Security Notice (Windows SAC & macOS Gatekeeper)
-> BadWords is a **100% free and open-source project created by an independent solo developer**. Since I don't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** may flag the newly compiled graphical binary.
-> 
-> If that happens, the setup script **automatically detects the block and gives you an option to run the Terminal Setup (option 1)**:
->
-> <p align="center">
->   <img src="repo/sac_notice.png" alt="Security Fallback Notice" width="70%">
-> </p>
->
-
-### <img src="repo/icons/terminal.svg" alt="Terminal Setup" width="24" height="24" valign="text-bottom"> Fallback: Terminal Setup
-
-If your system blocks the graphical window, the terminal setup offers **100% of the exact same features and tools**:
-
-<p align="center">
-  <img src="repo/cli_setup_preview.png" alt="Terminal Setup Preview" width="65%">
-</p>
-
-1. **Press `1`** for standard installation.
-2. Choose whether to create **Desktop and Start Menu shortcuts** (`Y/n`).
-3. Provide a path where you want BadWords (~4GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
-4. Wait for the download and setup to complete.
-5. Press **Enter** to launch BadWords (or **n** to skip it).
-
-<br>
-
----
-
-<a id="automated-setup-commands"></a>
-### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Option 1: Automated Setup Commands (Recommended)
-The absolute easiest way to start the setup. It securely downloads and runs the lightweight setup wizard directly from this repository.
-
-<br>
-
-#### <img src="repo/icons/windows.svg" alt="Windows" width="20" height="20" valign="text-bottom"> Windows
-Open the Start Menu, search for **PowerShell**, open it, paste the following command, and press **Enter**:
-
+**Windows (PowerShell)**
 ```powershell
-irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1" | iex
+irm "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/windows-setup.ps1" | iex
 ```
 
-<br>
-
-#### <img src="repo/icons/apple.svg" alt="macOS" width="20" height="20" valign="text-bottom"> macOS
-> [!WARNING]
-> BadWords will not work with the Mac App Store version of DaVinci Resolve. Re-install from the [official website](https://www.blackmagicdesign.com/products/davinciresolve/) if needed.
-
-Open the **Terminal** app (search with Spotlight `Cmd + Space`), paste the following command, and press **Enter**:
-
+**Linux**
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh" | bash
+curl -fsSL "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/linux-setup.sh" | bash
 ```
 
-<br>
+The scripts are plain text in [setupfiles/](setupfiles): read them before running them. StoryCraft is developed and tested on macOS with Apple Silicon and DaVinci Resolve Studio; Windows and Linux use the same installer but are untested.
 
-#### <img src="repo/icons/linux.svg" alt="Linux" width="20" height="20" valign="text-bottom"> Linux (Any Distro)
-Open your terminal, paste the following command, and press **Enter**:
+**Requirements**
+- DaVinci Resolve or DaVinci Resolve Studio (not the App Store version). Resolve's own transcription needs Studio 21.1+.
+- About 4 GB of disk space, plus 1–5 GB for the speech models. On macOS and Linux, models an installed BadWords already downloaded are reused.
+- In Resolve: *Preferences → System → General → External scripting using: Local* to launch StoryCraft from the desktop. For the details by Resolve version (Free or Studio, bridge mode), see the [original documentation](https://github.com/veritus-git/BadWords#readme): StoryCraft connects the same way.
 
-```bash
-curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh" | bash
-```
+## Build a story with Claude
 
-<br>
+StoryCraft includes an MCP server, so Claude Desktop or Claude Code can work with the open StoryCraft window. Claude reads the transcript in moments, checks its own edit until it flows and puts it on the story board; on request it sends it to Resolve as a new timeline. Your Claude app asks you to approve each step.
 
----
+Setup (StoryCraft open on the timeline; replace `<install>` with StoryCraft's install folder):
 
-### <img src="repo/icons/package.svg" alt="Option 2" width="24" height="24" valign="text-bottom"> Option 2: Manual Locall Setup
-Don't like running online terminal commands? You can download the pre-compiled standalone installer directly from the [Releases page](https://github.com/veritus-git/BadWords/releases/latest):
+- **Claude Code:** `claude mcp add storycraft -s user -- "<install>/venv/bin/python3" "<install>/mcp_server/storycraft_mcp.py"`
+- **Claude Desktop:** in Settings → Developer → Edit Config, add to `mcpServers`:
+  ```json
+  "storycraft": {"command": "<install>/venv/bin/python3", "args": ["<install>/mcp_server/storycraft_mcp.py"]}
+  ```
 
-**Windows:**
-  1. Download `badwords-setup-windows.exe`.
-  2. Double-click to run. *(If blocked by SmartScreen: right-click the file → **Properties** → check **Unblock** at the bottom → click **Apply**).*
+Then ask, for example: "Build a 2-minute story from this interview", and afterwards "Review the cuts". The connection only accepts requests from your own computer, with a key that changes every time StoryCraft starts. DaVinci Resolve Studio 21.1's own MCP server (File → Setup AI Assistants) can be connected at the same time.
 
-**macOS:**
-  1. Download `badwords-setup-macos`.
-  2. Open Terminal in your download folder, remove the macOS quarantine attribute, and launch the installer:
-     ```bash
-     xattr -d com.apple.quarantine badwords-setup-macos && chmod +x badwords-setup-macos && ./badwords-setup-macos
-     ```
+## If you want to help the original developer
 
-**Linux:**
-  1. Download `badwords-setup-linux`.
-  2. Double click to run or (if it fails) open terminal in the download folder, make it executable, and run:
-     ```bash
-     chmod +x badwords-setup-linux && ./badwords-setup-linux
-     ```
+StoryCraft exists because **Szymon Wolarz** built [BadWords](https://github.com/veritus-git/BadWords) as a solo developer and shared it under the MIT licence: the transcription, the Resolve connection, the timeline assembly and the installer all started there. If StoryCraft saves you time, please support him directly:
 
----
+<a href="https://www.buymeacoffee.com/BadWords" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Support%20the%20original%20developer&emoji=%E2%98%95&slug=BadWords&button_colour=0b8e46&font_colour=ffffff&font_family=Inter&outline_colour=ffffff&coffee_colour=FFFFFF" alt="Support the original developer on Buy Me a Coffee" height="50px"/></a>
 
-### <img src="repo/icons/shield-check.svg" alt="Safe" width="24" height="24" valign="text-bottom"> Wait, are these terminal commands actually safe?
-Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here is why BadWords uses them and why you don't need to worry:
+You can also star [the original repository](https://github.com/veritus-git/BadWords), and report problems that also happen in BadWords there.
 
-* **Zero System Interference:** These commands **do not require Administrator / root privileges** (no `sudo` or "Run as Administrator" needed). Everything is downloaded into a safe, isolated directory in your local user folder.
-* **Always Up-to-Date:** Fetching the script directly from GitHub ensures you are always running the latest version of the installer, so you don't have to deal with broken links or outdated dependencies.
-* **100% Transparent:** The commands point directly to plain-text files hosted right here on GitHub. You can click the *View script* links above to read every single line of code before pressing Enter!
+## Contribute
 
----
+Issues and pull requests are welcome on [this repository](https://github.com/Boris-Edu/StoryCraft/issues). More about StoryCraft: [storycraft.outerbeam.com](https://storycraft.outerbeam.com). Brand guide: [BRAND.md](BRAND.md).
 
-## <img src="repo/icons/launch.svg" alt="Launching" width="30" height="30" valign="text-bottom"> Launching & Compatibility by DaVinci Version
-
-Depending on whether you use **DaVinci Resolve Studio** or **DaVinci Resolve Free**, and which version you have installed, here is how you can launch and connect BadWords:
-
-* **DaVinci Resolve Studio (Any version):**  
-  *Full functionality with zero limitations.*
-  * **Option A (Desktop App):** Launch BadWords directly from your Desktop / Start Menu or terminal. Ensure that in DaVinci Resolve *Preferences → System → General*, **External scripting using** is set to **Local**. BadWords connects automatically via native IPC.
-  * **Option B (Embedded Mode):** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords** to launch it directly within Resolve.
-  * **Timeline Assembly:** Uses the 100% native `.drt` pipeline (preserves all Color Page grades, Fusion comps, Fairlight FX, and plugins).
-
-* **DaVinci Resolve Free (v21.0 and older):**  
-  *External scripting is locked by Blackmagic in the free edition, but embedded execution works.*
-  * **Option A (Embedded Mode):** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords**.
-  * **Option B (Bridge Mode):** In Resolve, click **Workspace** → **Scripts** → **BadWords Bridge**, then launch BadWords from your Desktop / Start Menu.
-  * **Timeline Assembly:** Native `.drt` assembly is fully supported and preserves all timeline features.
-
-* **DaVinci Resolve Free (v21.1+):**  
-  *In v21.1+, Blackmagic blocked both external scripting AND direct embedded Python scripts in the free edition.*
-  * **Bridge Mode (The only way to connect):**
-    1. Open DaVinci Resolve and load your project.
-    2. Click **Workspace** → **Scripts** → **BadWords Bridge** (runs once per Resolve session).
-    3. Launch BadWords from your Desktop or Start Menu - it connects automatically using the Lua bridge!
-  * **Timeline Assembly:** Because Blackmagic also disabled `.drt` script exports in Free 21.1+, BadWords automatically falls back to its robust **FCP7 XML assembly pipeline**.
-
----
-
-### <img src="repo/icons/workflow.svg" alt="Assembly Pipeline" width="24" height="24" valign="text-bottom"> Timeline Assembly: Native DRT vs. XML Fallback
-
-> [!NOTE]
-> **Studio vs. Free 21.1+ Note:**  
-> DaVinci Resolve Studio users (and Free users on version <21.1) always enjoy 100% native `.drt` assembly.  
-> The fallback to the **FCP7 XML pipeline** applies **strictly to DaVinci Resolve Free 21.1+** due to Blackmagic's scripting restrictions.
-
-| Timeline Element / Feature | Native .drt Pipeline<br>*(Studio & Free <21.1)* | FCP7 XML Pipeline<br>*(Free 21.1+ Fallback)* |
-| :--- | :---: | :---: |
-| **Cuts, Ripple-Cut & In/Out Points** | ✅ 100% frame-accurate | ✅ 100% frame-accurate |
-| **Multi-Track Video & Audio** *(V1, V2..., A1, A2...)* | ✅ Fully Preserved | ✅ Fully Preserved |
-| **Media Files & Audio Waveforms** | ✅ Fully Preserved | ✅ Fully Preserved |
-| **Proxy Media & Playback** | ✅ Fully Supported *(Playback → Prefer Proxies)* | ✅ Fully Supported *(Seamless relink to existing Media Pool proxies)* |
-| **Clip Marker Colors on Timeline** | ✅ Preserved & Re-applied | ✅ Preserved & Re-applied |
-| **Basic Transforms** *(Position, Zoom, Crop, Opacity)* | ✅ Fully Preserved | ✅ Fully Preserved |
-| **Fractional Frame Rates** *(23.976, 29.97, 59.94 fps)* | ✅ 100% Frame-Accurate | ✅ 100% Frame-Accurate (Zero Drift) |
-| **Track Filtering & Selection** | ✅ Fully Supported | ✅ Fully Supported |
-| **Color Page Grading & Node Trees** | ✅ **100% Preserved** *(Nodes, LUTs, Qualifiers)* | ⚠️ **Not Carried Over** *(Clips point to raw source files; grade after cutting or use Remote Grades)* |
-| **Fusion Page Compositions on Clips** | ✅ **100% Preserved** | ⚠️ **Not Carried Over** *(XML specification does not support Fusion nodes)* |
-| **Fairlight Audio FX & VST Plugins** | ✅ **100% Preserved** *(EQ, Dynamics, VST)* | ⚠️ **Not Carried Over** |
-| **Resolve OFX & Neural Engine** *(Magic Mask, Blur)* | ✅ **100% Preserved** | ⚠️ **Not Carried Over** |
-| **Compound Clips & Nested Timelines** | ✅ **100% Preserved** | ⚠️ May be flattened or imported as blank generators |
-
-> [!TIP]
-> **Summary:**  
-> If you run BadWords on **raw footage (A-roll, talking-head videos, raw podcasts, interviews, gameplays)** before color grading and applying VFX — **the XML pipeline works seamlessly and you won't notice any difference compared to `.drt`**.  
-> If you have already created complex Color node trees or Fusion animations on your clips prior to rough-cutting, those Resolve-specific nodes are preserved in Studio (via `.drt`), but cannot be transferred across XML.
-
-> **Important:** Your *first launch*, *first transcription*, and *first analysis* will take considerably longer than usual as the AI model completes its initial setup for your hardware. **All subsequent transcriptions are typically much faster.** <br>
-> **Note:** Whisper models perform best with English and major European languages. Other languages are supported but might yield lower precision.
-
----
-
-## <img src="repo/icons/list-checks.svg" alt="Requirements" width="30" height="30" valign="text-bottom"> Requirements
-- **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
-- **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
-- **Disk Space:** ~4GB free space for the app, plus 1–5GB depending on your chosen AI models.
-
----
-
-## <img src="repo/icons/user.svg" alt="Support the original author" width="30" height="30" valign="text-bottom"> Support the young coder this project originated from
-
-BadWords was created by **Simon (Szymon Wolarz)**, an 18-year-old solo developer, who started it as a side project for himself and then made it available to everyone. This fork builds on his work.
-
-If BadWords saved you time, please support him directly. It helps him keep the original project going between school and life:
-
-<a href="https://www.buymeacoffee.com/BadWords" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Bribe%20me%20with%20coffee&emoji=%E2%98%95&slug=BadWords&button_colour=0b8e46&font_colour=ffffff&font_family=Inter&outline_colour=ffffff&coffee_colour=FFFFFF" alt="Bribe Me With Coffee" height="50px"/></a>
-
----
-
-## <img src="repo/icons/users.svg" alt="Contribute & Contact" width="30" height="30" valign="text-bottom"> Contribute & Contact
-
-This is an open-source project. Feel free to open issues or pull requests to improve the tool!
-
-Problems with this fork's own changes (listed in [FORK.md](FORK.md)): please open an issue on [this fork](https://github.com/Boris-Edu/BadWords/issues). For the original BadWords, use the links below to reach Simon.
-
-[![Reddit](https://img.shields.io/badge/Reddit-FF4500?style=for-the-badge&logo=reddit&logoColor=white)](https://www.reddit.com/message/compose/?to=KoxSwYT)
-[![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:badwords.git@gmail.com)
-
-[License (MIT)](LICENSE)  
-*Note: This tool is not affiliated with Blackmagic Design. Use at your own risk.*
+[Licence (MIT)](LICENSE) · Not affiliated with Blackmagic Design.

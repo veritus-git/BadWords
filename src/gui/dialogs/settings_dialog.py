@@ -11,6 +11,8 @@ DESCRIPTION:
 Settings dialog with multi-tab layout and real-time preferences management.
 """
 
+from gui.theme import qc
+
 import sys
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
@@ -24,6 +26,36 @@ from PySide6.QtWidgets import (
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
+
+
+class _BrandBlock(QWidget):
+    """StoryCraft mark + wordmark with a caption under it (Settings sidebar, About page)."""
+    def __init__(self, caption, large=False, parent=None):
+        super().__init__(parent)
+        self._caption = caption
+        self._large = large
+        self.setFixedHeight(config.S(84 if large else 64))
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QFont
+        from PySide6.QtCore import QRectF
+        from gui import brand
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        m = config.S(52 if self._large else 26)
+        x0 = 0 if self._large else config.S(16)
+        y0 = (self.height() - m) / 2 if self._large else config.S(14)
+        brand.draw_mark(p, QRectF(x0, y0, m, m))
+        px = config.S(30 if self._large else 17)
+        tx = x0 + m + config.S(12 if self._large else 8)
+        brand.draw_wordmark(p, tx, y0 + (px * 1.05 if self._large else m * 0.78), px, solid=qc("#f0f0f0").name())
+        f = QFont(config.UI_FONT_NAME)
+        f.setPixelSize(config.S(12 if self._large else 11))
+        p.setFont(f)
+        p.setPen(QColor("#8a8a8a"))
+        cy = y0 + (px * 1.05 + config.S(20) if self._large else m + config.S(16))
+        p.drawText(int(tx if self._large else x0), int(cy), self._caption)
+        p.end()
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import (
     QPushButton, ToggleSwitch, ShortcutCaptureButton,
@@ -36,10 +68,134 @@ from gui.widgets.delegates import MarqueeItemDelegate
 from gui.utils import _txt
 
 from gui.dialogs.msgbox import CustomMsgBox
-from gui.dialogs.update_dialog import UpdateCheckThread
+from gui.dialogs.update_dialog import UpdateCheckThread, update_install_supported
 from gui.dialogs.marker_dialog import MarkerDialog
 from gui.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from gui.dialogs.overlay import MarkerDragZone, MarkerRowWidget
+
+# ── StoryCraft look ──────────────────────────────────────────────────────────
+# Written in the classic palette on purpose: gui/theme.py maps these greys (and the classic green)
+# onto the active theme, so the same values give ink/violet in StoryCraft and work in every other
+# theme, light ones included. Only the brand gradient and its ink text pass through untouched.
+_SC_BG = "#1c1c1c"        # content background (== config.BG_COLOR)
+_SC_SIDE = "#171717"      # sidebar, a step deeper than the content
+_SC_CARD = "#232323"      # soft card fill
+_SC_CARD_HI = "#2c2c2c"   # pill / hover / soft button fill
+_SC_CARD_HI2 = "#353535"  # pressed / selected segment
+_SC_TEXT = "#d9d9d9"
+_SC_TEXT_HI = "#ededed"
+_SC_LABEL = "#b0b0b0"     # form labels (a touch quieter than values)
+_SC_MUTED = "#8a8a8a"
+_SC_FAINT = "#6a6a6a"
+_SC_INK = "#0b0b14"       # text on the brand gradient
+_SC_GRAD = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #22d3ee, stop:1 #a855f7)"
+_SC_GRAD_HOVER = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3ad9f0, stop:1 #b36cf8)"
+_SC_GRAD_PRESS = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1bb8d0, stop:1 #9443dd)"
+_SC_TITLE_FONT = "Outfit"
+_SC_CARD_R = 14
+_SC_CTRL_R = 10
+
+
+def _sc_card(name="SettingsCard"):
+    """A soft card: subtle fill, large radius, no outline. Returns (frame, its QVBoxLayout)."""
+    frame = QFrame()
+    frame.setObjectName(name)
+    frame.setStyleSheet(f"QFrame#{name} {{ background-color: {_SC_CARD}; border: none; border-radius: {config.S(_SC_CARD_R)}px; }}")
+    lay = QVBoxLayout(frame)
+    lay.setContentsMargins(config.S(18), config.S(14), config.S(18), config.S(14))
+    lay.setSpacing(config.S(10))
+    return frame, lay
+
+
+def _sc_form(form):
+    """Same alignment for every settings form: labels left, controls flush right, on every platform
+    (macOS centres QFormLayout and keeps fields at their size hint by default)."""
+    form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+    form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    form.setRowWrapPolicy(QFormLayout.DontWrapRows)
+    form.setHorizontalSpacing(config.S(16))
+    form.setVerticalSpacing(config.S(12))
+    form.setContentsMargins(0, 0, 0, 0)
+    return form
+
+
+def _sc_form_card(form, name="SettingsCard"):
+    """A QFormLayout inside a soft card."""
+    frame, lay = _sc_card(name)
+    lay.addLayout(_sc_form(form))
+    return frame
+
+
+def _sc_section(text):
+    """Small quiet section heading above a card."""
+    lbl = QLabel(text)
+    lbl.setStyleSheet(f"color: {_SC_MUTED}; font-size: {config.FS(9)}pt; font-weight: 600; "
+                      f"letter-spacing: 0.4px; background: transparent; padding-left: {config.S(4)}px;")
+    return lbl
+
+
+_SOFT_ICON_BTN_QSS = f"""
+    QPushButton {{
+        background-color: transparent;
+        border: none;
+        border-radius: {config.S(8)}px;
+        padding: 0px;
+    }}
+    QPushButton:hover {{ background-color: {_SC_CARD_HI2}; }}
+    QPushButton:pressed {{ background-color: {_SC_CARD_HI}; }}
+"""
+
+
+class _NavDelegate(MarqueeItemDelegate):
+    """Settings sidebar rows: a calm list where the current page is a soft filled pill with a small
+    cyan-to-violet accent. Text drawing (marquee for long names) stays the base delegate's."""
+    _INSET_X = 10
+    _INSET_Y = 2
+
+    def __init__(self, list_widget):
+        super().__init__(list_widget, padding=config.S(self._INSET_X + 16))
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        hint.setHeight(config.S(38))
+        return hint
+
+    def paint(self, painter, option, index):
+        from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
+        from PySide6.QtGui import QPainter, QPalette, QLinearGradient, QColor, QFont as _QF
+        from PySide6.QtCore import QRectF
+        selected = bool(option.state & QStyle.State_Selected)
+        hovered = bool(option.state & QStyle.State_MouseOver) or index.row() == self._hovered_row
+        r = QRectF(option.rect).adjusted(config.S(self._INSET_X), config.S(self._INSET_Y),
+                                         -config.S(self._INSET_X), -config.S(self._INSET_Y))
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        if selected or hovered:
+            painter.setBrush(qc(_SC_CARD_HI if selected else "#202020"))
+            painter.drawRoundedRect(r, config.S(10), config.S(10))
+        if selected:
+            bar_h = min(r.height() - config.S(16), config.S(16))
+            bar = QRectF(r.left() + config.S(8), r.center().y() - bar_h / 2, config.S(3), bar_h)
+            g = QLinearGradient(bar.topLeft(), bar.bottomLeft())
+            g.setColorAt(0.0, QColor("#22d3ee"))
+            g.setColorAt(1.0, QColor("#a855f7"))
+            painter.setBrush(g)
+            painter.drawRoundedRect(bar, bar.width() / 2, bar.width() / 2)
+        painter.restore()
+        opt = QStyleOptionViewItem(option)
+        col = qc(_SC_TEXT_HI if selected else (_SC_TEXT if hovered else "#9a9a9a"))
+        pal = QPalette(opt.palette)
+        for grp in (QPalette.Active, QPalette.Inactive):
+            pal.setColor(grp, QPalette.WindowText, col)
+            pal.setColor(grp, QPalette.HighlightedText, col)
+        opt.palette = pal
+        f = _QF(opt.font)
+        f.setWeight(_QF.DemiBold if selected else _QF.Normal)
+        opt.font = f
+        super().paint(painter, opt, index)
+
 
 _CACHED_FONT_FAMILIES = None
 
@@ -110,124 +266,141 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
+        # Classic palette throughout (see _SC_* above); gui/theme.py maps it per theme.
+        _ff = f'"{config.UI_FONT_NAME}", "Ubuntu", sans-serif'
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {config.BG_COLOR}; }}
+            QDialog {{ background-color: {_SC_BG}; }}
+            /* plain layout containers (exact QWidget class only) never paint: cards show through */
+            .QWidget {{ background: transparent; }}
             #MainInnerFrame {{
-                background-color: {config.BG_COLOR};
-                border: 1px solid #1a1a1a;
+                background-color: {_SC_BG};
+                border: none;
             }}
             QPushButton {{
                 padding: {config.S(6)}px {config.S(16)}px;
                 outline: none;
             }}
             QLabel {{
-                color: {config.FG_COLOR};
-                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
+                color: {_SC_TEXT};
+                font-family: {_ff};
                 font-size: {config.FS(10)}pt;
                 background: transparent;
             }}
             QListWidget {{
-                background-color: {config.SIDEBAR_BG};
+                background-color: transparent;
                 border: none;
-                border-right: 1px solid {config.SEPARATOR_COL};
                 outline: none;
-                padding: {config.S(6)}px 0;
+                padding: {config.S(4)}px 0;
             }}
-            QListWidget::item {{
-                color: {config.NOTE_COL};
-                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.FS(10)}pt;
-                padding: {config.S(10)}px {config.S(16)}px;
-                border-radius: 0px;
-            }}
+            QListWidget::item,
+            QListWidget::item:hover,
             QListWidget::item:selected,
             QListWidget::item:selected:active,
             QListWidget::item:selected:!active {{
-                background-color: #2a2d2e;
-                color: #ffffff;
-                border-left: 2px solid {config.BTN_BG};
+                background: transparent;
+                border: none;
+                color: {_SC_TEXT};
+                font-family: {_ff};
+                font-size: {config.FS(10)}pt;
             }}
             QListWidget::item:focus {{ border: none; outline: none; }}
-            QListWidget::item:hover:!selected {{
-                background-color: #222222;
-                color: {config.FG_COLOR};
-            }}
             QStackedWidget {{
-                background-color: {config.BG_COLOR};
+                background-color: {_SC_BG};
             }}
             QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
-                background-color: {config.INPUT_BG};
-                color: {config.INPUT_FG};
-                border: 1px solid #3a3a3a;
-                padding: 4px 8px;
-                border-radius: 3px;
+                background-color: {_SC_CARD_HI};
+                color: {_SC_TEXT};
+                border: 1px solid transparent;
+                padding: {config.S(6)}px {config.S(10)}px;
+                border-radius: {config.S(_SC_CTRL_R)}px;
                 outline: none;
+                selection-background-color: #23a559;
             }}
             QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{
-                border: 1px solid {config.BTN_BG};
+                border: 1px solid #23a559;
                 outline: none;
             }}
             QCheckBox {{
-                color: {config.FG_COLOR};
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
-                spacing: 8px;
+                color: {_SC_TEXT};
+                font-family: {_ff};
+                font-size: {config.FS(10)}pt;
+                spacing: {config.S(8)}px;
             }}
             QCheckBox::indicator {{
-                width: 16px; height: 16px;
-                background: #1e1e1e;
-                border: 1px solid #555;
-                border-radius: 3px;
+                width: {config.S(16)}px; height: {config.S(16)}px;
+                background: {_SC_CARD_HI};
+                border: 1px solid #444444;
+                border-radius: {config.S(5)}px;
             }}
             QCheckBox::indicator:checked {{
-                background-color: {config.BTN_BG};
-                border-color: {config.BTN_BG};
+                background-color: #23a559;
+                border-color: #23a559;
             }}
             QPushButton#btn_apply {{
-                background-color: {config.BTN_BG};
-                color: white;
+                background: {_SC_GRAD};
+                color: {_SC_INK};
                 border: none;
-                border-radius: 4px;
-                font-weight: bold;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
-                padding: 0 18px;
+                border-radius: {config.S(_SC_CTRL_R)}px;
+                font-weight: 700;
+                font-family: {_ff};
+                font-size: {config.FS(10)}pt;
+                padding: 0 {config.S(20)}px;
             }}
-            QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
-            QPushButton#btn_apply:pressed {{ background-color: #125c2f; }}
+            QPushButton#btn_apply:hover {{ background: {_SC_GRAD_HOVER}; }}
+            QPushButton#btn_apply:pressed {{ background: {_SC_GRAD_PRESS}; }}
             QPushButton#btn_secondary {{
-                background-color: transparent;
-                color: #d4d4d4;
-                border: 1px solid #555;
-                border-radius: 4px;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
-                padding: 0 12px;
+                background-color: {_SC_CARD_HI};
+                color: {_SC_TEXT};
+                border: none;
+                border-radius: {config.S(_SC_CTRL_R)}px;
+                font-family: {_ff};
+                font-size: {config.FS(10)}pt;
+                font-weight: 500;
+                padding: 0 {config.S(16)}px;
             }}
-            QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
-            QPushButton#btn_ghost_sm {{
+            QPushButton#btn_secondary:hover {{ background-color: {_SC_CARD_HI2}; color: {_SC_TEXT_HI}; }}
+            QPushButton#btn_secondary:pressed {{ background-color: {_SC_CARD}; }}
+            QPushButton#btn_quiet {{
                 background-color: transparent;
-                color: #888;
-                border: 1px solid #444;
-                border-radius: {config.S(3)}px;
-                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                color: {_SC_MUTED};
+                border: none;
+                border-radius: {config.S(_SC_CTRL_R)}px;
+                font-family: {_ff};
                 font-size: {config.FS(9.5)}pt;
-                padding: {config.S(4)}px {config.S(12)}px;
+                padding: 0 {config.S(12)}px;
+            }}
+            QPushButton#btn_quiet:hover {{ background-color: {_SC_CARD}; color: {_SC_TEXT}; }}
+            QPushButton#btn_quiet:pressed {{ background-color: {_SC_CARD_HI}; }}
+            QPushButton#btn_ghost_sm {{
+                background-color: {_SC_CARD_HI};
+                color: {_SC_TEXT};
+                border: none;
+                border-radius: {config.S(8)}px;
+                font-family: {_ff};
+                font-size: {config.FS(9.5)}pt;
+                padding: {config.S(5)}px {config.S(14)}px;
                 text-align: center;
             }}
-            QPushButton#btn_ghost_sm:hover {{ background-color: #2a2d2e; color: #fff; border-color: #666; }}
-            QPushButton#btn_ghost_sm:pressed {{ background-color: #1a1a1a; color: #aaa; border-color: #444; }}
+            QPushButton#btn_ghost_sm:hover {{ background-color: {_SC_CARD_HI2}; color: {_SC_TEXT_HI}; }}
+            QPushButton#btn_ghost_sm:pressed {{ background-color: {_SC_CARD}; color: {_SC_MUTED}; }}
+            QPushButton#btn_ghost_sm:disabled {{ color: {_SC_FAINT}; }}
             QPushButton[class="revert-btn"] {{
                 padding: 0px;
                 text-align: center;
                 background: transparent;
-                border: 1px solid #444;
-                border-radius: 3px;
-                color: #888;
+                border: none;
+                border-radius: {config.S(8)}px;
+                color: {_SC_MUTED};
                 font-size: 12pt;
                 font-weight: bold;
             }}
-            {config.scrollbar_qss(8)}
+            QToolTip {{
+                background-color: {_SC_CARD_HI};
+                color: {_SC_TEXT};
+                border: none;
+                padding: {config.S(6)}px {config.S(8)}px;
+            }}
+            {config.scrollbar_qss(8, bg="transparent", fg="#3a3a3a", active="#555555")}
         """)
 
         # ─────────────────────────────────────────────────────────────────
@@ -240,7 +413,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             def paintEvent(self, e):
                 from PySide6.QtGui import QPainter, QColor
                 p = QPainter(self)
-                p.fillRect(self.rect(), QColor(config.BG_COLOR))
+                p.fillRect(self.rect(), qc(config.BG_COLOR))
                 super().paintEvent(e)
                 
         self.inner_frame = SolidFrame(self)
@@ -250,7 +423,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         from PySide6.QtGui import QColor
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(30)
-        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setColor(qc(0, 0, 0, 150))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)
         
@@ -276,15 +449,29 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         outer_layout.addLayout(root)
 
         # ── LEFT: Category list ───────────────────────────────────────────
+        # A calm sidebar a step deeper than the content: brand block, then the pages as soft pills.
+        side_w = config.S(184)
         self.category_list = QListWidget()
-        self.category_list.setFixedWidth(config.S(155))
         self.category_list.setFocusPolicy(Qt.NoFocus)
         self.category_list.setFont(QFont(config.UI_FONT_NAME, config.FS(10)))
         # Disable horizontal scrollbar — marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
+        self.category_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.category_list.setMouseTracking(True)
+        self._marquee_delegate = _NavDelegate(self.category_list)
         self.category_list.setItemDelegate(self._marquee_delegate)
-        root.addWidget(self.category_list)
+        sidebar = QWidget()
+        sidebar.setObjectName("SettingsSidebar")
+        sidebar.setAttribute(Qt.WA_StyledBackground, True)
+        sidebar.setFixedWidth(side_w)
+        sidebar.setStyleSheet(f"QWidget#SettingsSidebar {{ background-color: {_SC_SIDE}; border: none; }}")
+        l_side = QVBoxLayout(sidebar)
+        l_side.setContentsMargins(0, config.S(6), 0, config.S(12))
+        l_side.setSpacing(config.S(8))
+        l_side.addWidget(_BrandBlock(self.txt("tool_settings")))
+        self.category_list.setFixedWidth(side_w)
+        l_side.addWidget(self.category_list, 1)
+        root.addWidget(sidebar)
 
         # ── RIGHT: stacked pages + bottom bar ────────────────────────────
         right_layout = QVBoxLayout()
@@ -296,43 +483,38 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.stack = QStackedWidget()
         right_layout.addWidget(self.stack)
 
+        # Footer: no rule above it, just the actions on the page background.
+        # Quiet "reset everything" on the left, Close + the one gradient primary (Apply) on the right.
         self.w_footer = QWidget()
         l_footer = QVBoxLayout(self.w_footer)
         l_footer.setContentsMargins(0, 0, 0, 0)
         l_footer.setSpacing(0)
-        
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"background: {config.SEPARATOR_COL}; max-height: 1px; border: none;")
-        l_footer.addWidget(sep)
 
         btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(config.S(16), config.S(10), config.S(16), config.S(12))
+        btn_bar.setContentsMargins(config.S(20), config.S(10), config.S(20), config.S(16))
         btn_bar.setSpacing(config.S(8))
 
-        btn_bar.addStretch()
-
-        # Right: Restore / Close / Apply
         self.btn_restore = QPushButton(self.txt("btn_restore_defaults"))
-        self.btn_restore.setObjectName("btn_secondary")
-        self.btn_restore.setMinimumWidth(config.S(100))
-        self.btn_restore.setFixedHeight(config.S(30))
+        self.btn_restore.setObjectName("btn_quiet")
+        self.btn_restore.setFixedHeight(config.S(34))
         self.btn_restore.setCursor(Qt.PointingHandCursor)
         self.btn_restore.clicked.connect(self._restore_all_defaults)
         btn_bar.addWidget(self.btn_restore)
 
+        btn_bar.addStretch()
+
         self.btn_close = QPushButton(self.txt("btn_close"))
         self.btn_close.setObjectName("btn_secondary")
-        self.btn_close.setMinimumWidth(config.S(100))
-        self.btn_close.setFixedHeight(config.S(30))
+        self.btn_close.setMinimumWidth(config.S(92))
+        self.btn_close.setFixedHeight(config.S(34))
         self.btn_close.setCursor(Qt.PointingHandCursor)
         self.btn_close.clicked.connect(self.reject)
         btn_bar.addWidget(self.btn_close)
 
         self.btn_apply = QPushButton(self.txt("btn_apply"))
         self.btn_apply.setObjectName("btn_apply")
-        self.btn_apply.setMinimumWidth(config.S(100))
-        self.btn_apply.setFixedHeight(config.S(30))
+        self.btn_apply.setMinimumWidth(config.S(104))
+        self.btn_apply.setFixedHeight(config.S(34))
         self.btn_apply.setCursor(Qt.PointingHandCursor)
         self.btn_apply.clicked.connect(self._apply_settings)
         btn_bar.addWidget(self.btn_apply)
@@ -344,13 +526,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
+    def _soften_icon_buttons(self, root):
+        """The shared revert / clear buttons come boxed; inside Settings they are quiet icon buttons."""
+        for cls in (ReloadButton, CloseIconButton):
+            for b in root.findChildren(cls):
+                if b.property("_sc_keep_style"):
+                    continue
+                b.setStyleSheet(_SOFT_ICON_BTN_QSS)
+
     def _get_info_icon(self, info_key):
         parent = self.parent()
         if parent and hasattr(parent, '_create_info_icon'):
             return parent._create_info_icon(info_key)
         lbl_info = QLabel("ⓘ")
         lbl_info.setToolTip(self.txt(info_key) if hasattr(self, 'txt') else info_key)
-        lbl_info.setStyleSheet("color: #888; font-size: 11pt;")
+        lbl_info.setStyleSheet(f"color: {_SC_FAINT}; font-size: 11pt; background: transparent;")
         return lbl_info
 
 
@@ -439,8 +629,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.category_list.addItem(self.txt("tab_shortcuts"))
             self.category_list.addItem(self.txt("tab_custom_markers"))
             self.category_list.addItem(self.txt("tab_ai_engine"))
-            self.category_list.addItem(self.txt("tab_telemetry"))
-            self.category_list.addItem(self.txt("tab_support"))
+            self.category_list.addItem(self.txt("tab_telemetry") if getattr(config, "TELEMETRY_ENABLED", True) else self.txt("tab_about"))
+            self.category_list.addItem(self.txt("tab_support") if getattr(config, "SUPPORT_REPORTS_ENABLED", True) else self.txt("tab_logs"))
 
             if self._is_basic_mode:
                 item = self.category_list.item(4)
@@ -515,10 +705,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         def create_reset_handler(s_func, d_val):
             return lambda checked=False: s_func(d_val)
         btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+        row.addSpacing(config.S(2))
         row.addWidget(btn_rev)
         lbl = QLabel(label_text)
-        lbl.setMinimumWidth(config.S(160))
-        lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
+        lbl.setMinimumWidth(config.S(150))
+        lbl.setStyleSheet(f"color: {_SC_LABEL}; font-size: {config.FS(10)}pt; background: transparent;")
         form.addRow(lbl, container)
         self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
         return lbl, container
@@ -538,8 +729,151 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         method = getattr(self, f"_build_page_{page_name}", None)
         if method:
             page_widget = method(prefs)
-            if page_widget:
-                scroll.setWidget(page_widget)
+            if page_widget is None:
+                return
+            # StoryCraft sends nothing to the original project: About replaces Telemetry, and Logs keeps
+            # only the log file (the report form mails the original author). The original pages are still
+            # built, hidden, so every setting Apply reads exists.
+            if page_name == 'telemetry' and not getattr(config, "TELEMETRY_ENABLED", True):
+                shown = self._build_page_about(prefs)
+                page_widget.setParent(shown)
+                page_widget.hide()
+                page_widget = shown
+            elif page_name == 'support' and not getattr(config, "SUPPORT_REPORTS_ENABLED", True):
+                shown = self._build_page_logs(prefs)
+                page_widget.setParent(shown)
+                page_widget.hide()
+                page_widget = shown
+            lay = page_widget.layout()
+            item = self.category_list.item(idx)
+            if lay is not None:
+                lay.setContentsMargins(config.S(28), config.S(18), config.S(28), config.S(10))
+            if lay is not None and item is not None and hasattr(lay, "insertWidget"):
+                title = QLabel(item.text())
+                title.setObjectName("SettingsPageTitle")
+                title.setStyleSheet(f"QLabel#SettingsPageTitle {{ font-family: '{_SC_TITLE_FONT}'; font-size: {config.FS(17)}pt; "
+                                    f"font-weight: 600; color: {_SC_TEXT_HI}; background: transparent; }}")
+                lay.insertWidget(0, title)
+                lay.insertSpacing(1, config.S(14))
+            # Transparent page, scoped to the page itself: a bare "background: transparent;" would
+            # cascade to every button on it and wipe their fills.
+            if not page_widget.objectName():
+                page_widget.setObjectName(f"SettingsPage{idx}")
+            page_widget.setStyleSheet(f"QWidget#{page_widget.objectName()} {{ background: transparent; }}")
+            # One readable column, even when the window is wide
+            page_widget.setMaximumWidth(config.S(720))
+            scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+            self._soften_icon_buttons(page_widget)
+            scroll.setWidget(page_widget)
+
+    def _build_page_about(self, prefs):
+        """About StoryCraft: what it is, credit to the original author, privacy, where data lives."""
+        import os
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        lay.setSpacing(config.S(12))
+        lay.addWidget(_BrandBlock(self.txt("about_version").format(version=config.VERSION), large=True))
+
+        def para(text, color=_SC_TEXT, size=10):
+            lbl = QLabel(text)
+            lbl.setWordWrap(True)
+            lbl.setOpenExternalLinks(True)
+            lbl.setTextFormat(Qt.RichText)
+            lbl.setStyleSheet(f"color: {color}; font-size: {config.FS(size)}pt; background: transparent;")
+            return lbl
+
+        def card(*widgets):
+            frame, fl = _sc_card("AboutCard")
+            fl.setContentsMargins(config.S(18), config.S(14), config.S(18), config.S(16))
+            fl.setSpacing(config.S(6))
+            for w in widgets:
+                if isinstance(w, QPushButton):
+                    fl.addSpacing(config.S(4))
+                    fl.addWidget(w, 0, Qt.AlignLeft)
+                else:
+                    fl.addWidget(w)
+            return frame
+
+        link = lambda url, text: f'<a style="color:#22d3ee; text-decoration:none;" href="{url}">{text}</a>'
+        lay.addWidget(para(self.txt("about_what")))
+        lay.addSpacing(config.S(4))
+        lay.addWidget(card(
+            para(f"<b>{self.txt('about_credit_title')}</b>", _SC_TEXT_HI),
+            para(self.txt("about_credit"), _SC_MUTED, 9.5),
+            para(link("https://github.com/veritus-git/BadWords", self.txt("about_original_repo")) + " &nbsp;·&nbsp; "
+                 + link("https://buymeacoffee.com/badwords", self.txt("about_support_author")), size=9.5)))
+        lay.addWidget(card(
+            para(f"<b>{self.txt('about_privacy_title')}</b>", _SC_TEXT_HI),
+            para(self.txt("about_privacy"), _SC_MUTED, 9.5)))
+        saves = self.engine.os_doc.get_saves_folder()
+        btn_open = QPushButton(self.txt("about_open_data"))
+        btn_open.setObjectName("btn_ghost_sm")
+        btn_open.setCursor(Qt.PointingHandCursor)
+        btn_open.clicked.connect(lambda: self._open_folder(saves))
+        lay.addWidget(card(
+            para(f"<b>{self.txt('about_data_title')}</b>", _SC_TEXT_HI),
+            para(saves, _SC_MUTED, 9),
+            btn_open))
+        lay.addSpacing(config.S(2))
+        lay.addWidget(para(link("https://github.com/Boris-Edu/StoryCraft", self.txt("about_repo")), size=9.5))
+        lay.addStretch(1)
+        return page
+
+    def _build_page_logs(self, prefs):
+        """Logs: where the log file is, to share when asking for help."""
+        import os
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        lay.setSpacing(config.S(12))
+        info = QLabel(self.txt("logs_info"))
+        info.setWordWrap(True)
+        info.setStyleSheet(f"color: {_SC_MUTED}; font-size: {config.FS(9.5)}pt; background: transparent;")
+        lay.addWidget(info)
+        log_file = getattr(self.engine.os_doc, 'log_file', '') or ''
+        card, card_lay = _sc_card("LogsCard")
+        card_lay.setSpacing(config.S(12))
+        path = QLineEdit(log_file)
+        path.setReadOnly(True)
+        path.setCursorPosition(0)
+        path.setStyleSheet(f"QLineEdit {{ background-color: {_SC_BG}; color: {_SC_TEXT}; border: none; "
+                           f"border-radius: {config.S(8)}px; padding: {config.S(8)}px {config.S(10)}px; "
+                           f"font-family: 'Menlo', 'Consolas', monospace; font-size: {config.FS(9)}pt; }}")
+        card_lay.addWidget(path)
+        row = QHBoxLayout()
+        row.setSpacing(config.S(8))
+        btn_open = QPushButton(self.txt("btn_open_logs_dir"))
+        btn_open.setObjectName("btn_ghost_sm")
+        btn_open.setCursor(Qt.PointingHandCursor)
+        btn_open.clicked.connect(lambda: self._open_folder(os.path.dirname(log_file)))
+        btn_copy = QPushButton(self.txt("btn_copy_path"))
+        btn_copy.setObjectName("btn_ghost_sm")
+        btn_copy.setCursor(Qt.PointingHandCursor)
+        from PySide6.QtGui import QGuiApplication
+        btn_copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(log_file))
+        row.addWidget(btn_open)
+        row.addWidget(btn_copy)
+        row.addStretch()
+        card_lay.addLayout(row)
+        lay.addWidget(card)
+        lay.addStretch(1)
+        return page
+
+    @staticmethod
+    def _open_folder(path):
+        import os, subprocess
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            elif sys.platform == "win32":
+                os.startfile(path)
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception:
+            pass
 
     def _build_page_general(self, prefs):
         # PAGE 0 — GENERAL
@@ -551,15 +885,22 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Basic/Advanced view switch
 
-        view_btn_row = QHBoxLayout()
-        view_btn_row.setContentsMargins(0, 0, 0, config.S(16))
-        view_btn_row.setSpacing(config.S(10))
+        # A segmented control: one soft track, the current view is the raised segment
+        view_seg = QFrame()
+        view_seg.setObjectName("ViewSegment")
+        view_seg.setStyleSheet(f"QFrame#ViewSegment {{ background-color: {_SC_CARD}; border: none; border-radius: {config.S(_SC_CTRL_R + 2)}px; }}")
+        view_btn_row = QHBoxLayout(view_seg)
+        view_btn_row.setContentsMargins(config.S(4), config.S(4), config.S(4), config.S(4))
+        view_btn_row.setSpacing(config.S(4))
         
         self.btn_view_basic = QPushButton(self.txt("btn_view_basic"))
         self.btn_view_basic.setFixedHeight(config.S(30))
         self.btn_view_basic.setCursor(Qt.PointingHandCursor)
-        self.active_btn_style = f"background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold; font-size: {config.FS(10)}pt;"
-        self.inactive_btn_style = f"background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal; font-size: {config.FS(10)}pt;"
+        _seg = (f"border: none; border-radius: {config.S(_SC_CTRL_R - 1)}px; font-size: {config.FS(9.5)}pt; "
+                f"padding: 0 {config.S(18)}px; min-width: {config.S(96)}px;")
+        self.active_btn_style = f"QPushButton {{ background-color: {_SC_CARD_HI2}; color: {_SC_TEXT_HI}; font-weight: 600; {_seg} }}"
+        self.inactive_btn_style = (f"QPushButton {{ background-color: transparent; color: {_SC_MUTED}; font-weight: normal; {_seg} }}"
+                                   f"QPushButton:hover {{ color: {_SC_TEXT}; background-color: {_SC_CARD_HI}; }}")
         
         if self._is_basic_mode:
             self.btn_view_basic.setStyleSheet(self.active_btn_style)
@@ -580,29 +921,34 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         view_btn_row.addWidget(self.btn_view_basic)
         view_btn_row.addWidget(self.btn_view_advanced)
-        l_gen.addLayout(view_btn_row)
+        seg_row = QHBoxLayout()
+        seg_row.setContentsMargins(0, 0, 0, 0)
+        seg_row.addWidget(view_seg)
+        seg_row.addStretch()
+        l_gen.addLayout(seg_row)
+        l_gen.addSpacing(config.S(14))
 
         # ── Version / Update card (at the top) ────────────────────────────
-        ver_card = QFrame()
-        ver_card.setStyleSheet(
-            "QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }"
-        )
-        ver_card_lay = QVBoxLayout(ver_card)
-        ver_card_lay.setContentsMargins(config.S(16), config.S(12), config.S(16), config.S(12))
-        ver_card_lay.setSpacing(config.S(10))
+        ver_card, ver_card_lay = _sc_card("VersionCard")
+        ver_card_lay.setSpacing(config.S(12))
 
         # Row 1: version + status + Update Now
         ver_row = QHBoxLayout()
         ver_row.setSpacing(config.S(6))
         lbl_ver_key = QLabel(self.txt("lbl_ver_installed") + ":")
-        lbl_ver_key.setStyleSheet(f"color: #666; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        lbl_ver_key.setStyleSheet(f"color: {_SC_MUTED}; font-size: {config.FS(9)}pt; background: transparent; border: none;")
         lbl_ver_val = QLabel(config.VERSION)
-        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent; border: none;")
+        lbl_ver_val.setStyleSheet(f"color: {_SC_TEXT_HI}; font-family: '{_SC_TITLE_FONT}'; font-size: {config.FS(12)}pt; font-weight: 600; background: transparent; border: none;")
         self._lbl_ver_status = QLabel("…")
-        self._lbl_ver_status.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        self._lbl_ver_status.setStyleSheet(f"color: {_SC_FAINT}; font-size: {config.FS(9)}pt; background: transparent; border: none;")
         self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"))
         self._btn_ver_update.setObjectName("btn_ghost_sm")
-        self._btn_ver_update.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS(9)}pt;")
+        # The update is the one thing to act on here: brand gradient, ink text
+        self._btn_ver_update.setStyleSheet(
+            f"QPushButton {{ background: {_SC_GRAD}; color: {_SC_INK}; border: none; border-radius: {config.S(8)}px; "
+            f"padding: {config.S(4)}px {config.S(14)}px; font-size: {config.FS(9)}pt; font-weight: 700; }}"
+            f"QPushButton:hover {{ background: {_SC_GRAD_HOVER}; }}"
+            f"QPushButton:disabled {{ background: {_SC_CARD_HI}; color: {_SC_MUTED}; }}")
         self._btn_ver_update.setCursor(Qt.PointingHandCursor)
         self._btn_ver_update.hide()
         ver_row.addWidget(lbl_ver_key)
@@ -615,20 +961,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Thin divider inside card
         card_sep = QFrame()
-        card_sep.setFrameShape(QFrame.Shape.HLine)
-        card_sep.setStyleSheet("background-color: #222; max-height: 1px; border: none;")
+        card_sep.setFixedHeight(1)
+        card_sep.setStyleSheet(f"background-color: {_SC_CARD_HI}; border: none;")
         ver_card_lay.addWidget(card_sep)
 
         # Row 2: Notify toggle
         tgl_notify_row = QHBoxLayout()
-        tgl_notify_row.setSpacing(10)
+        tgl_notify_row.setSpacing(config.S(12))
         self.tgl_auto_check_updates = ToggleSwitch()
         self.tgl_auto_check_updates.setChecked(
             bool(prefs.get('auto_check_updates', True)), animated=False
         )
         self.tgl_auto_check_updates.setToolTip(self.txt("tt_auto_check_updates"))
         lbl_notify = QLabel(self.txt("lbl_auto_check_updates"))
-        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_notify.setStyleSheet(f"color: {_SC_LABEL}; font-size: {config.FS(10)}pt; background: transparent; border: none;")
         lbl_notify.setToolTip(self.txt("tt_auto_check_updates"))
         tgl_notify_row.addWidget(self.tgl_auto_check_updates)
         tgl_notify_row.addWidget(lbl_notify)
@@ -637,14 +983,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Row 3: Auto-update toggle
         tgl_autoupd_row = QHBoxLayout()
-        tgl_autoupd_row.setSpacing(10)
+        tgl_autoupd_row.setSpacing(config.S(12))
         self.tgl_auto_update_on_start = ToggleSwitch()
         self.tgl_auto_update_on_start.setChecked(
             bool(prefs.get('auto_update_on_start', False)), animated=False
         )
         self.tgl_auto_update_on_start.setToolTip(self.txt("tt_auto_update_on_start"))
         lbl_autoupd = QLabel(self.txt("lbl_auto_update_on_start"))
-        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_autoupd.setStyleSheet(f"color: {_SC_LABEL}; font-size: {config.FS(10)}pt; background: transparent; border: none;")
         lbl_autoupd.setToolTip(self.txt("tt_auto_update_on_start"))
         tgl_autoupd_row.addWidget(self.tgl_auto_update_on_start)
         tgl_autoupd_row.addWidget(lbl_autoupd)
@@ -652,7 +998,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         ver_card_lay.addLayout(tgl_autoupd_row)
 
         l_gen.addWidget(ver_card)
-        l_gen.addSpacing(12)
+        _fork_updates = bool(getattr(config, "UPDATE_REPO", None))
+        if not _fork_updates and not getattr(config, "CHECK_ORIGINAL_UPDATES", True):
+            ver_card.hide()
+        if not update_install_supported(self.engine.os_doc.install_dir):
+            # No StoryCraft installer to run: updates open the release page, no auto-install switch
+            self.tgl_auto_update_on_start.setChecked(False, animated=False)
+            for i in range(tgl_autoupd_row.count()):
+                wdg = tgl_autoupd_row.itemAt(i).widget()
+                if wdg is not None:
+                    wdg.hide()
+        l_gen.addSpacing(config.S(12))
 
         # ── Async: populate version status + wire Update Now button ───────
         # Use engine reference captured now; derive lang at call time from prefs
@@ -682,6 +1038,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 "color: #f4a641; font-size: 9pt; background: transparent; border: none;"
             )
             self._btn_ver_update.show()
+            if not update_install_supported(self.engine.os_doc.install_dir):
+                # StoryCraft: download from the release page (no installer of its own)
+                from PySide6.QtGui import QDesktopServices
+                from PySide6.QtCore import QUrl
+                self._btn_ver_update.setText(self.txt("btn_ver_download"))
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    try:
+                        self._btn_ver_update.clicked.disconnect()
+                    except Exception:
+                        pass
+                self._btn_ver_update.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(gh_url)))
+                return
 
             def _do_inline_update():
                 import threading, subprocess, tempfile, urllib.request, ssl
@@ -820,16 +1190,22 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
                 )
 
+        def _on_status_for_card(state):
+            texts = {"no_releases": ("lbl_ver_no_releases", "#9a9a9a"), "offline": ("lbl_ver_offline", "#9a9a9a")}
+            if state in texts:
+                key, col = texts[state]
+                self._lbl_ver_status.setText(self.txt(key))
+                self._lbl_ver_status.setStyleSheet(f"color: {col}; font-size: 9pt; background: transparent; border: none;")
+
         _thr = UpdateCheckThread(config.VERSION, parent=self)
         _thr.update_available.connect(_on_update_known_for_card)
+        _thr.status.connect(_on_status_for_card)
         _thr.finished.connect(_on_check_done_for_card)
         _thr.start()
         self._settings_ver_thread = _thr
 
         # ── Language + App Icon ────────────────────────────────────────────
-        form_gen = QFormLayout()
-        form_gen.setSpacing(14)
-        form_gen.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form_gen = _sc_form(QFormLayout())
 
         # Language dropdown
         self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
@@ -867,6 +1243,28 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             _on_lang_changed(val)
         self._add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
 
+        # Colour theme: applies immediately
+        from gui import theme as _theme
+        theme_names = [_theme.DISPLAY_NAMES[k] for k in _theme.PICKER]
+        self.dropdown_theme = CustomDropdown(theme_names)
+        self.dropdown_theme.setText(_theme.DISPLAY_NAMES.get(prefs.get('ui_theme', _theme.DEFAULT), _theme.DISPLAY_NAMES[_theme.DEFAULT]))
+
+        def _on_theme_changed(val):
+            key = next((k for k, v in _theme.DISPLAY_NAMES.items() if v == val), _theme.DEFAULT)
+            p = self.engine.load_preferences() or {}
+            if p.get('ui_theme') != key:
+                p['ui_theme'] = key
+                self.engine.save_preferences(p)
+            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
+                self._initial_state['ui_theme'] = key
+            _theme.set_theme(key)
+
+        self.dropdown_theme.valueChanged.connect(_on_theme_changed)
+        def _reset_theme(val):
+            self.dropdown_theme.setText(val)
+            _on_theme_changed(val)
+        self._add_row(form_gen, self.txt("lbl_theme"), self.dropdown_theme, _theme.DISPLAY_NAMES[_theme.DEFAULT], _reset_theme)
+
         # App Icon (Visual Selector) - Spans full width matching Language dropdown
         icon_row = QHBoxLayout()
         icon_row.setSpacing(config.S(6))
@@ -900,15 +1298,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         break
             btn_rev_icon.clicked.connect(lambda *args: set_icon_default("default"))
 
-        l_gen.addLayout(form_gen)
-        l_gen.addSpacing(8)
+        frm_card, frm_lay = _sc_card("GeneralCard")
+        frm_lay.addLayout(form_gen)
+        l_gen.addWidget(frm_card)
+        l_gen.addSpacing(config.S(8))
         l_gen.addStretch()
 
 
         # ── Import / Export settings (bottom) ─────────────────────────────
         io_row = QHBoxLayout()
-        io_row.setContentsMargins(0, 0, 0, 8)
-        io_row.setSpacing(8)
+        io_row.setContentsMargins(0, config.S(8), 0, 0)
+        io_row.setSpacing(config.S(8))
 
         btn_import_s = QPushButton(self.txt("btn_import_settings"))
         btn_import_s.setObjectName("btn_ghost_sm")
@@ -999,6 +1399,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row.addWidget(btn_rev)
 
             lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"color: {_SC_LABEL}; font-size: {config.FS(10)}pt; background: transparent;")
             
             if info_key:
                 lbl_container = QWidget()
@@ -1034,10 +1435,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         # ── ONE unified QFormLayout ───────────────────────────────────────────
         # Custom markers inserted via insertRow() at _custom_sc_insert_pos so
         # spacing is always identical (14px) between EVERY row.
-        form = QFormLayout()
-        form.setSpacing(14)
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form = _sc_form(QFormLayout())
 
         # Marker shortcuts (red … eraser)
         for key in KEY_ORDER:
@@ -1102,7 +1500,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             if is_disp:
                 self._advanced_widgets.extend([lbl, container])
 
-        l_shorts.addLayout(form)
+        l_shorts.addWidget(_sc_form_card(form, "ShortcutsCard"))
         l_shorts.addStretch()
 
         _check_shortcut_conflicts()
@@ -1127,22 +1525,23 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         markers_scroll = QScrollArea()
         markers_scroll.setWidgetResizable(True)
         markers_scroll.setFrameShape(QFrame.NoFrame)
-        markers_scroll.setMinimumHeight(120)
+        markers_scroll.setMinimumHeight(config.S(120))
         markers_scroll.setStyleSheet(f"""
             QScrollArea {{
-                background-color: #1e1e1e;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
+                background-color: {_SC_CARD};
+                border: none;
+                border-radius: {config.S(_SC_CARD_R)}px;
             }}
             QWidget#markers_inner {{
-                background-color: #1e1e1e;
+                background-color: transparent;
             }}
         """)
+        markers_scroll.viewport().setAutoFillBackground(False)
         self._markers_inner = MarkerDragZone()
         self._markers_inner.setObjectName("markers_inner")
         self._markers_layout = self._markers_inner.layout()
-        self._markers_layout.setContentsMargins(4, 4, 4, 4)
-        self._markers_layout.setSpacing(2)
+        self._markers_layout.setContentsMargins(config.S(8), config.S(8), config.S(8), config.S(8))
+        self._markers_layout.setSpacing(config.S(4))
         markers_scroll.setWidget(self._markers_inner)
         self._refresh_markers_list()
         # Also refresh Shortcuts tab now that current_custom_markers is populated
@@ -1154,26 +1553,27 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         marker_btn_row.setSpacing(config.S(8))
         btn_add_m = QPushButton(self.txt("btn_add_marker"))
         btn_add_m.setObjectName("btn_secondary")
-        btn_add_m.setFixedHeight(config.S(30))
+        btn_add_m.setFixedHeight(config.S(32))
         btn_add_m.setCursor(Qt.PointingHandCursor)
         btn_add_m.clicked.connect(self._on_add_marker)
         marker_btn_row.addWidget(btn_add_m)
 
         btn_export_m = QPushButton(self.txt("btn_export_markers"))
-        btn_export_m.setObjectName("btn_ghost_sm")
-        btn_export_m.setFixedHeight(config.S(28))
+        btn_export_m.setObjectName("btn_quiet")
+        btn_export_m.setFixedHeight(config.S(32))
         btn_export_m.setCursor(Qt.PointingHandCursor)
         btn_export_m.clicked.connect(self._on_export_markers)
         marker_btn_row.addWidget(btn_export_m)
 
         btn_import_m = QPushButton(self.txt("btn_import_markers"))
-        btn_import_m.setObjectName("btn_ghost_sm")
-        btn_import_m.setFixedHeight(config.S(28))
+        btn_import_m.setObjectName("btn_quiet")
+        btn_import_m.setFixedHeight(config.S(32))
         btn_import_m.setCursor(Qt.PointingHandCursor)
         btn_import_m.clicked.connect(self._on_import_markers)
         marker_btn_row.addWidget(btn_import_m)
 
         marker_btn_row.addStretch()
+        l_markers.addSpacing(config.S(4))
         l_markers.addLayout(marker_btn_row)
 
 
@@ -1199,9 +1599,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop_box.setSpacing(0)
 
         form_ontop = QFormLayout()
-        form_ontop.setSpacing(14)
-        form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form_ontop.setContentsMargins(0, 0, 0, 0)
         
         self.chk_ontop = ToggleSwitch()
         self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
@@ -1215,15 +1612,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         
         self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
                  False, lambda v: self.chk_ontop.setChecked(v, animated=True))
-        l_ontop_box.addLayout(form_ontop)
-        l_ontop_box.addSpacing(14)
+        l_ontop_box.addWidget(_sc_form_card(form_ontop, "OnTopCard"))
+        l_ontop_box.addSpacing(config.S(12))
         
         self._advanced_widgets.append(w_ontop_box)
         l_transcript.addWidget(w_ontop_box)
 
         form_transcript = QFormLayout()
-        form_transcript.setSpacing(14)
-        form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Display Mode (moved from General)
         view_items = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
@@ -1252,14 +1647,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             def create_reset_handler(s_func, d_val):
                 return lambda checked=False: s_func(d_val)
             btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addSpacing(config.S(2))
             row.addWidget(btn_rev)
             
             lbl_container = QWidget()
-            lbl_container.setMinimumWidth(config.S(160))
+            lbl_container.setMinimumWidth(config.S(150))
             lbl_layout = QHBoxLayout(lbl_container)
             lbl_layout.setContentsMargins(0, 0, 0, 0)
             lbl_layout.setSpacing(6)
             lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"color: {_SC_LABEL}; font-size: {config.FS(10)}pt; background: transparent;")
             lbl_layout.addWidget(lbl)
             lbl_layout.addWidget(self._get_info_icon(info_key))
             lbl_layout.addStretch()
@@ -1304,7 +1701,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                  self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
         self._add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
                  self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
-        l_transcript.addLayout(form_transcript)
+        tr_card, tr_lay = _sc_card("TranscriptCard")
+        tr_lay.addLayout(_sc_form(form_transcript))
+        l_transcript.addWidget(tr_card)
 
         # Font preview
         from PySide6.QtWidgets import QTextEdit
@@ -1332,18 +1731,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             
         self.lbl_preview.document().documentLayout().documentSizeChanged.connect(_update_preview_height)
         self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
-        l_transcript.addSpacing(10)
+        l_transcript.addSpacing(config.S(10))
         l_transcript.addWidget(self.lbl_preview)
 
 
         # Removed sep_chunk
         # ── Sync DaVinci timeline on chapter switch ─ BOTTOM of Transcript tab
         # (below font preview and chunking settings, applies to both basic/advanced)
-        l_transcript.addSpacing(14)
+        l_transcript.addSpacing(config.S(12))
 
         form_bottom = QFormLayout()
-        form_bottom.setSpacing(14)
-        form_bottom.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         self.chk_sync_davinci = ToggleSwitch()
         self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
@@ -1415,8 +1812,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
                  False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=True))
 
-        l_transcript.addLayout(form_bottom)
-        l_transcript.addSpacing(14)
+        l_transcript.addWidget(_sc_form_card(form_bottom, "TimelineCard"))
+        l_transcript.addSpacing(config.S(14))
 
         self.combo_font.valueChanged.connect(self._update_preview)
         self.spin_fsize.valueChanged.connect(self._update_preview)
@@ -1437,9 +1834,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ai.setContentsMargins(24, 20, 24, 16)
         l_ai.setSpacing(0)
         form_ai = QFormLayout()
-        form_ai.setSpacing(14)
-        form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        l_ai.addLayout(form_ai)
+        l_ai.addWidget(_sc_form_card(form_ai, "DeviceCard"))
 
         # Device
         _device_items = ["Auto", "CPU", "GPU"]
@@ -1467,24 +1862,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         l_whisper_hdr.addSpacing(config.S(24))
         lbl_hdr_whisper = QLabel(self.txt("hdr_whisper_parameters"))
-        lbl_hdr_whisper.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        lbl_hdr_whisper.setStyleSheet(f"color: {_SC_TEXT_HI}; font-family: '{_SC_TITLE_FONT}'; font-size: {config.FS(12)}pt; font-weight: 600; background: transparent;")
         l_whisper_hdr.addWidget(lbl_hdr_whisper)
-        l_whisper_hdr.addSpacing(config.S(8))
-
-        sep_whisper = QFrame()
-        sep_whisper.setFrameShape(QFrame.Shape.HLine)
-        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
-        l_whisper_hdr.addWidget(sep_whisper)
-        l_whisper_hdr.addSpacing(config.S(14))
+        l_whisper_hdr.addSpacing(config.S(10))
 
         l_ai.addWidget(w_whisper_hdr_box)
         self._advanced_widgets.append(w_whisper_hdr_box)
 
         # Initial prompt label + QTextEdit (under Whisper Parameters)
         lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
-        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+        lbl_prompt.setStyleSheet(f"color: {_SC_MUTED}; font-size: {config.FS(9)}pt; background: transparent; padding-left: {config.S(4)}px;")
         l_ai.addWidget(lbl_prompt)
-        l_ai.addSpacing(4)
+        l_ai.addSpacing(config.S(6))
 
         self.textedit_prompt = WrappingPlaceholderTextEdit()
         self.textedit_prompt.setMaximumHeight(80)
@@ -1501,24 +1890,25 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.textedit_prompt.setPlainText("")
         self.textedit_prompt.setStyleSheet(f"""
             QTextEdit {{
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                padding: 6px 8px;
+                background-color: {_SC_CARD};
+                color: {_SC_TEXT};
+                border: 1px solid transparent;
+                border-radius: {config.S(_SC_CARD_R)}px;
+                padding: {config.S(8)}px {config.S(10)}px;
                 font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
+                font-size: {config.FS(10)}pt;
             }}
+            QTextEdit:focus {{ border: 1px solid #23a559; }}
         """)
         l_ai.addWidget(self.textedit_prompt)
         self._advanced_widgets.extend([lbl_prompt, self.textedit_prompt])
 
-        l_ai.addSpacing(14)
+        l_ai.addSpacing(config.S(12))
 
         form_whisper = QFormLayout()
-        form_whisper.setSpacing(14)
-        form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        l_ai.addLayout(form_whisper)
+        whisper_card = _sc_form_card(form_whisper, "WhisperCard")
+        l_ai.addWidget(whisper_card)
+        self._advanced_widgets.append(whisper_card)
 
         self.chk_vad_filter = ToggleSwitch(parent=page_ai)
         self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
@@ -1599,6 +1989,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         self.chk_telemetry_opt_in = ToggleSwitch()
         self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+        if not getattr(config, "TELEMETRY_ENABLED", True):
+            # Fork: nothing is sent, so say so and leave the switch off
+            lbl_telem_info.setText(self.txt("msg_telemetry_off"))
+            self.chk_telemetry_opt_in.setChecked(False, animated=False)
+            self.chk_telemetry_opt_in.setEnabled(False)
         w1 = QWidget()
         l1 = QHBoxLayout(w1)
         l1.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
@@ -2039,11 +2434,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         row_ss = f"""
             QWidget#marker_row {{
-                background-color: #1e1e1e;
-                border-bottom: 1px solid #2a2a2a;
+                background-color: {_SC_CARD_HI};
+                border: none;
+                border-radius: {config.S(10)}px;
             }}
             QWidget#marker_row:hover {{
-                background-color: #252525;
+                background-color: {_SC_CARD_HI2};
             }}
             QLabel {{
                 color: {config.FG_COLOR};
@@ -2052,17 +2448,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 background: transparent;
             }}
             QPushButton {{
-                background-color: #2d2d2d;
-                color: #aaaaaa;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
+                background-color: transparent;
+                color: {_SC_MUTED};
+                border: none;
+                border-radius: {config.S(8)}px;
                 padding: 2px 8px;
                 font-size: 9pt;
                 min-height: 22px;
             }}
             QPushButton:hover {{
-                background-color: #383838;
-                color: #ffffff;
+                background-color: #404040;
+                color: {_SC_TEXT_HI};
             }}
             QPushButton#btn_del:hover {{
                 background-color: #7a2020;
@@ -2078,11 +2474,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             row_widget = MarkerRowWidget(m, idx)
             row_widget.setObjectName("marker_row")
-            row_widget.setFixedHeight(config.S(34))
+            row_widget.setFixedHeight(config.S(40))
+            row_widget.setAttribute(Qt.WA_StyledBackground, True)
             row_widget.setStyleSheet(row_ss)
             row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(8, 4, 8, 4)
-            row_layout.setSpacing(8)
+            row_layout.setContentsMargins(config.S(12), config.S(4), config.S(6), config.S(4))
+            row_layout.setSpacing(config.S(8))
 
             # Color dot indicator
             dot = QLabel("●")
@@ -2096,7 +2493,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             row_layout.addWidget(lbl_name, 1)
 
             lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
-            lbl_color.setStyleSheet(f"color: #666666; font-size: {config.FS(9)}pt; background: transparent;")
+            lbl_color.setStyleSheet(f"color: {_SC_MUTED}; font-size: {config.FS(9)}pt; background: transparent;")
             row_layout.addWidget(lbl_color)
 
             # Edit button
@@ -2108,18 +2505,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             btn_edit.setFixedHeight(config.S(26))
             btn_edit.setStyleSheet(f"""
                 QPushButton#btn_edit {{
-                    background-color: #2d2d2d;
-                    color: #aaaaaa;
-                    border: 1px solid #3a3a3a;
-                    border-radius: {config.S(3)}px;
+                    background-color: {_SC_CARD};
+                    color: {_SC_TEXT};
+                    border: none;
+                    border-radius: {config.S(8)}px;
                     padding: 0px {config.S(8)}px;
                     font-size: {config.FS(9)}pt;
                     min-height: {config.S(24)}px;
                     max-height: {config.S(24)}px;
                 }}
                 QPushButton#btn_edit:hover {{
-                    background-color: #383838;
-                    color: #ffffff;
+                    background-color: {_SC_BG};
+                    color: {_SC_TEXT_HI};
+                }}
+                QPushButton#btn_edit:disabled {{
+                    color: {_SC_FAINT};
                 }}
             """)
             btn_edit.clicked.connect(make_edit(idx))
@@ -2134,20 +2534,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 return lambda checked=False: self._on_remove_marker_inline(i)
             btn_del = CloseIconButton(size=26)
             btn_del.setFixedSize(config.S(26), config.S(26))
+            btn_del.setProperty("_sc_keep_style", True)
             btn_del.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: #2b2b2b;
-                    border: 1px solid #3a3a3a;
-                    border-radius: {config.S(3)}px;
+                    background-color: transparent;
+                    border: none;
+                    border-radius: {config.S(8)}px;
                     padding: 0px;
                 }}
                 QPushButton:hover {{
-                    background-color: #7a2020;
-                    border-color: #ed4245;
+                    background-color: rgba(237, 66, 69, 46);
                 }}
                 QPushButton:pressed {{
-                    background-color: #5a1515;
-                    border-color: #ed4245;
+                    background-color: rgba(237, 66, 69, 80);
                 }}
             """)
             btn_del.clicked.connect(make_del(idx))
@@ -2393,6 +2792,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                                      make_setter(widget, check_fn),
                                      is_display=False)
             form.insertRow(insert_pos + i, lbl, container)
+            self._soften_icon_buttons(container)
             self.custom_marker_shortcut_inputs[s_key] = widget
 
         check_fn()
@@ -2404,13 +2804,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         fs = self.spin_fsize.value()
         lh = self.spin_lheight.value()
         self.lbl_preview.setStyleSheet(f"""
-            background-color: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: {config.FG_COLOR};
+            background-color: {_SC_CARD};
+            border: none;
+            border-radius: {config.S(_SC_CARD_R)}px;
+            color: {_SC_TEXT};
             font-family: "{ff}";
             font-size: {fs}pt;
-            padding: 12px 14px;
+            padding: {config.S(14)}px {config.S(18)}px;
         """)
         preview_text = self.txt("lbl_font_preview")
         self.lbl_preview.setPlainText(preview_text)
@@ -2686,7 +3086,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.initial_prefs = self.engine.load_preferences() or {}
         self._initial_state = self._get_current_state_dict()
         self.btn_apply.setText(self.txt("txt_saved"))
-        self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
+        self.btn_apply.setStyleSheet(f"QPushButton#btn_apply {{ background: #23a559; color: white; }}")
         from PySide6.QtCore import QTimer
         def restore_btn():
             self.btn_apply.setText(self.txt("btn_apply"))

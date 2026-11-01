@@ -3,7 +3,7 @@
 #Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # --- BADWORDS AUTO-UPDATE (Cross-Platform) ---
-# Called by the BadWords GUI when the user clicks "Update Now", or runs background update.
+# Called by StoryCraft when the user clicks "Update now", or for a background update.
 # Implements full clean installation/update matching installer Option 1.
 # Detects 3.x -> 4.x migration, displaying an informative one-time dialog directing to GitHub.
 
@@ -19,6 +19,31 @@ import urllib.request
 import ssl
 import webbrowser
 import re
+
+# ── StoryCraft: where updates come from ──────────────────────────────────────
+# The fork's own GitHub releases. The original app (BadWords) is never detected, changed or removed.
+# STORYCRAFT_GH_* override the GitHub addresses (used to test against a local stand-in).
+APP_NAME = "StoryCraft"
+REPO = "Boris-Edu/StoryCraft"
+DEFAULT_BRANCH = "fork"
+GH_WEB = os.environ.get("STORYCRAFT_GH_WEB", "https://github.com")
+GH_API = os.environ.get("STORYCRAFT_GH_API", "https://api.github.com")
+GH_RAW = os.environ.get("STORYCRAFT_GH_RAW", "https://raw.githubusercontent.com")
+LEGACY_APP_NAMES = ("BadWords",)
+UA = f"{APP_NAME}-Updater/1.0"
+
+
+def is_storycraft_install(install_dir):
+    """Only a StoryCraft install is updated: its config says APP_NAME = "StoryCraft"."""
+    for c in (os.path.join(install_dir, "config", "app_constants.py"),
+              os.path.join(install_dir, "src", "config", "app_constants.py")):
+        try:
+            with open(c, encoding="utf-8") as f:
+                if re.search(r'^APP_NAME\s*=\s*["\']StoryCraft["\']', f.read(), re.M):
+                    return True
+        except OSError:
+            pass
+    return False
 
 def _sp_hidden_kwargs():
     """Returns kwargs to ensure child processes never flash console windows on Windows."""
@@ -270,7 +295,7 @@ def fetch_json(url, timeout=10):
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    req = urllib.request.Request(url, headers={"User-Agent": "BadWords-Updater/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -304,64 +329,27 @@ def parse_tag_tuple(t):
     return (0, 0, 0, -10)
 
 def get_latest_release():
-    # 1. Try GitHub
+    """Latest GitHub release of the StoryCraft repo: (tag, source zip url, source)."""
     try:
-        data = fetch_json("https://api.github.com/repos/veritus-git/BadWords/releases/latest")
+        data = fetch_json(f"{GH_API}/repos/{REPO}/releases/latest")
         tag = data.get("tag_name", "").strip()
         if tag:
-            zip_url = f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip"
-            return tag, zip_url, "GitHub"
+            return tag, f"{GH_WEB}/{REPO}/archive/refs/tags/{tag}.zip", "GitHub"
     except Exception as e:
         warn(f"GitHub API failed: {e}")
-
-    # 2. Try GitLab fallback
-    try:
-        data = fetch_json("https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases")
-        if isinstance(data, list) and data:
-            tag = data[0].get("tag_name", "").strip()
-        elif isinstance(data, dict):
-            tag = data.get("tag_name", "").strip()
-        
-        if tag:
-            zip_url = f"https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip"
-            return tag, zip_url, "GitLab"
-    except Exception as e:
-        warn(f"GitLab API failed: {e}")
-
     return None, None, None
 
 def get_latest_tag():
-    """
-    Specifically queries git tags from GitHub API (with GitLab fallback).
-    Selects the highest semver tag and returns (tag, zip_url, source_name).
-    """
-    # 1. GitHub tags
+    """Highest semver tag of the StoryCraft repo (falls back to the latest release)."""
     try:
-        data = fetch_json("https://api.github.com/repos/veritus-git/BadWords/tags")
+        data = fetch_json(f"{GH_API}/repos/{REPO}/tags")
         if isinstance(data, list) and data:
             valid_tags = [t.get("name", "").strip() for t in data if t.get("name")]
             if valid_tags:
-                sorted_tags = sorted(valid_tags, key=parse_tag_tuple, reverse=True)
-                tag = sorted_tags[0]
-                zip_url = f"https://github.com/veritus-git/BadWords/archive/refs/tags/{tag}.zip"
-                return tag, zip_url, "GitHub"
+                tag = sorted(valid_tags, key=parse_tag_tuple, reverse=True)[0]
+                return tag, f"{GH_WEB}/{REPO}/archive/refs/tags/{tag}.zip", "GitHub"
     except Exception as e:
         warn(f"GitHub tags API failed: {e}")
-
-    # 2. GitLab tags
-    try:
-        data = fetch_json("https://gitlab.com/api/v4/projects/badwords%2FBadWords/repository/tags")
-        if isinstance(data, list) and data:
-            valid_tags = [t.get("name", "").strip() for t in data if t.get("name")]
-            if valid_tags:
-                sorted_tags = sorted(valid_tags, key=parse_tag_tuple, reverse=True)
-                tag = sorted_tags[0]
-                zip_url = f"https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip"
-                return tag, zip_url, "GitLab"
-    except Exception as e:
-        warn(f"GitLab tags API failed: {e}")
-
-    # Fallback to releases if tags API failed
     return get_latest_release()
 
 def fetch_raw_file_from_tag(tag: str, rel_path: str) -> bytes | None:
@@ -369,15 +357,14 @@ def fetch_raw_file_from_tag(tag: str, rel_path: str) -> bytes | None:
     Fetches raw bytes of a file from GitHub or GitLab at the specified git tag.
     """
     rel_clean = rel_path.lstrip("/").replace("\\", "/")
-    gh_url = f"https://raw.githubusercontent.com/veritus-git/BadWords/{tag}/{rel_clean}"
-    gl_url = f"https://gitlab.com/badwords/BadWords/-/raw/{tag}/{rel_clean}"
+    gh_url = f"{GH_RAW}/{REPO}/{tag}/{rel_clean}"
 
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    headers = {"User-Agent": "BadWords-Updater/1.0"}
+    headers = {"User-Agent": UA}
 
-    for url in (gh_url, gl_url):
+    for url in (gh_url,):
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
@@ -528,7 +515,7 @@ def download(url, dest):
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        req = urllib.request.Request(url, headers={"User-Agent": "BadWords-Updater/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=30, context=ctx) as resp, open(dest, 'wb') as out:
             shutil.copyfileobj(resp, out)
         return os.path.isfile(dest)
@@ -769,7 +756,7 @@ def build_migration_dialog_class():
         def _on_github(self):
             self.user_choice = "github"
             try:
-                webbrowser.open("https://github.com/veritus-git/BadWords/releases/latest")
+                webbrowser.open(f"{GH_WEB}/{REPO}/releases/latest")
             except Exception:
                 pass
             self.accept()
@@ -855,6 +842,9 @@ def detect_nvidia_gpu():
     return False
 
 def get_resolve_script_dirs():
+    override = os.environ.get("STORYCRAFT_RESOLVE_SCRIPT_DIRS")  # sandboxed tests
+    if override:
+        return [p for p in override.split(os.pathsep) if p]
     paths = []
     if os.name == "nt":
         appdata = os.environ.get("APPDATA", "")
@@ -883,8 +873,8 @@ def get_resolve_script_dirs():
 def deploy_davinci_wrappers(install_dir):
     wrapper_content = f'''#!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# BadWords - AI-powered DaVinci Resolve Workflow Plugin
-# Generated by BadWords Updater
+# StoryCraft - interview editing for DaVinci Resolve
+# Generated by the StoryCraft updater
 
 import sys
 import os
@@ -914,7 +904,7 @@ if os.path.isdir(INSTALL_DIR):
     for sd in script_dirs:
         try:
             os.makedirs(sd, exist_ok=True)
-            w_path = os.path.join(sd, "BadWords.py")
+            w_path = os.path.join(sd, f"{APP_NAME}.py")  # never BadWords.py: that is the original app's
             with open(w_path, "w", encoding="utf-8") as f:
                 f.write(wrapper_content)
             if os.name != "nt":
@@ -969,11 +959,7 @@ def refresh_os_launchers_and_shortcuts(install_dir):
         sys.path.insert(0, os.path.join(install_dir, "setupfiles"))
 
         if os.name == "nt":
-            try:
-                from setupfiles.pe_patcher import ensure_badwords_exe
-                ensure_badwords_exe(install_dir)
-            except Exception as e:
-                warn(f"BadWords.exe generation notice: {e}")
+            info("StoryCraft has no Windows .exe launcher of its own yet: keeping the script launcher.")
 
         try:
             from setupfiles.setup import _create_os_shortcuts
@@ -985,8 +971,8 @@ def refresh_os_launchers_and_shortcuts(install_dir):
         warn(f"Integration refresh notice: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="BadWords Auto-Updater")
-    parser.add_argument("--install-dir", required=False, help="Path to BadWords installation directory")
+    parser = argparse.ArgumentParser(description="StoryCraft updater")
+    parser.add_argument("--install-dir", required=False, help="Path to the StoryCraft installation directory")
     parser.add_argument("--test-screenshot", default="", help="Save migration window screenshot to file and exit")
     parser.add_argument("--lang", default="", help="Language override for screenshot or test")
     parser.add_argument("--no-self-upgrade", action="store_true", help="Disable automatic updater self-upgrade")
@@ -1021,7 +1007,13 @@ def main():
         os.path.isfile(os.path.join(install_dir, "main.py")) or 
         os.path.isfile(os.path.join(install_dir, "src", "main.py"))
     ):
-        err(f"Valid BadWords installation not found at: {install_dir}")
+        err(f"Valid StoryCraft installation not found at: {install_dir}")
+        sys.exit(1)
+    if not is_storycraft_install(install_dir):
+        err(f"Not a StoryCraft installation (left untouched): {install_dir}")
+        sys.exit(1)
+    if os.path.exists(os.path.join(install_dir, ".storycraft_dev")):
+        err(f"This is a development copy (.storycraft_dev): update it from the repository instead. {install_dir}")
         sys.exit(1)
 
     info(f"Target installation directory: {install_dir}")
@@ -1037,15 +1029,15 @@ def main():
     else:
         info("Updater self-upgrade skipped (--no-self-upgrade or developer configuration active).")
 
-    # 2. Check latest release for BadWords program update (RELEASES, not tags)
-    info("Checking latest release for BadWords update...")
+    # 2. Check latest release for the StoryCraft update (RELEASES, not tags)
+    info("Checking latest StoryCraft release...")
     rel_tag, zip_url, source_repo = get_latest_release()
     if not rel_tag or not zip_url:
-        warn("Could not determine latest release from GitHub/GitLab releases, falling back to latest tag...")
+        warn("Could not determine the latest release on GitHub, falling back to the latest tag...")
         rel_tag, zip_url, source_repo = get_latest_tag()
 
     if not rel_tag or not zip_url:
-        err("Could not determine latest version from GitHub or GitLab.")
+        err("Could not determine the latest version on GitHub.")
         sys.exit(1)
 
     log(f"Target release: {rel_tag} (source: {source_repo})")
@@ -1056,12 +1048,12 @@ def main():
     target_tuple = parse_version(rel_tag)
     info(f"Current version: {current_ver_str} -> Target version: {rel_tag}")
 
-    is_v4_migration = (curr_tuple[0] < 4 and target_tuple[0] >= 4)
+    is_v4_migration = False  # the BadWords 3.x -> 4.x notice doesn't apply to StoryCraft
     if is_v4_migration:
         info("Detected migration from 3.x to 4.x. Update will proceed and show milestone notice upon completion.")
 
     # 3. Download and extract
-    tmp_dir = tempfile.mkdtemp(prefix="bw_update_")
+    tmp_dir = tempfile.mkdtemp(prefix="sc_update_")
     zip_path = os.path.join(tmp_dir, "repo.zip")
 
     info(f"Downloading source release from {source_repo}...")
@@ -1126,7 +1118,10 @@ def main():
 
     info("Deploying fresh application files...")
     if os.path.isdir(source_path):
-        shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
+        # The user's own files are never replaced, even if an archive carries copies of them
+        _keep = {p.lower() for p in protected_names}
+        shutil.copytree(source_path, install_dir, dirs_exist_ok=True,
+                        ignore=lambda d, names: [n for n in names if os.path.samefile(d, source_path) and n.lower() in _keep])
     if os.path.isdir(assets_path):
         dest_assets = os.path.join(install_dir, "assets")
         shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
@@ -1162,7 +1157,8 @@ def main():
 
         info("Upgrading core dependencies (faster-whisper, pypdf, PySide6)...")
         # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
-        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "av<19", "pypdf", "PySide6"],
+        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "av<19", "pypdf", "PySide6",
+                            "onnxruntime", "huggingface_hub", "certifi"],
                            capture_output=True, text=True, **_sp_hidden_kwargs())
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:
@@ -1229,8 +1225,8 @@ def main():
 
     # Cleanup
     shutil.rmtree(tmp_dir, ignore_errors=True)
-    log(f"BadWords updated to {tag} successfully!")
-    log("Please restart BadWords (close and relaunch from DaVinci Resolve or Desktop shortcut).")
+    log(f"{APP_NAME} updated to {tag} successfully!")
+    log(f"Please restart {APP_NAME} (close and relaunch it from DaVinci Resolve or its shortcut).")
 
     # 9. Milestone notice for 3.x -> 4.x migration (post-update)
     if is_v4_migration and not is_v4_migration_already_notified(install_dir):

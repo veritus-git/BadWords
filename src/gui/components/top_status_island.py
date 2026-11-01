@@ -13,6 +13,8 @@ Shapes 1:1 identically to AudioToggleTab (inverted trapezoid with curved bezier 
 providing minimalist feedback during transcription with pure vector graphics (zero emojis).
 """
 
+from gui.theme import qc
+
 import re
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import (
@@ -303,16 +305,16 @@ class TopStatusIsland(QWidget):
         path.closeSubpath()
 
         # Fill background - slightly darker than the title bar (#191919) by just a couple shades
-        bg_col = QColor("#161616")
+        bg_col = qc("#161616")
         p.fillPath(path, QBrush(bg_col))
 
         # Border outline along shoulders and bottom edge
         if self._state == "completed":
-            border_col = QColor("#23a559")
+            border_col = qc("#23a559")
         elif self._state == "error":
-            border_col = QColor("#e74c3c")
+            border_col = qc("#e74c3c")
         else:
-            border_col = QColor("#262626")
+            border_col = qc("#262626")
         border_path = QPainterPath()
         border_path.moveTo(0.5, 0.0)
         border_path.cubicTo(c1, 0.5, c2, h - 0.5, c3, h - 0.5)
@@ -348,13 +350,13 @@ class TopStatusIsland(QWidget):
             p.rotate(self._spinner_angle)
 
             arc_rect = QRectF(-icon_r, -icon_r, icon_r * 2.0, icon_r * 2.0)
-            spinner_pen = QPen(QColor("#23a559"), config.S(1.6), Qt.SolidLine, Qt.RoundCap)
+            spinner_pen = QPen(qc("#23a559"), config.S(1.6), Qt.SolidLine, Qt.RoundCap)
             p.setPen(spinner_pen)
             p.drawArc(arc_rect, 0, 270 * 16)
             p.restore()
 
         elif self._state == "completed":
-            check_pen = QPen(QColor("#2ecc71"), config.S(1.6), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            check_pen = QPen(qc("#2ecc71"), config.S(1.6), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
             p.setPen(check_pen)
             check_path = QPainterPath()
             check_path.moveTo(icon_cx - config.S(4.0), icon_cy)
@@ -363,7 +365,7 @@ class TopStatusIsland(QWidget):
             p.drawPath(check_path)
 
         elif self._state == "error":
-            err_pen = QPen(QColor("#e74c3c"), config.S(1.6), Qt.SolidLine, Qt.RoundCap)
+            err_pen = QPen(qc("#e74c3c"), config.S(1.6), Qt.SolidLine, Qt.RoundCap)
             p.setPen(err_pen)
             p.drawEllipse(QPointF(icon_cx, icon_cy), icon_r, icon_r)
             p.drawLine(QPointF(icon_cx, icon_cy - icon_r + 2.5), QPointF(icon_cx, icon_cy + 0.5))
@@ -376,7 +378,7 @@ class TopStatusIsland(QWidget):
         # Title (e.g. Transkrybowanie...)
         if self._title_text:
             p.setFont(f_lbl)
-            p.setPen(QColor("#a2a2a8"))
+            p.setPen(qc("#a2a2a8"))
             p.drawText(QPointF(cur_x, text_y), self._title_text)
             cur_x += title_w
 
@@ -384,5 +386,5 @@ class TopStatusIsland(QWidget):
         if self._percent_text:
             cur_x += float(config.S(8))
             p.setFont(f_bold)
-            p.setPen(QColor("#23a559"))
+            p.setPen(qc("#23a559"))
             p.drawText(QPointF(cur_x, text_y), self._percent_text)

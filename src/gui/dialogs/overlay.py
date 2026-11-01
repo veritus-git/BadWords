@@ -11,6 +11,8 @@ DESCRIPTION:
 Dim overlay, global event filters, and drag/drop zones for markers and sidebar.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import Qt, QTimer, QObject, QEvent, QRect, QPoint, QMimeData, QVariantAnimation, QEasingCurve
 from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QSizePolicy, QLineEdit, QApplication
 from PySide6.QtGui import QCursor, QPainter, QPen, QColor, QDrag
@@ -105,7 +107,7 @@ class SidebarDragZone(QFrame):
         super().paintEvent(event)
         if self._drop_line_y >= 0:
             p = QPainter(self)
-            p.setPen(QPen(QColor("#11703c"), 3))
+            p.setPen(QPen(qc("#11703c"), 3))
             p.drawLine(0, self._drop_line_y, self.width(), self._drop_line_y)
             
     def dragEnterEvent(self, event):
@@ -212,7 +214,7 @@ class MarkerDragZone(QFrame):
         super().paintEvent(event)
         if self._drop_line_y >= 0:
             p = QPainter(self)
-            p.setPen(QPen(QColor("#11703c"), 3))
+            p.setPen(QPen(qc("#11703c"), 3))
             p.drawLine(0, self._drop_line_y, self.width(), self._drop_line_y)
             
     def dragEnterEvent(self, event):

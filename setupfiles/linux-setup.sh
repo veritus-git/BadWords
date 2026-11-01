@@ -3,34 +3,34 @@
 # Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # ============================================================
-#  BadWords Linux Bootstrapper v4.0
-#  Run with: curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh" | bash
+#  StoryCraft Linux Bootstrapper v4.0
+#  Run with: curl -fsSL "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/linux-setup.sh" | bash
 # ============================================================
 
 set -uo pipefail
 
-REPO_OWNER="veritus-git"
-REPO_NAME="BadWords"
-TAG="${BADWORDS_TAG:-latest}"
-BIN_NAME="badwords-setup-linux"
+REPO_OWNER="Boris-Edu"
+REPO_NAME="StoryCraft"
+TAG="${STORYCRAFT_TAG:-latest}"
+BIN_NAME="storycraft-setup-linux"
 
 INSTALLER_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/setupfiles/setup.py"
-INSTALLER_URL_FB="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
+INSTALLER_URL_FB="https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/setup.py"
 PBS_FALLBACK_TAG="20250317"
 PBS_FALLBACK_VER="3.12.9"
 
 # ── Directories ───────────────────────────────────────────────
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/BadWords-bootstrap"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/StoryCraft-bootstrap"
 PBS_DIR="$CACHE_DIR/python"
-TARGET_BIN="$CACHE_DIR/badwords-installer"
+TARGET_BIN="$CACHE_DIR/storycraft-installer"
 BW_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t 'bw_tmp')
 trap 'rm -rf "$BW_TMP"' EXIT INT TERM
 
 mkdir -p "$CACHE_DIR"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd 2>/dev/null || echo "")"
-LOCAL_BIN="$SCRIPT_DIR/../installer/target/release/badwords-installer"
-LOCAL_DEBUG="$SCRIPT_DIR/../installer/target/debug/badwords-installer"
+LOCAL_BIN="$SCRIPT_DIR/../installer/target/release/storycraft-installer"
+LOCAL_DEBUG="$SCRIPT_DIR/../installer/target/debug/storycraft-installer"
 LOCAL_SETUP="$SCRIPT_DIR/setup.py"
 LOCAL_REPO=""
 if [ -f "$LOCAL_SETUP" ]; then
@@ -40,8 +40,8 @@ fi
 # ── Helper: Rich Terminal Python Fallback ─────────────────────
 invoke_python_fallback() {
     clear
-    echo -e "user@computer:~$ curl -fsSL \"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh\" | bash"
-    echo -e "\033[36mDownloading BadWords Setup for Linux...\033[0m"
+    echo -e "user@computer:~$ curl -fsSL \"https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/linux-setup.sh\" | bash"
+    echo -e "\033[36mDownloading StoryCraft Setup for Linux...\033[0m"
     echo ""
     echo -e "\033[36m========================================================================\033[0m"
     echo -e "\033[33m [!] Security & Compatibility Notice:\033[0m"
@@ -160,7 +160,7 @@ invoke_python_fallback() {
     fi
 
     export PYTHONPATH="$PKG_DIR"
-    printf '\033]0;BadWords Setup\007'
+    printf '\033]0;StoryCraft Setup\007'
     clear
     local args=(--platform linux --bootstrap-python "$PYTHON_BIN")
     if [ -n "$LOCAL_REPO" ]; then
@@ -183,7 +183,7 @@ start_native_executable() {
 }
 
 # 0. Force fallback check (for testing or explicitly requested CLI mode)
-if [ "${BADWORDS_FORCE_FALLBACK:-0}" = "1" ] || [[ " $* " =~ " --fallback " ]] || [[ " $* " =~ " --cli " ]]; then
+if [ "${STORYCRAFT_FORCE_FALLBACK:-0}" = "1" ] || [[ " $* " =~ " --fallback " ]] || [[ " $* " =~ " --cli " ]]; then
     invoke_python_fallback "$@"
 fi
 
@@ -198,7 +198,7 @@ elif [ -f "$SCRIPT_DIR/../installer/Cargo.toml" ] && command -v cargo &>/dev/nul
 fi
 
 # 2. Remote download
-echo "Downloading BadWords Setup for Linux..."
+echo "Downloading StoryCraft Setup for Linux..."
 
 DOWNLOAD_URL=""
 if [ "$TAG" = "latest" ]; then

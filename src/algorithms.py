@@ -1583,12 +1583,11 @@ def analyze_repeats(words_data, show_inaudible=True, algo_settings=None):
                         marked_indices.add(i)
                         break
                         
-        # C. Direct 1-word stutters ("to to", "I I")
+        # C. Direct 1-word stutters ("to to", "I I"): mark the first, the last copy stays
         if i + 1 < n_flow:
             next_clean = flow[i+1]['clean']
             if clean == next_clean and len(clean) > 0:
                 marked_indices.add(i)
-                marked_indices.add(i+1)
 
     # PASS 2: Phrase Retakes & False Starts (Dynamic Gap-based N-gram)
     LOOKAHEAD = int(algo_settings.get('algo_retake_lookahead', 60))
@@ -1729,6 +1728,298 @@ def analyze_repeats(words_data, show_inaudible=True, algo_settings=None):
 # 6. GUI LOGIC HELPERS (Decoupled Logic)
 # ==========================================
 
+# Grammatical doubles that are not stammers when said exactly twice
+_STAMMER_KEEP_DOUBLE = {"had", "that", "very", "really"}
+
+
+def find_stammers(words_data, max_n=4, max_gap=1.5):
+    """
+    Words and short phrases said again straight away: "I think I think", "no no no", "the the".
+    A phrase of 1-max_n words repeated back to back (each copy within max_gap seconds of the one
+    before; punctuation and case ignored). Returns the indices of every copy except the last, which
+    stays in the edit. Silence, inaudible and hallucination items are skipped.
+    """
+    flow = []
+    for i, w in enumerate(words_data):
+        if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible') or w.get('_is_hallucination'):
+            continue
+        t = re.sub(r"[^\w']", "", w.get('text') or "").lower()
+        if t:
+            flow.append((i, t))
+    out, k = [], 0
+    while k < len(flow):
+        found = None
+        for n in range(max_n, 0, -1):
+            if k + 2 * n > len(flow):
+                continue
+            phrase = [t for _, t in flow[k:k + n]]
+            reps = 1
+            while k + (reps + 1) * n <= len(flow) and [t for _, t in flow[k + reps * n:k + (reps + 1) * n]] == phrase:
+                last_raw = (words_data[flow[k + reps * n - 1][0]].get('text') or '').rstrip().rstrip('"\')”’')
+                if last_raw.endswith(("?", "!")) or (last_raw.endswith(".") and not last_raw.endswith("..")):
+                    break  # a whole sentence said again: find_echoes keeps the first, fuller one
+                prev_end = words_data[flow[k + reps * n - 1][0]].get('end', 0.0)
+                if words_data[flow[k + reps * n][0]].get('start', 0.0) - prev_end > max_gap:
+                    break
+                reps += 1
+            first_raw = (words_data[flow[k][0]].get('text') or '').rstrip()
+            broke_off = first_raw.endswith((",", "...", "…", "-", "—"))  # "that, that": a stumble, not grammar
+            if reps >= 2 and not (n == 1 and reps == 2 and phrase[0] in _STAMMER_KEEP_DOUBLE and not broke_off):
+                # the reading that covers the most words wins; on a tie the shortest phrase ("no" x4, not "no no" x2)
+                if found is None or n * reps >= found[0] * found[1]:
+                    found = (n, reps)
+        if found:
+            n, reps = found
+            out.extend(flow[j][0] for j in range(k, k + (reps - 1) * n))
+            k += reps * n
+        else:
+            k += 1
+    return out
+
+
+_HESITATION_WORDS = {"um", "uh", "eh", "er", "erm", "ah", "hmm", "mm", "uhm", "umm"}
+
+
+def _trails_off(raw):
+    return (raw or "").rstrip().endswith(("...", "…", "-", "—"))
+
+
+def find_restarts(words_data, window_s=7.0, max_piece=6, pause_s=0.6):
+    """
+    Self-corrections: the speaker starts a phrase, hesitates and starts it again with the same word
+    ("we drove to the... uh, we walked to the park" -> keep "we walked to the park").
+    A restart is the same word again within window_s, with at most max_piece words abandoned before it, when
+      - the abandoned piece doesn't finish a sentence (no . ? ! in it),
+      - it ends in hesitation: a word trailing off (... or -), a filler, or a pause over pause_s after a
+        word left hanging (the, to, a, and...),
+      - and the new start resembles it: same second word, or a 1-2 word false start, or half of its
+        meaningful words come back right after.
+    Chains are followed ("the... house, the shop... uh, the park"). Returns the abandoned words' indices.
+    """
+    flow = []
+    for i, w in enumerate(words_data):
+        if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible') or w.get('_is_hallucination'):
+            continue
+        raw = (w.get('text') or '').strip()
+        t = re.sub(r"[^\w']", "", raw).lower()
+        if t:
+            flow.append((i, t, raw, float(w.get('start', 0.0)), float(w.get('end', 0.0))))
+
+    def finishes_sentence(raw):
+        r = raw.rstrip("\"')”’")
+        return r.endswith(("?", "!")) or (r.endswith(".") and not r.endswith(("...", "..")))
+
+    def is_restart(a, m):
+        piece = flow[a:m]
+        if not piece or len(piece) > max_piece or any(finishes_sentence(p[2]) for p in piece):
+            return False
+        prev = flow[m - 1]
+        trails = lambda p: p[2].endswith(("...", "…", "-", "—"))
+        broken = any(trails(p) for p in piece)  # speech already broke off inside the piece
+        hesitant = (trails(prev) or prev[1] in _HESITATION_WORDS or trails(piece[0])
+                    or (flow[m][3] - prev[4] > pause_s and (prev[1] in _STOP or broken)))
+        if not hesitant:
+            return False
+        words = [p[1] for p in piece if p[1] not in _HESITATION_WORDS]
+        content = {w for w in words if w not in _STOP and len(w) > 2}
+        if len(words) <= 2 and (not content or trails(piece[0])):
+            return True  # a 1-2 word false start: "it... it's", "the... house, the park"
+        if len(words) > 1 and m + 1 < len(flow) and flow[m + 1][1] == words[1]:
+            return True
+        # a longer piece counts only if what it said comes back (a rephrasing); its first word is the
+        # repeated one, so judge the rest ("cars... a lot of cars" is not a restart at "cars")
+        rest = {w for w in words[1:] if w not in _STOP and len(w) > 2}
+        after = {f[1] for f in flow[m:m + len(words) + 3]}
+        return bool(rest) and len(rest & after) * 2 >= len(rest)
+
+    out, k = [], 0
+    while k < len(flow):
+        t = flow[k][1]
+        chain = [k]
+        if t not in _HESITATION_WORDS:
+            m = k + 1
+            while m < len(flow) and m - chain[-1] <= max_piece and flow[m][3] - flow[chain[0]][3] <= window_s:
+                if flow[m][1] == t and is_restart(chain[-1], m):
+                    chain.append(m)
+                m += 1
+        if len(chain) >= 2 and chain[-1] + 1 < len(flow):
+            for j in range(len(chain) - 1):
+                a, m = chain[j], chain[j + 1]
+                said = [p for p in flow[a:m] if p[1] not in _HESITATION_WORDS]
+                if (j == len(chain) - 2 and len(said) == 2 and _trails_off(flow[a][2])
+                        and not _trails_off(said[1][2])):
+                    # "I... then I went": only the word that trailed off was abandoned
+                    out.extend(p[0] for p in flow[a:m] if p is not said[1])
+                else:
+                    out.extend(flow[x][0] for x in range(a, m))
+            k = chain[-1]
+        else:
+            k += 1
+    return out
+
+
+_BACKCHANNEL = {"yeah", "yes", "yep", "yup", "mhm", "mmhm", "mm", "hmm", "uhhuh", "uh-huh", "right", "okay", "ok", "oh"}
+
+
+def _spoken_sentences(words_data):
+    """[(word indices), ...] split at . ? ! (not at ...), skipping silence and inaudible items."""
+    out, cur = [], []
+    for i, w in enumerate(words_data):
+        if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible') or w.get('_is_hallucination'):
+            continue
+        raw = (w.get('text') or '').strip()
+        if not raw:
+            continue
+        cur.append(i)
+        r = raw.rstrip('"\')”’')
+        if r.endswith(("?", "!")) or (r.endswith(".") and not r.endswith("..")):
+            out.append(cur)
+            cur = []
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _stem(w):
+    w = re.sub(r"[^\w']", "", w or "").lower()
+    for suf in ("'s", "s", "ed", "ing"):
+        if len(w) > 4 and w.endswith(suf):
+            return w[:-len(suf)]
+    return w
+
+
+def find_echoes(words_data, window_s=10.0, max_words=10):
+    """
+    Echoes and empty answers: a short sentence that only says again what the sentence just before
+    said ("We finished the bridge. Finished the bridge.", "It changed everything. You know? Changed
+    everything."), a sentence that is only "Yeah." / "Mhm." / "Right.", and a "Yeah," that
+    opens a longer sentence. Returns the word indices to cut (the first, fuller version stays).
+    """
+    sents = _spoken_sentences(words_data)
+    text = lambda i: re.sub(r"[^\w'-]", "", words_data[i].get('text') or "").lower().replace("-", "")
+    content = lambda s: {_stem(words_data[i].get('text')) for i in s
+                         if text(i) not in _STOP and len(text(i)) > 2 and text(i) not in _BACKCHANNEL}
+    out = set()
+    for k, s in enumerate(sents):
+        toks = [text(i) for i in s]
+        if toks and len(toks) <= 3 and all(t in _BACKCHANNEL for t in toks):
+            out.update(s)  # "Yeah." "Mhm, yeah."
+            continue
+        if len(toks) >= 4 and toks[0] in _BACKCHANNEL and (words_data[s[0]].get('text') or '').rstrip().endswith(","):
+            out.add(s[0])  # "Yeah, I think..." -> "I think..."
+        if len(s) > max_words:
+            continue
+        mine = content(s)
+        if len(mine) < 2:
+            continue  # one word ("Boats.", "Main Street.") usually clarifies or lists: not an echo
+        for back in (1, 2):
+            if k - back < 0:
+                break
+            prev = sents[k - back]
+            gap = float(words_data[s[0]].get('start', 0)) - float(words_data[prev[-1]].get('end', 0))
+            if gap > window_s:
+                break
+            between = sents[k - back + 1:k]
+            if any(content(b) for b in between):
+                break  # something new was said in between: not an echo
+            if mine <= content(prev):
+                out.update(s)
+                for b in between:  # the "You know?" between the two
+                    out.update(b)
+                break
+    return sorted(out)
+
+
+# Words that open an answer without saying anything ("Yeah. Well, so I started...") or trail off at the end
+_CLIP_OPENERS = {"yeah", "yes", "yep", "well", "um", "uh", "eh", "er", "erm", "ah", "oh", "okay", "ok", "hmm", "mm",
+                 "uhm", "umm", "like", "so"}
+_CLIP_TRAILERS = {"and", "so", "but", "um", "uh", "eh", "er", "like", "or", "yeah"}
+
+
+LOUD_SOUND_MIN_DB = 6.0
+
+
+def measure_sounds(words_data, audio, sr=16000):
+    """
+    How loud each sound without words is (an "inaudible" item: a cough, a knock, a voice in the
+    background), against the speaker's voice: 'sound_db' = its level (90th percentile of 20 ms
+    frames) minus the typical word's. 'loud' when it is 2 dB louder than all but the loudest 5 % of
+    words (and at least LOUD_SOUND_MIN_DB): no word sounds like that, so it is cut. Returns the
+    indices of the loud ones.
+    """
+    import numpy as np
+    if audio is None or not len(audio):
+        return []
+    hop = int(sr * 0.02)
+
+    def level(w):
+        x = audio[int(float(w['start']) * sr):int(float(w['end']) * sr)]
+        n = len(x) // hop
+        if n == 0:
+            return None
+        f = np.sqrt((x[:n * hop].astype(np.float32).reshape(n, hop) ** 2).mean(1))
+        return 20.0 * float(np.log10(np.percentile(f, 90) + 1e-9))
+
+    voice = [lv for lv in (level(w) for w in words_data if w.get('type') == 'word') if lv is not None]
+    if len(voice) < 20:
+        return []
+    typical = float(np.median(voice))
+    limit = max(LOUD_SOUND_MIN_DB, float(np.percentile(voice, 95)) - typical + 2.0)
+    loud = []
+    for i, w in enumerate(words_data):
+        if w.get('type') == 'inaudible' or w.get('is_inaudible'):
+            lv = level(w)
+            if lv is None:
+                continue
+            w['sound_db'] = round(lv - typical, 1)
+            w['loud'] = w['sound_db'] >= limit
+            if w['loud']:
+                loud.append(i)
+    return loud
+
+
+def sound_markers(words_data, ops, fps, offset=0.133):
+    """Where the sounds without words that an edit keeps land in the new timeline: [(frame, sound_db)].
+    ops: the assembled ops (laid end to end, sorted by ('order', 's') as every assembler does)."""
+    placed, at = [], 0
+    for o in sorted(ops or [], key=lambda o: (o.get('order', 0), o['s'])):
+        placed.append((o['s'], o['e'], at))
+        at += o['e'] - o['s']
+    out = []
+    for w in words_data or []:
+        if w.get('type') == 'inaudible' or w.get('is_inaudible'):
+            f = int(round(((float(w['start']) + float(w['end'])) / 2 + offset) * fps))
+            for s, e, a in placed:
+                if s <= f < e:
+                    out.append((a + f - s, w.get('sound_db')))
+                    break
+    return out
+
+
+def find_repeats(words_data):
+    """Everything said again: stammers, restarts and echoes (word indices to cut, sorted)."""
+    return sorted(set(find_stammers(words_data)) | set(find_restarts(words_data)) | set(find_echoes(words_data)))
+
+
+def mark_stammers(words_data, ids=None):
+    """Mark repeated words and restarts as Retake (the last version stays). Leaves the user's own marks
+    alone. Returns the indices marked."""
+    marked = []
+    if ids is None:
+        ids = find_repeats(words_data)
+    for i in ids:
+        w = words_data[i]
+        if w.get('manual_status'):
+            continue
+        w['status'] = 'repeat'
+        w['algo_status'] = 'repeat'
+        w['is_auto'] = True
+        w['selected'] = False
+        w['is_stammer'] = True
+        marked.append(i)
+    return marked
+
+
 def apply_auto_filler_logic(words_data, fillers, is_enabled):
     fillers_lower = [f.lower() for f in fillers]
     for w in words_data:
@@ -1740,7 +2031,8 @@ def apply_auto_filler_logic(words_data, fillers, is_enabled):
                 w['selected'] = True
         else:
             # CLEANUP: If it was auto-marked previously, but no longer qualifies, clear it
-            if w.get('is_auto'):
+            # (repeated words are marked by their own detector, not by the filler list)
+            if w.get('is_auto') and not w.get('is_stammer'):
                 w['status'] = w.get('manual_status')
                 w['is_auto'] = False
                 w['selected'] = bool(w['status'])
@@ -2223,7 +2515,8 @@ _AI_ABBREVIATIONS = {
 }
 
 
-def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_words=40, offset=0.133):
+def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_words=40, offset=0.133,
+                        target_s=None, clarity_fn=None, avoid_fn=None, speaker_fn=None):
     """
     Plain-text transcript of what survives the cuts, meant to be pasted into an LLM.
     One sentence per line with a stable ID, its time in the edit and in the source
@@ -2233,6 +2526,11 @@ def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_w
     laid end to end in source order, exactly as Assemble builds the timeline).
     offset: the same cut-point offset Assemble applied (settings 'offset'), so a word counts
     as kept exactly when Assemble kept it.
+    avoid_fn(word) -> True for words the editor tagged as not to be used (noise, hesitation):
+    their sentences are flagged AVOID.
+    speaker_fn(word) -> True for words of the second speaker (the interviewer): shown as INTERVIEWER.
+    Sentences are grouped into moments (whole thoughts, see story_moments); the AI picks moments
+    or runs of sentences, and each sentence dict gets its moment ID under "moment".
     Returns (text, sentences); each sentence keeps its source range for later reassembly.
     """
     import bisect
@@ -2266,7 +2564,8 @@ def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_w
         mid_edit = edit_time(mid + offset)
         if mid_edit is None:
             continue  # cut
-        cur.append((text, start, end, max(0.0, mid_edit - (mid - start)), len(spoken) - 1))
+        cur.append((text, start, end, max(0.0, mid_edit - (mid - start)), len(spoken) - 1,
+                    bool(avoid_fn and avoid_fn(w)), bool(speaker_fn and speaker_fn(w))))
         if (text[-1] in '.?!…' and text.lower().lstrip('"\'(“‘') not in _AI_ABBREVIATIONS) or len(cur) >= max_words:
             groups.append(cur)
             cur = []
@@ -2281,28 +2580,73 @@ def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_w
         return cut_s, max(cut_e, e1)
 
     width = max(3, len(str(len(groups))))
-    sentences, lines = [], []
+    sentences = []
     for n, g in enumerate(groups, 1):
-        sid = f"S{n:0{width}d}"
-        body = " ".join(w[0] for w in g)
         cut_s, cut_e = edges(g[0][4], g[-1][4])
-        sentences.append({"id": sid, "text": body, "src_start": g[0][1], "src_end": g[-1][2],
-                          "cut_start": cut_s, "cut_end": cut_e, "edit_start": g[0][3], "words": len(g)})
-        lines.append(f"[{sid} | edit {_ai_tc(g[0][3])} | src {_ai_tc(g[0][1])} | {len(g)}w] {body}")
+        sentences.append({"id": f"S{n:0{width}d}", "text": " ".join(w[0] for w in g),
+                          "src_start": g[0][1], "src_end": g[-1][2], "cut_start": cut_s, "cut_end": cut_e,
+                          "edit_start": g[0][3], "words": len(g), "length": round(max(0.0, cut_e - cut_s), 2),
+                          "clarity": clarity_fn(g[0][1], g[-1][2]) if clarity_fn else None,
+                          "avoid": any(w[5] for w in g), "speaker2": sum(w[6] for w in g) * 2 > len(g)})
 
+    moments = story_moments(sentences)
+    mwidth = max(2, len(str(len(moments))))
+    lines = []
+    for k, (f, l) in enumerate(moments, 1):
+        mid = f"M{k:0{mwidth}d}"
+        run = sentences[f:l + 1]
+        for s in run:
+            s["moment"] = mid
+        length = run[-1]["cut_end"] - run[0]["cut_start"]
+        cl = [s["clarity"] for s in run if s.get("clarity") is not None]
+        ids = run[0]["id"] if f == l else f"{run[0]['id']}-{run[-1]['id']}"
+        tags = (f" | clarity {round(sum(cl) / len(cl))}" if cl else "") + (" | AVOID" if any(s["avoid"] for s in run) else "")
+        who = "INTERVIEWER: " if run[0].get("speaker2") else ""
+        body = " ".join(f"({s['id']}) {s['text']}" for s in run)
+        lines.append(f"[{mid} | {ids} | at {_ai_tc(run[0]['src_start'])} | {length:.1f}s{tags}] {who}{body}")
+
+    mm = lambda s: f"{int(round(s)) // 60}:{int(round(s)) % 60:02d}"
+    if target_s:
+        lo, hi = target_s * 0.9, target_s * 1.1
+        length_rule = (f"# - Target length: about {mm(target_s)} (between {mm(lo)} and {mm(hi)}). Add up the seconds of"
+                       " what you pick, and say the total at the end of the outline.")
+    else:
+        length_rule = "# - No target length was set: aim for a story of 2 to 4 minutes."
     header = [
-        f"# BadWords transcript after cuts: {title}".rstrip(),
-        f"# Edit length {_ai_tc(edit_total)}, {len(sentences)} sentences."
-        + (f" Removed before export: {', '.join(removed)}." if removed else ""),
-        "# Each line: [ID | time in the edit | time in the source recording | word count] sentence.",
-        "# Times are h:mm:ss.s from the start. Refer to sentences by ID (e.g. S012).",
-        "# When asked to build an edit or story, end the answer with a line that says EDIT, then one",
-        "# line per clip in the order it should play, using IDs or ID ranges only, for example:",
+        f"# StoryCraft transcript: {title}".rstrip(),
+        f"# Recording after cleanup: {_ai_tc(edit_total)}, {len(moments)} moments, {len(sentences)} sentences."
+        + (f" Already removed: {', '.join(removed)}." if removed else ""),
+        "# The transcript is split into MOMENTS: whole thoughts, in recording order. Each line:",
+        "# [moment ID | its sentence IDs | time in the recording | length in seconds | clarity | AVOID] text,"
+        " with every sentence prefixed by its ID, e.g. (S041).",
+        "# INTERVIEWER: the second speaker (questions, reactions). Clarity 0-100: how clearly it was spoken and"
+        " recorded. AVOID: the editor tagged it as unusable (background noise, a voice behind, an awkward hesitation).",
+        "#",
+        "# When asked for an edit or a story:",
+        "# 1. Read all of it first and find the through-line: what this person is really telling us.",
+        "# 2. Write a short OUTLINE (3 to 6 lines): an opening that hooks, a middle that develops it, an ending that lands.",
+        "# 3. Build the EDIT from the moments that serve that outline.",
+        "# Rules, so the story flows:",
+        "# - Use whole moments wherever you can. Fewer, longer clips beat many snippets: clips of 10 to 40 seconds,"
+        " never under 5.",
+        "# - Every clip must make sense right after the one before it. Never start a clip with a sentence that leans on"
+        " something left out ('And...', 'But...', 'So...', 'Because...', 'That's why...', 'he/she/it/they'"
+        " with nobody named yet).",
+        "# - To shorten a moment, keep one run of whole sentences from it by sentence IDs (S041-S043). Don't collect"
+        " single sentences from all over the recording.",
+        "# - Change the order when it tells the story better, but keep causes before effects.",
+        "# - Say each point once: no two clips for the same point (the same thanks, praise or idea), and no clip that"
+        " repeats itself. Leave the INTERVIEWER out unless a question is needed to understand the answer.",
+        "# - Don't use AVOID moments. Prefer clarity 70 and up; below 60 only if nothing else says it.",
+        length_rule,
+        "# Answer format: the OUTLINE, then a line that says EDIT, then one clip per line in play order: a moment"
+        " (M12), a run of moments (M12-M14) or a run of sentences (S041-S043), optionally followed by # and why."
+        " For example:",
         "# EDIT",
-        "# S014-S016",
-        "# S002",
-        "# S031-S035",
-        "# BadWords imports that block and assembles the timeline in that order.",
+        "# M03  # opening: who she is",
+        "# S041-S043  # the turning point",
+        "# M20-M21  # ending",
+        "# StoryCraft imports that block and assembles the timeline in that order.",
         "",
     ]
     return "\n".join(header + lines) + "\n", sentences
@@ -2311,11 +2655,73 @@ def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_w
 _STORY_ID_RE = None
 
 
-def parse_story_answer(answer, sentence_count):
+def story_moments(sentences, max_gap=1.5, max_len=45.0, min_len=8.0):
+    """
+    Group sentences into moments: whole thoughts an editor would cut as one piece. A moment ends
+    at a pause longer than max_gap, when the speaker or the AVOID tag changes, or before it passes
+    max_len seconds; moments shorter than min_len join a close neighbour of the same kind.
+    Returns [(first, last), ...] of sentence indices, in recording order.
+    """
+    kind = lambda s: (bool(s.get("speaker2")), bool(s.get("avoid")))
+    span = lambda f, l: sentences[l]["cut_end"] - sentences[f]["cut_start"]
+    out = []
+    for i, s in enumerate(sentences):
+        if out:
+            f, l = out[-1]
+            gap = s["src_start"] - sentences[l]["src_end"]
+            # "And/But/So..." carries on the thought before it: allow a longer pause and a longer moment
+            leans = s["text"].lower().lstrip(" .,…\"'(“‘-").startswith(_DANGLING_STARTS)
+            if kind(s) == kind(sentences[l]) and (
+                    (gap <= max_gap and span(f, i) <= max_len) or (leans and gap <= 4.0 and span(f, i) <= max_len * 1.3)):
+                out[-1] = (f, i)
+                continue
+        out.append((i, i))
+    merged = []
+    for f, l in out:
+        if merged:
+            pf, pl = merged[-1]
+            short = span(f, l) < min_len or span(pf, pl) < min_len
+            gap = sentences[f]["src_start"] - sentences[pl]["src_end"]
+            if short and kind(sentences[f]) == kind(sentences[pl]) and gap <= 4.0 and span(pf, l) <= max_len * 1.3:
+                merged[-1] = (pf, l)
+                continue
+        merged.append((f, l))
+    return merged
+
+
+def moment_ranges(sentences):
+    """{moment number: (first, last)} from the "moment" IDs build_ai_transcript gave the sentences."""
+    out = {}
+    for i, s in enumerate(sentences):
+        m = s.get("moment")
+        if m and m[1:].isdigit():
+            n = int(m[1:])
+            f, _ = out.get(n, (i, i))
+            out[n] = (f, i)
+    return out
+
+
+def moment_blocks(sentences, indices=None):
+    """Story-board blocks that follow the moments (fallback: story_blocks for older transcripts)."""
+    if not sentences or not sentences[0].get("moment"):
+        return story_blocks(sentences, indices)
+    keep = set(range(len(sentences)) if indices is None else indices)
+    blocks = []
+    for i in sorted(keep):
+        if blocks and blocks[-1][1] == i - 1 and sentences[i]["moment"] == sentences[i - 1]["moment"]:
+            blocks[-1] = (blocks[-1][0], i)
+        else:
+            blocks.append((i, i))
+    return blocks
+
+
+def parse_story_answer(answer, sentence_count, moments=None):
     """
     Reads the sentence IDs an LLM answer refers to, in the order they appear.
     If the answer has an EDIT line, only what follows it counts; otherwise every ID or
     range in the text does (ranges: S004-S007, S004–S007, S004 to S007, S004..S007).
+    moments: {n: (first, last)} (see moment_ranges) to also accept moment IDs (M12, M12-M14);
+    on a line that has sentence IDs, those win (the AI trimmed the moment).
     Returns (picks, unknown): picks = 0-based sentence indices in play order, each used
     once (a sentence already picked is skipped, so overlapping ranges merge);
     unknown = IDs outside the transcript.
@@ -2333,19 +2739,341 @@ def parse_story_answer(answer, sentence_count):
             text = "\n".join(lines[i + 1:])
             break
 
+    moment_re = re.compile(r'\bM(\d{1,4})\b(?:\s*(?:-|–|—|\.\.\.?|…|to|through|thru)\s*M?(\d{1,4})\b)?', re.IGNORECASE)
     picks, seen, unknown = [], set(), []
-    for m in _STORY_ID_RE.finditer(text):
-        a = int(m.group(1))
-        b = int(m.group(2)) if m.group(2) else a
-        step = 1 if b >= a else -1
-        for n in range(a, b + step, step):
-            if not 1 <= n <= sentence_count:
-                unknown.append(f"S{n:03d}")
-                continue
-            if n - 1 not in seen:
-                seen.add(n - 1)
-                picks.append(n - 1)
+
+    def _add(idx):
+        if idx not in seen:
+            seen.add(idx)
+            picks.append(idx)
+
+    for line in text.splitlines():
+        line = line.lstrip(" \t#*->`").split("#", 1)[0]  # "# M03  # why" -> "M03"
+        found = list(_STORY_ID_RE.finditer(line))
+        if found:
+            for m in found:
+                a = int(m.group(1))
+                b = int(m.group(2)) if m.group(2) else a
+                step = 1 if b >= a else -1
+                for n in range(a, b + step, step):
+                    if not 1 <= n <= sentence_count:
+                        unknown.append(f"S{n:03d}")
+                        continue
+                    _add(n - 1)
+        elif moments:
+            for m in moment_re.finditer(line):
+                a = int(m.group(1))
+                b = int(m.group(2)) if m.group(2) else a
+                step = 1 if b >= a else -1
+                for n in range(a, b + step, step):
+                    if n not in moments:
+                        unknown.append(f"M{n:02d}")
+                        continue
+                    f, l = moments[n]
+                    for i in range(f, l + 1):
+                        _add(i)
     return picks, unknown
+
+
+_DANGLING_STARTS = ("and ", "but ", "so ", "because ", "'cause ", "cause ", "which ", "then ", "also ", "or ",
+                    "plus ", "that's why", "that is why", "and so", "et ", "mais ", "donc ", "parce que", "alors ",
+                    "puis ", "ou ")
+
+
+def check_story(clips, sentences, duration, target_s=None):
+    """
+    Problems in an imported AI edit that break the flow. clips: from story_clips, in play order.
+    Returns a list of (code, detail) with code in: length, short, dangling, avoid, unclear, interviewer.
+    """
+    issues = []
+    mm = lambda s: f"{int(round(s)) // 60}:{int(round(s)) % 60:02d}"
+    if target_s and abs(duration - target_s) > 0.1 * target_s:
+        issues.append(("length", {"duration": mm(duration), "target": mm(target_s),
+                                  "lo": mm(target_s * 0.9), "hi": mm(target_s * 1.1)}))
+    ids = lambda c: c["start_id"] if c["start_id"] == c["end_id"] else f'{c["start_id"]}-{c["end_id"]}'
+
+    def trim_join(a, b):
+        # b carries on a's thought a moment later (a stumble or a repeat cut out): one piece to the ear
+        sa, sb = sentences[a["last"]], sentences[b["first"]]
+        num = lambda s: int(re.sub(r"\D", "", s.get("moment") or "") or -9)
+        return 0 <= num(sb) - num(sa) <= 1 and num(sa) >= 0 and 0 <= sb["src_start"] - sa["src_end"] <= 12.0
+    short = [ids(c) for k, c in enumerate(clips) if c["cut_end"] - c["cut_start"] < 5.0
+             and not (k + 1 < len(clips) and trim_join(c, clips[k + 1]))
+             and not (k > 0 and trim_join(clips[k - 1], c))]
+    if short:
+        issues.append(("short", {"ids": ", ".join(short)}))
+    dangling = []
+    for k, c in enumerate(clips):
+        first = sentences[c["first"]]
+        prev_last = clips[k - 1]["last"] if k else None
+        if prev_last == c["first"] - 1 or (k and trim_join(clips[k - 1], c)):
+            continue  # follows straight on (or after a trimmed stumble) from the clip before
+        t = first["text"].lower().lstrip(" .,…\"'(“‘-")
+        if t.startswith(_DANGLING_STARTS) or (k == 0 and t.startswith(("and", "but", "so "))):
+            dangling.append(first["id"])
+    if dangling:
+        issues.append(("dangling", {"ids": ", ".join(dangling)}))
+    run = lambda c: sentences[c["first"]:c["last"] + 1]
+    avoid = [ids(c) for c in clips if any(s.get("avoid") for s in run(c))]
+    if avoid:
+        issues.append(("avoid", {"ids": ", ".join(avoid)}))
+    unclear = []
+    for c in clips:
+        cl = [s["clarity"] for s in run(c) if s.get("clarity") is not None]
+        if cl and sum(cl) / len(cl) < 60:
+            unclear.append(ids(c))
+    if unclear:
+        issues.append(("unclear", {"ids": ", ".join(unclear)}))
+    alone = [ids(c) for c in clips if all(s.get("speaker2") for s in run(c))]
+    if alone and len(alone) * 3 > len(clips):
+        issues.append(("interviewer", {"ids": ", ".join(alone)}))
+    for kind, detail in same_point(clips, sentences):
+        issues.append((kind, detail))
+    return issues
+
+
+def same_point(clips, sentences):
+    """Clips that make the same point, and a theme repeated through the edit.
+    - "repeat": two clips share a word that is rare in the whole interview (said in at most 1 % of its
+      sentences, 5+ letters; two such words, or one of 9+ letters), e.g. "scholarship": the second
+      clip most likely restates the first.
+    - "theme": a name (capitalised word, e.g. an organisation) appears in 4+ clips.
+    Returns [("repeat", {...}) | ("theme", {...})]."""
+    import collections
+    function = {"since", "again", "their", "there", "where", "which", "while", "about", "after", "before", "because",
+                "would", "could", "should", "always", "never", "every", "other", "another", "maybe", "still", "until",
+                "we're", "they're", "you're", "it'll", "that's", "there's", "what's", "here's", "i've", "we've",
+                "they've", "didn't", "doesn't", "wasn't", "weren't", "can't", "won't", "going", "being", "these",
+                "those", "thing", "things", "something", "anything", "everything", "nothing", "somebody", "anybody",
+                "everybody", "nobody", "people", "really", "little", "pretty", "whole", "first", "great", "happy"}
+    tokens = lambda text: [x for x in re.findall(r"[\w']+", text)
+                           if x.lower() not in _STOP and x.lower() not in _BACKCHANNEL and x.lower() not in function]
+    df = collections.Counter()
+    for s in sentences:
+        df.update({_stem(x) for x in tokens(s["text"]) if len(x) > 2})
+    rare = max(2, len(sentences) // 100)
+    words, names, said = [], [], {}
+    for c in clips:
+        text = " ".join(s["text"] for s in sentences[c["first"]:c["last"] + 1])
+        toks = tokens(text)
+        words.append({_stem(x) for x in toks if len(x) >= 5 and df[_stem(x)] <= rare})
+        for x in toks:
+            said.setdefault(_stem(x), x.lower())  # report the word as spoken, not its stem
+        names.append({x for i, x in enumerate(toks) if len(x) >= 2 and (x.isupper() or (x[0].isupper() and i > 0))})
+    out = []
+    for i in range(len(clips)):
+        for j in range(i + 1, len(clips)):
+            shared = sorted(words[i] & words[j])
+            if len(shared) >= 2 or any(len(w) >= 9 for w in shared):  # one short shared word is chance
+                out.append(("repeat", {"a": i + 1, "b": j + 1, "words": ", ".join(said[w] for w in shared[:3])}))
+    counts = collections.Counter(n for ns in names for n in ns)
+    for name, n in counts.most_common():
+        if n >= 4 and name not in ("I", "OK"):
+            out.append(("theme", {"word": name, "count": n, "total": len(clips)}))
+    return out
+
+
+
+_FIX_LINES = {
+    "length": "The edit runs {duration}; the target is {target} (between {lo} and {hi}). Bring it inside that range.",
+    "short": "These clips are under 5 seconds: {ids}. Extend each to a whole moment, or drop it.",
+    "dangling": "These clips start on a sentence that leans on something left out: {ids}. Start a sentence earlier,"
+                " or reorder so the clip before sets it up.",
+    "avoid": "These clips use parts tagged AVOID: {ids}. Replace them.",
+    "unclear": "These clips are hard to hear (clarity under 60): {ids}. Replace them with clearer moments that say"
+               " the same, if there are any.",
+    "interviewer": "Too many clips are only the interviewer: {ids}. Keep a question only where the answer needs it.",
+    "repeat": "Clips {a} and {b} make the same point ({words}). Keep the stronger one, or cut the repeated part.",
+    "theme": "\"{word}\" comes back in {count} of {total} clips: say it fully once or twice, not in every part.",
+}
+
+
+def story_fix_prompt(issues):
+    """The follow-up to paste back to the AI: what to fix, then the same answer format again."""
+    if not issues:
+        return ""
+    lines = ["Your EDIT needs a few fixes so the story flows:"]
+    lines += [f"- {_FIX_LINES[code].format(**detail)}" for code, detail in issues]
+    lines.append("Keep what works. Send the full corrected OUTLINE, then EDIT with one clip per line, as before.")
+    return "\n".join(lines) + "\n"
+
+
+_STOP = set("""a an and the of to in on at for with is was were be been are it its it's i i'm you your we our they
+them he she his her this that so but or if as by from just like yeah well um uh oh you know really very there
+then what when how who all not no do did don't have has had get got gonna going would could""".split())
+
+
+def _content_words(text):
+    return {w for w in re.findall(r"[a-z']+", (text or "").lower()) if w not in _STOP and len(w) > 2}
+
+
+def review_cuts(clips, sentences, level_fn=None):
+    """
+    Every join of an edit, for an editor or an AI to judge: what is said either side, how far it
+    jumps in the recording, and what may be wrong (ends or starts mid-thought, a loudness jump,
+    a long jump back). Also clips that say much the same thing. clips: story_clips, in play order.
+    level_fn(t0, t1) -> speech level in dB (or None). Returns (joins, repeats):
+    joins: [{"n", "before_id", "after_id", "before", "after", "jump", "notes": [...]}],
+    repeats: [(clip number, clip number, shared share 0-1)].
+    """
+    def tail(text, n=12):
+        w = text.split()
+        return ("…" if len(w) > n else "") + " ".join(w[-n:])
+
+    def head(text, n=12):
+        w = text.split()
+        return " ".join(w[:n]) + ("…" if len(w) > n else "")
+
+    joins = []
+    for k in range(1, len(clips)):
+        a, b = clips[k - 1], clips[k]
+        last, first = sentences[a["last"]], sentences[b["first"]]
+        notes = []
+        trim = (last.get("moment") and last.get("moment") == first.get("moment")
+                and 0 <= first["src_start"] - last["src_end"] <= 5.0)
+        if b["first"] == a["last"] + 1:
+            jump = 0.0
+        elif trim:
+            jump = first["src_start"] - last["src_end"]
+            notes.append("trim inside a moment (a stumble cut out)")
+        else:
+            jump = first["src_start"] - last["src_end"]
+            if (last["text"].rstrip()[-1:] not in ".?!") or last["text"].rstrip().endswith(("...", "…")):
+                notes.append("ends mid-thought")
+            t = first["text"].lower().lstrip(" .,…\"'(“‘-")
+            if t.startswith(_DANGLING_STARTS) or (first["text"][:1].islower()):
+                notes.append("starts mid-thought")
+            if jump < -2.0:
+                notes.append("goes back in the recording")
+        if level_fn is not None:
+            la = level_fn(max(0.0, last["src_end"] - 1.5), last["src_end"])
+            lb = level_fn(first["src_start"], first["src_start"] + 1.5)
+            if la is not None and lb is not None and abs(la - lb) >= 4.0:
+                notes.append(f"loudness {'drops' if lb < la else 'rises'} {abs(la - lb):.0f} dB")
+        if first.get("speaker2") != last.get("speaker2"):
+            notes.append("speaker changes")
+        joins.append({"n": k, "before_id": last["id"], "after_id": first["id"], "before": tail(last["text"]),
+                      "after": head(first["text"]), "jump": jump, "notes": notes})
+    words = [_content_words(" ".join(s["text"] for s in sentences[c["first"]:c["last"] + 1])) for c in clips]
+    repeats = []
+    for i in range(len(clips)):
+        for j in range(i + 1, len(clips)):
+            if len(words[i]) >= 4 and len(words[j]) >= 4:
+                share = len(words[i] & words[j]) / min(len(words[i]), len(words[j]))
+                if share >= 0.45:
+                    repeats.append((i + 1, j + 1, round(share, 2)))
+    return joins, repeats
+
+
+def cut_review_text(clips, sentences, duration=None, target_s=None, level_fn=None):
+    """review_cuts as text for an AI (or the user), with what to do about it."""
+    joins, repeats = review_cuts(clips, sentences, level_fn)
+    mm = lambda s: f"{int(round(s)) // 60}:{int(round(s)) % 60:02d}"
+    ids = lambda c: c["start_id"] if c["start_id"] == c["end_id"] else f'{c["start_id"]}-{c["end_id"]}'
+    lines = [f"# StoryCraft cut review: {len(clips)} clips, {len(joins)} cuts"
+             + (f", {mm(duration)} after cuts" if duration else "") + (f" (target {mm(target_s)})" if target_s else "")]
+    lines.append("# Current EDIT: " + " | ".join(ids(c) for c in clips))
+    flagged = 0
+    for j in joins:
+        jump = "continues straight on" if j["jump"] == 0 else f"jumps {j['jump']:+.0f}s in the recording"
+        lines.append(f"Cut {j['n']} ({j['before_id']} -> {j['after_id']}): {jump}"
+                     + (f"; {', '.join(j['notes'])}" if j["notes"] else ""))
+        lines.append(f'   before: "{j["before"]}"')
+        lines.append(f'   after:  "{j["after"]}"')
+        flagged += any(n not in ("goes back in the recording", "trim inside a moment (a stumble cut out)")
+                       for n in j["notes"])  # reordering and trims are choices, not faults
+    for a, b, share in repeats:
+        lines.append(f"Clips {a} and {b} say much the same thing ({int(share * 100)}% shared words): keep the stronger one.")
+    lines.append("")
+    lines.append(f"# {flagged} cut(s) flagged. For each, judge whether it sounds natural; fix the ones that don't by"
+                 " reordering, extending a clip by a sentence (so a thought is complete or set up), trimming, or"
+                 " dropping a clip. Keep the story's through-line and the target length. Then answer with the corrected"
+                 " EDIT, one clip per line, as before.")
+    return "\n".join(lines) + "\n"
+
+
+_TAIL_NEW_CLAUSE = {"i", "you", "we", "they", "he", "she", "it", "that", "this", "there", "here", "what"}
+
+
+def refine_clip_edges(clips, words, audio=None, sr=16000, lead=0.15, tail=0.25, search=0.08):
+    """
+    Clean cut points for story clips: start a little before the first word and end a little after the
+    last (lead / tail seconds), never inside a neighbouring word, and, with the audio (mono, sr),
+    on the quietest 20 ms nearby, so a cut doesn't clip a breath or a word's edge. A clip that ends
+    just before a 1-2 word tail finishing its sentence ("...I was interested. [pause] In the garden.",
+    split by the transcript) takes the tail.
+    Returns new clip dicts (cut_start / cut_end changed).
+    """
+    import bisect
+    spoken = sorted((float(w["start"]), float(w["end"]), re.sub(r"[^\w']", "", w.get("text") or "").lower(),
+                     (w.get("text") or "").rstrip().rstrip('"\')”’'), w.get("status") in (None, "normal", "typo"), w.get("speaker"))
+                    for w in words or []
+                    if w.get("type") not in ("silence", "inaudible") and not w.get("is_inaudible") and (w.get("text") or "").strip())
+    starts = [s[0] for s in spoken]
+    if not spoken:
+        return [dict(c) for c in clips]
+
+    def quietest(t, lo, hi):
+        lo, hi = max(lo, t - search), min(hi, t + search)
+        if audio is None or hi - lo < 0.02:
+            return min(max(t, lo), hi)
+        best, best_e = t, None
+        x = lo
+        while x + 0.02 <= hi:
+            seg = audio[int(x * sr):int((x + 0.02) * sr)]
+            if len(seg):
+                e = float((seg ** 2).mean())
+                if best_e is None or e < best_e:
+                    best, best_e = x + 0.01, e
+            x += 0.01
+        return best
+
+    def tail_end(c, i1):
+        # the 1-2 words after the clip that finish its sentence, kept for the clip (index of the last), or i1
+        if i1 + 1 >= len(spoken) or spoken[i1 + 1][0] - spoken[i1][1] > 1.2:
+            return i1
+        if spoken[i1 + 1][2].split("'")[0] in _TAIL_NEW_CLAUSE:
+            return i1  # "That's great." / "They'll see.": a new sentence, not the end of this one
+        for j in (i1 + 1, i1 + 2):
+            if j >= len(spoken) or j > i1 + 1 and spoken[j][0] - spoken[j - 1][1] > 1.2:
+                return i1
+            frag = spoken[i1 + 1:j + 1]
+            if not frag[-1][4] or frag[-1][5] != spoken[i1][5]:
+                return i1  # cut, or the other speaker
+            if frag[-1][3].endswith((".", "?", "!")) and not frag[-1][3].endswith(".."):
+                after = spoken[j + 1][0] - frag[-1][1] if j + 1 < len(spoken) else 9.0
+                taken = any(o is not c and o["cut_start"] - 0.05 <= frag[0][0] <= o["cut_end"] for o in clips)
+                ok = (after >= 0.15 and not taken and frag[-1][3].lower() not in _AI_ABBREVIATIONS
+                      and not all(f[2] in _BACKCHANNEL | _STOP for f in frag))
+                return j if ok else i1
+        return i1
+
+    out = []
+    for c in clips:
+        i0 = bisect.bisect_left(starts, c["cut_start"] - 0.05)
+        i1 = bisect.bisect_right(starts, c["cut_end"]) - 1
+        if i0 >= len(spoken) or i1 < i0:
+            out.append(dict(c))
+            continue
+        i1 = tail_end(c, i1)
+        # don't open on "Yeah. Well," / "Um", don't end on "and..." / "you know": keep at least 3 words
+        while i1 - i0 >= 3 and spoken[i0][2] in _CLIP_OPENERS:
+            i0 += 1
+        while i1 - i0 >= 3 and (spoken[i1][2] in _CLIP_TRAILERS
+                                or (spoken[i1][2] == "know" and spoken[i1 - 1][2] == "you")):
+            i1 -= 2 if spoken[i1][2] == "know" else 1
+        first_s, last_e = spoken[i0][0], max(s[1] for s in spoken[i0:i1 + 1])
+        prev_e = spoken[i0 - 1][1] if i0 > 0 else 0.0
+        next_s = spoken[i1 + 1][0] if i1 + 1 < len(spoken) else last_e + 2.0
+        lo_s, hi_s = max(prev_e + 0.02, first_s - 0.35), first_s - 0.02
+        lo_e, hi_e = last_e + 0.02, min(next_s - 0.02, last_e + 0.45)
+        new = dict(c)
+        if hi_s > lo_s:
+            new["cut_start"] = quietest(min(max(first_s - lead, lo_s), hi_s), lo_s, hi_s)
+        if hi_e > lo_e:
+            new["cut_end"] = quietest(min(max(last_e + tail, lo_e), hi_e), lo_e, hi_e)
+        out.append(new)
+    return out
 
 
 def story_clips(picks, sentences):
@@ -2388,3 +3116,83 @@ def apply_story_order(kept_ops, clips, fps, offset=0.133, keep_source_order=Fals
     if keep_source_order:
         out.sort(key=lambda o: o['s'])
     return out
+
+
+def story_blocks(sentences, indices=None, max_gap=1.0, max_len=25.0):
+    """
+    Group sentences into blocks for the story board: runs of consecutive sentences, broken
+    where the speaker paused longer than `max_gap` seconds or the block would pass `max_len`.
+    indices: which sentence indices to group (default all), any order; they are grouped in source order.
+    Returns [(first, last), ...] of sentence indices.
+    """
+    idx = sorted(set(range(len(sentences)) if indices is None else indices))
+    blocks = []
+    for i in idx:
+        if blocks:
+            first, last = blocks[-1]
+            gap = sentences[i]["src_start"] - sentences[last]["src_end"]
+            length = sentences[i]["cut_end"] - sentences[first]["cut_start"]
+            if i == last + 1 and gap <= max_gap and length <= max_len:
+                blocks[-1] = (first, i)
+                continue
+        blocks.append((i, i))
+    return blocks
+
+
+# ── AI marks layer ───────────────────────────────────────────────────────────
+# What the analysis marked is kept in w['ai_mark'] ('bad' | 'repeat' | 'typo' | 'inaudible' | None),
+# untouched by painting or clearing, so it can be brought back for the whole transcript or a passage.
+AI_MARKS = ("bad", "repeat", "typo", "inaudible")
+MARK_STATE_KEYS = ("status", "manual_status", "algo_status", "is_auto", "selected", "overlay_suppressed")
+
+
+def ai_verdict(w):
+    """The AI's mark for a word, read from the analysis fields (not from the user's paint)."""
+    if w.get('_is_hallucination'):
+        return 'bad'
+    if w.get('manual_status') is None:
+        s = w.get('status')
+        if s in ('bad', 'repeat', 'typo') and (w.get('is_auto') or w.get('algo_status')):
+            return s
+    if w.get('algo_status') in ('bad', 'repeat', 'typo'):
+        return w['algo_status']
+    if w.get('is_inaudible') or w.get('type') == 'inaudible':
+        return 'inaudible'
+    return None
+
+
+def snapshot_ai_marks(words_data, overwrite=False, ids=None):
+    """Record the AI's marks. overwrite=False only fills words that have no snapshot yet."""
+    for i, w in enumerate(words_data):
+        if ids is not None and i not in ids:
+            continue
+        if w.get('type') == 'silence':
+            continue
+        if overwrite or 'ai_mark' not in w:
+            w['ai_mark'] = ai_verdict(w)
+
+
+def restore_ai_mark(w):
+    """Put a word back to what the AI marked. Inaudible words are left to the display layer."""
+    a = w.get('ai_mark')
+    w['manual_status'] = None
+    w['overlay_suppressed'] = False
+    if a in ('bad', 'repeat', 'typo') or (a or '').startswith('custom_'):  # custom_*: speaker detection
+        w['status'] = a
+        w['selected'] = True
+        w['is_auto'] = True
+        w['algo_status'] = a
+    else:
+        w['status'] = None
+        w['selected'] = False
+        w['is_auto'] = False
+        w['algo_status'] = None
+
+
+def clear_mark(w):
+    """The user cleared this word: it stays unmarked until restored (AI marks don't resurface)."""
+    w['manual_status'] = 'normal'
+    w['status'] = None
+    w['selected'] = False
+    w['is_auto'] = False
+    w['overlay_suppressed'] = True

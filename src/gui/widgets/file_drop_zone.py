@@ -13,6 +13,8 @@ Adheres strictly to the BadWords design system: dark aesthetics, zero emojis, ve
 and embedded Ubuntu font consistency across all platforms.
 """
 
+from gui.theme import qc
+
 import os
 import subprocess
 from PySide6.QtCore import Qt, Signal, QSize, QPoint
@@ -409,23 +411,23 @@ class FileDropZone(QWidget):
 
         # Background - dark graphite blending harmoniously with #1c1c1c UI
         if getattr(self, '_shake_err_border', False):
-            bg_color = QColor("#221414")
-            border_color = QColor("#ed4245")
+            bg_color = qc("#221414")
+            border_color = qc("#ed4245")
             pen_style = Qt.SolidLine
             pen_w = 1.5
         elif self._is_drag_active:
-            bg_color = QColor("#142d1e")
-            border_color = QColor("#1a7a3e")
+            bg_color = qc("#142d1e")
+            border_color = qc("#1a7a3e")
             pen_style = Qt.SolidLine
             pen_w = 2.0
         elif self._current_file:
-            bg_color = QColor("#1a1a1a")
-            border_color = QColor("#3a3a3a")
+            bg_color = qc("#1a1a1a")
+            border_color = qc("#3a3a3a")
             pen_style = Qt.SolidLine
             pen_w = 1.0
         else:
-            bg_color = QColor("#1a1a1a")
-            border_color = QColor("#3a3a3a")
+            bg_color = qc("#1a1a1a")
+            border_color = qc("#3a3a3a")
             pen_style = Qt.DashLine
             pen_w = 1.2
 

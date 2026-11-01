@@ -16,8 +16,25 @@ import platform
 # ==========================================
 # APPLICATION INFO
 # ==========================================
-APP_NAME = "BadWords"
+APP_NAME = "StoryCraft"  # fork of BadWords by Szymon Wolarz (MIT); see FORK.md
+# The fork must not offer or install releases of the original project over itself
+CHECK_ORIGINAL_UPDATES = False
+# StoryCraft's own updates: the latest GitHub release of this repo (tag "v4.1.0" for VERSION "4.1.0"),
+# installed by setupfiles/updater.py from UPDATE_BRANCH. A development copy (file ".storycraft_dev" in the
+# install folder) is never updated in place: it only gets the download link.
+UPDATE_REPO = "Boris-Edu/StoryCraft"
+UPDATE_BRANCH = "fork"
+UPDATE_INSTALL_SUPPORTED = True
+# Telemetry of the original project goes to its author's analytics: off in the fork (no prompt, no ping)
+TELEMETRY_ENABLED = False
+# The original's "Send report" goes to its author's server: off in the fork (Settings shows Logs instead)
+SUPPORT_REPORTS_ENABLED = False
 VERSION = "4.0.0"
+# Media Pool bin and timeline names in Resolve. Timelines made by the original app
+# ("... BadWords Edit N") still count when numbering new edits.
+RESOLVE_BIN = "StoryCraft"
+EDIT_SUFFIX = "StoryCraft Edit"
+LEGACY_EDIT_SUFFIXES = ("BadWords Edit",)
 SUPPORT_WEBHOOK_URL = "http://frog02.mikr.us:41385/"
 POSTHOG_API_KEY = "phc_mNTg2LuyNaVX8AG7vW63JZKCXr2PLVGGHHT7jNv3BdKR"
 POSTHOG_HOST = "https://eu.i.posthog.com"

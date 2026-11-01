@@ -3,34 +3,35 @@
 # Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # ============================================================
-#  BadWords macOS Bootstrapper v4.0
-#  Run with: curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh" | bash
+#  StoryCraft macOS Bootstrapper v4.0
+#  Run with: curl -fsSL "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/mac-setup.sh" | bash
 # ============================================================
 
 set -uo pipefail
 
-REPO_OWNER="veritus-git"
-REPO_NAME="BadWords"
-TAG="${BADWORDS_TAG:-latest}"
-BIN_NAME="badwords-setup-macos"
+REPO_OWNER="Boris-Edu"
+REPO_NAME="StoryCraft"
+TAG="${STORYCRAFT_TAG:-latest}"
+BIN_NAME="storycraft-setup-macos"
 
-INSTALLER_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/setupfiles/setup.py"
-INSTALLER_URL_FB="https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/setup.py"
+BRANCH="fork"
+INSTALLER_URL="${STORYCRAFT_GH_RAW:-https://raw.githubusercontent.com}/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/setupfiles/setup.py"
+INSTALLER_URL_FB="$INSTALLER_URL"
 PBS_FALLBACK_TAG="20250317"
 PBS_FALLBACK_VER="3.12.9"
 
 # ── Directories ───────────────────────────────────────────────
-CACHE_DIR="$HOME/Library/Caches/BadWords-bootstrap"
+CACHE_DIR="$HOME/Library/Caches/StoryCraft-bootstrap"
 PBS_DIR="$CACHE_DIR/python"
-TARGET_BIN="$CACHE_DIR/badwords-installer"
+TARGET_BIN="$CACHE_DIR/storycraft-installer"
 BW_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t 'bw_tmp')
 trap 'rm -rf "$BW_TMP"' EXIT INT TERM
 
 mkdir -p "$CACHE_DIR"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd 2>/dev/null || echo "")"
-LOCAL_BIN="$SCRIPT_DIR/../installer/target/release/badwords-installer"
-LOCAL_DEBUG="$SCRIPT_DIR/../installer/target/debug/badwords-installer"
+LOCAL_BIN="$SCRIPT_DIR/../installer/target/release/storycraft-installer"
+LOCAL_DEBUG="$SCRIPT_DIR/../installer/target/debug/storycraft-installer"
 LOCAL_SETUP="$SCRIPT_DIR/setup.py"
 LOCAL_REPO=""
 if [ -f "$LOCAL_SETUP" ]; then
@@ -40,9 +41,10 @@ fi
 # ── Helper: Rich Terminal Python Fallback ─────────────────────
 invoke_python_fallback() {
     clear
-    echo -e "user@MacBook-Pro ~ % curl -fsSL \"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh\" | bash"
-    echo -e "\033[36mDownloading BadWords Setup for macOS...\033[0m"
+    echo -e "user@MacBook-Pro ~ % curl -fsSL \"https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/mac-setup.sh\" | bash"
+    echo -e "\033[36mDownloading StoryCraft Setup for macOS...\033[0m"
     echo ""
+    if [ "${SC_NATIVE_BLOCKED:-0}" = "1" ]; then
     echo -e "\033[36m========================================================================\033[0m"
     echo -e "\033[33m [!] macOS Security / Gatekeeper Notice:\033[0m"
     echo -e "     The graphical installer binary was blocked by macOS Gatekeeper"
@@ -59,6 +61,7 @@ invoke_python_fallback() {
         exit 0
     fi
 
+    fi
     echo ""
     echo -e "  \033[36mPreparing portable Python environment...\033[0m"
 
@@ -156,12 +159,13 @@ start_native_executable() {
     if "$bin" "$@"; then
         exit 0
     else
+        SC_NATIVE_BLOCKED=1
         invoke_python_fallback "$@"
     fi
 }
 
 # 0. Force fallback check (for testing or explicitly requested CLI mode)
-if [ "${BADWORDS_FORCE_FALLBACK:-0}" = "1" ] || [[ " $* " =~ " --fallback " ]] || [[ " $* " =~ " --cli " ]]; then
+if [ "${STORYCRAFT_FORCE_FALLBACK:-0}" = "1" ] || [[ " $* " =~ " --fallback " ]] || [[ " $* " =~ " --cli " ]]; then
     invoke_python_fallback "$@"
 fi
 
@@ -176,7 +180,11 @@ elif [ -f "$SCRIPT_DIR/../installer/Cargo.toml" ] && command -v cargo &>/dev/nul
 fi
 
 # 2. Remote download
-echo "Downloading BadWords Setup for macOS..."
+# StoryCraft publishes no prebuilt installer app: run the installer with Python
+if [ "${STORYCRAFT_NATIVE_INSTALLER:-0}" != "1" ]; then
+    invoke_python_fallback "$@"
+fi
+echo "Downloading StoryCraft Setup for macOS..."
 
 DOWNLOAD_URL=""
 if [ "$TAG" = "latest" ]; then

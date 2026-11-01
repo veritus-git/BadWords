@@ -19,6 +19,7 @@ import threading
 import queue
 import json
 import hashlib
+import config
 import builtins
 
 from .resolve_bridge import ResolveBridgeClient
@@ -214,7 +215,7 @@ class ResolveHandler:
                         self.fps = float(res.get("fps", 24.0))
                         self.bridge_start_frame = int(res.get("start_frame", 0))
                         self.bridge_timelines = res.get("timelines", [])
-                        log_info(f"Connected to Resolve via BadWords Bridge. Project: {self.bridge_project_name}, FPS: {self.fps}")
+                        log_info(f"Connected to Resolve via StoryCraft Bridge. Project: {self.bridge_project_name}, FPS: {self.fps}")
                         return
                 except Exception as b_err:
                     if not silent:
@@ -224,7 +225,7 @@ class ResolveHandler:
             if not silent:
                 log_error("Could not connect to Resolve API object or Bridge.")
                 if is_free_21_1:
-                    log_info("[Tip] DaVinci Resolve Free 21.1+: open DaVinci Resolve and run 'Workspace -> Scripts -> BadWords Bridge'.")
+                    log_info("[Tip] DaVinci Resolve Free 21.1+: open DaVinci Resolve and run 'Workspace -> Scripts -> StoryCraft Bridge'.")
                 else:
                     log_info("[Tip] Ensure DaVinci Resolve is running and a project is open.")
         except Exception as e:
@@ -250,7 +251,7 @@ class ResolveHandler:
         return bool(self.backend == 'bridge' and self.bridge_project_name)
 
     def stop_bridge(self) -> bool:
-        """Sends Exit command to BadWords Bridge to shut it down inside DaVinci Resolve."""
+        """Sends Exit command to StoryCraft Bridge to shut it down inside DaVinci Resolve."""
         if self.backend != 'bridge':
             return False
         try:
@@ -259,7 +260,7 @@ class ResolveHandler:
             self.bridge_project_name = ""
             self.bridge_timeline_name = ""
             self.bridge_timelines = []
-            log_info("BadWords Bridge stopped successfully.")
+            log_info("StoryCraft Bridge stopped successfully.")
             return bool(res and res.get("ok"))
         except Exception as e:
             log_error(f"stop_bridge error: {e}")
@@ -1056,37 +1057,31 @@ class ResolveHandler:
 
     def get_next_badwords_edit_index(self, original_name):
         """
-        Calculates the next suffix index for the new Edit timeline.
+        Calculates the next suffix index for the new Edit timeline
+        ("<name> StoryCraft Edit N"; older "<name> BadWords Edit N" timelines count too).
         """
-        base_name = re.sub(r" BadWords Edit \d+$", "", original_name)
+        suffixes = (config.EDIT_SUFFIX,) + tuple(config.LEGACY_EDIT_SUFFIXES)
+        alt = "|".join(re.escape(s) for s in suffixes)
+        base_name = re.sub(rf" (?:{alt}) \d+$", "", original_name)
+        pattern = re.compile(rf"^{re.escape(base_name)} (?:{alt}) (\d+)$")
         idx = 1
 
         if self.backend == 'bridge':
             self.get_all_timelines()
-            for name in (self.bridge_timelines or []):
-                if name.startswith(f"{base_name} BadWords Edit "):
-                    try:
-                        curr_idx = int(name.split(" BadWords Edit ")[-1])
-                        if curr_idx >= idx: idx = curr_idx + 1
-                    except (ValueError, IndexError):
-                        pass
-            return base_name, idx
-
-        if not self.project:
+            names = list(self.bridge_timelines or [])
+        elif not self.project:
             return base_name, 1
+        else:
+            names = []
+            for i in range(1, self.project.GetTimelineCount() + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl:
+                    names.append(tl.GetName())
 
-        count_map = self.project.GetTimelineCount()
-        for i in range(1, count_map + 1):
-            tl = self.project.GetTimelineByIndex(i)
-            if not tl: continue
-            name = tl.GetName()
-            if name.startswith(f"{base_name} BadWords Edit "):
-                try:
-                    curr_idx = int(name.split(" BadWords Edit ")[-1])
-                    if curr_idx >= idx: idx = curr_idx + 1
-                except (ValueError, IndexError):
-                    pass  # nazwa nie zawiera poprawnego indeksu — pomijamy
-        
+        for name in names:
+            m = pattern.match(name or "")
+            if m:
+                idx = max(idx, int(m.group(1)) + 1)
         return base_name, idx
 
     def _resolve_target_timeline(self, timeline_name: str = None):
@@ -1614,12 +1609,13 @@ class ResolveHandler:
                     pass  # nazwa nie zawiera poprawnego indeksu — pomijamy
         return base_name, idx
 
-    # ── BadWords Bin Management ──────────────────────────────────────────────
-    # All files produced by BadWords land here. Structure:
+    # ── App Bin Management ───────────────────────────────────────────────────
+    # All files produced by the app land here (config.RESOLVE_BIN). Structure:
     #   Master/
-    #     BadWords/
-    #       Edits/       ← final output timelines ("BadWords Edit N")
+    #     StoryCraft/    ← new edit timelines ("<name> StoryCraft Edit N")
+    #       Edits/
     #       Resources/   ← everything else (filtered TLs, temp imports, etc.)
+    # A "BadWords" bin left by the original app is not touched (Resolve can't rename bins).
 
     def _get_or_create_folder(self, parent_folder, name):
         """Returns existing subfolder by name, or creates it."""
@@ -1633,10 +1629,10 @@ class ResolveHandler:
             return None
 
     def get_badwords_root_bin(self):
-        """Returns (or creates) the top-level 'BadWords' bin under Master."""
+        """Returns (or creates) the app's top-level bin under Master."""
         try:
             root = self.media_pool.GetRootFolder()
-            return self._get_or_create_folder(root, "BadWords")
+            return self._get_or_create_folder(root, config.RESOLVE_BIN)
         except Exception as e:
             log_error(f"get_badwords_root_bin error: {e}")
             return None
@@ -1665,9 +1661,199 @@ class ResolveHandler:
             item = self.find_timeline_item_recursive(self.media_pool.GetRootFolder(), item_name)
             if item:
                 self.media_pool.MoveClips([item], target_bin)
-                log_info(f"Moved '{item_name}' to BadWords/{bin_type.capitalize()}.")
+                log_info(f"Moved '{item_name}' to {config.RESOLVE_BIN}/{bin_type.capitalize()}.")
         except Exception as e:
             log_error(f"move_to_badwords_bin('{item_name}') error: {e}")
+
+    def get_timeline_length_s(self, timeline_name):
+        """Length of a timeline in seconds (native connection only), or None."""
+        if self.backend == 'bridge' or not self.project:
+            return None
+        try:
+            for i in range(1, (self.project.GetTimelineCount() or 0) + 1):
+                tl = self.project.GetTimelineByIndex(i)
+                if tl and tl.GetName() == timeline_name:
+                    fps = float(tl.GetSetting("timelineFrameRate") or self.fps or 24.0)
+                    return (tl.GetEndFrame() - tl.GetStartFrame()) / fps
+        except Exception:
+            pass
+        return None
+
+    # ── Polish of a newly assembled timeline (Studio 21.1+: TimelineItem.AddTransition) ──
+
+    AUDIO_FADES = ("Cross Fade 0 dB", "Cross Fade +3 dB", "Cross Fade -3 dB")
+
+    def polish_timeline(self, crossfade_frames=2, mark_jumps=True, min_jump_s=2.0, sound_marks=None):
+        """On the current (just assembled) timeline: a short audio crossfade on every butt join, so cuts
+        don't click, and a marker where the picture jumps within the same shot at a story join (the
+        source jumps more than min_jump_s, or goes back), to cover with a punch-in or B-roll.
+        sound_marks: [(frame from the timeline start, level against the voice in dB)] of the sounds
+        without words the edit keeps: a Cocoa "Sound" marker each, to listen to.
+        Returns (fades added, markers added)."""
+        if self.backend == 'bridge' or not self.project:
+            return 0, 0
+        tl = self.project.GetCurrentTimeline()
+        if not tl:
+            return 0, 0
+        try:
+            fps = float(tl.GetSetting("timelineFrameRate") or self.fps or 24.0)
+        except Exception:
+            fps = float(self.fps or 24.0)
+        fades = 0
+        if crossfade_frames and crossfade_frames > 0:
+            fade_name = None
+            for ti in range(1, (tl.GetTrackCount("audio") or 0) + 1):
+                items = tl.GetItemListInTrack("audio", ti) or []
+                for a, b in zip(items, items[1:]):
+                    if b.GetStart() != a.GetEnd():
+                        continue
+                    for name in ([fade_name] if fade_name else self.AUDIO_FADES):
+                        try:
+                            ok = a.AddTransition({"type": name, "category": "audio", "position": "end",
+                                                  "alignment": "center", "duration": int(crossfade_frames)})
+                        except Exception:
+                            ok = None
+                        if ok:
+                            fade_name = name
+                            fades += 1
+                            break
+                    if not fade_name:
+                        break  # this Resolve has none of these transitions: don't try every join
+        markers = 0
+        if mark_jumps and (tl.GetTrackCount("video") or 0) >= 1:
+            items = tl.GetItemListInTrack("video", 1) or []
+            t0 = tl.GetStartFrame()
+            for a, b in zip(items, items[1:]):
+                ma, mb = a.GetMediaPoolItem(), b.GetMediaPoolItem()
+                if not ma or not mb or ma.GetUniqueId() != mb.GetUniqueId() or b.GetStart() != a.GetEnd():
+                    continue
+                gap = (b.GetLeftOffset() - (a.GetLeftOffset() + a.GetDuration())) / fps
+                if gap > min_jump_s or gap < -0.5:
+                    note = f"Same shot, {gap:+.1f}s in the recording: cover with a punch-in, a cutaway or B-roll."
+                    try:
+                        if tl.AddMarker(b.GetStart() - t0, "Yellow", "Jump cut", note, 1):
+                            markers += 1
+                    except Exception:
+                        pass
+        sounds = 0
+        for frame, db in sound_marks or []:
+            level = f"{round(db):+d} dB against the voice" if db is not None else "not measured"
+            note = f"A sound without words ({level}) kept in the edit: listen, and cut it if it doesn't belong."
+            try:
+                if tl.AddMarker(int(frame), "Cocoa", "Sound", note, 1):
+                    sounds += 1
+            except Exception:
+                pass
+        log_info(f"polish_timeline: {fades} audio crossfade(s), {markers} jump-cut marker(s), {sounds} sound marker(s)")
+        return fades, markers
+
+    # ── Resolve's own transcription (Studio 21.1+: MediaPoolItem.GetTranscription) ──
+
+    @staticmethod
+    def _tc_to_frames(tc, fps):
+        parts = [int(p) for p in re.split(r"[:;]", str(tc or "0:0:0:0"))]
+        while len(parts) < 4:
+            parts.insert(0, 0)
+        h, m, s, f = parts[-4:]
+        return (h * 3600 + m * 60 + s) * int(round(fps)) + f
+
+    def get_resolve_transcript(self, timeline_name=None, track_indices=None, speakers=True, done_ids=None,
+                               status=None, cancel=None, transcribe=True):
+        """
+        The timeline's words from Resolve's own transcription of its clips, in seconds from the
+        timeline start, shaped like Whisper's output ({"language", "segments": [{"words": [...]}]}),
+        each word with the segment's "speaker". Clips without a transcription (or, with speakers=True,
+        transcribed without speaker detection and not in done_ids) are transcribed by Resolve first,
+        with speaker detection. Returns (data, newly_done_ids), or (None, msg) when it can't.
+        """
+        if self.backend == 'bridge' or not self.project:
+            return None, "Resolve's transcription needs DaVinci Resolve Studio connected directly."
+        tl = self._resolve_target_timeline(timeline_name)
+        if not tl:
+            return None, "Timeline not found."
+        try:
+            fps = float(tl.GetSetting("timelineFrameRate") or self.fps or 24.0)
+        except Exception:
+            fps = float(self.fps or 24.0)
+        tl_start = tl.GetStartFrame()
+        tracks = track_indices or list(range(1, (tl.GetTrackCount("audio") or 0) + 1))
+        items, seen = [], set()
+        for ti in tracks:
+            for it in tl.GetItemListInTrack("audio", ti) or []:
+                mpi = it.GetMediaPoolItem()
+                if not mpi:
+                    continue
+                key = (mpi.GetUniqueId(), it.GetStart(), it.GetLeftOffset())
+                if key in seen:  # the same piece on two tracks (e.g. linked stereo channels)
+                    continue
+                seen.add(key)
+                items.append((it, mpi))
+        if not items:
+            return None, "No audio clips on the timeline."
+        items.sort(key=lambda p: p[0].GetStart())
+
+        # 1. Make sure every clip has a transcription (with speakers when asked)
+        done_ids = set(done_ids or [])
+        newly_done, clips, txs = [], {}, {}
+        for _, mpi in items:
+            clips[mpi.GetUniqueId()] = mpi
+        for n, (uid, mpi) in enumerate(clips.items(), 1):
+            if cancel and cancel():
+                return None, "Cancelled."
+            tx = mpi.GetTranscription() or {}
+            segs = tx.get("segments") or []
+            needs = not segs or (speakers and uid not in done_ids and not any(s.get("speaker") for s in segs))
+            if needs and transcribe:
+                if status:
+                    status(n, len(clips))
+                if segs:
+                    mpi.ClearTranscription()
+                mpi.TranscribeAudio(True if speakers else None)
+                waited = 0.0
+                while True:  # TranscribeAudio may return before the transcription is there
+                    tx = mpi.GetTranscription() or {}
+                    if tx.get("segments") or waited > 1800 or (cancel and cancel()):
+                        break
+                    time.sleep(1.0)
+                    waited += 1.0
+                if speakers:
+                    newly_done.append(uid)
+            txs[uid] = tx
+
+        # 2. Source timecodes -> seconds on the timeline, piece by piece
+        out_segments, language = [], None
+        for it, mpi in items:
+            tx = txs.get(mpi.GetUniqueId()) or {}
+            language = language or tx.get("language")
+            try:
+                clip_fps = float(mpi.GetClipProperty("FPS") or fps)
+            except (TypeError, ValueError):
+                clip_fps = fps
+            clip0 = self._tc_to_frames(mpi.GetClipProperty("Start TC") or "00:00:00:00", clip_fps)
+            left = it.GetLeftOffset()
+            src_len = it.GetDuration() * clip_fps / fps
+            base = (it.GetStart() - tl_start) / fps
+            for seg in tx.get("segments") or []:
+                words = []
+                for w in seg.get("words") or []:
+                    text = (w.get("text") or "").strip()
+                    if not text or text == "(...)":
+                        continue
+                    f0 = self._tc_to_frames(w.get("start"), clip_fps) - clip0
+                    f1 = self._tc_to_frames(w.get("end"), clip_fps) - clip0
+                    if f0 < left or f0 >= left + src_len:
+                        continue
+                    t0 = base + (f0 - left) / clip_fps
+                    t1 = base + (min(f1, left + src_len) - left) / clip_fps
+                    words.append({"word": " " + text, "start": round(t0, 3), "end": round(max(t1, t0 + 0.04), 3),
+                                  "speaker": seg.get("speaker")})
+                if words:
+                    out_segments.append({"start": words[0]["start"], "end": words[-1]["end"],
+                                         "text": "".join(x["word"] for x in words), "words": words})
+        out_segments.sort(key=lambda s: s["start"])
+        if not out_segments:
+            return None, "Resolve has no words for this timeline."
+        return {"language": language or "", "segments": out_segments}, newly_done
 
     def find_timeline_item_recursive(self, folder, name):
         """Recursively finds a timeline MediaPoolItem by name."""
@@ -3004,7 +3190,7 @@ class ResolveHandler:
     def reapply_clip_colors(self, tl_name, color_schedule):
         """
         POST-IMPORT COLOR VERIFICATION & CORRECTION.
-        Works across both Direct API and BadWords Bridge.
+        Works across both Direct API and StoryCraft Bridge.
         """
         if not color_schedule:
             log_info("reapply_clip_colors: empty schedule, skipping.")
@@ -3157,7 +3343,7 @@ class ResolveHandler:
         try:
             log_info(f"Creating timeline: {new_tl_name} (AudioOnly: {audio_only_mode})")
 
-            # Place new timeline directly in BadWords/ root bin (no Edits subfolder).
+            # Place new timeline directly in the app's root bin (no Edits subfolder).
             bw_bin = self.get_badwords_root_bin()
             if bw_bin:
                 self.media_pool.SetCurrentFolder(bw_bin)

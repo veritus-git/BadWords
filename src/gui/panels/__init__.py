@@ -16,6 +16,7 @@ from .silence_panel import build_silence_panel
 from .fillers_panel import build_fillers_panel
 from .main_workspace_panel import build_main_workspace_panel
 from .assembly_panel import build_assembly_panel
+from .story_panel import build_story_panel
 
 __all__ = [
     "build_script_panel",
@@ -23,5 +24,6 @@ __all__ = [
     "build_fillers_panel",
     "build_main_workspace_panel",
     "build_assembly_panel",
+    "build_story_panel",
     "wrap_activity_panel",
 ]

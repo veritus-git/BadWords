@@ -11,6 +11,8 @@ DESCRIPTION:
 Helper layout managers for the GUI.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
@@ -89,8 +91,8 @@ class Layer2Overlay(QWidget):
     def paintEvent(self, event):
         if self._is_overlapping:
             p = QPainter(self)
-            p.fillRect(self.rect(), QColor("#212121"))
-            p.setPen(QColor("#2e2e2e"))
+            p.fillRect(self.rect(), qc("#212121"))
+            p.setPen(qc("#2e2e2e"))
             p.drawLine(0, 0, self.width(), 0)
 
 
@@ -111,9 +113,13 @@ class MainPanelWidget(QWidget):
             super().resizeEvent(event)
             self.layer1.setGeometry(0, 0, self.width(), self.height())
         hint = self.layer2.sizeHint()
-        if self.layer2.layout():
-            hint = self.layer2.layout().sizeHint()
+        lay2 = self.layer2.layout()
+        if lay2:
+            hint = lay2.sizeHint()
         h = max(hint.height(), self.layer2.minimumSizeHint().height())
+        if lay2 is not None and lay2.hasHeightForWidth():
+            # wrapped text (the story notice) needs the height for the real width, not the default one
+            h = max(h, lay2.heightForWidth(self.width()))
         self.layer2.setGeometry(0, self.height() - h, self.width(), h)
         
         # Dynamic overlap check

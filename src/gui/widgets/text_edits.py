@@ -11,6 +11,8 @@ DESCRIPTION:
 Custom text edit fields with keyboard shortcut support.
 """
 
+from gui.theme import qc
+
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
@@ -37,7 +39,7 @@ class WrappingPlaceholderTextEdit(QTextEdit):
         super().paintEvent(event)
         if not self.toPlainText() and self._custom_placeholder:
             p = QPainter(self.viewport())
-            p.setPen(QColor("#777777"))
+            p.setPen(qc("#777777"))
             rect = self.viewport().rect().adjusted(5, 5, -5, -5)
             p.drawText(rect, Qt.AlignTop | Qt.TextWordWrap, self._custom_placeholder)
             p.end()

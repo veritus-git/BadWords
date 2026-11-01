@@ -27,6 +27,12 @@ def build_processing_view(win) -> QWidget:
     
     layout = QVBoxLayout(page)
     layout.setAlignment(Qt.AlignCenter)
+
+    # The StoryCraft mark, animated while work is in progress
+    from gui import brand
+    win.processing_mark = brand.animated_mark_widget(config.S(84), page)
+    layout.addWidget(win.processing_mark, 0, Qt.AlignCenter)
+    layout.addSpacing(config.S(22))
     
     win.lbl_processing_status = QLabel(win.txt("status_whisper_init", "Inicjalizowanie transkrypcji..."), page)
     win.lbl_processing_status.setAlignment(Qt.AlignCenter)

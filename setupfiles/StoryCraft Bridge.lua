@@ -1,7 +1,7 @@
 --[[
-    BadWords Bridge.lua
+    StoryCraft Bridge.lua
     ===================
-    DaVinci Resolve Lua Bridge for BadWords.
+    DaVinci Resolve Lua Bridge for StoryCraft (fork of BadWords).
     Enables communication with BadWords desktop app across all DaVinci Resolve
     versions (including DaVinci Resolve 21.1+ Free where Python scripting is removed
     and Lua sandbox is tightened).
@@ -1027,20 +1027,20 @@ local function do_import_timeline_file(file_path, timeline_name)
             end
         end)
 
-        -- Move imported timeline into BadWords folder
+        -- Move imported timeline into the StoryCraft folder
         pcall(function()
             local root = mp:GetRootFolder()
             if not root then return end
             local sub_folders = root:GetSubFolderList() or {}
             local bw_folder = nil
             for _, f in ipairs(sub_folders) do
-                if f:GetName() == "BadWords" then
+                if f:GetName() == "StoryCraft" then
                     bw_folder = f
                     break
                 end
             end
             if not bw_folder then
-                bw_folder = mp:AddSubFolder(root, "BadWords")
+                bw_folder = mp:AddSubFolder(root, "StoryCraft")
             end
             if bw_folder then
                 local clips = root:GetClipList() or {}

@@ -33,6 +33,8 @@ DEFAULT_USER_DATA = {
 # ==========================================
 DEFAULT_SETTINGS = {
     "settings_version":     VERSION,
+    "ui_theme":             "storycraft",  # storycraft | graphite | midnight | studio (gui/theme.py)
+    "plain_colors":         [],          # colours kept in the edit without colour ("Keep")
     # ── Transcript / Editor ──────────────────────────────────────────────────
     "editor_font_family":   get_system_font_name(),
     "editor_font_size":     12,
