@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/brand/storycraft-lockup.svg" alt="StoryCraft for DaVinci Resolve" height="96"></p>
 
 <p align="center"><b>Turn an unscripted interview into a story, inside DaVinci Resolve.</b><br>
-More information, and the workflow in pictures: <a href="https://boris-edu.github.io/StoryCraft/"><b>boris-edu.github.io/StoryCraft</b></a></p>
+More information, and the workflow in pictures: <a href="https://storycraft.dessimond.com"><b>storycraft.dessimond.com</b></a></p>
 
 > [!NOTE]
 > StoryCraft is a fork of [BadWords](https://github.com/veritus-git/BadWords) by Szymon Wolarz. It is not affiliated with the original project. BadWords' own documentation lives [in its repository](https://github.com/veritus-git/BadWords#readme).
@@ -91,6 +91,6 @@ You can also star [the original repository](https://github.com/veritus-git/BadWo
 
 ## Contribute
 
-Issues and pull requests are welcome on [this repository](https://github.com/Boris-Edu/StoryCraft/issues). More about StoryCraft: [boris-edu.github.io/StoryCraft](https://boris-edu.github.io/StoryCraft/). Brand guide: [BRAND.md](BRAND.md).
+Issues and pull requests are welcome on [this repository](https://github.com/Boris-Edu/StoryCraft/issues). More about StoryCraft: [storycraft.dessimond.com](https://storycraft.dessimond.com). Brand guide: [BRAND.md](BRAND.md).
 
 [Licence (MIT)](LICENSE) · Not affiliated with Blackmagic Design.
