@@ -219,39 +219,6 @@ class AudioPreviewWidget(QFrame):
             QSlider::handle:horizontal:hover {{
                 background: #ffffff;
             }}
-            QWidget#SeekBarContainer {{
-                background: transparent;
-                border: none;
-            }}
-            QSlider#SeekSlider {{
-                margin: 0px;
-                padding: 0px;
-                border: none;
-                background: transparent;
-            }}
-            QSlider#SeekSlider::groove:horizontal {{
-                height: {config.S(3)}px;
-                background: rgba(255, 255, 255, 0.10);
-                border-radius: 0px;
-                margin: 0px;
-            }}
-            QSlider#SeekSlider::sub-page:horizontal {{
-                background: #1ed760;
-                border-radius: 0px;
-                margin: 0px;
-            }}
-            QSlider#SeekSlider::handle:horizontal {{
-                background: #ffffff;
-                width: {config.S(10)}px;
-                height: {config.S(10)}px;
-                margin: -{config.S(3.5)}px 0px;
-                border-radius: {config.S(5)}px;
-                border: 0px solid transparent;
-            }}
-            QSlider#SeekSlider::handle:horizontal:hover {{
-                background: #ffffff;
-                border: 1px solid #1ed760;
-            }}
             QLabel#TimecodeLabel {{
                 font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
                 font-size: {config.FS(9.5)}pt;
@@ -297,35 +264,13 @@ class AudioPreviewWidget(QFrame):
         self.lbl_status.hide()
         self.content_layout.addWidget(self.lbl_status)
 
-        # 4. Top Seek Progress Slider (spans between left and right side panels)
-        self.seek_bar_container = QWidget()
-        self.seek_bar_container.setObjectName("SeekBarContainer")
-        self.seek_bar_container.setFixedHeight(config.S(10))
-        seek_h_layout = QHBoxLayout(self.seek_bar_container)
-        seek_h_layout.setContentsMargins(0, 0, 0, 0)
-        seek_h_layout.setSpacing(0)
-
-        self.seek_spacer_left = QWidget()
-        self.seek_spacer_left.setStyleSheet("background: transparent;")
-        self.seek_spacer_right = QWidget()
-        self.seek_spacer_right.setStyleSheet("background: transparent;")
-
-        self.slider_seek = JumpSlider(Qt.Horizontal)
-        self.slider_seek.setObjectName("SeekSlider")
-        self.slider_seek.setRange(0, 1000)
-        self.slider_seek.setValue(0)
-        self.slider_seek.setFixedHeight(config.S(10))
-        self.slider_seek.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # 4. Bind to central editor's SlimAudioSeekBar
+        self.slider_seek = getattr(self.main_window, 'slider_seek', None)
         self._seek_dragging = False
-        self.slider_seek.sliderPressed.connect(self._on_seek_pressed)
-        self.slider_seek.sliderReleased.connect(self._on_seek_released)
-        self.slider_seek.sliderMoved.connect(self._on_seek_moved)
-
-        seek_h_layout.addWidget(self.seek_spacer_left)
-        seek_h_layout.addWidget(self.slider_seek, 1)
-        seek_h_layout.addWidget(self.seek_spacer_right)
-
-        self.content_layout.addWidget(self.seek_bar_container)
+        if self.slider_seek:
+            self.slider_seek.sliderPressed.connect(self._on_seek_pressed)
+            self.slider_seek.sliderReleased.connect(self._on_seek_released)
+            self.slider_seek.sliderMoved.connect(self._on_seek_moved)
 
         # 5. Controls Row (Timecode | Buttons | Playback | Volume)
         self.controls_widget = QWidget()
@@ -555,34 +500,8 @@ class AudioPreviewWidget(QFrame):
         self.update_seek_margins()
 
     def update_seek_margins(self) -> None:
-        """
-        Dynamically adjusts left and right spacers so that slider_seek aligns
-        between the left activity panel and right activity panel (matching the central editor width).
-        """
-        if not self.main_window or not hasattr(self, 'seek_spacer_left') or not hasattr(self, 'seek_spacer_right'):
-            return
-        try:
-            sb_l = getattr(self.main_window, "_sidebar_left", None)
-            p_l = getattr(self.main_window, "_panel_left", None)
-            sb_r = getattr(self.main_window, "_sidebar_right", None)
-            p_r = getattr(self.main_window, "_panel_right", None)
-
-            # Left margin: width of left sidebar icon bar + left panel drawer (if visible)
-            w_left = (sb_l.width() if sb_l and sb_l.isVisible() else 0)
-            if p_l and p_l.isVisible():
-                w_left += p_l.width()
-
-            # Right margin: width of right sidebar icon bar + right panel drawer (if visible)
-            w_right = (sb_r.width() if sb_r and sb_r.isVisible() else 0)
-            if p_r and p_r.isVisible():
-                w_right += p_r.width()
-
-            if self.seek_spacer_left.width() != w_left:
-                self.seek_spacer_left.setFixedWidth(max(0, w_left))
-            if self.seek_spacer_right.width() != w_right:
-                self.seek_spacer_right.setFixedWidth(max(0, w_right))
-        except Exception:
-            pass
+        """Seek bar is hosted directly in normal_editor_page, perfectly matching editor boundaries."""
+        pass
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -593,7 +512,7 @@ class AudioPreviewWidget(QFrame):
         return self.isVisible() and not getattr(self, "is_collapsed", False)
 
     def _get_expanded_target_height(self) -> int:
-        h = self.controls_widget.sizeHint().height() + self.slider_seek.height()
+        h = self.controls_widget.sizeHint().height()
         if self.show_timeline or self.show_video:
             h += config.S(235) + config.S(14)
         return max(50, h)
@@ -675,7 +594,8 @@ class AudioPreviewWidget(QFrame):
 
         self.lbl_status.show()
         self.controls_widget.hide()
-        self.slider_seek.hide()
+        if self.slider_seek:
+            self.slider_seek.hide()
         self.media_container.hide()
         if getattr(self, "is_collapsed", False):
             self.content_widget.hide()
@@ -763,7 +683,8 @@ class AudioPreviewWidget(QFrame):
         # Restore UI controls
         self.lbl_status.hide()
         self.controls_widget.show()
-        self.slider_seek.show()
+        if self.slider_seek:
+            self.slider_seek.show()
         self._apply_modularity_state()
 
         if getattr(self, "is_collapsed", False):
@@ -847,7 +768,8 @@ class AudioPreviewWidget(QFrame):
             self.player.setSource(QUrl.fromLocalFile(assembled_audio_path))
             self.lbl_status.hide()
             self.controls_widget.show()
-            self.slider_seek.show()
+            if self.slider_seek:
+                self.slider_seek.show()
             self._apply_modularity_state()
 
             if getattr(self, "is_collapsed", False):
@@ -855,7 +777,8 @@ class AudioPreviewWidget(QFrame):
             else:
                 self.content_widget.show()
 
-            self.slider_seek.setValue(0)
+            if self.slider_seek:
+                self.slider_seek.setValue(0)
             self.current_word_idx = -1
             self.last_jumped_ts = -1.0
             self._clear_highlights()
@@ -996,14 +919,16 @@ class AudioPreviewWidget(QFrame):
 
     def _on_seek_pressed(self) -> None:
         self._seek_dragging = True
-        self._on_seek_moved(self.slider_seek.value(), sync_resolve=False)
+        if self.slider_seek:
+            self._on_seek_moved(self.slider_seek.value(), sync_resolve=False)
 
     def _on_seek_released(self) -> None:
         from PySide6.QtGui import QGuiApplication
         self._seek_dragging = False
         mods = QGuiApplication.queryKeyboardModifiers()
         is_jump = bool(mods & (Qt.ControlModifier | Qt.AltModifier))
-        self._on_seek_moved(self.slider_seek.value(), sync_resolve=is_jump)
+        if self.slider_seek:
+            self._on_seek_moved(self.slider_seek.value(), sync_resolve=is_jump)
 
     def _on_seek_moved(self, value: int, sync_resolve: bool = False) -> None:
         dur = self.get_total_duration()
@@ -1016,6 +941,9 @@ class AudioPreviewWidget(QFrame):
             if sync_resolve and self.main_window and hasattr(self.main_window, "_jump_playhead"):
                 self.main_window._jump_playhead(t)
             self.lbl_timecode.setText(self._format_timecode(t))
+            if hasattr(self, "waveform_timeline") and self.waveform_timeline:
+                self.waveform_timeline.set_playhead_time(audio_pos_s)
+            self._update_highlight_at_time(t)
 
     def _on_waveform_seek_requested(self, timestamp_s: float, sync_resolve: bool = False) -> None:
         """Receives playhead click/scrub from WaveformTimelineWidget for 60 FPS local playback and video sync."""
@@ -1095,31 +1023,46 @@ class AudioPreviewWidget(QFrame):
         self.lbl_timecode.setText(self._format_timecode(orig_t))
 
         # Update seek slider position
-        if not self._seek_dragging and dur > 0:
+        if not self._seek_dragging and dur > 0 and self.slider_seek:
             self.slider_seek.setValue(int(min(1.0, max(0.0, audio_t / dur)) * 1000))
 
         # Synchronize Waveform Timeline playhead
-        self.waveform_timeline.set_playhead_time(audio_t)
+        if hasattr(self, "waveform_timeline") and self.waveform_timeline:
+            self.waveform_timeline.set_playhead_time(audio_t)
 
         # Word highlighting
-        found_idx = -1
         if time.time() < getattr(self, "_force_highlight_until", 0.0):
             found_idx = getattr(self, "_force_highlight_idx", -1)
+            if found_idx != getattr(self, "current_word_idx", -1):
+                self._clear_highlights()
+                self.current_word_idx = found_idx
+                if found_idx >= 0:
+                    w = canvas.words_data[found_idx]
+                    w["_audio_active"] = True
+                    canvas.update()
         else:
-            offset_s = 0.0
-            if self.clean_ops and hasattr(self.main_window, "engine"):
-                prefs = self.main_window.engine.load_preferences() or {}
-                offset_s = prefs.get("offset", 0.133)
+            self._update_highlight_at_time(orig_t)
 
-            match_t = orig_t + 0.15 - offset_s
-            for i, w_item in enumerate(canvas.words_data):
-                start_t = w_item.get("start", 0)
-                if start_t > match_t:
-                    found_idx = i - 1
-                    break
-            else:
-                if canvas.words_data:
-                    found_idx = len(canvas.words_data) - 1
+    def _update_highlight_at_time(self, orig_t: float) -> None:
+        """Dynamically highlights the word currently at timestamp orig_t across the transcript canvas."""
+        canvas = getattr(self.main_window, "text_canvas", None)
+        if not canvas or not getattr(canvas, "words_data", None):
+            return
+        offset_s = 0.0
+        if self.clean_ops and hasattr(self.main_window, "engine"):
+            prefs = self.main_window.engine.load_preferences() or {}
+            offset_s = prefs.get("offset", 0.133)
+
+        match_t = orig_t + 0.15 - offset_s
+        found_idx = -1
+        for i, w_item in enumerate(canvas.words_data):
+            start_t = w_item.get("start", 0)
+            if start_t > match_t:
+                found_idx = i - 1
+                break
+        else:
+            if canvas.words_data:
+                found_idx = len(canvas.words_data) - 1
 
         if found_idx >= 0 and canvas.words_data[found_idx].get("type") == "silence":
             pass

@@ -675,7 +675,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_nav_settings.clicked.connect(lambda: self._on_settings())
         left_layout.addWidget(self.btn_nav_settings, 0, Qt.AlignHCenter)
         
-        self._sidebar_left.show()
+        self._sidebar_left.hide()
 
         self._sidebar_right = QFrame(self)
         self._sidebar_right.setFixedWidth(config.SIDEBAR_WIDTH)
@@ -702,6 +702,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_nav_colors.clicked.connect(lambda: self._toggle_activity("colors"))
         drag_layout_right.addWidget(self.btn_nav_colors, 0, Qt.AlignHCenter)
 
+        self._sidebar_right.hide()
         self._restore_sidebar_layout()
         
         from PySide6.QtCore import QTimer
@@ -829,6 +830,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._main_h_splitter.splitterMoved.connect(lambda *_: self.audio_preview.update_seek_margins())
 
         self.setCentralWidget(self._root_frame)
+        self.go_to_page(0)
 
 
     def _toggle_activity(self, activity_id: str):
@@ -4456,8 +4458,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'top_island') and getattr(self.top_island, 'isVisible', lambda: False)():
             self.top_island._ensure_z_order()
         if index != 2:
+            if hasattr(self, '_sidebar_left') and self._sidebar_left:
+                self._sidebar_left.hide()
+            if hasattr(self, '_sidebar_right') and self._sidebar_right:
+                self._sidebar_right.hide()
+            if hasattr(self, '_panel_left') and self._panel_left:
+                self._panel_left.hide()
+            if hasattr(self, '_panel_right') and self._panel_right:
+                self._panel_right.hide()
             if hasattr(self, 'audio_preview') and self.audio_preview:
                 self.audio_preview.hide()
+            if hasattr(self, 'slider_seek') and self.slider_seek:
+                self.slider_seek.hide()
             if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'deactivate_transcription_mode'):
                 self._title_bar.deactivate_transcription_mode()
             if getattr(self, '_is_mac', False):
@@ -4467,6 +4479,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._mac_menu_source.menuAction().setVisible(False)
                     self._mac_menu_edits.menuAction().setVisible(False)
         else:
+            if hasattr(self, '_sidebar_left') and self._sidebar_left:
+                self._sidebar_left.show()
+            if hasattr(self, '_sidebar_right') and self._sidebar_right:
+                self._sidebar_right.show()
             if hasattr(self, 'audio_preview') and self.audio_preview:
                 self.audio_preview.check_audio_availability()
             if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'activate_transcription_mode'):

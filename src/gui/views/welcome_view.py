@@ -1090,6 +1090,21 @@ class WelcomePageView(QWidget):
 
         self.root_layout.addWidget(self.workspace_container)
 
+        # ── 4. Floating Settings Button in bottom-left corner ─────────────────
+        from gui.widgets.buttons import SidebarButton
+        self.btn_welcome_settings = SidebarButton(
+            "\u2699",
+            win.txt("tool_settings"),
+            "settings",
+            tooltip_widget=getattr(win, "shared_tooltip", None),
+            is_draggable=False,
+            parent=self
+        )
+        self.btn_welcome_settings.setFixedSize(config.S(40), config.S(40))
+        self.btn_welcome_settings.setCursor(Qt.PointingHandCursor)
+        self.btn_welcome_settings.clicked.connect(lambda: win._on_settings())
+        self.btn_welcome_settings.show()
+
         win.welcome_mode_switch.on_change = self.switch_workspace_animated
 
         orig_set_current_index = win.welcome_stack.setCurrentIndex
@@ -1199,6 +1214,11 @@ class WelcomePageView(QWidget):
             cur_y = self._target_y(self._current_idx)
             self.welcome_root.move(0, cur_y)
         self.root_layout.activate()
+        if hasattr(self, 'btn_welcome_settings') and self.btn_welcome_settings:
+            btn_s = self.btn_welcome_settings.width()
+            margin = config.S(16)
+            self.btn_welcome_settings.move(margin, self.height() - btn_s - margin)
+            self.btn_welcome_settings.raise_()
 
     def switch_workspace_animated(self, target_idx: int):
         if self._current_idx == target_idx and not self._is_animating:

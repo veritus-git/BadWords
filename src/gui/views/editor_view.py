@@ -44,7 +44,13 @@ def build_editor_view(win) -> QWidget:
     normal_editor_layout = QVBoxLayout(normal_editor_page)
     normal_editor_layout.setContentsMargins(0, 0, 0, 0)
     normal_editor_layout.setSpacing(0)
-    normal_editor_layout.addWidget(win.scroll_area)
+    normal_editor_layout.addWidget(win.scroll_area, 1)
+
+    from gui.widgets.sliders import SlimAudioSeekBar
+    win.slider_seek = SlimAudioSeekBar(Qt.Horizontal, parent=normal_editor_page)
+    win.slider_seek.setFixedHeight(config.S(10))
+    win.slider_seek.hide()
+    normal_editor_layout.addWidget(win.slider_seek, 0)
 
     win.sbs_loading_page = QWidget()
     win.sbs_loading_page.setStyleSheet(f"background-color: {config.BG_COLOR};")

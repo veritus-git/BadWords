@@ -57,3 +57,102 @@ class JumpSlider(QSlider):
             return
         super().mouseReleaseEvent(ev)
 
+
+class SlimAudioSeekBar(QSlider):
+    """
+    Sleek, borderless seek slider drawn with pure anti-aliased vector geometry.
+    Has zero extra background height, does not push elements apart, and renders
+    the playhead as an unclipped, perfectly smooth circular dot.
+    """
+    def __init__(self, orientation=Qt.Horizontal, parent=None):
+        super().__init__(orientation, parent)
+        import config
+        self.config = config
+        self.setRange(0, 1000)
+        self.setValue(0)
+        self.setFixedHeight(config.S(10))
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+        self.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
+        self._hovered = False
+        self._dragging = False
+
+    def enterEvent(self, ev):
+        self._hovered = True
+        self.update()
+        super().enterEvent(ev)
+
+    def leaveEvent(self, ev):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(ev)
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self._dragging = True
+            w = max(1, self.width())
+            ratio = max(0.0, min(1.0, ev.position().x() / float(w)))
+            val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
+            self.setValue(val)
+            self.sliderPressed.emit()
+            self.sliderMoved.emit(val)
+            self.update()
+            ev.accept()
+            return
+        super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev):
+        if ev.buttons() & Qt.LeftButton:
+            w = max(1, self.width())
+            ratio = max(0.0, min(1.0, ev.position().x() / float(w)))
+            val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
+            self.setValue(val)
+            self.sliderMoved.emit(val)
+            self.update()
+            ev.accept()
+            return
+        super().mouseMoveEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self._dragging = False
+            self.sliderReleased.emit()
+            self.update()
+            ev.accept()
+            return
+        super().mouseReleaseEvent(ev)
+
+    def paintEvent(self, ev):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        w = float(self.width())
+        h = float(self.height())
+        cy = h / 2.0
+        line_h = float(self.config.S(2.0))
+
+        # Progress ratio
+        rng = self.maximum() - self.minimum()
+        ratio = (self.value() - self.minimum()) / float(rng) if rng > 0 else 0.0
+        ratio = max(0.0, min(1.0, ratio))
+
+        # 1. Background unplayed track (subtle faint gray)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 30))
+        painter.drawRoundedRect(QRectF(0, cy - line_h / 2.0, w, line_h), line_h / 2.0, line_h / 2.0)
+
+        # 2. Played progress track (Spotify vibrant green)
+        played_w = w * ratio
+        if played_w > 0:
+            painter.setBrush(QColor("#1ed760"))
+            painter.drawRoundedRect(QRectF(0, cy - line_h / 2.0, played_w, line_h), line_h / 2.0, line_h / 2.0)
+
+        # 3. Smooth white circle dot (kropka)
+        # Regular radius: 3.0px (diameter 6px). On hover/drag: 4.0px (diameter 8px).
+        r = float(self.config.S(4.0 if (self._hovered or self._dragging) else 3.0))
+        dot_x = max(r, min(w - r, played_w))
+        painter.setBrush(QColor("#ffffff"))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(QPointF(dot_x, cy), r, r)
+
+
+
