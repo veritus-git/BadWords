@@ -1301,11 +1301,14 @@ def _detect_resolve_edition_info():
                         pass
 
         elif "mac" in PLAT or "darwin" in PLAT:
+            # Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
+            # Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
+            # edition apart. Keep it "Unknown" so deployment doesn't remove BadWords.py.
             candidate_apps = [
                 ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
                 ("/Applications/DaVinci Resolve Studio.app", "Studio"),
-                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Free"),
-                ("/Applications/DaVinci Resolve.app", "Free"),
+                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Unknown"),
+                ("/Applications/DaVinci Resolve.app", "Unknown"),
             ]
             chosen_app = None
             for app_path, ed in candidate_apps:
@@ -1327,8 +1330,6 @@ def _detect_resolve_edition_info():
                             dname = str(pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or "").lower()
                             if "studio" in bid or "studio" in dname:
                                 info["edition"] = "Studio"
-                            elif "resolve" in bid or "resolve" in dname:
-                                info["edition"] = "Free"
                     except Exception:
                         pass
 
@@ -1482,7 +1483,8 @@ else:
 
     res_info = _detect_resolve_edition_info()
     is_studio = (res_info.get("edition") == "Studio")
-    is_free_21_1 = (not is_studio and res_info.get("is_21_1_or_newer", False))
+    # Only a confirmed Free 21.1+ drops BadWords.py; "Unknown" deploys both BadWords.py and the Bridge
+    is_free_21_1 = (res_info.get("edition") == "Free" and res_info.get("is_21_1_or_newer", False))
     debug_log(f"DaVinci Resolve deployment: is_studio={is_studio}, is_free_21_1={is_free_21_1}")
 
     # Locate BadWords Bridge.lua source

@@ -1897,8 +1897,11 @@ fn detect_resolve_info() -> ResolveInfo {
     let candidates = [
         ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", ResolveEdition::Studio),
         ("/Applications/DaVinci Resolve Studio.app", ResolveEdition::Studio),
-        ("/Applications/DaVinci Resolve/DaVinci Resolve.app", ResolveEdition::Free),
-        ("/Applications/DaVinci Resolve.app", ResolveEdition::Free),
+        // Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
+        // Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
+        // edition apart. Keep it Unknown so deployment doesn't remove BadWords.py.
+        ("/Applications/DaVinci Resolve/DaVinci Resolve.app", ResolveEdition::Unknown),
+        ("/Applications/DaVinci Resolve.app", ResolveEdition::Unknown),
     ];
 
     let mut found_plist: Option<std::path::PathBuf> = None;
@@ -1924,8 +1927,6 @@ fn detect_resolve_info() -> ResolveInfo {
             let id = String::from_utf8_lossy(&out.stdout).to_lowercase();
             if id.contains("studio") {
                 info.edition = ResolveEdition::Studio;
-            } else if id.contains("resolve") {
-                info.edition = ResolveEdition::Free;
             }
         }
 
@@ -1953,9 +1954,7 @@ fn detect_resolve_info() -> ResolveInfo {
         }
     }
 
-    if info.installed && info.edition == ResolveEdition::Unknown {
-        info.edition = ResolveEdition::Free;
-    }
+    // No Unknown -> Free fallback on macOS: Studio and Free share the same bundle (see above)
 
     info
 }
@@ -2094,7 +2093,8 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
     let res_info = detect_resolve_info();
 
     let is_studio = res_info.edition == ResolveEdition::Studio;
-    let is_free_21_1 = !is_studio && res_info.is_21_1_or_newer;
+    // Only a confirmed Free 21.1+ drops BadWords.py; Unknown deploys both BadWords.py and the Bridge
+    let is_free_21_1 = res_info.edition == ResolveEdition::Free && res_info.is_21_1_or_newer;
 
     emit_log(
         sender,
