@@ -342,6 +342,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._title_bar.projectImportRequested.connect(self._on_import_project)
         self._title_bar.transcriptExportTxtRequested.connect(self._on_export_transcript_txt)
         self._title_bar.transcriptCopyRequested.connect(self._on_copy_transcript_clipboard)
+        self._title_bar.aiTranscriptCopyRequested.connect(self._on_copy_ai_transcript)
+        self._title_bar.aiTranscriptExportRequested.connect(self._on_export_ai_transcript)
+        self._title_bar.aiStoryImportRequested.connect(self._on_import_ai_story)
         self._root_layout.addWidget(self._title_bar)
         self.top_island = TopStatusIsland(parent_frame=self._root_frame, main_window=self)
 
@@ -367,6 +370,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._mac_action_export_txt.triggered.connect(self._on_export_transcript_txt)
             self._mac_action_copy = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_clipboard"))
             self._mac_action_copy.triggered.connect(self._on_copy_transcript_clipboard)
+            self._mac_menu_transcript.addSeparator()
+            self._mac_action_copy_ai = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_ai_transcript"))
+            self._mac_action_copy_ai.triggered.connect(self._on_copy_ai_transcript)
+            self._mac_action_export_ai = self._mac_menu_transcript.addAction(self.txt("titlebar_export_ai_transcript"))
+            self._mac_action_export_ai.triggered.connect(self._on_export_ai_transcript)
+            self._mac_action_import_story = self._mac_menu_transcript.addAction(self.txt("titlebar_import_ai_story"))
+            self._mac_action_import_story.triggered.connect(self._on_import_ai_story)
             self._mac_menu_transcript.menuAction().setVisible(False)
 
             # Source Info Menu
@@ -1701,6 +1711,156 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         # Brief notification
         self._show_temporary_status(self.txt("msg_transcript_exported"))
+
+    _AI_COLOR_NAMES = {"Violet": "red (errors/fillers)", "Navy": "blue (retakes)",
+                       "Olive": "green (script differences)", "Tan": "silence", "Chocolate": "inaudible"}
+
+    def _live_cut_prefs(self):
+        """Prefs exactly as the next Assemble will use them (saved prefs + current panel toggles)."""
+        prefs = dict(self.engine.load_preferences() or {})
+        for attr, key in (('tgl_silence_cut', 'silence_cut'), ('tgl_silence_mark', 'silence_mark'),
+                          ('tgl_show_inaudible', 'show_inaudible'), ('tgl_mark_inaudible', 'mark_inaudible'),
+                          ('tgl_show_typos', 'show_typos')):
+            if hasattr(self, attr):
+                prefs[key] = getattr(self, attr).isChecked()
+        if hasattr(self, 'color_cut_buttons'):
+            prefs['auto_cut_colors'] = [c for c, b in self.color_cut_buttons.items() if b.isChecked()]
+        return prefs
+
+    def _build_ai_transcript(self):
+        """Transcript of the edit after the current cuts, with sentence IDs and timecodes.
+        Derived from the transcript and the same cut calculation as Assemble, so it needs
+        no re-transcription and every sentence still points back to the source."""
+        import algorithms
+        canvas = getattr(self, 'text_canvas', None)
+        if not canvas or not canvas.words_data:
+            return None, []
+        prefs = self._live_cut_prefs()
+        rh = getattr(self.engine, 'resolve_handler', None)
+        fps = getattr(rh, 'fps', None) or 24.0
+        ops, _ = self.engine.calculate_timeline_structure_with_cuts(
+            [dict(w) for w in canvas.words_data], fps, prefs)
+        removed = [self._AI_COLOR_NAMES.get(c, c.lower()) for c in prefs.get('auto_cut_colors', [])]
+        if prefs.get('silence_cut'):
+            removed.append("silence")
+        snap = getattr(self, '_transcription_source', None) or {}
+        return algorithms.build_ai_transcript(
+            canvas.words_data, ops, fps, title=snap.get('timeline_name', ''), removed=removed,
+            offset=prefs.get('offset', 0.133))
+
+    def _on_copy_ai_transcript(self):
+        text, sentences = self._build_ai_transcript()
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        self._remember_ai_sentences(sentences)
+        self._show_temporary_status(self.txt("msg_ai_transcript_copied").format(count=len(sentences)))
+
+    def _on_export_ai_transcript(self):
+        text, sentences = self._build_ai_transcript()
+        if not text:
+            return
+        self._remember_ai_sentences(sentences)
+        from PySide6.QtWidgets import QFileDialog
+        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        os.makedirs(saves_dir, exist_ok=True)
+        snap = getattr(self, '_transcription_source', None) or {}
+        timeline_name = snap.get('timeline_name') or "Transcript"
+        safe_name = "".join([c for c in timeline_name if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.txt("titlebar_export_ai_transcript"),
+            os.path.join(saves_dir, f"BadWords_{safe_name}_ai_transcript.txt"),
+            "Text Files (*.txt)"
+        )
+        if not path:
+            return
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        self._show_temporary_status(self.txt("msg_transcript_exported"))
+
+    # ── Story mode (issue #8): import an AI edit and assemble it in its order ──
+    def _ai_story_map_path(self):
+        snap = getattr(self, '_transcription_source', None) or {}
+        name = snap.get('timeline_name') or snap.get('source_file') or "Transcript"
+        safe = "".join(c for c in os.path.basename(str(name)) if c.isalnum() or c in ' -_').strip() or "Transcript"
+        return os.path.join(self.engine.os_doc.install_dir, "saves", "ai_story", f"{safe}.json")
+
+    def _remember_ai_sentences(self, sentences):
+        """The IDs the AI sees depend on the cut settings at export time, so keep that exact
+        map: the import must resolve S012 to the same sentence even if settings change later."""
+        import json
+        self._ai_sentences = sentences
+        try:
+            path = self._ai_story_map_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({"version": 1, "sentences": sentences}, f)
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"_remember_ai_sentences: {e}")
+
+    def _load_ai_sentences(self):
+        import json
+        if getattr(self, '_ai_sentences', None):
+            return self._ai_sentences
+        try:
+            with open(self._ai_story_map_path(), encoding='utf-8') as f:
+                sentences = json.load(f).get("sentences") or []
+            if sentences and all('cut_start' in s for s in sentences):
+                self._ai_sentences = sentences
+                return sentences
+        except Exception:
+            pass
+        return None
+
+    def _on_import_ai_story(self):
+        import algorithms
+        from gui.dialogs.story_import_dialog import StoryImportDialog
+        canvas = getattr(self, 'text_canvas', None)
+        if not canvas or not canvas.words_data:
+            return
+        note = ""
+        sentences = self._load_ai_sentences()
+        if not sentences:
+            _, sentences = self._build_ai_transcript()
+            note = self.txt("story_rebuilt_note")
+        if not sentences:
+            return
+
+        prefs = self._live_cut_prefs()
+        rh = getattr(self.engine, 'resolve_handler', None)
+        fps = getattr(rh, 'fps', None) or 24.0
+        ops, _ = self.engine.calculate_timeline_structure_with_cuts(
+            [dict(w) for w in canvas.words_data], fps, prefs)
+        offset = float(prefs.get('offset', 0.133))
+
+        def _duration(clips, keep_source_order):
+            story_ops = algorithms.apply_story_order(ops, clips, fps, offset, keep_source_order)
+            return sum(o['e'] - o['s'] for o in story_ops) / fps
+
+        dlg = StoryImportDialog(self, self.lang, sentences, _duration, note=note)
+        if dlg.exec() and dlg.result_story:
+            self._story = dlg.result_story
+            self._update_story_banner()
+            self._show_temporary_status(self.txt("msg_story_loaded").format(
+                clips=len(self._story["clips"]), assemble=self.txt("btn_assemble")))
+
+    def _update_story_banner(self):
+        story = getattr(self, '_story', None)
+        if not hasattr(self, 'story_banner'):
+            return
+        if not story:
+            self.story_banner.setVisible(False)
+            return
+        secs = int(round(story.get("duration", 0)))
+        key = "story_banner_source" if story.get("keep_source_order") else "story_banner"
+        self.lbl_story.setText(self.txt(key).format(
+            clips=len(story["clips"]), duration=f"{secs // 60}:{secs % 60:02d}", assemble=self.txt("btn_assemble")))
+        self.story_banner.setVisible(True)
+
+    def _clear_story(self):
+        self._story = None
+        self._update_story_banner()
 
     def _on_copy_transcript_clipboard(self):
         """Copy the transcript as plain text to the system clipboard."""
@@ -3063,6 +3223,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             prefs['mark_tool'] = checked_btn.property("status_id")
 
         self.engine.save_preferences(prefs)
+
+        story = getattr(self, '_story', None)
+        if story:
+            prefs['story_clips'] = story["clips"]
+            prefs['story_keep_source_order'] = story.get("keep_source_order", False)
 
         # SANITIZE EXPORT DATA (prevents C++ QRect deepcopy memory leaks)
         export_data    = self._get_clean_words_data()

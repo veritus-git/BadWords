@@ -32,6 +32,48 @@ except ImportError:
     def log_info(m): print(f"[INFO] {m}")
     def log_warn(m): print(f"[WARN] {m}")
 
+
+def _reorder_story_clipitems(root):
+    """
+    Story mode emits clipitems per source clip, so a reordered edit leaves them out of
+    timeline order. Sort each track's items by <start> in place (other track children keep
+    their slots), then make sure the first <file id> in document order carries the full
+    definition and later ones are references, as FCP7 XML expects.
+    """
+    item_tags = ('clipitem', 'generatoritem')
+    for track in root.iter('track'):
+        children = list(track)
+        slots = [i for i, c in enumerate(children) if c.tag in item_tags]
+        if len(slots) < 2:
+            continue
+        def _start(el):
+            try:
+                return int(el.findtext('start'))
+            except (TypeError, ValueError):
+                return -1
+        items = sorted((children[i] for i in slots), key=_start)
+        for i, el in zip(slots, items):
+            children[i] = el
+        for c in list(track):
+            track.remove(c)
+        for c in children:
+            track.append(c)
+
+    by_id = {}
+    for f in root.iter('file'):
+        if f.get('id'):
+            by_id.setdefault(f.get('id'), []).append(f)
+    for files in by_id.values():
+        first = files[0]
+        if len(first):
+            continue
+        full = next((f for f in files[1:] if len(f)), None)
+        if full is None:
+            continue
+        for c in list(full):
+            full.remove(c)
+            first.append(c)
+
 class ResolveHandler:
     def __init__(self, os_doctor):
         """
@@ -2116,7 +2158,8 @@ class ResolveHandler:
                     _filter_section_tracks(audio_sec, audio_track_filter, preserve_track_order)
 
             # ── 2. Build dest_offset lookup: for a 0-based src frame, return dest frame ──
-            sorted_ops = sorted(ops, key=lambda x: x['s'])
+            # Story mode (issue #8) tags ops with 'order'; plain ops keep source order.
+            sorted_ops = sorted(ops, key=lambda x: (x.get('order', 0), x['s']))
             dest_offsets = []
             acc = 0
             for op in sorted_ops:
@@ -2243,6 +2286,10 @@ class ResolveHandler:
 
                         track.append(new_ci)
                         color_schedule[new_dest_rel] = op_color_for_src(op['s'])
+
+            # ── 3.4. Story order: put clipitems back in timeline order ───────────
+            if any('order' in op for op in sorted_ops):
+                _reorder_story_clipitems(root)
 
             # ── 3.5. Track Packing (when preserve_track_order is False) ───────────
             if not preserve_track_order:

@@ -153,6 +153,9 @@ class CustomTitleBar(QWidget):
     projectImportRequested = Signal()
     transcriptExportTxtRequested = Signal()
     transcriptCopyRequested = Signal()
+    aiTranscriptCopyRequested = Signal()
+    aiTranscriptExportRequested = Signal()
+    aiStoryImportRequested = Signal()
 
     def __init__(self, window: QWidget, lang: str, parent=None):
         super().__init__(parent)
@@ -333,6 +336,9 @@ class CustomTitleBar(QWidget):
         self._show_titlebar_popup(self.btn_menu_transcript, [
             (_t("titlebar_export_txt"), lambda: self.transcriptExportTxtRequested.emit()),
             (_t("titlebar_copy_clipboard"), lambda: self.transcriptCopyRequested.emit()),
+            (_t("titlebar_copy_ai_transcript"), lambda: self.aiTranscriptCopyRequested.emit()),
+            (_t("titlebar_export_ai_transcript"), lambda: self.aiTranscriptExportRequested.emit()),
+            (_t("titlebar_import_ai_story"), lambda: self.aiStoryImportRequested.emit()),
         ])
 
     def _show_edit_menu(self):

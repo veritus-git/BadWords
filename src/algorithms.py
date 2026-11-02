@@ -2208,3 +2208,183 @@ def build_side_by_side_alignment(script_text, words_data):
             merged_rows.append(row)
 
     return merged_rows
+
+
+def _ai_tc(seconds):
+    seconds = max(0.0, seconds)
+    return f"{int(seconds // 3600)}:{int(seconds % 3600 // 60):02d}:{seconds % 60:04.1f}"
+
+
+# Titles and abbreviations that end in a dot but never end a sentence ("Mr. Smith")
+_AI_ABBREVIATIONS = {
+    "mr.", "mrs.", "ms.", "mx.", "dr.", "prof.", "st.", "sr.", "jr.", "rev.", "fr.", "sgt.", "lt.", "col.", "gen.",
+    "capt.", "gov.", "sen.", "rep.", "pres.", "vs.", "e.g.", "i.e.", "mt.", "ave.",
+    "mme.", "mlle.", "hr.", "sra.", "srta.", "dott.", "sig.", "ks.",
+}
+
+
+def build_ai_transcript(words_data, kept_ops, fps, title="", removed=None, max_words=40, offset=0.133):
+    """
+    Plain-text transcript of what survives the cuts, meant to be pasted into an LLM.
+    One sentence per line with a stable ID, its time in the edit and in the source
+    recording, and its word count:  [S001 | edit 0:00:03.2 | src 0:01:12.4 | 14w] text
+
+    kept_ops: surviving ops from calculate_timeline_structure_with_cuts (source frames,
+    laid end to end in source order, exactly as Assemble builds the timeline).
+    offset: the same cut-point offset Assemble applied (settings 'offset'), so a word counts
+    as kept exactly when Assemble kept it.
+    Returns (text, sentences); each sentence keeps its source range for later reassembly.
+    """
+    import bisect
+
+    ops = sorted(kept_ops or [], key=lambda o: o['s'])
+    starts = [o['s'] for o in ops]
+    dest, acc = [], 0
+    for o in ops:
+        dest.append(acc)
+        acc += o['e'] - o['s']
+    edit_total = acc / fps if fps else 0.0
+
+    def edit_time(t):
+        f = t * fps
+        i = bisect.bisect_right(starts, f) - 1
+        if i < 0 or f >= ops[i]['e']:
+            return None
+        return (dest[i] + f - ops[i]['s']) / fps
+
+    spoken = []  # (start, end) of every spoken word, kept or cut: sentence edges sit between them
+    groups, cur = [], []
+    for w in words_data:
+        if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible'):
+            continue
+        text = (w.get('text') or '').strip()
+        if not text:
+            continue
+        start, end = w.get('start', 0.0), w.get('end', 0.0)
+        spoken.append((start, end))
+        mid = (start + end) / 2.0
+        mid_edit = edit_time(mid + offset)
+        if mid_edit is None:
+            continue  # cut
+        cur.append((text, start, end, max(0.0, mid_edit - (mid - start)), len(spoken) - 1))
+        if (text[-1] in '.?!…' and text.lower().lstrip('"\'(“‘') not in _AI_ABBREVIATIONS) or len(cur) >= max_words:
+            groups.append(cur)
+            cur = []
+    if cur:
+        groups.append(cur)
+
+    def edges(first, last, pad=0.25):
+        # Cut halfway into the gap to the neighbouring words, at most `pad` away from speech
+        s0, e1 = spoken[first][0], spoken[last][1]
+        cut_s = max((spoken[first - 1][1] + s0) / 2.0, s0 - pad) if first > 0 else max(0.0, s0 - pad)
+        cut_e = min((e1 + spoken[last + 1][0]) / 2.0, e1 + pad) if last + 1 < len(spoken) else e1 + pad
+        return cut_s, max(cut_e, e1)
+
+    width = max(3, len(str(len(groups))))
+    sentences, lines = [], []
+    for n, g in enumerate(groups, 1):
+        sid = f"S{n:0{width}d}"
+        body = " ".join(w[0] for w in g)
+        cut_s, cut_e = edges(g[0][4], g[-1][4])
+        sentences.append({"id": sid, "text": body, "src_start": g[0][1], "src_end": g[-1][2],
+                          "cut_start": cut_s, "cut_end": cut_e, "edit_start": g[0][3], "words": len(g)})
+        lines.append(f"[{sid} | edit {_ai_tc(g[0][3])} | src {_ai_tc(g[0][1])} | {len(g)}w] {body}")
+
+    header = [
+        f"# BadWords transcript after cuts: {title}".rstrip(),
+        f"# Edit length {_ai_tc(edit_total)}, {len(sentences)} sentences."
+        + (f" Removed before export: {', '.join(removed)}." if removed else ""),
+        "# Each line: [ID | time in the edit | time in the source recording | word count] sentence.",
+        "# Times are h:mm:ss.s from the start. Refer to sentences by ID (e.g. S012).",
+        "# When asked to build an edit or story, end the answer with a line that says EDIT, then one",
+        "# line per clip in the order it should play, using IDs or ID ranges only, for example:",
+        "# EDIT",
+        "# S014-S016",
+        "# S002",
+        "# S031-S035",
+        "# BadWords imports that block and assembles the timeline in that order.",
+        "",
+    ]
+    return "\n".join(header + lines) + "\n", sentences
+
+
+_STORY_ID_RE = None
+
+
+def parse_story_answer(answer, sentence_count):
+    """
+    Reads the sentence IDs an LLM answer refers to, in the order they appear.
+    If the answer has an EDIT line, only what follows it counts; otherwise every ID or
+    range in the text does (ranges: S004-S007, S004–S007, S004 to S007, S004..S007).
+    Returns (picks, unknown): picks = 0-based sentence indices in play order, each used
+    once (a sentence already picked is skipped, so overlapping ranges merge);
+    unknown = IDs outside the transcript.
+    """
+    import re
+    global _STORY_ID_RE
+    if _STORY_ID_RE is None:
+        _STORY_ID_RE = re.compile(
+            r'\bS(\d{1,5})\b(?:\s*(?:-|–|—|\.\.\.?|…|to|through|thru)\s*S?(\d{1,5})\b)?', re.IGNORECASE)
+
+    text = answer or ""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if re.fullmatch(r'[\s#*_`>:-]*EDIT[\s*_`:]*', line, re.IGNORECASE):
+            text = "\n".join(lines[i + 1:])
+            break
+
+    picks, seen, unknown = [], set(), []
+    for m in _STORY_ID_RE.finditer(text):
+        a = int(m.group(1))
+        b = int(m.group(2)) if m.group(2) else a
+        step = 1 if b >= a else -1
+        for n in range(a, b + step, step):
+            if not 1 <= n <= sentence_count:
+                unknown.append(f"S{n:03d}")
+                continue
+            if n - 1 not in seen:
+                seen.add(n - 1)
+                picks.append(n - 1)
+    return picks, unknown
+
+
+def story_clips(picks, sentences):
+    """Groups picked sentences into clips: a clip is a run of consecutive sentences in the
+    recording that also follow each other in the answer."""
+    clips = []
+    for idx in picks:
+        s = sentences[idx]
+        if clips and clips[-1]["last"] == idx - 1:
+            clips[-1].update(last=idx, cut_end=s["cut_end"], end_id=s["id"])
+            clips[-1]["text"] += " " + s["text"]
+        else:
+            clips.append({"first": idx, "last": idx, "start_id": s["id"], "end_id": s["id"],
+                          "cut_start": s["cut_start"], "cut_end": s["cut_end"], "text": s["text"]})
+    return clips
+
+
+def apply_story_order(kept_ops, clips, fps, offset=0.133, keep_source_order=False):
+    """
+    Restricts the surviving ops to the story clips and lays them out in story order.
+    Each op gets an 'order' key (the clip's position); every assembler sorts ops by
+    ('order', 's'), so plain ops without the key keep their usual source order.
+    Fillers, silences and colours removed by the normal cut settings stay removed inside clips.
+    """
+    ops = sorted(kept_ops or [], key=lambda o: o['s'])
+    out = []
+    for k, clip in enumerate(clips):
+        a = int(round((clip["cut_start"] + offset) * fps))
+        b = int(round((clip["cut_end"] + offset) * fps))
+        for op in ops:
+            s, e = max(op['s'], a), min(op['e'], b)
+            if e - s < 1:
+                continue
+            new = dict(op, s=s, e=e)
+            if 'start_s' in new:
+                new['start_s'], new['end_s'] = s / fps, e / fps
+            if not keep_source_order:
+                new['order'] = k
+            out.append(new)
+    if keep_source_order:
+        out.sort(key=lambda o: o['s'])
+    return out
