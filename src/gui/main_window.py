@@ -694,13 +694,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
         drag_layout_right.addWidget(self.btn_nav_main, 0, Qt.AlignHCenter)
         
-        self.btn_nav_colors = SidebarButton("\U0001f3a8", self.txt("tool_colors"), "colors", tooltip_widget=self.shared_tooltip, is_right_side=True)
-        self.btn_nav_colors.clicked.connect(lambda: self._toggle_activity("colors"))
-        drag_layout_right.addWidget(self.btn_nav_colors, 0, Qt.AlignHCenter)
-
         self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", self.txt("tool_assembly"), "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
         drag_layout_right.addWidget(self.btn_nav_assembly, 0, Qt.AlignHCenter)
+
+        self.btn_nav_colors = SidebarButton("\U0001f3a8", self.txt("tool_colors"), "colors", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_colors.clicked.connect(lambda: self._toggle_activity("colors"))
+        drag_layout_right.addWidget(self.btn_nav_colors, 0, Qt.AlignHCenter)
 
         self._restore_sidebar_layout()
         
@@ -966,17 +966,25 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 btn.is_right_side = False
                 self._drag_zone_left.layout().addWidget(btn, 0, Qt.AlignHCenter)
 
-        # Odtwórz poprawną kolejność dla prawej strony
+        # Odtwórz poprawną kolejność dla prawej strony (Colors na samym dole)
+        if 'colors' in right_saved and 'assembly' in right_saved:
+            if right_saved.index('colors') < right_saved.index('assembly'):
+                right_saved.remove('colors')
+                right_saved.append('colors')
+
         for act_id in right_saved:
             if act_id in btns_map:
                 btn = btns_map.pop(act_id)
                 btn.is_right_side = True
                 self._drag_zone_right.layout().addWidget(btn, 0, Qt.AlignHCenter)
 
-        # Resztki (nowe funkcje) lądują domyślnie na lewo
+        # Resztki: przyciski prawe lądują na prawo, lewe na lewo
         for btn in btns_map.values():
-            btn.is_right_side = False
-            self._drag_zone_left.layout().addWidget(btn, 0, Qt.AlignHCenter)
+            if getattr(btn, 'is_right_side', False):
+                self._drag_zone_right.layout().addWidget(btn, 0, Qt.AlignHCenter)
+            else:
+                btn.is_right_side = False
+                self._drag_zone_left.layout().addWidget(btn, 0, Qt.AlignHCenter)
 
     def _build_activities(self):
         from gui.panels import (
@@ -2948,7 +2956,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if w:
                 w.setParent(None)
                 w.deleteLater()
-        if not stats:
+        matching_keys = [k for k in config.RESOLVE_COLORS_HEX if k in stats]
+        has_items = bool(matching_keys)
+
+        if hasattr(self, 'lbl_legend_hint') and self.lbl_legend_hint:
+            self.lbl_legend_hint.setVisible(has_items)
+        if hasattr(self, 'div_legend') and self.div_legend:
+            self.div_legend.setVisible(has_items)
+
+        if not has_items:
             empty = QLabel(self.txt("legend_empty"))
             empty.setWordWrap(True)
             empty.setStyleSheet(f"color: #808080; font-size: {config.FS(9)}pt;")

@@ -35,16 +35,18 @@ def build_colors_panel(win) -> QFrame:
     l_colors.addWidget(lbl_title)
 
     # Subtitle / Hint
-    lbl_hint = QLabel(win.txt("tt_legend_remove", "Manage colors present in this timeline. Check Remove to exclude them on Assemble."))
-    lbl_hint.setWordWrap(True)
-    lbl_hint.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt; line-height: 1.3;")
-    l_colors.addWidget(lbl_hint)
+    win.lbl_legend_hint = QLabel(win.txt("tt_legend_remove", "Manage colors present in this timeline. Check Remove to exclude them on Assemble."))
+    win.lbl_legend_hint.setWordWrap(True)
+    win.lbl_legend_hint.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt; line-height: 1.3;")
+    win.lbl_legend_hint.setVisible(False)
+    l_colors.addWidget(win.lbl_legend_hint)
 
     # Divider
-    div = QFrame()
-    div.setFixedHeight(config.S(1))
-    div.setStyleSheet("background-color: #383838; margin-top: 4px; margin-bottom: 4px; border: none;")
-    l_colors.addWidget(div)
+    win.div_legend = QFrame()
+    win.div_legend.setFixedHeight(config.S(1))
+    win.div_legend.setStyleSheet("background-color: #383838; margin-top: 4px; margin-bottom: 4px; border: none;")
+    win.div_legend.setVisible(False)
+    l_colors.addWidget(win.div_legend)
 
     # Legend list container (populated dynamically by win._render_color_legend())
     win.legend_layout = QVBoxLayout()
