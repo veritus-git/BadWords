@@ -1333,6 +1333,34 @@ handlers.DeleteClipsByColor = function(req)
     local target_tl = proj:GetCurrentTimeline()
     if not target_tl then return { error = "No active timeline" } end
 
+    local function collect_by_color(tl)
+        local found = {}
+        for _, tt in ipairs({"video", "audio"}) do
+            local tc = tl:GetTrackCount(tt) or 0
+            for i = 1, tc do
+                local track_color = ""
+                pcall(function() track_color = tl:GetTrackColor(tt, i) or "" end)
+                if not track_color or track_color == "" then
+                    track_color = (tt == "video") and "Blue" or "Green"
+                end
+                local items = tl:GetItemListInTrack(tt, i) or {}
+                for _, item in ipairs(items) do
+                    local c = item:GetClipColor()
+                    local actual_color = (c and c ~= "") and c or track_color
+                    if actual_color and string.lower(actual_color) == string.lower(color_name) then
+                        table.insert(found, item)
+                    end
+                end
+            end
+        end
+        return found
+    end
+
+    -- Nothing to cut: report it, and don't leave an identical "- Cut X" duplicate behind
+    if #collect_by_color(target_tl) == 0 then
+        return { ok = true, deleted = 0, timeline_name = target_tl:GetName() }
+    end
+
     if new_timeline then
         local base_name = target_tl:GetName() or "Timeline"
         local new_name = base_name .. " - Cut " .. color_name
@@ -1350,35 +1378,22 @@ handlers.DeleteClipsByColor = function(req)
         end
     end
 
-    local clips_to_delete = {}
-    for _, tt in ipairs({"video", "audio"}) do
-        local tc = target_tl:GetTrackCount(tt) or 0
-        for i = 1, tc do
-            local track_color = ""
-            pcall(function() track_color = target_tl:GetTrackColor(tt, i) or "" end)
-            if not track_color or track_color == "" then
-                track_color = (tt == "video") and "Blue" or "Green"
-            end
-            local items = target_tl:GetItemListInTrack(tt, i) or {}
-            for _, item in ipairs(items) do
-                local c = item:GetClipColor()
-                local actual_color = (c and c ~= "") and c or track_color
-                if actual_color and string.lower(actual_color) == string.lower(color_name) then
-                    table.insert(clips_to_delete, item)
-                end
-            end
-        end
+    -- A duplicated timeline has its own items, so collect again
+    local clips_to_delete = collect_by_color(target_tl)
+    if #clips_to_delete == 0 then
+        return { ok = true, deleted = 0, timeline_name = target_tl:GetName() }
     end
 
-    local deleted = 0
-    if #clips_to_delete > 0 then
-        local ok = pcall(function() return target_tl:DeleteClips(clips_to_delete, true) end)
-        if not ok then
-            pcall(function() return target_tl:DeleteClips(clips_to_delete, false) end)
-        end
-        deleted = #clips_to_delete
+    -- pcall's first value only says "did not throw"; DeleteClips' own result is the second
+    local ok, res = pcall(function() return target_tl:DeleteClips(clips_to_delete, true) end)
+    if not (ok and res) then
+        ok, res = pcall(function() return target_tl:DeleteClips(clips_to_delete, false) end)
     end
-    return { ok = true, deleted = deleted, timeline_name = target_tl:GetName() }
+    if not (ok and res) then
+        return { ok = false, deleted = 0, timeline_name = target_tl:GetName(),
+                 error = "DaVinci Resolve refused to delete the clips" }
+    end
+    return { ok = true, deleted = #clips_to_delete, timeline_name = target_tl:GetName() }
 end
 
 handlers.GetTimelineStructure = function(req)

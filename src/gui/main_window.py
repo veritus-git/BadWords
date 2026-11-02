@@ -1300,7 +1300,71 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         ret = box.exec()
         if ret == 2: return
         new_timeline = (ret == 1)
-        self.engine.api_delete_clips_by_color(color_name, new_timeline)
+        res = self.engine.api_delete_clips_by_color(color_name, new_timeline) or {}
+
+        # Always report the outcome: a silent 0-clip cut looked like "delete does nothing"
+        tl_name = res.get("timeline_name", "")
+        if not res.get("ok"):
+            msg_title = self.txt("msg_warning")
+            msg = self.txt("msg_cut_result_failed").format(error=res.get("error") or "?")
+        elif res.get("deleted", 0) == 0:
+            if self._offer_assemble_without(color_name, localized_color_name, tl_name):
+                return
+            msg_title = self.txt("msg_warning")
+            msg = self.txt("msg_cut_result_none").format(
+                color=localized_color_name, tl=tl_name,
+                assemble=self.txt("btn_assemble"), original=self.txt("titlebar_original"))
+        else:
+            msg_title = self.txt("msg_success")
+            msg = self.txt("msg_cut_result_deleted").format(count=res["deleted"], color=localized_color_name, tl=tl_name)
+        CustomMsgBox(self, msg_title, msg, self.txt("btn_ok")).exec()
+
+    def _offer_assemble_without(self, color_name, localized_color_name, tl_name):
+        """Nothing of this colour exists in Resolve yet (colours only reach Resolve via
+        Assemble, the step people miss). If BadWords has parts of that colour marked, offer
+        to assemble a new timeline without them in one step. Returns True if offered."""
+        if getattr(self, '_is_live_transcribing', False):
+            return False
+        canvas = getattr(self, 'text_canvas', None)
+        if not canvas or not canvas.words_data:
+            return False
+        is_silence = color_name.lower() == "tan"
+        auto_btn = getattr(self, 'color_cut_buttons', {}).get(color_name)
+        if not is_silence and auto_btn is None:
+            return False
+
+        # Count what an assembly would remove for this colour alone
+        probe = dict(self.engine.load_preferences() or {})
+        probe['auto_cut_colors'] = [] if is_silence else [color_name]
+        probe['silence_cut'] = is_silence
+        probe['silence_mark'] = False
+        rh = getattr(self.engine, 'resolve_handler', None)
+        fps = getattr(rh, 'fps', None) or 24.0
+        try:
+            _, cut_ops = self.engine.calculate_timeline_structure_with_cuts(
+                [dict(w) for w in canvas.words_data], fps, probe)
+        except Exception:
+            return False
+        if not cut_ops:
+            return False
+
+        if is_silence:
+            note = self.txt("msg_cut_offer_note_silence").format(setting=self.txt("lbl_detect_and_cut_silence"))
+        else:
+            note = self.txt("msg_cut_offer_note_auto").format(color=localized_color_name)
+        msg = self.txt("msg_cut_offer_assemble").format(
+            color=localized_color_name, tl=tl_name, assemble=self.txt("btn_assemble"),
+            count=len(cut_ops), note=note)
+        box = CustomMsgBox(self, self.txt("msg_warning"), msg,
+                           self.txt("btn_cut_assemble_without").format(color=localized_color_name),
+                           self.txt("btn_cancel"))
+        if box.exec() == 1:
+            if is_silence:
+                self.tgl_silence_cut.setChecked(True)
+            else:
+                auto_btn.setChecked(True)
+            self._on_assemble()
+        return True
 
     def _on_analyze_standalone(self):
         if not hasattr(self, 'text_canvas') or not self.text_canvas.words_data:
