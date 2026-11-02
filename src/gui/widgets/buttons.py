@@ -1122,6 +1122,8 @@ class SidebarButton(QPushButton):
             image_name = "main.png"
         elif activity_id == "assembly":
             image_name = "assembly.png"
+        elif activity_id == "colors":
+            image_name = "palette-icon.png"
         elif activity_id == "settings":
             image_name = "settings.png"
             

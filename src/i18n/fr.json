@@ -481,5 +481,6 @@
     "tt_force_xml_assembly": "Force l'assemblage de la timeline à utiliser le pipeline XML FCP7 au lieu du DRT natif.",
     "status_assembly_drt_build": "Construction de l'assemblage DRT...",
     "status_assembly_drt_import": "Importation de la timeline DRT...",
-    "lbl_timeline_ready": "A1: Prêt pour l'audio de la timeline"
+    "lbl_timeline_ready": "A1: Prêt pour l'audio de la timeline",
+    "tool_colors": "Couleurs dans ce montage"
 }

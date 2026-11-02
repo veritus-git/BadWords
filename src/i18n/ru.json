@@ -481,5 +481,6 @@
     "tt_force_xml_assembly": "Принудительно выполняет сборку таймлайна через FCP7 XML вместо нативного DRT.",
     "status_assembly_drt_build": "Создание DRT монтажа...",
     "status_assembly_drt_import": "Импорт DRT таймлайна...",
-    "lbl_timeline_ready": "A1: Готов для аудио таймлайна"
+    "lbl_timeline_ready": "A1: Готов для аудио таймлайна",
+    "tool_colors": "Цвета в монтаже"
 }

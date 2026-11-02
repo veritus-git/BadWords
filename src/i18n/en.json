@@ -481,5 +481,6 @@
     "lbl_force_xml_assembly": "Force XML Timeline Assembly",
     "tt_force_xml_assembly": "Forces timeline assembly to use the FCP7 XML pipeline instead of native DRT. Useful for testing XML assembly or on Resolve 21.1+ Free.",
     "status_assembly_drt_build": "Building DRT assembly...",
-    "status_assembly_drt_import": "Importing DRT timeline..."
+    "status_assembly_drt_import": "Importing DRT timeline...",
+    "tool_colors": "Colors in this edit"
 }

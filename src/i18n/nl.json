@@ -481,5 +481,6 @@
     "tt_force_xml_assembly": "Forceert tijdlijnassemblage via de FCP7 XML-pijplijn in plaats van native DRT.",
     "status_assembly_drt_build": "DRT-montage opbouwen...",
     "status_assembly_drt_import": "DRT-tijdlijn importeren...",
-    "lbl_timeline_ready": "A1: Gereed voor tijdlijnaudio"
+    "lbl_timeline_ready": "A1: Gereed voor tijdlijnaudio",
+    "tool_colors": "Kleuren in deze montage"
 }

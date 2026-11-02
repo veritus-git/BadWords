@@ -694,6 +694,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.btn_nav_main.clicked.connect(lambda: self._toggle_activity("main_panel"))
         drag_layout_right.addWidget(self.btn_nav_main, 0, Qt.AlignHCenter)
         
+        self.btn_nav_colors = SidebarButton("\U0001f3a8", self.txt("tool_colors"), "colors", tooltip_widget=self.shared_tooltip, is_right_side=True)
+        self.btn_nav_colors.clicked.connect(lambda: self._toggle_activity("colors"))
+        drag_layout_right.addWidget(self.btn_nav_colors, 0, Qt.AlignHCenter)
+
         self.btn_nav_assembly = SidebarButton("\u2699\ufe0f", self.txt("tool_assembly"), "assembly", tooltip_widget=self.shared_tooltip, is_right_side=True)
         self.btn_nav_assembly.clicked.connect(lambda: self._toggle_activity("assembly"))
         drag_layout_right.addWidget(self.btn_nav_assembly, 0, Qt.AlignHCenter)
@@ -977,7 +981,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _build_activities(self):
         from gui.panels import (
             build_script_panel, build_silence_panel, build_fillers_panel,
-            build_main_workspace_panel, build_assembly_panel
+            build_main_workspace_panel, build_assembly_panel, build_colors_panel
         )
         self._favorite_proxies = {}
         self._pin_buttons = {}
@@ -986,6 +990,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.activities["silence"] = build_silence_panel(self)
         self.activities["fillers"] = build_fillers_panel(self)
         self.activities["main_panel"] = build_main_workspace_panel(self)
+        self.activities["colors"] = build_colors_panel(self)
         self.activities["assembly"] = build_assembly_panel(self)
 
         self.btn_analyze_standalone.installEventFilter(self)
@@ -2939,8 +2944,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             return
         while lay.count():
             item = lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
         if not stats:
             empty = QLabel(self.txt("legend_empty"))
             empty.setWordWrap(True)
@@ -3570,8 +3577,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, '_panel_right'): self._panel_right.hide()
         
         # Un-toggle the sidebar buttons so they don't look active
-        if hasattr(self, 'btn_nav_script'): self.btn_nav_script.set_active(False)
-        if hasattr(self, 'btn_nav_main'): self.btn_nav_main.set_active(False)
+        for btn in self.findChildren(SidebarButton):
+            btn.set_active(False)
 
         # 2. Switch stack to index 1 (Processing page with full-screen progress bar and hints)
         self.go_to_page(1)

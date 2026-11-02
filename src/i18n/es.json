@@ -481,5 +481,6 @@
     "tt_force_xml_assembly": "Fuerza el ensamblado de la línea de tiempo usando la canalización XML FCP7 en lugar del DRT nativo.",
     "status_assembly_drt_build": "Construyendo montaje DRT...",
     "status_assembly_drt_import": "Importando timeline DRT...",
-    "lbl_timeline_ready": "A1: Listo para audio de la línea de tiempo"
+    "lbl_timeline_ready": "A1: Listo para audio de la línea de tiempo",
+    "tool_colors": "Colores en esta edición"
 }
