@@ -17,7 +17,7 @@ import json
 SUPPORTED_LANGS = {
     'en': 'English', 'pl': 'Polski', 'de': 'Deutsch', 'es': 'Español',
     'fr': 'Français', 'it': 'Italiano', 'pt': 'Português', 'nl': 'Nederlands',
-    'uk': 'Українська', 'ru': 'Русский'
+    'uk': 'Українська', 'ru': 'Русский', 'zh': '简体中文'
 }
 
 TRANS = {}
