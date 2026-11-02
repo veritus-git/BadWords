@@ -1251,6 +1251,34 @@ fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvi
             emit_log(sender, "OK", "CPU AI acceleration configured.");
         }
 
+        // Apple Silicon: GPU transcription engine (mlx-whisper), without PyTorch (only its model
+        // converter needs torch). Optional: on failure BadWords keeps using the CPU engine.
+        if cfg!(target_os = "macos") && std::env::consts::ARCH == "aarch64" {
+            emit_log(sender, "INFO", "Installing Apple GPU engine (MLX)...");
+            let mlx_ok = run_pip_install_streaming(
+                &v_py,
+                &["--upgrade", "--no-deps", "mlx-whisper"],
+                90,
+                90,
+                "Installing Apple GPU engine...",
+                "Downloading MLX Whisper",
+                sender,
+            ) && run_pip_install_streaming(
+                &v_py,
+                &["--upgrade", "mlx", "numba", "scipy", "tiktoken", "more-itertools", "tqdm", "huggingface_hub"],
+                90,
+                90,
+                "Installing Apple GPU engine...",
+                "Downloading MLX runtime",
+                sender,
+            );
+            if mlx_ok {
+                emit_log(sender, "OK", "Apple GPU engine (MLX) installed.");
+            } else {
+                emit_log(sender, "WARN", "Apple GPU engine (MLX) could not be installed. Transcription will use the CPU.");
+            }
+        }
+
         // ── Comprehensive Package Verification & Auto-Recovery ──
         emit_progress_sub(sender, 90, 0, "Verifying packages...", "Checking installed AI and GUI modules");
         emit_log(sender, "INFO", "Verifying installed dependencies (PySide6, faster-whisper, pypdf)...");
