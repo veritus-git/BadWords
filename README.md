@@ -89,6 +89,10 @@ StoryCraft exists because **Szymon Wolarz** built [BadWords](https://github.com/
 
 You can also star [the original repository](https://github.com/veritus-git/BadWords), and report problems that also happen in BadWords there.
 
+## Built with Claude
+
+StoryCraft's improvements over BadWords (the fixes, features and new interface listed in [FORK.md](FORK.md)) were built with Claude models from Anthropic, using Claude Code. The original BadWords code is Szymon Wolarz's work.
+
 ## Contribute
 
 Issues and pull requests are welcome on [this repository](https://github.com/Boris-Edu/StoryCraft/issues). More about StoryCraft: [storycraft.dessimond.com](https://storycraft.dessimond.com). Brand guide: [BRAND.md](BRAND.md).

@@ -4,27 +4,28 @@
 
 - **Based on:** upstream branch `dev-v4` (the v4 rewrite), commit [`c65926a`](https://github.com/veritus-git/BadWords/commit/c65926a).
 - **Default branch here:** `fork`. It contains every change listed below.
-- **Original project:** for the official release, installers and support, go to [veritus-git/BadWords](https://github.com/veritus-git/BadWords). The installation commands in the README install the original project, not this fork.
+- **Original project:** for the official release, installers and support, go to [veritus-git/BadWords](https://github.com/veritus-git/BadWords). The installation commands in the README install StoryCraft, next to an installed BadWords without touching it.
+- **Built with Claude:** the fork's changes to BadWords (everything listed below) were built with Claude models (Anthropic) in Claude Code. The original BadWords code is Szymon Wolarz's work.
 
 ## Differences from the original
 
-Status: **Upstream PR** = offered to the original project, waiting for review. **Fork only** = not offered upstream.
+Status: **Merged upstream** = accepted into the original project. **Upstream PR** = offered to the original project, waiting for review. **Fork only** = not offered upstream.
 
 ### Fixes
 | Change | Status |
 |---|---|
-| Transcription no longer crashes with PyAV 19 (`metadata_errors`); a failed model download explains why (offline, firewall) instead of "Analysis failed" | Upstream PR [#9](https://github.com/veritus-git/BadWords/pull/9) |
-| Esc on the "Cut clips" dialog no longer cuts the current timeline; Cut Now always reports what it did; on a timeline that was never assembled it offers "Assemble without <colour>" | Upstream PR [#10](https://github.com/veritus-git/BadWords/pull/10) |
-| macOS: Resolve Studio is no longer detected as Free 21.1 (which removed the launcher and showed "no timelines") | Upstream PR [#11](https://github.com/veritus-git/BadWords/pull/11) |
+| Transcription no longer crashes with PyAV 19 (`metadata_errors`); a failed model download explains why (offline, firewall) instead of "Analysis failed" | Merged upstream [#9](https://github.com/veritus-git/BadWords/pull/9) |
+| Esc on the "Cut clips" dialog no longer cuts the current timeline; Cut Now always reports what it did; on a timeline that was never assembled it offers "Assemble without <colour>" | Merged upstream [#10](https://github.com/veritus-git/BadWords/pull/10) |
+| macOS: Resolve Studio is no longer detected as Free 21.1 (which removed the launcher and showed "no timelines") | Merged upstream [#11](https://github.com/veritus-git/BadWords/pull/11) |
 | AI transcript: sentences no longer end after titles such as "Mr." or "Dr." | Upstream PR [#16](https://github.com/veritus-git/BadWords/pull/16) |
 
 ### Features
 | Change | Status |
 |---|---|
-| **Apple Silicon GPU transcription** with mlx-whisper: about 11× faster than the CPU path, same fillers and timings, no PyTorch | Upstream PR [#12](https://github.com/veritus-git/BadWords/pull/12) |
-| **Live silence tuning:** remove a share of the pause time (longest first), minimum clip length between cuts, keep part of each pause, live readout | Upstream PR [#13](https://github.com/veritus-git/BadWords/pull/13) |
-| **"Colors in this edit" legend:** what each colour means, how much is kept or removed, Remove checkbox per colour | Upstream PR [#14](https://github.com/veritus-git/BadWords/pull/14) |
-| **Cuts shown in the transcript text:** removed words struck through, a mark where a pause is cut out | Upstream PR [#15](https://github.com/veritus-git/BadWords/pull/15) |
+| **Apple Silicon GPU transcription** with mlx-whisper: about 11× faster than the CPU path, same fillers and timings, no PyTorch | Merged upstream [#12](https://github.com/veritus-git/BadWords/pull/12) |
+| **Live silence tuning:** remove a share of the pause time (longest first), minimum clip length between cuts, keep part of each pause, live readout | Merged upstream [#13](https://github.com/veritus-git/BadWords/pull/13) |
+| **"Colors in this edit" legend:** what each colour means, how much is kept or removed, Remove checkbox per colour | Merged upstream [#14](https://github.com/veritus-git/BadWords/pull/14) |
+| **Cuts shown in the transcript text:** removed words struck through, a mark where a pause is cut out | Merged upstream [#15](https://github.com/veritus-git/BadWords/pull/15) |
 | **AI story round trip:** copy an AI-ready transcript with sentence IDs, paste the AI's edit back, and Assemble builds the timeline in the AI's order | Upstream PR [#16](https://github.com/veritus-git/BadWords/pull/16) |
 
 ### UI revamp (in progress, fork only)
@@ -80,5 +81,6 @@ Status: **Upstream PR** = offered to the original project, waiting for review. *
 | Speech-to-text benchmark for Mac (faster-whisper vs mlx-whisper vs Apple Speech), on branch [`feat/mac-asr-benchmark`](https://github.com/Boris-Edu/StoryCraft/tree/feat/mac-asr-benchmark/tools/asr_benchmark) | Fork only |
 
 ## Changelog
+- **2026-11-02:** first public release, v4.0.0 (the website is not part of the download). PRs #9–#15 merged into BadWords; #16 open.
 - **2026-10-31 (local):** UI revamp started: Keep / Mark / Cut for pauses, Play edit (jumping, then smooth rendered preview), Story board, workflow bar with Send to Resolve, Keep / Mark / Cut for colours, colour themes, refreshed layout and theme fonts; renamed StoryCraft with its own identity.
 - **2026-10-31:** fork published with the fixes and features above; PRs #9–#16 offered upstream.

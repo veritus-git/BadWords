@@ -5,15 +5,13 @@ on:
     branches:
       - 'dev-v4'
       - 'main'
-    tags:
-      - 'v*'
     paths:
       - 'installer/**'
       - 'setupfiles/**'
       - 'src/config/app_constants.py'
       - '.github/workflows/build-installer.yml'
-  release:
-    types: [published, created]
+  # No tag or release trigger: StoryCraft releases ship no prebuilt installer (the bootstrap scripts run
+  # setupfiles/setup.py), and this job builds the original BadWords installer.
   workflow_dispatch:
 
 permissions:

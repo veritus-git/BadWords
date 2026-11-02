@@ -1,0 +1,2 @@
+# Release downloads (GitHub source archives, used by setup.py and updater.py) leave the website out
+website/ export-ignore
