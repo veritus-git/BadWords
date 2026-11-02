@@ -887,9 +887,26 @@ class AudioPreviewWidget(QFrame):
         self.waveform_timeline.set_playhead_time(self._start_pos_s)
         self.sync_playback()
 
+    def get_total_duration(self) -> float:
+        """Returns the actual timeline/project audio duration in seconds."""
+        if self.clean_ops:
+            fps = getattr(self.main_window.resolve_handler, "fps", 24.0) if self.main_window else 24.0
+            total_f = sum(op["e"] - op["s"] for op in self.clean_ops)
+            if total_f > 0:
+                return total_f / fps
+        if hasattr(self, "waveform_timeline") and getattr(self.waveform_timeline, "_duration", 0.0) > 0:
+            return self.waveform_timeline._duration
+        canvas = getattr(self.main_window, "text_canvas", None)
+        if canvas and getattr(canvas, "words_data", None):
+            return float(canvas.words_data[-1].get("end", 0.0))
+        dur = self.player.duration()
+        if dur > 0:
+            return dur / 1000.0
+        return 0.0
+
     def _get_audio_t(self) -> float:
         if self.player.playbackState() != QMediaPlayer.PlayingState:
-            return self.player.position() / 1000.0
+            return getattr(self, "_start_pos_s", self.player.position() / 1000.0)
         return getattr(self, "_start_pos_s", 0.0) + (time.time() - getattr(self, "_real_start_time", 0.0)) * self.player.playbackRate()
 
     def toggle_play(self) -> None:
@@ -986,24 +1003,25 @@ class AudioPreviewWidget(QFrame):
 
     def _on_seek_pressed(self) -> None:
         self._seek_dragging = True
+        self._on_seek_moved(self.slider_seek.value(), sync_resolve=False)
 
     def _on_seek_released(self) -> None:
         from PySide6.QtGui import QGuiApplication
         self._seek_dragging = False
-        dur = self.player.duration()
-        if dur > 0:
-            ms = int(self.slider_seek.value() / 1000.0 * dur)
-            self.set_position_ms(ms)
-            mods = QGuiApplication.queryKeyboardModifiers()
-            if mods & (Qt.ControlModifier | Qt.AltModifier):
-                t_s = ms / 1000.0
-                if self.main_window and hasattr(self.main_window, "_jump_playhead"):
-                    self.main_window._jump_playhead(t_s)
+        mods = QGuiApplication.queryKeyboardModifiers()
+        is_jump = bool(mods & (Qt.ControlModifier | Qt.AltModifier))
+        self._on_seek_moved(self.slider_seek.value(), sync_resolve=is_jump)
 
-    def _on_seek_moved(self, value: int) -> None:
-        dur = self.player.duration()
+    def _on_seek_moved(self, value: int, sync_resolve: bool = False) -> None:
+        dur = self.get_total_duration()
         if dur > 0:
-            t = (value / 1000.0) * (dur / 1000.0)
+            t = (value / 1000.0) * dur
+            audio_pos_s = t
+            if self.clean_ops:
+                audio_pos_s = self._original_to_audio_time(t)
+            self.set_position_ms(int(audio_pos_s * 1000))
+            if sync_resolve and self.main_window and hasattr(self.main_window, "_jump_playhead"):
+                self.main_window._jump_playhead(t)
             self.lbl_timecode.setText(self._format_timecode(t))
 
     def _on_waveform_seek_requested(self, timestamp_s: float, sync_resolve: bool = False) -> None:
@@ -1080,12 +1098,12 @@ class AudioPreviewWidget(QFrame):
         audio_t = max(0.0, self._get_audio_t())
         orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t
 
-        dur = self.player.duration() / 1000.0
+        dur = self.get_total_duration()
         self.lbl_timecode.setText(self._format_timecode(orig_t))
 
         # Update seek slider position
         if not self._seek_dragging and dur > 0:
-            self.slider_seek.setValue(int(audio_t / dur * 1000))
+            self.slider_seek.setValue(int(min(1.0, max(0.0, audio_t / dur)) * 1000))
 
         # Synchronize Waveform Timeline playhead
         self.waveform_timeline.set_playhead_time(audio_t)

@@ -25,18 +25,26 @@ class JumpSlider(QSlider):
     def mousePressEvent(self, ev):
         from PySide6.QtCore import Qt
         if ev.button() == Qt.LeftButton:
-            val = self.minimum() + ((self.maximum() - self.minimum()) * ev.position().x()) / self.width()
-            self.setValue(int(val))
-            ev.accept()
+            w = max(1, self.width())
+            ratio = max(0.0, min(1.0, ev.position().x() / float(w)))
+            val = self.minimum() + ((self.maximum() - self.minimum()) * ratio)
+            ival = int(round(val))
+            self.setValue(ival)
             self.sliderPressed.emit()
+            self.sliderMoved.emit(ival)
+            ev.accept()
             return
         super().mousePressEvent(ev)
 
     def mouseMoveEvent(self, ev):
         from PySide6.QtCore import Qt
         if ev.buttons() & Qt.LeftButton:
-            val = self.minimum() + ((self.maximum() - self.minimum()) * ev.position().x()) / self.width()
-            self.setValue(int(val))
+            w = max(1, self.width())
+            ratio = max(0.0, min(1.0, ev.position().x() / float(w)))
+            val = self.minimum() + ((self.maximum() - self.minimum()) * ratio)
+            ival = int(round(val))
+            self.setValue(ival)
+            self.sliderMoved.emit(ival)
             ev.accept()
             return
         super().mouseMoveEvent(ev)
