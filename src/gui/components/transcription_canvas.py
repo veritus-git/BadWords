@@ -1080,12 +1080,6 @@ class TranscriptionCanvas(QWidget):
                 p.setPen(QPen(final_fg, 1.5))
                 mid_y = int(w['_rect'].center().y()) + 1
                 p.drawLine(int(w['_rect'].left()) + 4, mid_y, int(w['_rect'].right()) - 4, mid_y)
-            elif preview_state == 'jump':
-                # Cut pause: a thin razor mark in the gap before the word
-                r = w['_rect']
-                p.setPen(Qt.NoPen)
-                p.setBrush(QColor("#e5534b"))
-                p.drawRoundedRect(QRectF(r.left() - space_w / 2.0 - 1, r.top(), 2, r.height()), 1, 1)
 
             if alpha < 1.0:
                 p.setOpacity(1.0)
