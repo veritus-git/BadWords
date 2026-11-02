@@ -252,6 +252,8 @@ class AudioPreviewWidget(QFrame):
 
         if parent_widget:
             parent_widget.installEventFilter(self)
+        if self.main_window and hasattr(self.main_window, "scroll_area") and self.main_window.scroll_area:
+            self.main_window.scroll_area.installEventFilter(self)
 
         # 3. Status Label (for fetching / missing audio)
         self.lbl_status = QLabel("")
@@ -467,6 +469,9 @@ class AudioPreviewWidget(QFrame):
         if not parent or not self.isVisible():
             if hasattr(self, "toggle_tab") and self.toggle_tab:
                 self.toggle_tab.hide()
+            slider = getattr(self, "slider_seek", None) or (getattr(self.main_window, "slider_seek", None) if self.main_window else None)
+            if slider:
+                slider.hide()
             return
 
         tw = self.toggle_tab.width()
@@ -482,31 +487,77 @@ class AudioPreviewWidget(QFrame):
         self.toggle_tab.move(target_x, target_y)
         if not self.toggle_tab.isVisible():
             self.toggle_tab.show()
-            self.toggle_tab.raise_()
+        self.toggle_tab.raise_()
+        self.update_seek_geometry()
+
+    def update_seek_geometry(self) -> None:
+        """Positions the slim seek slider directly on the top edge of audio_preview, bounded by the editor."""
+        slider = getattr(self, "slider_seek", None) or (getattr(self.main_window, "slider_seek", None) if self.main_window else None)
+        if not slider:
+            return
+        if not self.isVisible() or getattr(self, "is_collapsed", False) or not self.is_preview_active():
+            slider.hide()
+            return
+
+        # Check current main window page: only show on Editor page (index 2)
+        stack = getattr(self.main_window, "_stack", None)
+        if stack and stack.currentIndex() != 2:
+            slider.hide()
+            return
+
+        ref_w = getattr(self.main_window, "scroll_area", None)
+        parent = slider.parentWidget()
+        if not ref_w or not parent:
+            slider.hide()
+            return
+
+        from PySide6.QtCore import QPoint
+        pt = ref_w.mapTo(parent, QPoint(0, 0))
+        x = pt.x()
+        w = ref_w.width()
+        if w <= 0:
+            slider.hide()
+            return
+
+        sh = slider.height()
+        cy = sh // 2
+        # Position slider so its 4px track line is centered literally on the top edge of audio preview
+        target_y = self.y() - cy
+
+        slider.setGeometry(x, target_y, w, sh)
+        if not slider.isVisible():
+            slider.show()
+        slider.raise_()
 
     def eventFilter(self, watched, event):
         if watched == self.parentWidget() and event.type() == QEvent.Resize:
             self.update_tab_position()
+            self.update_seek_geometry()
+        elif self.main_window and watched == getattr(self.main_window, "scroll_area", None) and event.type() == QEvent.Resize:
+            self.update_seek_geometry()
         return super().eventFilter(watched, event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_tab_position()
-        self.update_seek_margins()
+        self.update_seek_geometry()
 
     def showEvent(self, event):
         super().showEvent(event)
         self.update_tab_position()
-        self.update_seek_margins()
+        self.update_seek_geometry()
 
     def update_seek_margins(self) -> None:
-        """Seek bar is hosted directly in normal_editor_page, perfectly matching editor boundaries."""
-        pass
+        self.update_tab_position()
+        self.update_seek_geometry()
 
     def hideEvent(self, event):
         super().hideEvent(event)
         if hasattr(self, "toggle_tab") and self.toggle_tab:
             self.toggle_tab.hide()
+        slider = getattr(self, "slider_seek", None) or (getattr(self.main_window, "slider_seek", None) if self.main_window else None)
+        if slider:
+            slider.hide()
 
     def is_preview_active(self) -> bool:
         return self.isVisible() and not getattr(self, "is_collapsed", False)

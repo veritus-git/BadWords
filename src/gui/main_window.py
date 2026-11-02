@@ -320,8 +320,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """)
 
         # ── CSD: root frame (wraps title bar + content, owns border-radius) ──
+        self.setCursor(Qt.ArrowCursor)
         self._root_frame = QFrame()
         self._root_frame.setObjectName("RootFrame")
+        self._root_frame.setCursor(Qt.ArrowCursor)
         _is_mac_root = platform.system() == "Darwin"
         self._root_frame.setStyleSheet(f"""
             QFrame#RootFrame {{
@@ -4485,6 +4487,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._sidebar_right.show()
             if hasattr(self, 'audio_preview') and self.audio_preview:
                 self.audio_preview.check_audio_availability()
+                self.audio_preview.update_seek_geometry()
             if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'activate_transcription_mode'):
                 if getattr(self, '_transcription_source', None):
                     self._title_bar.activate_transcription_mode()

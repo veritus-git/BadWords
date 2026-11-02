@@ -70,7 +70,7 @@ class SlimAudioSeekBar(QSlider):
         self.config = config
         self.setRange(0, 1000)
         self.setValue(0)
-        self.setFixedHeight(config.S(10))
+        self.setFixedHeight(config.S(14))
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
         self.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
@@ -91,7 +91,8 @@ class SlimAudioSeekBar(QSlider):
         if ev.button() == Qt.LeftButton:
             self._dragging = True
             w = max(1, self.width())
-            ratio = max(0.0, min(1.0, ev.position().x() / float(w)))
+            pos_x = ev.position().x() if hasattr(ev, 'position') else ev.x()
+            ratio = max(0.0, min(1.0, pos_x / float(w)))
             val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
             self.setValue(val)
             self.sliderPressed.emit()
@@ -104,7 +105,8 @@ class SlimAudioSeekBar(QSlider):
     def mouseMoveEvent(self, ev):
         if ev.buttons() & Qt.LeftButton:
             w = max(1, self.width())
-            ratio = max(0.0, min(1.0, ev.position().x() / float(w)))
+            pos_x = ev.position().x() if hasattr(ev, 'position') else ev.x()
+            ratio = max(0.0, min(1.0, pos_x / float(w)))
             val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
             self.setValue(val)
             self.sliderMoved.emit(val)
@@ -128,27 +130,27 @@ class SlimAudioSeekBar(QSlider):
         w = float(self.width())
         h = float(self.height())
         cy = h / 2.0
-        line_h = float(self.config.S(2.0))
+        line_h = float(self.config.S(4.0))
+        radius = float(self.config.S(2.0))
 
         # Progress ratio
         rng = self.maximum() - self.minimum()
         ratio = (self.value() - self.minimum()) / float(rng) if rng > 0 else 0.0
         ratio = max(0.0, min(1.0, ratio))
 
-        # 1. Background unplayed track (subtle faint gray)
+        # 1. Background unplayed track (matching v3.2.4 exact: rgba(255, 255, 255, 0.08))
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 30))
-        painter.drawRoundedRect(QRectF(0, cy - line_h / 2.0, w, line_h), line_h / 2.0, line_h / 2.0)
+        painter.setBrush(QColor(255, 255, 255, 20))
+        painter.drawRoundedRect(QRectF(0.0, cy - line_h / 2.0, w, line_h), radius, radius)
 
-        # 2. Played progress track (Spotify vibrant green)
+        # 2. Played progress track (matching v3.2.4 exact: #1ed760)
         played_w = w * ratio
         if played_w > 0:
             painter.setBrush(QColor("#1ed760"))
-            painter.drawRoundedRect(QRectF(0, cy - line_h / 2.0, played_w, line_h), line_h / 2.0, line_h / 2.0)
+            painter.drawRoundedRect(QRectF(0.0, cy - line_h / 2.0, played_w, line_h), radius, radius)
 
-        # 3. Smooth white circle dot (kropka)
-        # Regular radius: 3.0px (diameter 6px). On hover/drag: 4.0px (diameter 8px).
-        r = float(self.config.S(4.0 if (self._hovered or self._dragging) else 3.0))
+        # 3. Smooth white circle dot (kropka, diameter 10px idle / 12px hover)
+        r = float(self.config.S(6.0 if (self._hovered or self._dragging) else 5.0))
         dot_x = max(r, min(w - r, played_w))
         painter.setBrush(QColor("#ffffff"))
         painter.setPen(Qt.NoPen)

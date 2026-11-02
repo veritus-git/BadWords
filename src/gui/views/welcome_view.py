@@ -1028,6 +1028,7 @@ class WelcomePageView(QWidget):
         self.win = win
         self.setObjectName("page_welcome")
         self.setStyleSheet(f"QWidget#page_welcome {{ background-color: {config.BG_COLOR}; }}")
+        self.setCursor(Qt.ArrowCursor)
         self._current_idx = 0
         self._is_animating = False
         self._y_anim = None
@@ -1037,6 +1038,7 @@ class WelcomePageView(QWidget):
 
         self.welcome_root = QWidget(self)
         self.welcome_root.setObjectName("welcome_root")
+        self.welcome_root.setCursor(Qt.ArrowCursor)
         self.welcome_root.setStyleSheet("QWidget#welcome_root { background: transparent; }")
 
         self.root_layout = QVBoxLayout(self.welcome_root)
@@ -1074,6 +1076,7 @@ class WelcomePageView(QWidget):
         # ── 3. Workspace Stack Area ───────────────────────────────────────────
         self.workspace_container = QWidget(self.welcome_root)
         self.workspace_container.setFixedHeight(self.H_MAX_CONTENT)
+        self.workspace_container.setCursor(Qt.ArrowCursor)
         self.workspace_container.setStyleSheet("background: transparent;")
 
         ws_layout = QVBoxLayout(self.workspace_container)
@@ -1476,6 +1479,7 @@ def build_welcome_view(win) -> QWidget:
     # PAGE 0: TRANSCRIPTION WORKSPACE
     # ═══════════════════════════════════════════════════════════════
     p_transcription = QWidget()
+    p_transcription.setCursor(Qt.ArrowCursor)
     p_transcription.setStyleSheet("background: transparent;")
     l_trans = QVBoxLayout(p_transcription)
     l_trans.setContentsMargins(0, 0, 0, 0)
@@ -1483,6 +1487,7 @@ def build_welcome_view(win) -> QWidget:
     l_trans.setAlignment(Qt.AlignTop)
 
     win.slider_widget = QWidget()
+    win.slider_widget.setCursor(Qt.ArrowCursor)
     win.slider_widget.setStyleSheet("background: transparent;")
     win.slider_layout = QHBoxLayout(win.slider_widget)
     win.slider_layout.setContentsMargins(0, 0, 0, 0)
@@ -1492,6 +1497,7 @@ def build_welcome_view(win) -> QWidget:
     # ── Left Column: Settings Container (325px + shake padding) ──────────────
     pad = config.S(10)
     win.settings_container = QWidget()
+    win.settings_container.setCursor(Qt.ArrowCursor)
     win.settings_container.setFixedWidth(config.S(325) + 2 * pad)
     win.settings_container.setStyleSheet("background: transparent;")
     win.settings_layout = QVBoxLayout(win.settings_container)
@@ -1808,12 +1814,14 @@ def build_welcome_view(win) -> QWidget:
     # PAGE 1: FAST SILENCE WORKSPACE (325px)
     # ═══════════════════════════════════════════════════════════════
     p_silence_outer = QWidget()
+    p_silence_outer.setCursor(Qt.ArrowCursor)
     p_silence_outer.setStyleSheet("background: transparent;")
     p_silence_outer_layout = QHBoxLayout(p_silence_outer)
     p_silence_outer_layout.setContentsMargins(0, 0, 0, 0)
     p_silence_outer_layout.setSpacing(0)
 
     p_silence = QWidget()
+    p_silence.setCursor(Qt.ArrowCursor)
     p_silence.setFixedWidth(config.S(325) + 2 * pad)
     p_silence.setStyleSheet("background: transparent;")
     l_fast = QVBoxLayout(p_silence)

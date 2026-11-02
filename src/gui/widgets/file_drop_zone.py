@@ -57,6 +57,7 @@ class FileDropZone(QWidget):
 
         self._current_file = ""
         self._is_drag_active = False
+        self.setCursor(Qt.ArrowCursor)
 
         self._build_ui()
         self._update_state()
@@ -92,6 +93,7 @@ class FileDropZone(QWidget):
 
         self.lbl_subprompt = QLabel()
         self.lbl_subprompt.setAlignment(Qt.AlignCenter)
+        self.lbl_subprompt.setCursor(Qt.PointingHandCursor)
         self.lbl_subprompt.setStyleSheet(
             f"color: #1a7a3e; font-family: '{config.UI_FONT_NAME}'; "
             f"font-size: {config.FS(8.0)}pt; font-weight: bold; background: transparent; border: none;"
@@ -242,7 +244,7 @@ class FileDropZone(QWidget):
         else:
             self.selected_container.hide()
             self.empty_container.show()
-            self.setCursor(Qt.PointingHandCursor)
+            self.setCursor(Qt.ArrowCursor)
 
     def _probe_duration_str(self, file_path: str) -> str:
         """Quick ffprobe duration lookup (non-blocking / fast timeout)."""
