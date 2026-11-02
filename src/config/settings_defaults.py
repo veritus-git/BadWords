@@ -128,6 +128,9 @@ DEFAULT_SETTINGS = {
     "show_inaudible":       True,
     "silence_cut":          False,
     "silence_mark":         False,
+    "silence_cut_pct":      100.0,  # % of total pause time to remove, longest pauses first
+    "silence_min_clip":     0.0,    # Min kept piece (s) between two silence cuts; 0 = off
+    "silence_keep":         0.0,    # Pause (s) left in place at every silence cut
     # ── Milestone / Migration Notices ─────────────────────────────────────────
     "v4_migration_notified": True,
 }

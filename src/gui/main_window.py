@@ -500,8 +500,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if 'silence_min_dur' in prefs:
                 self.spin_silence_min_dur.setText(str(prefs['silence_min_dur']))
             self.spin_silence_min_dur.editingFinished.connect(
-                lambda: self._save_single_pref('silence_min_dur',
-                    float(self.spin_silence_min_dur.text().replace(',', '.') or 0.2))
+                lambda: (self._save_single_pref('silence_min_dur',
+                    float(self.spin_silence_min_dur.text().replace(',', '.') or 0.2)),
+                    self._refresh_cut_preview())
             )
 
         
@@ -2826,10 +2827,35 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             prefs['silence_mark'] = v_mark
             prefs['ui_tgl_silence_mark'] = v_mark
         self.engine.save_preferences(prefs)
+        self._refresh_cut_preview()
+
+    def _refresh_cut_preview(self):
+        """Recompute the waveform cut preview (and the silence readout) from current prefs."""
         if hasattr(self, 'audio_preview') and hasattr(self.audio_preview, 'waveform_timeline'):
             canvas = getattr(self, 'text_canvas', None)
             words = canvas.words_data if canvas else []
             self.audio_preview.waveform_timeline.set_words_data(words)
+
+    def _update_silence_stats(self, surviving_ops, cut_ops, total_dur):
+        """Show how many pauses the current silence settings cut or mark, and how much time."""
+        lbl = getattr(self, 'lbl_silence_stats', None)
+        if lbl is None:
+            return
+        cut = self.tgl_silence_cut.isChecked() if hasattr(self, 'tgl_silence_cut') else False
+        mark = self.tgl_silence_mark.isChecked() if hasattr(self, 'tgl_silence_mark') else False
+        if cut:
+            spans = [(op['start_s'], op['end_s']) for op in cut_ops if op.get('cut_type') == 'silence_cut']
+            key = "lbl_silence_stats_cut"
+        elif mark:
+            spans = [(op['start_s'], op['end_s']) for op in surviving_ops if op.get('type') == 'silence_mark']
+            key = "lbl_silence_stats_mark"
+        else:
+            lbl.setText("")
+            return
+        secs = sum(max(0.0, e - s) for s, e in spans)
+        pct = int(round(100.0 * secs / total_dur)) if total_dur > 0 else 0
+        lbl.setText(self.txt(key).format(
+            count=len(spans), removed=f"{int(secs // 60)}:{int(secs % 60):02d}", pct=pct))
 
     def _on_assemble(self):
         if getattr(self, '_is_live_transcribing', False):
