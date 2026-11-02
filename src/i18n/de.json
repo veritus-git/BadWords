@@ -482,5 +482,8 @@
     "status_assembly_drt_build": "DRT-Zusammenstellung wird erstellt...",
     "status_assembly_drt_import": "DRT-Timeline wird importiert...",
     "lbl_timeline_ready": "A1: Bereit für Timeline-Audio",
-    "tool_colors": "Farben in diesem Schnitt"
+    "tool_colors": "Farben in diesem Schnitt",
+    "legend_description": "Übersicht über Farben und Marker in diesem Schnitt. Aktivieren Sie 'Entfernen', um diese Farbe beim Zusammenfügen zu schneiden.",
+    "legend_silence_managed": "(im Bereich Stille verwaltet)",
+    "tt_legend_silence_managed": "Das Schneiden von Stille und Pausenanpassung werden im Bereich Stille konfiguriert."
 }

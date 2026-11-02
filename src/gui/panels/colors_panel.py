@@ -35,7 +35,7 @@ def build_colors_panel(win) -> QFrame:
     l_colors.addWidget(lbl_title)
 
     # Subtitle / Hint
-    win.lbl_legend_hint = QLabel(win.txt("tt_legend_remove", "Manage colors present in this timeline. Check Remove to exclude them on Assemble."))
+    win.lbl_legend_hint = QLabel(win.txt("legend_description", "Overview of colors and markers in this edit. Check 'Remove' to cut all segments of that color during Assemble."))
     win.lbl_legend_hint.setWordWrap(True)
     win.lbl_legend_hint.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt; line-height: 1.3;")
     win.lbl_legend_hint.setVisible(False)

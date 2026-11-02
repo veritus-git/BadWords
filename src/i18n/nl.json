@@ -482,5 +482,8 @@
     "status_assembly_drt_build": "DRT-montage opbouwen...",
     "status_assembly_drt_import": "DRT-tijdlijn importeren...",
     "lbl_timeline_ready": "A1: Gereed voor tijdlijnaudio",
-    "tool_colors": "Kleuren in deze montage"
+    "tool_colors": "Kleuren in deze montage",
+    "legend_description": "Overzicht van kleuren en markeringen in deze bewerking. Vink 'Verwijderen' aan om die kleur te knippen tijdens de montage.",
+    "legend_silence_managed": "(beheerd in paneel Stilte)",
+    "tt_legend_silence_managed": "Het knippen van stilte en pauze-instellingen worden geconfigureerd in het paneel Stilte."
 }

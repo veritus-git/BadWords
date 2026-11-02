@@ -482,5 +482,8 @@
     "status_assembly_drt_build": "Construindo montagem DRT...",
     "status_assembly_drt_import": "Importando timeline DRT...",
     "lbl_timeline_ready": "A1: Pronto para áudio da timeline",
-    "tool_colors": "Cores nesta edição"
+    "tool_colors": "Cores nesta edição",
+    "legend_description": "Visão geral de cores e marcadores nesta edição. Marque 'Remover' para cortar essa cor durante a montagem.",
+    "legend_silence_managed": "(gerenciado no painel Silêncio)",
+    "tt_legend_silence_managed": "O corte de silêncio e o ajuste de pausas são configurados no painel Silêncio."
 }

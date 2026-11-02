@@ -244,7 +244,7 @@ class AudioPreviewWidget(QFrame):
                 background: #ffffff;
                 width: {config.S(10)}px;
                 height: {config.S(10)}px;
-                margin: -{config.S(3)}px 0px;
+                margin: -{config.S(3.5)}px 0px;
                 border-radius: {config.S(5)}px;
                 border: 0px solid transparent;
             }}
@@ -300,7 +300,7 @@ class AudioPreviewWidget(QFrame):
         # 4. Top Seek Progress Slider (spans between left and right side panels)
         self.seek_bar_container = QWidget()
         self.seek_bar_container.setObjectName("SeekBarContainer")
-        self.seek_bar_container.setFixedHeight(config.S(6))
+        self.seek_bar_container.setFixedHeight(config.S(10))
         seek_h_layout = QHBoxLayout(self.seek_bar_container)
         seek_h_layout.setContentsMargins(0, 0, 0, 0)
         seek_h_layout.setSpacing(0)
@@ -314,7 +314,7 @@ class AudioPreviewWidget(QFrame):
         self.slider_seek.setObjectName("SeekSlider")
         self.slider_seek.setRange(0, 1000)
         self.slider_seek.setValue(0)
-        self.slider_seek.setFixedHeight(config.S(6))
+        self.slider_seek.setFixedHeight(config.S(10))
         self.slider_seek.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._seek_dragging = False
         self.slider_seek.sliderPressed.connect(self._on_seek_pressed)
@@ -562,31 +562,24 @@ class AudioPreviewWidget(QFrame):
         if not self.main_window or not hasattr(self, 'seek_spacer_left') or not hasattr(self, 'seek_spacer_right'):
             return
         try:
-            stack = getattr(self.main_window, "_stack", None)
-            if stack and stack.isVisible() and self.isVisible():
-                p_tl = stack.mapToGlobal(QPointF(0, 0).toPoint())
-                p_tr = stack.mapToGlobal(QPointF(stack.width(), 0).toPoint())
+            sb_l = getattr(self.main_window, "_sidebar_left", None)
+            p_l = getattr(self.main_window, "_panel_left", None)
+            sb_r = getattr(self.main_window, "_sidebar_right", None)
+            p_r = getattr(self.main_window, "_panel_right", None)
 
-                self_tl = self.mapFromGlobal(p_tl)
-                self_tr = self.mapFromGlobal(p_tr)
+            # Left margin: width of left sidebar icon bar + left panel drawer (if visible)
+            w_left = (sb_l.width() if sb_l and sb_l.isVisible() else 0)
+            if p_l and p_l.isVisible():
+                w_left += p_l.width()
 
-                w_left = max(0, int(self_tl.x()))
-                w_right = max(0, int(self.width() - self_tr.x()))
+            # Right margin: width of right sidebar icon bar + right panel drawer (if visible)
+            w_right = (sb_r.width() if sb_r and sb_r.isVisible() else 0)
+            if p_r and p_r.isVisible():
+                w_right += p_r.width()
 
-                if self.seek_spacer_left.width() != w_left:
-                    self.seek_spacer_left.setFixedWidth(w_left)
-                if self.seek_spacer_right.width() != w_right:
-                    self.seek_spacer_right.setFixedWidth(w_right)
-            else:
-                sb_l = getattr(self.main_window, "_sidebar_left", None)
-                p_l = getattr(self.main_window, "_panel_left", None)
-                sb_r = getattr(self.main_window, "_sidebar_right", None)
-                p_r = getattr(self.main_window, "_panel_right", None)
-
-                w_left = (sb_l.width() if sb_l and sb_l.isVisible() else 0) + (p_l.width() if p_l and p_l.isVisible() else 0)
-                w_right = (sb_r.width() if sb_r and sb_r.isVisible() else 0) + (p_r.width() if p_r and p_r.isVisible() else 0)
-
+            if self.seek_spacer_left.width() != w_left:
                 self.seek_spacer_left.setFixedWidth(max(0, w_left))
+            if self.seek_spacer_right.width() != w_right:
                 self.seek_spacer_right.setFixedWidth(max(0, w_right))
         except Exception:
             pass

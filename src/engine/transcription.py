@@ -359,9 +359,18 @@ except Exception as e:
 
     def model_cache_folder(self, model_name, use_mlx=False) -> str:
         """Hugging Face cache folder name of a model inside models_dir."""
-        if model_name == "large": model_name = "large-v3"
+        if model_name == "large":
+            model_name = "large-v3"
         if use_mlx:
             return "models--" + MLX_MODEL_REPOS.get(model_name, MLX_MODEL_REPOS["large-v3"]).replace("/", "--")
+        if model_name in ("turbo", "large-v3-turbo"):
+            return "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo"
+        try:
+            from faster_whisper.utils import _MODELS
+            if model_name in _MODELS:
+                return "models--" + _MODELS[model_name].replace("/", "--")
+        except Exception:
+            pass
         return f"models--Systran--faster-whisper-{model_name}"
 
     def _get_mlx_runner_code(self, audio_path, model, lang, initial_prompt_str, islands, json_output_path, prefs) -> str:

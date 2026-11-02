@@ -341,9 +341,11 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # Whisper expects None for auto-detection, not the string "auto"
             if isinstance(lang, str) and lang.lower() == "auto":
                 lang = None
-            _raw_model = settings.get('model', 'medium')
-            if "Turbo" in _raw_model:
+            _raw_model = str(settings.get('model', 'medium'))
+            if "turbo" in _raw_model.lower():
                 model = "large-v3-turbo"
+            elif _raw_model.lower() == "large":
+                model = "large-v3"
             else:
                 model = _raw_model.split()[0].lower()
             
@@ -708,10 +710,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 try:
                     model_folder_name = self.model_cache_folder(model, use_mlx)
                     model_folder_path = os.path.join(self.models_dir, model_folder_name)
-                    if os.path.exists(model_folder_path):
-                        marker_path = os.path.join(model_folder_path, ".badwords_initialized")
-                        with open(marker_path, "w") as mf:
-                            mf.write("1")
+                    os.makedirs(model_folder_path, exist_ok=True)
+                    marker_path = os.path.join(model_folder_path, ".badwords_initialized")
+                    with open(marker_path, "w") as mf:
+                        mf.write("1")
                 except Exception as e:
                     log_error(f"Failed to save model init marker: {e}")
                     

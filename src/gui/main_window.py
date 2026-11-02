@@ -860,6 +860,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 current_page.resizeEvent(None)
             if hasattr(self, 'audio_preview') and self.audio_preview:
                 self.audio_preview.update_seek_margins()
+                QTimer.singleShot(0, self.audio_preview.update_seek_margins)
         else:
             for widget in self.findChildren(SidebarButton):
                 if widget.is_right_side == target_btn.is_right_side:
@@ -924,6 +925,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     current_page.resizeEvent(None)
             if hasattr(self, 'audio_preview') and self.audio_preview:
                 self.audio_preview.update_seek_margins()
+                QTimer.singleShot(0, self.audio_preview.update_seek_margins)
 
     def _save_sidebar_layout(self):
         prefs = self.engine.load_preferences() or {}
@@ -3010,28 +3012,26 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             text.setWordWrap(True)
             h.addWidget(text, 1)
 
-            cb = QCheckBox(self.txt("legend_remove"))
-            if key == "Tan" and hasattr(self, 'tgl_silence_cut'):
-                cb.setChecked(self.tgl_silence_cut.isChecked())
-                cb.setToolTip(self.txt("tt_legend_remove"))
+            if key == "Tan":
+                lbl_managed = QLabel(self.txt("legend_silence_managed", "(managed in Silence panel)"))
+                lbl_managed.setStyleSheet(f"color: #777777; font-size: {config.FS(8.5)}pt; font-style: italic;")
+                lbl_managed.setToolTip(self.txt("tt_legend_silence_managed", "Silence cutting is configured in the Silence panel."))
+                h.addWidget(lbl_managed, 0, Qt.AlignTop)
             elif key in cut_buttons:
+                cb = QCheckBox(self.txt("legend_remove"))
                 cb.setChecked(cut_buttons[key].isChecked())
                 cb.setToolTip(self.txt("tt_legend_remove"))
+                cb.toggled.connect(lambda c, k=key: self._on_legend_remove_toggled(k, c))
+                h.addWidget(cb, 0, Qt.AlignTop)
             else:
+                cb = QCheckBox(self.txt("legend_remove"))
                 cb.setEnabled(False)
                 cb.setToolTip(self.txt("tt_legend_not_removable"))
-            cb.toggled.connect(lambda c, k=key: self._on_legend_remove_toggled(k, c))
-            h.addWidget(cb, 0, Qt.AlignTop)
+                h.addWidget(cb, 0, Qt.AlignTop)
             lay.addWidget(row)
 
     def _on_legend_remove_toggled(self, key, checked):
-        """Legend checkbox = the colour's auto-cut (A) button, or the silence cut/mark toggles."""
-        if key == "Tan":
-            if checked and hasattr(self, 'tgl_silence_cut'):
-                self.tgl_silence_cut.setChecked(True)
-            elif not checked and hasattr(self, 'tgl_silence_mark'):
-                self.tgl_silence_mark.setChecked(True)
-            return
+        """Legend checkbox = the colour's auto-cut (A) button."""
         btn = getattr(self, 'color_cut_buttons', {}).get(key)
         if btn is not None and btn.isChecked() != checked:
             btn.setChecked(checked)
@@ -3710,7 +3710,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     break
                     
         raw_model = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
-        model = raw_model.split()[0].lower() # Fixes capital letter issue for Whisper
+        if "Turbo" in raw_model:
+            model = 'large-v3-turbo'
+        elif "large" in raw_model.lower():
+            model = 'large-v3'
+        else:
+            model = raw_model.split()[0].lower() # Fixes capital letter issue for Whisper
 
         # Read selected timeline and audio tracks
         selected_tl = getattr(self, 'combo_tl_0', None)

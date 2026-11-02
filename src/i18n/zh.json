@@ -482,5 +482,8 @@
     "tt_force_xml_assembly": "Forces timeline assembly to use the FCP7 XML pipeline instead of native DRT. Useful for testing XML assembly or on Resolve 21.1+ Free.",
     "status_assembly_drt_build": "Building DRT assembly...",
     "status_assembly_drt_import": "Importing DRT timeline...",
-    "tool_colors": "剪辑中的颜色"
+    "tool_colors": "剪辑中的颜色",
+    "legend_description": "此剪辑中的颜色和标记概览。勾选“删除”可在组装时剪切该颜色的所有片段。",
+    "legend_silence_managed": "（在“静音”面板中管理）",
+    "tt_legend_silence_managed": "静音剪切和停顿调整在“静音”面板中进行配置。"
 }
