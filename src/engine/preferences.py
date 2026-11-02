@@ -78,7 +78,8 @@ class PreferencesMixin:
             self._telemetry_pinging = True
             
             # Global marker allowing identification as "Update" even after full app removal
-            global_marker = os.path.join(self.os_doc.home_dir, ".badwords_installed")
+            _app_clean = getattr(config, "APP_NAME", "badwords").lower().replace(" ", "")
+            global_marker = os.path.join(self.os_doc.home_dir, f".{_app_clean}_installed")
             
             if not last_ping:
                 if os.path.exists(global_marker):
@@ -111,7 +112,10 @@ class PreferencesMixin:
                         "distinct_id": uuid_str, 
                         "properties": {
                             "distinct_id": uuid_str,
+                            "app_name": getattr(config, "APP_NAME", "BadWords"),
+                            "$app_name": getattr(config, "APP_NAME", "BadWords"),
                             "version": current_version,
+                            "$app_version": current_version,
                             "os": self.os_doc.os_type,
                             "install_type": install_type,
                             "$lib": "urllib_python"
