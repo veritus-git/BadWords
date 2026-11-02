@@ -14,8 +14,9 @@ REPO_NAME="StoryCraft"
 TAG="${STORYCRAFT_TAG:-latest}"
 BIN_NAME="storycraft-setup-linux"
 
-INSTALLER_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/setupfiles/setup.py"
-INSTALLER_URL_FB="https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/setup.py"
+BRANCH="fork"
+INSTALLER_URL="${STORYCRAFT_GH_RAW:-https://raw.githubusercontent.com}/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/setupfiles/setup.py"
+INSTALLER_URL_FB="$INSTALLER_URL"
 PBS_FALLBACK_TAG="20250317"
 PBS_FALLBACK_VER="3.12.9"
 
@@ -43,20 +44,22 @@ invoke_python_fallback() {
     echo -e "user@computer:~$ curl -fsSL \"https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/linux-setup.sh\" | bash"
     echo -e "\033[36mDownloading StoryCraft Setup for Linux...\033[0m"
     echo ""
-    echo -e "\033[36m========================================================================\033[0m"
-    echo -e "\033[33m [!] Security & Compatibility Notice:\033[0m"
-    echo -e "     The graphical installer binary could not run on this system"
-    echo -e "     (unsupported environment or security policy)."
-    echo -e "\033[36m========================================================================\033[0m"
-    echo -e " How would you like to proceed?"
-    echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended)\033[0m"
-    echo -e "  \033[90m[2] Exit\033[0m"
-    echo -e "\033[36m========================================================================\033[0m"
+    if [ "${SC_NATIVE_BLOCKED:-0}" = "1" ]; then
+        echo -e "\033[36m========================================================================\033[0m"
+        echo -e "\033[33m [!] Security & Compatibility Notice:\033[0m"
+        echo -e "     The graphical installer binary could not run on this system"
+        echo -e "     (unsupported environment or security policy)."
+        echo -e "\033[36m========================================================================\033[0m"
+        echo -e " How would you like to proceed?"
+        echo -e "  \033[32m[1] Run Terminal Installer via Python (Recommended)\033[0m"
+        echo -e "  \033[90m[2] Exit\033[0m"
+        echo -e "\033[36m========================================================================\033[0m"
 
-    read -r -p "Select an option [1 or 2]: " choice
-    if [ "$choice" != "1" ]; then
-        echo "Setup closed."
-        exit 0
+        read -r -p "Select an option [1 or 2]: " choice < /dev/tty 2>/dev/null || choice="1"
+        if [ "$choice" != "1" ]; then
+            echo "Setup closed."
+            exit 0
+        fi
     fi
 
     echo ""
@@ -166,7 +169,11 @@ invoke_python_fallback() {
     if [ -n "$LOCAL_REPO" ]; then
         args+=(--local-repo "$LOCAL_REPO")
     fi
-    exec "$PYTHON_BIN" "$SETUP_PY" "${args[@]}" < /dev/tty
+    if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+        exec "$PYTHON_BIN" "$SETUP_PY" "${args[@]}" "$@" < /dev/tty
+    else
+        exec "$PYTHON_BIN" "$SETUP_PY" "${args[@]}" "$@"
+    fi
 }
 
 # ── Helper: Start Native Executable Safely ─────────────────────
@@ -178,6 +185,7 @@ start_native_executable() {
     if "$bin" "$@"; then
         exit 0
     else
+        SC_NATIVE_BLOCKED=1
         invoke_python_fallback "$@"
     fi
 }
@@ -198,6 +206,10 @@ elif [ -f "$SCRIPT_DIR/../installer/Cargo.toml" ] && command -v cargo &>/dev/nul
 fi
 
 # 2. Remote download
+# StoryCraft publishes no prebuilt installer app: run the installer with Python
+if [ "${STORYCRAFT_NATIVE_INSTALLER:-0}" != "1" ]; then
+    invoke_python_fallback "$@"
+fi
 echo "Downloading StoryCraft Setup for Linux..."
 
 DOWNLOAD_URL=""

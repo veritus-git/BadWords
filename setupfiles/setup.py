@@ -1017,7 +1017,7 @@ def get_latest_tag(force_main=False):
                     return tag, f"{GH_WEB}/{REPO}/archive/refs/tags/{tag}.zip", "GitHub"
     except Exception:
         pass
-    return DEFAULT_BRANCH, "", ""
+    return DEFAULT_BRANCH, f"{GH_WEB}/{REPO}/archive/refs/heads/{DEFAULT_BRANCH}.zip", "GitHub (branch)"
 
 def fetch_git_branches():
     """Branch names of the StoryCraft repo."""

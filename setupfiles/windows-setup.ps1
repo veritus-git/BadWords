@@ -11,9 +11,9 @@ $ErrorActionPreference = "Continue"
 $RepoOwner        = "Boris-Edu"
 $RepoName         = "StoryCraft"
 $Tag              = if ($env:STORYCRAFT_TAG) { $env:STORYCRAFT_TAG } else { "latest" }
-$BinName          = "storycraft-setup-windows.exe"
-$INSTALLER_URL    = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/setupfiles/setup.py"
-$INSTALLER_URL_FB = "https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/setup.py"
+$Branch           = "fork"
+$INSTALLER_URL    = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/$Branch/setupfiles/setup.py"
+$INSTALLER_URL_FB = $INSTALLER_URL
 $EMBED_URL        = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip"
 $GETPIP_URL       = "https://bootstrap.pypa.io/get-pip.py"
 
@@ -43,20 +43,22 @@ function Invoke-PythonFallback() {
     Write-Host "PS C:\Users\User> irm `"https://raw.githubusercontent.com/Boris-Edu/StoryCraft/fork/setupfiles/windows-setup.ps1`" | iex" -ForegroundColor White
     Write-Host "Downloading StoryCraft Setup..." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "========================================================================" -ForegroundColor Cyan
-    Write-Host " [!] Windows Security Notice:" -ForegroundColor Yellow
-    Write-Host "     The graphical installer binary was blocked by Windows Smart App" -ForegroundColor White
-    Write-Host "     Control (SAC) or SmartScreen because it lacks an EV certificate." -ForegroundColor White
-    Write-Host "========================================================================" -ForegroundColor Cyan
-    Write-Host " How would you like to proceed?" -ForegroundColor White
-    Write-Host "  [1] Run Terminal Installer via Python (Recommended)" -ForegroundColor Green
-    Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
-    Write-Host "========================================================================" -ForegroundColor Cyan
-    
-    $choice = Read-Host "Select an option [1 or 2]"
-    if ($choice -ne "1") {
-        Write-Host "Setup cancelled by user." -ForegroundColor Yellow
-        exit 0
+    if ($global:SC_NATIVE_BLOCKED -eq 1) {
+        Write-Host "========================================================================" -ForegroundColor Cyan
+        Write-Host " [!] Windows Security Notice:" -ForegroundColor Yellow
+        Write-Host "     The graphical installer binary was blocked by Windows Smart App" -ForegroundColor White
+        Write-Host "     Control (SAC) or SmartScreen because it lacks an EV certificate." -ForegroundColor White
+        Write-Host "========================================================================" -ForegroundColor Cyan
+        Write-Host " How would you like to proceed?" -ForegroundColor White
+        Write-Host "  [1] Run Terminal Installer via Python (Recommended)" -ForegroundColor Green
+        Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
+        Write-Host "========================================================================" -ForegroundColor Cyan
+        
+        $choice = Read-Host "Select an option [1 or 2]"
+        if ($choice -ne "1") {
+            Write-Host "Setup cancelled by user." -ForegroundColor Yellow
+            exit 0
+        }
     }
 
     Write-Host ""
@@ -185,6 +187,7 @@ function Start-NativeExecutable($exePath, $arguments) {
             exit 0
         }
     } catch {
+        $global:SC_NATIVE_BLOCKED = 1
         Invoke-PythonFallback
     }
 }
@@ -221,6 +224,10 @@ if ($CargoToml -and (Test-Path $CargoToml) -and (Get-Command "cargo" -ErrorActio
 }
 
 # 2. Remote download binary
+# StoryCraft publishes no prebuilt installer app: run the installer with Python
+if ($env:STORYCRAFT_NATIVE_INSTALLER -ne "1") {
+    Invoke-PythonFallback
+}
 Write-Host "Downloading StoryCraft Setup..." -ForegroundColor Cyan
 
 $DownloadUrl = if ($Tag -eq "latest") {
