@@ -86,7 +86,7 @@ def build_silence_panel(win) -> QFrame:
     win._silence_fade_anim = QVariantAnimation(w_params)
     win._silence_fade_anim.setDuration(250)
     win._silence_fade_anim.setEasingCurve(QEasingCurve.InOutQuad)
-    win._silence_fade_anim.valueChanged.connect(lambda val: opacity_effect.setOpacity(val))
+    win._silence_fade_anim.valueChanged.connect(lambda val: (opacity_effect.setOpacity(val), w_params.repaint()))
 
     def _param_block(label_text, key, default, lo, hi, scale, decimals, on_change_callback, tooltip_text=""):
         v_box = QVBoxLayout()
@@ -297,15 +297,19 @@ def build_silence_panel(win) -> QFrame:
             win.lbl_silence_stats.repaint()
 
     def _on_sil_cut_toggled(checked):
-        if checked:
+        if checked and win.tgl_silence_mark.isChecked():
+            win.tgl_silence_mark.blockSignals(True)
             win.tgl_silence_mark.setChecked(False)
+            win.tgl_silence_mark.blockSignals(False)
         if hasattr(win, '_save_silence_toggles_prefs'):
             win._save_silence_toggles_prefs()
         _update_container_state(animate=True)
 
     def _on_sil_mark_toggled(checked):
-        if checked:
+        if checked and win.tgl_silence_cut.isChecked():
+            win.tgl_silence_cut.blockSignals(True)
             win.tgl_silence_cut.setChecked(False)
+            win.tgl_silence_cut.blockSignals(False)
         if hasattr(win, '_save_silence_toggles_prefs'):
             win._save_silence_toggles_prefs()
         _update_container_state(animate=True)

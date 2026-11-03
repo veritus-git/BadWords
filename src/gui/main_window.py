@@ -2958,8 +2958,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         pct = int(round(100.0 * secs / total_dur)) if total_dur > 0 else 0
         lbl.setText(self.txt(key).format(
             count=len(spans), removed=f"{int(secs // 60)}:{int(secs % 60):02d}", pct=pct))
-        if hasattr(self, '_silence_stats_opacity_effect'):
-            self._silence_stats_opacity_effect.setOpacity(1.0)
         lbl.repaint()
 
     # ── Colour legend ───────────────────────────────────────────────────────
@@ -3247,6 +3245,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # GATHER UI STATES
         if hasattr(self, 'tgl_silence_cut'): prefs['silence_cut'] = self.tgl_silence_cut.isChecked()
         if hasattr(self, 'tgl_silence_mark'): prefs['silence_mark'] = self.tgl_silence_mark.isChecked()
+        if hasattr(self, 'spin_silence_min_dur'):
+            try: prefs['panel_silence_min_dur'] = float(self.spin_silence_min_dur.text().replace(',', '.'))
+            except Exception: pass
+        if hasattr(self, 'spin_thresh'):
+            try: prefs['panel_silence_threshold_db'] = float(self.spin_thresh.text().replace(',', '.'))
+            except Exception: pass
+        if hasattr(self, 'spin_silence_keep'):
+            try: prefs['silence_keep'] = float(self.spin_silence_keep.text().replace(',', '.'))
+            except Exception: pass
+        if hasattr(self, 'spin_silence_cut_pct'):
+            try: prefs['silence_cut_pct'] = float(self.spin_silence_cut_pct.text().replace(',', '.'))
+            except Exception: pass
+        if hasattr(self, 'spin_silence_min_clip'):
+            try: prefs['silence_min_clip'] = float(self.spin_silence_min_clip.text().replace(',', '.'))
+            except Exception: pass
         if hasattr(self, 'tgl_reviewer'): prefs['enable_reviewer'] = self.tgl_reviewer.isChecked()
         if hasattr(self, 'tgl_show_inaudible'): prefs['show_inaudible'] = self.tgl_show_inaudible.isChecked()
         if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
