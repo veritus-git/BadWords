@@ -12781,6 +12781,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         try:
             rh = self.engine.resolve_handler
+            if hasattr(rh, "refresh_context"): rh.refresh_context()
             timelines = rh.get_all_timelines()
 
             current_tl_name = ""

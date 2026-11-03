@@ -80,8 +80,8 @@ class ResolveHandler:
                 self.project = self.project_manager.GetCurrentProject()
                 if self.project:
                     self.media_pool = self.project.GetMediaPool()
-                    self.timeline = self.project.GetCurrentTimeline()
-                    self.fps = self.timeline.GetSetting("timelineFrameRate")
+                    self.timeline = self.project.GetCurrentTimeline() or (self.project.GetTimelineByIndex(1) if self.project.GetTimelineCount() > 0 else None)
+                    self.fps = self.timeline.GetSetting("timelineFrameRate") if self.timeline else 24.0
                     # Handle string fps (e.g. "24.00")
                     try: self.fps = float(self.fps)
                     except (TypeError, ValueError) as e:
