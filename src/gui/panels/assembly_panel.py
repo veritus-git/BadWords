@@ -24,12 +24,54 @@ from gui.widgets.buttons import QPushButton, ToggleSwitch, StarFavoriteButton
 from .script_panel import wrap_activity_panel, create_panel_header
 
 
+class DynamicAssemblyWidget(QWidget):
+    """Activity panel container for Assembly that dynamically reduces spacings when compressed vertically."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.l_assembly = None
+        self.l_switches = None
+        self.l_colors = None
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_spacings()
+
+    def adjust_spacings(self):
+        h = self.height()
+        if h <= 0:
+            return
+        # If plenty of vertical space (>= 740px), keep generous original spacing (15px / 14px / 8px).
+        # When compressed / smaller window, dynamically reduce spacing down to 3px so items don't overflow.
+        if h >= 740:
+            s_main = config.S(15)
+            s_switch = config.S(14)
+            s_color = config.S(8)
+        elif h >= 600:
+            ratio = (h - 600) / 140.0
+            s_main = int(config.S(8) + ratio * (config.S(15) - config.S(8)))
+            s_switch = int(config.S(6) + ratio * (config.S(14) - config.S(6)))
+            s_color = int(config.S(5) + ratio * (config.S(8) - config.S(5)))
+        else:
+            ratio = max(0.0, (h - 400) / 200.0)
+            s_main = int(config.S(4) + ratio * (config.S(8) - config.S(4)))
+            s_switch = int(config.S(3) + ratio * (config.S(6) - config.S(3)))
+            s_color = int(config.S(3) + ratio * (config.S(5) - config.S(3)))
+
+        if self.l_assembly:
+            self.l_assembly.setSpacing(s_main)
+        if self.l_switches:
+            self.l_switches.setSpacing(s_switch)
+        if self.l_colors:
+            self.l_colors.setSpacing(s_color)
+
+
 def build_assembly_panel(win) -> QFrame:
     """Build the Assembly activity panel and bind widgets to main window."""
-    p_assembly = QWidget()
+    p_assembly = DynamicAssemblyWidget()
     l_assembly = QVBoxLayout(p_assembly)
     l_assembly.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
-    l_assembly.setSpacing(config.S(8))
+    l_assembly.setSpacing(config.S(15))
+    p_assembly.l_assembly = l_assembly
 
     header = create_panel_header(
         win,
@@ -45,10 +87,11 @@ def build_assembly_panel(win) -> QFrame:
         win._pin_buttons[fav_id] = btn
         return btn
     
-    # ── Top Toggles Container (Compact & Responsive) ──
+    # ── Top Toggles Container (Dynamic Spacing) ──
     l_switches = QVBoxLayout()
     l_switches.setContentsMargins(0, 0, 0, 0)
-    l_switches.setSpacing(config.S(6))
+    l_switches.setSpacing(config.S(14))
+    p_assembly.l_switches = l_switches
 
     row_show_inaudible = QHBoxLayout()
     row_show_inaudible.setSpacing(config.S(8))
@@ -100,6 +143,7 @@ def build_assembly_panel(win) -> QFrame:
     
     l_colors_container = QVBoxLayout()
     l_colors_container.setSpacing(config.S(8))
+    p_assembly.l_colors = l_colors_container
     
     div_top = QFrame()
     div_top.setFixedHeight(config.S(1))
@@ -200,4 +244,6 @@ def build_assembly_panel(win) -> QFrame:
     l_assembly.addLayout(l_colors_container)
     l_assembly.addStretch(1)
     
+    p_assembly.adjust_spacings()
+
     return wrap_activity_panel(p_assembly)

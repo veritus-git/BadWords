@@ -613,14 +613,14 @@ class WaveformTimelineWidget(QWidget):
     # -------------------------------------------------------------------------
 
     def _get_clip_rect(self) -> QRectF:
-        """Calculates the Fairlight clip ribbon rectangle inside the widget taking ~80% of widget height."""
+        """Calculates the Fairlight clip ribbon rectangle inside the widget taking ~70% of widget height."""
         m_x = float(config.S(8))
         h = float(self.height())
         sb_h = float(config.S(7)) if (hasattr(self, 'scrollbar') and self.scrollbar.isVisible()) else 0.0
 
         usable_h = max(20.0, h - sb_h)
-        # Bounded to ~80% of available height with balanced top/bottom margin
-        clip_h = round(usable_h * 0.80)
+        # Bounded to 70% of available height with balanced top/bottom margin
+        clip_h = round(usable_h * 0.70)
         clip_y = round((usable_h - clip_h) / 2.0)
 
         available_w = max(10.0, float(self.width()) - 2.0 * m_x)

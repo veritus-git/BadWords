@@ -20,8 +20,8 @@ from PySide6.QtGui import QColor
 import config
 
 
-def create_panel_header(win, title_key: str, desc_key: str, default_title: str = "", default_desc: str = "") -> QWidget:
-    """Create a standardized panel header with title, short description, and divider line."""
+def create_panel_header(win, title_key: str, desc_key: str, default_title: str = "", default_desc: str = "", show_divider: bool = True) -> QWidget:
+    """Create a standardized panel header with title, short description, and optional divider line."""
     from gui.widgets.labels import QLabel
     header = QWidget()
     header.setObjectName("PanelHeaderWidget")
@@ -38,10 +38,11 @@ def create_panel_header(win, title_key: str, desc_key: str, default_title: str =
     lbl_desc.setStyleSheet(f"color: #888888; font-size: {config.FS(9.5)}pt; line-height: 1.35;")
     h_layout.addWidget(lbl_desc)
 
-    div = QFrame()
-    div.setFixedHeight(config.S(1))
-    div.setStyleSheet("background-color: #383838; margin-top: 6px; margin-bottom: 8px; border: none;")
-    h_layout.addWidget(div)
+    if show_divider:
+        div = QFrame()
+        div.setFixedHeight(config.S(1))
+        div.setStyleSheet("background-color: #383838; margin-top: 6px; margin-bottom: 8px; border: none;")
+        h_layout.addWidget(div)
 
     # Register for global show/hide preference
     if not hasattr(win, '_panel_headers'):
@@ -111,7 +112,8 @@ def build_script_panel(win) -> QFrame:
         "panel_script_title",
         "panel_script_desc",
         "Script Comparison",
-        "Paste or import script text (.docx, .pdf, .txt) to automatically detect off-script words and missing lines."
+        "Paste or import script text (.docx, .pdf, .txt) to automatically detect off-script words and missing lines.",
+        show_divider=False
     )
     l_script_analysis.addWidget(header)
 
