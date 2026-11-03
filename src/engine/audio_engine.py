@@ -192,25 +192,11 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     log_error(f"[FastSilence] FFmpeg audio extraction failed: {sp_res.stderr[-300:]}")
                     return None, None
             else:
-                # ── Pre-render: calculate track end frame to limit render range ───
-                # If specific tracks are selected, we only need to render up to where
-                # THOSE tracks end — no need to render silence from longer other tracks.
-                track_indices_for_render = settings.get('track_indices') or None
-                end_frame_override = None
-                if track_indices_for_render:
-                    end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
-                        settings.get('timeline_name') or (self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')),
-                        track_indices_for_render
-                    )
-                    if end_seconds:
-                        fps = self.resolve_handler.fps or 60.0
-                        end_frame_override = int(round(end_seconds * fps))
-                        log_info(f"transcribe_audio: render end_frame_override={end_frame_override} ({end_seconds:.2f}s)")
-
-                # ── Try Direct Audio first (skip Resolve render when possible) ───
+                # ── 1. Try Direct Audio first (skip Resolve render when possible) ───
                 tl_name_for_direct = settings.get('timeline_name') or (
                     self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')
                 )
+                track_indices_for_render = settings.get('track_indices') or None
                 direct_info = None
                 if tl_name_for_direct:
                     try:
@@ -234,7 +220,18 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     else:
                         log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
 
+                # ── 2. Fall back to Resolve render only if Direct Audio was not possible ───
                 if not wav_path:
+                    end_frame_override = None
+                    if track_indices_for_render and tl_name_for_direct:
+                        end_seconds = self.resolve_handler.get_selected_tracks_end_seconds(
+                            tl_name_for_direct, track_indices_for_render
+                        )
+                        if end_seconds:
+                            fps = self.resolve_handler.fps or 60.0
+                            end_frame_override = int(round(end_seconds * fps))
+                            log_info(f"fast_silence: render end_frame_override={end_frame_override} ({end_seconds:.2f}s)")
+
                     update_status(self.txt("status_render"))
                     update_progress(-1)  # Indeterminate infinite progress bar
 
@@ -478,23 +475,11 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 update_progress(40)
             else:
                 update_status(self.txt("status_render"))
-                # ── Pre-render: calculate track end frame to limit render range ───
-                track_indices_for_render = settings.get('track_indices') or None
-                end_frame_override_tx = None
-                if track_indices_for_render:
-                    _end_s = self.resolve_handler.get_selected_tracks_end_seconds(
-                        settings.get('timeline_name') or (self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')),
-                        track_indices_for_render
-                    )
-                    if _end_s:
-                        _fps = self.resolve_handler.fps or 60.0
-                        end_frame_override_tx = int(round(_end_s * _fps))
-                        log_info(f"transcribe_audio: render end_frame_override={end_frame_override_tx} ({_end_s:.2f}s)")
-
-                # ── Try Direct Audio first (skip Resolve render when possible) ───
+                # ── 1. Try Direct Audio first (skip Resolve render when possible) ───
                 tl_name_for_direct = settings.get('timeline_name') or (
                     self.resolve_handler.timeline.GetName() if self.resolve_handler.timeline else getattr(self.resolve_handler, 'bridge_timeline_name', '')
                 )
+                track_indices_for_render = settings.get('track_indices') or None
                 direct_info = None
                 if tl_name_for_direct:
                     try:
@@ -517,7 +502,18 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     else:
                         log_info("[DirectAudio] Direct extraction failed, falling back to Resolve render.")
 
+                # ── 2. Fall back to Resolve render only if Direct Audio was not possible ───
                 if not wav_path:
+                    end_frame_override_tx = None
+                    if track_indices_for_render and tl_name_for_direct:
+                        _end_s = self.resolve_handler.get_selected_tracks_end_seconds(
+                            tl_name_for_direct, track_indices_for_render
+                        )
+                        if _end_s:
+                            _fps = self.resolve_handler.fps or 60.0
+                            end_frame_override_tx = int(round(_end_s * _fps))
+                            log_info(f"transcribe_audio: render end_frame_override={end_frame_override_tx} ({_end_s:.2f}s)")
+
                     update_status(self.txt("status_render"))
                     update_progress(-1)  # Indeterminate infinite progress bar
 

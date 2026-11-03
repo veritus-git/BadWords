@@ -131,6 +131,15 @@ class ResolveHandler:
                                         break
                             except Exception:
                                 pass
+                        if hasattr(container, "fu") and getattr(container, "fu"):
+                            try:
+                                fu = getattr(container, "fu")
+                                if hasattr(fu, "GetResolve"):
+                                    self.resolve = fu.GetResolve()
+                                    if self.resolve:
+                                        break
+                            except Exception:
+                                pass
 
                 # 1.5. Jeśli obiekt resolve został pobrany: inicjalizacja projektu
                 if self.resolve:

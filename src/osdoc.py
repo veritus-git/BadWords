@@ -1075,20 +1075,15 @@ if os.path.exists(MAIN_SCRIPT):
     os.environ["BADWORDS_EMBEDDED"] = "1"
     if "--embedded" not in sys.argv:
         sys.argv.append("--embedded")
-    # On Linux, DaVinci Resolve's host process has already loaded Qt5 into memory,
-    # causing PySide6 (Qt6) dlopen conflicts in-process. Launch externally on Linux.
-    if sys.platform.startswith('linux'):
+    try:
+        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+        gv = globals().copy()
+        gv['__file__'] = MAIN_SCRIPT
+        exec(code, gv)
+    except Exception as e:
+        print("[BadWords] In-process execution failed:", e)
+        print("[BadWords] Falling back to external process launch...")
         _launch_external()
-    else:
-        try:
-            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-            gv = globals().copy()
-            gv['__file__'] = MAIN_SCRIPT
-            exec(code, gv)
-        except Exception as e:
-            print("[BadWords] In-process execution failed:", e)
-            print("[BadWords] Falling back to external process launch...")
-            _launch_external()
 else:
     print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''

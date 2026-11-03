@@ -629,12 +629,15 @@ handlers.RenderAudio = function(req)
 
     -- Configure Render Settings for WAV Audio
     proj:DeleteAllRenderJobs()
-    proj:SetCurrentRenderFormatAndCodec("wav", "LinearPCM")
+    pcall(function() proj:LoadRenderPreset("Audio Only") end)
     local r_settings = {
         TargetDir = export_path,
         CustomName = unique_id,
         ExportAudio = true,
-        ExportVideo = false
+        ExportVideo = false,
+        AudioCodec = "wav",
+        AudioBitDepth = 16,
+        AudioSampleRate = 48000
     }
 
     local tl_start_frame = tonumber(current_tl:GetStartFrame()) or 0
@@ -698,8 +701,24 @@ handlers.RenderAudio = function(req)
         return { error = render_error }
     end
 
-    local final_file = export_path .. sep .. unique_id .. ".wav"
-    return { ok = true, file_path = final_file }
+    local expected_wav = export_path .. sep .. unique_id .. ".wav"
+    if bmd.fileexists(expected_wav) then
+        return { ok = true, file_path = expected_wav }
+    end
+
+    -- If Resolve saved as .mov (e.g. QuickTime container) or another format, detect it
+    local candidates = {
+        export_path .. sep .. unique_id .. ".mov",
+        export_path .. sep .. unique_id .. ".mp4",
+        export_path .. sep .. unique_id .. ".m4a",
+    }
+    for _, cand in ipairs(candidates) do
+        if bmd.fileexists(cand) then
+            return { ok = true, file_path = cand }
+        end
+    end
+
+    return { ok = true, file_path = expected_wav }
 end
 
 handlers.ExportTimelineDrt = function(req)
@@ -1477,6 +1496,8 @@ while not quitServer do
         if chunk then
             ok, req = pcall(chunk)
         end
+        -- Consume request file immediately so subsequent requests written by client are never deleted
+        pcall(function() os.remove(active_req_file) end)
 
         if ok and type(req) == "table" and type(req.id) == "string" then
             if req.id == last_request_id then
@@ -1508,7 +1529,6 @@ while not quitServer do
                 end
 
                 bridge_respond(req.id, result)
-                pcall(function() os.remove(active_req_file) end)
 
                 if control and control.quit then
                     quitServer = true
