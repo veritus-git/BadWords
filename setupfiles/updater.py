@@ -203,7 +203,7 @@ def main():
             subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True)
 
         info("Upgrading pip packages...")
-        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "pypdf"], 
+        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "av<18", "pypdf"], 
                            capture_output=True, text=True)
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:

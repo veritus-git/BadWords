@@ -1518,10 +1518,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         if is_update:
             log_info("Upgrading core dependencies...")
-            _pip_run("install", "--upgrade", "faster-whisper", "pypdf", "-q",
+            _pip_run("install", "--upgrade", "faster-whisper", "av<18", "pypdf", "-q",
                      label="Upgrading Whisper / PyPDF")
         else:
-            pkg_list = ["faster-whisper", "pypdf"]
+            pkg_list = ["faster-whisper", "av<18", "pypdf"]
             if has_nvidia and nvidia_pkgs:
                 pkg_list.extend(nvidia_pkgs.split())
             _pip_run("install", *pkg_list, "-q",
@@ -2017,7 +2017,7 @@ def option_move():
                 _pip("Installing PyTorch (CPU fallback)", "install", "torch", "torchaudio",
                      "--index-url", "https://download.pytorch.org/whl/cpu", "-q")
         _pip("Installing Faster-Whisper + Stable-TS + PyPDF",
-             "install", "faster-whisper", "stable-ts", "pypdf", "-q")
+             "install", "faster-whisper", "av<18", "stable-ts", "pypdf", "-q")
         if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode != 0:
             _pip("Installing PySide6", "install", "PySide6", "-q")
 
