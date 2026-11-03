@@ -1602,28 +1602,36 @@ else:
     for rd in resolve_dirs:
         try:
             os.makedirs(rd, exist_ok=True)
-
-            # 1. BadWords.py: ALWAYS deployed so BadWords can be launched from Workspace -> Scripts
             wp = os.path.join(rd, "BadWords.py")
-            with open(wp, "w", encoding="utf-8") as f:
-                f.write(wrapper_content)
-            os.chmod(wp, 0o755)
-            debug_log(f"BadWords.py written to: {wp}")
-            written = True
+            target_lua = os.path.join(rd, "BadWords Bridge.lua")
 
             if is_studio:
-                # ── STUDIO EDITION ─────────────────────────────────────────────────────────────
-                # BadWords Bridge.lua is not needed on Studio. If present from a previous Free install, remove it.
-                target_lua = os.path.join(rd, "BadWords Bridge.lua")
+                # ── 1. STUDIO EDITION ──────────────────────────────────────────────────────────
+                # BadWords.py: deployed for Workspace -> Scripts
+                # BadWords Bridge.lua: NEVER installed (removed if present)
+                with open(wp, "w", encoding="utf-8") as f:
+                    f.write(wrapper_content)
+                os.chmod(wp, 0o755)
+                debug_log(f"BadWords.py written to: {wp}")
+                written = True
+
                 if os.path.exists(target_lua):
                     try:
                         os.remove(target_lua)
                         debug_log(f"Removed BadWords Bridge.lua (Studio uses native scripting): {target_lua}")
                     except Exception:
                         pass
-            else:
-                # ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
-                # BadWords Bridge.lua is deployed as fallback for external process connection
+
+            elif is_free_21_1:
+                # ── 2. FREE EDITION >= 21.1 ────────────────────────────────────────────────────
+                # BadWords.py: NEVER installed (Python scripting blocked in Free 21.1+, removed if present)
+                # BadWords Bridge.lua: deployed (only supported connection mode)
+                if os.path.exists(wp):
+                    try:
+                        os.remove(wp)
+                        debug_log(f"Removed BadWords.py (Python scripting blocked in Resolve Free 21.1+): {wp}")
+                    except Exception:
+                        pass
 
                 if bridge_lua_src and os.path.isfile(bridge_lua_src):
                     with open(bridge_lua_src, "r", encoding="utf-8") as bf:
@@ -1631,12 +1639,35 @@ else:
                     clean_inst = install_dir.replace('\\', '/')
                     b_code = b_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
 
-                    # Ensure bridge folder in install_dir exists
                     bridge_dir = os.path.join(install_dir, "bridge")
                     try: os.makedirs(bridge_dir, exist_ok=True)
                     except Exception: pass
 
-                    target_lua = os.path.join(rd, "BadWords Bridge.lua")
+                    with open(target_lua, "w", encoding="utf-8") as bf:
+                        bf.write(b_code)
+                    os.chmod(target_lua, 0o755)
+                    debug_log(f"BadWords Bridge.lua written to: {target_lua}")
+                    written = True
+
+            else:
+                # ── 3. FREE EDITION < 21.1 ─────────────────────────────────────────────────────
+                # BOTH BadWords.py (internal scripting) and BadWords Bridge.lua (external fallback) deployed
+                with open(wp, "w", encoding="utf-8") as f:
+                    f.write(wrapper_content)
+                os.chmod(wp, 0o755)
+                debug_log(f"BadWords.py written to: {wp}")
+                written = True
+
+                if bridge_lua_src and os.path.isfile(bridge_lua_src):
+                    with open(bridge_lua_src, "r", encoding="utf-8") as bf:
+                        b_code = bf.read()
+                    clean_inst = install_dir.replace('\\', '/')
+                    b_code = b_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+
+                    bridge_dir = os.path.join(install_dir, "bridge")
+                    try: os.makedirs(bridge_dir, exist_ok=True)
+                    except Exception: pass
+
                     with open(target_lua, "w", encoding="utf-8") as bf:
                         bf.write(b_code)
                     os.chmod(target_lua, 0o755)

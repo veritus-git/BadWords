@@ -155,18 +155,30 @@ class ResolveHandler:
                     if self.resolve:
                         break
 
-            # 1.3. External scripting: Attempt to connect via DaVinciResolveScript (Studio & supported setups)
-            if not self.resolve:
-                if not hasattr(self, 'bmd') or not self.bmd:
-                    self._load_resolve_script_module()
-                if hasattr(self, 'bmd') and self.bmd:
-                    try:
-                        obj = self.bmd.scriptapp("Resolve")
-                        if obj and hasattr(obj, 'GetProjectManager'):
-                            self.resolve = obj
-                    except Exception as e:
-                        if not silent:
-                            log_warn(f"External scriptapp('Resolve') attempt: {e}")
+            # 1.3. External scripting: ONLY attempt bmd.scriptapp("Resolve") on Studio or Unknown
+            #      DaVinci Resolve Free explicitly blocks external scripting.
+            #      Calling bmd.scriptapp("Resolve") on Free can freeze the UI in fusionscript.dll!
+            #      Therefore, for Free edition, skip external scripting entirely and go straight to Bridge.
+            edition_info = self.get_resolve_edition_info()
+            is_free = (edition_info.get("edition") == "Free")
+            is_free_21_1 = (is_free and edition_info.get("is_21_1_or_newer", False))
+
+            if not self.resolve and not is_free:
+                resolve_proc_running = True
+                if hasattr(self, 'os_doc') and self.os_doc and hasattr(self.os_doc, 'is_process_running'):
+                    resolve_proc_running = self.os_doc.is_process_running(["Resolve", "resolve", "fuscript"])
+
+                if resolve_proc_running:
+                    if not hasattr(self, 'bmd') or not self.bmd:
+                        self._load_resolve_script_module()
+                    if hasattr(self, 'bmd') and self.bmd:
+                        try:
+                            obj = self.bmd.scriptapp("Resolve")
+                            if obj and hasattr(obj, 'GetProjectManager'):
+                                self.resolve = obj
+                        except Exception as e:
+                            if not silent:
+                                log_warn(f"External scriptapp('Resolve') attempt: {e}")
 
             # 1.4. If native resolve object was acquired, initialize project and timeline
             if self.resolve:
@@ -224,10 +236,10 @@ class ResolveHandler:
             self.backend = None
             if not silent:
                 log_error("Could not connect to Resolve API object or Bridge.")
-                edition_info = self.get_resolve_edition_info()
-                is_free_21_1 = (edition_info.get("edition") == "Free" and edition_info.get("is_21_1_or_newer", False))
                 if is_free_21_1:
                     log_info("[Tip] DaVinci Resolve Free 21.1+: open DaVinci Resolve and run 'Workspace -> Scripts -> BadWords Bridge'.")
+                elif is_free:
+                    log_info("[Tip] DaVinci Resolve Free: run 'Workspace -> Scripts -> BadWords' in Resolve, or start 'BadWords Bridge'.")
                 else:
                     log_info("[Tip] Ensure DaVinci Resolve is running and a project is open.")
         except Exception as e:
