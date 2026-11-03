@@ -11,6 +11,7 @@ DESCRIPTION:
 Background thread processing analysis jobs without freezing the GUI.
 """
 
+import inspect
 from PySide6.QtCore import QThread, Signal
 
 class AnalysisWorker(QThread):
@@ -29,11 +30,17 @@ class AnalysisWorker(QThread):
     def run(self):
         try:
             func = getattr(self.engine, self.pipeline_func_name)
+            sig = inspect.signature(func)
+            kwargs = {
+                'callback_status': self.status.emit,
+                'callback_progress': self.progress.emit,
+            }
+            if 'callback_chunk' in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                kwargs['callback_chunk'] = self.chunk_ready.emit
+
             words_data, segments_data = func(
                 self.settings,
-                callback_status=self.status.emit,
-                callback_progress=self.progress.emit,
-                callback_chunk=self.chunk_ready.emit
+                **kwargs
             )
             if words_data is None and segments_data is None:
                 raise RuntimeError("Analysis pipeline failed to produce results.")

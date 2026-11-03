@@ -136,7 +136,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
     # 3. MAIN ANALYSIS PIPELINE
     # ==========================================
 
-    def run_fast_silence_pipeline(self, settings, callback_status=None, callback_progress=None):
+    def run_fast_silence_pipeline(self, settings, callback_status=None, callback_progress=None, callback_chunk=None, **kwargs):
         """
         Fast Silence Cut: render audio, run FFmpeg silencedetect, build a minimal
         words_data list of 'silence' segments — no Whisper involved.
