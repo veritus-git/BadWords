@@ -1405,6 +1405,15 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             bool(prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])),
             animated=False
         )
+        def _on_timestamp_precise_changed(checked):
+            self.engine.save_preferences({"timestamp_precise": checked})
+            main_w = self.parent()
+            if main_w and hasattr(main_w, 'text_canvas'):
+                main_w.text_canvas.invalidate_font_cache()
+                main_w.text_canvas._calculate_layout()
+                main_w.text_canvas.update()
+
+        self.tgl_timestamp_precise.toggled.connect(_on_timestamp_precise_changed)
         w_ts_precise = QWidget()
         l_ts_precise = QHBoxLayout(w_ts_precise)
         l_ts_precise.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
@@ -2767,6 +2776,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             update_macos_bundle_icon(new_icon_name)
 
         if hasattr(main_win, 'text_canvas'):
+            main_win.text_canvas.invalidate_font_cache()
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()
 

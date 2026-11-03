@@ -692,6 +692,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         for h in getattr(self, '_panel_headers', []):
             if h:
                 h.setVisible(bool(visible))
+        if hasattr(self, 'header_legend') and self.header_legend:
+            self.header_legend.setVisible(bool(visible))
         if hasattr(self, 'lbl_legend_title') and self.lbl_legend_title:
             self.lbl_legend_title.setVisible(bool(visible))
         has_items = getattr(self, '_legend_has_items', False)
@@ -1544,9 +1546,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtGui import QFontMetrics
         line_height = QFontMetrics(self.txt_fillers.font()).lineSpacing()
         
-        new_height = int(doc_height + line_height + 10) # 10px padding margin
-        # Cap max height to avoid breaking the UI
-        new_height = min(new_height, 250)
+        calc_height = int(doc_height + line_height + config.S(10))
+        min_h = config.S(110)
+        max_h = config.S(240)
+        new_height = max(min_h, min(calc_height, max_h))
         self.txt_fillers.setFixedHeight(new_height)
         
         # Word count calculation
@@ -3182,6 +3185,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._legend_has_items = has_items
 
         show_headers = getattr(self, 'prefs', {}).get('show_panel_headers', True)
+        if hasattr(self, 'header_legend') and self.header_legend:
+            self.header_legend.setVisible(show_headers)
         if hasattr(self, 'lbl_legend_title') and self.lbl_legend_title:
             self.lbl_legend_title.setVisible(show_headers)
         if hasattr(self, 'lbl_legend_hint') and self.lbl_legend_hint:

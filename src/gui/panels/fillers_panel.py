@@ -33,7 +33,8 @@ def build_fillers_panel(win) -> QFrame:
         "panel_fillers_title",
         "panel_fillers_desc",
         "Filler Words",
-        "Manage the list of vocal pauses and hesitations (e.g. 'umms', 'uhs') to detect and eliminate them automatically."
+        "Manage the list of vocal pauses and hesitations (e.g. 'umms', 'uhs') to detect and eliminate them automatically.",
+        show_divider=False
     )
     l_fillers.addWidget(header)
 
@@ -42,6 +43,7 @@ def build_fillers_panel(win) -> QFrame:
     
     win.txt_fillers = QTextEdit()
     win.txt_fillers.setAcceptRichText(False)
+    win.txt_fillers.setMinimumHeight(config.S(110))
     win.txt_fillers.setStyleSheet(f"""
         background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;
         border-radius: {config.S(4)}px; padding: {config.S(4)}px;
@@ -73,6 +75,7 @@ def build_fillers_panel(win) -> QFrame:
     l_fillers.addLayout(filler_tools_layout)
     
     win.txt_fillers.textChanged.connect(win._on_fillers_text_changed)
+    win.txt_fillers.document().documentLayout().documentSizeChanged.connect(lambda _sz: win._on_fillers_text_changed())
     win._on_fillers_text_changed()
     
     row_auto_filler = QHBoxLayout()

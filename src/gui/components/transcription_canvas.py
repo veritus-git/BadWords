@@ -62,7 +62,7 @@ class TranscriptionCanvas(QWidget):
 
     def _get_font_and_metrics(self):
         """Returns cached QFont, QFontMetrics, and layout metrics without reading disk."""
-        if self._cached_editor_font is None or self._cached_metrics is None:
+        if self._cached_editor_font is None or self._cached_metrics is None or getattr(self, '_cached_prefs', None) is None:
             engine = getattr(self.main_window, 'engine', None)
             prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
             self._cached_prefs = prefs
@@ -90,15 +90,18 @@ class TranscriptionCanvas(QWidget):
 
     def invalidate_font_cache(self):
         """Invalidates font metrics when preferences change."""
+        self._cached_prefs = None
         self._cached_editor_font = None
         self._cached_bold_font = None
         self._cached_metrics = None
         self._cached_ts_font = None
         self._cached_ts_metrics = None
-        if hasattr(self, 'words_data'):
+        if hasattr(self, 'words_data') and self.words_data:
             for w in self.words_data:
                 w.pop('_calc_w', None)
                 w.pop('_ts_calc_w', None)
+                w.pop('_ts_text', None)
+                w.pop('_ts_rect', None)
 
     def prepare_for_streaming(self):
         """Prepares canvas for real-time streaming chunks."""
@@ -207,6 +210,7 @@ class TranscriptionCanvas(QWidget):
             # Clean previous markers
             w.pop('_ts_rect', None)
             w.pop('_ts_text', None)
+            w.pop('_ts_calc_w', None)
             w.pop('_separator_y', None)
 
             # Segment boundary / paragraph start
@@ -222,12 +226,13 @@ class TranscriptionCanvas(QWidget):
                 # Formatted timestamp
                 secs = w.get('start', 0)
                 if precise_ts:
-                    m = int(secs // 60)
-                    s = int(secs % 60)
-                    ms = int((secs - int(secs)) * 1000)
+                    total_ms = int(round(max(0.0, float(secs)) * 1000))
+                    m = total_ms // 60000
+                    s = (total_ms % 60000) // 1000
+                    ms = total_ms % 1000
                     ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
                 else:
-                    total_s = int(round(secs))
+                    total_s = int(round(max(0.0, float(secs))))
                     m = total_s // 60
                     s = total_s % 60
                     ts_text = f"[{m:02d}:{s:02d}]"
@@ -434,6 +439,7 @@ class TranscriptionCanvas(QWidget):
         for w in words_to_clean:
             w.pop('_ts_rect', None)
             w.pop('_ts_text', None)
+            w.pop('_ts_calc_w', None)
             w.pop('_separator_y', None)
 
         from PySide6.QtGui import QFontMetrics, QFont
@@ -465,7 +471,7 @@ class TranscriptionCanvas(QWidget):
         if is_sbs and hasattr(self, 'sbs_rows'):
             # 0. CLEANUP (usuwamy śmieci z normalnego widoku, które powodowały problemy z separatorami)
             for w in self.words_data:
-                for key in ['_rect', '_ts_rect', '_display_text', '_ts_text', '_separator_y']:
+                for key in ['_rect', '_ts_rect', '_display_text', '_ts_text', '_ts_calc_w', '_separator_y']:
                     w.pop(key, None)
                     
             visible_words = []
@@ -473,7 +479,7 @@ class TranscriptionCanvas(QWidget):
             max_w = self.width() - 20
             
             # Estimate timestamp width for consistent left-column alignment
-            sample_ts = "[00:00]"
+            sample_ts = "[00:00.000]" if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']) else "[00:00]"
             ts_base_w = ts_metrics.horizontalAdvance(sample_ts)
             default_script_start_x = 20 + ts_base_w + 10
             default_script_w = (self.width() // 2 - 20) - default_script_start_x
@@ -521,12 +527,13 @@ class TranscriptionCanvas(QWidget):
                 if trans_toks:
                     secs = trans_toks[0].get('start', 0)
                     if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']):
-                        m = int(secs // 60)
-                        s = int(secs % 60)
-                        ms = int((secs - int(secs)) * 1000)
+                        total_ms = int(round(max(0.0, float(secs)) * 1000))
+                        m = total_ms // 60000
+                        s = (total_ms % 60000) // 1000
+                        ms = total_ms % 1000
                         ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
                     else:
-                        total_s = int(round(secs))
+                        total_s = int(round(max(0.0, float(secs))))
                         m = total_s // 60
                         s = total_s % 60
                         ts_text = f"[{m:02d}:{s:02d}]"
@@ -660,6 +667,7 @@ class TranscriptionCanvas(QWidget):
             # Clean previous iteration markers
             w.pop('_ts_rect', None)
             w.pop('_ts_text', None)
+            w.pop('_ts_calc_w', None)
             w.pop('_separator_y', None)
             
             # Paragraph formatting based on Engine's Chunking
@@ -675,12 +683,13 @@ class TranscriptionCanvas(QWidget):
                 # Generate Timestamp — format depends on 'timestamp_precise' setting
                 secs = w.get('start', 0)
                 if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']):
-                    m = int(secs // 60)
-                    s = int(secs % 60)
-                    ms = int((secs - int(secs)) * 1000)
+                    total_ms = int(round(max(0.0, float(secs)) * 1000))
+                    m = total_ms // 60000
+                    s = (total_ms % 60000) // 1000
+                    ms = total_ms % 1000
                     ts_text = f"[{m:02d}:{s:02d}.{ms:03d}]"
                 else:
-                    total_s = int(round(secs))
+                    total_s = int(round(max(0.0, float(secs))))
                     m = total_s // 60
                     s = total_s % 60
                     ts_text = f"[{m:02d}:{s:02d}]"
