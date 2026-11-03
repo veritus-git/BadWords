@@ -132,6 +132,7 @@ DEFAULT_SETTINGS = {
     "silence_min_clip":     0.0,    # Min kept piece (s) between two silence cuts; 0 = off
     "silence_keep":         0.2,    # Pause (s) left in place at every silence cut
     "panel_silence_min_dur": 0.2,   # Post-transcript silence duration filter in Silence panel (seconds)
+    "panel_silence_threshold_db": -42.0, # Post-transcript silence threshold in Silence panel (dB)
     # ── Milestone / Migration Notices ─────────────────────────────────────────
     "v4_migration_notified": True,
 }

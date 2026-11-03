@@ -481,6 +481,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     toggle.setChecked(prefs[key], animated=False)
                 toggle.toggled.connect(lambda v, k=key: self._save_single_pref(k, v))
                 
+        if hasattr(self, 'spin_thresh'):
+            val = prefs.get('panel_silence_threshold_db', prefs.get('silence_threshold_db', -42.0))
+            self.spin_thresh.setText(f"{float(val):.1f}")
+            self.spin_thresh.editingFinished.connect(
+                lambda: (self._save_single_pref('panel_silence_threshold_db',
+                    float(self.spin_thresh.text().replace(',', '.') or -42.0)),
+                    self._refresh_cut_preview())
+            )
+
         if hasattr(self, 'spin_pad'):
             if 'ui_spin_pad' in prefs:
                 self.spin_pad.setText(str(prefs['ui_spin_pad']))

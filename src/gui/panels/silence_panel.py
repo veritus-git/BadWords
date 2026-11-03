@@ -172,7 +172,19 @@ def build_silence_panel(win) -> QFrame:
         if hasattr(win, '_refresh_cut_preview'):
             win._refresh_cut_preview()
 
-    # 1. Zostaw przerwę (s): 0.00 to 1.50 s, default 0.20 s
+    # 1. Próg ciszy (dB): -80.0 to -10.0 dB, default -42.0 dB
+    # Decoupled from pre-transcription baseline silence_threshold_db.
+    vb_thresh, win.spin_thresh, win.slider_thresh, _rst_thresh = _param_block(
+        win.txt("lbl_silence_threshold_db"), 'panel_silence_threshold_db', -42.0, -80.0, -10.0, 1.0, 1,
+        _on_preview_change,
+        win.txt("tt_silence_threshold_db")
+    )
+    l_params.addLayout(vb_thresh)
+    l_params.addSpacing(config.S(2))
+    l_params.addWidget(_create_separator())
+    l_params.addSpacing(config.S(8))
+
+    # 2. Zostaw przerwę (s): 0.00 to 1.50 s, default 0.20 s
     vb_keep, win.spin_silence_keep, win.slider_silence_keep, _rst_keep = _param_block(
         win.txt("lbl_silence_keep"), 'silence_keep', 0.20, 0.00, 1.50, 100.0, 2,
         _on_preview_change,
