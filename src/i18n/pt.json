@@ -85,7 +85,7 @@
     "lbl_threshold_db": "Limite (dB)",
     "lbl_min_silence_dur": "Duração mín. do silêncio (s)",
     "lbl_silence_cut_pct": "Pausas a remover (%)",
-    "lbl_silence_min_clip": "Clipe mín. entre cortes (s)",
+    "lbl_silence_min_clip": "Duração mín. do clipe (s)",
     "lbl_silence_keep": "Manter pausa (s)",
     "tt_silence_cut_pct": "Corta primeiro as pausas mais longas até remover esta parte do tempo total de pausas. 100 = todas as pausas detectadas. Reduza para quem fala devagar, para manter o ritmo.",
     "tt_silence_min_clip": "Nunca deixa um trecho menor que isto entre dois cortes de silêncio: de duas pausas próximas, só a mais longa é cortada. Evita microcortes bruscos. 0 = desligado.",

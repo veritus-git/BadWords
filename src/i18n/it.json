@@ -85,7 +85,7 @@
     "lbl_threshold_db": "Soglia (dB)",
     "lbl_min_silence_dur": "Durata min. silenzio (s)",
     "lbl_silence_cut_pct": "Pause da rimuovere (%)",
-    "lbl_silence_min_clip": "Clip min. tra i tagli (s)",
+    "lbl_silence_min_clip": "Durata min. clip (s)",
     "lbl_silence_keep": "Mantieni pausa (s)",
     "tt_silence_cut_pct": "Taglia prima le pause più lunghe finché non viene rimossa questa quota del tempo totale di pausa. 100 = ogni pausa rilevata. Riducilo per chi parla lentamente, per mantenerne il ritmo.",
     "tt_silence_min_clip": "Non lascia mai un pezzo più corto di questo tra due tagli di silenzio: di due pause vicine, viene tagliata solo la più lunga. Evita micro-tagli a scatti. 0 = disattivato.",

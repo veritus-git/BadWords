@@ -85,7 +85,7 @@
     "lbl_threshold_db": "Threshold (dB)",
     "lbl_min_silence_dur": "Min silence duration (s)",
     "lbl_silence_cut_pct": "Pauses to remove (%)",
-    "lbl_silence_min_clip": "Min clip between cuts (s)",
+    "lbl_silence_min_clip": "Min clip duration (s)",
     "lbl_silence_keep": "Keep pause (s)",
     "tt_silence_cut_pct": "Cuts the longest pauses first until this share of the total pause time is removed. 100 = every detected pause. Lower it for slow speakers to keep their rhythm.",
     "tt_silence_min_clip": "Never leaves a piece shorter than this between two silence cuts: of two close pauses, only the longer one is cut. Avoids jumpy micro-cuts. 0 = off.",
