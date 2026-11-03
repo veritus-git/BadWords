@@ -487,7 +487,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.spin_thresh.editingFinished.connect(
                 lambda: (self._save_single_pref('panel_silence_threshold_db',
                     float(self.spin_thresh.text().replace(',', '.') or -42.0)),
-                    self._refresh_cut_preview())
+                    self._trigger_silence_recompute())
             )
 
         if hasattr(self, 'spin_pad'):
@@ -2805,6 +2805,132 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             prefs['ui_tgl_silence_mark'] = v_mark
         self.engine.save_preferences(prefs)
         self._refresh_cut_preview()
+
+    def _trigger_silence_recompute(self):
+        """Debounced trigger for FFmpeg silence detection when threshold changes."""
+        if not hasattr(self, '_silence_debounce_timer'):
+            self._silence_debounce_timer = QTimer(self)
+            self._silence_debounce_timer.setSingleShot(True)
+            self._silence_debounce_timer.timeout.connect(self._run_silence_recompute)
+        self._silence_debounce_timer.start(350)
+
+    def _run_silence_recompute(self):
+        """Asynchronously runs FFmpeg silence detection on active audio with current threshold and baseline min_dur."""
+        canvas = getattr(self, 'text_canvas', None)
+        if not canvas or not canvas.words_data:
+            return
+
+        active_wav = None
+        if canvas.words_data and len(canvas.words_data) > 0:
+            active_wav = canvas.words_data[0].get("meta_audio_path")
+        if not active_wav or not os.path.isfile(active_wav):
+            active_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
+        if (not active_wav or not os.path.isfile(active_wav)) and hasattr(self, 'audio_preview'):
+            active_wav = getattr(self.audio_preview, 'original_audio_path', None)
+
+        if not active_wav or not os.path.isfile(active_wav):
+            self._refresh_cut_preview()
+            return
+
+        prefs = self.engine.load_preferences() or {}
+        thresh_val = float(prefs.get('panel_silence_threshold_db', prefs.get('silence_threshold_db', -42.0)))
+        min_dur_val = float(prefs.get('silence_min_dur', 0.2))
+        pad_s = float(prefs.get('ui_spin_pad', 0.05))
+
+        prev_worker = getattr(self, '_silence_detect_worker', None)
+        if prev_worker is not None and prev_worker.isRunning():
+            try:
+                prev_worker.cancel()
+                prev_worker.wait(50)
+            except Exception:
+                pass
+
+        import subprocess
+        import re
+        from PySide6.QtCore import QThread, Signal as _Signal
+
+        class _SilenceDetectWorker(QThread):
+            detected = _Signal(list)
+
+            def __init__(self, engine, wav, thresh, min_dur, pad):
+                super().__init__()
+                self.engine = engine
+                self.wav = wav
+                self.thresh = thresh
+                self.min_dur = min_dur
+                self.pad = pad
+                self._proc = None
+                self._is_cancelled = False
+
+            def cancel(self):
+                self._is_cancelled = True
+                if self._proc is not None:
+                    try:
+                        self._proc.kill()
+                    except Exception:
+                        pass
+
+            def run(self):
+                try:
+                    if self._is_cancelled:
+                        return
+                    cmd = [
+                        self.engine.ffmpeg_cmd, "-i", self.wav,
+                        "-af", f"silencedetect=noise={self.thresh}dB:d={self.min_dur}",
+                        "-f", "null", "-"
+                    ]
+                    self._proc = subprocess.Popen(
+                        cmd, stderr=subprocess.PIPE, text=True,
+                        encoding='utf-8', errors='replace',
+                        **self.engine.os_doc.get_subprocess_kwargs()
+                    )
+                    _, stderr = self._proc.communicate()
+                    if self._is_cancelled:
+                        return
+                    starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', stderr)]
+                    ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', stderr)]
+                    raw = []
+                    count = min(len(starts), len(ends))
+                    for i in range(count):
+                        raw.append({'s': starts[i], 'e': ends[i]})
+                    if len(starts) > len(ends):
+                        raw.append({'s': starts[-1], 'e': 999999.0})
+
+                    bridged = []
+                    if raw:
+                        curr = dict(raw[0])
+                        for next_s in raw[1:]:
+                            if next_s['s'] - curr['e'] < 0.15:
+                                curr['e'] = next_s['e']
+                            else:
+                                bridged.append(curr)
+                                curr = dict(next_s)
+                        bridged.append(curr)
+
+                    dur = self.engine._get_audio_duration(self.wav)
+                    padded = []
+                    for s in bridged:
+                        ns = s['s'] if s['s'] < 0.01 else s['s'] + self.pad
+                        ne = s['e'] if s['e'] >= dur or abs(s['e'] - dur) < 0.01 else s['e'] - self.pad
+                        if ne > ns:
+                            padded.append({'s': ns, 'e': ne})
+                    if not self._is_cancelled:
+                        self.detected.emit(padded)
+                except Exception as e:
+                    if not self._is_cancelled:
+                        from osdoc import log_error
+                        log_error(f"_SilenceDetectWorker error: {e}")
+                        self.detected.emit([])
+
+        def _on_detected(new_silences):
+            if canvas and canvas.words_data:
+                canvas.words_data[0]['meta_global_silence'] = new_silences
+            self._refresh_cut_preview()
+
+        worker = _SilenceDetectWorker(self.engine, active_wav, thresh_val, min_dur_val, pad_s)
+        worker.detected.connect(_on_detected)
+        self._silence_detect_worker = worker
+        worker.start()
 
     def _refresh_cut_preview(self):
         """Recompute the waveform cut preview (and the silence readout) from current prefs."""

@@ -178,6 +178,12 @@ def build_silence_panel(win) -> QFrame:
         return v_box, edit, slider, rst
 
     # Callback helpers
+    def _on_recompute_change():
+        if hasattr(win, '_trigger_silence_recompute'):
+            win._trigger_silence_recompute()
+        elif hasattr(win, '_refresh_cut_preview'):
+            win._refresh_cut_preview()
+
     def _on_preview_change():
         if hasattr(win, '_refresh_cut_preview'):
             win._refresh_cut_preview()
@@ -186,7 +192,7 @@ def build_silence_panel(win) -> QFrame:
     # Decoupled from pre-transcription baseline silence_threshold_db.
     vb_thresh, win.spin_thresh, win.slider_thresh, _rst_thresh = _param_block(
         win.txt("lbl_silence_threshold_db"), 'panel_silence_threshold_db', -42.0, -80.0, -10.0, 1.0, 1,
-        _on_preview_change,
+        _on_recompute_change,
         win.txt("tt_silence_threshold_db")
     )
     l_params.addLayout(vb_thresh)
