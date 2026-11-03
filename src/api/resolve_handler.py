@@ -2269,14 +2269,24 @@ class ResolveHandler:
                             fid = file_el.get('id')
                             reg = file_registry.get(fid)
                             if reg and reg['has_valid_file']:
-                                # REAL PHYSICAL MEDIA FILE on disk — preserve complete file element with pathurl
+                                # REAL PHYSICAL MEDIA FILE on disk — full master definition once, then shallow ref
                                 new_ci.tag = 'clipitem'
-                                new_ci.remove(file_el)
-                                new_ci.append(copy.deepcopy(reg['elem']))
+                                if fid not in emitted_fids:
+                                    emitted_fids.add(fid)
+                                    new_ci.remove(file_el)
+                                    new_ci.append(copy.deepcopy(reg['elem']))
+                                else:
+                                    for c in list(file_el):
+                                        file_el.remove(c)
                             elif reg:
                                 new_ci.tag = 'clipitem'
-                                new_ci.remove(file_el)
-                                new_ci.append(copy.deepcopy(reg['elem']))
+                                if fid not in emitted_fids:
+                                    emitted_fids.add(fid)
+                                    new_ci.remove(file_el)
+                                    new_ci.append(copy.deepcopy(reg['elem']))
+                                else:
+                                    for c in list(file_el):
+                                        file_el.remove(c)
                             else:
                                 # Non-physical file (compound clip, generator, title, solid)
                                 new_ci.tag = 'generatoritem'

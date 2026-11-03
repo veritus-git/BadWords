@@ -15,6 +15,7 @@ import os
 import uuid
 import zipfile
 import copy
+import re
 import xml.etree.ElementTree as ET
 
 from osdoc import log_info, log_warn, log_error, get_subprocess_kwargs
@@ -233,11 +234,11 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
         with open(seq_xml_path, 'rb') as xf:
             raw_bytes = xf.read()
 
+        has_colon_colon = False
         try:
             root = ET.fromstring(raw_bytes)
             tree = ET.ElementTree(root)
         except ET.ParseError as pe:
-            import re
             log_warn(f"drt_apply_ops: direct XML parse error ({pe}), applying sanitization...")
             try:
                 with open('/tmp/badwords_failed_seq.xml', 'wb') as dbg_f:
@@ -258,6 +259,15 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
 
             # 3. Fix unescaped less-thans
             text = re.sub(r'<(?![a-zA-Z/_!?])', '&lt;', text)
+
+            # 4. Fix C++ namespace colons in XML tag names (e.g. <ListMgt::LmVersionTable>)
+            # XML 1.0 strictly forbids consecutive colons in element tags.
+            while '::' in text:
+                new_text = re.sub(r'(</?[a-zA-Z0-9_-]+)::([a-zA-Z0-9_-]+)', r'\1_BW_COLONCOLON_\2', text)
+                if new_text == text:
+                    break
+                text = new_text
+                has_colon_colon = True
 
             root = ET.fromstring(text.encode('utf-8'))
             tree = ET.ElementTree(root)
@@ -435,8 +445,25 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
                         track_vec.remove(el)
 
         # ── 4. Write modified XML back ────────────────────────────────────────
-        # Preserve XML declaration and comment from original
-        tree.write(seq_xml_path, encoding='unicode', xml_declaration=True)
+        serialized = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+        # Restore C++ namespace tags if replaced
+        if has_colon_colon or b'_BW_COLONCOLON_' in serialized:
+            serialized = serialized.replace(b'_BW_COLONCOLON_', b'::')
+
+        # Ensure standard double-quote declaration
+        if serialized.startswith(b"<?xml version='1.0' encoding='utf-8'?>"):
+            serialized = b'<?xml version="1.0" encoding="UTF-8"?>' + serialized[len(b"<?xml version='1.0' encoding='utf-8'?>"):]
+
+        # Preserve original DbAppVer/DbPrjVer comment if present
+        m_comment = re.search(rb'(<!--DbAppVer="[^"]*"\s+DbPrjVer="[^"]*"-->)', raw_bytes)
+        if m_comment and m_comment.group(1) not in serialized:
+            decl_end = serialized.find(b'?>\n')
+            if decl_end != -1:
+                insert_idx = decl_end + 3
+                serialized = serialized[:insert_idx] + m_comment.group(1) + b'\n' + serialized[insert_idx:]
+
+        with open(seq_xml_path, 'wb') as out_f:
+            out_f.write(serialized)
 
         log_info(f"drt_apply_ops: wrote {seq_xml_path} "
                  f"(base={base_offset}, total_dest={total_dest_frames}f, "
