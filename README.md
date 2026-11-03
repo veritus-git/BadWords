@@ -161,9 +161,6 @@ irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/wind
 <br>
 
 #### <img src="repo/icons/apple.svg" alt="macOS" width="20" height="20" valign="text-bottom"> macOS
-> [!WARNING]
-> BadWords will not work with the Mac App Store version of DaVinci Resolve. Re-install from the [official website](https://www.blackmagicdesign.com/products/davinciresolve/) if needed.
-
 Open the **Terminal** app (search with Spotlight `Cmd + Space`), paste the following command, and press **Enter**:
 
 ```bash
@@ -275,7 +272,7 @@ Depending on whether you use **DaVinci Resolve Studio** or **DaVinci Resolve Fre
 ---
 
 ## <img src="repo/icons/list-checks.svg" alt="Requirements" width="30" height="30" valign="text-bottom"> Requirements
-- **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
+- **App:** DaVinci Resolve (Free or Studio, including Mac App Store edition)
 - **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
 - **Disk Space:** ~4GB free space for the app, plus 1–5GB depending on your chosen AI models.
 
