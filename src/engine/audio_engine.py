@@ -539,6 +539,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # (Silently normalizes audio under the fast motion process without flashing screen)
             normalized_wav = self.normalize_audio(current_wav_path)
             target_wav = normalized_wav
+            self.current_analysis_audio_path = target_wav
+            self.last_audio_path = target_wav
 
             update_progress(100)
             # FIX OP-03: Removed time.sleep(0.3) — UI logic does not belong in the Engine layer
@@ -671,6 +673,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             
             if final_audio and os.path.exists(final_audio) and words_data:
                 words_data[0]['meta_audio_path'] = final_audio
+                self.current_analysis_audio_path = final_audio
+                self.last_audio_path = final_audio
                 # Do not delete final_audio so it can be used for audio preview
             
             if words_data:
@@ -1192,7 +1196,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             if status is None: status = 'normal'
             if status == 'typo' and w.get('is_auto') and not do_show_typos:
                 status = 'normal'
-            if status == 'inaudible' and not do_mark_inaudible:
+            if status == 'inaudible' and not do_mark_inaudible and ('chocolate' not in auto_cut_colors and 'inaudible' not in auto_cut_colors):
                 status = 'normal'
             
             if current_chunk is None:
@@ -1249,7 +1253,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             # Raising "Min silence duration" applies live; lowering it below the
             # value used during analysis needs a new analysis (ranges are already filtered).
             try:
-                min_sil_s = max(0.2, float(settings.get('silence_min_dur', 0.2)))
+                min_sil_s = max(0.01, float(settings.get('silence_min_dur', 0.2)))
             except (TypeError, ValueError):
                 min_sil_s = 0.2
             if raw_silence is not None:

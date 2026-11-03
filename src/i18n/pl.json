@@ -87,6 +87,8 @@
     "lbl_silence_cut_pct": "Pauzy do usunięcia (%)",
     "lbl_silence_min_clip": "Min. długość klipu (s)",
     "lbl_silence_keep": "Zostaw pauzę (s)",
+    "tt_silence_threshold_db": "Poziom decybeli (dB), poniżej którego dźwięk uznawany jest za ciszę. Niższa wartość (np. -50 dB) wykrywa tylko głęboką ciszę, wyższa (np. -30 dB) łapie również cichy szum tła.",
+    "tt_min_silence_dur": "Minimalny czas trwania przerwy w sekundach, aby została uznana za ciszę. Zapobiega wycinaniu naturalnych mikropauz między słowami.",
     "tt_silence_cut_pct": "Najpierw tnie najdłuższe pauzy, aż usunie tę część łącznego czasu pauz. 100 = każda wykryta pauza. Zmniejsz dla wolno mówiących osób, aby zachować ich rytm.",
     "tt_silence_min_clip": "Nigdy nie zostawia fragmentu krótszego niż ta wartość między dwoma cięciami ciszy: z dwóch bliskich pauz tnie tylko dłuższą. Zapobiega drobnym, skaczącym cięciom. 0 = wył.",
     "tt_silence_keep": "Zostawia tyle z każdej wyciętej pauzy, aby mowa nie brzmiała na pośpieszną. 0 = wytnij całą pauzę.",

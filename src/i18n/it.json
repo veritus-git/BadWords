@@ -87,6 +87,8 @@
     "lbl_silence_cut_pct": "Pause da rimuovere (%)",
     "lbl_silence_min_clip": "Durata min. clip (s)",
     "lbl_silence_keep": "Mantieni pausa (s)",
+    "tt_silence_threshold_db": "Livello di decibel (dB) al di sotto del quale l'audio è considerato silenzio. Valori più bassi rilevano solo il silenzio profondo; valori più alti catturano anche rumori di fondo lievi.",
+    "tt_min_silence_dur": "Durata minima della pausa in secondi per classificarla come silenzio. Evita di tagliare le micro-pause naturali tra le parole.",
     "tt_silence_cut_pct": "Taglia prima le pause più lunghe finché non viene rimossa questa quota del tempo totale di pausa. 100 = ogni pausa rilevata. Riducilo per chi parla lentamente, per mantenerne il ritmo.",
     "tt_silence_min_clip": "Non lascia mai un pezzo più corto di questo tra due tagli di silenzio: di due pause vicine, viene tagliata solo la più lunga. Evita micro-tagli a scatti. 0 = disattivato.",
     "tt_silence_keep": "Lascia questa parte di ogni pausa tagliata, così il parlato non sembra affrettato. 0 = taglia l'intera pausa.",

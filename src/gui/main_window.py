@@ -2793,7 +2793,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._silence_debounce_timer = QTimer(self)
             self._silence_debounce_timer.setSingleShot(True)
             self._silence_debounce_timer.timeout.connect(self._run_silence_recompute)
-        self._silence_debounce_timer.start(150)
+        self._silence_debounce_timer.start(350)
 
     def _run_silence_recompute(self):
         """Asynchronously runs FFmpeg silence detection on active audio with current threshold and min_dur."""
@@ -2801,8 +2801,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not canvas or not canvas.words_data:
             return
 
-        active_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
-        if not active_wav and hasattr(self, 'audio_preview'):
+        active_wav = None
+        if canvas.words_data and len(canvas.words_data) > 0:
+            active_wav = canvas.words_data[0].get("meta_audio_path")
+        if not active_wav or not os.path.isfile(active_wav):
+            active_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
+        if not active_wav or not os.path.isfile(active_wav) and hasattr(self, 'audio_preview'):
             active_wav = getattr(self.audio_preview, 'original_audio_path', None)
 
         if not active_wav or not os.path.isfile(active_wav):
@@ -2817,10 +2821,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         prev_worker = getattr(self, '_silence_detect_worker', None)
         if prev_worker is not None and prev_worker.isRunning():
             try:
-                prev_worker.terminate()
+                prev_worker.cancel()
+                prev_worker.wait(50)
             except Exception:
                 pass
 
+        import subprocess
+        import re
         from PySide6.QtCore import QThread, Signal as _Signal
 
         class _SilenceDetectWorker(QThread):
@@ -2833,10 +2840,43 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.thresh = thresh
                 self.min_dur = min_dur
                 self.pad = pad
+                self._proc = None
+                self._is_cancelled = False
+
+            def cancel(self):
+                self._is_cancelled = True
+                if self._proc is not None:
+                    try:
+                        self._proc.kill()
+                    except Exception:
+                        pass
 
             def run(self):
                 try:
-                    raw = self.engine.detect_silence(self.wav, self.thresh, self.min_dur)
+                    if self._is_cancelled:
+                        return
+                    cmd = [
+                        self.engine.ffmpeg_cmd, "-i", self.wav,
+                        "-af", f"silencedetect=noise={self.thresh}dB:d={self.min_dur}",
+                        "-f", "null", "-"
+                    ]
+                    self._proc = subprocess.Popen(
+                        cmd, stderr=subprocess.PIPE, text=True,
+                        encoding='utf-8', errors='replace',
+                        **self.engine.os_doc.get_subprocess_kwargs()
+                    )
+                    _, stderr = self._proc.communicate()
+                    if self._is_cancelled:
+                        return
+                    starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', stderr)]
+                    ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', stderr)]
+                    raw = []
+                    count = min(len(starts), len(ends))
+                    for i in range(count):
+                        raw.append({'s': starts[i], 'e': ends[i]})
+                    if len(starts) > len(ends):
+                        raw.append({'s': starts[-1], 'e': 999999.0})
+
                     bridged = []
                     if raw:
                         curr = dict(raw[0])
@@ -2847,6 +2887,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                 bridged.append(curr)
                                 curr = dict(next_s)
                         bridged.append(curr)
+
                     dur = self.engine._get_audio_duration(self.wav)
                     padded = []
                     for s in bridged:
@@ -2854,11 +2895,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         ne = s['e'] if s['e'] >= dur or abs(s['e'] - dur) < 0.01 else s['e'] - self.pad
                         if ne > ns:
                             padded.append({'s': ns, 'e': ne})
-                    self.detected.emit(padded)
+                    if not self._is_cancelled:
+                        self.detected.emit(padded)
                 except Exception as e:
-                    from osdoc import log_error
-                    log_error(f"_SilenceDetectWorker error: {e}")
-                    self.detected.emit([])
+                    if not self._is_cancelled:
+                        from osdoc import log_error
+                        log_error(f"_SilenceDetectWorker error: {e}")
+                        self.detected.emit([])
 
         def _on_detected(new_silences):
             if canvas and canvas.words_data:
@@ -2884,7 +2927,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             spans = [(op['start_s'], op['end_s']) for op in surviving_ops if op.get('type') == 'silence_mark']
             key = "lbl_silence_stats_mark"
         else:
-            lbl.setText("")
             return
         secs = sum(max(0.0, e - s) for s, e in spans)
         pct = int(round(100.0 * secs / total_dur)) if total_dur > 0 else 0
@@ -2967,19 +3009,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 continue
 
             # Determine effective status
-            is_inaudible_token = bool(w.get('is_inaudible') or w.get('type') == 'inaudible')
+            is_inaudible_token = bool(w.get('is_inaudible') or w.get('type') == 'inaudible' or w.get('text') == '(...)')
             status = w.get('status')
             if not status:
                 status = 'inaudible' if is_inaudible_token else 'normal'
             elif status == 'inaudible' and not mark_inaudible and (w.get('manual_status') != 'inaudible' or w.get('is_auto', False)):
-                status = 'normal'
+                if ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+                    status = 'inaudible'
+                else:
+                    status = 'normal'
             elif status == 'typo' and not show_typos and (w.get('manual_status') != 'typo' or w.get('is_auto', False)):
                 status = 'normal'
 
             aliases = normalize_color_aliases(status)
 
+            if is_inaudible_token and ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+                preview[w['id']] = 'cut'
+                continue
+
             if aliases & auto_cut_set and 'normal' not in aliases and 'silence' not in aliases:
                 preview[w['id']] = 'cut'
+                continue
+
+            # Spoken normal words should NEVER be cut or struck through by silence cuts or timestamp padding
+            if status == 'normal' and not is_inaudible_token:
                 continue
 
             w_start = w.get('start', 0.0)
@@ -2989,6 +3042,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 if c_start <= w_mid <= c_end:
                     preview[w['id']] = 'cut'
                     break
+
+        # Propagate cut status to all tokens in any consecutive inaudible run (ensures visible first (...) is struck through)
+        inaud_run = []
+        for w in canvas.words_data or []:
+            if w.get('is_inaudible') or w.get('type') == 'inaudible' or w.get('text') == '(...)':
+                inaud_run.append(w)
+            else:
+                if inaud_run:
+                    if any(preview.get(m['id']) == 'cut' for m in inaud_run) or ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+                        for m in inaud_run:
+                            preview[m['id']] = 'cut'
+                    inaud_run = []
+        if inaud_run:
+            if any(preview.get(m['id']) == 'cut' for m in inaud_run) or ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+                for m in inaud_run:
+                    preview[m['id']] = 'cut'
 
         canvas.set_cut_preview(preview)
 

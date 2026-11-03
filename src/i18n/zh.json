@@ -87,6 +87,8 @@
     "lbl_silence_cut_pct": "Pauses to remove (%)",
     "lbl_silence_min_clip": "最短片段时长 (s)",
     "lbl_silence_keep": "Keep pause (s)",
+    "tt_silence_threshold_db": "音频被视作静音的分贝阈值 (dB)。更低的值仅检测完全静音；更高的值会同时捕获微弱的背景底噪。",
+    "tt_min_silence_dur": "判定为静音的最短停顿时间（秒）。避免误切词与词之间的自然微停顿。",
     "tt_silence_cut_pct": "Cuts the longest pauses first until this share of the total pause time is removed. 100 = every detected pause. Lower it for slow speakers to keep their rhythm.",
     "tt_silence_min_clip": "Never leaves a piece shorter than this between two silence cuts: of two close pauses, only the longer one is cut. Avoids jumpy micro-cuts. 0 = off.",
     "tt_silence_keep": "Leaves this much of every cut pause in place so speech doesn't sound rushed. 0 = cut the whole pause.",

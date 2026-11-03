@@ -87,6 +87,8 @@
     "lbl_silence_cut_pct": "Te verwijderen pauzes (%)",
     "lbl_silence_min_clip": "Min. cliplengte (s)",
     "lbl_silence_keep": "Pauze behouden (s)",
+    "tt_silence_threshold_db": "Decibelniveau (dB) waaronder audio als stilte wordt beschouwd. Lagere waarden detecteren alleen diepe stilte; hogere waarden vangen ook subtiele achtergrondruis op.",
+    "tt_min_silence_dur": "Minimale pauzeduur in seconden om als stilte te worden geclassificeerd. Voorkomt het wegknippen van natuurlijke micropauzes tussen woorden.",
     "tt_silence_cut_pct": "Knipt eerst de langste pauzes tot dit deel van de totale pauzetijd is verwijderd. 100 = elke gedetecteerde pauze. Verlaag dit bij langzame sprekers om hun ritme te behouden.",
     "tt_silence_min_clip": "Laat tussen twee stilteknippen nooit een kortere strook over: van twee nabije pauzes wordt alleen de langste geknipt. Voorkomt schokkerige microknippen. 0 = uit.",
     "tt_silence_keep": "Laat zoveel van elke geknipte pauze staan zodat spraak niet gehaast klinkt. 0 = hele pauze knippen.",

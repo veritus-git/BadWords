@@ -36,28 +36,6 @@ def build_silence_panel(win) -> QFrame:
         font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; }}
         QLineEdit:focus {{ border: 1px solid #1a7a3e; outline: none; }}
     """
-    _sil_slider_style = f"""
-        QSlider::groove:horizontal {{
-            height: {config.S(4)}px;
-            background: #383838;
-            border-radius: {config.S(2)}px;
-        }}
-        QSlider::sub-page:horizontal {{
-            background: #1ed760;
-            border-radius: {config.S(2)}px;
-        }}
-        QSlider::handle:horizontal {{
-            background: #ffffff;
-            width: {config.S(12)}px;
-            margin-top: -{config.S(4)}px;
-            margin-bottom: -{config.S(4)}px;
-            border-radius: {config.S(6)}px;
-        }}
-        QSlider::handle:horizontal:hover {{
-            background: #1ed760;
-            border: 2px solid #ffffff;
-        }}
-    """
 
     def _create_separator():
         div = QFrame()
@@ -113,7 +91,7 @@ def build_silence_panel(win) -> QFrame:
     def _param_block(label_text, key, default, lo, hi, scale, decimals, on_change_callback, tooltip_text=""):
         v_box = QVBoxLayout()
         v_box.setContentsMargins(0, 0, 0, 0)
-        v_box.setSpacing(config.S(3))
+        v_box.setSpacing(config.S(5))
 
         lbl = QLabel(label_text)
         lbl.setStyleSheet(f"color: #e0e0e0; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500;")
@@ -138,8 +116,7 @@ def build_silence_panel(win) -> QFrame:
         slider = JumpSlider(Qt.Horizontal)
         slider.setRange(int(round(lo * scale)), int(round(hi * scale)))
         slider.setValue(int(round(saved_val * scale)))
-        slider.setStyleSheet(_sil_slider_style)
-        slider.setFixedHeight(config.S(18))
+        slider.setFixedHeight(config.S(16))
         if tooltip_text:
             slider.setToolTip(tooltip_text)
 
@@ -158,6 +135,8 @@ def build_silence_panel(win) -> QFrame:
             _is_syncing[0] = False
 
         slider.valueChanged.connect(_on_slider)
+        if on_change_callback:
+            slider.sliderReleased.connect(on_change_callback)
 
         def _on_edit(val=None):
             if _is_syncing[0]:
@@ -203,10 +182,12 @@ def build_silence_panel(win) -> QFrame:
     vb_thresh, win.spin_thresh, win.slider_thresh, _rst_thresh = _param_block(
         win.txt("lbl_silence_threshold_db"), 'silence_threshold_db', -42.0, -80.0, -10.0, 1.0, 1,
         _on_recompute_change,
-        win.txt("tt_silence_threshold_db") if hasattr(win, 'txt') else "Poziom decybeli (dB), poniżej którego dźwięk uznawany jest za ciszę."
+        win.txt("tt_silence_threshold_db")
     )
     l_params.addLayout(vb_thresh)
+    l_params.addSpacing(config.S(8))
     l_params.addWidget(_create_separator())
+    l_params.addSpacing(config.S(8))
 
     # 2. Zostaw przerwę (s): 0.00 to 1.50 s, default 0.20 s
     vb_keep, win.spin_silence_keep, win.slider_silence_keep, _rst_keep = _param_block(
@@ -215,7 +196,9 @@ def build_silence_panel(win) -> QFrame:
         win.txt("tt_silence_keep")
     )
     l_params.addLayout(vb_keep)
+    l_params.addSpacing(config.S(8))
     l_params.addWidget(_create_separator())
+    l_params.addSpacing(config.S(8))
 
     # 3. Pauzy do usunięcia (%): 0 to 100%, default 100%
     vb_pct, win.spin_silence_cut_pct, win.slider_silence_cut_pct, _rst_pct = _param_block(
@@ -224,16 +207,20 @@ def build_silence_panel(win) -> QFrame:
         win.txt("tt_silence_cut_pct")
     )
     l_params.addLayout(vb_pct)
+    l_params.addSpacing(config.S(8))
     l_params.addWidget(_create_separator())
+    l_params.addSpacing(config.S(8))
 
     # 4. Min. czas trwania ciszy (s): 0.05 to 3.00 s, default 0.20 s
     vb_min_dur, win.spin_silence_min_dur, win.slider_silence_min_dur, _rst_min_dur = _param_block(
         win.txt("lbl_min_silence_dur"), 'silence_min_dur', 0.20, 0.05, 3.00, 100.0, 2,
         _on_recompute_change,
-        win.txt("tt_min_silence_dur") if hasattr(win, 'txt') else "Minimalny czas trwania przerwy w sekundach, by została sklasyfikowana jako cisza."
+        win.txt("tt_min_silence_dur")
     )
     l_params.addLayout(vb_min_dur)
+    l_params.addSpacing(config.S(8))
     l_params.addWidget(_create_separator())
+    l_params.addSpacing(config.S(8))
 
     # 5. Min. klip między cięciami (s): 0.00 to 5.00 s, default 0.00 s
     vb_min_clip, win.spin_silence_min_clip, win.slider_silence_min_clip, _rst_min_clip = _param_block(
@@ -242,13 +229,22 @@ def build_silence_panel(win) -> QFrame:
         win.txt("tt_silence_min_clip")
     )
     l_params.addLayout(vb_min_clip)
-    l_params.addWidget(_create_separator())
 
-    # 6. Live stats label
+    # 6. Live stats label with dedicated 0.0 <-> 1.0 opacity effect & fade animation
+    l_params.addSpacing(config.S(12))
     win.lbl_silence_stats = QLabel("")
     win.lbl_silence_stats.setWordWrap(True)
     win.lbl_silence_stats.setStyleSheet(f"color: #8a8a8a; font-size: {config.FS(9)}pt;")
     l_params.addWidget(win.lbl_silence_stats)
+
+    stats_opacity = QGraphicsOpacityEffect(win.lbl_silence_stats)
+    win.lbl_silence_stats.setGraphicsEffect(stats_opacity)
+    win._silence_stats_opacity_effect = stats_opacity
+
+    win._silence_stats_fade_anim = QVariantAnimation(win.lbl_silence_stats)
+    win._silence_stats_fade_anim.setDuration(250)
+    win._silence_stats_fade_anim.setEasingCurve(QEasingCurve.InOutQuad)
+    win._silence_stats_fade_anim.valueChanged.connect(lambda val: stats_opacity.setOpacity(val))
 
     l_params.addStretch(1)
     l_silence.addWidget(w_params, 1)
@@ -259,17 +255,25 @@ def build_silence_panel(win) -> QFrame:
         mark_on = win.tgl_silence_mark.isChecked()
         is_active = cut_on or mark_on
 
-        target_opacity = 1.0 if is_active else 0.35
+        target_params_opacity = 1.0 if is_active else 0.35
+        target_stats_opacity = 1.0 if is_active else 0.0
         w_params.setEnabled(is_active)
 
         if animate:
             win._silence_fade_anim.stop()
             win._silence_fade_anim.setStartValue(opacity_effect.opacity())
-            win._silence_fade_anim.setEndValue(target_opacity)
+            win._silence_fade_anim.setEndValue(target_params_opacity)
             win._silence_fade_anim.start()
+
+            win._silence_stats_fade_anim.stop()
+            win._silence_stats_fade_anim.setStartValue(stats_opacity.opacity())
+            win._silence_stats_fade_anim.setEndValue(target_stats_opacity)
+            win._silence_stats_fade_anim.start()
         else:
             win._silence_fade_anim.stop()
-            opacity_effect.setOpacity(target_opacity)
+            opacity_effect.setOpacity(target_params_opacity)
+            win._silence_stats_fade_anim.stop()
+            stats_opacity.setOpacity(target_stats_opacity)
 
     def _on_sil_cut_toggled(checked):
         if checked:

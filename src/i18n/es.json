@@ -87,6 +87,8 @@
     "lbl_silence_cut_pct": "Pausas a eliminar (%)",
     "lbl_silence_min_clip": "Duración mín. del clip (s)",
     "lbl_silence_keep": "Conservar pausa (s)",
+    "tt_silence_threshold_db": "Nivel de decibelios (dB) por debajo del cual el audio se considera silencio. Valores más bajos detectan solo silencio absoluto; valores más altos capturan también ruido de fondo sutil.",
+    "tt_min_silence_dur": "Duración mínima de la pausa en segundos para clasificarla como silencio. Evita cortar micropausas naturales entre palabras.",
     "tt_silence_cut_pct": "Corta primero las pausas más largas hasta eliminar este porcentaje del tiempo total de pausas. 100 = todas las pausas detectadas. Redúcelo con hablantes lentos para conservar su ritmo.",
     "tt_silence_min_clip": "Nunca deja un fragmento más corto que esto entre dos cortes de silencio: de dos pausas cercanas, solo se corta la más larga. Evita microcortes bruscos. 0 = desactivado.",
     "tt_silence_keep": "Deja esta parte de cada pausa cortada para que el habla no suene apresurada. 0 = cortar toda la pausa.",

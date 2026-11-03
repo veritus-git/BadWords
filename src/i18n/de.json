@@ -87,6 +87,8 @@
     "lbl_silence_cut_pct": "Zu entfernende Pausen (%)",
     "lbl_silence_min_clip": "Min. Cliplänge (s)",
     "lbl_silence_keep": "Pause behalten (s)",
+    "tt_silence_threshold_db": "Dezibel-Pegel (dB), unter dem Audio als Stille gewertet wird. Niedrigere Werte (z. B. -50 dB) erkennen nur tiefe Stille; höhere Werte erfassen auch leises Hintergrundrauschen.",
+    "tt_min_silence_dur": "Minimale Pausendauer in Sekunden, um als Stille eingestuft zu werden. Verhindert das Abschneiden natürlicher Mikropausen zwischen Wörtern.",
     "tt_silence_cut_pct": "Schneidet zuerst die längsten Pausen, bis dieser Anteil der gesamten Pausenzeit entfernt ist. 100 = jede erkannte Pause. Bei langsamen Sprechern verringern, um ihren Rhythmus zu erhalten.",
     "tt_silence_min_clip": "Lässt zwischen zwei Stilleschnitten nie ein kürzeres Stück übrig: Von zwei nahen Pausen wird nur die längere geschnitten. Vermeidet sprunghafte Mikroschnitte. 0 = aus.",
     "tt_silence_keep": "Lässt so viel von jeder geschnittenen Pause stehen, damit die Sprache nicht gehetzt klingt. 0 = ganze Pause schneiden.",
