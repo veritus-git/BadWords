@@ -2958,7 +2958,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         pct = int(round(100.0 * secs / total_dur)) if total_dur > 0 else 0
         lbl.setText(self.txt(key).format(
             count=len(spans), removed=f"{int(secs // 60)}:{int(secs % 60):02d}", pct=pct))
-        lbl.repaint()
+        lbl.update()
 
     # ── Colour legend ───────────────────────────────────────────────────────
     _LEGEND_OP_KEYS = {"bad": "Violet", "repeat": "Navy", "typo": "Olive",

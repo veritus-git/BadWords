@@ -1089,7 +1089,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
         pct = min(100.0, max(0.0, _num('silence_cut_pct', 100.0)))
         min_clip_f = int(round(max(0.0, _num('silence_min_clip', 0.0)) * fps))
-        keep_f = int(round(max(0.0, _num('silence_keep', 0.2)) * fps))
+        keep_f = int(round(max(0.0, _num('silence_keep', 0.1)) * fps))
         ranges = sorted(r for r in s_ranges if r[1] > r[0])
 
         if pct < 100.0 and ranges:
