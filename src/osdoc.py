@@ -492,7 +492,12 @@ class OSDoctor:
         """Returns the standard path for DaVinci Resolve Scripting API modules."""
         paths = []
         if self.is_mac:
-            paths.append("/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules")
+            paths.extend(["/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
+                          "/Applications/DaVinci Resolve Studio.app/Contents/Resources/Developer/Scripting/Modules",
+                          "/Applications/DaVinci Resolve.app/Contents/Resources/Developer/Scripting/Modules"])
+            for app in ("DaVinci Resolve Studio.app", "DaVinci Resolve.app"):
+                lib = f"/Applications/{app}/Contents/Libraries/Fusion/fusionscript.so"
+                if os.path.exists(lib): os.environ.setdefault("RESOLVE_SCRIPT_LIB", lib); break
         elif self.is_win:
             paths.append(os.path.join(
                 os.environ.get("PROGRAMDATA", "C:\\ProgramData"),
