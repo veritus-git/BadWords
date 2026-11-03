@@ -1010,6 +1010,9 @@ class TranscriptionCanvas(QWidget):
         ts_color = QColor("#666666")
         p.setFont(active_font)
         
+        cut_runs = []
+        current_run = None
+        
         for w in visible_words:
             if w.get('is_script_bg'): continue
 
@@ -1077,12 +1080,36 @@ class TranscriptionCanvas(QWidget):
             p.drawText(draw_rect, Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
             
             if is_cut:
-                p.setPen(QPen(final_fg, 1.5))
-                mid_y = int(w['_rect'].center().y()) + 1
-                p.drawLine(int(w['_rect'].left()) + 4, mid_y, int(w['_rect'].right()) - 4, mid_y)
+                w_mid_y = int(w['_rect'].center().y()) + 1
+                w_left = int(w['_rect'].left()) + 2
+                w_right = int(w['_rect'].right()) - 2
+                w_pen_color = final_fg
+
+                if current_run is not None:
+                    # Continue unbroken strikethrough if on same text row within word gap
+                    if abs(w_mid_y - current_run['mid_y']) <= 3 and 0 <= (w_left - current_run['end_x']) <= 45:
+                        current_run['end_x'] = w_right
+                    else:
+                        cut_runs.append(current_run)
+                        current_run = {'mid_y': w_mid_y, 'start_x': w_left, 'end_x': w_right, 'color': w_pen_color}
+                else:
+                    current_run = {'mid_y': w_mid_y, 'start_x': w_left, 'end_x': w_right, 'color': w_pen_color}
+            else:
+                if current_run is not None:
+                    cut_runs.append(current_run)
+                    current_run = None
 
             if alpha < 1.0:
                 p.setOpacity(1.0)
+            
+        if current_run is not None:
+            cut_runs.append(current_run)
+            current_run = None
+
+        # PASS 3.5: Merged Continuous Strikethroughs across adjacent cut words/sentences
+        for run in cut_runs:
+            p.setPen(QPen(run.get('color', QColor("#8a8a8a")), 1.5))
+            p.drawLine(run['start_x'], run['mid_y'], run['end_x'], run['mid_y'])
             
         # PASS 4: Active Underlines
         if active_underlines:

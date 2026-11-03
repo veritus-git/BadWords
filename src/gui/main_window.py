@@ -2787,6 +2787,89 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             words = canvas.words_data if canvas else []
             self.audio_preview.waveform_timeline.set_words_data(words)
 
+    def _trigger_silence_recompute(self):
+        """Debounced trigger for FFmpeg silence detection when threshold or min_dur changes."""
+        if not hasattr(self, '_silence_debounce_timer'):
+            self._silence_debounce_timer = QTimer(self)
+            self._silence_debounce_timer.setSingleShot(True)
+            self._silence_debounce_timer.timeout.connect(self._run_silence_recompute)
+        self._silence_debounce_timer.start(150)
+
+    def _run_silence_recompute(self):
+        """Asynchronously runs FFmpeg silence detection on active audio with current threshold and min_dur."""
+        canvas = getattr(self, 'text_canvas', None)
+        if not canvas or not canvas.words_data:
+            return
+
+        active_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
+        if not active_wav and hasattr(self, 'audio_preview'):
+            active_wav = getattr(self.audio_preview, 'original_audio_path', None)
+
+        if not active_wav or not os.path.isfile(active_wav):
+            self._refresh_cut_preview()
+            return
+
+        prefs = self.engine.load_preferences() or {}
+        thresh_val = float(prefs.get('silence_threshold_db', -42.0))
+        min_dur_val = float(prefs.get('silence_min_dur', 0.2))
+        pad_s = float(prefs.get('ui_spin_pad', 0.05))
+
+        prev_worker = getattr(self, '_silence_detect_worker', None)
+        if prev_worker is not None and prev_worker.isRunning():
+            try:
+                prev_worker.terminate()
+            except Exception:
+                pass
+
+        from PySide6.QtCore import QThread, Signal as _Signal
+
+        class _SilenceDetectWorker(QThread):
+            detected = _Signal(list)
+
+            def __init__(self, engine, wav, thresh, min_dur, pad):
+                super().__init__()
+                self.engine = engine
+                self.wav = wav
+                self.thresh = thresh
+                self.min_dur = min_dur
+                self.pad = pad
+
+            def run(self):
+                try:
+                    raw = self.engine.detect_silence(self.wav, self.thresh, self.min_dur)
+                    bridged = []
+                    if raw:
+                        curr = dict(raw[0])
+                        for next_s in raw[1:]:
+                            if next_s['s'] - curr['e'] < 0.15:
+                                curr['e'] = next_s['e']
+                            else:
+                                bridged.append(curr)
+                                curr = dict(next_s)
+                        bridged.append(curr)
+                    dur = self.engine._get_audio_duration(self.wav)
+                    padded = []
+                    for s in bridged:
+                        ns = s['s'] if s['s'] < 0.01 else s['s'] + self.pad
+                        ne = s['e'] if s['e'] >= dur or abs(s['e'] - dur) < 0.01 else s['e'] - self.pad
+                        if ne > ns:
+                            padded.append({'s': ns, 'e': ne})
+                    self.detected.emit(padded)
+                except Exception as e:
+                    from osdoc import log_error
+                    log_error(f"_SilenceDetectWorker error: {e}")
+                    self.detected.emit([])
+
+        def _on_detected(new_silences):
+            if canvas and canvas.words_data:
+                canvas.words_data[0]['meta_global_silence'] = new_silences
+            self._refresh_cut_preview()
+
+        worker = _SilenceDetectWorker(self.engine, active_wav, thresh_val, min_dur_val, pad_s)
+        worker.detected.connect(_on_detected)
+        self._silence_detect_worker = worker
+        worker.start()
+
     def _update_silence_stats(self, surviving_ops, cut_ops, total_dur):
         """Show how many pauses the current silence settings cut or mark, and how much time."""
         lbl = getattr(self, 'lbl_silence_stats', None)
@@ -2832,32 +2915,81 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     return name
         return None
 
-    def _update_text_cut_preview(self, surviving_ops):
-        """Show in the text view what the next Assemble removes: dropped words are struck
-        through, and a mark sits where a pause between kept words is cut out.
-        Fed by the waveform preview, so both views come from the same cut calculation."""
-        import bisect
+    def _update_text_cut_preview(self, surviving_ops, cut_ops=None):
+        """Show in the text view what the next Assemble removes: words in cut categories
+        (bad, repeat, typo, inaudible, custom colors) or in cut ranges are struck through.
+        Silence cuts (pauses) NEVER strike through spoken words!"""
         canvas = getattr(self, 'text_canvas', None)
         if canvas is None or not hasattr(canvas, 'set_cut_preview'):
             return
-        offset = float((self.engine.load_preferences() or {}).get('offset', 0.133))
-        spans = sorted((op['start_s'], op['end_s']) for op in surviving_ops)
-        starts = [s for s, _ in spans]
-        preview, prev = {}, None
+
+        prefs = self.engine.load_preferences() or {}
+        raw_auto_cut = prefs.get('auto_cut_colors', [])
+        auto_cut_colors = [c.lower() for c in raw_auto_cut] if isinstance(raw_auto_cut, list) else []
+
+        def normalize_color_aliases(name: str) -> set:
+            s = str(name or '').lower().strip()
+            if s in ("violet", "red", "bad"):
+                return {"violet", "red", "bad"}
+            if s in ("navy", "blue", "repeat"):
+                return {"navy", "blue", "repeat"}
+            if s in ("olive", "green", "typo"):
+                return {"olive", "green", "typo"}
+            if s in ("chocolate", "inaudible"):
+                return {"chocolate", "inaudible"}
+            if s in ("tan", "silence_mark", "silence"):
+                return {"tan", "silence_mark", "silence"}
+            if s.startswith("custom_"):
+                c = s.split("_", 1)[1].lower()
+                return {s, c}
+            return {s}
+
+        auto_cut_set = set()
+        for c in auto_cut_colors:
+            auto_cut_set.update(normalize_color_aliases(c))
+
+        mark_inaudible = hasattr(self, 'tgl_mark_inaudible') and self.tgl_mark_inaudible.isChecked() if hasattr(self, 'tgl_mark_inaudible') else False
+        show_typos = hasattr(self, 'tgl_show_typos') and self.tgl_show_typos.isChecked() if hasattr(self, 'tgl_show_typos') else True
+
+        non_silence_cuts = []
+        if cut_ops:
+            for op in cut_ops:
+                if op.get('cut_type') != 'silence_cut':
+                    non_silence_cuts.append((op.get('start_s', 0.0), op.get('end_s', 0.0)))
+
+        preview = {}
         for w in canvas.words_data or []:
-            if w.get('type') in ('silence', 'inaudible') or w.get('is_inaudible') or 'id' not in w:
+            if w.get('type') == 'silence' or 'id' not in w:
                 continue
-            # Same rule as Assemble: a word stays when its middle lands inside a kept clip
-            t = (w.get('start', 0.0) + w.get('end', 0.0)) / 2.0 + offset
-            i = bisect.bisect_right(starts, t) - 1
-            if i < 0 or t >= spans[i][1]:
+
+            if w.get('is_assembled_cut'):
                 preview[w['id']] = 'cut'
-                prev = None
                 continue
-            if prev is not None and i != prev and any(
-                    spans[k + 1][0] - spans[k][1] > 1e-3 for k in range(prev, i)):
-                preview[w['id']] = 'jump'
-            prev = i
+
+            # Determine effective status
+            is_inaudible_token = bool(w.get('is_inaudible') or w.get('type') == 'inaudible')
+            status = w.get('status')
+            if not status:
+                status = 'inaudible' if is_inaudible_token else 'normal'
+            elif status == 'inaudible' and not mark_inaudible and (w.get('manual_status') != 'inaudible' or w.get('is_auto', False)):
+                status = 'normal'
+            elif status == 'typo' and not show_typos and (w.get('manual_status') != 'typo' or w.get('is_auto', False)):
+                status = 'normal'
+
+            aliases = normalize_color_aliases(status)
+
+            if aliases & auto_cut_set and 'normal' not in aliases and 'silence' not in aliases:
+                preview[w['id']] = 'cut'
+                continue
+
+            w_start = w.get('start', 0.0)
+            w_end = w.get('end', 0.0)
+            w_mid = (w_start + w_end) / 2.0
+            for c_start, c_end in non_silence_cuts:
+                if c_start <= w_mid <= c_end:
+                    preview[w['id']] = 'cut'
+                    break
+
         canvas.set_cut_preview(preview)
 
     def _update_color_legend(self, surviving_ops, cut_ops):
