@@ -138,9 +138,9 @@ class SlimAudioSeekBar(QSlider):
         ratio = (self.value() - self.minimum()) / float(rng) if rng > 0 else 0.0
         ratio = max(0.0, min(1.0, ratio))
 
-        # 1. Background unplayed track (matching v3.2.4 exact: rgba(255, 255, 255, 0.08))
+        # 1. Background unplayed track (solid opaque dark grey)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 20))
+        painter.setBrush(QColor("#383838"))
         painter.drawRoundedRect(QRectF(0.0, cy - line_h / 2.0, w, line_h), radius, radius)
 
         # 2. Played progress track (matching v3.2.4 exact: #1ed760)

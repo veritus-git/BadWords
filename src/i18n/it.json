@@ -485,5 +485,6 @@
     "tool_colors": "Colori in questo montaggio",
     "legend_description": "Panoramica di colori e marcatori in questo montaggio. Seleziona 'Rimuovi' per tagliare quel colore durante l'assemblaggio.",
     "legend_silence_managed": "(gestito nel pannello Silenzio)",
-    "tt_legend_silence_managed": "Il taglio del silenzio e la regolazione delle pause si configurano nel pannello Silenzio."
+    "tt_legend_silence_managed": "Il taglio del silenzio e la regolazione delle pause si configurano nel pannello Silenzio.",
+    "hdr_audio_preprocessing": "Pre-elaborazione audio e VAD (FFmpeg)"
 }

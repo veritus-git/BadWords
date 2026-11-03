@@ -8,7 +8,8 @@
 MODULE: silence_panel.py
 ROLE: GUI Activity Panel
 DESCRIPTION:
-Sidebar activity panel for audio silence detection parameters and toggles.
+Sidebar activity panel for audio silence detection live editing parameters,
+real-time interactive sliders (Keep Pause, Cut %), and assemble toggles.
 """
 
 from PySide6.QtCore import Qt
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 import config
 from gui.widgets.labels import QLabel
 from gui.widgets.buttons import QPushButton, ToggleSwitch, ReloadButton
+from gui.widgets.sliders import JumpSlider
 from .script_panel import wrap_activity_panel
 
 
@@ -26,7 +28,7 @@ def build_silence_panel(win) -> QFrame:
     p_silence = QWidget()
     l_silence = QVBoxLayout(p_silence)
     l_silence.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
-    l_silence.setSpacing(config.S(10))
+    l_silence.setSpacing(config.S(8))
     
     _sil_input_style = f"""
         QLineEdit {{ background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;
@@ -34,10 +36,27 @@ def build_silence_panel(win) -> QFrame:
         font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; }}
         QLineEdit:focus {{ border: 1px solid #1a7a3e; outline: none; }}
     """
-    _sil_rst_style = f"""
-        QPushButton {{ background: transparent; border: 1px solid #444;
-        border-radius: {config.S(3)}px; color: #777; font-size: {config.FS(11)}pt; }}
-        QPushButton:hover {{ color: #ccc; border-color: #666; }}
+    _sil_slider_style = f"""
+        QSlider::groove:horizontal {{
+            height: {config.S(4)}px;
+            background: #383838;
+            border-radius: {config.S(2)}px;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: #1ed760;
+            border-radius: {config.S(2)}px;
+        }}
+        QSlider::handle:horizontal {{
+            background: #ffffff;
+            width: {config.S(12)}px;
+            margin-top: -{config.S(4)}px;
+            margin-bottom: -{config.S(4)}px;
+            border-radius: {config.S(6)}px;
+        }}
+        QSlider::handle:horizontal:hover {{
+            background: #1ed760;
+            border: 2px solid #ffffff;
+        }}
     """
 
     def _sil_row(label_text, widget, rst_btn):
@@ -50,84 +69,127 @@ def build_silence_panel(win) -> QFrame:
 
     _sil_prefs = win.engine.load_preferences() or {}
 
-    win.spin_thresh = QLineEdit()
-    win.spin_thresh.setText(str(_sil_prefs.get('silence_threshold_db', _sil_prefs.get('ui_spin_thresh', -42.0))))
-    win.spin_thresh.setFixedWidth(config.S(68))
-    win.spin_thresh.setFixedHeight(config.INPUT_HEIGHT)
-    win.spin_thresh.setStyleSheet(_sil_input_style)
-    _rst_thresh = ReloadButton(size=30)
-    _rst_thresh.clicked.connect(lambda: (
-        win.spin_thresh.setText("-42.0"),
-        win._save_single_pref('silence_threshold_db', -42.0)
-    ))
+    def _slider_tuning_field(key, default, lo, hi, scale, decimals, tooltip_key):
+        saved_val = float(_sil_prefs.get(key, default))
+        saved_val = min(hi, max(lo, saved_val))
 
-    win.spin_pad = QLineEdit()
-    win.spin_pad.setText(str(_sil_prefs.get('ui_spin_pad', 0.1)))
-    win.spin_pad.setFixedWidth(config.S(68))
-    win.spin_pad.setFixedHeight(config.INPUT_HEIGHT)
-    win.spin_pad.setStyleSheet(_sil_input_style)
-    _rst_pad = ReloadButton(size=30)
-    _rst_pad.clicked.connect(lambda: (
-        win.spin_pad.setText("0.1"),
-        win._save_single_pref('ui_spin_pad', 0.1)
-    ))
-
-    win.spin_silence_min_dur = QLineEdit()
-    win.spin_silence_min_dur.setText(str(_sil_prefs.get('silence_min_dur', 0.2)))
-    win.spin_silence_min_dur.setFixedWidth(config.S(68))
-    win.spin_silence_min_dur.setFixedHeight(config.INPUT_HEIGHT)
-    win.spin_silence_min_dur.setStyleSheet(_sil_input_style)
-    win.spin_silence_min_dur.setToolTip(
-        "Minimum duration (in seconds) for a gap to be classified as silence. "
-        "Lower = more sensitive. Applies to both standalone and post-transcript modes. "
-        "Raising it updates the cuts immediately; lowering it below the value used "
-        "during analysis needs a new analysis."
-    )
-    _rst_min = ReloadButton(size=30)
-    _rst_min.clicked.connect(lambda: (
-        win.spin_silence_min_dur.setText("0.2"),
-        win._save_single_pref('silence_min_dur', 0.2),
-        win._refresh_cut_preview()
-    ))
-
-    def _tuning_field(key, default, lo, hi, tooltip_key):
         edit = QLineEdit()
-        edit.setText(str(_sil_prefs.get(key, default)))
+        edit.setText(f"{saved_val:.{decimals}f}")
         edit.setFixedWidth(config.S(68))
         edit.setFixedHeight(config.INPUT_HEIGHT)
         edit.setStyleSheet(_sil_input_style)
         edit.setToolTip(win.txt(tooltip_key))
 
+        slider = JumpSlider(Qt.Horizontal)
+        slider.setRange(int(round(lo * scale)), int(round(hi * scale)))
+        slider.setValue(int(round(saved_val * scale)))
+        slider.setStyleSheet(_sil_slider_style)
+        slider.setFixedHeight(config.S(18))
+        slider.setToolTip(win.txt(tooltip_key))
+
+        _is_syncing = [False]
+
+        def _on_slider(v):
+            if _is_syncing[0]:
+                return
+            _is_syncing[0] = True
+            real_val = round(v / float(scale), decimals)
+            real_val = min(hi, max(lo, real_val))
+            edit.setText(f"{real_val:.{decimals}f}")
+            win._save_single_pref(key, real_val)
+            if hasattr(win, '_refresh_cut_preview'):
+                win._refresh_cut_preview()
+            _is_syncing[0] = False
+
+        slider.valueChanged.connect(_on_slider)
+
+        def _on_edit(val=None):
+            if _is_syncing[0]:
+                return
+            _is_syncing[0] = True
+            if val is None:
+                try:
+                    val = float(edit.text().replace(',', '.').strip())
+                except ValueError:
+                    val = default
+            val = min(hi, max(lo, val))
+            val = round(val, decimals)
+            edit.setText(f"{val:.{decimals}f}")
+            slider.setValue(int(round(val * scale)))
+            win._save_single_pref(key, val)
+            if hasattr(win, '_refresh_cut_preview'):
+                win._refresh_cut_preview()
+            _is_syncing[0] = False
+
+        edit.editingFinished.connect(lambda: _on_edit())
+        rst = ReloadButton(size=30)
+        rst.clicked.connect(lambda: _on_edit(default))
+
+        return edit, slider, rst
+
+    def _simple_tuning_field(key, default, lo, hi, decimals, tooltip_text):
+        saved_val = float(_sil_prefs.get(key, default))
+        saved_val = min(hi, max(lo, saved_val))
+
+        edit = QLineEdit()
+        edit.setText(f"{saved_val:.{decimals}f}")
+        edit.setFixedWidth(config.S(68))
+        edit.setFixedHeight(config.INPUT_HEIGHT)
+        edit.setStyleSheet(_sil_input_style)
+        edit.setToolTip(tooltip_text)
+
         def _commit(value=None):
             if value is None:
                 try:
-                    value = float(edit.text().replace(',', '.'))
+                    value = float(edit.text().replace(',', '.').strip())
                 except ValueError:
                     value = default
             value = min(hi, max(lo, value))
-            edit.setText(str(value))
+            value = round(value, decimals)
+            edit.setText(f"{value:.{decimals}f}")
             win._save_single_pref(key, value)
-            win._refresh_cut_preview()
+            if hasattr(win, '_refresh_cut_preview'):
+                win._refresh_cut_preview()
 
-        edit.editingFinished.connect(_commit)
+        edit.editingFinished.connect(lambda: _commit())
         rst = ReloadButton(size=30)
         rst.clicked.connect(lambda: _commit(default))
         return edit, rst
 
-    win.spin_silence_cut_pct, _rst_pct = _tuning_field(
-        'silence_cut_pct', 100.0, 0.0, 100.0, "tt_silence_cut_pct")
-    win.spin_silence_min_clip, _rst_clip = _tuning_field(
-        'silence_min_clip', 0.0, 0.0, 30.0, "tt_silence_min_clip")
-    win.spin_silence_keep, _rst_keep = _tuning_field(
-        'silence_keep', 0.0, 0.0, 5.0, "tt_silence_keep")
-
-    l_silence.addLayout(_sil_row(win.txt("lbl_threshold_db"), win.spin_thresh, _rst_thresh))
-    l_silence.addLayout(_sil_row(win.txt("lbl_padding_s"), win.spin_pad, _rst_pad))
-    l_silence.addLayout(_sil_row(win.txt("lbl_min_silence_dur"), win.spin_silence_min_dur, _rst_min))
-    l_silence.addLayout(_sil_row(win.txt("lbl_silence_cut_pct"), win.spin_silence_cut_pct, _rst_pct))
-    l_silence.addLayout(_sil_row(win.txt("lbl_silence_min_clip"), win.spin_silence_min_clip, _rst_clip))
+    # 1. Keep Pause (silence_keep): default 0.2s with live JumpSlider
+    win.spin_silence_keep, win.slider_silence_keep, _rst_keep = _slider_tuning_field(
+        'silence_keep', 0.2, 0.0, 1.5, 100, 2, "tt_silence_keep"
+    )
     l_silence.addLayout(_sil_row(win.txt("lbl_silence_keep"), win.spin_silence_keep, _rst_keep))
+    l_silence.addWidget(win.slider_silence_keep)
+    l_silence.addSpacing(config.S(6))
 
+    # 2. Cut Percentage (silence_cut_pct): default 100% with live JumpSlider
+    win.spin_silence_cut_pct, win.slider_silence_cut_pct, _rst_pct = _slider_tuning_field(
+        'silence_cut_pct', 100.0, 0.0, 100.0, 1, 0, "tt_silence_cut_pct"
+    )
+    l_silence.addLayout(_sil_row(win.txt("lbl_silence_cut_pct"), win.spin_silence_cut_pct, _rst_pct))
+    l_silence.addWidget(win.slider_silence_cut_pct)
+    l_silence.addSpacing(config.S(6))
+
+    # 3. Min Silence Duration (silence_min_dur): default 0.2s
+    win.spin_silence_min_dur, _rst_min = _simple_tuning_field(
+        'silence_min_dur', 0.2, 0.05, 5.0, 2,
+        win.txt("tt_min_silence_dur") if hasattr(win, 'txt') else
+        "Minimum duration (in seconds) for a gap to be classified as silence."
+    )
+    l_silence.addLayout(_sil_row(win.txt("lbl_min_silence_dur"), win.spin_silence_min_dur, _rst_min))
+    l_silence.addSpacing(config.S(4))
+
+    # 4. Min Kept Clip (silence_min_clip): default 0.0s
+    win.spin_silence_min_clip, _rst_clip = _simple_tuning_field(
+        'silence_min_clip', 0.0, 0.0, 30.0, 2,
+        win.txt("tt_silence_min_clip")
+    )
+    l_silence.addLayout(_sil_row(win.txt("lbl_silence_min_clip"), win.spin_silence_min_clip, _rst_clip))
+    l_silence.addSpacing(config.S(8))
+
+    # 5. Toggles
     row_silence_cut = QHBoxLayout()
     lbl_cut = QLabel(win.txt("lbl_detect_and_cut_silence"))
     lbl_cut.setWordWrap(True)
@@ -152,7 +214,7 @@ def build_silence_panel(win) -> QFrame:
     row_silence_mark.addWidget(win.tgl_silence_mark)
     l_silence.addLayout(row_silence_mark)
     
-    # Live readout of what the current settings do (filled by the waveform preview)
+    # 6. Live readout of what current settings do (updated dynamically by waveform timeline)
     win.lbl_silence_stats = QLabel("")
     win.lbl_silence_stats.setWordWrap(True)
     win.lbl_silence_stats.setStyleSheet(f"color: #8a8a8a; font-size: {config.FS(9)}pt;")

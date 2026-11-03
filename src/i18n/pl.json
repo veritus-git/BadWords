@@ -485,5 +485,6 @@
     "tt_force_xml_assembly": "Wymusza składanie osi czasu za pomocą FCP7 XML zamiast natywnego DRT. Przydatne do testowania składania XML lub na darmowym DaVinci Resolve 21.1+.",
     "status_assembly_drt_build": "Budowanie montażu DRT...",
     "status_assembly_drt_import": "Importowanie osi czasu DRT...",
-    "tool_colors": "Kolory w montażu"
+    "tool_colors": "Kolory w montażu",
+    "hdr_audio_preprocessing": "Przetwarzanie audio i wykrywanie ciszy (FFmpeg VAD)"
 }

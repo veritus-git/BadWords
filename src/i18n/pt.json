@@ -485,5 +485,6 @@
     "tool_colors": "Cores nesta edição",
     "legend_description": "Visão geral de cores e marcadores nesta edição. Marque 'Remover' para cortar essa cor durante a montagem.",
     "legend_silence_managed": "(gerenciado no painel Silêncio)",
-    "tt_legend_silence_managed": "O corte de silêncio e o ajuste de pausas são configurados no painel Silêncio."
+    "tt_legend_silence_managed": "O corte de silêncio e o ajuste de pausas são configurados no painel Silêncio.",
+    "hdr_audio_preprocessing": "Pré-processamento de áudio e VAD (FFmpeg)"
 }

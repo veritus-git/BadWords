@@ -1458,6 +1458,42 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
         self._add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
 
+        # ── Audio Pre-Processing & Silence VAD (FFmpeg) ─────────
+        w_audio_hdr_box = QWidget()
+        w_audio_hdr_box.setStyleSheet("background: transparent;")
+        l_audio_hdr = QVBoxLayout(w_audio_hdr_box)
+        l_audio_hdr.setContentsMargins(0, 0, 0, 0)
+        l_audio_hdr.setSpacing(0)
+        l_audio_hdr.addSpacing(config.S(24))
+        lbl_hdr_audio = QLabel(self.txt("hdr_audio_preprocessing"))
+        lbl_hdr_audio.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        l_audio_hdr.addWidget(lbl_hdr_audio)
+        l_audio_hdr.addSpacing(config.S(8))
+        sep_audio = QFrame()
+        sep_audio.setFrameShape(QFrame.Shape.HLine)
+        sep_audio.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_audio_hdr.addWidget(sep_audio)
+        l_audio_hdr.addSpacing(config.S(14))
+        l_ai.addWidget(w_audio_hdr_box)
+        self._advanced_widgets.append(w_audio_hdr_box)
+
+        form_audio = QFormLayout()
+        form_audio.setSpacing(14)
+        form_audio.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        l_ai.addLayout(form_audio)
+
+        def_thresh = config.DEFAULT_SETTINGS.get('silence_threshold_db', -42.0)
+        self.spin_silence_thresh = CustomNumberInput(float(prefs.get('silence_threshold_db', def_thresh)), -80.0, -10.0, step=1.0, decimals=1, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_audio, self.txt("lbl_silence_threshold_db"), self.spin_silence_thresh, def_thresh, self.spin_silence_thresh.setValue))
+
+        def_pad = config.DEFAULT_SETTINGS.get('ui_spin_pad', 0.1)
+        self.spin_silence_pad = CustomNumberInput(float(prefs.get('ui_spin_pad', def_pad)), 0.0, 2.0, step=0.05, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_audio, self.txt("lbl_padding_s"), self.spin_silence_pad, def_pad, self.spin_silence_pad.setValue))
+
+        def_min_dur = config.DEFAULT_SETTINGS.get('silence_min_dur', 0.2)
+        self.spin_silence_min_dur = CustomNumberInput(float(prefs.get('silence_min_dur', def_min_dur)), 0.05, 5.0, step=0.05, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_audio, self.txt("lbl_min_silence_dur"), self.spin_silence_min_dur, def_min_dur, self.spin_silence_min_dur.setValue))
+
         # ── Advanced Whisper Parameters ─────────────────────────
         w_whisper_hdr_box = QWidget()
         w_whisper_hdr_box.setStyleSheet("background: transparent;")
@@ -2548,9 +2584,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 'ai_no_repeat_ngram_size':  self._safe_get('spin_no_repeat', old_prefs.get('ai_no_repeat_ngram_size', 0), 'value'),
                 'ai_length_penalty':        self._safe_get('spin_length_penalty', old_prefs.get('ai_length_penalty', config.DEFAULT_SETTINGS.get('ai_length_penalty', 1.0)), 'value'),
                 'ai_repetition_penalty':    self._safe_get('spin_repetition_penalty', old_prefs.get('ai_repetition_penalty', config.DEFAULT_SETTINGS.get('ai_repetition_penalty', 1.0)), 'value'),
+                'silence_threshold_db':     self._safe_get('spin_silence_thresh', old_prefs.get('silence_threshold_db', -42.0), 'value'),
+                'ui_spin_pad':              self._safe_get('spin_silence_pad', old_prefs.get('ui_spin_pad', 0.1), 'value'),
+                'silence_min_dur':          self._safe_get('spin_silence_min_dur', old_prefs.get('silence_min_dur', 0.2), 'value'),
             })
         else:
-            advanced_keys = ["device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_length_penalty", "ai_repetition_penalty"]
+            advanced_keys = ["device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_length_penalty", "ai_repetition_penalty", "silence_threshold_db", "ui_spin_pad", "silence_min_dur"]
             for key in advanced_keys:
                 state[key] = old_prefs.get(key, config.DEFAULT_SETTINGS.get(key))
         return state
@@ -2651,6 +2690,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._safe_set('spin_lookahead', _g('algo_retake_lookahead', 80), 'setValue')
             self._safe_set('spin_penalty', _g('algo_distance_penalty', 2.0), 'setValue')
             self._safe_set('spin_anchor', _g('algo_anchor_depth', 3), 'setValue')
+            self._safe_set('spin_silence_thresh', _g('silence_threshold_db', -42.0), 'setValue')
+            self._safe_set('spin_silence_pad', _g('ui_spin_pad', 0.1), 'setValue')
+            self._safe_set('spin_silence_min_dur', _g('silence_min_dur', 0.2), 'setValue')
 
     def _apply_settings(self):
         old_prefs = self.engine.load_preferences() or {}
