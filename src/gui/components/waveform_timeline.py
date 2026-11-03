@@ -352,10 +352,12 @@ class WaveformTimelineWidget(QWidget):
         auto_cut = list(prefs.get('auto_cut_colors', []))
         if hasattr(self.main_window, 'color_cut_buttons'):
             for c_name, btn in self.main_window.color_cut_buttons.items():
-                if btn.isChecked() and not any(c.lower() == c_name.lower() for c in auto_cut):
-                    auto_cut.append(c_name)
-                elif not btn.isChecked() and any(c.lower() == c_name.lower() for c in auto_cut):
-                    auto_cut = [c for c in auto_cut if c.lower() != c_name.lower()]
+                aliases = self.main_window._normalize_color_aliases(c_name) if hasattr(self.main_window, '_normalize_color_aliases') else {c_name.lower()}
+                if btn.isChecked():
+                    if not any(c.lower() in aliases for c in auto_cut):
+                        auto_cut.append(c_name)
+                else:
+                    auto_cut = [c for c in auto_cut if c.lower() not in aliases]
         prefs['auto_cut_colors'] = auto_cut
 
         fps = 60.0

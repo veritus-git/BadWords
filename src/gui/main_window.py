@@ -2756,10 +2756,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         auto_cut = list(prefs.get('auto_cut_colors', []))
         if hasattr(self, 'color_cut_buttons'):
             for c_name, btn in self.color_cut_buttons.items():
-                if btn.isChecked() and not any(c.lower() == c_name.lower() for c in auto_cut):
-                    auto_cut.append(c_name)
-                elif not btn.isChecked() and any(c.lower() == c_name.lower() for c in auto_cut):
-                    auto_cut = [c for c in auto_cut if c.lower() != c_name.lower()]
+                aliases = self._normalize_color_aliases(c_name)
+                if btn.isChecked():
+                    if not any(c.lower() in aliases for c in auto_cut):
+                        auto_cut.append(c_name)
+                else:
+                    auto_cut = [c for c in auto_cut if c.lower() not in aliases]
         prefs['auto_cut_colors'] = auto_cut
         self.engine.save_preferences(prefs)
         self._refresh_cut_preview()
@@ -2968,10 +2970,40 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     return name
         return None
 
-    def _update_text_cut_preview(self, surviving_ops, cut_ops=None):
+    def _normalize_color_aliases(self, name: str) -> set:
+        s = str(name or '').lower().strip()
+        if s in ("violet", "red", "bad"):
+            return {"violet", "red", "bad"}
+        if s in ("navy", "blue", "repeat"):
+            return {"navy", "blue", "repeat"}
+        if s in ("olive", "green", "typo"):
+            return {"olive", "green", "typo"}
+        if s in ("chocolate", "inaudible", "brown"):
+            return {"chocolate", "inaudible", "brown"}
+        if s in ("tan", "silence_mark", "silence"):
+            return {"tan", "silence_mark", "silence"}
+        if s.startswith("custom_"):
+            c = s.split("_", 1)[1].lower()
+            return {s, c}
+        return {s}
+
+    def is_color_cut(self, status: str) -> bool:
+        if not status or status == 'normal':
+            return False
+        prefs = self.engine.load_preferences() or {}
+        raw_auto_cut = prefs.get('auto_cut_colors', [])
+        auto_cut_colors = [c.lower() for c in raw_auto_cut] if isinstance(raw_auto_cut, list) else []
+        auto_cut_set = set()
+        for c in auto_cut_colors:
+            auto_cut_set.update(self._normalize_color_aliases(c))
+        aliases = self._normalize_color_aliases(status)
+        return bool(aliases & auto_cut_set and 'normal' not in aliases and 'silence' not in aliases)
+
+    def _update_text_cut_preview(self, surviving_ops=None, cut_ops=None):
         """Show in the text view what the next Assemble removes: words in cut categories
-        (bad, repeat, typo, inaudible, custom colors) or in cut ranges are struck through.
-        Silence cuts (pauses) NEVER strike through spoken words!"""
+        (bad, repeat, typo, inaudible, custom colors) are struck through and dimmed.
+        Silence cuts (pauses) NEVER strike through spoken words, and words whose colors
+        are NOT selected for cutting are NEVER struck through or dimmed!"""
         canvas = getattr(self, 'text_canvas', None)
         if canvas is None or not hasattr(canvas, 'set_cut_preview'):
             return
@@ -2980,35 +3012,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         raw_auto_cut = prefs.get('auto_cut_colors', [])
         auto_cut_colors = [c.lower() for c in raw_auto_cut] if isinstance(raw_auto_cut, list) else []
 
-        def normalize_color_aliases(name: str) -> set:
-            s = str(name or '').lower().strip()
-            if s in ("violet", "red", "bad"):
-                return {"violet", "red", "bad"}
-            if s in ("navy", "blue", "repeat"):
-                return {"navy", "blue", "repeat"}
-            if s in ("olive", "green", "typo"):
-                return {"olive", "green", "typo"}
-            if s in ("chocolate", "inaudible", "brown"):
-                return {"chocolate", "inaudible", "brown"}
-            if s in ("tan", "silence_mark", "silence"):
-                return {"tan", "silence_mark", "silence"}
-            if s.startswith("custom_"):
-                c = s.split("_", 1)[1].lower()
-                return {s, c}
-            return {s}
-
         auto_cut_set = set()
         for c in auto_cut_colors:
-            auto_cut_set.update(normalize_color_aliases(c))
+            auto_cut_set.update(self._normalize_color_aliases(c))
 
         mark_inaudible = hasattr(self, 'tgl_mark_inaudible') and self.tgl_mark_inaudible.isChecked() if hasattr(self, 'tgl_mark_inaudible') else False
         show_typos = hasattr(self, 'tgl_show_typos') and self.tgl_show_typos.isChecked() if hasattr(self, 'tgl_show_typos') else True
-
-        non_silence_cuts = []
-        if cut_ops:
-            for op in cut_ops:
-                if op.get('cut_type') != 'silence_cut':
-                    non_silence_cuts.append((op.get('start_s', 0.0), op.get('end_s', 0.0)))
 
         preview = {}
         for w in canvas.words_data or []:
@@ -3025,34 +3034,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if not status:
                 status = 'inaudible' if is_inaudible_token else 'normal'
             elif status == 'inaudible' and not mark_inaudible and (w.get('manual_status') != 'inaudible' or w.get('is_auto', False)):
-                if ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+                if ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set or 'brown' in auto_cut_set):
                     status = 'inaudible'
                 else:
                     status = 'normal'
             elif status == 'typo' and not show_typos and (w.get('manual_status') != 'typo' or w.get('is_auto', False)):
                 status = 'normal'
 
-            aliases = normalize_color_aliases(status)
+            aliases = self._normalize_color_aliases(status)
 
-            if is_inaudible_token and ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+            if is_inaudible_token and ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set or 'brown' in auto_cut_set):
                 preview[w['id']] = 'cut'
                 continue
 
             if aliases & auto_cut_set and 'normal' not in aliases and 'silence' not in aliases:
                 preview[w['id']] = 'cut'
                 continue
-
-            # Spoken normal words should NEVER be cut or struck through by silence cuts or timestamp padding
-            if status == 'normal' and not is_inaudible_token:
-                continue
-
-            w_start = w.get('start', 0.0)
-            w_end = w.get('end', 0.0)
-            w_mid = (w_start + w_end) / 2.0
-            for c_start, c_end in non_silence_cuts:
-                if c_start <= w_mid <= c_end:
-                    preview[w['id']] = 'cut'
-                    break
 
         # Propagate cut status to all tokens in any consecutive inaudible run (ensures visible first (...) is struck through)
         inaud_run = []
@@ -3061,12 +3058,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 inaud_run.append(w)
             else:
                 if inaud_run:
-                    if any(preview.get(m['id']) == 'cut' for m in inaud_run) or ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+                    if any(preview.get(m['id']) == 'cut' for m in inaud_run) or ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set or 'brown' in auto_cut_set):
                         for m in inaud_run:
                             preview[m['id']] = 'cut'
                     inaud_run = []
         if inaud_run:
-            if any(preview.get(m['id']) == 'cut' for m in inaud_run) or ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set):
+            if any(preview.get(m['id']) == 'cut' for m in inaud_run) or ('chocolate' in auto_cut_set or 'inaudible' in auto_cut_set or 'brown' in auto_cut_set):
                 for m in inaud_run:
                     preview[m['id']] = 'cut'
 
@@ -3188,11 +3185,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         raw_auto_cut = list(prefs.get('auto_cut_colors', []))
 
         # Normalize key and aliases
-        aliases = {key.lower()}
-        if key.lower() in ("violet", "red"): aliases.update(["violet", "red", "bad"])
-        elif key.lower() in ("navy", "blue"): aliases.update(["navy", "blue", "repeat"])
-        elif key.lower() in ("olive", "green"): aliases.update(["olive", "green", "typo"])
-        elif key.lower() in ("chocolate", "brown"): aliases.update(["chocolate", "brown", "inaudible"])
+        aliases = self._normalize_color_aliases(key)
 
         if checked:
             if not any(c.lower() in aliases for c in raw_auto_cut):
@@ -3246,10 +3239,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         auto_cut = list(prefs.get('auto_cut_colors', []))
         if hasattr(self, 'color_cut_buttons'):
             for c_name, btn in self.color_cut_buttons.items():
-                if btn.isChecked() and not any(c.lower() == c_name.lower() for c in auto_cut):
-                    auto_cut.append(c_name)
-                elif not btn.isChecked() and any(c.lower() == c_name.lower() for c in auto_cut):
-                    auto_cut = [c for c in auto_cut if c.lower() != c_name.lower()]
+                aliases = self._normalize_color_aliases(c_name)
+                if btn.isChecked():
+                    if not any(c.lower() in aliases for c in auto_cut):
+                        auto_cut.append(c_name)
+                else:
+                    auto_cut = [c for c in auto_cut if c.lower() not in aliases]
         prefs['auto_cut_colors'] = auto_cut
 
         checked_btn = getattr(self, 'marker_btn_group', None) and self.marker_btn_group.checkedButton()

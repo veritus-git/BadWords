@@ -1087,8 +1087,8 @@ class TranscriptionCanvas(QWidget):
             
             if is_cut:
                 w_mid_y = int(w['_rect'].center().y()) + 1
-                w_left = int(w['_rect'].left()) + 2
-                w_right = int(w['_rect'].right()) - 2
+                w_left = int(w['_rect'].left())
+                w_right = int(w['_rect'].right())
                 w_pen_color = final_fg
 
                 if current_run is not None:
@@ -1168,6 +1168,7 @@ class TranscriptionCanvas(QWidget):
                         id_map = {wo['id']: wo for wo in self.words_data}
 
                         layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
+                        is_color_cut_fn = getattr(self.main_window, 'is_color_cut', None)
                         for wid, _raw in updates:
                             word_obj = id_map.get(wid)
                             if word_obj is None:
@@ -1180,6 +1181,11 @@ class TranscriptionCanvas(QWidget):
                             # writes word_obj['status'] to the correct final value.
                             if layer_engine:
                                 layer_engine(word_obj)
+                            if is_color_cut_fn:
+                                if is_color_cut_fn(word_obj.get('status')):
+                                    self._cut_preview[wid] = 'cut'
+                                else:
+                                    self._cut_preview.pop(wid, None)
 
                         self.update()
                 break
