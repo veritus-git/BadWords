@@ -1395,28 +1395,44 @@ def _create_davinci_wrappers(install_dir, resolve_dirs):
 import sys, os, traceback, builtins
 
 for _k in ("resolve", "bmd", "fusion", "fu"):
-    if _k in globals():
+    if _k in globals() and globals()[_k] is not None:
         setattr(builtins, _k, globals()[_k])
+    elif _k in locals() and locals()[_k] is not None:
+        setattr(builtins, _k, locals()[_k])
 
 INSTALL_DIR = r'{install_str}'
 MAIN_SCRIPT = r'{main_script}'
+
+if not os.path.exists(MAIN_SCRIPT):
+    for _alt_cand in [
+        os.path.join(os.path.dirname(INSTALL_DIR), "main.py"),
+        os.path.join(os.path.dirname(INSTALL_DIR), "src", "main.py"),
+        os.path.join(INSTALL_DIR, "src", "main.py"),
+    ]:
+        if os.path.isfile(_alt_cand):
+            MAIN_SCRIPT = _alt_cand
+            break
 
 # 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
 _candidates = [
     r'{libs_str}',
     os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "libs"),
     os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "venv", "Lib", "site-packages"),
 ]
 
-_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
-if os.path.isdir(_v_lib):
-    try:
-        for _entry in os.listdir(_v_lib):
-            _sp = os.path.join(_v_lib, _entry, "site-packages")
-            if os.path.isdir(_sp) and _sp not in _candidates:
-                _candidates.append(_sp)
-    except Exception:
-        pass
+for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    for _lib_sub in ("lib", "lib64"):
+        _v_lib = os.path.join(_base, "venv", _lib_sub)
+        if os.path.isdir(_v_lib):
+            try:
+                for _entry in os.listdir(_v_lib):
+                    _sp = os.path.join(_v_lib, _entry, "site-packages")
+                    if os.path.isdir(_sp) and _sp not in _candidates:
+                        _candidates.append(_sp)
+            except Exception:
+                pass
 
 for _sp_dir in _candidates:
     if os.path.isdir(_sp_dir):
@@ -1424,18 +1440,39 @@ for _sp_dir in _candidates:
             sys.path.remove(_sp_dir)
         sys.path.insert(0, _sp_dir)
 
-if INSTALL_DIR not in sys.path:
-    sys.path.append(INSTALL_DIR)
+for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.append(_p)
 
-# 2. Windows: register DLL search paths for PySide6 and shiboken6
-if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
-    for _sp_dir in _candidates:
-        if os.path.isdir(_sp_dir):
-            for _pkg in ['PySide6', 'shiboken6']:
-                _p = os.path.join(_sp_dir, _pkg)
-                if os.path.isdir(_p):
-                    try: os.add_dll_directory(_p)
-                    except Exception: pass
+# 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
+if sys.platform.startswith('win'):
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
+    if hasattr(os, 'add_dll_directory'):
+        for _sp_dir in _candidates:
+            if os.path.isdir(_sp_dir):
+                for _pkg in ['PySide6', 'shiboken6']:
+                    _p = os.path.join(_sp_dir, _pkg)
+                    if os.path.isdir(_p):
+                        try: os.add_dll_directory(_p)
+                        except Exception: pass
+                _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                if os.path.isdir(_nv_dir):
+                    import ctypes
+                    for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                        _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                        if os.path.isdir(_bin_p):
+                            try:
+                                os.add_dll_directory(_bin_p)
+                                os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                for _f in os.listdir(_bin_p):
+                                    if _f.endswith('.dll'):
+                                        try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                        except Exception: pass
+                            except Exception: pass
 
 # 3. Linux: Preload Qt6 shared libraries if needed
 if sys.platform.startswith('linux'):
@@ -1454,16 +1491,65 @@ if sys.platform.startswith('linux'):
                     except OSError: pass
             break
 
-# 4. Launch main script in-process (preserves DaVinci Resolve Free API connection)
+# 4. Launch main script
+def _launch_external():
+    import subprocess, shutil
+    clean_env = os.environ.copy()
+    clean_env["BADWORDS_EMBEDDED"] = "1"
+    if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
+        clean_paths = [p for p in clean_env['LD_LIBRARY_PATH'].split(os.pathsep) if 'resolve' not in p.lower()]
+        clean_env['LD_LIBRARY_PATH'] = os.pathsep.join(clean_paths)
+    for cand in [
+        os.path.join(INSTALL_DIR, 'BadWords'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords'),
+        os.path.join(INSTALL_DIR, 'BadWords.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords.exe'),
+    ]:
+        if os.path.isfile(cand) and (sys.platform.startswith('win') or os.access(cand, os.X_OK)):
+            try:
+                subprocess.Popen([cand, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+                print("[BadWords] Launched standalone binary:", cand)
+                return True
+            except Exception:
+                pass
+
+    py_cands = [
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'python.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'python.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python3'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python'),
+    ]
+    py_bin = next((p for p in py_cands if os.path.isfile(p)), None)
+    if not py_bin:
+        curr_exe = sys.executable or ""
+        if "resolve" not in curr_exe.lower() and os.path.isfile(curr_exe):
+            py_bin = curr_exe
+        elif sys.platform.startswith('win'):
+            py_bin = shutil.which('pythonw') or shutil.which('python') or 'python'
+        else:
+            py_bin = shutil.which('python3') or shutil.which('python') or 'python3'
+
+    subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+    print("[BadWords] Launched external process:", MAIN_SCRIPT)
+    return True
+
 if os.path.exists(MAIN_SCRIPT):
+    os.environ["BADWORDS_EMBEDDED"] = "1"
+    if "--embedded" not in sys.argv:
+        sys.argv.append("--embedded")
     try:
         with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
         gv = globals().copy()
         gv['__file__'] = MAIN_SCRIPT
         exec(code, gv)
     except Exception as e:
-        print("Error:", e)
-        traceback.print_exc()
+        print("[BadWords] In-process execution failed:", e)
+        print("[BadWords] Falling back to external process launch...")
+        _launch_external()
 else:
     print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
@@ -1517,46 +1603,27 @@ else:
         try:
             os.makedirs(rd, exist_ok=True)
 
+            # 1. BadWords.py: ALWAYS deployed so BadWords can be launched from Workspace -> Scripts
+            wp = os.path.join(rd, "BadWords.py")
+            with open(wp, "w", encoding="utf-8") as f:
+                f.write(wrapper_content)
+            os.chmod(wp, 0o755)
+            debug_log(f"BadWords.py written to: {wp}")
+            written = True
+
             if is_studio:
                 # ── STUDIO EDITION ─────────────────────────────────────────────────────────────
-                # 1. BadWords Bridge.lua MUST NOT be installed. If present, delete it.
-                # 2. BadWords.py MUST be installed for native scripting.
+                # BadWords Bridge.lua is not needed on Studio. If present from a previous Free install, remove it.
                 target_lua = os.path.join(rd, "BadWords Bridge.lua")
                 if os.path.exists(target_lua):
                     try:
                         os.remove(target_lua)
-                        debug_log(f"Removed BadWords Bridge.lua (Studio uses native external scripting): {target_lua}")
+                        debug_log(f"Removed BadWords Bridge.lua (Studio uses native scripting): {target_lua}")
                     except Exception:
                         pass
-
-                wp = os.path.join(rd, "BadWords.py")
-                with open(wp, "w", encoding="utf-8") as f:
-                    f.write(wrapper_content)
-                os.chmod(wp, 0o755)
-                debug_log(f"BadWords.py written to: {wp}")
-                written = True
-
             else:
                 # ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
-                # 1. BadWords Bridge.lua MUST ALWAYS be installed!
-                # 2. BadWords.py:
-                #    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
-                #    - If Free < 21.1: Deploy BadWords.py.
-                if is_free_21_1:
-                    wp = os.path.join(rd, "BadWords.py")
-                    if os.path.exists(wp):
-                        try:
-                            os.remove(wp)
-                            debug_log(f"Removed BadWords.py (blocked in Resolve Free 21.1+): {wp}")
-                        except Exception:
-                            pass
-                else:
-                    wp = os.path.join(rd, "BadWords.py")
-                    with open(wp, "w", encoding="utf-8") as f:
-                        f.write(wrapper_content)
-                    os.chmod(wp, 0o755)
-                    debug_log(f"BadWords.py written to: {wp}")
-                    written = True
+                # BadWords Bridge.lua is deployed as fallback for external process connection
 
                 if bridge_lua_src and os.path.isfile(bridge_lua_src):
                     with open(bridge_lua_src, "r", encoding="utf-8") as bf:

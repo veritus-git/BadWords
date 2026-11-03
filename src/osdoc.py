@@ -964,28 +964,44 @@ class OSDoctor:
 import sys, os, traceback, builtins
 
 for _k in ("resolve", "bmd", "fusion", "fu"):
-    if _k in globals():
+    if _k in globals() and globals()[_k] is not None:
         setattr(builtins, _k, globals()[_k])
+    elif _k in locals() and locals()[_k] is not None:
+        setattr(builtins, _k, locals()[_k])
 
 INSTALL_DIR = r'{install_str}'
 MAIN_SCRIPT = r'{main_script}'
+
+if not os.path.exists(MAIN_SCRIPT):
+    for _alt_cand in [
+        os.path.join(os.path.dirname(INSTALL_DIR), "main.py"),
+        os.path.join(os.path.dirname(INSTALL_DIR), "src", "main.py"),
+        os.path.join(INSTALL_DIR, "src", "main.py"),
+    ]:
+        if os.path.isfile(_alt_cand):
+            MAIN_SCRIPT = _alt_cand
+            break
 
 # 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
 _candidates = [
     r'{libs_str}',
     os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "libs"),
     os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "venv", "Lib", "site-packages"),
 ]
 
-_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
-if os.path.isdir(_v_lib):
-    try:
-        for _entry in os.listdir(_v_lib):
-            _sp = os.path.join(_v_lib, _entry, "site-packages")
-            if os.path.isdir(_sp) and _sp not in _candidates:
-                _candidates.append(_sp)
-    except Exception:
-        pass
+for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    for _lib_sub in ("lib", "lib64"):
+        _v_lib = os.path.join(_base, "venv", _lib_sub)
+        if os.path.isdir(_v_lib):
+            try:
+                for _entry in os.listdir(_v_lib):
+                    _sp = os.path.join(_v_lib, _entry, "site-packages")
+                    if os.path.isdir(_sp) and _sp not in _candidates:
+                        _candidates.append(_sp)
+            except Exception:
+                pass
 
 for _sp_dir in _candidates:
     if os.path.isdir(_sp_dir):
@@ -993,8 +1009,9 @@ for _sp_dir in _candidates:
             sys.path.remove(_sp_dir)
         sys.path.insert(0, _sp_dir)
 
-if INSTALL_DIR not in sys.path:
-    sys.path.append(INSTALL_DIR)
+for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.append(_p)
 
 # 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
 if sys.platform.startswith('win'):
@@ -1045,7 +1062,7 @@ if sys.platform.startswith('linux'):
 
 # 4. Launch main script
 def _launch_external():
-    import subprocess
+    import subprocess, shutil
     clean_env = os.environ.copy()
     clean_env["BADWORDS_EMBEDDED"] = "1"
     if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
@@ -1064,11 +1081,27 @@ def _launch_external():
                 return True
             except Exception:
                 pass
-    py_bin = sys.executable or 'python3'
-    if sys.platform.startswith('win'):
-        pyw = os.path.join(os.path.dirname(py_bin), 'pythonw.exe')
-        if os.path.isfile(pyw):
-            py_bin = pyw
+
+    py_cands = [
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'python.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'python.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python3'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python'),
+    ]
+    py_bin = next((p for p in py_cands if os.path.isfile(p)), None)
+    if not py_bin:
+        curr_exe = sys.executable or ""
+        if "resolve" not in curr_exe.lower() and os.path.isfile(curr_exe):
+            py_bin = curr_exe
+        elif sys.platform.startswith('win'):
+            py_bin = shutil.which('pythonw') or shutil.which('python') or 'python'
+        else:
+            py_bin = shutil.which('python3') or shutil.which('python') or 'python3'
+
     subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
     print("[BadWords] Launched external process:", MAIN_SCRIPT)
     return True

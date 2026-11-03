@@ -72,11 +72,14 @@ class ResolveHandler:
 
     def _load_resolve_script_module(self):
         """Dynamically imports DaVinciResolveScript using path from OSDoctor."""
+        if hasattr(self, 'bmd') and self.bmd:
+            return
         api_path = self.os_doc.get_resolve_api_path()
         if not api_path: return
 
         try:
-            sys.path.append(api_path)
+            if api_path not in sys.path:
+                sys.path.append(api_path)
             import DaVinciResolveScript as bmd # type: ignore
             self.bmd = bmd
         except ImportError:
@@ -85,64 +88,13 @@ class ResolveHandler:
     def _connect(self, silent: bool = False):
         """Establishes connection to the running Resolve instance."""
         try:
-            edition_info = self.get_resolve_edition_info()
-            is_free_21_1 = (edition_info.get("edition") == "Free" and edition_info.get("is_21_1_or_newer", False))
-
             # ══════════════════════════════════════════════════════════════════════
-            # 1. RESOLVE STARSZE NIŻ 21.1 ORAZ STUDIO (STARY SPOSÓB Z WERSJI 3.2.4)
+            # 1. NATIVE RESOLVE CONNECTION (PRIORITY 1: EMBEDDED / DIRECT SCRIPTING)
             # ══════════════════════════════════════════════════════════════════════
-            if not is_free_21_1:
-                # 1.1. Próba załadowania modułu bmd (jak w 3.2.4)
-                if not hasattr(self, 'bmd') or not self.bmd:
-                    self._load_resolve_script_module()
 
-                # 1.2. Pobranie obiektu Resolve przez bmd.scriptapp (jak w 3.2.4)
-                if hasattr(self, 'bmd') and self.bmd:
-                    try:
-                        self.resolve = self.bmd.scriptapp("Resolve")
-                    except Exception:
-                        pass
-
-                # 1.3. Fallback dla środowiska embedded: sprawdzenie __main__ i builtins (jak w 3.2.4)
-                if not self.resolve:
-                    import __main__
-                    if hasattr(__main__, "resolve") and getattr(__main__, "resolve"):
-                        self.resolve = getattr(__main__, "resolve")
-                    elif hasattr(builtins, "resolve") and getattr(builtins, "resolve"):
-                        self.resolve = getattr(builtins, "resolve")
-
-                # 1.4. Dodatkowe sprawdzenie bmd lub fusion w __main__ / builtins
-                if not self.resolve:
-                    import __main__
-                    for container in (builtins, __main__):
-                        if hasattr(container, "bmd") and getattr(container, "bmd"):
-                            try:
-                                self.resolve = getattr(container, "bmd").scriptapp("Resolve")
-                                if self.resolve:
-                                    break
-                            except Exception:
-                                pass
-                        if hasattr(container, "fusion") and getattr(container, "fusion"):
-                            try:
-                                fu = getattr(container, "fusion")
-                                if hasattr(fu, "GetResolve"):
-                                    self.resolve = fu.GetResolve()
-                                    if self.resolve:
-                                        break
-                            except Exception:
-                                pass
-                        if hasattr(container, "fu") and getattr(container, "fu"):
-                            try:
-                                fu = getattr(container, "fu")
-                                if hasattr(fu, "GetResolve"):
-                                    self.resolve = fu.GetResolve()
-                                    if self.resolve:
-                                        break
-                            except Exception:
-                                pass
-
-                # 1.5. Jeśli obiekt resolve został pobrany: inicjalizacja projektu
-                if self.resolve:
+            # 1.1. If self.resolve is already cached and responsive, reuse it
+            if self.resolve:
+                try:
                     self.project_manager = self.resolve.GetProjectManager()
                     self.project = self.project_manager.GetCurrentProject() if self.project_manager else None
                     if self.project:
@@ -151,23 +103,105 @@ class ResolveHandler:
                         self.timeline = self.project.GetCurrentTimeline()
                         if self.timeline:
                             self.fps = self.timeline.GetSetting("timelineFrameRate")
-                            # Handle string fps (e.g. "24.00")
                             try: self.fps = float(self.fps)
-                            except (TypeError, ValueError) as e:
-                                if not silent:
-                                    log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
-                                self.fps = 24.0
+                            except (TypeError, ValueError): self.fps = 24.0
                         else:
                             self.fps = 24.0
-                        
-                        log_info(f"Connected to Resolve (native 3.2.4). Project: {self.project.GetName()}, FPS: {self.fps}")
+                        log_info(f"Connected to Resolve (native cached). Project: {self.project.GetName()}, FPS: {self.fps}")
                         return
-                    else:
+                except Exception:
+                    self.resolve = None
+                    self.project = None
+                    self.project_manager = None
+
+            # 1.2. Embedded in-process execution: Resolve passes 'resolve', 'bmd', or 'fusion'
+            #      into globals / builtins / __main__ when executed via Workspace -> Scripts -> BadWords.
+            import __main__
+            for container in (builtins, __main__):
+                if hasattr(container, "resolve") and getattr(container, "resolve"):
+                    obj = getattr(container, "resolve")
+                    if type(obj).__name__ != 'ResolveHandler' and hasattr(obj, 'GetProjectManager'):
+                        self.resolve = obj
+                        break
+
+            if not self.resolve:
+                for container in (builtins, __main__):
+                    for attr in ("fusion", "fu"):
+                        if hasattr(container, attr) and getattr(container, attr):
+                            try:
+                                fu = getattr(container, attr)
+                                if hasattr(fu, "GetResolve"):
+                                    obj = fu.GetResolve()
+                                    if obj and hasattr(obj, 'GetProjectManager'):
+                                        self.resolve = obj
+                                        break
+                            except Exception:
+                                pass
+                    if self.resolve:
+                        break
+
+            if not self.resolve:
+                for container in (builtins, __main__):
+                    if hasattr(container, "bmd") and getattr(container, "bmd"):
+                        try:
+                            b = getattr(container, "bmd")
+                            if hasattr(b, "scriptapp"):
+                                obj = b.scriptapp("Resolve")
+                                if obj and hasattr(obj, 'GetProjectManager'):
+                                    self.resolve = obj
+                                    break
+                        except Exception:
+                            pass
+                    if self.resolve:
+                        break
+
+            # 1.3. External scripting: Attempt to connect via DaVinciResolveScript (Studio & supported setups)
+            if not self.resolve:
+                if not hasattr(self, 'bmd') or not self.bmd:
+                    self._load_resolve_script_module()
+                if hasattr(self, 'bmd') and self.bmd:
+                    try:
+                        obj = self.bmd.scriptapp("Resolve")
+                        if obj and hasattr(obj, 'GetProjectManager'):
+                            self.resolve = obj
+                    except Exception as e:
                         if not silent:
-                            log_error("No project is open in Resolve.")
+                            log_warn(f"External scriptapp('Resolve') attempt: {e}")
+
+            # 1.4. If native resolve object was acquired, initialize project and timeline
+            if self.resolve:
+                try:
+                    self.project_manager = self.resolve.GetProjectManager()
+                    self.project = self.project_manager.GetCurrentProject() if self.project_manager else None
+                except Exception as e:
+                    self.project_manager = None
+                    self.project = None
+                    self.resolve = None
+                    if not silent:
+                        log_error(f"Failed to access Resolve project manager: {e}")
+
+                if self.project:
+                    self.backend = 'native'
+                    self.media_pool = self.project.GetMediaPool()
+                    self.timeline = self.project.GetCurrentTimeline()
+                    if self.timeline:
+                        self.fps = self.timeline.GetSetting("timelineFrameRate")
+                        try: self.fps = float(self.fps)
+                        except (TypeError, ValueError) as e:
+                            if not silent:
+                                log_error(f"_connect: failed to parse FPS '{self.fps}', falling back to 24.0: {e}")
+                            self.fps = 24.0
+                    else:
+                        self.fps = 24.0
+                    
+                    log_info(f"Connected to Resolve (native). Project: {self.project.GetName()}, FPS: {self.fps}")
+                    return
+                else:
+                    if not silent:
+                        log_error("No project is open in Resolve.")
 
             # ══════════════════════════════════════════════════════════════════════
-            # 2. RESOLVE FREE 21.1+ (LUB FALLBACK DLA BRAKU POŁĄCZENIA NATYWNEGO)
+            # 2. RESOLVE FREE / BRIDGE FALLBACK (PRIORITY 2: EXTERNAL LAUNCH WITH BRIDGE)
             # ══════════════════════════════════════════════════════════════════════
             if self.bridge_client.is_bridge_alive(timeout_secs=0.25):
                 try:
@@ -190,6 +224,8 @@ class ResolveHandler:
             self.backend = None
             if not silent:
                 log_error("Could not connect to Resolve API object or Bridge.")
+                edition_info = self.get_resolve_edition_info()
+                is_free_21_1 = (edition_info.get("edition") == "Free" and edition_info.get("is_21_1_or_newer", False))
                 if is_free_21_1:
                     log_info("[Tip] DaVinci Resolve Free 21.1+: open DaVinci Resolve and run 'Workspace -> Scripts -> BadWords Bridge'.")
                 else:
