@@ -503,5 +503,7 @@
     "panel_workspace_title": "Area di Lavoro & Marcatori",
     "panel_workspace_desc": "Gestisci modalità di marcatura, statistiche della timeline, marcatori di colore personalizzati e scorciatoie preferite.",
     "panel_assembly_title": "Opzioni di Montaggio",
-    "panel_assembly_desc": "Configura regole di taglio a catena, gestione del parlato inudibile e generazione della timeline."
+    "panel_assembly_desc": "Configura regole di taglio a catena, gestione del parlato inudibile e generazione della timeline.",
+    "lbl_show_panel_headers": "Mostra intestazioni pannelli",
+    "tt_show_panel_headers": "Mostra o nascondi i titoli e le descrizioni in cima ai pannelli laterali."
 }

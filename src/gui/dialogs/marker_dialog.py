@@ -127,11 +127,12 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         color_row = QHBoxLayout()
         color_lbl = QLabel(_txt(lang, "lbl_marker_color"), content)
         color_lbl.setFixedWidth(config.S(100))
-        _blocked = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan"})
+        _blocked_raw = getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan", "Green", "Blue"})
+        _blocked = {b.lower() for b in _blocked_raw}
         self._color_key_map: dict[str, str] = {}
         translated_options: list[str] = []
         for c in config.RESOLVE_COLORS:
-            if c in _blocked:
+            if c.lower() in _blocked:
                 continue
             t = _txt(lang, f"resolve_color_{c.lower()}")
             self._color_key_map[t] = c

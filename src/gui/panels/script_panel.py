@@ -24,9 +24,10 @@ def create_panel_header(win, title_key: str, desc_key: str, default_title: str =
     """Create a standardized panel header with title, short description, and divider line."""
     from gui.widgets.labels import QLabel
     header = QWidget()
+    header.setObjectName("PanelHeaderWidget")
     h_layout = QVBoxLayout(header)
-    h_layout.setContentsMargins(0, 0, 0, config.S(4))
-    h_layout.setSpacing(config.S(4))
+    h_layout.setContentsMargins(0, 0, 0, 0)
+    h_layout.setSpacing(config.S(10))
 
     lbl_title = QLabel(win.txt(title_key, default_title))
     lbl_title.setStyleSheet(f"font-weight: bold; font-size: {config.FS(11)}pt; color: #ffffff;")
@@ -34,13 +35,21 @@ def create_panel_header(win, title_key: str, desc_key: str, default_title: str =
 
     lbl_desc = QLabel(win.txt(desc_key, default_desc))
     lbl_desc.setWordWrap(True)
-    lbl_desc.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt; line-height: 1.3;")
+    lbl_desc.setStyleSheet(f"color: #888888; font-size: {config.FS(9.5)}pt; line-height: 1.35;")
     h_layout.addWidget(lbl_desc)
 
     div = QFrame()
     div.setFixedHeight(config.S(1))
-    div.setStyleSheet("background-color: #383838; margin-top: 4px; margin-bottom: 4px; border: none;")
+    div.setStyleSheet("background-color: #383838; margin-top: 6px; margin-bottom: 8px; border: none;")
     h_layout.addWidget(div)
+
+    # Register for global show/hide preference
+    if not hasattr(win, '_panel_headers'):
+        win._panel_headers = []
+    win._panel_headers.append(header)
+
+    prefs = getattr(win, 'prefs', {}) or {}
+    header.setVisible(bool(prefs.get('show_panel_headers', True)))
 
     return header
 

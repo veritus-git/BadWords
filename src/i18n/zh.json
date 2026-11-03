@@ -503,5 +503,7 @@
     "panel_workspace_title": "工作区与标记",
     "panel_workspace_desc": "管理标记模式、时间线统计信息、自定义彩色标记及常用快捷功能。",
     "panel_assembly_title": "装配与剪辑选项",
-    "panel_assembly_desc": "配置波纹裁剪规则、模糊发音片段处理及新时间线生成参数。"
+    "panel_assembly_desc": "配置波纹裁剪规则、模糊发音片段处理及新时间线生成参数。",
+    "lbl_show_panel_headers": "显示面板标题",
+    "tt_show_panel_headers": "显示或隐藏侧边栏面板顶部的标题和描述。"
 }

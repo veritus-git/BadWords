@@ -1415,6 +1415,22 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
                  False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=True))
 
+        # ── Show panel headers toggle (basic + advanced) ──
+        self.tgl_show_panel_headers = ToggleSwitch()
+        self.tgl_show_panel_headers.setChecked(
+            bool(prefs.get('show_panel_headers', True)),
+            animated=False
+        )
+        w_panel_hdr = QWidget()
+        l_panel_hdr = QHBoxLayout(w_panel_hdr)
+        l_panel_hdr.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_panel_hdr.addStretch()
+        l_panel_hdr.addWidget(self._get_info_icon("tt_show_panel_headers"))
+        l_panel_hdr.addSpacing(config.S(8))
+        l_panel_hdr.addWidget(self.tgl_show_panel_headers)
+        self._add_row(form_bottom, self.txt("lbl_show_panel_headers"), w_panel_hdr,
+                 True, lambda v: self.tgl_show_panel_headers.setChecked(v, animated=True))
+
         l_transcript.addLayout(form_bottom)
         l_transcript.addSpacing(14)
 
@@ -2354,13 +2370,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             ).exec()
             return
 
-        # Validate: each entry must have at least a non-empty 'name'
+        # Validate: each entry must have at least a non-empty 'name' and non-reserved color
+        blocked_colors = {c.lower() for c in getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan", "Green", "Blue"})}
         valid = []
         for entry in imported:
             if isinstance(entry, dict) and entry.get('name', '').strip():
+                c_name = entry.get('color', 'Orange').strip()
+                if c_name.lower() in blocked_colors:
+                    continue
                 valid.append({
                     'name':  entry['name'].strip(),
-                    'color': entry.get('color', 'Blue'),
+                    'color': c_name,
                 })
 
         if not valid:
@@ -2556,6 +2576,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
             'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
             'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
+            'show_panel_headers':   self._safe_get('tgl_show_panel_headers', old_prefs.get('show_panel_headers', True), 'isChecked'),
             'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
             'auto_update_on_start':   self._safe_get('tgl_auto_update_on_start', old_prefs.get('auto_update_on_start', False), 'isChecked'),
             'always_on_top':          self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
@@ -2660,6 +2681,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._safe_set('tgl_xml_preserve_track_order', _g('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'setChecked')
         self._safe_set('tgl_force_xml_assembly', _g('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'setChecked')
         self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
+        self._safe_set('tgl_show_panel_headers', _g('show_panel_headers', True), 'setChecked')
         self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')
         self._safe_set('tgl_auto_update_on_start', _g('auto_update_on_start', False), 'setChecked')
         
@@ -2751,6 +2773,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         if hasattr(main_win, 'update_silence_panel_ranges'):
             main_win.update_silence_panel_ranges()
 
+        if hasattr(main_win, 'set_panel_headers_visible'):
+            main_win.set_panel_headers_visible(new_prefs.get('show_panel_headers', True))
+
         aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
         if aot_changed and main_win:
             is_top = bool(new_prefs.get('always_on_top'))
@@ -2829,6 +2854,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 'always_on_top': f"{self.txt('tab_transcript')}: {self.txt('lbl_always_on_top')}",
                 'sync_davinci_chapter': f"{self.txt('tab_transcript')}: {self.txt('chk_sync_davinci')}",
                 'timestamp_precise':    f"{self.txt('tab_transcript')}: {self.txt('lbl_timestamp_precise')}",
+                'show_panel_headers':   f"{self.txt('tab_transcript')}: {self.txt('lbl_show_panel_headers')}",
                 'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
                 'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
                 'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",

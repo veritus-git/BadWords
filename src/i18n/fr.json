@@ -503,5 +503,7 @@
     "panel_workspace_title": "Espace de Travail & Marqueurs",
     "panel_workspace_desc": "Gérez les modes de marquage, les statistiques de la timeline, les marqueurs de couleur personnalisés et les favoris épinglés.",
     "panel_assembly_title": "Options de Montage",
-    "panel_assembly_desc": "Configurez les règles de coupe raccord, le traitement des paroles inaudibles et la création de timeline."
+    "panel_assembly_desc": "Configurez les règles de coupe raccord, le traitement des paroles inaudibles et la création de timeline.",
+    "lbl_show_panel_headers": "Afficher les en-têtes de panneau",
+    "tt_show_panel_headers": "Afficher ou masquer les titres et descriptions en haut des panneaux latéraux."
 }

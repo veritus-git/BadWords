@@ -503,5 +503,7 @@
     "panel_workspace_title": "Espacio de Trabajo y Marcadores",
     "panel_workspace_desc": "Gestiona modos de marcado, estadísticas de la línea de tiempo, marcadores de color personalizados y favoritos fijados.",
     "panel_assembly_title": "Opciones de Montaje",
-    "panel_assembly_desc": "Configura reglas de corte en cadena, gestión de fragmentos inaudibles y creación de líneas de tiempo."
+    "panel_assembly_desc": "Configura reglas de corte en cadena, gestión de fragmentos inaudibles y creación de líneas de tiempo.",
+    "lbl_show_panel_headers": "Mostrar encabezados de paneles",
+    "tt_show_panel_headers": "Muestra u oculta los títulos y descripciones en la parte superior de los paneles laterales."
 }

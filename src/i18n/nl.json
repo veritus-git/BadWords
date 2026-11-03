@@ -503,5 +503,7 @@
     "panel_workspace_title": "Werkruimte & Markeringen",
     "panel_workspace_desc": "Beheer markeringsmodi, tijdlijnstatistieken, aangepaste kleurmarkeringen en vastgezette favorieten.",
     "panel_assembly_title": "Montage Opties",
-    "panel_assembly_desc": "Configureer ripple-cut regels, verwerking van onhoorbare spraak en tijdlijnaanmaak."
+    "panel_assembly_desc": "Configureer ripple-cut regels, verwerking van onhoorbare spraak en tijdlijnaanmaak.",
+    "lbl_show_panel_headers": "Toon paneelkopteksten",
+    "tt_show_panel_headers": "Titels en beschrijvingen bovenaan de zijpanelen weergeven of verbergen."
 }

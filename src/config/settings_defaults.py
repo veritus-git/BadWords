@@ -42,6 +42,7 @@ DEFAULT_SETTINGS = {
     "view_mode":            "segmented",
     "transcript_layout":    "segmented",
     "settings_view_mode":   "basic",
+    "show_panel_headers":   True,
     # ── Chunking ────────────────────────────────────────────────────────────
     "chunk_punct_count":    1,
     "chunk_max_words":      15,

@@ -503,5 +503,7 @@
     "panel_workspace_title": "Przestrzeń Robocza",
     "panel_workspace_desc": "Zarządzaj trybami oznaczania, statystykami osi czasu, własnymi znacznikami i przypiętymi skrótami.",
     "panel_assembly_title": "Opcje Montażu",
-    "panel_assembly_desc": "Skonfiguruj reguły montażu ripple-cut, obsługę niesłyszalnych słów, kolory cięć i tworzenie osi czasu."
+    "panel_assembly_desc": "Skonfiguruj reguły montażu ripple-cut, obsługę niesłyszalnych słów, kolory cięć i tworzenie osi czasu.",
+    "lbl_show_panel_headers": "Pokaż nagłówki paneli",
+    "tt_show_panel_headers": "Pokaż lub ukryj tytuły i opisy na górze bocznych paneli."
 }

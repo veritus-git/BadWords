@@ -684,6 +684,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 else:
                     self.show()
 
+    def set_panel_headers_visible(self, visible: bool) -> None:
+        """Show or hide all sidebar panel headers (titles, descriptions, dividers)."""
+        if not hasattr(self, 'prefs') or not isinstance(self.prefs, dict):
+            self.prefs = {}
+        self.prefs['show_panel_headers'] = bool(visible)
+        for h in getattr(self, '_panel_headers', []):
+            if h:
+                h.setVisible(bool(visible))
+        if hasattr(self, 'lbl_legend_title') and self.lbl_legend_title:
+            self.lbl_legend_title.setVisible(bool(visible))
+        has_items = getattr(self, '_legend_has_items', False)
+        if hasattr(self, 'lbl_legend_hint') and self.lbl_legend_hint:
+            self.lbl_legend_hint.setVisible(bool(visible) and has_items)
+        if hasattr(self, 'div_legend') and self.div_legend:
+            self.div_legend.setVisible(bool(visible) and has_items)
+
 
     # ------------------------------------------------------------------
     # UI Construction
@@ -3163,11 +3179,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 w.deleteLater()
         matching_keys = [k for k in config.RESOLVE_COLORS_HEX if k in stats]
         has_items = bool(matching_keys)
+        self._legend_has_items = has_items
 
+        show_headers = getattr(self, 'prefs', {}).get('show_panel_headers', True)
+        if hasattr(self, 'lbl_legend_title') and self.lbl_legend_title:
+            self.lbl_legend_title.setVisible(show_headers)
         if hasattr(self, 'lbl_legend_hint') and self.lbl_legend_hint:
-            self.lbl_legend_hint.setVisible(has_items)
+            self.lbl_legend_hint.setVisible(has_items and show_headers)
         if hasattr(self, 'div_legend') and self.div_legend:
-            self.div_legend.setVisible(has_items)
+            self.div_legend.setVisible(has_items and show_headers)
 
         if not has_items:
             empty = QLabel(self.txt("legend_empty"))

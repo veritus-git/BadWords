@@ -503,5 +503,7 @@
     "panel_workspace_title": "Área de Trabalho & Marcadores",
     "panel_workspace_desc": "Gira modos de marcação, estatísticas da linha de tempo, marcadores de cor personalizados e atalhos favoritos.",
     "panel_assembly_title": "Opções de Montagem",
-    "panel_assembly_desc": "Configure regras de corte ripple, tratamento de palavras inaudíveis e criação de timeline."
+    "panel_assembly_desc": "Configure regras de corte ripple, tratamento de palavras inaudíveis e criação de timeline.",
+    "lbl_show_panel_headers": "Mostrar cabeçalhos de painéis",
+    "tt_show_panel_headers": "Mostrar ou ocultar títulos e descrições no topo dos painéis laterais."
 }

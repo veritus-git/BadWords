@@ -503,5 +503,7 @@
     "panel_workspace_title": "Arbeitsbereich & Marker",
     "panel_workspace_desc": "Verwalten Sie Markierungsmodi, Timeline-Statistiken, benutzerdefinierte Farbmarker und angeheftete Favoriten.",
     "panel_assembly_title": "Schnitt-Optionen",
-    "panel_assembly_desc": "Konfigurieren Sie Schnittregeln (Ripple-Cut), die Handhabung unverständlicher Wörter und die Timeline-Erstellung."
+    "panel_assembly_desc": "Konfigurieren Sie Schnittregeln (Ripple-Cut), die Handhabung unverständlicher Wörter und die Timeline-Erstellung.",
+    "lbl_show_panel_headers": "Panel-Überschriften anzeigen",
+    "tt_show_panel_headers": "Titel und Beschreibungen oben in den Seitenleisten-Panels anzeigen oder ausblenden."
 }

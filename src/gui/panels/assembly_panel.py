@@ -29,7 +29,7 @@ def build_assembly_panel(win) -> QFrame:
     p_assembly = QWidget()
     l_assembly = QVBoxLayout(p_assembly)
     l_assembly.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
-    l_assembly.setSpacing(config.S(15))
+    l_assembly.setSpacing(config.S(8))
 
     header = create_panel_header(
         win,
@@ -45,6 +45,11 @@ def build_assembly_panel(win) -> QFrame:
         win._pin_buttons[fav_id] = btn
         return btn
     
+    # ── Top Toggles Container (Compact & Responsive) ──
+    l_switches = QVBoxLayout()
+    l_switches.setContentsMargins(0, 0, 0, 0)
+    l_switches.setSpacing(config.S(6))
+
     row_show_inaudible = QHBoxLayout()
     row_show_inaudible.setSpacing(config.S(8))
     lbl_show_inaud = QLabel(win.txt("lbl_show_inaudible_fragments"))
@@ -57,7 +62,7 @@ def build_assembly_panel(win) -> QFrame:
     row_show_inaudible.addWidget(win.tgl_show_inaudible)
     pin_show_inaud = _pin_btn('show_inaudible')
     row_show_inaudible.addWidget(pin_show_inaud)
-    l_assembly.addLayout(row_show_inaudible)
+    l_switches.addLayout(row_show_inaudible)
     pin_show_inaud.clicked.connect(lambda checked=False, p=pin_show_inaud: win._toggle_favorite('show_inaudible', win.tgl_show_inaudible, win.txt("tool_show_inaudible"), p))
     
     row_mark_inaudible = QHBoxLayout()
@@ -71,7 +76,7 @@ def build_assembly_panel(win) -> QFrame:
     row_mark_inaudible.addWidget(win.tgl_mark_inaudible)
     pin_mark_inaud = _pin_btn('mark_inaudible')
     row_mark_inaudible.addWidget(pin_mark_inaud)
-    l_assembly.addLayout(row_mark_inaudible)
+    l_switches.addLayout(row_mark_inaudible)
     pin_mark_inaud.clicked.connect(lambda checked=False, p=pin_mark_inaud: win._toggle_favorite('mark_inaudible', win.tgl_mark_inaudible, win.txt("tool_mark_inaudible"), p))
     
     row_show_typos = QHBoxLayout()
@@ -86,23 +91,38 @@ def build_assembly_panel(win) -> QFrame:
     row_show_typos.addWidget(win.tgl_show_typos)
     pin_show_typos = _pin_btn('show_typos')
     row_show_typos.addWidget(pin_show_typos)
-    l_assembly.addLayout(row_show_typos)
+    l_switches.addLayout(row_show_typos)
     pin_show_typos.clicked.connect(lambda checked=False, p=pin_show_typos: win._toggle_favorite('show_typos', win.tgl_show_typos, win.txt("tool_show_typos"), p))
+
+    l_assembly.addLayout(l_switches)
     
     win.color_cut_buttons = {}
     
     l_colors_container = QVBoxLayout()
-    l_colors_container.setSpacing(config.S(10))
+    l_colors_container.setSpacing(config.S(8))
     
     div_top = QFrame()
     div_top.setFixedHeight(config.S(1))
-    div_top.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+    div_top.setStyleSheet("background-color: #383838; margin-top: 4px; margin-bottom: 2px; border: none;")
     l_colors_container.addWidget(div_top)
     
     from gui.utils import get_layout_icon_path
 
-    color_idx = 0
-    for color_name, color_hex in config.RESOLVE_COLORS_HEX.items():
+    # Reserved colors: Chocolate, Tan, Green, Blue are reserved by BadWords/Resolve defaults.
+    # They ONLY have the scissors icon (no auto-cut assemble toggle) and must be at the very bottom.
+    RESERVED_COLORS = ["Chocolate", "Tan", "Green", "Blue"]
+    reserved_set = {c.lower() for c in RESERVED_COLORS}
+
+    all_colors = list(config.RESOLVE_COLORS_HEX.items())
+    standard_colors = [(name, hex_val) for name, hex_val in all_colors if name.lower() not in reserved_set]
+    reserved_colors = []
+    for r_name in RESERVED_COLORS:
+        for name, hex_val in all_colors:
+            if name.lower() == r_name.lower():
+                reserved_colors.append((name, hex_val))
+                break
+
+    def _render_color_item(color_name: str, color_hex: str, is_scissors_only: bool):
         row_color = QHBoxLayout()
         row_color.setSpacing(config.S(8))
         
@@ -112,11 +132,9 @@ def build_assembly_panel(win) -> QFrame:
         row_color.addStretch()
         
         pin_c = _pin_btn(f'cut_{color_name.lower()}')
-        
-        is_unsupported = color_name.lower() in ["tan"]
         btn_auto = None
         
-        if not is_unsupported:
+        if not is_scissors_only:
             btn_auto = QPushButton()
             btn_auto.setFixedSize(config.S(24), config.S(24))
             btn_auto.setCursor(Qt.PointingHandCursor)
@@ -154,17 +172,30 @@ def build_assembly_panel(win) -> QFrame:
         
         l_colors_container.addLayout(row_color)
         
+        target_fav = btn_auto if btn_auto is not None else btn_cut_now
         clean_label = win.txt(f"resolve_color_{color_name.lower()}").replace("<br>", " ")
-        pin_c.clicked.connect(lambda _, c=color_name, b=btn_auto, p=pin_c, l=clean_label: win._toggle_favorite(
+        pin_c.clicked.connect(lambda _, c=color_name, b=target_fav, p=pin_c, l=clean_label: win._toggle_favorite(
             f'cut_{c.lower()}', b, l, p
         ))
-        
-        color_idx += 1
-        if color_idx == 3:
+
+    # 1. Standard editable colors (Violet, Navy, Olive first with divider, then others)
+    for idx, (color_name, color_hex) in enumerate(standard_colors):
+        _render_color_item(color_name, color_hex, is_scissors_only=False)
+        if idx == 2:
             div = QFrame()
-            div.setFixedHeight(1)
-            div.setStyleSheet("background-color: #383838; margin: 0px; border: none;")
+            div.setFixedHeight(config.S(1))
+            div.setStyleSheet("background-color: #383838; margin: 2px 0px; border: none;")
             l_colors_container.addWidget(div)
+
+    # 2. Divider before reserved colors at the bottom
+    div_reserved = QFrame()
+    div_reserved.setFixedHeight(config.S(1))
+    div_reserved.setStyleSheet("background-color: #383838; margin-top: 4px; margin-bottom: 2px; border: none;")
+    l_colors_container.addWidget(div_reserved)
+
+    # 3. Reserved colors at the very bottom (Chocolate, Tan, Green, Blue) — scissors only!
+    for color_name, color_hex in reserved_colors:
+        _render_color_item(color_name, color_hex, is_scissors_only=True)
         
     l_assembly.addLayout(l_colors_container)
     l_assembly.addStretch(1)

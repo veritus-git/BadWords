@@ -98,19 +98,35 @@ class PreviewToggleBtn(QPushButton):
 
         if self._renderer and self._renderer.isValid():
             dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 1.0
-            icon_px = max(1, int(config.S(16) * dpr))
-            img = QImage(icon_px, icon_px, QImage.Format_ARGB32_Premultiplied)
+            vb = self._renderer.viewBoxF()
+            native_w = vb.width() if vb.isValid() and vb.width() > 0 else 1.0
+            native_h = vb.height() if vb.isValid() and vb.height() > 0 else 1.0
+            aspect = native_w / native_h
+
+            # Max bounding box for the icon inside the 26x26 button preserving natural aspect ratio
+            max_w = float(config.S(16))
+            max_h = float(config.S(14))
+
+            draw_w = max_w
+            draw_h = draw_w / aspect
+            if draw_h > max_h:
+                draw_h = max_h
+                draw_w = draw_h * aspect
+
+            px_w = max(1, int(round(draw_w * dpr)))
+            px_h = max(1, int(round(draw_h * dpr)))
+
+            img = QImage(px_w, px_h, QImage.Format_ARGB32_Premultiplied)
             img.fill(Qt.transparent)
             ip = QPainter(img)
-            self._renderer.render(ip, QRectF(0, 0, icon_px, icon_px))
+            self._renderer.render(ip, QRectF(0, 0, px_w, px_h))
             ip.setCompositionMode(QPainter.CompositionMode_SourceIn)
             ip.fillRect(img.rect(), color)
             ip.end()
 
-            draw_s = float(config.S(16))
-            x = (w - draw_s) / 2.0
-            y = (h - draw_s) / 2.0
-            painter.drawImage(QRectF(x, y, draw_s, draw_s), img)
+            x = (w - draw_w) / 2.0
+            y = (h - draw_h) / 2.0
+            painter.drawImage(QRectF(x, y, draw_w, draw_h), img)
         else:
             if self.mode == "timeline":
                 # Fallback waveform bars icon
@@ -247,11 +263,11 @@ class AudioPreviewWidget(QFrame):
                 background: #ffffff;
             }}
             QLabel#TimecodeLabel {{
-                font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+                font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
                 font-size: {config.FS(9.5)}pt;
                 font-weight: bold;
                 color: #ffffff;
-                letter-spacing: 0.5px;
+                font-feature-settings: 'tnum';
             }}
             QLabel#StatusLabel {{
                 color: #666666;
@@ -318,6 +334,7 @@ class AudioPreviewWidget(QFrame):
         self.lbl_timecode = QLabel("01:00:00:00")
         self.lbl_timecode.setObjectName("TimecodeLabel")
         self.lbl_timecode.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.lbl_timecode.setFixedWidth(config.S(86))
         left_layout.addWidget(self.lbl_timecode)
         left_layout.addSpacing(config.S(4))
 

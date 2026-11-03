@@ -503,5 +503,7 @@
     "panel_workspace_title": "Workspace & Markers",
     "panel_workspace_desc": "Manage marker modes, timeline statistics, custom color markers, and pinned favorite shortcuts.",
     "panel_assembly_title": "Assembly Options",
-    "panel_assembly_desc": "Configure ripple-cut rules, inaudible speech handling, color cut presets, and timeline creation."
+    "panel_assembly_desc": "Configure ripple-cut rules, inaudible speech handling, color cut presets, and timeline creation.",
+    "lbl_show_panel_headers": "Show panel headers",
+    "tt_show_panel_headers": "Show or hide titles and descriptions at the top of sidebar panels."
 }

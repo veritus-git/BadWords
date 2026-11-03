@@ -613,20 +613,18 @@ class WaveformTimelineWidget(QWidget):
     # -------------------------------------------------------------------------
 
     def _get_clip_rect(self) -> QRectF:
-        """Calculates the Fairlight clip ribbon rectangle inside the widget with authentic DaVinci timeline track height and breathing room."""
+        """Calculates the Fairlight clip ribbon rectangle inside the widget taking ~80% of widget height."""
         m_x = float(config.S(8))
-        m_y_top = float(config.S(22))   # Top space for breathing room + zoom controls
-        m_y_bot = float(config.S(16))   # Bottom space for breathing room + scrollbar
+        h = float(self.height())
         sb_h = float(config.S(7)) if (hasattr(self, 'scrollbar') and self.scrollbar.isVisible()) else 0.0
 
-        available_w = max(10.0, self.width() - 2 * m_x)
-        available_h = max(10.0, self.height() - m_y_top - m_y_bot - sb_h)
+        usable_h = max(20.0, h - sb_h)
+        # Bounded to ~80% of available height with balanced top/bottom margin
+        clip_h = round(usable_h * 0.80)
+        clip_y = round((usable_h - clip_h) / 2.0)
 
-        # Authentic DaVinci Resolve audio clip track height (proportional, not stretched out)
-        natural_clip_h = min(available_h, float(config.S(82)))
-        clip_y = m_y_top + (available_h - natural_clip_h) / 2.0
-
-        return QRectF(m_x, clip_y, available_w, natural_clip_h)
+        available_w = max(10.0, float(self.width()) - 2.0 * m_x)
+        return QRectF(m_x, clip_y, available_w, clip_h)
 
     def _rebuild_waveform_pixmap(self) -> None:
         """
@@ -660,8 +658,8 @@ class WaveformTimelineWidget(QWidget):
         # Subtle timeline track boundary separator lines top and bottom
         track_pen = QPen(QColor("#242424"), 1.0)
         painter.setPen(track_pen)
-        painter.drawLine(QPointF(0, ry - float(config.S(5))), QPointF(w, ry - float(config.S(5))))
-        painter.drawLine(QPointF(0, ry + rh + float(config.S(5))), QPointF(w, ry + rh + float(config.S(5))))
+        painter.drawLine(QPointF(0, ry - float(config.S(3))), QPointF(w, ry - float(config.S(3))))
+        painter.drawLine(QPointF(0, ry + rh + float(config.S(3))), QPointF(w, ry + rh + float(config.S(3))))
 
         # 2. Fairlight Audio Clip Ribbon
         clip_path = QPainterPath()
