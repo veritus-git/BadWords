@@ -488,5 +488,10 @@
     "legend_description": "Aperçu des couleurs et des marqueurs dans ce montage. Cochez « Supprimer » pour couper cette couleur lors de l'assemblage.",
     "legend_silence_managed": "(géré dans l'onglet Silence)",
     "tt_legend_silence_managed": "La découpe des silences et l'ajustement des pauses sont configurés dans l'onglet Silence.",
-    "hdr_audio_preprocessing": "Prétraitement audio et VAD (FFmpeg)"
+    "hdr_audio_preprocessing": "Prétraitement audio et VAD (FFmpeg)",
+    "tt_toggle_timeline": "Basculer l'aperçu de la timeline",
+    "tt_toggle_video": "Basculer l'aperçu vidéo",
+    "tt_zoom_out": "Zoom arrière",
+    "tt_zoom_fit": "Ajuster la timeline",
+    "tt_zoom_in": "Zoom avant (ou Ctrl + Molette)"
 }

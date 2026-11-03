@@ -488,5 +488,10 @@
     "legend_description": "Resumen de colores y marcadores en esta edición. Marca 'Eliminar' para cortar ese color durante el ensamblaje.",
     "legend_silence_managed": "(gestionado en el panel Silencio)",
     "tt_legend_silence_managed": "El corte de silencio y el ajuste de pausas se configuran en el panel Silencio.",
-    "hdr_audio_preprocessing": "Preprocesamiento de audio y VAD (FFmpeg)"
+    "hdr_audio_preprocessing": "Preprocesamiento de audio y VAD (FFmpeg)",
+    "tt_toggle_timeline": "Alternar vista previa de la línea de tiempo",
+    "tt_toggle_video": "Alternar vista previa de video",
+    "tt_zoom_out": "Alejar",
+    "tt_zoom_fit": "Ajustar línea de tiempo",
+    "tt_zoom_in": "Acercar (o Ctrl + Rueda)"
 }

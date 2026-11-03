@@ -488,5 +488,10 @@
     "legend_description": "此剪辑中的颜色和标记概览。勾选“删除”可在组装时剪切该颜色的所有片段。",
     "legend_silence_managed": "（在“静音”面板中管理）",
     "tt_legend_silence_managed": "静音剪切和停顿调整在“静音”面板中进行配置。",
-    "hdr_audio_preprocessing": "音频预处理和静音检测 (FFmpeg VAD)"
+    "hdr_audio_preprocessing": "音频预处理和静音检测 (FFmpeg VAD)",
+    "tt_toggle_timeline": "切换时间轴预览",
+    "tt_toggle_video": "切换视频预览",
+    "tt_zoom_out": "缩小",
+    "tt_zoom_fit": "适应时间轴",
+    "tt_zoom_in": "放大 (或 Ctrl + 滚轮)"
 }

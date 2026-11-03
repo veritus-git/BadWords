@@ -614,6 +614,8 @@ class OSDoctor:
                 "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/Modules",
                 "/Applications/DaVinci Resolve Studio/DaVinci Resolve.app/Contents/Libraries/Fusion/Modules",
                 "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/Modules",
+                "/Applications/DaVinci Resolve.app/Contents/Resources/Developer/Scripting/Modules",
+                "/Applications/DaVinci Resolve Studio.app/Contents/Resources/Developer/Scripting/Modules",
             ])
             if "RESOLVE_SCRIPT_LIB" not in os.environ:
                 candidates = [

@@ -488,5 +488,10 @@
     "status_assembly_drt_build": "Building DRT assembly...",
     "status_assembly_drt_import": "Importing DRT timeline...",
     "tool_colors": "Colors in this edit",
-    "hdr_audio_preprocessing": "Audio Pre-Processing & VAD (FFmpeg)"
+    "hdr_audio_preprocessing": "Audio Pre-Processing & VAD (FFmpeg)",
+    "tt_toggle_timeline": "Toggle Timeline Preview",
+    "tt_toggle_video": "Toggle Video Preview",
+    "tt_zoom_out": "Zoom Out",
+    "tt_zoom_fit": "Fit Timeline",
+    "tt_zoom_in": "Zoom In (or Ctrl + Wheel)"
 }

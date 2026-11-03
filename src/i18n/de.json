@@ -488,5 +488,10 @@
     "legend_description": "Übersicht über Farben und Marker in diesem Schnitt. Aktivieren Sie 'Entfernen', um diese Farbe beim Zusammenfügen zu schneiden.",
     "legend_silence_managed": "(im Bereich Stille verwaltet)",
     "tt_legend_silence_managed": "Das Schneiden von Stille und Pausenanpassung werden im Bereich Stille konfiguriert.",
-    "hdr_audio_preprocessing": "Audio-Vorverarbeitung & VAD (FFmpeg)"
+    "hdr_audio_preprocessing": "Audio-Vorverarbeitung & VAD (FFmpeg)",
+    "tt_toggle_timeline": "Timeline-Vorschau umschalten",
+    "tt_toggle_video": "Video-Vorschau umschalten",
+    "tt_zoom_out": "Verkleinern",
+    "tt_zoom_fit": "Timeline anpassen",
+    "tt_zoom_in": "Vergrößern (oder Strg + Mausrad)"
 }

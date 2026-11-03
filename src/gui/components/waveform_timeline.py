@@ -595,6 +595,8 @@ class WaveformTimelineWidget(QWidget):
     def _on_peaks_ready(self, peaks: WaveformPeaks, audio_path: str) -> None:
         if self._audio_path == audio_path:
             self._peaks = peaks
+            if hasattr(self.main_window, 'engine') and self.main_window.engine:
+                self.main_window.engine.register_active_peaks(peaks, audio_path)
             self._duration = peaks.duration
             self._recalculate_cut_ranges()
             self._zoom_level = 1.0
@@ -602,6 +604,8 @@ class WaveformTimelineWidget(QWidget):
             self._sync_scrollbar()
             self._needs_pixmap_rebuild = True
             self.update()
+            if hasattr(self.main_window, '_refresh_cut_preview'):
+                self.main_window._refresh_cut_preview()
 
     def _on_peaks_error(self, err_msg: str) -> None:
         log_info(f"WaveformTimelineWidget: peak extraction notice: {err_msg}")

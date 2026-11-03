@@ -488,5 +488,10 @@
     "legend_description": "Overzicht van kleuren en markeringen in deze bewerking. Vink 'Verwijderen' aan om die kleur te knippen tijdens de montage.",
     "legend_silence_managed": "(beheerd in paneel Stilte)",
     "tt_legend_silence_managed": "Het knippen van stilte en pauze-instellingen worden geconfigureerd in het paneel Stilte.",
-    "hdr_audio_preprocessing": "Audio voorverwerking & VAD (FFmpeg)"
+    "hdr_audio_preprocessing": "Audio voorverwerking & VAD (FFmpeg)",
+    "tt_toggle_timeline": "Tijdlijnvoorbeeld in-/uitschakelen",
+    "tt_toggle_video": "Videovoorbeeld in-/uitschakelen",
+    "tt_zoom_out": "Uitzoomen",
+    "tt_zoom_fit": "Tijdlijn passend maken",
+    "tt_zoom_in": "Inzoomen (of Ctrl + Muiswiel)"
 }

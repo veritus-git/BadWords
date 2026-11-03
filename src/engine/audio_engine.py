@@ -74,6 +74,96 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             self.save_preferences({'offset': 0.133, 'pad': 0.0, 'snap_max': 0.25})
             log_info("Forced offset/pad/snap override applied successfully.")
 
+        # In-memory Waveform & Silence buffer for real-time live preview
+        self._active_peaks = None
+        self._peaks_cache = {}
+        self._silence_cache = {}
+
+    def register_active_peaks(self, peaks, audio_path: str = None):
+        """Stores the active WaveformPeaks in RAM for real-time silence analysis."""
+        self._active_peaks = peaks
+        if audio_path and peaks is not None:
+            self._peaks_cache[audio_path] = peaks
+
+    def get_cached_waveform_peaks(self, audio_path: str):
+        """Returns cached WaveformPeaks from RAM or fast-loads from .npz on disk (<5ms)."""
+        if not audio_path:
+            return getattr(self, '_active_peaks', None)
+        if audio_path in self._peaks_cache:
+            return self._peaks_cache[audio_path]
+        try:
+            from engine.waveform import WaveformExtractor
+            temp_dir = self.os_doc.get_temp_dir()
+            peaks = WaveformExtractor.extract_from_file(
+                audio_path,
+                points_per_second=400,
+                cache_dir=temp_dir,
+                ffmpeg_cmd=self.ffmpeg_cmd,
+            )
+            if peaks is not None:
+                self._peaks_cache[audio_path] = peaks
+                self._active_peaks = peaks
+            return peaks
+        except Exception as e:
+            log_error(f"get_cached_waveform_peaks error: {e}")
+            return None
+
+    def compute_silence_from_peaks(self, peaks, threshold_db: float, min_dur: float, pad_s: float = 0.05) -> list:
+        """
+        Ultra-fast vectorized silence detection directly from precomputed WaveformPeaks in RAM (< 5ms).
+        Allows real-time live silence threshold dB and min_dur tuning without heavy FFmpeg subprocesses.
+        """
+        if peaks is None or getattr(peaks, 'num_points', 0) == 0 or getattr(peaks, 'peaks_rms', None) is None or len(peaks.peaks_rms) == 0:
+            return []
+
+        cache_key = (id(peaks), round(float(threshold_db), 1), round(float(min_dur), 3), round(float(pad_s), 3))
+        if hasattr(self, '_silence_cache') and cache_key in self._silence_cache:
+            return self._silence_cache[cache_key]
+
+        try:
+            import numpy as np
+            thresh_lin = float(10.0 ** (threshold_db / 20.0))
+            is_silent = peaks.peaks_rms < thresh_lin
+
+            padded = np.empty(len(is_silent) + 2, dtype=np.int8)
+            padded[0] = 0
+            padded[-1] = 0
+            padded[1:-1] = is_silent.view(np.int8) if hasattr(is_silent, 'view') else is_silent.astype(np.int8)
+            diff = np.diff(padded)
+            starts_idx = np.where(diff == 1)[0]
+            ends_idx = np.where(diff == -1)[0]
+            pps = float(getattr(peaks, 'points_per_second', 400)) or 400.0
+            starts_s = starts_idx / pps
+            ends_s = ends_idx / pps
+
+            # Micro-gap bridging (< 0.10 s)
+            bridged = []
+            for s, e in zip(starts_s, ends_s):
+                if bridged and (s - bridged[-1]['e']) < 0.10:
+                    bridged[-1]['e'] = float(e)
+                else:
+                    bridged.append({'s': float(s), 'e': float(e)})
+
+            # Filter min_dur and apply padding
+            result = []
+            for r in bridged:
+                dur = r['e'] - r['s']
+                if dur >= min_dur:
+                    s_pad = r['s'] if r['s'] < 0.01 else r['s'] + pad_s
+                    e_pad = max(s_pad, r['e'] - pad_s)
+                    if (e_pad - s_pad) >= 0.02:
+                        result.append({'s': float(round(s_pad, 3)), 'e': float(round(e_pad, 3))})
+
+            if not hasattr(self, '_silence_cache'):
+                self._silence_cache = {}
+            if len(self._silence_cache) > 50:
+                self._silence_cache.clear()
+            self._silence_cache[cache_key] = result
+            return result
+        except Exception as e:
+            log_error(f"compute_silence_from_peaks error: {e}")
+            return []
+
     def _get_file_fps(self, file_path: str) -> float:
         """Inspects media file to determine its frame rate via ffprobe, fallback to 24.0."""
         try:
@@ -1250,13 +1340,36 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             final_ops = []
             s_ranges = []
             
-            # Raising "Min silence duration" applies live in-memory by filtering detected ranges;
-            # reads panel_silence_min_dur (decoupled from pre-transcription silence_min_dur).
+            # Reads panel_silence_min_dur (decoupled from pre-transcription silence_min_dur)
             try:
                 min_sil_s = max(0.01, float(settings.get('panel_silence_min_dur', settings.get('silence_min_dur', 0.2))))
             except (TypeError, ValueError):
                 min_sil_s = 0.2
-            if raw_silence is not None:
+
+            # Live in-RAM threshold dB from Silence panel or settings
+            thresh_db = None
+            if 'panel_silence_threshold_db' in settings:
+                try:
+                    thresh_db = float(settings['panel_silence_threshold_db'])
+                except (TypeError, ValueError):
+                    pass
+            elif 'silence_threshold_db' in settings:
+                try:
+                    thresh_db = float(settings['silence_threshold_db'])
+                except (TypeError, ValueError):
+                    pass
+
+            peaks = getattr(self, '_active_peaks', None)
+            if peaks is None and words_data and words_data[0].get('meta_audio_path'):
+                peaks = self.get_cached_waveform_peaks(words_data[0]['meta_audio_path'])
+
+            # LIVE IN-RAM DETECTOR: If waveform peaks are cached in RAM, compute exact silences
+            # dynamically using the threshold dB and min duration in < 5ms!
+            if peaks is not None and thresh_db is not None:
+                computed_silences = self.compute_silence_from_peaks(peaks, thresh_db, min_sil_s)
+                for s in computed_silences:
+                    s_ranges.append((t2f(s['s']), t2f(s['e'])))
+            elif raw_silence is not None:
                 for s in raw_silence:
                     if (s['e'] - s['s']) < min_sil_s: continue
                     s_ranges.append((t2f(s['s']), t2f(s['e'])))

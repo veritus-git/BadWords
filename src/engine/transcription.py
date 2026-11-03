@@ -351,6 +351,12 @@ except Exception as e:
         """True on Apple Silicon (native, not Rosetta) when mlx + mlx-whisper are installed in libs."""
         if not self.os_doc.is_mac or platform.machine() != "arm64":
             return False
+        try:
+            import importlib.util
+            if importlib.util.find_spec("mlx_whisper") is not None and importlib.util.find_spec("mlx") is not None:
+                return True
+        except Exception:
+            pass
         return all(os.path.isdir(os.path.join(self.libs_dir, pkg)) for pkg in ("mlx", "mlx_whisper"))
 
     def use_mlx_for(self, device_mode) -> bool:

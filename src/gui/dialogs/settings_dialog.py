@@ -2748,6 +2748,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()
 
+        if hasattr(main_win, 'update_silence_panel_ranges'):
+            main_win.update_silence_panel_ranges()
+
         aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
         if aot_changed and main_win:
             is_top = bool(new_prefs.get('always_on_top'))

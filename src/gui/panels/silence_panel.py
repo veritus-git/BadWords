@@ -102,8 +102,15 @@ def build_silence_panel(win) -> QFrame:
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(config.S(8))
 
+        def _get_current_lo():
+            if key == 'panel_silence_min_dur' and hasattr(win, 'engine') and win.engine:
+                prefs = win.engine.load_preferences() or {}
+                return max(0.01, float(prefs.get('silence_min_dur', lo)))
+            return lo
+
+        curr_lo = _get_current_lo()
         saved_val = float(_sil_prefs.get(key, default))
-        saved_val = min(hi, max(lo, saved_val))
+        saved_val = min(hi, max(curr_lo, saved_val))
 
         edit = QLineEdit()
         edit.setText(f"{saved_val:.{decimals}f}" if decimals > 0 else str(int(round(saved_val))))
@@ -114,7 +121,7 @@ def build_silence_panel(win) -> QFrame:
             edit.setToolTip(tooltip_text)
 
         slider = JumpSlider(Qt.Horizontal)
-        slider.setRange(int(round(lo * scale)), int(round(hi * scale)))
+        slider.setRange(int(round(curr_lo * scale)), int(round(hi * scale)))
         slider.setValue(int(round(saved_val * scale)))
         slider.setFixedHeight(config.S(16))
         if tooltip_text:
@@ -126,8 +133,9 @@ def build_silence_panel(win) -> QFrame:
             if _is_syncing[0]:
                 return
             _is_syncing[0] = True
+            c_lo = _get_current_lo()
             real_val = round(v / float(scale), decimals)
-            real_val = min(hi, max(lo, real_val))
+            real_val = min(hi, max(c_lo, real_val))
             edit.setText(f"{real_val:.{decimals}f}" if decimals > 0 else str(int(round(real_val))))
             win._save_single_pref(key, real_val)
             if on_change_callback:
@@ -142,12 +150,14 @@ def build_silence_panel(win) -> QFrame:
             if _is_syncing[0]:
                 return
             _is_syncing[0] = True
+            c_lo = _get_current_lo()
+            c_default = c_lo if key == 'panel_silence_min_dur' else default
             if val is None:
                 try:
                     val = float(edit.text().replace(',', '.').strip())
                 except ValueError:
-                    val = default
-            val = min(hi, max(lo, val))
+                    val = c_default
+            val = min(hi, max(c_lo, val))
             val = round(val, decimals)
             edit.setText(f"{val:.{decimals}f}" if decimals > 0 else str(int(round(val))))
             slider.setValue(int(round(val * scale)))
@@ -158,7 +168,7 @@ def build_silence_panel(win) -> QFrame:
 
         edit.editingFinished.connect(lambda: _on_edit())
         rst = ReloadButton(size=28)
-        rst.clicked.connect(lambda: _on_edit(default))
+        rst.clicked.connect(lambda: _on_edit(_get_current_lo() if key == 'panel_silence_min_dur' else default))
 
         row.addWidget(slider, 1)
         row.addWidget(edit, 0)
@@ -206,11 +216,12 @@ def build_silence_panel(win) -> QFrame:
     l_params.addWidget(_create_separator())
     l_params.addSpacing(config.S(8))
 
-    # 3. Min. czas trwania ciszy (s): 0.05 to 3.00 s, default 0.20 s
-    # Works 100% live in-memory via _on_preview_change on pre-detected silences!
-    # Decoupled from pre-transcription baseline silence_min_dur to prevent false inaudibles.
-    vb_min_dur, win.spin_silence_min_dur, win.slider_silence_min_dur, _rst_min_dur = _param_block(
-        win.txt("lbl_min_silence_dur"), 'panel_silence_min_dur', 0.20, 0.05, 3.00, 100.0, 2,
+    # 3. Min. czas trwania ciszy (s): dynamic lower bound bound to pre-transcription setting silence_min_dur!
+    base_min_dur = float(_sil_prefs.get('silence_min_dur', 0.20))
+    lo_min_dur = max(0.01, base_min_dur)
+    hi_min_dur = max(3.00, lo_min_dur + 1.0)
+    vb_min_dur, win.spin_silence_min_dur, win.slider_silence_min_dur, win._rst_silence_min_dur = _param_block(
+        win.txt("lbl_min_silence_dur"), 'panel_silence_min_dur', lo_min_dur, lo_min_dur, hi_min_dur, 100.0, 2,
         _on_preview_change,
         win.txt("tt_min_silence_dur")
     )
@@ -300,3 +311,28 @@ def build_silence_panel(win) -> QFrame:
     _update_container_state(animate=False)
 
     return wrap_activity_panel(p_silence)
+
+
+def update_silence_panel_min_dur_range(win):
+    """
+    Dynamically adjusts panel_silence_min_dur lower bound to match the pre-transcription
+    silence_min_dur setting from preferences.
+    """
+    if not hasattr(win, 'slider_silence_min_dur') or not hasattr(win, 'spin_silence_min_dur'):
+        return
+    prefs = win.engine.load_preferences() if hasattr(win, 'engine') and win.engine else {}
+    base_min_dur = float(prefs.get('silence_min_dur', 0.20))
+    lo = max(0.01, base_min_dur)
+    hi = max(3.00, lo + 1.0)
+    scale = 100.0
+
+    win.slider_silence_min_dur.setRange(int(round(lo * scale)), int(round(hi * scale)))
+
+    current_val = float(prefs.get('panel_silence_min_dur', lo))
+    if current_val < lo:
+        current_val = lo
+        win._save_single_pref('panel_silence_min_dur', current_val)
+        win.spin_silence_min_dur.setText(f"{current_val:.2f}")
+        win.slider_silence_min_dur.setValue(int(round(current_val * scale)))
+        if hasattr(win, '_refresh_cut_preview'):
+            win._refresh_cut_preview()

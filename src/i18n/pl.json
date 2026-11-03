@@ -488,5 +488,10 @@
     "status_assembly_drt_build": "Budowanie montażu DRT...",
     "status_assembly_drt_import": "Importowanie osi czasu DRT...",
     "tool_colors": "Kolory w montażu",
-    "hdr_audio_preprocessing": "Przetwarzanie audio i wykrywanie ciszy (FFmpeg VAD)"
+    "hdr_audio_preprocessing": "Przetwarzanie audio i wykrywanie ciszy (FFmpeg VAD)",
+    "tt_toggle_timeline": "Przełącz podgląd osi czasu",
+    "tt_toggle_video": "Przełącz podgląd wideo",
+    "tt_zoom_out": "Pomniejsz",
+    "tt_zoom_fit": "Dopasuj oś czasu",
+    "tt_zoom_in": "Powiększ (lub Ctrl + Kółko)"
 }

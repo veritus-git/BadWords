@@ -499,13 +499,22 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             )
 
         if hasattr(self, 'spin_silence_min_dur'):
-            val = prefs.get('panel_silence_min_dur', prefs.get('silence_min_dur', 0.2))
+            base_min_dur = float(prefs.get('silence_min_dur', 0.2))
+            val = max(base_min_dur, float(prefs.get('panel_silence_min_dur', base_min_dur)))
             self.spin_silence_min_dur.setText(f"{float(val):.2f}")
-            self.spin_silence_min_dur.editingFinished.connect(
-                lambda: (self._save_single_pref('panel_silence_min_dur',
-                    float(self.spin_silence_min_dur.text().replace(',', '.') or 0.2)),
-                    self._refresh_cut_preview())
-            )
+            def _on_spin_min_dur_finished():
+                b_min = float((self.engine.load_preferences() or {}).get('silence_min_dur', 0.2))
+                try:
+                    raw_v = float(self.spin_silence_min_dur.text().replace(',', '.') or b_min)
+                except ValueError:
+                    raw_v = b_min
+                clamped_v = max(b_min, raw_v)
+                self.spin_silence_min_dur.setText(f"{clamped_v:.2f}")
+                self._save_single_pref('panel_silence_min_dur', clamped_v)
+                if hasattr(self, 'slider_silence_min_dur'):
+                    self.slider_silence_min_dur.setValue(int(round(clamped_v * 100.0)))
+                self._refresh_cut_preview()
+            self.spin_silence_min_dur.editingFinished.connect(_on_spin_min_dur_finished)
 
         
         # Restore pinned favorites
@@ -533,6 +542,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 # Pre-build all pages into RAM so open is 0ms
                 for i in range(self._settings_dialog.category_list.count()):
                     self._settings_dialog._ensure_page_built(i)
+        except Exception:
+            pass
+
+    def update_silence_panel_ranges(self):
+        """Refreshes the silence panel's minimum duration range to match current settings."""
+        try:
+            from gui.panels.silence_panel import update_silence_panel_min_dur_range
+            update_silence_panel_min_dur_range(self)
         except Exception:
             pass
 
