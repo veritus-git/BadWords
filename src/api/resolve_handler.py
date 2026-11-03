@@ -2113,32 +2113,21 @@ class ResolveHandler:
                      f"preserve_order={preserve_track_order}")
 
             # ── 1.5. Build Master File Registry ───────────────────────────────────────────
-            # In FCP7 XML, the first clipitem defines the master <file id="..."> with pathurl
-            # and full media info. Subsequent clips use shallow <file id="..."/> references.
-            # We index all file IDs so shallow references know their real media path.
+            # In FCP7 XML, clipitems reference master <file id="..."> elements.
+            # We index all file IDs so shallow or cross-track references preserve full media info and pathurl.
             file_registry = {}  # fid -> {'elem': copy.deepcopy(file_el), 'has_valid_file': bool, 'is_audio': bool}
             for file_el in root.iter('file'):
                 fid = file_el.get('id')
                 if not fid:
                     continue
                 path_el = file_el.find('pathurl')
-                if path_el is not None and path_el.text and path_el.text.strip():
+                has_file = bool(path_el is not None and path_el.text and path_el.text.strip())
+                is_aud = False
+                if has_file:
                     raw = path_el.text.strip()
-                    has_file = False
-                    if raw.startswith('file://'):
-                        import urllib.parse as _up
-                        fs_path = _up.unquote(raw[len('file://'):])
-                        if fs_path.startswith('localhost/'):
-                            fs_path = fs_path[len('localhost'):]
-                        if not os.path.exists(fs_path) and fs_path.startswith('/') \
-                                and len(fs_path) > 2 and fs_path[2] == ':':
-                            fs_path = fs_path[1:]
-                        if os.path.exists(fs_path):
-                            has_file = True
-                    is_aud = False
-                    if has_file:
-                        ext = os.path.splitext(raw)[1].lower()
-                        is_aud = (ext in _AUDIO_EXTS)
+                    ext = os.path.splitext(raw)[1].lower()
+                    is_aud = (ext in _AUDIO_EXTS)
+                if fid not in file_registry or (has_file and not file_registry[fid]['has_valid_file']):
                     file_registry[fid] = {
                         'elem': copy.deepcopy(file_el),
                         'has_valid_file': has_file,
@@ -2280,17 +2269,14 @@ class ResolveHandler:
                             fid = file_el.get('id')
                             reg = file_registry.get(fid)
                             if reg and reg['has_valid_file']:
-                                # REAL PHYSICAL MEDIA FILE on disk!
+                                # REAL PHYSICAL MEDIA FILE on disk — preserve complete file element with pathurl
                                 new_ci.tag = 'clipitem'
-                                if fid not in emitted_fids:
-                                    # First time this file ID is emitted in XML: provide full master definition
-                                    emitted_fids.add(fid)
-                                    new_ci.remove(file_el)
-                                    new_ci.append(copy.deepcopy(reg['elem']))
-                                else:
-                                    # Subsequent occurrence: shallow reference <file id="..."/>
-                                    for c in list(file_el):
-                                        file_el.remove(c)
+                                new_ci.remove(file_el)
+                                new_ci.append(copy.deepcopy(reg['elem']))
+                            elif reg:
+                                new_ci.tag = 'clipitem'
+                                new_ci.remove(file_el)
+                                new_ci.append(copy.deepcopy(reg['elem']))
                             else:
                                 # Non-physical file (compound clip, generator, title, solid)
                                 new_ci.tag = 'generatoritem'

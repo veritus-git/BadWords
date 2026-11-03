@@ -17,7 +17,7 @@ import zipfile
 import copy
 import xml.etree.ElementTree as ET
 
-from osdoc import log_info, log_error, get_subprocess_kwargs
+from osdoc import log_info, log_warn, log_error, get_subprocess_kwargs
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -229,8 +229,39 @@ def apply_ops_to_seq_container(seq_xml_path, ops, base_offset, fps, audio_only_m
         color_schedule maps dest_start_frame → color_string|None
     """
     try:
-        tree = ET.parse(seq_xml_path)
-        root = tree.getroot()
+        raw_bytes = b""
+        with open(seq_xml_path, 'rb') as xf:
+            raw_bytes = xf.read()
+
+        try:
+            root = ET.fromstring(raw_bytes)
+            tree = ET.ElementTree(root)
+        except ET.ParseError as pe:
+            import re
+            log_warn(f"drt_apply_ops: direct XML parse error ({pe}), applying sanitization...")
+            try:
+                with open('/tmp/badwords_failed_seq.xml', 'wb') as dbg_f:
+                    dbg_f.write(raw_bytes)
+            except Exception:
+                pass
+
+            try:
+                text = raw_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                text = raw_bytes.decode('latin-1', errors='replace')
+
+            # 1. Strip illegal XML 1.0 control characters (except \t, \n, \r)
+            text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+
+            # 2. Fix unescaped ampersands that are not valid entities
+            text = re.sub(r'&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);)', '&amp;', text)
+
+            # 3. Fix unescaped less-thans
+            text = re.sub(r'<(?![a-zA-Z/_!?])', '&lt;', text)
+
+            root = ET.fromstring(text.encode('utf-8'))
+            tree = ET.ElementTree(root)
+            log_info("drt_apply_ops: XML sanitized and parsed successfully!")
 
         # ── 1. Base offset is now provided by the timeline ───────────────────
         log_info(f"drt_apply_ops: base_offset={base_offset}, ops={len(ops)}, "
@@ -617,10 +648,9 @@ def assemble_via_drt(resolve_handler, original_tl_name, ops,
             base_offset = target_tl.GetStartFrame()
             fps = resolve_handler.fps
 
-            export_type = getattr(resolve_handler.resolve, 'EXPORT_DRT', None)
+            export_type = getattr(resolve_handler.resolve, 'EXPORT_DRT', 1)
             if export_type is None:
-                log_error("drt_assemble: resolve.EXPORT_DRT constant not available.")
-                return False, {}, None
+                export_type = 1
 
             export_ok = target_tl.Export(src_drt_path, export_type)
             if not export_ok or not os.path.exists(src_drt_path):

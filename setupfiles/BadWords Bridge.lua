@@ -976,7 +976,7 @@ local function do_import_timeline_file(file_path, timeline_name)
         if timeline_name and timeline_name ~= "" then
             import_options = {
                 timelineName = timeline_name,
-                importSourceClips = false
+                importSourceClips = true
             }
         end
         if import_options then
@@ -984,9 +984,9 @@ local function do_import_timeline_file(file_path, timeline_name)
             if ok and res then imported = res end
         end
         if not imported and timeline_name and timeline_name ~= "" then
-            -- Fallback with importSourceClips = true if media files are not yet in pool
+            -- Fallback with importSourceClips = false if needed
             local ok, res = pcall(function()
-                return mp:ImportTimelineFromFile(file_path, { timelineName = timeline_name, importSourceClips = true })
+                return mp:ImportTimelineFromFile(file_path, { timelineName = timeline_name, importSourceClips = false })
             end)
             if ok and res then imported = res end
         end

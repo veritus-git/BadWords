@@ -2072,14 +2072,14 @@ except Exception as e:
 
                                 import_options = {
                                     "timelineName": new_tl_name,
-                                    "importSourceClips": False
+                                    "importSourceClips": True
                                 }
                                 new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
                                     cut_xml_path,
                                     import_options,
                                 )
                                 if not new_tl:
-                                    import_options["importSourceClips"] = True
+                                    import_options["importSourceClips"] = False
                                     new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
                                         cut_xml_path,
                                         import_options,

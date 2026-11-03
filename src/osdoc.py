@@ -13,6 +13,7 @@ File management and project document structure system.
 
 import os
 import sys
+import time
 import platform
 import shutil
 import logging
@@ -738,6 +739,10 @@ class OSDoctor:
             exe_path = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe"
             if os.path.isfile(exe_path):
                 info["installed"] = True
+                # Check for fraunhofer_aac.dll which is only bundled with DaVinci Resolve Studio
+                aac_dll = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\fraunhofer_aac.dll"
+                if os.path.isfile(aac_dll):
+                    info["edition"] = "Studio"
                 if not info["version"] or info["edition"] == "Unknown":
                     try:
                         import ctypes
