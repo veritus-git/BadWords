@@ -1250,10 +1250,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             final_ops = []
             s_ranges = []
             
-            # Raising "Min silence duration" applies live; lowering it below the
-            # value used during analysis needs a new analysis (ranges are already filtered).
+            # Raising "Min silence duration" applies live in-memory by filtering detected ranges;
+            # reads panel_silence_min_dur (decoupled from pre-transcription silence_min_dur).
             try:
-                min_sil_s = max(0.01, float(settings.get('silence_min_dur', 0.2)))
+                min_sil_s = max(0.01, float(settings.get('panel_silence_min_dur', settings.get('silence_min_dur', 0.2))))
             except (TypeError, ValueError):
                 min_sil_s = 0.2
             if raw_silence is not None:

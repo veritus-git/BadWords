@@ -91,7 +91,7 @@ def build_silence_panel(win) -> QFrame:
     def _param_block(label_text, key, default, lo, hi, scale, decimals, on_change_callback, tooltip_text=""):
         v_box = QVBoxLayout()
         v_box.setContentsMargins(0, 0, 0, 0)
-        v_box.setSpacing(config.S(6))
+        v_box.setSpacing(config.S(2))
 
         lbl = QLabel(label_text)
         lbl.setStyleSheet(f"color: #e0e0e0; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500;")
@@ -116,7 +116,7 @@ def build_silence_panel(win) -> QFrame:
         slider = JumpSlider(Qt.Horizontal)
         slider.setRange(int(round(lo * scale)), int(round(hi * scale)))
         slider.setValue(int(round(saved_val * scale)))
-        slider.setFixedHeight(config.INPUT_HEIGHT)
+        slider.setFixedHeight(config.S(16))
         if tooltip_text:
             slider.setToolTip(tooltip_text)
 
@@ -168,62 +168,46 @@ def build_silence_panel(win) -> QFrame:
         return v_box, edit, slider, rst
 
     # Callback helpers
-    def _on_recompute_change():
-        if hasattr(win, '_trigger_silence_recompute'):
-            win._trigger_silence_recompute()
-        elif hasattr(win, '_refresh_cut_preview'):
-            win._refresh_cut_preview()
-
     def _on_preview_change():
         if hasattr(win, '_refresh_cut_preview'):
             win._refresh_cut_preview()
 
-    # 1. Próg ciszy (dB): -80.0 to -10.0 dB, default -42.0 dB
-    vb_thresh, win.spin_thresh, win.slider_thresh, _rst_thresh = _param_block(
-        win.txt("lbl_silence_threshold_db"), 'silence_threshold_db', -42.0, -80.0, -10.0, 1.0, 1,
-        _on_recompute_change,
-        win.txt("tt_silence_threshold_db")
-    )
-    l_params.addLayout(vb_thresh)
-    l_params.addSpacing(config.S(10))
-    l_params.addWidget(_create_separator())
-    l_params.addSpacing(config.S(10))
-
-    # 2. Zostaw przerwę (s): 0.00 to 1.50 s, default 0.20 s
+    # 1. Zostaw przerwę (s): 0.00 to 1.50 s, default 0.20 s
     vb_keep, win.spin_silence_keep, win.slider_silence_keep, _rst_keep = _param_block(
         win.txt("lbl_silence_keep"), 'silence_keep', 0.20, 0.00, 1.50, 100.0, 2,
         _on_preview_change,
         win.txt("tt_silence_keep")
     )
     l_params.addLayout(vb_keep)
-    l_params.addSpacing(config.S(10))
+    l_params.addSpacing(config.S(2))
     l_params.addWidget(_create_separator())
-    l_params.addSpacing(config.S(10))
+    l_params.addSpacing(config.S(8))
 
-    # 3. Pauzy do usunięcia (%): 0 to 100%, default 100%
+    # 2. Pauzy do usunięcia (%): 0 to 100%, default 100%
     vb_pct, win.spin_silence_cut_pct, win.slider_silence_cut_pct, _rst_pct = _param_block(
         win.txt("lbl_silence_cut_pct"), 'silence_cut_pct', 100.0, 0.0, 100.0, 1.0, 0,
         _on_preview_change,
         win.txt("tt_silence_cut_pct")
     )
     l_params.addLayout(vb_pct)
-    l_params.addSpacing(config.S(10))
+    l_params.addSpacing(config.S(2))
     l_params.addWidget(_create_separator())
-    l_params.addSpacing(config.S(10))
+    l_params.addSpacing(config.S(8))
 
-    # 4. Min. czas trwania ciszy (s): 0.05 to 3.00 s, default 0.20 s
+    # 3. Min. czas trwania ciszy (s): 0.05 to 3.00 s, default 0.20 s
     # Works 100% live in-memory via _on_preview_change on pre-detected silences!
+    # Decoupled from pre-transcription baseline silence_min_dur to prevent false inaudibles.
     vb_min_dur, win.spin_silence_min_dur, win.slider_silence_min_dur, _rst_min_dur = _param_block(
-        win.txt("lbl_min_silence_dur"), 'silence_min_dur', 0.20, 0.05, 3.00, 100.0, 2,
+        win.txt("lbl_min_silence_dur"), 'panel_silence_min_dur', 0.20, 0.05, 3.00, 100.0, 2,
         _on_preview_change,
         win.txt("tt_min_silence_dur")
     )
     l_params.addLayout(vb_min_dur)
-    l_params.addSpacing(config.S(10))
+    l_params.addSpacing(config.S(2))
     l_params.addWidget(_create_separator())
-    l_params.addSpacing(config.S(10))
+    l_params.addSpacing(config.S(8))
 
-    # 5. Min. klip między cięciami (s): 0.00 to 5.00 s, default 0.00 s
+    # 4. Min. klip między cięciami (s): 0.00 to 5.00 s, default 0.00 s
     vb_min_clip, win.spin_silence_min_clip, win.slider_silence_min_clip, _rst_min_clip = _param_block(
         win.txt("lbl_silence_min_clip"), 'silence_min_clip', 0.00, 0.00, 5.00, 10.0, 2,
         _on_preview_change,
@@ -233,7 +217,7 @@ def build_silence_panel(win) -> QFrame:
 
     l_silence.addWidget(w_params, 0)
 
-    # 6. Live stats label outside w_params (no nested graphics effect!) with 0.0 <-> 1.0 opacity
+    # 5. Live stats label outside w_params (no nested graphics effect!) with 0.0 <-> 1.0 opacity
     l_silence.addSpacing(config.S(10))
     win.lbl_silence_stats = QLabel("")
     win.lbl_silence_stats.setWordWrap(True)
@@ -248,7 +232,10 @@ def build_silence_panel(win) -> QFrame:
     win._silence_stats_fade_anim.setDuration(250)
     win._silence_stats_fade_anim.setEasingCurve(QEasingCurve.InOutQuad)
     win._silence_stats_fade_anim.valueChanged.connect(
-        lambda val: (stats_opacity.setOpacity(val), win.lbl_silence_stats.update())
+        lambda val: (stats_opacity.setOpacity(val), win.lbl_silence_stats.repaint())
+    )
+    win._silence_stats_fade_anim.finished.connect(
+        lambda: win.lbl_silence_stats.repaint()
     )
 
     l_silence.addStretch(1)
@@ -278,7 +265,7 @@ def build_silence_panel(win) -> QFrame:
             opacity_effect.setOpacity(target_params_opacity)
             win._silence_stats_fade_anim.stop()
             stats_opacity.setOpacity(target_stats_opacity)
-            win.lbl_silence_stats.update()
+            win.lbl_silence_stats.repaint()
 
     def _on_sil_cut_toggled(checked):
         if checked:

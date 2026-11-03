@@ -481,16 +481,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     toggle.setChecked(prefs[key], animated=False)
                 toggle.toggled.connect(lambda v, k=key: self._save_single_pref(k, v))
                 
-        if hasattr(self, 'spin_thresh'):
-            if 'silence_threshold_db' in prefs:
-                self.spin_thresh.setText(str(prefs['silence_threshold_db']))
-            elif 'ui_spin_thresh' in prefs:
-                self.spin_thresh.setText(str(prefs['ui_spin_thresh']))
-            self.spin_thresh.editingFinished.connect(
-                lambda: self._save_single_pref('silence_threshold_db',
-                    float(self.spin_thresh.text().replace(',', '.') or -42.0))
-            )
-
         if hasattr(self, 'spin_pad'):
             if 'ui_spin_pad' in prefs:
                 self.spin_pad.setText(str(prefs['ui_spin_pad']))
@@ -500,10 +490,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             )
 
         if hasattr(self, 'spin_silence_min_dur'):
-            if 'silence_min_dur' in prefs:
-                self.spin_silence_min_dur.setText(str(prefs['silence_min_dur']))
+            val = prefs.get('panel_silence_min_dur', prefs.get('silence_min_dur', 0.2))
+            self.spin_silence_min_dur.setText(f"{float(val):.2f}")
             self.spin_silence_min_dur.editingFinished.connect(
-                lambda: (self._save_single_pref('silence_min_dur',
+                lambda: (self._save_single_pref('panel_silence_min_dur',
                     float(self.spin_silence_min_dur.text().replace(',', '.') or 0.2)),
                     self._refresh_cut_preview())
             )
@@ -2797,132 +2787,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             words = canvas.words_data if canvas else []
             self.audio_preview.waveform_timeline.set_words_data(words)
 
-    def _trigger_silence_recompute(self):
-        """Debounced trigger for FFmpeg silence detection when threshold or min_dur changes."""
-        if not hasattr(self, '_silence_debounce_timer'):
-            self._silence_debounce_timer = QTimer(self)
-            self._silence_debounce_timer.setSingleShot(True)
-            self._silence_debounce_timer.timeout.connect(self._run_silence_recompute)
-        self._silence_debounce_timer.start(350)
-
-    def _run_silence_recompute(self):
-        """Asynchronously runs FFmpeg silence detection on active audio with current threshold and min_dur."""
-        canvas = getattr(self, 'text_canvas', None)
-        if not canvas or not canvas.words_data:
-            return
-
-        active_wav = None
-        if canvas.words_data and len(canvas.words_data) > 0:
-            active_wav = canvas.words_data[0].get("meta_audio_path")
-        if not active_wav or not os.path.isfile(active_wav):
-            active_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
-        if not active_wav or not os.path.isfile(active_wav) and hasattr(self, 'audio_preview'):
-            active_wav = getattr(self.audio_preview, 'original_audio_path', None)
-
-        if not active_wav or not os.path.isfile(active_wav):
-            self._refresh_cut_preview()
-            return
-
-        prefs = self.engine.load_preferences() or {}
-        thresh_val = float(prefs.get('silence_threshold_db', -42.0))
-        min_dur_val = float(prefs.get('silence_min_dur', 0.2))
-        pad_s = float(prefs.get('ui_spin_pad', 0.05))
-
-        prev_worker = getattr(self, '_silence_detect_worker', None)
-        if prev_worker is not None and prev_worker.isRunning():
-            try:
-                prev_worker.cancel()
-                prev_worker.wait(50)
-            except Exception:
-                pass
-
-        import subprocess
-        import re
-        from PySide6.QtCore import QThread, Signal as _Signal
-
-        class _SilenceDetectWorker(QThread):
-            detected = _Signal(list)
-
-            def __init__(self, engine, wav, thresh, min_dur, pad):
-                super().__init__()
-                self.engine = engine
-                self.wav = wav
-                self.thresh = thresh
-                self.min_dur = min_dur
-                self.pad = pad
-                self._proc = None
-                self._is_cancelled = False
-
-            def cancel(self):
-                self._is_cancelled = True
-                if self._proc is not None:
-                    try:
-                        self._proc.kill()
-                    except Exception:
-                        pass
-
-            def run(self):
-                try:
-                    if self._is_cancelled:
-                        return
-                    cmd = [
-                        self.engine.ffmpeg_cmd, "-i", self.wav,
-                        "-af", f"silencedetect=noise={self.thresh}dB:d=0.05",
-                        "-f", "null", "-"
-                    ]
-                    self._proc = subprocess.Popen(
-                        cmd, stderr=subprocess.PIPE, text=True,
-                        encoding='utf-8', errors='replace',
-                        **self.engine.os_doc.get_subprocess_kwargs()
-                    )
-                    _, stderr = self._proc.communicate()
-                    if self._is_cancelled:
-                        return
-                    starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', stderr)]
-                    ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', stderr)]
-                    raw = []
-                    count = min(len(starts), len(ends))
-                    for i in range(count):
-                        raw.append({'s': starts[i], 'e': ends[i]})
-                    if len(starts) > len(ends):
-                        raw.append({'s': starts[-1], 'e': 999999.0})
-
-                    bridged = []
-                    if raw:
-                        curr = dict(raw[0])
-                        for next_s in raw[1:]:
-                            if next_s['s'] - curr['e'] < 0.15:
-                                curr['e'] = next_s['e']
-                            else:
-                                bridged.append(curr)
-                                curr = dict(next_s)
-                        bridged.append(curr)
-
-                    dur = self.engine._get_audio_duration(self.wav)
-                    padded = []
-                    for s in bridged:
-                        ns = s['s'] if s['s'] < 0.01 else s['s'] + self.pad
-                        ne = s['e'] if s['e'] >= dur or abs(s['e'] - dur) < 0.01 else s['e'] - self.pad
-                        if ne > ns:
-                            padded.append({'s': ns, 'e': ne})
-                    if not self._is_cancelled:
-                        self.detected.emit(padded)
-                except Exception as e:
-                    if not self._is_cancelled:
-                        from osdoc import log_error
-                        log_error(f"_SilenceDetectWorker error: {e}")
-                        self.detected.emit([])
-
-        def _on_detected(new_silences):
-            if canvas and canvas.words_data:
-                canvas.words_data[0]['meta_global_silence'] = new_silences
-            self._refresh_cut_preview()
-
-        worker = _SilenceDetectWorker(self.engine, active_wav, thresh_val, min_dur_val, pad_s)
-        worker.detected.connect(_on_detected)
-        self._silence_detect_worker = worker
-        worker.start()
-
     def _update_silence_stats(self, surviving_ops, cut_ops, total_dur):
         """Show how many pauses the current silence settings cut or mark, and how much time."""
         lbl = getattr(self, 'lbl_silence_stats', None)
@@ -2944,7 +2808,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             count=len(spans), removed=f"{int(secs // 60)}:{int(secs % 60):02d}", pct=pct))
         if hasattr(self, '_silence_stats_opacity_effect'):
             self._silence_stats_opacity_effect.setOpacity(1.0)
-        lbl.update()
+        lbl.repaint()
 
     # ── Colour legend ───────────────────────────────────────────────────────
     _LEGEND_OP_KEYS = {"bad": "Violet", "repeat": "Navy", "typo": "Olive",
