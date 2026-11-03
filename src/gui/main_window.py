@@ -1179,6 +1179,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.text_canvas.load_data(updated_words)
             self._show_transcript_view()
             self._analyze_thread = None
+            if hasattr(self, '_refresh_cut_preview'):
+                self._refresh_cut_preview()
             QTimer.singleShot(150, lambda: self.editor_view_stack.setCurrentIndex(0))
             
         from PySide6.QtCore import QThread, Signal as _Signal
@@ -1251,6 +1253,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.text_canvas.update()
             
             self._sbs_thread = None
+            if hasattr(self, '_refresh_cut_preview'):
+                self._refresh_cut_preview()
             if hasattr(self, 'sbs_loading_bar'):
                 self.sbs_loading_bar.set_value(100)
             QTimer.singleShot(150, lambda: self.editor_view_stack.setCurrentIndex(0))
@@ -1399,6 +1403,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # Standalone analysis returns a tuple: (processed_words, count)
         updated_words, _ = self.engine.run_standalone_analysis(self.text_canvas.words_data, show_inaudible)
         self.text_canvas.load_data(updated_words)
+        if hasattr(self, '_refresh_cut_preview'):
+            self._refresh_cut_preview()
 
     def _switch_chapter(self, chapter_name):
         if not self._chapters: return
@@ -2747,14 +2753,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _save_auto_cut_prefs(self):
         prefs = self.engine.load_preferences() or {}
+        auto_cut = list(prefs.get('auto_cut_colors', []))
         if hasattr(self, 'color_cut_buttons'):
-            auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
-            prefs['auto_cut_colors'] = auto_cut
+            for c_name, btn in self.color_cut_buttons.items():
+                if btn.isChecked() and not any(c.lower() == c_name.lower() for c in auto_cut):
+                    auto_cut.append(c_name)
+                elif not btn.isChecked() and any(c.lower() == c_name.lower() for c in auto_cut):
+                    auto_cut = [c for c in auto_cut if c.lower() != c_name.lower()]
+        prefs['auto_cut_colors'] = auto_cut
         self.engine.save_preferences(prefs)
-        if hasattr(self, 'audio_preview') and hasattr(self.audio_preview, 'waveform_timeline'):
-            canvas = getattr(self, 'text_canvas', None)
-            words = canvas.words_data if canvas else []
-            self.audio_preview.waveform_timeline.set_words_data(words)
+        self._refresh_cut_preview()
 
     def _save_top_toggles_prefs(self):
         prefs = self.engine.load_preferences() or {}
@@ -2857,7 +2865,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         return
                     cmd = [
                         self.engine.ffmpeg_cmd, "-i", self.wav,
-                        "-af", f"silencedetect=noise={self.thresh}dB:d={self.min_dur}",
+                        "-af", f"silencedetect=noise={self.thresh}dB:d=0.05",
                         "-f", "null", "-"
                     ]
                     self._proc = subprocess.Popen(
@@ -2932,6 +2940,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         pct = int(round(100.0 * secs / total_dur)) if total_dur > 0 else 0
         lbl.setText(self.txt(key).format(
             count=len(spans), removed=f"{int(secs // 60)}:{int(secs % 60):02d}", pct=pct))
+        if hasattr(self, '_silence_stats_opacity_effect'):
+            self._silence_stats_opacity_effect.setOpacity(1.0)
+        lbl.update()
 
     # ── Colour legend ───────────────────────────────────────────────────────
     _LEGEND_OP_KEYS = {"bad": "Violet", "repeat": "Navy", "typo": "Olive",
@@ -2977,8 +2988,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 return {"navy", "blue", "repeat"}
             if s in ("olive", "green", "typo"):
                 return {"olive", "green", "typo"}
-            if s in ("chocolate", "inaudible"):
-                return {"chocolate", "inaudible"}
+            if s in ("chocolate", "inaudible", "brown"):
+                return {"chocolate", "inaudible", "brown"}
             if s in ("tan", "silence_mark", "silence"):
                 return {"tan", "silence_mark", "silence"}
             if s.startswith("custom_"):
@@ -3153,24 +3164,50 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 lbl_managed.setStyleSheet(f"color: #777777; font-size: {config.FS(8.5)}pt; font-style: italic;")
                 lbl_managed.setToolTip(self.txt("tt_legend_silence_managed", "Silence cutting is configured in the Silence panel."))
                 h.addWidget(lbl_managed, 0, Qt.AlignTop)
-            elif key in cut_buttons:
+            else:
+                prefs = self.engine.load_preferences() or {}
+                auto_cut_list = [c.lower() for c in prefs.get('auto_cut_colors', [])]
+                is_checked = (key.lower() in auto_cut_list)
+                if key in cut_buttons:
+                    is_checked = cut_buttons[key].isChecked()
+                elif key == "Violet" and ("red" in auto_cut_list or "bad" in auto_cut_list): is_checked = True
+                elif key == "Navy" and ("blue" in auto_cut_list or "repeat" in auto_cut_list): is_checked = True
+                elif key == "Olive" and ("green" in auto_cut_list or "typo" in auto_cut_list): is_checked = True
+                elif key == "Chocolate" and ("brown" in auto_cut_list or "inaudible" in auto_cut_list): is_checked = True
+
                 cb = QCheckBox(self.txt("legend_remove"))
-                cb.setChecked(cut_buttons[key].isChecked())
+                cb.setChecked(is_checked)
                 cb.setToolTip(self.txt("tt_legend_remove"))
                 cb.toggled.connect(lambda c, k=key: self._on_legend_remove_toggled(k, c))
-                h.addWidget(cb, 0, Qt.AlignTop)
-            else:
-                cb = QCheckBox(self.txt("legend_remove"))
-                cb.setEnabled(False)
-                cb.setToolTip(self.txt("tt_legend_not_removable"))
                 h.addWidget(cb, 0, Qt.AlignTop)
             lay.addWidget(row)
 
     def _on_legend_remove_toggled(self, key, checked):
         """Legend checkbox = the colour's auto-cut (A) button."""
+        prefs = self.engine.load_preferences() or {}
+        raw_auto_cut = list(prefs.get('auto_cut_colors', []))
+
+        # Normalize key and aliases
+        aliases = {key.lower()}
+        if key.lower() in ("violet", "red"): aliases.update(["violet", "red", "bad"])
+        elif key.lower() in ("navy", "blue"): aliases.update(["navy", "blue", "repeat"])
+        elif key.lower() in ("olive", "green"): aliases.update(["olive", "green", "typo"])
+        elif key.lower() in ("chocolate", "brown"): aliases.update(["chocolate", "brown", "inaudible"])
+
+        if checked:
+            if not any(c.lower() in aliases for c in raw_auto_cut):
+                raw_auto_cut.append(key)
+        else:
+            raw_auto_cut = [c for c in raw_auto_cut if c.lower() not in aliases]
+
+        prefs['auto_cut_colors'] = raw_auto_cut
+        self.engine.save_preferences(prefs)
+
         btn = getattr(self, 'color_cut_buttons', {}).get(key)
         if btn is not None and btn.isChecked() != checked:
             btn.setChecked(checked)
+
+        self._refresh_cut_preview()
 
     def _on_assemble(self):
         if getattr(self, '_is_live_transcribing', False):
@@ -3206,9 +3243,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'tgl_show_typos'): prefs['show_typos'] = self.tgl_show_typos.isChecked()
         if hasattr(self, 'tgl_mark_inaudible'): prefs['mark_inaudible'] = self.tgl_mark_inaudible.isChecked()
 
+        auto_cut = list(prefs.get('auto_cut_colors', []))
         if hasattr(self, 'color_cut_buttons'):
-            auto_cut = [c_name for c_name, btn in self.color_cut_buttons.items() if btn.isChecked()]
-            prefs['auto_cut_colors'] = auto_cut
+            for c_name, btn in self.color_cut_buttons.items():
+                if btn.isChecked() and not any(c.lower() == c_name.lower() for c in auto_cut):
+                    auto_cut.append(c_name)
+                elif not btn.isChecked() and any(c.lower() == c_name.lower() for c in auto_cut):
+                    auto_cut = [c for c in auto_cut if c.lower() != c_name.lower()]
+        prefs['auto_cut_colors'] = auto_cut
 
         checked_btn = getattr(self, 'marker_btn_group', None) and self.marker_btn_group.checkedButton()
         if checked_btn:

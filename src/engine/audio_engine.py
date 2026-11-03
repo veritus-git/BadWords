@@ -1347,8 +1347,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 return {"navy", "blue", "repeat"}
             if s in ("olive", "green", "typo"):
                 return {"olive", "green", "typo"}
-            if s in ("chocolate", "inaudible"):
-                return {"chocolate", "inaudible"}
+            if s in ("chocolate", "inaudible", "brown"):
+                return {"chocolate", "inaudible", "brown"}
             if s in ("tan", "silence_mark", "silence"):
                 return {"tan", "silence_mark", "silence"}
             if s.startswith("custom_"):

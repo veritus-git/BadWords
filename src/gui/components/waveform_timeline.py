@@ -349,9 +349,14 @@ class WaveformTimelineWidget(QWidget):
             prefs['mark_inaudible'] = self.main_window.tgl_mark_inaudible.isChecked()
         if hasattr(self.main_window, 'tgl_show_typos'):
             prefs['show_typos'] = self.main_window.tgl_show_typos.isChecked()
+        auto_cut = list(prefs.get('auto_cut_colors', []))
         if hasattr(self.main_window, 'color_cut_buttons'):
-            auto_cut = [c_name for c_name, btn in self.main_window.color_cut_buttons.items() if btn.isChecked()]
-            prefs['auto_cut_colors'] = auto_cut
+            for c_name, btn in self.main_window.color_cut_buttons.items():
+                if btn.isChecked() and not any(c.lower() == c_name.lower() for c in auto_cut):
+                    auto_cut.append(c_name)
+                elif not btn.isChecked() and any(c.lower() == c_name.lower() for c in auto_cut):
+                    auto_cut = [c for c in auto_cut if c.lower() != c_name.lower()]
+        prefs['auto_cut_colors'] = auto_cut
 
         fps = 60.0
         if hasattr(self.main_window.engine, 'resolve_handler') and self.main_window.engine.resolve_handler:

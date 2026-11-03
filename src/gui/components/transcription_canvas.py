@@ -307,6 +307,9 @@ class TranscriptionCanvas(QWidget):
         if vbar:
             vbar.setValue(old_scroll_val)
 
+        if hasattr(self.main_window, '_refresh_cut_preview'):
+            self.main_window._refresh_cut_preview()
+
         self.update()
 
     def load_data(self, words_data):
@@ -330,6 +333,9 @@ class TranscriptionCanvas(QWidget):
 
         if vbar:
             vbar.setValue(old_scroll_val)
+
+        if hasattr(self.main_window, '_refresh_cut_preview'):
+            self.main_window._refresh_cut_preview()
 
         self.update()
 
@@ -1285,7 +1291,9 @@ class TranscriptionCanvas(QWidget):
             if action and action.get('changes'):
                 if hasattr(self.main_window, 'undo_manager'):
                     self.main_window.undo_manager.push(action)
-                if hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
+                if hasattr(self.main_window, '_refresh_cut_preview'):
+                    self.main_window._refresh_cut_preview()
+                elif hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
                     self.main_window.waveform_timeline.set_words_data(self.words_data)
             self._current_undo_action = None
 

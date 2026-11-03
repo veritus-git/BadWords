@@ -104,7 +104,7 @@ def build_assembly_panel(win) -> QFrame:
         
         pin_c = _pin_btn(f'cut_{color_name.lower()}')
         
-        is_unsupported = color_name.lower() in ["tan", "chocolate", "green", "blue"]
+        is_unsupported = color_name.lower() in ["tan"]
         btn_auto = None
         
         if not is_unsupported:
