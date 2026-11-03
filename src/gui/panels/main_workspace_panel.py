@@ -22,7 +22,7 @@ from gui.widgets.layouts import MainPanelWidget
 from gui.widgets.labels import QLabel
 from gui.widgets.buttons import QPushButton, AssembleSplitButton
 from gui.components.track_options_drawer import TrackOptionsDrawer
-from .script_panel import wrap_activity_panel
+from .script_panel import wrap_activity_panel, create_panel_header
 
 
 def build_main_workspace_panel(win) -> QFrame:
@@ -32,6 +32,15 @@ def build_main_workspace_panel(win) -> QFrame:
     l_main = QVBoxLayout(p_main.layer1)
     l_main.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
     l_main.setSpacing(config.S(10))
+
+    header = create_panel_header(
+        win,
+        "panel_workspace_title",
+        "panel_workspace_desc",
+        "Workspace & Markers",
+        "Manage marker modes, timeline statistics, custom color markers, and pinned favorite shortcuts."
+    )
+    l_main.addWidget(header)
     
     # Top Section (Markers)
     row_marking_title = QHBoxLayout()

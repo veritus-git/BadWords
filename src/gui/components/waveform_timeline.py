@@ -613,15 +613,20 @@ class WaveformTimelineWidget(QWidget):
     # -------------------------------------------------------------------------
 
     def _get_clip_rect(self) -> QRectF:
-        """Calculates the Fairlight clip ribbon rectangle inside the widget with breathing room."""
+        """Calculates the Fairlight clip ribbon rectangle inside the widget with authentic DaVinci timeline track height and breathing room."""
         m_x = float(config.S(8))
         m_y_top = float(config.S(22))   # Top space for breathing room + zoom controls
         m_y_bot = float(config.S(16))   # Bottom space for breathing room + scrollbar
         sb_h = float(config.S(7)) if (hasattr(self, 'scrollbar') and self.scrollbar.isVisible()) else 0.0
 
-        w = max(10.0, self.width() - 2 * m_x)
-        h = max(10.0, self.height() - m_y_top - m_y_bot - sb_h)
-        return QRectF(m_x, m_y_top, w, h)
+        available_w = max(10.0, self.width() - 2 * m_x)
+        available_h = max(10.0, self.height() - m_y_top - m_y_bot - sb_h)
+
+        # Authentic DaVinci Resolve audio clip track height (proportional, not stretched out)
+        natural_clip_h = min(available_h, float(config.S(82)))
+        clip_y = m_y_top + (available_h - natural_clip_h) / 2.0
+
+        return QRectF(m_x, clip_y, available_w, natural_clip_h)
 
     def _rebuild_waveform_pixmap(self) -> None:
         """
@@ -646,11 +651,17 @@ class WaveformTimelineWidget(QWidget):
         ry = clip_rect.y()
         rw = clip_rect.width()
         rh = clip_rect.height()
-        radius = float(config.S(6))
+        radius = float(config.S(4))
 
-        # 1. Dark container background
+        # 1. Dark timeline track lane background
         bg_container = QRectF(0, 0, w, h)
-        painter.fillRect(bg_container, QColor("#141414"))
+        painter.fillRect(bg_container, QColor("#151515"))
+
+        # Subtle timeline track boundary separator lines top and bottom
+        track_pen = QPen(QColor("#242424"), 1.0)
+        painter.setPen(track_pen)
+        painter.drawLine(QPointF(0, ry - float(config.S(5))), QPointF(w, ry - float(config.S(5))))
+        painter.drawLine(QPointF(0, ry + rh + float(config.S(5))), QPointF(w, ry + rh + float(config.S(5))))
 
         # 2. Fairlight Audio Clip Ribbon
         clip_path = QPainterPath()
@@ -696,39 +707,57 @@ class WaveformTimelineWidget(QWidget):
                 painter.drawLine(QPointF(x0, ry), QPointF(x0, ry + rh))
                 painter.drawLine(QPointF(x1, ry), QPointF(x1, ry + rh))
 
-        # 4. Subtle horizontal audio midline and dB guide lines
+        # 4. Subtle horizontal audio midline (0dB baseline)
         mid_y = ry + rh / 2.0
-        half_h = (rh / 2.0) * 0.88
+        # Scaled to 0.60 for natural breathing room above and below waveform
+        half_h = (rh / 2.0) * 0.60
 
-        # 0dB midline (subtle dark line matching DaVinci Fairlight Screenshot 3)
-        midline_pen = QPen(QColor(15, 35, 25, 120), 1.0, Qt.SolidLine)
+        midline_pen = QPen(QColor(22, 54, 38, 140), 1.0, Qt.SolidLine)
         painter.setPen(midline_pen)
         painter.drawLine(QPointF(rx, mid_y), QPointF(rx + rw, mid_y))
 
-        # 5. Draw Waveform Silhouette (1:1 with DaVinci Resolve Screenshot 3)
+        # 5. Draw Waveform Silhouette (Continuous, interpolated silhouette matching DaVinci Resolve)
         if self._peaks is not None and self._peaks.num_points > 0 and self._duration > 0:
             num_cols = max(1, int(rw))
+            pts_per_sec = float(self._peaks.points_per_second)
+            total_pts = self._peaks.num_points
+            peaks_max = self._peaks.peaks_max
+            peaks_min = self._peaks.peaks_min
 
-            # Smooth power scaling preserving quiet speech while preventing clipping
             def scale_amp(v: float) -> float:
                 if abs(v) < 1e-4:
                     return 0.0
-                return float(np.sign(v) * (abs(v) ** 0.62))
+                return float(np.sign(v) * (abs(v) ** 0.65))
 
             top_pts = []
             bot_pts = []
 
-            for col in range(num_cols):
-                t0 = t_start + (col / float(num_cols)) * vis_dur
-                t1 = t_start + ((col + 1) / float(num_cols)) * vis_dur
+            dt_per_pixel = vis_dur / float(num_cols)
+            is_zoomed_in = (dt_per_pixel * pts_per_sec) < 1.5
 
-                p_min, p_max, _, _ = self._peaks.get_visible_peaks(t0, t1)
-                if len(p_max) > 0:
-                    v_max = float(np.max(p_max))
-                    v_min = float(np.min(p_min))
+            for col in range(num_cols):
+                t_mid = t_start + (col + 0.5) * dt_per_pixel
+                x_val = rx + col + 0.5
+
+                if is_zoomed_in:
+                    # Continuous linear interpolation between peak samples eliminates blocky steps
+                    exact_idx = t_mid * pts_per_sec
+                    idx0 = max(0, min(total_pts - 1, int(exact_idx)))
+                    idx1 = min(total_pts - 1, idx0 + 1)
+                    frac = exact_idx - idx0
+
+                    v_max = (1.0 - frac) * float(peaks_max[idx0]) + frac * float(peaks_max[idx1])
+                    v_min = (1.0 - frac) * float(peaks_min[idx0]) + frac * float(peaks_min[idx1])
                 else:
-                    v_max = 0.0
-                    v_min = 0.0
+                    t0 = t_start + col * dt_per_pixel
+                    t1 = t0 + dt_per_pixel
+                    p_min, p_max, _, _ = self._peaks.get_visible_peaks(t0, t1)
+                    if len(p_max) > 0:
+                        v_max = float(np.max(p_max))
+                        v_min = float(np.min(p_min))
+                    else:
+                        v_max = 0.0
+                        v_min = 0.0
 
                 if abs(v_max) < 0.002 and abs(v_min) < 0.002:
                     s_max = 0.003
@@ -737,7 +766,6 @@ class WaveformTimelineWidget(QWidget):
                     s_max = scale_amp(v_max)
                     s_min = scale_amp(v_min)
 
-                x_val = rx + col + 0.5
                 y_top = mid_y - (s_max * half_h)
                 y_bot = mid_y - (s_min * half_h)
 
@@ -795,37 +823,19 @@ class WaveformTimelineWidget(QWidget):
             painter.restore()
 
         # Ribbon outer border
-        border_pen = QPen(QColor("#1b3b2c"), 1.0)
+        border_pen = QPen(QColor("#245437"), 1.0)
         painter.setPen(border_pen)
         painter.drawPath(clip_path)
 
-        # 6. Clip Name Label Badge (at bottom-left corner of the clip, matching Screenshot 1!)
+        # 6. Clip Name Label (matching Screenshot 1: clean white text in bottom-left corner)
         badge_font = QFont(config.UI_FONT_NAME, config.FS(8))
         badge_font.setBold(False)
         painter.setFont(badge_font)
 
         clip_label = self._clip_name
-        fm = painter.fontMetrics()
-        txt_w = fm.horizontalAdvance(clip_label)
-        txt_h = fm.height()
-
-        badge_pad_x = float(config.S(6))
-        badge_pad_y = float(config.S(2))
-        badge_rect = QRectF(
-            rx + float(config.S(8)),
-            ry + rh - float(config.S(6)) - txt_h - 2 * badge_pad_y,
-            txt_w + 2 * badge_pad_x,
-            txt_h + 2 * badge_pad_y,
-        )
-
-        badge_path = QPainterPath()
-        badge_path.addRoundedRect(badge_rect, config.S(3), config.S(3))
-        painter.fillPath(badge_path, QColor(10, 22, 15, 210))
-        painter.setPen(QPen(QColor("#245437"), 1.0))
-        painter.drawPath(badge_path)
-
-        painter.setPen(QColor("#c8e6d2"))
-        painter.drawText(badge_rect, Qt.AlignCenter, clip_label)
+        if clip_label:
+            painter.setPen(QColor(245, 245, 245, 230))
+            painter.drawText(QPointF(rx + float(config.S(8)), ry + rh - float(config.S(6))), clip_label)
 
         painter.end()
 

@@ -21,7 +21,7 @@ from PySide6.QtGui import QIcon
 import config
 from gui.widgets.labels import QLabel
 from gui.widgets.buttons import QPushButton, ToggleSwitch, StarFavoriteButton
-from .script_panel import wrap_activity_panel
+from .script_panel import wrap_activity_panel, create_panel_header
 
 
 def build_assembly_panel(win) -> QFrame:
@@ -30,6 +30,15 @@ def build_assembly_panel(win) -> QFrame:
     l_assembly = QVBoxLayout(p_assembly)
     l_assembly.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
     l_assembly.setSpacing(config.S(15))
+
+    header = create_panel_header(
+        win,
+        "panel_assembly_title",
+        "panel_assembly_desc",
+        "Assembly Options",
+        "Configure ripple-cut rules, inaudible speech handling, color cut presets, and timeline creation."
+    )
+    l_assembly.addWidget(header)
     
     def _pin_btn(fav_id: str):
         btn = StarFavoriteButton(size=18)

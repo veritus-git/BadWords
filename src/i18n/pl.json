@@ -493,5 +493,15 @@
     "tt_toggle_video": "Przełącz podgląd wideo",
     "tt_zoom_out": "Pomniejsz",
     "tt_zoom_fit": "Dopasuj oś czasu",
-    "tt_zoom_in": "Powiększ (lub Ctrl + Kółko)"
+    "tt_zoom_in": "Powiększ (lub Ctrl + Kółko)",
+    "panel_silence_title": "Wykrywanie Ciszy",
+    "panel_silence_desc": "Skonfiguruj progi decybeli, minimalny czas trwania i marginesy wycinania lub oznaczania ciszy.",
+    "panel_script_title": "Analiza Scenariusza",
+    "panel_script_desc": "Wklej lub zaimportuj tekst scenariusza (.docx, .pdf, .txt), aby automatycznie wykryć kwestie spoza scenariusza i brakujące linie.",
+    "panel_fillers_title": "Słowa Wypełniacze",
+    "panel_fillers_desc": "Zarządzaj listą słów-wypełniaczy i zająknięć ('yyy', 'eee'), aby wykrywać i usuwać je automatycznie.",
+    "panel_workspace_title": "Przestrzeń Robocza",
+    "panel_workspace_desc": "Zarządzaj trybami oznaczania, statystykami osi czasu, własnymi znacznikami i przypiętymi skrótami.",
+    "panel_assembly_title": "Opcje Montażu",
+    "panel_assembly_desc": "Skonfiguruj reguły montażu ripple-cut, obsługę niesłyszalnych słów, kolory cięć i tworzenie osi czasu."
 }

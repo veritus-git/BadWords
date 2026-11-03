@@ -493,5 +493,15 @@
     "tt_toggle_video": "切换视频预览",
     "tt_zoom_out": "缩小",
     "tt_zoom_fit": "适应时间轴",
-    "tt_zoom_in": "放大 (或 Ctrl + 滚轮)"
+    "tt_zoom_in": "放大 (或 Ctrl + 滚轮)",
+    "panel_silence_title": "静音检测",
+    "panel_silence_desc": "配置分贝阈值、最小停顿时间和安全间距，用于裁剪或标记静音片段。",
+    "panel_script_title": "脚本比对",
+    "panel_script_desc": "粘贴或导入台词脚本（.docx、.pdf、.txt），自动检测脱稿词和缺失语句。",
+    "panel_fillers_title": "语气词与填充词",
+    "panel_fillers_desc": "管理发音停顿词（如“呃”、“啊”、“那个”等）列表，实现自动检测与批量消除。",
+    "panel_workspace_title": "工作区与标记",
+    "panel_workspace_desc": "管理标记模式、时间线统计信息、自定义彩色标记及常用快捷功能。",
+    "panel_assembly_title": "装配与剪辑选项",
+    "panel_assembly_desc": "配置波纹裁剪规则、模糊发音片段处理及新时间线生成参数。"
 }

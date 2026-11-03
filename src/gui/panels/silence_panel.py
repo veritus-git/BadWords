@@ -20,7 +20,7 @@ import config
 from gui.widgets.labels import QLabel
 from gui.widgets.buttons import QPushButton, ToggleSwitch, ReloadButton
 from gui.widgets.sliders import JumpSlider
-from .script_panel import wrap_activity_panel
+from .script_panel import wrap_activity_panel, create_panel_header
 
 
 def build_silence_panel(win) -> QFrame:
@@ -29,6 +29,16 @@ def build_silence_panel(win) -> QFrame:
     l_silence = QVBoxLayout(p_silence)
     l_silence.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
     l_silence.setSpacing(config.S(8))
+
+    header = create_panel_header(
+        win,
+        "panel_silence_title",
+        "panel_silence_desc",
+        "Silence Detection",
+        "Configure silence thresholds, minimum pause durations, and padding for cutting or marking quiet sections."
+    )
+    l_silence.addWidget(header)
+    l_silence.addSpacing(config.S(4))
     
     _sil_input_style = f"""
         QLineEdit {{ background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;

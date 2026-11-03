@@ -1530,10 +1530,11 @@ class ResolveHandler:
             log_error(f"compute_timeline_fingerprint error: {e}")
             return None
 
-    def find_timeline_by_fingerprint(self, target_fingerprint):
+    def find_timeline_by_fingerprint(self, target_fingerprint, preferred_name: str = None):
         """
-        Scan all timelines in the current project and find one whose
+        Scan timelines in the current project and find one whose
         content fingerprint matches the target.
+        Fast path: checks preferred_name first to prevent unnecessary scans and UI lag.
 
         Returns (timeline_name, exact_match) or (None, False).
         """
@@ -1541,8 +1542,18 @@ class ResolveHandler:
             return None, False
 
         try:
+            # 1. Fast path: check preferred_name first!
+            if preferred_name:
+                fp = self.compute_timeline_fingerprint(preferred_name)
+                if fp and fp == target_fingerprint:
+                    log_info(f"find_timeline_by_fingerprint: fast match found on preferred_name → '{preferred_name}'")
+                    return preferred_name, True
+
+            # 2. Otherwise scan remaining timelines
             tls = self.get_all_timelines()
             for tl_name in tls:
+                if preferred_name and tl_name == preferred_name:
+                    continue
                 fp = self.compute_timeline_fingerprint(tl_name)
                 if fp and fp == target_fingerprint:
                     log_info(f"find_timeline_by_fingerprint: match found → '{tl_name}'")

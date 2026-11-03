@@ -493,5 +493,15 @@
     "tt_toggle_video": "Attiva/disattiva anteprima video",
     "tt_zoom_out": "Riduci zoom",
     "tt_zoom_fit": "Adatta timeline",
-    "tt_zoom_in": "Ingrandisci zoom (o Ctrl + Rotellina)"
+    "tt_zoom_in": "Ingrandisci zoom (o Ctrl + Rotellina)",
+    "panel_silence_title": "Rilevamento Silenzi",
+    "panel_silence_desc": "Configura soglie di decibel, durate minime di pausa e margini per tagliare o contrassegnare le sezioni silenziose.",
+    "panel_script_title": "Confronto Script",
+    "panel_script_desc": "Incolla o importa il testo dello script (.docx, .pdf, .txt) per rilevare automaticamente parole fuori copione e battute mancanti.",
+    "panel_fillers_title": "Parole di Riempimento",
+    "panel_fillers_desc": "Gestisci l'elenco delle esitazioni vocali ('ehm', 'uhm') per rilevarle ed eliminarle automaticamente.",
+    "panel_workspace_title": "Area di Lavoro & Marcatori",
+    "panel_workspace_desc": "Gestisci modalità di marcatura, statistiche della timeline, marcatori di colore personalizzati e scorciatoie preferite.",
+    "panel_assembly_title": "Opzioni di Montaggio",
+    "panel_assembly_desc": "Configura regole di taglio a catena, gestione del parlato inudibile e generazione della timeline."
 }

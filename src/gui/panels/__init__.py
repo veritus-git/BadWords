@@ -11,7 +11,7 @@ DESCRIPTION:
 Package initialization for sidebar activity panels.
 """
 
-from .script_panel import build_script_panel, wrap_activity_panel
+from .script_panel import build_script_panel, wrap_activity_panel, create_panel_header
 from .silence_panel import build_silence_panel
 from .fillers_panel import build_fillers_panel
 from .main_workspace_panel import build_main_workspace_panel
@@ -26,4 +26,5 @@ __all__ = [
     "build_assembly_panel",
     "build_colors_panel",
     "wrap_activity_panel",
+    "create_panel_header",
 ]

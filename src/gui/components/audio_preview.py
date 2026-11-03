@@ -34,6 +34,7 @@ from PySide6.QtGui import (
     QBrush,
     QPolygonF,
     QPixmap,
+    QImage,
     QFont,
 )
 from PySide6.QtWidgets import (
@@ -56,13 +57,13 @@ from osdoc import log_info, log_error
 
 
 class PreviewToggleBtn(QPushButton):
-    """Clean minimalist toggle icon button for Timeline and Video preview modes."""
+    """Clean minimalist toggle icon button for Timeline and Video preview modes using SVG layout assets."""
     def __init__(self, mode: str = "timeline", parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.mode = mode
         self.setCheckable(True)
         self.setChecked(True)
-        self.setFixedSize(config.S(24), config.S(24))
+        self.setFixedSize(config.S(26), config.S(26))
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -76,6 +77,17 @@ class PreviewToggleBtn(QPushButton):
             }}
         """)
 
+        from gui.utils import get_layout_icon_path
+        svg_name = "timeline-preview.svg" if mode == "timeline" else "video-preview.svg"
+        svg_path = get_layout_icon_path(svg_name)
+        self._renderer = None
+        if os.path.isfile(svg_path):
+            try:
+                from PySide6.QtSvg import QSvgRenderer
+                self._renderer = QSvgRenderer(svg_path)
+            except Exception:
+                self._renderer = None
+
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         painter = QPainter(self)
@@ -84,26 +96,41 @@ class PreviewToggleBtn(QPushButton):
         w = float(self.width())
         h = float(self.height())
 
-        if self.mode == "timeline":
-            # Waveform bars icon
-            painter.setPen(QPen(color, float(config.S(1.8)), Qt.SolidLine, Qt.RoundCap))
-            xs = [w * 0.26, w * 0.42, w * 0.58, w * 0.74]
-            heights = [h * 0.30, h * 0.60, h * 0.42, h * 0.65]
-            for x, bar_h in zip(xs, heights):
-                painter.drawLine(QPointF(x, (h - bar_h) / 2.0), QPointF(x, (h + bar_h) / 2.0))
-        elif self.mode == "video":
-            # Filmstrip / 16:9 frame with center play triangle
-            painter.setPen(QPen(color, float(config.S(1.4)), Qt.SolidLine, Qt.RoundCap))
-            rect = QRectF(w * 0.18, h * 0.25, w * 0.64, h * 0.50)
-            painter.drawRoundedRect(rect, config.S(2), config.S(2))
-            # Center play triangle
-            tri = QPolygonF([
-                QPointF(w * 0.43, h * 0.36),
-                QPointF(w * 0.43, h * 0.64),
-                QPointF(w * 0.63, h * 0.50),
-            ])
-            painter.setBrush(QBrush(color))
-            painter.drawPolygon(tri)
+        if self._renderer and self._renderer.isValid():
+            dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 1.0
+            icon_px = max(1, int(config.S(16) * dpr))
+            img = QImage(icon_px, icon_px, QImage.Format_ARGB32_Premultiplied)
+            img.fill(Qt.transparent)
+            ip = QPainter(img)
+            self._renderer.render(ip, QRectF(0, 0, icon_px, icon_px))
+            ip.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            ip.fillRect(img.rect(), color)
+            ip.end()
+
+            draw_s = float(config.S(16))
+            x = (w - draw_s) / 2.0
+            y = (h - draw_s) / 2.0
+            painter.drawImage(QRectF(x, y, draw_s, draw_s), img)
+        else:
+            if self.mode == "timeline":
+                # Fallback waveform bars icon
+                painter.setPen(QPen(color, float(config.S(1.8)), Qt.SolidLine, Qt.RoundCap))
+                xs = [w * 0.26, w * 0.42, w * 0.58, w * 0.74]
+                heights = [h * 0.30, h * 0.60, h * 0.42, h * 0.65]
+                for x_bar, bar_h in zip(xs, heights):
+                    painter.drawLine(QPointF(x_bar, (h - bar_h) / 2.0), QPointF(x_bar, (h + bar_h) / 2.0))
+            elif self.mode == "video":
+                # Fallback filmstrip frame with center play triangle
+                painter.setPen(QPen(color, float(config.S(1.4)), Qt.SolidLine, Qt.RoundCap))
+                rect = QRectF(w * 0.18, h * 0.25, w * 0.64, h * 0.50)
+                painter.drawRoundedRect(rect, config.S(2), config.S(2))
+                tri = QPolygonF([
+                    QPointF(w * 0.43, h * 0.36),
+                    QPointF(w * 0.43, h * 0.64),
+                    QPointF(w * 0.63, h * 0.50),
+                ])
+                painter.setBrush(QBrush(color))
+                painter.drawPolygon(tri)
 
 
 class AudioPreviewWidget(QFrame):
@@ -303,18 +330,18 @@ class AudioPreviewWidget(QFrame):
         left_layout.addWidget(self.lbl_centered)
         left_layout.addSpacing(config.S(6))
 
-        # Modularity Buttons: Waveform Timeline & Video Preview Toggles
-        self.btn_toggle_timeline = PreviewToggleBtn("timeline", parent=self)
-        self.btn_toggle_timeline.setChecked(self.show_timeline)
-        self.btn_toggle_timeline.setToolTip(self.main_window.txt("tt_toggle_timeline", "Toggle Timeline Preview") if self.main_window else "Toggle Timeline")
-        self.btn_toggle_timeline.clicked.connect(self.toggle_timeline_preview)
-        left_layout.addWidget(self.btn_toggle_timeline)
-
+        # Modularity Buttons: Video Preview (Left) & Waveform Timeline (Right) Toggles
         self.btn_toggle_video = PreviewToggleBtn("video", parent=self)
         self.btn_toggle_video.setChecked(self.show_video)
         self.btn_toggle_video.setToolTip(self.main_window.txt("tt_toggle_video", "Toggle Video Preview") if self.main_window else "Toggle Video Preview")
         self.btn_toggle_video.clicked.connect(self.toggle_video_preview)
         left_layout.addWidget(self.btn_toggle_video)
+
+        self.btn_toggle_timeline = PreviewToggleBtn("timeline", parent=self)
+        self.btn_toggle_timeline.setChecked(self.show_timeline)
+        self.btn_toggle_timeline.setToolTip(self.main_window.txt("tt_toggle_timeline", "Toggle Timeline Preview") if self.main_window else "Toggle Timeline Preview")
+        self.btn_toggle_timeline.clicked.connect(self.toggle_timeline_preview)
+        left_layout.addWidget(self.btn_toggle_timeline)
 
         left_layout.addStretch()
 

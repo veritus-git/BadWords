@@ -88,7 +88,16 @@ class _ProjectImportWorker(QThread):
         try:
             self.status_updated.emit("Loading project...")
             bws_extras = None
-            if self.file_path.endswith('.bws'):
+
+            # Detect whether file is a zip archive / directory or legacy JSON
+            import zipfile
+            is_zip = False
+            try:
+                is_zip = os.path.isfile(self.file_path) and zipfile.is_zipfile(self.file_path)
+            except Exception:
+                pass
+
+            if is_zip or os.path.isdir(self.file_path) or self.file_path.endswith('.bws'):
                 state, _, bws_extras = self.engine.load_bws(self.file_path)
             else:
                 state, _ = self.engine.load_project_state(self.file_path)
@@ -106,10 +115,30 @@ class _ProjectImportWorker(QThread):
 
             target_name = (state.get('transcription_source') or (state.get('settings') or {}).get('transcription_source') or {}).get("timeline_name", "")
 
+            # Safe off-main-thread timeline matching to prevent UI freezes
+            found_tl = None
+            is_exact = False
+            exists_by_name = False
+            rh = getattr(self.engine, 'resolve_handler', None)
+            if bws_extras and bws_extras.get("timeline_fingerprint") and rh and rh.is_connected():
+                self.status_updated.emit("Matching timeline...")
+                try:
+                    found_tl, is_exact = rh.find_timeline_by_fingerprint(
+                        bws_extras["timeline_fingerprint"], preferred_name=target_name
+                    )
+                    if not (found_tl and is_exact) and target_name:
+                        exists_by_name = rh.timeline_exists(target_name)
+                except Exception as _fe:
+                    from osdoc import log_error as _le
+                    _le(f"_ProjectImportWorker: fingerprint matching error: {_fe}")
+
             meta = {
                 "bws_extras": bws_extras,
                 "missing_media": missing_media,
-                "target_name": target_name
+                "target_name": target_name,
+                "found_tl": found_tl,
+                "is_exact": is_exact,
+                "exists_by_name": exists_by_name,
             }
             self.finished_success.emit(state, meta)
         except Exception as e:
@@ -1634,10 +1663,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._media_inventory = media_inventory
 
             recipe = getattr(self, '_assembly_recipe', None)
-            xml_path = None
-            if not drt_path and getattr(self, 'resolve_handler', None) and getattr(self, '_transcription_source', None):
+            xml_path = getattr(self, '_extracted_xml_path', None)
+            is_free_21_1 = bool(getattr(self, 'resolve_handler', None) and hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer())
+            if (not drt_path or is_free_21_1) and getattr(self, 'resolve_handler', None) and getattr(self, '_transcription_source', None):
                 tl_name = self._transcription_source.get("timeline_name")
-                if tl_name:
+                if tl_name and (not xml_path or not os.path.exists(xml_path)):
                     try:
                         temp_dir = self.engine.os_doc.get_temp_folder()
                         safe_name = "".join(c for c in tl_name if c.isalnum() or c in '_- ')
@@ -1857,18 +1887,20 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             missing_media = meta.get("missing_media", [])
             target_name = meta.get("target_name", "")
 
-            # Safe main-thread timeline fingerprint matching
-            found_tl = None
-            is_exact = False
-            exists_by_name = False
-            if bws_extras and bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.is_connected():
+            # Safe timeline matching (pre-computed in background worker to eliminate UI freezing)
+            found_tl = meta.get("found_tl")
+            is_exact = meta.get("is_exact", False)
+            exists_by_name = meta.get("exists_by_name", False)
+
+            # Fallback check only if not already determined by worker
+            if found_tl is None and not exists_by_name and bws_extras and bws_extras.get("timeline_fingerprint") and getattr(self, 'resolve_handler', None) and self.resolve_handler.is_connected():
                 try:
                     found_tl, is_exact = self.resolve_handler.find_timeline_by_fingerprint(bws_extras["timeline_fingerprint"], preferred_name=target_name)
                     if not (found_tl and is_exact) and target_name:
                         exists_by_name = self.resolve_handler.timeline_exists(target_name)
                 except Exception as _fe:
                     from osdoc import log_error as _le
-                    _le(f"fingerprint matching error: {_fe}")
+                    _le(f"fingerprint matching fallback error: {_fe}")
 
             from_main_window = getattr(self, '_pre_import_stack_idx', 0) != 2
 
@@ -2047,8 +2079,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self._title_bar.chapter_dropdown.setText(self._chapters[self._current_chapter_idx]['name'])
                 self._title_bar.update_dropdown_placement()
                 
-            if hasattr(self, 'audio_preview') and not from_main_window:
-                self.audio_preview.check_audio_availability()
+            if hasattr(self, 'audio_preview'):
+                extracted_audio = (bws_extras.get("audio_path") if bws_extras else None)
+                if not extracted_audio:
+                    words = state.get('words_data', [])
+                    if words and words[0].get('meta_audio_path'):
+                        extracted_audio = words[0].get('meta_audio_path')
+
+                if extracted_audio and os.path.exists(extracted_audio):
+                    self.audio_preview.original_audio_path = extracted_audio
+                    if hasattr(self.audio_preview, 'waveform_timeline'):
+                        self.audio_preview.waveform_timeline.load_from_audio(extracted_audio)
+                        self.audio_preview.waveform_timeline.set_words_data(state.get('words_data', []))
+                    self.audio_preview.check_audio_availability()
+                elif not from_main_window:
+                    self.audio_preview.check_audio_availability()
 
             # Rebuild title from snapshot using new title bar mode
             if getattr(self, '_transcription_source', None):
@@ -3140,9 +3185,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         def _dur(s):
             return f"{int(s // 60)}:{int(s % 60):02d}"
 
-        for key, hex_col in config.RESOLVE_COLORS_HEX.items():
-            if key not in stats:
-                continue
+        # Ensure silence color (Tan) is ALWAYS rendered at the very bottom
+        keys_to_render = [k for k in config.RESOLVE_COLORS_HEX if k in stats and k != "Tan"]
+        if "Tan" in stats:
+            keys_to_render.append("Tan")
+
+        for key in keys_to_render:
+            hex_col = config.RESOLVE_COLORS_HEX[key]
             kept_n, kept_s, cut_n, cut_s = stats[key]
             name = self.txt(f"resolve_color_{key.lower()}")
             if key in self._LEGEND_MEANINGS:

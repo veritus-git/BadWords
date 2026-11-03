@@ -493,5 +493,15 @@
     "tt_toggle_video": "Toggle Video Preview",
     "tt_zoom_out": "Zoom Out",
     "tt_zoom_fit": "Fit Timeline",
-    "tt_zoom_in": "Zoom In (or Ctrl + Wheel)"
+    "tt_zoom_in": "Zoom In (or Ctrl + Wheel)",
+    "panel_silence_title": "Silence Detection",
+    "panel_silence_desc": "Configure silence thresholds, minimum pause durations, and padding for cutting or marking quiet sections.",
+    "panel_script_title": "Script Comparison",
+    "panel_script_desc": "Paste or import script text (.docx, .pdf, .txt) to automatically detect off-script words and missing lines.",
+    "panel_fillers_title": "Filler Words",
+    "panel_fillers_desc": "Manage the list of vocal pauses and hesitations (e.g. 'umms', 'uhs') to detect and eliminate them automatically.",
+    "panel_workspace_title": "Workspace & Markers",
+    "panel_workspace_desc": "Manage marker modes, timeline statistics, custom color markers, and pinned favorite shortcuts.",
+    "panel_assembly_title": "Assembly Options",
+    "panel_assembly_desc": "Configure ripple-cut rules, inaudible speech handling, color cut presets, and timeline creation."
 }

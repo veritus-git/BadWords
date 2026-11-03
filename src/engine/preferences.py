@@ -293,13 +293,15 @@ class PreferencesMixin:
                 "files": {}
             }
 
-            # 4. Create ZIP
+            # 4. Create ZIP archive with BadWords BWS container signature
             with zipfile.ZipFile(file_path, 'w') as zf:
+                zf.comment = b"BADWORDS_BWS_PROJECT_V2"
+
                 # project.json (compressed)
                 zf.writestr('project.json', project_json_bytes, compress_type=zipfile.ZIP_DEFLATED)
                 manifest["files"]["project.json"] = {"size": len(project_json_bytes)}
 
-                # audio/source.flac (stored — already compressed by Vorbis)
+                # audio/source.flac (stored — already compressed audio)
                 if flac_temp_path and os.path.exists(flac_temp_path):
                     zf.write(flac_temp_path, 'audio/source.flac', compress_type=zipfile.ZIP_STORED)
                     manifest["files"]["audio/source.flac"] = {"size": os.path.getsize(flac_temp_path)}
@@ -309,7 +311,7 @@ class PreferencesMixin:
                     zf.write(drt_path, 'timeline/source.drt', compress_type=zipfile.ZIP_STORED)
                     manifest["files"]["timeline/source.drt"] = {"size": os.path.getsize(drt_path)}
 
-                # timeline/source.xml (compressed XML fallback)
+                # timeline/source.xml (compressed XML fallback for Resolve 21.1+ Free)
                 if xml_path and os.path.exists(xml_path):
                     zf.write(xml_path, 'timeline/source.xml', compress_type=zipfile.ZIP_DEFLATED)
                     manifest["files"]["timeline/source.xml"] = {"size": os.path.getsize(xml_path)}
@@ -324,7 +326,7 @@ class PreferencesMixin:
                 manifest_bytes = json.dumps(manifest, indent=2).encode('utf-8')
                 zf.writestr('manifest.json', manifest_bytes, compress_type=zipfile.ZIP_DEFLATED)
 
-            log_info(f"save_bws: wrote {file_path} ({os.path.getsize(file_path)} bytes)")
+            log_info(f"save_bws: wrote robust container {file_path} ({os.path.getsize(file_path)} bytes)")
 
             # Cleanup temp FLAC
             if flac_temp_path and os.path.exists(flac_temp_path):
@@ -343,13 +345,14 @@ class PreferencesMixin:
 
     def load_bws(self, file_path):
         """
-        Load project from .bws archive.
+        Load project from robust .bws archive (or unpacked project folder / .zip file).
 
         Returns:
             (project_state, segments, bws_extras)
             bws_extras is a dict with:
                 - audio_path: str|None — path to extracted FLAC in temp
                 - drt_path: str|None — path to extracted DRT in temp
+                - xml_path: str|None — path to extracted XML in temp (Resolve 21.1+ Free)
                 - assembly_recipe: dict|None — FFmpeg recipe for assembled audio
                 - manifest: dict — full manifest
                 - media_inventory: list — source file references
@@ -365,45 +368,113 @@ class PreferencesMixin:
             manifest = {}
             audio_path = None
             drt_path = None
+            xml_path = None
             assembly_recipe = None
+            project_state = None
 
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                namelist = zf.namelist()
+            # Case 1: Uncompressed project directory
+            if os.path.isdir(file_path):
+                proj_json_path = os.path.join(file_path, "project.json")
+                if not os.path.isfile(proj_json_path):
+                    # Search inside 1 level deep if packed inside folder
+                    for root, _, files in os.walk(file_path):
+                        if "project.json" in files:
+                            proj_json_path = os.path.join(root, "project.json")
+                            file_path = root
+                            break
 
-                # 1. Read project data
-                project_state = json.loads(zf.read('project.json'))
+                if not os.path.isfile(proj_json_path):
+                    raise FileNotFoundError(f"Missing project.json in directory: {file_path}")
 
-                # 2. Read manifest
-                if 'manifest.json' in namelist:
-                    manifest = json.loads(zf.read('manifest.json'))
+                with open(proj_json_path, 'r', encoding='utf-8') as f:
+                    project_state = json.load(f)
 
-                # 3. Extract audio to temp
-                if 'audio/source.flac' in namelist:
-                    audio_path = os.path.join(bws_extract_dir, 'source.flac')
-                    with zf.open('audio/source.flac') as src, open(audio_path, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
+                man_json_path = os.path.join(file_path, "manifest.json")
+                if os.path.isfile(man_json_path):
+                    try:
+                        with open(man_json_path, 'r', encoding='utf-8') as f:
+                            manifest = json.load(f)
+                    except Exception:
+                        pass
 
-                # 4. Extract DRT to temp
-                if 'timeline/source.drt' in namelist:
-                    drt_path = os.path.join(bws_extract_dir, 'source.drt')
-                    with zf.open('timeline/source.drt') as src, open(drt_path, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
+                cand_audio = os.path.join(file_path, "audio", "source.flac")
+                if not os.path.isfile(cand_audio):
+                    cand_audio = os.path.join(file_path, "source.flac")
+                if os.path.isfile(cand_audio):
+                    audio_path = cand_audio
 
-                # 4b. Extract XML to temp (Resolve Free 21.1+ fallback)
-                xml_path = None
-                if 'timeline/source.xml' in namelist:
-                    xml_path = os.path.join(bws_extract_dir, 'source.xml')
-                    with zf.open('timeline/source.xml') as src, open(xml_path, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
+                cand_drt = os.path.join(file_path, "timeline", "source.drt")
+                if not os.path.isfile(cand_drt):
+                    cand_drt = os.path.join(file_path, "source.drt")
+                if os.path.isfile(cand_drt):
+                    drt_path = cand_drt
 
-                # 5. Read assembly recipe
-                if 'recipes/assembly_ops.json' in namelist:
-                    assembly_recipe = json.loads(zf.read('recipes/assembly_ops.json'))
+                cand_xml = os.path.join(file_path, "timeline", "source.xml")
+                if not os.path.isfile(cand_xml):
+                    cand_xml = os.path.join(file_path, "source.xml")
+                if os.path.isfile(cand_xml):
+                    xml_path = cand_xml
 
-            # Inject audio path into words_data so AudioPreview can find it
+                cand_recipe = os.path.join(file_path, "recipes", "assembly_ops.json")
+                if not os.path.isfile(cand_recipe):
+                    cand_recipe = os.path.join(file_path, "assembly_ops.json")
+                if os.path.isfile(cand_recipe):
+                    try:
+                        with open(cand_recipe, 'r', encoding='utf-8') as f:
+                            assembly_recipe = json.load(f)
+                    except Exception:
+                        pass
+
+            # Case 2: Zip archive (.bws, .zip, etc.)
+            elif os.path.isfile(file_path) and zipfile.is_zipfile(file_path):
+                with zipfile.ZipFile(file_path, 'r') as zf:
+                    namelist = zf.namelist()
+
+                    # Find project.json (supporting flat or nested archives)
+                    proj_name = 'project.json'
+                    if proj_name not in namelist:
+                        matches = [n for n in namelist if n.endswith('/project.json') or n.endswith('project.json')]
+                        if matches:
+                            proj_name = matches[0]
+
+                    project_state = json.loads(zf.read(proj_name).decode('utf-8'))
+
+                    for n in namelist:
+                        if n.endswith('manifest.json'):
+                            try:
+                                manifest = json.loads(zf.read(n).decode('utf-8'))
+                            except Exception:
+                                pass
+                        elif n.endswith('audio/source.flac') or n.endswith('/source.flac') or n == 'source.flac':
+                            audio_path = os.path.join(bws_extract_dir, 'source.flac')
+                            with zf.open(n) as src, open(audio_path, 'wb') as dst:
+                                shutil.copyfileobj(src, dst)
+                        elif n.endswith('timeline/source.drt') or n.endswith('/source.drt') or n == 'source.drt':
+                            drt_path = os.path.join(bws_extract_dir, 'source.drt')
+                            with zf.open(n) as src, open(drt_path, 'wb') as dst:
+                                shutil.copyfileobj(src, dst)
+                        elif n.endswith('timeline/source.xml') or n.endswith('/source.xml') or n == 'source.xml':
+                            xml_path = os.path.join(bws_extract_dir, 'source.xml')
+                            with zf.open(n) as src, open(xml_path, 'wb') as dst:
+                                shutil.copyfileobj(src, dst)
+                        elif n.endswith('recipes/assembly_ops.json') or n.endswith('assembly_ops.json'):
+                            try:
+                                assembly_recipe = json.loads(zf.read(n).decode('utf-8'))
+                            except Exception:
+                                pass
+            else:
+                # Direct JSON file fallback
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    project_state = json.load(f)
+
+            if not project_state:
+                raise ValueError(f"Could not load valid project state from: {file_path}")
+
+            # Inject audio path into all words so AudioPreview & Waveform can find it immediately
             words = project_state.get('words_data', [])
             if audio_path and words:
-                words[0]['meta_audio_path'] = audio_path
+                for w in words:
+                    w['meta_audio_path'] = audio_path
 
             segments = self._reconstruct_segments(words)
 
@@ -420,7 +491,7 @@ class PreferencesMixin:
                 "extract_dir": bws_extract_dir,
             }
 
-            log_info(f"load_bws: loaded from {file_path} "
+            log_info(f"load_bws: successfully loaded from {file_path} "
                      f"(audio={'yes' if audio_path else 'no'}, "
                      f"drt={'yes' if drt_path else 'no'}, "
                      f"xml={'yes' if xml_path else 'no'}, "

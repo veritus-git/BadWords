@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 import config
 from gui.widgets.labels import QLabel
 from gui.widgets.buttons import QPushButton, ToggleSwitch, ReloadButton
-from .script_panel import wrap_activity_panel
+from .script_panel import wrap_activity_panel, create_panel_header
 
 
 def build_fillers_panel(win) -> QFrame:
@@ -27,6 +27,15 @@ def build_fillers_panel(win) -> QFrame:
     l_fillers = QVBoxLayout(p_fillers)
     l_fillers.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
     l_fillers.setSpacing(config.S(10))
+
+    header = create_panel_header(
+        win,
+        "panel_fillers_title",
+        "panel_fillers_desc",
+        "Filler Words",
+        "Manage the list of vocal pauses and hesitations (e.g. 'umms', 'uhs') to detect and eliminate them automatically."
+    )
+    l_fillers.addWidget(header)
 
     prefs = win.engine.load_preferences() or {}
     fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)

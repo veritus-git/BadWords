@@ -20,6 +20,31 @@ from PySide6.QtGui import QColor
 import config
 
 
+def create_panel_header(win, title_key: str, desc_key: str, default_title: str = "", default_desc: str = "") -> QWidget:
+    """Create a standardized panel header with title, short description, and divider line."""
+    from gui.widgets.labels import QLabel
+    header = QWidget()
+    h_layout = QVBoxLayout(header)
+    h_layout.setContentsMargins(0, 0, 0, config.S(4))
+    h_layout.setSpacing(config.S(4))
+
+    lbl_title = QLabel(win.txt(title_key, default_title))
+    lbl_title.setStyleSheet(f"font-weight: bold; font-size: {config.FS(11)}pt; color: #ffffff;")
+    h_layout.addWidget(lbl_title)
+
+    lbl_desc = QLabel(win.txt(desc_key, default_desc))
+    lbl_desc.setWordWrap(True)
+    lbl_desc.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt; line-height: 1.3;")
+    h_layout.addWidget(lbl_desc)
+
+    div = QFrame()
+    div.setFixedHeight(config.S(1))
+    div.setStyleSheet("background-color: #383838; margin-top: 4px; margin-bottom: 4px; border: none;")
+    h_layout.addWidget(div)
+
+    return header
+
+
 def wrap_activity_panel(widget: QWidget) -> QFrame:
     """Wrap any panel widget into a styled ActivityPanel frame container."""
     container = QFrame()
@@ -72,6 +97,15 @@ def build_script_panel(win) -> QFrame:
     l_script_analysis.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
     l_script_analysis.setSpacing(config.S(10))
     
+    header = create_panel_header(
+        win,
+        "panel_script_title",
+        "panel_script_desc",
+        "Script Comparison",
+        "Paste or import script text (.docx, .pdf, .txt) to automatically detect off-script words and missing lines."
+    )
+    l_script_analysis.addWidget(header)
+
     win.text_script = QTextEdit()
     win.text_script.setAcceptRichText(False)
     win.text_script.setPlaceholderText(win.txt("ph_paste_script_here"))

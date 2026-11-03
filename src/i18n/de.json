@@ -493,5 +493,15 @@
     "tt_toggle_video": "Video-Vorschau umschalten",
     "tt_zoom_out": "Verkleinern",
     "tt_zoom_fit": "Timeline anpassen",
-    "tt_zoom_in": "Vergrößern (oder Strg + Mausrad)"
+    "tt_zoom_in": "Vergrößern (oder Strg + Mausrad)",
+    "panel_silence_title": "Stille-Erkennung",
+    "panel_silence_desc": "Konfigurieren Sie Dezibel-Schwellenwerte, Mindestpausendauern und Puffer zum Schneiden oder Markieren ruhiger Abschnitte.",
+    "panel_script_title": "Skript-Vergleich",
+    "panel_script_desc": "Fügen Sie Skripttext ein oder importieren Sie ihn (.docx, .pdf, .txt), um abweichende Wörter und fehlende Zeilen automatisch zu erkennen.",
+    "panel_fillers_title": "Füllwörter",
+    "panel_fillers_desc": "Verwalten Sie die Liste der stimmlichen Pausen (äh, ähm), um sie automatisch zu erkennen und zu entfernen.",
+    "panel_workspace_title": "Arbeitsbereich & Marker",
+    "panel_workspace_desc": "Verwalten Sie Markierungsmodi, Timeline-Statistiken, benutzerdefinierte Farbmarker und angeheftete Favoriten.",
+    "panel_assembly_title": "Schnitt-Optionen",
+    "panel_assembly_desc": "Konfigurieren Sie Schnittregeln (Ripple-Cut), die Handhabung unverständlicher Wörter und die Timeline-Erstellung."
 }

@@ -493,5 +493,15 @@
     "tt_toggle_video": "Alternar visualização de vídeo",
     "tt_zoom_out": "Reduzir zoom",
     "tt_zoom_fit": "Ajustar linha do tempo",
-    "tt_zoom_in": "Ampliar zoom (ou Ctrl + Roda)"
+    "tt_zoom_in": "Ampliar zoom (ou Ctrl + Roda)",
+    "panel_silence_title": "Deteção de Silêncio",
+    "panel_silence_desc": "Configure limiares de decibéis, durações mínimas de pausa e margens para cortar ou marcar secções silenciosas.",
+    "panel_script_title": "Comparação de Guião",
+    "panel_script_desc": "Cole ou importe texto de guião (.docx, .pdf, .txt) para detetar automaticamente palavras fora do guião e falas em falta.",
+    "panel_fillers_title": "Palavras de Preenchimento",
+    "panel_fillers_desc": "Gira a lista de hesitações vocais ('hum', 'é') para as detetar e eliminar automaticamente.",
+    "panel_workspace_title": "Área de Trabalho & Marcadores",
+    "panel_workspace_desc": "Gira modos de marcação, estatísticas da linha de tempo, marcadores de cor personalizados e atalhos favoritos.",
+    "panel_assembly_title": "Opções de Montagem",
+    "panel_assembly_desc": "Configure regras de corte ripple, tratamento de palavras inaudíveis e criação de timeline."
 }

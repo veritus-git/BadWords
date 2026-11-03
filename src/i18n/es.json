@@ -493,5 +493,15 @@
     "tt_toggle_video": "Alternar vista previa de video",
     "tt_zoom_out": "Alejar",
     "tt_zoom_fit": "Ajustar línea de tiempo",
-    "tt_zoom_in": "Acercar (o Ctrl + Rueda)"
+    "tt_zoom_in": "Acercar (o Ctrl + Rueda)",
+    "panel_silence_title": "Detección de Silencios",
+    "panel_silence_desc": "Configura umbrales de decibelios, duración mínima de pausas y márgenes para cortar o marcar secciones silenciosas.",
+    "panel_script_title": "Comparación de Guion",
+    "panel_script_desc": "Pega o importa texto de guion (.docx, .pdf, .txt) para detectar automáticamente palabras fuera de guion y líneas faltantes.",
+    "panel_fillers_title": "Muletillas",
+    "panel_fillers_desc": "Gestiona la lista de pausas vocales y titubeos ('eh', 'em') para detectarlos y eliminarlos automáticamente.",
+    "panel_workspace_title": "Espacio de Trabajo y Marcadores",
+    "panel_workspace_desc": "Gestiona modos de marcado, estadísticas de la línea de tiempo, marcadores de color personalizados y favoritos fijados.",
+    "panel_assembly_title": "Opciones de Montaje",
+    "panel_assembly_desc": "Configura reglas de corte en cadena, gestión de fragmentos inaudibles y creación de líneas de tiempo."
 }

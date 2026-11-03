@@ -493,5 +493,15 @@
     "tt_toggle_video": "Videovoorbeeld in-/uitschakelen",
     "tt_zoom_out": "Uitzoomen",
     "tt_zoom_fit": "Tijdlijn passend maken",
-    "tt_zoom_in": "Inzoomen (of Ctrl + Muiswiel)"
+    "tt_zoom_in": "Inzoomen (of Ctrl + Muiswiel)",
+    "panel_silence_title": "Stilte Detectie",
+    "panel_silence_desc": "Configureer decibeldrempels, minimale pauzeduur en marges voor het knippen of markeren van stille secties.",
+    "panel_script_title": "Script Vergelijking",
+    "panel_script_desc": "Plak of importeer scripttekst (.docx, .pdf, .txt) om automatisch afwijkende woorden en ontbrekende regels te detecteren.",
+    "panel_fillers_title": "Vulwoorden",
+    "panel_fillers_desc": "Beheer de lijst met vocale pauzes ('eh', 'ehm') om ze automatisch te detecteren en te verwijderen.",
+    "panel_workspace_title": "Werkruimte & Markeringen",
+    "panel_workspace_desc": "Beheer markeringsmodi, tijdlijnstatistieken, aangepaste kleurmarkeringen en vastgezette favorieten.",
+    "panel_assembly_title": "Montage Opties",
+    "panel_assembly_desc": "Configureer ripple-cut regels, verwerking van onhoorbare spraak en tijdlijnaanmaak."
 }
