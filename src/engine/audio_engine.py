@@ -102,6 +102,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         """
         Inspects each media file in the queue to build the sequential clips mapping table:
         duration, timeline offset, frame rate, resolution, stream types, audio channels.
+        Uses a single JSON ffprobe query per clip for maximum efficiency.
         """
         clips_info = []
         accum_offset = 0.0
@@ -117,40 +118,31 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             height = 1080
             audio_channels = 2
 
-            # 1. Probe duration
             try:
-                cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", fp]
+                cmd = [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate,channels",
+                    "-of", "json", fp
+                ]
                 res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
                 if res.returncode == 0 and res.stdout.strip():
-                    dur = max(0.1, float(res.stdout.strip()))
-            except Exception:
-                dur = 0.1
-
-            # 2. Probe video streams
-            try:
-                cmd_v = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=p=0", fp]
-                res_v = subprocess.run(cmd_v, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
-                if res_v.returncode == 0 and res_v.stdout.strip():
-                    parts = res_v.stdout.strip().split(',')
-                    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-                        has_video = True
-                        width = int(parts[0])
-                        height = int(parts[1])
-                    if len(parts) >= 3 and '/' in parts[2]:
-                        num, den = parts[2].split('/', 1)
-                        if float(den) > 0:
-                            fps = float(num) / float(den)
-                    elif len(parts) >= 3 and parts[2].replace('.', '').isdigit():
-                        fps = float(parts[2])
-            except Exception:
-                pass
-
-            # 3. Probe audio channels
-            try:
-                cmd_a = ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "default=noprint_wrappers=1:nokey=1", fp]
-                res_a = subprocess.run(cmd_a, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
-                if res_a.returncode == 0 and res_a.stdout.strip().isdigit():
-                    audio_channels = max(1, int(res_a.stdout.strip()))
+                    p_data = json.loads(res.stdout.strip())
+                    fmt = p_data.get("format", {})
+                    if fmt.get("duration"):
+                        dur = max(0.1, float(fmt["duration"]))
+                    for s in p_data.get("streams", []):
+                        if s.get("codec_type") == "video" and not has_video:
+                            has_video = True
+                            width = int(s.get("width", 1920))
+                            height = int(s.get("height", 1080))
+                            rf = s.get("r_frame_rate", "")
+                            if "/" in rf:
+                                n, d = rf.split("/", 1)
+                                if float(d) > 0: fps = float(n) / float(d)
+                            elif rf.replace(".", "").isdigit():
+                                fps = float(rf)
+                        elif s.get("codec_type") == "audio":
+                            audio_channels = max(1, int(s.get("channels", 2)))
             except Exception:
                 pass
 
@@ -181,6 +173,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         if len(clips_info) == 1:
             cmd = [
                 self.ffmpeg_cmd, "-y",
+                "-threads", "0",
                 "-i", clips_info[0]["path"],
                 "-vn", "-map", "0:a:0?",
                 "-ar", "48000", "-ac", "1",
@@ -200,6 +193,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 part_path = os.path.join(temp_dir, f"tmp_part_{idx}_{os.getpid()}_{int(time.time())}.wav")
                 cmd = [
                     self.ffmpeg_cmd, "-y",
+                    "-threads", "0",
                     "-i", clip["path"],
                     "-vn", "-map", "0:a:0?",
                     "-ar", "48000", "-ac", "1",
@@ -238,14 +232,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
     def generate_preview_proxy(self, clips_info: list, output_proxy_mp4: str, target_fps=30.0, callback_status=None) -> bool:
         """
-        Generates an ultra-fast, lightweight 540p H.264 preview proxy with short GOP
+        Generates an ultra-fast, lightweight 360p H.264 preview proxy with short GOP
         for 100% stutter-free playback and scrubbing in QMediaPlayer.
-        Mixed media: audio-only clips are rendered with a black background video track
-        so video playback stays continuous across the entire sequence.
+        Single clips do not require proxy concatenation.
         """
         if not clips_info:
             return False
         if not any(c.get("has_video") for c in clips_info):
+            return False
+
+        # Single video clip does not need proxy re-encoding; played directly by player
+        if len(clips_info) == 1 and clips_info[0].get("has_video"):
             return False
 
         sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, 'get_subprocess_kwargs') else {}
@@ -261,22 +258,24 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 if clip.get("has_video"):
                     cmd = [
                         self.ffmpeg_cmd, "-y",
+                        "-threads", "0",
                         "-i", clip["path"],
-                        "-vf", "scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                        "-vf", "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1",
                         "-r", str(target_fps),
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-g", "15",
-                        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-crf", "32", "-g", "30",
+                        "-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1",
                         part_path
                     ]
                 else:
                     dur_s = max(0.1, float(clip.get("duration", 1.0)))
                     cmd = [
                         self.ffmpeg_cmd, "-y",
-                        "-f", "lavfi", "-i", f"color=c=black:s=960x540:r={target_fps}:d={dur_s}",
+                        "-threads", "0",
+                        "-f", "lavfi", "-i", f"color=c=black:s=640x360:r={target_fps}:d={dur_s}",
                         "-i", clip["path"],
                         "-map", "0:v:0", "-map", "1:a:0",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-g", "15",
-                        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-crf", "32", "-g", "30",
+                        "-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1",
                         "-shortest",
                         part_path
                     ]

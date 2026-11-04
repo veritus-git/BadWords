@@ -2264,7 +2264,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 try:
                     rh = getattr(self._engine, 'resolve_handler', None)
                     if rh:
-                        rh.refresh_context()
+                        rh.refresh_context(silent=True)
                 except Exception:
                     pass
 
@@ -3920,7 +3920,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         _dev = (self.engine.load_preferences() or {}).get('device', 'auto').upper()
         _use_mlx = self.engine.use_mlx_for("GPU" if _dev in ("AUTO", "GPU") else "CPU")
         model_folder_name = self.engine.model_cache_folder(model_key, _use_mlx)
-        import os
         marker_path = os.path.join(self.engine.models_dir, model_folder_name, ".badwords_initialized")
         _is_first_model_run = not os.path.exists(marker_path)
 

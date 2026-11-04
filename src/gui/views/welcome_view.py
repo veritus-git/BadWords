@@ -1452,6 +1452,8 @@ def build_welcome_view(win) -> QWidget:
                 win._bridge_file_watcher.addPath(mb_dir)
 
         def _on_bridge_event(path):
+            if getattr(win, 'current_source_type', 'file') != 'resolve':
+                return
             h = getattr(win.engine, 'resolve_handler', None)
             if h and not h.is_connected():
                 if hasattr(win, '_refresh_davinci_connection'):
