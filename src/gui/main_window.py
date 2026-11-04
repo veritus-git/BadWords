@@ -2522,22 +2522,25 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # ── Source validation ─────────────────────────────────────────────────
         is_file_source = getattr(self, 'current_source_type', 'resolve') == 'file'
         source_file_path = None
+        source_files = []
         if is_file_source:
             if hasattr(self, 'drop_zone_1'):
+                source_files = self.drop_zone_1.get_files()
                 source_file_path = self.drop_zone_1.get_file()
-            if not source_file_path or not os.path.isfile(source_file_path):
+            if not source_files:
                 if hasattr(self, 'drop_zone_1'):
                     self.drop_zone_1.shake()
                 dlg = CustomMsgBox(self, "BadWords", self.txt("msg_file_not_selected"), self.txt("btn_ok"))
                 dlg.exec()
                 return
             from gui.widgets.file_drop_zone import FileDropZone
-            if not FileDropZone.is_supported_file(source_file_path):
-                if hasattr(self, 'drop_zone_1'):
-                    self.drop_zone_1.shake()
-                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_unsupported_file_format"), self.txt("btn_ok"))
-                dlg.exec()
-                return
+            for sf in source_files:
+                if not os.path.isfile(sf) or not FileDropZone.is_supported_file(sf):
+                    if hasattr(self, 'drop_zone_1'):
+                        self.drop_zone_1.shake()
+                    dlg = CustomMsgBox(self, "BadWords", self.txt("msg_unsupported_file_format"), self.txt("btn_ok"))
+                    dlg.exec()
+                    return
         else:
             rh = getattr(self.engine, 'resolve_handler', None)
             if not rh or not rh.is_connected():
@@ -2619,6 +2622,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._transcription_source = {
             "source_type": "file" if is_file_source else "resolve",
             "source_file": source_file_path,
+            "source_files": source_files if is_file_source else None,
             "timeline_name": curr_tl_name,
             "track_indices": track_indices,
             "track_names": selected_track_names,
@@ -2633,6 +2637,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             'timeline_name':   selected_tl_name or None,
             'track_indices':   track_indices or None,
             'source_file':     source_file_path,
+            'source_files':    source_files if is_file_source else None,
         }
         self._fs_settings = settings
 
@@ -3367,6 +3372,27 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if w.get('status') == 'inaudible' and not mark_inaudible:
                 w['status'] = None
 
+        # STANDALONE (FILE) MODE -> Launch ExportDialog
+        is_file_source = False
+        if src and src.get('source_type') == 'file':
+            is_file_source = True
+        elif getattr(self, 'current_source_type', 'resolve') == 'file':
+            is_file_source = True
+
+        if is_file_source:
+            from gui.dialogs.export_dialog import ExportDialog
+            clips_info = getattr(self.engine, 'current_clips_info', None)
+            if not clips_info and export_data and export_data[0].get('clips_info'):
+                clips_info = export_data[0].get('clips_info')
+            if not clips_info:
+                source_files = (src or {}).get('source_files') or ([(src or {})['source_file']] if (src or {}).get('source_file') else [])
+                if source_files:
+                    clips_info = self.engine.probe_media_files(source_files)
+
+            dlg = ExportDialog(self, self.engine, clips_info or [], ops=[], words_data=export_data)
+            dlg.exec()
+            return
+
         # UI PREP — infinite bar starts immediately so it animates during assembly
         self._panel_left.hide()
         self._panel_right.hide()
@@ -3828,22 +3854,25 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # ── Source validation ─────────────────────────────────────────────────
         is_file_source = getattr(self, 'current_source_type', 'resolve') == 'file'
         source_file_path = None
+        source_files = []
         if is_file_source:
             if hasattr(self, 'drop_zone_0'):
+                source_files = self.drop_zone_0.get_files()
                 source_file_path = self.drop_zone_0.get_file()
-            if not source_file_path or not os.path.isfile(source_file_path):
+            if not source_files:
                 if hasattr(self, 'drop_zone_0'):
                     self.drop_zone_0.shake()
                 dlg = CustomMsgBox(self, "BadWords", self.txt("msg_file_not_selected"), self.txt("btn_ok"))
                 dlg.exec()
                 return
             from gui.widgets.file_drop_zone import FileDropZone
-            if not FileDropZone.is_supported_file(source_file_path):
-                if hasattr(self, 'drop_zone_0'):
-                    self.drop_zone_0.shake()
-                dlg = CustomMsgBox(self, "BadWords", self.txt("msg_unsupported_file_format"), self.txt("btn_ok"))
-                dlg.exec()
-                return
+            for sf in source_files:
+                if not os.path.isfile(sf) or not FileDropZone.is_supported_file(sf):
+                    if hasattr(self, 'drop_zone_0'):
+                        self.drop_zone_0.shake()
+                    dlg = CustomMsgBox(self, "BadWords", self.txt("msg_unsupported_file_format"), self.txt("btn_ok"))
+                    dlg.exec()
+                    return
         else:
             rh = getattr(self.engine, 'resolve_handler', None)
             if not rh or not rh.is_connected():
@@ -4017,6 +4046,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             "track_indices": track_indices or None,
             "expected_script": self.text_script.toPlainText(),
             "source_file": source_file_path,
+            "source_files": source_files if is_file_source else None,
         }
 
         # 4. Start QThread targeting self.engine.run_analysis_pipeline()
@@ -4261,19 +4291,27 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not (hasattr(self, '_panel_right') and self._panel_right.isVisible()):
             self._toggle_activity("main_panel")
         
-        # Read selected timeline/tracks to format the new title
-        selected_tl = getattr(self, 'combo_tl_0', None)
-        selected_tl_name = selected_tl.text() if selected_tl else ""
-        selected_tracks_combo = getattr(self, 'combo_tr_0', None)
-        
-        if not selected_tracks_combo:
-            tracks_str = self.txt("txt_all")
+        # Read selected timeline/tracks or files to format the new title
+        is_file_source = getattr(self, 'current_source_type', 'resolve') == 'file'
+        if is_file_source:
+            file_paths = getattr(self.drop_zone_0, 'get_files', lambda: [])()
+            selected_tl_name = os.path.basename(file_paths[0]) if file_paths else "File"
+            if len(file_paths) > 1:
+                selected_tl_name = f"{selected_tl_name} (+{len(file_paths)-1})"
+            tracks_str = "File Mode"
         else:
-            tracks = list(selected_tracks_combo.selected_items)
-            if not tracks or (len(tracks) == len(selected_tracks_combo.options_list)):
+            selected_tl = getattr(self, 'combo_tl_0', None)
+            selected_tl_name = selected_tl.text() if selected_tl else ""
+            selected_tracks_combo = getattr(self, 'combo_tr_0', None)
+            
+            if not selected_tracks_combo:
                 tracks_str = self.txt("txt_all")
             else:
-                tracks_str = ", ".join(sorted(tracks))
+                tracks = list(selected_tracks_combo.selected_items)
+                if not tracks or (len(tracks) == len(selected_tracks_combo.options_list)):
+                    tracks_str = self.txt("txt_all")
+                else:
+                    tracks_str = ", ".join(sorted(tracks))
 
         # Activate the new title bar mode: [Project▾] [Transcript▾] [Edit▾] + centered source info
         self._title_bar.activate_transcription_mode()
@@ -4291,25 +4329,36 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._mac_action_track.setText(f"Track: {tracks_str}")
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
-        # Compute track indices from names (needed for engine assembly)
-        all_tracks_available = list(selected_tracks_combo.options_list) if selected_tracks_combo else []
-        selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
-        track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
+        if is_file_source:
+            file_paths = getattr(self.drop_zone_0, 'get_files', lambda: [])()
+            self._transcription_source = {
+                "source_type":    "file",
+                "source_files":   file_paths,
+                "timeline_name":  selected_tl_name,
+                "track_names":    [],
+                "track_indices":  [],
+                "all_tracks":     True,
+            }
+        else:
+            all_tracks_available = list(selected_tracks_combo.options_list) if selected_tracks_combo else []
+            selected_track_names = list(selected_tracks_combo.selected_items) if selected_tracks_combo else []
+            track_indices = self._track_names_to_indices(selected_tl_name, selected_track_names)
 
-        source_files = []
-        try:
-            if self.resolve_handler:
-                source_files = self.resolve_handler.get_timeline_source_files(selected_tl_name, track_indices)
-        except Exception:
-            pass
+            source_files = []
+            try:
+                if self.resolve_handler:
+                    source_files = self.resolve_handler.get_timeline_source_files(selected_tl_name, track_indices)
+            except Exception:
+                pass
 
-        self._transcription_source = {
-            "timeline_name":  selected_tl_name,
-            "track_names":    selected_track_names,
-            "track_indices":  track_indices,
-            "all_tracks":     (not selected_track_names) or (len(selected_track_names) >= len(all_tracks_available)),
-            "source_files":   source_files,
-        }
+            self._transcription_source = {
+                "source_type":    "resolve",
+                "timeline_name":  selected_tl_name,
+                "track_names":    selected_track_names,
+                "track_indices":  track_indices,
+                "all_tracks":     (not selected_track_names) or (len(selected_track_names) >= len(all_tracks_available)),
+                "source_files":   source_files,
+            }
         # Persist snapshot so it survives project export/import
         try:
             prefs = self.engine.load_preferences() or {}
@@ -4763,6 +4812,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, '_title_bar') and hasattr(self._title_bar, 'activate_transcription_mode'):
                 if getattr(self, '_transcription_source', None):
                     self._title_bar.activate_transcription_mode()
+            if hasattr(self, 'btn_assemble'):
+                src = getattr(self, '_transcription_source', {}) or {}
+                is_file = (src.get('source_type') == 'file') or (getattr(self, 'current_source_type', 'resolve') == 'file')
+                self.btn_assemble.set_export_mode(is_file)
             if getattr(self, '_is_mac', False):
                 if hasattr(self, '_mac_menu_project'):
                     self._mac_menu_project.menuAction().setVisible(True)

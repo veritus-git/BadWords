@@ -74,6 +74,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             self.save_preferences({'offset': 0.133, 'pad': 0.0, 'snap_max': 0.25})
             log_info("Forced offset/pad/snap override applied successfully.")
 
+        self.current_proxy_video_path = None
+        self.current_clips_info = None
+
     def _get_file_fps(self, file_path: str) -> float:
         """Inspects media file to determine its frame rate via ffprobe, fallback to 24.0."""
         try:
@@ -94,6 +97,221 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         except Exception:
             pass
         return 24.0
+
+    def probe_media_files(self, file_paths: list) -> list:
+        """
+        Inspects each media file in the queue to build the sequential clips mapping table:
+        duration, timeline offset, frame rate, resolution, stream types, audio channels.
+        """
+        clips_info = []
+        accum_offset = 0.0
+        sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, 'get_subprocess_kwargs') else {}
+
+        for idx, fp in enumerate(file_paths):
+            if not fp or not os.path.isfile(fp):
+                continue
+            dur = 0.0
+            has_video = False
+            fps = 24.0
+            width = 1920
+            height = 1080
+            audio_channels = 2
+
+            # 1. Probe duration
+            try:
+                cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", fp]
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
+                if res.returncode == 0 and res.stdout.strip():
+                    dur = max(0.1, float(res.stdout.strip()))
+            except Exception:
+                dur = 0.1
+
+            # 2. Probe video streams
+            try:
+                cmd_v = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=p=0", fp]
+                res_v = subprocess.run(cmd_v, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
+                if res_v.returncode == 0 and res_v.stdout.strip():
+                    parts = res_v.stdout.strip().split(',')
+                    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                        has_video = True
+                        width = int(parts[0])
+                        height = int(parts[1])
+                    if len(parts) >= 3 and '/' in parts[2]:
+                        num, den = parts[2].split('/', 1)
+                        if float(den) > 0:
+                            fps = float(num) / float(den)
+                    elif len(parts) >= 3 and parts[2].replace('.', '').isdigit():
+                        fps = float(parts[2])
+            except Exception:
+                pass
+
+            # 3. Probe audio channels
+            try:
+                cmd_a = ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "default=noprint_wrappers=1:nokey=1", fp]
+                res_a = subprocess.run(cmd_a, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
+                if res_a.returncode == 0 and res_a.stdout.strip().isdigit():
+                    audio_channels = max(1, int(res_a.stdout.strip()))
+            except Exception:
+                pass
+
+            clips_info.append({
+                "index": idx,
+                "path": os.path.abspath(fp),
+                "duration": dur,
+                "offset": accum_offset,
+                "has_video": has_video,
+                "fps": fps,
+                "width": width,
+                "height": height,
+                "audio_channels": audio_channels
+            })
+            accum_offset += dur
+
+        return clips_info
+
+    def extract_and_concat_source_audio(self, clips_info: list, output_wav: str, callback_status=None) -> bool:
+        """
+        Extracts high-fidelity 48kHz 16-bit mono WAV and concatenates all clips seamlessly
+        into a single unified audio file for Whisper & silence detection.
+        """
+        if not clips_info:
+            return False
+        sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, 'get_subprocess_kwargs') else {}
+
+        if len(clips_info) == 1:
+            cmd = [
+                self.ffmpeg_cmd, "-y",
+                "-i", clips_info[0]["path"],
+                "-vn", "-map", "0:a:0?",
+                "-ar", "48000", "-ac", "1",
+                "-c:a", "pcm_s16le",
+                output_wav
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **sp_kwargs)
+            return res.returncode == 0 and os.path.isfile(output_wav) and os.path.getsize(output_wav) > 0
+
+        temp_dir = os.path.dirname(output_wav)
+        part_wavs = []
+        concat_txt = os.path.join(temp_dir, f"concat_audio_{os.getpid()}_{int(time.time())}.txt")
+        try:
+            for idx, clip in enumerate(clips_info):
+                if callback_status:
+                    callback_status(f"Ekstrakcja audio ({idx+1}/{len(clips_info)})...")
+                part_path = os.path.join(temp_dir, f"tmp_part_{idx}_{os.getpid()}_{int(time.time())}.wav")
+                cmd = [
+                    self.ffmpeg_cmd, "-y",
+                    "-i", clip["path"],
+                    "-vn", "-map", "0:a:0?",
+                    "-ar", "48000", "-ac", "1",
+                    "-c:a", "pcm_s16le",
+                    part_path
+                ]
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **sp_kwargs)
+                if res.returncode != 0 or not os.path.isfile(part_path) or os.path.getsize(part_path) == 0:
+                    log_error(f"Failed to extract audio part for {clip['path']}")
+                    return False
+                part_wavs.append(part_path)
+
+            with open(concat_txt, "w", encoding="utf-8") as f:
+                for pw in part_wavs:
+                    safe_p = pw.replace("'", "'\\''")
+                    f.write(f"file '{safe_p}'\n")
+
+            if callback_status:
+                callback_status("Łączenie strumieni audio...")
+
+            cmd_c = [
+                self.ffmpeg_cmd, "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", concat_txt,
+                "-c", "copy",
+                output_wav
+            ]
+            res_c = subprocess.run(cmd_c, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **sp_kwargs)
+            return res_c.returncode == 0 and os.path.isfile(output_wav) and os.path.getsize(output_wav) > 0
+        finally:
+            for pw in part_wavs:
+                try: os.remove(pw)
+                except Exception: pass
+            try: os.remove(concat_txt)
+            except Exception: pass
+
+    def generate_preview_proxy(self, clips_info: list, output_proxy_mp4: str, target_fps=30.0, callback_status=None) -> bool:
+        """
+        Generates an ultra-fast, lightweight 540p H.264 preview proxy with short GOP
+        for 100% stutter-free playback and scrubbing in QMediaPlayer.
+        Mixed media: audio-only clips are rendered with a black background video track
+        so video playback stays continuous across the entire sequence.
+        """
+        if not clips_info:
+            return False
+        if not any(c.get("has_video") for c in clips_info):
+            return False
+
+        sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, 'get_subprocess_kwargs') else {}
+        temp_dir = os.path.dirname(output_proxy_mp4)
+        part_proxies = []
+        concat_txt = os.path.join(temp_dir, f"concat_proxy_{os.getpid()}_{int(time.time())}.txt")
+
+        try:
+            for idx, clip in enumerate(clips_info):
+                if callback_status:
+                    callback_status(f"Tworzenie podglądu wideo ({idx+1}/{len(clips_info)})...")
+                part_path = os.path.join(temp_dir, f"tmp_proxy_part_{idx}_{os.getpid()}_{int(time.time())}.mp4")
+                if clip.get("has_video"):
+                    cmd = [
+                        self.ffmpeg_cmd, "-y",
+                        "-i", clip["path"],
+                        "-vf", "scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                        "-r", str(target_fps),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-g", "15",
+                        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+                        part_path
+                    ]
+                else:
+                    dur_s = max(0.1, float(clip.get("duration", 1.0)))
+                    cmd = [
+                        self.ffmpeg_cmd, "-y",
+                        "-f", "lavfi", "-i", f"color=c=black:s=960x540:r={target_fps}:d={dur_s}",
+                        "-i", clip["path"],
+                        "-map", "0:v:0", "-map", "1:a:0",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-g", "15",
+                        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+                        "-shortest",
+                        part_path
+                    ]
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **sp_kwargs)
+                if res.returncode == 0 and os.path.isfile(part_path) and os.path.getsize(part_path) > 0:
+                    part_proxies.append(part_path)
+                else:
+                    log_error(f"Proxy generation failed for part {idx}: {res.stderr[-200:]}")
+                    return False
+
+            if len(part_proxies) == 1:
+                import shutil
+                shutil.move(part_proxies[0], output_proxy_mp4)
+                return True
+
+            with open(concat_txt, "w", encoding="utf-8") as f:
+                for pp in part_proxies:
+                    safe_p = pp.replace("'", "'\\''")
+                    f.write(f"file '{safe_p}'\n")
+
+            cmd_c = [
+                self.ffmpeg_cmd, "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", concat_txt,
+                "-c", "copy",
+                output_proxy_mp4
+            ]
+            res_c = subprocess.run(cmd_c, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **sp_kwargs)
+            return res_c.returncode == 0 and os.path.isfile(output_proxy_mp4)
+        finally:
+            for pp in part_proxies:
+                try: os.remove(pp)
+                except Exception: pass
+            try: os.remove(concat_txt)
+            except Exception: pass
 
     # ==========================================
 
@@ -171,26 +389,39 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             os.makedirs(temp_dir, exist_ok=True)
 
             source_file = settings.get('source_file')
+            source_files = settings.get('source_files')
+            if not source_files and source_file:
+                source_files = [source_file]
+
+            clips_info = None
+            proxy_video_path = None
             wav_path = None
 
-            if source_file and os.path.isfile(source_file):
-                log_info(f"[FastSilence] Using standalone source file: {source_file}")
+            if source_files:
+                log_info(f"[FastSilence] Using standalone source files ({len(source_files)}): {source_files}")
+                clips_info = self.probe_media_files(source_files)
+                if not clips_info:
+                    log_error("[FastSilence] No valid clips found in queue.")
+                    return None, None
+
+                self.current_clips_info = clips_info
                 update_status("Ekstrakcja audio ze źródła...")
                 update_progress(20)
                 wav_path = os.path.join(temp_dir, f"{unique_id}_source.wav")
-                cmd = [
-                    self.ffmpeg_cmd, "-y",
-                    "-i", source_file,
-                    "-vn",
-                    "-map", "0:a:0?",
-                    "-ar", "48000",
-                    "-ac", "1",
-                    wav_path
-                ]
-                sp_res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **self.os_doc.get_subprocess_kwargs())
-                if sp_res.returncode != 0 or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
-                    log_error(f"[FastSilence] FFmpeg audio extraction failed: {sp_res.stderr[-300:]}")
+                ok_audio = self.extract_and_concat_source_audio(clips_info, wav_path, callback_status=update_status)
+                if not ok_audio or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+                    log_error("[FastSilence] FFmpeg audio extraction/concat failed.")
                     return None, None
+
+                if any(c.get("has_video") for c in clips_info):
+                    proxy_path = os.path.join(temp_dir, f"{unique_id}_preview_proxy.mp4")
+                    try:
+                        fps = clips_info[0].get("fps", 30.0)
+                        if self.generate_preview_proxy(clips_info, proxy_path, target_fps=fps, callback_status=update_status):
+                            proxy_video_path = proxy_path
+                            self.current_proxy_video_path = proxy_video_path
+                    except Exception as e:
+                        log_error(f"[FastSilence] Proxy generation failed: {e}")
             else:
                 # ── 1. Try Direct Audio first (skip Resolve render when possible) ───
                 tl_name_for_direct = settings.get('timeline_name') or (
@@ -306,6 +537,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 'is_segment_start': True,
                 'id':               0,
                 'meta_global_silence': padded_silences,
+                'clips_info':       clips_info,
+                'proxy_video_path': proxy_video_path,
             }]
 
             update_progress(100)
@@ -324,7 +557,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                         log_error(f"run_fast_silence_pipeline cleanup: cannot remove {p}: {e}")
             if wav_path and os.path.exists(wav_path) and 'words_data' in locals() and words_data:
                 words_data[0]['meta_audio_path'] = wav_path
-                # Do not delete wav_path so it can be used for audio preview
+                if clips_info:
+                    words_data[0]['clips_info'] = clips_info
+                if proxy_video_path:
+                    words_data[0]['proxy_video_path'] = proxy_video_path
 
 
     def run_analysis_pipeline(self, settings, callback_status=None, callback_progress=None, callback_chunk=None):
@@ -439,9 +675,19 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
             filler_words = settings.get('filler_words', [])
             source_file = settings.get('source_file')
+            source_files = settings.get('source_files')
+            if not source_files and source_file:
+                source_files = [source_file]
 
-            if source_file and os.path.isfile(source_file):
-                fps = self._get_file_fps(source_file)
+            clips_info = None
+            proxy_video_path = None
+            if source_files:
+                clips_info = self.probe_media_files(source_files)
+                self.current_clips_info = clips_info
+                if clips_info and clips_info[0].get("fps"):
+                    fps = clips_info[0]["fps"]
+                else:
+                    fps = 24.0
             else:
                 fps = self.resolve_handler.fps or 24.0
 
@@ -454,24 +700,26 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             os.makedirs(temp_dir, exist_ok=True)
 
             wav_path = None
-            if source_file and os.path.isfile(source_file):
-                log_info(f"[AnalysisPipeline] Using standalone source file: {source_file}")
+            if clips_info:
+                log_info(f"[AnalysisPipeline] Using standalone source files ({len(clips_info)}): {[c['path'] for c in clips_info]}")
                 update_status("Ekstrakcja audio ze źródła...")
                 update_progress(20)
                 wav_path = os.path.join(temp_dir, f"{unique_id}_source.wav")
-                cmd = [
-                    self.ffmpeg_cmd, "-y",
-                    "-i", source_file,
-                    "-vn",
-                    "-map", "0:a:0?",
-                    "-ar", "48000",
-                    "-ac", "1",
-                    wav_path
-                ]
-                sp_res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **self.os_doc.get_subprocess_kwargs())
-                if sp_res.returncode != 0 or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
-                    log_error(f"[AnalysisPipeline] FFmpeg audio extraction failed: {sp_res.stderr[-300:]}")
+                ok_audio = self.extract_and_concat_source_audio(clips_info, wav_path, callback_status=update_status)
+                if not ok_audio or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+                    log_error("[AnalysisPipeline] Audio extraction/concat failed.")
                     return None, None
+
+                # Generate preview proxy if video is present
+                if any(c.get("has_video") for c in clips_info):
+                    proxy_path = os.path.join(temp_dir, f"{unique_id}_preview_proxy.mp4")
+                    try:
+                        if self.generate_preview_proxy(clips_info, proxy_path, target_fps=fps, callback_status=update_status):
+                            proxy_video_path = proxy_path
+                            self.current_proxy_video_path = proxy_video_path
+                    except Exception as e:
+                        log_error(f"[AnalysisPipeline] Proxy generation error: {e}")
+
                 update_progress(40)
             else:
                 update_status(self.txt("status_render"))
@@ -673,6 +921,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             
             if final_audio and os.path.exists(final_audio) and words_data:
                 words_data[0]['meta_audio_path'] = final_audio
+                if clips_info:
+                    words_data[0]['clips_info'] = clips_info
+                if proxy_video_path:
+                    words_data[0]['proxy_video_path'] = proxy_video_path
                 self.current_analysis_audio_path = final_audio
                 self.last_audio_path = final_audio
                 # Do not delete final_audio so it can be used for audio preview

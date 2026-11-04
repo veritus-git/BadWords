@@ -2378,6 +2378,20 @@ class AssembleSplitButton(QFrame):
         if self._is_assemble_enabled:
             self.update_style()
 
+    def set_export_mode(self, is_export: bool):
+        """Switches the button between DaVinci Resolve Assemble (split button) and Standalone Export (single button)."""
+        self._is_export_mode = bool(is_export)
+        if is_export:
+            self.sep.hide()
+            self.btn_arrow.hide()
+            text = self.parent_gui.txt("btn_export", "Export") if hasattr(self.parent_gui, 'txt') else "Export"
+            self.btn_main.setText(text)
+        else:
+            self.sep.show()
+            self.btn_arrow.show()
+            text = self.parent_gui.txt("btn_assemble", "Assemble") if hasattr(self.parent_gui, 'txt') else "Assemble"
+            self.btn_main.setText(text)
+
     def set_assemble_enabled(self, enabled: bool, custom_text: str = None):
         """Enable or disable the Assemble button with visual transition and dimming."""
         was_disabled = not getattr(self, '_is_assemble_enabled', True)
@@ -2391,7 +2405,9 @@ class AssembleSplitButton(QFrame):
         if custom_text is not None:
             self.btn_main.setText(custom_text)
         elif enabled:
-            if hasattr(self.parent_gui, 'txt'):
+            if getattr(self, '_is_export_mode', False):
+                self.btn_main.setText(self.parent_gui.txt("btn_export", "Export") if hasattr(self.parent_gui, 'txt') else "Export")
+            elif hasattr(self.parent_gui, 'txt'):
                 self.btn_main.setText(self.parent_gui.txt("btn_assemble"))
             else:
                 self.btn_main.setText("Assemble")

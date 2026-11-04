@@ -1368,6 +1368,8 @@ class WelcomePageView(QWidget):
             win.slider_widget.adjustSize()
         if hasattr(win, '_sync_script_edit_height'):
             win._sync_script_edit_height(animated=False)
+        if hasattr(win, 'btn_assemble'):
+            win.btn_assemble.set_export_mode(mode == "file")
 
     def switch_source_animated(self, mode: str):
         if getattr(self.win, 'current_source_type', 'file') == mode and not self._is_animating:
@@ -2088,8 +2090,11 @@ def build_welcome_view(win) -> QWidget:
     if is_standalone:
         p_txt = win.txt("lbl_drop_file_prompt") if hasattr(win, 'txt') else "Przeciągnij plik wideo lub audio tutaj"
         sub_txt = win.txt("lbl_drop_file_subprompt") if hasattr(win, 'txt') else "lub kliknij, aby wybrać z dysku"
-        win.drop_zone_0.set_texts(p_txt, sub_txt)
-        win.drop_zone_1.set_texts(p_txt, sub_txt)
+        add_txt = win.txt("btn_add") if hasattr(win, 'txt') else "Dodaj"
+        clear_txt = win.txt("btn_clear") if hasattr(win, 'txt') else "Wyczyść"
+        queue_txt = win.txt("lbl_queue") if hasattr(win, 'txt') else "Kolejka"
+        win.drop_zone_0.set_texts(p_txt, sub_txt, add_txt=add_txt, clear_txt=clear_txt, queue_txt=queue_txt)
+        win.drop_zone_1.set_texts(p_txt, sub_txt, add_txt=add_txt, clear_txt=clear_txt, queue_txt=queue_txt)
 
         page._apply_source_mode(win.current_source_type)
         page.welcome_root.move(0, page._target_y(0, win.current_source_type))
@@ -2101,22 +2106,16 @@ def build_welcome_view(win) -> QWidget:
         win.combo_source_0.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
         win.combo_source_1.valueChanged.connect(lambda val: _sync_source(0 if val == opt_file else 1))
 
-        def _sync_file_0(fp: str):
-            if hasattr(win, 'drop_zone_1') and win.drop_zone_1.get_file() != fp:
-                if fp:
-                    win.drop_zone_1.set_file(fp)
-                else:
-                    win.drop_zone_1.clear_file()
+        def _sync_files_0(flist: list):
+            if hasattr(win, 'drop_zone_1') and win.drop_zone_1.get_files() != flist:
+                win.drop_zone_1.set_files(flist)
 
-        def _sync_file_1(fp: str):
-            if hasattr(win, 'drop_zone_0') and win.drop_zone_0.get_file() != fp:
-                if fp:
-                    win.drop_zone_0.set_file(fp)
-                else:
-                    win.drop_zone_0.clear_file()
+        def _sync_files_1(flist: list):
+            if hasattr(win, 'drop_zone_0') and win.drop_zone_0.get_files() != flist:
+                win.drop_zone_0.set_files(flist)
 
-        win.drop_zone_0.file_selected.connect(_sync_file_0)
-        win.drop_zone_1.file_selected.connect(_sync_file_1)
+        win.drop_zone_0.files_changed.connect(_sync_files_0)
+        win.drop_zone_1.files_changed.connect(_sync_files_1)
     else:
         page.welcome_root.move(0, page._target_y(0, "resolve"))
 

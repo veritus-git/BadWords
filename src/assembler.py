@@ -963,3 +963,563 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
         except Exception:
             pass
 
+
+# ==============================================================================
+# STANDALONE TIMELINE EXPORTERS (FCP7 XML, OpenTimelineIO, FCPXML, EDL)
+# ==============================================================================
+
+def _path_to_fileurl(path: str) -> str:
+    """Converts a local filesystem path to a standard RFC 3986 file://localhost URL."""
+    import urllib.parse
+    path = path.replace('\\', '/')
+    if len(path) >= 2 and path[1] == ':':
+        path = '/' + path
+    if not path.startswith('/'):
+        path = '/' + path
+    encoded = urllib.parse.quote(path, safe='/:@')
+    return 'file://localhost' + encoded
+
+
+def _get_fps_params(fps: float) -> tuple[int, str]:
+    """Returns (timebase: int, is_ntsc: str) for XML timeline specifications."""
+    ntsc_map = {
+        23.976: (24, "TRUE"),
+        29.97:  (30, "TRUE"),
+        47.952: (48, "TRUE"),
+        59.94:  (60, "TRUE"),
+    }
+    for target_fps, (tb, ntsc) in ntsc_map.items():
+        if abs(fps - target_fps) < 0.05:
+            return tb, ntsc
+    return int(round(fps)), "FALSE"
+
+
+def _format_timecode_edl(frame, fps: float) -> str:
+    """Calculates non-drop frame timecode string HH:MM:SS:FF for EDL."""
+    r_fps = int(round(fps)) if fps > 0 else 24
+    f_int = int(round(float(frame)))
+    ff = f_int % r_fps
+    total_s = f_int // r_fps
+    ss = total_s % 60
+    total_m = total_s // 60
+    mm = total_m % 60
+    hh = total_m // 60
+    return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+
+
+def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
+                              fps: float = 24.0, width: int = 1920, height: int = 1080,
+                              preserve_audio_tracks: bool = True,
+                              timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
+    """
+    Builds a frame-accurate Final Cut Pro 7 XML (<xmeml version="5">) for standalone files.
+    References only original source files on disk (never proxies).
+    Fully supports mixed media: V1 track contains video items where video exists, with empty
+    gaps during audio-only segments. A1..An tracks receive multi-channel audio clips.
+    """
+    try:
+        kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
+        if not kept_ops:
+            return False, "Brak operacji cięcia do wyeksportowania."
+
+        if not clips_info:
+            return False, "Brak danych o klipach źródłowych."
+
+        total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
+        timebase, ntsc_str = _get_fps_params(fps)
+
+        # Precompute frame bounds for each clip
+        processed_clips = []
+        for c in clips_info:
+            start_f = int(round(float(c.get("offset", 0.0)) * fps))
+            dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
+            processed_clips.append({
+                "path": c["path"],
+                "name": os.path.basename(c["path"]),
+                "rel_start": start_f,
+                "rel_end": start_f + dur_f,
+                "src_in": 0,
+                "src_out": dur_f,
+                "total_frames": dur_f,
+                "has_video": bool(c.get("has_video", False)),
+                "audio_channels": max(1, int(c.get("audio_channels", 2))),
+            })
+
+        audio_exts = {
+            ".wav", ".mp3", ".aac", ".aiff", ".aif", ".flac", ".m4a", ".ogg", ".opus"
+        }
+
+        # Root XML element
+        xmeml = ET.Element("xmeml", version="5")
+        seq = ET.SubElement(xmeml, "sequence", id="sequence-1")
+        ET.SubElement(seq, "name").text = timeline_name
+        ET.SubElement(seq, "duration").text = str(total_dest_frames)
+
+        r_seq = ET.SubElement(seq, "rate")
+        ET.SubElement(r_seq, "timebase").text = str(timebase)
+        ET.SubElement(r_seq, "ntsc").text = ntsc_str
+
+        media_el = ET.SubElement(seq, "media")
+
+        # ── Video Section ─────────────────────────────────────────────────────
+        video_el = ET.SubElement(media_el, "video")
+        fmt = ET.SubElement(video_el, "format")
+        sc = ET.SubElement(fmt, "samplecharacteristics")
+        ET.SubElement(sc, "width").text = str(width)
+        ET.SubElement(sc, "height").text = str(height)
+        r_sc = ET.SubElement(sc, "rate")
+        ET.SubElement(r_sc, "timebase").text = str(timebase)
+        ET.SubElement(r_sc, "ntsc").text = ntsc_str
+
+        # File registry
+        file_registry: dict[str, str] = {}
+        file_id_counter = [0]
+
+        def get_file_id(fp: str) -> str:
+            if fp not in file_registry:
+                file_id_counter[0] += 1
+                file_registry[fp] = f"file-{file_id_counter[0]}"
+            return file_registry[fp]
+
+        emitted_full_files: set[str] = set()
+
+        def make_file_elem(parent_el, fp: str):
+            fid = get_file_id(fp)
+            file_el = ET.SubElement(parent_el, "file", id=fid)
+            if fp not in emitted_full_files:
+                emitted_full_files.add(fp)
+                ET.SubElement(file_el, "name").text = os.path.basename(fp)
+                ET.SubElement(file_el, "pathurl").text = _path_to_fileurl(fp)
+                r_f = ET.SubElement(file_el, "rate")
+                ET.SubElement(r_f, "timebase").text = str(timebase)
+                ET.SubElement(r_f, "ntsc").text = ntsc_str
+
+                # Find clip total duration in frames
+                match_dur = 0
+                for pc in processed_clips:
+                    if pc["path"] == fp:
+                        match_dur = max(match_dur, pc["total_frames"])
+                if match_dur > 0:
+                    ET.SubElement(file_el, "duration").text = str(match_dur)
+
+                _, ext = os.path.splitext(fp)
+                if ext.lower() in audio_exts:
+                    ET.SubElement(file_el, "mediatype").text = "audio"
+
+        ci_counter_v = [0]
+        any_video = any(c["has_video"] for c in processed_clips)
+        if any_video:
+            v_track = ET.SubElement(video_el, "track")
+            dest_pos = 0
+            for op in kept_ops:
+                op_dur = op["e"] - op["s"]
+                for clip in processed_clips:
+                    ov_start = max(op["s"], clip["rel_start"])
+                    ov_end = min(op["e"], clip["rel_end"])
+                    if ov_end > ov_start and clip["has_video"]:
+                        offset_in_clip = ov_start - clip["rel_start"]
+                        src_in = clip["src_in"] + offset_in_clip
+                        seg_dur = ov_end - ov_start
+                        src_out = src_in + seg_dur
+                        op_offset = ov_start - op["s"]
+                        ci_start = dest_pos + op_offset
+                        ci_end = ci_start + seg_dur
+
+                        ci_counter_v[0] += 1
+                        ci = ET.SubElement(v_track, "clipitem", id=f"clipitem-v1-{ci_counter_v[0]}")
+                        ET.SubElement(ci, "name").text = clip["name"]
+                        ET.SubElement(ci, "duration").text = str(seg_dur)
+                        r_ci = ET.SubElement(ci, "rate")
+                        ET.SubElement(r_ci, "timebase").text = str(timebase)
+                        ET.SubElement(r_ci, "ntsc").text = ntsc_str
+                        ET.SubElement(ci, "start").text = str(ci_start)
+                        ET.SubElement(ci, "end").text = str(ci_end)
+                        ET.SubElement(ci, "in").text = str(src_in)
+                        ET.SubElement(ci, "out").text = str(src_out)
+                        make_file_elem(ci, clip["path"])
+
+                dest_pos += op_dur
+        else:
+            ET.SubElement(video_el, "track")
+
+        # ── Audio Section ─────────────────────────────────────────────────────
+        audio_el = ET.SubElement(media_el, "audio")
+        max_ch = max((c["audio_channels"] for c in processed_clips), default=2) if preserve_audio_tracks else 2
+        num_audio_tracks = max(1, min(max_ch, 8))
+
+        ci_counter_a = [0]
+        for t_idx in range(1, num_audio_tracks + 1):
+            a_track = ET.SubElement(audio_el, "track")
+            dest_pos = 0
+            for op in kept_ops:
+                op_dur = op["e"] - op["s"]
+                for clip in processed_clips:
+                    ov_start = max(op["s"], clip["rel_start"])
+                    ov_end = min(op["e"], clip["rel_end"])
+                    if ov_end > ov_start:
+                        clip_ch = clip["audio_channels"]
+                        src_ch = t_idx if t_idx <= clip_ch else (1 if clip_ch == 1 else ((t_idx - 1) % clip_ch + 1))
+
+                        offset_in_clip = ov_start - clip["rel_start"]
+                        src_in = clip["src_in"] + offset_in_clip
+                        seg_dur = ov_end - ov_start
+                        src_out = src_in + seg_dur
+                        op_offset = ov_start - op["s"]
+                        ci_start = dest_pos + op_offset
+                        ci_end = ci_start + seg_dur
+
+                        ci_counter_a[0] += 1
+                        ci = ET.SubElement(a_track, "clipitem", id=f"clipitem-a{t_idx}-{ci_counter_a[0]}")
+                        ET.SubElement(ci, "name").text = clip["name"]
+                        ET.SubElement(ci, "duration").text = str(seg_dur)
+                        r_ci = ET.SubElement(ci, "rate")
+                        ET.SubElement(r_ci, "timebase").text = str(timebase)
+                        ET.SubElement(r_ci, "ntsc").text = ntsc_str
+                        ET.SubElement(ci, "start").text = str(ci_start)
+                        ET.SubElement(ci, "end").text = str(ci_end)
+                        ET.SubElement(ci, "in").text = str(src_in)
+                        ET.SubElement(ci, "out").text = str(src_out)
+                        make_file_elem(ci, clip["path"])
+
+                        # Audio source track mapping
+                        st = ET.SubElement(ci, "sourcetrack")
+                        ET.SubElement(st, "mediatype").text = "audio"
+                        ET.SubElement(st, "trackindex").text = str(src_ch)
+
+                dest_pos += op_dur
+
+        # Save XML to output path
+        raw_xml = ET.tostring(xmeml, encoding="unicode")
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+            f.write(raw_xml)
+
+        log_info(f"build_standalone_fcp7_xml: wrote {output_path} ({len(kept_ops)} cuts, {total_dest_frames} frames)")
+        return True, output_path
+
+    except Exception as e:
+        import traceback
+        log_error(f"build_standalone_fcp7_xml failed: {e}\n{traceback.format_exc()}")
+        return False, str(e)
+
+
+def build_standalone_otio(clips_info: list, ops: list, output_path: str,
+                          fps: float = 24.0, width: int = 1920, height: int = 1080,
+                          preserve_audio_tracks: bool = True,
+                          timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
+    """
+    Builds an OpenTimelineIO (.otio) JSON timeline file.
+    Fully open-source standard created by Pixar / Academy Software Foundation,
+    natively imported by DaVinci Resolve, Premiere, and modern post-production suites.
+    """
+    try:
+        import json
+        kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
+        if not kept_ops:
+            return False, "Brak operacji cięcia do wyeksportowania."
+
+        total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
+
+        processed_clips = []
+        for c in clips_info:
+            start_f = int(round(float(c.get("offset", 0.0)) * fps))
+            dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
+            processed_clips.append({
+                "path": c["path"],
+                "name": os.path.basename(c["path"]),
+                "rel_start": start_f,
+                "rel_end": start_f + dur_f,
+                "src_in": 0,
+                "src_out": dur_f,
+                "has_video": bool(c.get("has_video", False)),
+                "audio_channels": max(1, int(c.get("audio_channels", 2))),
+            })
+
+        tracks_children = []
+
+        # ── Video Track ───────────────────────────────────────────────────────
+        any_video = any(c["has_video"] for c in processed_clips)
+        if any_video:
+            v_children = []
+            dest_pos = 0
+            curr_v_track_head = 0
+
+            for op in kept_ops:
+                op_dur = op["e"] - op["s"]
+                for clip in processed_clips:
+                    ov_start = max(op["s"], clip["rel_start"])
+                    ov_end = min(op["e"], clip["rel_end"])
+                    if ov_end > ov_start and clip["has_video"]:
+                        offset_in_clip = ov_start - clip["rel_start"]
+                        src_in = clip["src_in"] + offset_in_clip
+                        seg_dur = ov_end - ov_start
+                        op_offset = ov_start - op["s"]
+                        ci_start = dest_pos + op_offset
+
+                        # If there is a gap before this clipitem, insert Gap
+                        if ci_start > curr_v_track_head:
+                            gap_dur = ci_start - curr_v_track_head
+                            v_children.append({
+                                "OTIO_SCHEMA": "Gap.1",
+                                "name": "Gap",
+                                "source_range": {
+                                    "OTIO_SCHEMA": "TimeRange.1",
+                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(gap_dur)}
+                                }
+                            })
+                            curr_v_track_head = ci_start
+
+                        v_children.append({
+                            "OTIO_SCHEMA": "Clip.1",
+                            "name": clip["name"],
+                            "source_range": {
+                                "OTIO_SCHEMA": "TimeRange.1",
+                                "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(src_in)},
+                                "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(seg_dur)}
+                            },
+                            "media_reference": {
+                                "OTIO_SCHEMA": "ExternalReference.1",
+                                "target_url": _path_to_fileurl(clip["path"])
+                            }
+                        })
+                        curr_v_track_head = ci_start + seg_dur
+
+                dest_pos += op_dur
+
+            # Trailing gap if any
+            if curr_v_track_head < total_dest_frames:
+                v_children.append({
+                    "OTIO_SCHEMA": "Gap.1",
+                    "name": "Gap",
+                    "source_range": {
+                        "OTIO_SCHEMA": "TimeRange.1",
+                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                        "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(total_dest_frames - curr_v_track_head)}
+                    }
+                })
+
+            tracks_children.append({
+                "OTIO_SCHEMA": "Track.1",
+                "name": "V1",
+                "kind": "Video",
+                "children": v_children
+            })
+
+        # ── Audio Tracks ──────────────────────────────────────────────────────
+        max_ch = max((c["audio_channels"] for c in processed_clips), default=2) if preserve_audio_tracks else 2
+        num_audio_tracks = max(1, min(max_ch, 8))
+
+        for t_idx in range(1, num_audio_tracks + 1):
+            a_children = []
+            dest_pos = 0
+            curr_a_track_head = 0
+
+            for op in kept_ops:
+                op_dur = op["e"] - op["s"]
+                for clip in processed_clips:
+                    ov_start = max(op["s"], clip["rel_start"])
+                    ov_end = min(op["e"], clip["rel_end"])
+                    if ov_end > ov_start:
+                        offset_in_clip = ov_start - clip["rel_start"]
+                        src_in = clip["src_in"] + offset_in_clip
+                        seg_dur = ov_end - ov_start
+                        op_offset = ov_start - op["s"]
+                        ci_start = dest_pos + op_offset
+
+                        if ci_start > curr_a_track_head:
+                            gap_dur = ci_start - curr_a_track_head
+                            a_children.append({
+                                "OTIO_SCHEMA": "Gap.1",
+                                "name": "Gap",
+                                "source_range": {
+                                    "OTIO_SCHEMA": "TimeRange.1",
+                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(gap_dur)}
+                                }
+                            })
+                            curr_a_track_head = ci_start
+
+                        a_children.append({
+                            "OTIO_SCHEMA": "Clip.1",
+                            "name": clip["name"],
+                            "source_range": {
+                                "OTIO_SCHEMA": "TimeRange.1",
+                                "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(src_in)},
+                                "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(seg_dur)}
+                            },
+                            "media_reference": {
+                                "OTIO_SCHEMA": "ExternalReference.1",
+                                "target_url": _path_to_fileurl(clip["path"])
+                            }
+                        })
+                        curr_a_track_head = ci_start + seg_dur
+
+                dest_pos += op_dur
+
+            tracks_children.append({
+                "OTIO_SCHEMA": "Track.1",
+                "name": f"A{t_idx}",
+                "kind": "Audio",
+                "children": a_children
+            })
+
+        otio_doc = {
+            "OTIO_SCHEMA": "Timeline.1",
+            "name": timeline_name,
+            "global_start_time": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": fps,
+                "value": 0.0
+            },
+            "tracks": {
+                "OTIO_SCHEMA": "Stack.1",
+                "name": "tracks",
+                "children": tracks_children
+            }
+        }
+
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(otio_doc, f, indent=2)
+
+        log_info(f"build_standalone_otio: wrote {output_path}")
+        return True, output_path
+
+    except Exception as e:
+        import traceback
+        log_error(f"build_standalone_otio failed: {e}\n{traceback.format_exc()}")
+        return False, str(e)
+
+
+def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
+                            fps: float = 24.0, width: int = 1920, height: int = 1080,
+                            preserve_audio_tracks: bool = True,
+                            timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
+    """Builds an Apple Final Cut Pro X XML (.fcpxml)."""
+    try:
+        kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
+        if not kept_ops:
+            return False, "Brak operacji cięcia do wyeksportowania."
+
+        fcpxml = ET.Element("fcpxml", version="1.9")
+        resources = ET.SubElement(fcpxml, "resources")
+        timebase, _ = _get_fps_params(fps)
+        frame_dur_str = f"1001/{int(round(fps*1000))}s" if abs(fps - round(fps)) > 0.01 else f"1/{int(fps)}s"
+        ET.SubElement(resources, "format", id="r1", name=f"FFVideoFormat{height}p{int(round(fps))}",
+                      frameDuration=frame_dur_str, width=str(width), height=str(height))
+
+        asset_map = {}
+        for idx, c in enumerate(clips_info):
+            aid = f"r{idx+2}"
+            asset_map[c["path"]] = aid
+            dur_s = float(c.get("duration", 0.0))
+            dur_frames = int(round(dur_s * fps))
+            ET.SubElement(resources, "asset", id=aid, name=os.path.basename(c["path"]),
+                          src=_path_to_fileurl(c["path"]),
+                          duration=f"{dur_frames*1001}/{int(round(fps*1000))}s" if abs(fps - round(fps)) > 0.01 else f"{dur_frames}/{int(fps)}s",
+                          hasVideo="1" if c.get("has_video") else "0",
+                          hasAudio="1")
+
+        library = ET.SubElement(fcpxml, "library")
+        event = ET.SubElement(library, "event", name="BadWords Event")
+        project = ET.SubElement(event, "project", name=timeline_name)
+        sequence = ET.SubElement(project, "sequence", format="r1")
+        spine = ET.SubElement(sequence, "spine")
+
+        # Process ops into spine clips
+        total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
+        dest_pos = 0
+        for op in kept_ops:
+            op_dur = op["e"] - op["s"]
+            for c in clips_info:
+                start_f = int(round(float(c.get("offset", 0.0)) * fps))
+                dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
+                rel_end = start_f + dur_f
+
+                ov_start = max(op["s"], start_f)
+                ov_end = min(op["e"], rel_end)
+                if ov_end > ov_start:
+                    seg_dur = ov_end - ov_start
+                    src_in = ov_start - start_f
+                    aid = asset_map.get(c["path"], "r2")
+                    dur_str = f"{seg_dur*1001}/{int(round(fps*1000))}s" if abs(fps - round(fps)) > 0.01 else f"{seg_dur}/{int(fps)}s"
+                    start_str = f"{src_in*1001}/{int(round(fps*1000))}s" if abs(fps - round(fps)) > 0.01 else f"{src_in}/{int(fps)}s"
+
+                    if c.get("has_video"):
+                        ET.SubElement(spine, "asset-clip", ref=aid, name=os.path.basename(c["path"]),
+                                      duration=dur_str, start=start_str)
+                    else:
+                        ET.SubElement(spine, "asset-clip", ref=aid, name=os.path.basename(c["path"]),
+                                      duration=dur_str, start=start_str)
+
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        raw_xml = ET.tostring(fcpxml, encoding="unicode")
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n')
+            f.write(raw_xml)
+
+        return True, output_path
+    except Exception as e:
+        return False, str(e)
+
+
+def build_standalone_edl(clips_info: list, ops: list, output_path: str,
+                         fps: float = 24.0, preserve_audio_tracks: bool = True,
+                         timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
+    """Builds a CMX 3600 Edit Decision List (.edl)."""
+    try:
+        kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
+        if not kept_ops:
+            return False, "Brak operacji cięcia do wyeksportowania."
+
+        lines = [
+            f"TITLE: {timeline_name}",
+            "FCM: NON-DROP FRAME",
+            ""
+        ]
+
+        event_idx = 1
+        dest_pos = 0
+
+        for op in kept_ops:
+            op_dur = op["e"] - op["s"]
+            for c in clips_info:
+                start_f = int(round(float(c.get("offset", 0.0)) * fps))
+                dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
+                rel_end = start_f + dur_f
+
+                ov_start = max(op["s"], start_f)
+                ov_end = min(op["e"], rel_end)
+                if ov_end > ov_start:
+                    seg_dur = ov_end - ov_start
+                    src_in = ov_start - start_f
+                    src_out = src_in + seg_dur
+                    op_offset = ov_start - op["s"]
+                    ci_start = dest_pos + op_offset
+                    ci_end = ci_start + seg_dur
+
+                    src_in_tc = _format_timecode_edl(src_in, fps)
+                    src_out_tc = _format_timecode_edl(src_out, fps)
+                    dst_in_tc = _format_timecode_edl(ci_start, fps)
+                    dst_out_tc = _format_timecode_edl(ci_end, fps)
+
+                    track_type = "V" if c.get("has_video") else "A"
+                    reel = "AX"
+                    lines.append(f"{event_idx:03d}  {reel:<8} {track_type:<4} C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
+                    lines.append(f"* FROM CLIP: {os.path.basename(c['path'])}")
+                    lines.append("")
+                    event_idx += 1
+
+            dest_pos += op_dur
+
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+        return True, output_path
+    except Exception as e:
+        return False, str(e)
+
+

@@ -788,17 +788,28 @@ class AudioPreviewWidget(QFrame):
             self.content_widget.show()
         self.show()
 
-        # Discover source video file (e.g. from DaVinci timeline or project snapshot)
+        # Discover source video file (e.g. from DaVinci timeline, project snapshot, or preview proxy)
         snap = getattr(self.main_window, "_transcription_source", None) or {}
         source_files = list(snap.get("source_files") or [])
         video_file = None
 
-        for sf in source_files:
-            if sf and os.path.isfile(sf):
-                ext = os.path.splitext(sf)[1].lower()
-                if ext in (".mov", ".mp4", ".m4v", ".mkv", ".avi", ".webm"):
-                    video_file = sf
-                    break
+        # 0. Check for preview proxy generated for standalone / multi-clip mode
+        proxy_path = None
+        if words and len(words) > 0:
+            proxy_path = words[0].get("proxy_video_path")
+        if not proxy_path and self.main_window and hasattr(self.main_window, "engine"):
+            proxy_path = getattr(self.main_window.engine, "current_proxy_video_path", None)
+
+        if proxy_path and os.path.isfile(proxy_path):
+            video_file = proxy_path
+
+        if not video_file:
+            for sf in source_files:
+                if sf and os.path.isfile(sf):
+                    ext = os.path.splitext(sf)[1].lower()
+                    if ext in (".mov", ".mp4", ".m4v", ".mkv", ".avi", ".webm"):
+                        video_file = sf
+                        break
 
         # Fallback 1: Query resolve_handler for timeline source files if snap was empty or missing video
         if not video_file and self.main_window and getattr(self.main_window, "resolve_handler", None):
@@ -833,9 +844,20 @@ class AudioPreviewWidget(QFrame):
                 except Exception:
                     pass
 
-        clip_name = os.path.basename(video_file) if video_file else (
-            f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)
-        )
+        if snap.get("source_type") == "file" or proxy_path:
+            sf_list = list(snap.get("source_files") or [])
+            if len(sf_list) == 1:
+                clip_name = os.path.basename(sf_list[0])
+            elif len(sf_list) > 1:
+                clip_name = f"{os.path.basename(sf_list[0])} (+{len(sf_list)-1})"
+            elif video_file:
+                clip_name = os.path.basename(video_file)
+            else:
+                clip_name = os.path.basename(audio_path)
+        else:
+            clip_name = os.path.basename(video_file) if video_file else (
+                f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)
+            )
 
         # Set media player source
         target_source = video_file if (video_file and self.clean_ops is None) else audio_path
