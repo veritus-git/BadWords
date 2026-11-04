@@ -16,10 +16,11 @@ All generated XML/OTIO files strictly reference original media files on disk (ne
 
 import os
 import time
-from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtCore import Qt, QUrl, QSize, QVariantAnimation, QEasingCurve
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
-    QFrame, QLineEdit, QFileDialog, QSizePolicy
+    QFrame, QLineEdit, QFileDialog, QSizePolicy, QGraphicsOpacityEffect,
+    QGraphicsDropShadowEffect
 )
 from PySide6.QtGui import QDesktopServices, QCursor, QPixmap
 
@@ -196,7 +197,6 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.inner_frame = SolidFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
 
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
         from PySide6.QtGui import QColor
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(30)
@@ -259,6 +259,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.combo_fmt = CustomDropdown(self.format_labels)
         self.combo_fmt.setText(self.format_labels[0])
         self.combo_fmt.setFixedHeight(config.S(28))
+        self.combo_fmt.valueChanged.connect(self._on_format_changed)
         r_fmt.addWidget(self.combo_fmt, 1)
         c_lay.addLayout(r_fmt)
 
@@ -322,22 +323,36 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         c_lay.addLayout(r_res)
 
         # ── 5. Audio Track Preservation (with Info Icon) ──────────────────────
-        r_audio = QHBoxLayout()
+        self.w_audio_container = QWidget()
+        self.w_audio_container.setStyleSheet("background: transparent;")
+        r_audio = QHBoxLayout(self.w_audio_container)
+        r_audio.setContentsMargins(0, 0, 0, 0)
         r_audio.setSpacing(config.S(6))
 
-        lbl_aud = QLabel(self._t("lbl_export_preserve_audio", "Zachowaj oryginalne ścieżki audio (A1, A2...)"))
-        lbl_aud.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
-        r_audio.addWidget(lbl_aud)
+        self.lbl_aud = QLabel(self._t("lbl_export_preserve_audio", "Zachowaj oryginalne ścieżki audio (A1, A2...)"))
+        self.lbl_aud.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        r_audio.addWidget(self.lbl_aud)
 
         # (i) Information icon with comprehensive explanation tooltip
-        info_aud = self._create_info_icon("tt_export_preserve_audio")
-        r_audio.addWidget(info_aud)
+        self.info_aud = self._create_info_icon("tt_export_preserve_audio")
+        r_audio.addWidget(self.info_aud)
         r_audio.addStretch(1)
 
         self.tgl_audio = ToggleSwitch()
         self.tgl_audio.setChecked(True)
         r_audio.addWidget(self.tgl_audio)
-        c_lay.addLayout(r_audio)
+        c_lay.addWidget(self.w_audio_container)
+
+        self.audio_opacity_effect = QGraphicsOpacityEffect(self.w_audio_container)
+        self.w_audio_container.setGraphicsEffect(self.audio_opacity_effect)
+
+        self._audio_fade_anim = QVariantAnimation(self.w_audio_container)
+        self._audio_fade_anim.setDuration(250)
+        self._audio_fade_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._audio_fade_anim.valueChanged.connect(lambda val: self.audio_opacity_effect.setOpacity(val))
+
+        self._audio_pref = True
+        self.tgl_audio.toggled.connect(self._on_audio_toggled)
 
         # ── 6. Destination Folder ─────────────────────────────────────────────
         r_dest = QHBoxLayout()
@@ -425,6 +440,47 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         c_lay.addLayout(h_actions)
         root_l.addWidget(container)
 
+        self._update_audio_toggle_state(animate=False)
+
+    def _get_selected_format_id(self) -> str:
+        selected_text = self.combo_fmt.text() if hasattr(self, 'combo_fmt') else ""
+        for fid, fname in self.format_items:
+            if fname == selected_text:
+                return fid
+        return "fcp7_xml"
+
+    def _on_format_changed(self, text: str):
+        self._update_audio_toggle_state(animate=True)
+
+    def _on_audio_toggled(self, checked: bool):
+        if self._get_selected_format_id() == "fcp7_xml":
+            self._audio_pref = checked
+
+    def _update_audio_toggle_state(self, animate: bool = True):
+        fmt_id = self._get_selected_format_id()
+        is_supported = (fmt_id == "fcp7_xml")
+        target_opacity = 1.0 if is_supported else 0.35
+
+        self.w_audio_container.setAttribute(Qt.WA_TransparentForMouseEvents, not is_supported)
+        self.tgl_audio.setEnabled(is_supported)
+
+        self.tgl_audio.blockSignals(True)
+        if is_supported:
+            self.tgl_audio.setChecked(self._audio_pref, animated=animate)
+        else:
+            self.tgl_audio.setChecked(False, animated=animate)
+        self.tgl_audio.blockSignals(False)
+
+        if animate:
+            curr = self.audio_opacity_effect.opacity()
+            self._audio_fade_anim.stop()
+            self._audio_fade_anim.setStartValue(curr)
+            self._audio_fade_anim.setEndValue(target_opacity)
+            self._audio_fade_anim.start()
+        else:
+            self._audio_fade_anim.stop()
+            self.audio_opacity_effect.setOpacity(target_opacity)
+
     def _on_browse_dest(self):
         folder = QFileDialog.getExistingDirectory(self, self._t("lbl_export_dest", "Katalog zapisu"), self.txt_dest_dir.text())
         if folder:
@@ -470,7 +526,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             target_fps = self.default_fps
 
         width, height = self._parse_resolution()
-        preserve_audio = self.tgl_audio.isChecked()
+        preserve_audio = self.tgl_audio.isChecked() and (fmt_id == "fcp7_xml")
 
         # Recalculate or adapt ops for target_fps if needed
         ops = self.ops
