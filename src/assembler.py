@@ -1102,10 +1102,6 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                 if match_dur > 0:
                     ET.SubElement(file_el, "duration").text = str(match_dur)
 
-                _, ext = os.path.splitext(fp)
-                if ext.lower() in audio_exts:
-                    ET.SubElement(file_el, "mediatype").text = "audio"
-
         ci_counter_v = [0]
         any_video = any(c["has_video"] for c in processed_clips)
         if any_video:
@@ -1145,11 +1141,37 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
         # ── Audio Section ─────────────────────────────────────────────────────
         audio_el = ET.SubElement(media_el, "audio")
         max_ch = max((c["audio_channels"] for c in processed_clips), default=2) if preserve_audio_tracks else 2
-        num_audio_tracks = max(1, min(max_ch, 8))
+        num_audio_tracks = max(1, min(max_ch, 8)) if preserve_audio_tracks else 1
+
+        if preserve_audio_tracks:
+            ET.SubElement(audio_el, "numOutputChannels").text = str(num_audio_tracks)
+            fmt_a = ET.SubElement(audio_el, "format")
+            sc_a = ET.SubElement(fmt_a, "samplecharacteristics")
+            ET.SubElement(sc_a, "depth").text = "16"
+            ET.SubElement(sc_a, "samplerate").text = "48000"
+
+            outputs_el = ET.SubElement(audio_el, "outputs")
+            for o_idx in range(1, num_audio_tracks + 1):
+                grp = ET.SubElement(outputs_el, "group")
+                ET.SubElement(grp, "index").text = str(o_idx)
+                ET.SubElement(grp, "numchannels").text = "1"
+                ET.SubElement(grp, "downmix").text = "0"
+                ch_el = ET.SubElement(grp, "channel")
+                ET.SubElement(ch_el, "index").text = str(o_idx)
 
         ci_counter_a = [0]
         for t_idx in range(1, num_audio_tracks + 1):
-            a_track = ET.SubElement(audio_el, "track")
+            if preserve_audio_tracks:
+                a_track = ET.SubElement(
+                    audio_el, "track",
+                    currentExplodedTrackIndex=str(t_idx - 1),
+                    totalExplodedTrackCount=str(num_audio_tracks),
+                    premiereTrackType="Mono"
+                )
+                ET.SubElement(a_track, "outputchannelindex").text = str(t_idx)
+            else:
+                a_track = ET.SubElement(audio_el, "track", premiereTrackType="Stereo")
+
             dest_pos = 0
             for op in kept_ops:
                 op_dur = op["e"] - op["s"]
@@ -1169,7 +1191,13 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         ci_end = ci_start + seg_dur
 
                         ci_counter_a[0] += 1
-                        ci = ET.SubElement(a_track, "clipitem", id=f"clipitem-a{t_idx}-{ci_counter_a[0]}")
+                        ci_kwargs = {"id": f"clipitem-a{t_idx}-{ci_counter_a[0]}"}
+                        if preserve_audio_tracks:
+                            ci_kwargs["premiereChannelType"] = "mono"
+                        else:
+                            ci_kwargs["premiereChannelType"] = "stereo"
+
+                        ci = ET.SubElement(a_track, "clipitem", **ci_kwargs)
                         ET.SubElement(ci, "name").text = clip["name"]
                         ET.SubElement(ci, "duration").text = str(seg_dur)
                         r_ci = ET.SubElement(ci, "rate")
@@ -1184,7 +1212,21 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         # Audio source track mapping
                         st = ET.SubElement(ci, "sourcetrack")
                         ET.SubElement(st, "mediatype").text = "audio"
-                        ET.SubElement(st, "trackindex").text = str(src_ch)
+                        ET.SubElement(st, "trackindex").text = str(src_ch if preserve_audio_tracks else 1)
+
+                        if preserve_audio_tracks:
+                            # Center pan filter so mono track plays in center
+                            flt = ET.SubElement(ci, "filter")
+                            eff = ET.SubElement(flt, "effect")
+                            ET.SubElement(eff, "name").text = "Audio Pan"
+                            ET.SubElement(eff, "effectid").text = "audiopan"
+                            ET.SubElement(eff, "effectcategory").text = "audio"
+                            ET.SubElement(eff, "effecttype").text = "audio"
+                            ET.SubElement(eff, "mediatype").text = "audio"
+                            param = ET.SubElement(eff, "parameter")
+                            ET.SubElement(param, "parameterid").text = "pan"
+                            ET.SubElement(param, "name").text = "Pan"
+                            ET.SubElement(param, "value").text = "0"
 
                 dest_pos += op_dur
 
@@ -1673,17 +1715,12 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                         "offset": to_time_str(ci_start),
                         "duration": to_time_str(seg_dur),
                         "start": to_time_str(src_in),
+                        "audioRole": "dialogue"
                     }
-                    if not preserve_audio_tracks:
-                        clip_kwargs["audioRole"] = "dialogue"
                     if has_vid:
                         clip_kwargs["format"] = "r1"
 
-                    clip_elem = ET.SubElement(spine, "asset-clip", **clip_kwargs)
-
-                    if preserve_audio_tracks:
-                        for ch_idx in range(1, audio_ch + 1):
-                            ET.SubElement(clip_elem, "audio-channel-source", srcCh=str(ch_idx), role=f"dialogue.dialogue-{ch_idx}")
+                    ET.SubElement(spine, "asset-clip", **clip_kwargs)
 
             dest_pos += op_dur
 
