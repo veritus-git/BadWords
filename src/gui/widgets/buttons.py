@@ -689,7 +689,14 @@ class ToggleSwitch(QWidget):
         
         self.toggled.emit(self._is_checked)
 
+    def mousePressEvent(self, event):
+        if not self.isEnabled():
+            return
+        super().mousePressEvent(event)
+
     def mouseReleaseEvent(self, event):
+        if not self.isEnabled():
+            return
         if event.button() == Qt.LeftButton:
             self._is_checked = not self._is_checked
             self._update_animation()
@@ -720,6 +727,8 @@ class ToggleSwitch(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        if not self.isEnabled():
+            p.setOpacity(0.35)
         
         # Draw background capsule
         p.setPen(Qt.NoPen)
