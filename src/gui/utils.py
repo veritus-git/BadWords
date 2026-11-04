@@ -14,7 +14,7 @@ Helper utilities for GUI (e.g., time formatting, icon loading).
 import os
 import platform
 from PySide6.QtWidgets import QApplication, QWidget
-from PySide6.QtGui import QIcon, QFontDatabase
+from PySide6.QtGui import QIcon, QFontDatabase, QPixmap
 from PySide6.QtCore import QByteArray
 import config
 
@@ -66,9 +66,12 @@ def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2)
     return get_svg_icon(svg, size)
 
 
-def get_export_icon(size: int = 13, color: str = "#ffffff") -> QIcon:
-    """Returns the export/upload icon from assets/layout/upload-bold-arrow-icon.svg rendered with the given color."""
+def get_export_pixmap(height: int = 11, color: str = "#ffffff", dpr: float = 2.0) -> QPixmap:
+    """Renders the export/upload SVG preserving its native 512x379.661 aspect ratio."""
     try:
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QPixmap, QPainter
+        from PySide6.QtCore import QByteArray, Qt
         p = get_layout_icon_path("upload-bold-arrow-icon.svg")
         if os.path.isfile(p):
             with open(p, "r", encoding="utf-8") as f:
@@ -78,9 +81,29 @@ def get_export_icon(size: int = 13, color: str = "#ffffff") -> QIcon:
             else:
                 import re
                 svg_data = re.sub(r'fill="[^"]*"', f'fill="{color}"', svg_data)
-            return get_svg_icon(svg_data, size)
+
+            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+            # Native aspect ratio: 512.0 / 379.661 = 1.34857
+            w = int(round(height * 512.0 / 379.661))
+            pixmap = QPixmap(int(w * dpr), int(height * dpr))
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            renderer.render(painter)
+            painter.end()
+            pixmap.setDevicePixelRatio(dpr)
+            return pixmap
     except Exception:
         pass
+    return QPixmap()
+
+
+def get_export_icon(size: int = 13, color: str = "#ffffff") -> QIcon:
+    """Returns the export/upload icon from assets/layout/upload-bold-arrow-icon.svg rendered with preserved aspect ratio."""
+    pix = get_export_pixmap(size, color)
+    if not pix.isNull():
+        return QIcon(pix)
     return QIcon()
 
 

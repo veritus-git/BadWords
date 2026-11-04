@@ -19,7 +19,7 @@ import time
 from PySide6.QtCore import Qt, QUrl, QSize
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
-    QFrame, QLineEdit, QFileDialog
+    QFrame, QLineEdit, QFileDialog, QSizePolicy
 )
 from PySide6.QtGui import QDesktopServices, QCursor, QPixmap
 
@@ -28,7 +28,7 @@ from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAME
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import CustomDropdown, ToggleSwitch
 from gui.dialogs.msgbox import CustomMsgBox
-from gui.utils import _app_icon, _txt, get_export_icon, get_layout_icon_path
+from gui.utils import _app_icon, _txt, get_export_icon, get_export_pixmap, get_layout_icon_path
 import assembler
 
 
@@ -54,8 +54,24 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowModality(Qt.WindowModal)
         self.setWindowIcon(_app_icon())
 
-        self.setMinimumWidth(config.S(530))
-        self.setFixedHeight(config.S(385))
+        win_w = config.S(560)
+        win_h = config.S(415)
+        self.setFixedSize(win_w, win_h)
+
+        # Center over active main window or active screen
+        parent_w = parent or parent_gui
+        if parent_w:
+            geo = parent_w.geometry()
+            x = geo.x() + (geo.width() - win_w) // 2
+            y = geo.y() + (geo.height() - win_h) // 2
+            self.move(max(0, x), max(0, y))
+        else:
+            from PySide6.QtGui import QGuiApplication
+            screen = QGuiApplication.primaryScreen()
+            if screen:
+                sg = screen.availableGeometry()
+                self.move(sg.x() + (sg.width() - win_w) // 2,
+                          sg.y() + (sg.height() - win_h) // 2)
 
         self._init_metadata()
         self._build_ui()
@@ -133,9 +149,9 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
     def _build_ui(self):
         self.setStyleSheet(f"""
             QDialog, ExportDialog {{ background-color: transparent; }}
-            QFrame#MainInnerFrame {{
+            #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: 1px solid #333333;
+                border: 1px solid #1a1a1a;
                 border-radius: 0px;
             }}
             QLabel {{
@@ -168,10 +184,26 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         outer_l = QVBoxLayout(self)
-        outer_l.setContentsMargins(0, 0, 0, 0)
+        outer_l.setContentsMargins(15, 15, 15, 15)
 
-        self.inner_frame = QFrame(self)
+        class SolidFrame(QFrame):
+            def paintEvent(self, e):
+                from PySide6.QtGui import QPainter, QColor
+                p = QPainter(self)
+                p.fillRect(self.rect(), QColor(config.BG_COLOR))
+                super().paintEvent(e)
+
+        self.inner_frame = SolidFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+
         outer_l.addWidget(self.inner_frame)
 
         root_l = QVBoxLayout(self.inner_frame)
@@ -356,19 +388,37 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         btn_cancel.clicked.connect(self.reject)
         h_actions.addWidget(btn_cancel)
 
-        self.btn_export = QPushButton(self._t("btn_export", "Eksportuj"))
+        self.btn_export = QPushButton()
         self.btn_export.setCursor(Qt.PointingHandCursor)
         self.btn_export.setFixedHeight(config.S(32))
-        self.btn_export.setIcon(get_export_icon(config.S(13), "#ffffff"))
-        self.btn_export.setIconSize(QSize(config.S(14), config.S(11)))
+        self.btn_export.setMinimumWidth(config.S(110))
+        self.btn_export.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.btn_export.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1a7a3e; color: #ffffff; border: none;
-                border-radius: {config.S(4)}px; padding: 0px {config.S(22)}px;
+                border-radius: {config.S(4)}px; padding: 0px {config.S(16)}px;
                 font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
             }}
             QPushButton:hover {{ background-color: #219653; }}
         """)
+
+        btn_exp_lay = QHBoxLayout(self.btn_export)
+        btn_exp_lay.setContentsMargins(config.S(14), 0, config.S(14), 0)
+        btn_exp_lay.setSpacing(config.S(8))
+        btn_exp_lay.addStretch(1)
+
+        self.lbl_btn_export_text = QLabel(self._t("btn_export", "Eksportuj"))
+        self.lbl_btn_export_text.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl_btn_export_text.setStyleSheet(f"color: #ffffff; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: bold; background: transparent; border: none;")
+        btn_exp_lay.addWidget(self.lbl_btn_export_text)
+
+        self.lbl_btn_export_icon = QLabel()
+        self.lbl_btn_export_icon.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl_btn_export_icon.setStyleSheet("background: transparent; border: none;")
+        self.lbl_btn_export_icon.setPixmap(get_export_pixmap(config.S(11), "#ffffff"))
+        btn_exp_lay.addWidget(self.lbl_btn_export_icon)
+        btn_exp_lay.addStretch(1)
+
         self.btn_export.clicked.connect(self._on_execute_export)
         h_actions.addWidget(self.btn_export)
 
@@ -429,7 +479,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             ops = self.engine.calculate_timeline_structure(self.words_data, target_fps, prefs)
 
         self.btn_export.setEnabled(False)
-        self.btn_export.setText(self._t("btn_exporting", "Eksportowanie..."))
+        self.lbl_btn_export_text.setText(self._t("btn_exporting", "Eksportowanie..."))
+        self.lbl_btn_export_icon.hide()
 
         ok = False
         msg = ""
@@ -459,8 +510,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             )
 
         self.btn_export.setEnabled(True)
-        self.btn_export.setText(self._t("btn_export", "Eksportuj"))
-        self.btn_export.setIcon(get_export_icon(config.S(13), "#ffffff"))
+        self.lbl_btn_export_text.setText(self._t("btn_export", "Eksportuj"))
+        self.lbl_btn_export_icon.show()
 
         if ok:
             succ_dlg = CustomMsgBox(
