@@ -522,5 +522,16 @@
   "btn_add": "Toevoegen",
   "btn_open_folder": "Map openen",
   "btn_browse": "Bladeren...",
-  "tt_export_preserve_audio": "Ingeschakeld: Behoudt alle afzonderlijke audiosporen en -kanalen van bronbestanden (bijv. A1, A2, A3...) en plaatst elk kanaal op een eigen tijdlijnspoor.\n\nUitgeschakeld: Alle audiokanalen worden gemixt naar een standaard stereopaar (A1-A2)."
+  "tt_export_preserve_audio": "Ingeschakeld: Behoudt alle afzonderlijke audiosporen en -kanalen van bronbestanden (bijv. A1, A2, A3...) en plaatst elk kanaal op een eigen tijdlijnspoor.\n\nUitgeschakeld: Alle audiokanalen worden gemixt naar een standaard stereopaar (A1-A2).",
+  "status_extracting_audio": "Audio extraheren ({idx}/{total})...",
+  "status_combining_audio": "Audiostromen samenvoegen...",
+  "status_extracting_source": "Audio uit bron extraheren...",
+  "status_generating_proxy_bg": "Videovoorbeeld genereren op achtergrond...",
+  "status_generating_proxy": "Videovoorbeeld genereren ({idx}/{total})...",
+  "btn_exporting": "Exporteren...",
+  "dlg_export_error": "Exportfout",
+  "msg_export_failed": "Exporteren van tijdlijn mislukt:",
+  "lbl_res_original": "Origineel",
+  "tt_remove_clip_from_queue": "Verwijder deze clip uit de wachtrij",
+  "tt_clear_file": "Bestand wissen / Kies een ander"
 }

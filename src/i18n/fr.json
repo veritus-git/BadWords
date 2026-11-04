@@ -522,5 +522,16 @@
   "btn_add": "Ajouter",
   "btn_open_folder": "Ouvrir le dossier",
   "btn_browse": "Parcourir...",
-  "tt_export_preserve_audio": "Activé : Conserve toutes les pistes et canaux audio distincts des fichiers sources (ex. A1, A2, A3...), en plaçant chaque canal sur une piste dédiée de la timeline.\n\nDésactivé : Tous les canaux audio seront mixés en une piste stéréo standard (A1-A2)."
+  "tt_export_preserve_audio": "Activé : Conserve toutes les pistes et canaux audio distincts des fichiers sources (ex. A1, A2, A3...), en plaçant chaque canal sur une piste dédiée de la timeline.\n\nDésactivé : Tous les canaux audio seront mixés en une piste stéréo standard (A1-A2).",
+  "status_extracting_audio": "Extraction audio ({idx}/{total})...",
+  "status_combining_audio": "Combinaison des pistes audio...",
+  "status_extracting_source": "Extraction de l'audio source...",
+  "status_generating_proxy_bg": "Génération de l'aperçu vidéo en arrière-plan...",
+  "status_generating_proxy": "Génération de l'aperçu vidéo ({idx}/{total})...",
+  "btn_exporting": "Exportation...",
+  "dlg_export_error": "Erreur d'exportation",
+  "msg_export_failed": "Échec de l'exportation de la timeline :",
+  "lbl_res_original": "Originale",
+  "tt_remove_clip_from_queue": "Supprimer ce clip de la file d'attente",
+  "tt_clear_file": "Effacer le fichier / Choisir un autre"
 }

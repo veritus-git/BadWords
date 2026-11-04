@@ -276,7 +276,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_res.addWidget(lbl_res)
 
         self.res_options = [
-            f"{self.default_width} x {self.default_height} (Oryginalna)",
+            f"{self.default_width} x {self.default_height} ({self._t('lbl_res_original', 'Oryginalna')})",
             "1920 x 1080 (Full HD 16:9)",
             "3840 x 2160 (4K UHD 16:9)",
             "1080 x 1920 (Pionowe / Shorts 9:16)",
@@ -429,7 +429,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             ops = self.engine.calculate_timeline_structure(self.words_data, target_fps, prefs)
 
         self.btn_export.setEnabled(False)
-        self.btn_export.setText("Eksportowanie...")
+        self.btn_export.setText(self._t("btn_exporting", "Eksportowanie..."))
 
         ok = False
         msg = ""
@@ -475,6 +475,9 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             self.accept()
         else:
             err_dlg = CustomMsgBox(
-                self, "Błąd eksportu", f"Nie udało się wyeksportować osi czasu:\n{msg}", "OK"
+                self,
+                self._t("dlg_export_error", "Błąd eksportu"),
+                f"{self._t('msg_export_failed', 'Nie udało się wyeksportować osi czasu:')}\n{msg}",
+                "OK"
             )
             err_dlg.exec()

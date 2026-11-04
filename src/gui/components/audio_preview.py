@@ -859,8 +859,24 @@ class AudioPreviewWidget(QFrame):
                 f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)
             )
 
+        # Check if we have multiple video clips needing proxy
+        num_video_clips = len([sf for sf in source_files if os.path.splitext(sf)[1].lower() in (".mov", ".mp4", ".m4v", ".mkv", ".avi", ".webm")])
+        is_bg_proxy_pending = (num_video_clips > 1 and not (proxy_path and os.path.isfile(proxy_path)))
+
+        if is_bg_proxy_pending:
+            target_source = audio_path
+            msg = self.main_window.txt("status_generating_proxy_bg") if self.main_window and hasattr(self.main_window, "txt") else "Generating video preview..."
+            self.video_preview_widget.show_loading(True, msg)
+        else:
+            target_source = video_file if (video_file and self.clean_ops is None) else audio_path
+            if video_file:
+                self.video_preview_widget.show_loading(False)
+                self.video_preview_widget.show_placeholder(False)
+            else:
+                self.video_preview_widget.show_loading(False)
+                self.video_preview_widget.show_placeholder(True, "Audio Only")
+
         # Set media player source
-        target_source = video_file if (video_file and self.clean_ops is None) else audio_path
         if self._source_audio_path != target_source:
             self._source_audio_path = target_source
             self.original_audio_path = target_source
@@ -868,14 +884,26 @@ class AudioPreviewWidget(QFrame):
             self.clean_ops = None
             self.current_word_idx = -1
             self.last_jumped_ts = -1.0
-        if video_file:
-            self.video_preview_widget.show_placeholder(False)
-        else:
-            self.video_preview_widget.show_placeholder(True, "Audio Only")
 
         # Configure Waveform Timeline Ribbon
         self.waveform_timeline.load_from_audio(audio_path, clip_name=clip_name)
         self.waveform_timeline.set_words_data(words)
+
+    def set_background_proxy_video(self, proxy_path: str):
+        """Called when background multi-clip proxy generation finishes."""
+        if not proxy_path or not os.path.isfile(proxy_path):
+            return
+        self.video_preview_widget.show_loading(False)
+        pos = self.player.position()
+        was_playing = (self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
+        self._source_audio_path = proxy_path
+        self.original_audio_path = proxy_path
+        self.player.setSource(QUrl.fromLocalFile(proxy_path))
+        if pos > 0:
+            self.player.setPosition(pos)
+        if was_playing:
+            self.player.play()
+        self.video_preview_widget.show_placeholder(False)
 
     def load_assembled_audio(self, assembled_audio_path: str, clean_ops: List[Dict[str, Any]]) -> None:
         """Switches playback to the newly assembled timeline audio."""

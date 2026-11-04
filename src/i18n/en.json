@@ -522,5 +522,16 @@
   "btn_add": "Add",
   "btn_open_folder": "Open Folder",
   "btn_browse": "Browse...",
-  "tt_export_preserve_audio": "When enabled: Preserves all discrete audio tracks and channels from source media files (e.g., A1, A2, A3...), placing each channel on a dedicated timeline track.\n\nWhen disabled: All audio channels will be mixed down into a standard stereo pair (A1-A2)."
+  "tt_export_preserve_audio": "When enabled: Preserves all discrete audio tracks and channels from source media files (e.g., A1, A2, A3...), placing each channel on a dedicated timeline track.\n\nWhen disabled: All audio channels will be mixed down into a standard stereo pair (A1-A2).",
+  "status_extracting_audio": "Extracting audio ({idx}/{total})...",
+  "status_combining_audio": "Combining audio streams...",
+  "status_extracting_source": "Extracting source audio...",
+  "status_generating_proxy_bg": "Generating video preview in background...",
+  "status_generating_proxy": "Generating video preview ({idx}/{total})...",
+  "btn_exporting": "Exporting...",
+  "dlg_export_error": "Export Error",
+  "msg_export_failed": "Failed to export timeline:",
+  "lbl_res_original": "Original",
+  "tt_remove_clip_from_queue": "Remove this clip from queue",
+  "tt_clear_file": "Clear file / Choose another"
 }

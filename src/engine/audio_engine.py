@@ -189,7 +189,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         try:
             for idx, clip in enumerate(clips_info):
                 if callback_status:
-                    callback_status(f"Ekstrakcja audio ({idx+1}/{len(clips_info)})...")
+                    callback_status(self.txt("status_extracting_audio", idx=idx+1, total=len(clips_info)))
                 part_path = os.path.join(temp_dir, f"tmp_part_{idx}_{os.getpid()}_{int(time.time())}.wav")
                 cmd = [
                     self.ffmpeg_cmd, "-y",
@@ -212,7 +212,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     f.write(f"file '{safe_p}'\n")
 
             if callback_status:
-                callback_status("Łączenie strumieni audio...")
+                callback_status(self.txt("status_combining_audio"))
 
             cmd_c = [
                 self.ffmpeg_cmd, "-y",
@@ -253,7 +253,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         try:
             for idx, clip in enumerate(clips_info):
                 if callback_status:
-                    callback_status(f"Tworzenie podglądu wideo ({idx+1}/{len(clips_info)})...")
+                    callback_status(self.txt("status_generating_proxy", idx=idx+1, total=len(clips_info)))
                 part_path = os.path.join(temp_dir, f"tmp_proxy_part_{idx}_{os.getpid()}_{int(time.time())}.mp4")
                 if clip.get("has_video"):
                     cmd = [
@@ -404,23 +404,13 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     return None, None
 
                 self.current_clips_info = clips_info
-                update_status("Ekstrakcja audio ze źródła...")
+                update_status(self.txt("status_extracting_source"))
                 update_progress(20)
                 wav_path = os.path.join(temp_dir, f"{unique_id}_source.wav")
                 ok_audio = self.extract_and_concat_source_audio(clips_info, wav_path, callback_status=update_status)
                 if not ok_audio or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
                     log_error("[FastSilence] FFmpeg audio extraction/concat failed.")
                     return None, None
-
-                if any(c.get("has_video") for c in clips_info):
-                    proxy_path = os.path.join(temp_dir, f"{unique_id}_preview_proxy.mp4")
-                    try:
-                        fps = clips_info[0].get("fps", 30.0)
-                        if self.generate_preview_proxy(clips_info, proxy_path, target_fps=fps, callback_status=update_status):
-                            proxy_video_path = proxy_path
-                            self.current_proxy_video_path = proxy_video_path
-                    except Exception as e:
-                        log_error(f"[FastSilence] Proxy generation failed: {e}")
             else:
                 # ── 1. Try Direct Audio first (skip Resolve render when possible) ───
                 tl_name_for_direct = settings.get('timeline_name') or (
@@ -701,23 +691,13 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             wav_path = None
             if clips_info:
                 log_info(f"[AnalysisPipeline] Using standalone source files ({len(clips_info)}): {[c['path'] for c in clips_info]}")
-                update_status("Ekstrakcja audio ze źródła...")
+                update_status(self.txt("status_extracting_source"))
                 update_progress(20)
                 wav_path = os.path.join(temp_dir, f"{unique_id}_source.wav")
                 ok_audio = self.extract_and_concat_source_audio(clips_info, wav_path, callback_status=update_status)
                 if not ok_audio or not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
                     log_error("[AnalysisPipeline] Audio extraction/concat failed.")
                     return None, None
-
-                # Generate preview proxy if video is present
-                if any(c.get("has_video") for c in clips_info):
-                    proxy_path = os.path.join(temp_dir, f"{unique_id}_preview_proxy.mp4")
-                    try:
-                        if self.generate_preview_proxy(clips_info, proxy_path, target_fps=fps, callback_status=update_status):
-                            proxy_video_path = proxy_path
-                            self.current_proxy_video_path = proxy_video_path
-                    except Exception as e:
-                        log_error(f"[AnalysisPipeline] Proxy generation error: {e}")
 
                 update_progress(40)
             else:

@@ -2641,6 +2641,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         }
         self._fs_settings = settings
 
+        if is_file_source and source_files:
+            self._maybe_start_background_proxy(source_files)
+
         self._analysis_worker = AnalysisWorker(self.engine, 'run_fast_silence_pipeline', settings)
         self._analysis_worker.progress.connect(self._on_analysis_progress)
         self._analysis_worker.status.connect(self._on_analysis_status)
@@ -4051,6 +4054,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # 4. Start QThread targeting self.engine.run_analysis_pipeline()
         import time
         self._transcription_start_time = time.time()
+        if is_file_source and source_files:
+            self._maybe_start_background_proxy(source_files)
         self._analysis_worker = AnalysisWorker(self.engine, 'run_analysis_pipeline', settings)
         self._analysis_worker.progress.connect(self._on_analysis_progress)
         self._analysis_worker.status.connect(self._on_analysis_status)
@@ -4058,6 +4063,41 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._analysis_worker.finished_ok.connect(self._on_analysis_finished)
         self._analysis_worker.error.connect(self._on_analysis_error)
         self._analysis_worker.start()
+
+    def _maybe_start_background_proxy(self, source_files: list):
+        if not source_files or len(source_files) <= 1:
+            return
+        video_exts = (".mov", ".mp4", ".m4v", ".mkv", ".avi", ".webm")
+        video_files = [sf for sf in source_files if sf and os.path.isfile(sf) and os.path.splitext(sf)[1].lower() in video_exts]
+        if len(video_files) <= 1:
+            return
+
+        clips_info = getattr(self.engine, "current_clips_info", None)
+        if not clips_info:
+            clips_info = self.engine.probe_media_files(source_files)
+            self.engine.current_clips_info = clips_info
+
+        temp_dir = self.engine.os_doc.get_temp_folder()
+        os.makedirs(temp_dir, exist_ok=True)
+        proxy_path = os.path.join(temp_dir, f"BW_proxy_{os.getpid()}_{len(source_files)}.mp4")
+
+        if hasattr(self, "_proxy_worker") and self._proxy_worker and self._proxy_worker.isRunning():
+            try:
+                self._proxy_worker.terminate()
+                self._proxy_worker.wait(300)
+            except Exception:
+                pass
+
+        from handlers.analysis_worker import BackgroundProxyWorker
+        fps = clips_info[0].get("fps", 30.0) if clips_info else 30.0
+        self._proxy_worker = BackgroundProxyWorker(self.engine, clips_info, proxy_path, target_fps=fps)
+        self._proxy_worker.proxy_ready.connect(self._on_bg_proxy_ready)
+        self._proxy_worker.start()
+
+    def _on_bg_proxy_ready(self, proxy_path: str):
+        self.engine.current_proxy_video_path = proxy_path
+        if hasattr(self, "media_preview_bar") and self.media_preview_bar:
+            self.media_preview_bar.set_background_proxy_video(proxy_path)
 
     def _set_live_transcription_lock(self, locked: bool):
         """Locks all actions that require a complete transcript while keeping marking mode and options functional."""

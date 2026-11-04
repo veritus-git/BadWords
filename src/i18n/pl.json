@@ -522,5 +522,16 @@
   "btn_add": "Dodaj",
   "btn_open_folder": "Otwórz folder",
   "btn_browse": "Przeglądaj...",
-  "tt_export_preserve_audio": "Gdy włączone: Zachowuje wszystkie niezależne ścieżki i kanały audio z plików źródłowych (np. A1, A2, A3...), umieszczając każdy kanał na osobnej ścieżce na osi czasu.\n\nGdy wyłączone: Wszystkie kanały audio zostaną zmiksowane do pojedynczej ścieżki stereo (A1-A2)."
+  "tt_export_preserve_audio": "Gdy włączone: Zachowuje wszystkie niezależne ścieżki i kanały audio z plików źródłowych (np. A1, A2, A3...), umieszczając każdy kanał na osobnej ścieżce na osi czasu.\n\nGdy wyłączone: Wszystkie kanały audio zostaną zmiksowane do pojedynczej ścieżki stereo (A1-A2).",
+  "status_extracting_audio": "Ekstrakcja audio ({idx}/{total})...",
+  "status_combining_audio": "Łączenie strumieni audio...",
+  "status_extracting_source": "Ekstrakcja audio ze źródła...",
+  "status_generating_proxy_bg": "Tworzenie podglądu wideo w tle...",
+  "status_generating_proxy": "Tworzenie podglądu wideo ({idx}/{total})...",
+  "btn_exporting": "Eksportowanie...",
+  "dlg_export_error": "Błąd eksportu",
+  "msg_export_failed": "Nie udało się wyeksportować osi czasu:",
+  "lbl_res_original": "Oryginalna",
+  "tt_remove_clip_from_queue": "Usuń ten klip z kolejki",
+  "tt_clear_file": "Wyczyść plik / Wybierz inny"
 }

@@ -11,6 +11,6 @@ DESCRIPTION:
 Python package initialization file.
 """
 
-from .analysis_worker import AnalysisWorker
+from .analysis_worker import AnalysisWorker, BackgroundProxyWorker
 from .autosave_manager import AutoSaveManager
 from .undo_manager import UndoManager

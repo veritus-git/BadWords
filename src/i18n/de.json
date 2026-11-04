@@ -522,5 +522,16 @@
   "btn_add": "Hinzufügen",
   "btn_open_folder": "Ordner öffnen",
   "btn_browse": "Durchsuchen...",
-  "tt_export_preserve_audio": "Wenn aktiviert: Behält alle separaten Audiospuren und Kanäle der Quelldateien bei (z. B. A1, A2, A3...) und platziert jeden Kanal auf einer eigenen Timeline-Spur.\n\nWenn deaktiviert: Alle Audiokanäle werden auf ein Stereo-Paar (A1-A2) heruntergemischt."
+  "tt_export_preserve_audio": "Wenn aktiviert: Behält alle separaten Audiospuren und Kanäle der Quelldateien bei (z. B. A1, A2, A3...) und platziert jeden Kanal auf einer eigenen Timeline-Spur.\n\nWenn deaktiviert: Alle Audiokanäle werden auf ein Stereo-Paar (A1-A2) heruntergemischt.",
+  "status_extracting_audio": "Audio extrahieren ({idx}/{total})...",
+  "status_combining_audio": "Audioströme zusammenführen...",
+  "status_extracting_source": "Audio aus Quelle extrahieren...",
+  "status_generating_proxy_bg": "Videovorschau im Hintergrund erstellen...",
+  "status_generating_proxy": "Videovorschau erstellen ({idx}/{total})...",
+  "btn_exporting": "Exportieren...",
+  "dlg_export_error": "Exportfehler",
+  "msg_export_failed": "Timeline konnte nicht exportiert werden:",
+  "lbl_res_original": "Original",
+  "tt_remove_clip_from_queue": "Diesen Clip aus der Warteschlange entfernen",
+  "tt_clear_file": "Datei löschen / Andere auswählen"
 }

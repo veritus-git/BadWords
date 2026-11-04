@@ -522,5 +522,16 @@
   "btn_add": "Añadir",
   "btn_open_folder": "Abrir carpeta",
   "btn_browse": "Examinar...",
-  "tt_export_preserve_audio": "Activado: Conserva todas las pistas y canales de audio discretos de los archivos de origen (por ejemplo, A1, A2, A3...), colocando cada canal en una pista de línea de tiempo dedicada.\n\nDesactivado: Todos los canales de audio se mezclarán en un par estéreo estándar (A1-A2)."
+  "tt_export_preserve_audio": "Activado: Conserva todas las pistas y canales de audio discretos de los archivos de origen (por ejemplo, A1, A2, A3...), colocando cada canal en una pista de línea de tiempo dedicada.\n\nDesactivado: Todos los canales de audio se mezclarán en un par estéreo estándar (A1-A2).",
+  "status_extracting_audio": "Extrayendo audio ({idx}/{total})...",
+  "status_combining_audio": "Combinando pistas de audio...",
+  "status_extracting_source": "Extrayendo audio de la fuente...",
+  "status_generating_proxy_bg": "Generando vista previa de video en segundo plano...",
+  "status_generating_proxy": "Generando vista previa de video ({idx}/{total})...",
+  "btn_exporting": "Exportando...",
+  "dlg_export_error": "Error de exportación",
+  "msg_export_failed": "No se pudo exportar la línea de tiempo:",
+  "lbl_res_original": "Original",
+  "tt_remove_clip_from_queue": "Eliminar este clip de la cola",
+  "tt_clear_file": "Borrar archivo / Elegir otro"
 }

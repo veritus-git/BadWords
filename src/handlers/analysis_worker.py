@@ -52,5 +52,29 @@ class AnalysisWorker(QThread):
             self.error.emit(str(e))
 
 
+class BackgroundProxyWorker(QThread):
+    proxy_ready = Signal(str)
+    proxy_failed = Signal(str)
+
+    def __init__(self, engine, clips_info: list, output_proxy_mp4: str, target_fps: float = 30.0):
+        super().__init__()
+        self.engine = engine
+        self.clips_info = clips_info
+        self.output_proxy_mp4 = output_proxy_mp4
+        self.target_fps = target_fps
+
+    def run(self):
+        try:
+            import os
+            ok = self.engine.generate_preview_proxy(self.clips_info, self.output_proxy_mp4, target_fps=self.target_fps)
+            if ok and os.path.isfile(self.output_proxy_mp4) and os.path.getsize(self.output_proxy_mp4) > 0:
+                self.proxy_ready.emit(self.output_proxy_mp4)
+            else:
+                self.proxy_failed.emit("Proxy generation returned False")
+        except Exception as e:
+            self.proxy_failed.emit(str(e))
+
+
+
 
 

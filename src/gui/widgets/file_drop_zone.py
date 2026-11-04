@@ -179,7 +179,7 @@ class FileDropZone(QWidget):
         self.btn_clear = QPushButton("✕")
         self.btn_clear.setFixedSize(config.S(24), config.S(24))
         self.btn_clear.setCursor(Qt.PointingHandCursor)
-        self.btn_clear.setToolTip("Wyczyść plik / Wybierz inny")
+        self.btn_clear.setToolTip(_txt(self._lang, "tt_clear_file", "Clear file"))
         self.btn_clear.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #888888;
@@ -216,7 +216,7 @@ class FileDropZone(QWidget):
         )
         h_multi_top.addWidget(self.lbl_multi_summary, 1)
 
-        self.btn_multi_add = QPushButton("+ Dodaj")
+        self.btn_multi_add = QPushButton(f"+ {_txt(self._lang, 'btn_add', 'Add')}")
         self.btn_multi_add.setCursor(Qt.PointingHandCursor)
         self.btn_multi_add.setStyleSheet(f"""
             QPushButton {{
@@ -229,7 +229,7 @@ class FileDropZone(QWidget):
         self.btn_multi_add.clicked.connect(lambda: self.browse_files(append=True))
         h_multi_top.addWidget(self.btn_multi_add)
 
-        self.btn_multi_clear = QPushButton("Wyczyść")
+        self.btn_multi_clear = QPushButton(_txt(self._lang, "btn_clear", "Clear"))
         self.btn_multi_clear.setCursor(Qt.PointingHandCursor)
         self.btn_multi_clear.setStyleSheet(f"""
             QPushButton {{
@@ -533,7 +533,7 @@ class FileDropZone(QWidget):
         btn_del = QPushButton("✕")
         btn_del.setFixedSize(config.S(14), config.S(14))
         btn_del.setCursor(Qt.PointingHandCursor)
-        btn_del.setToolTip("Usuń ten klip z kolejki")
+        btn_del.setToolTip(_txt(self._lang, "tt_remove_clip_from_queue", "Remove this clip from queue"))
         btn_del.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: #707070; border: none;

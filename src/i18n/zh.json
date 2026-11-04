@@ -522,5 +522,16 @@
   "btn_add": "添加",
   "btn_open_folder": "打开文件夹",
   "btn_browse": "浏览...",
-  "tt_export_preserve_audio": "启用时：保留源媒体文件中的所有独立音频轨道和声道（如 A1、A2、A3...），并将每个声道放置在时间轴的专用轨道上。\n\n禁用时：所有音频声道将混音为标准立体声对（A1-A2）。"
+  "tt_export_preserve_audio": "启用时：保留源媒体文件中的所有独立音频轨道和声道（如 A1、A2、A3...），并将每个声道放置在时间轴的专用轨道上。\n\n禁用时：所有音频声道将混音为标准立体声对（A1-A2）。",
+  "status_extracting_audio": "正在提取音频 ({idx}/{total})...",
+  "status_combining_audio": "正在合并音频流...",
+  "status_extracting_source": "正在从源文件提取音频...",
+  "status_generating_proxy_bg": "正在后台生成视频预览...",
+  "status_generating_proxy": "正在生成视频预览 ({idx}/{total})...",
+  "btn_exporting": "正在导出...",
+  "dlg_export_error": "导出错误",
+  "msg_export_failed": "导出时间轴失败：",
+  "lbl_res_original": "原始",
+  "tt_remove_clip_from_queue": "从队列中移除此剪辑",
+  "tt_clear_file": "清除文件 / 选择其他文件"
 }

@@ -10,6 +10,7 @@ ROLE: GUI Component
 DESCRIPTION:
 16:9 Video playback preview container utilizing QVideoWidget.
 Features rounded corners, aspect-ratio preservation, and sleek DaVinci Resolve styling.
+Supports background proxy generation status and instant playback.
 """
 
 from __future__ import annotations
@@ -63,7 +64,18 @@ class VideoPreviewWidget(QFrame):
 
     def show_placeholder(self, show: bool = True, text: str = "Video Preview") -> None:
         if show:
+            self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(8.5)}pt; font-style: italic;")
             self.lbl_placeholder.setText(text)
+            self.lbl_placeholder.show()
+            self.video_widget.hide()
+        else:
+            self.lbl_placeholder.hide()
+            self.video_widget.show()
+
+    def show_loading(self, show: bool = True, text: str = "Generating preview...") -> None:
+        if show:
+            self.lbl_placeholder.setStyleSheet(f"color: #38c172; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(8.5)}pt; font-style: italic;")
+            self.lbl_placeholder.setText(f"⏳ {text}")
             self.lbl_placeholder.show()
             self.video_widget.hide()
         else:
