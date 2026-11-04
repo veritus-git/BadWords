@@ -1225,13 +1225,14 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         ET.SubElement(st, "mediatype").text = "audio"
                         ET.SubElement(st, "trackindex").text = str(src_ch if preserve_audio_tracks else 1)
 
-                        links_by_key[(op_idx, clip_idx)].append({
-                            "id": f"clipitem-a{t_idx}-{track_ci_idx}",
-                            "mediatype": "audio",
-                            "trackindex": t_idx,
-                            "clipindex": track_ci_idx,
-                            "elem": ci
-                        })
+                        if clip["has_video"]:
+                            links_by_key[(op_idx, clip_idx)].append({
+                                "id": f"clipitem-a{t_idx}-{track_ci_idx}",
+                                "mediatype": "audio",
+                                "trackindex": t_idx,
+                                "clipindex": track_ci_idx,
+                                "elem": ci
+                            })
 
                         if preserve_audio_tracks:
                             # Center pan filter so mono track plays in center
@@ -1249,9 +1250,11 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
 
                 dest_pos += op_dur
 
-        # Build link elements across linked video and audio items
+        # Build link elements across linked video and audio items (only for clips that have video)
         for seg_key, items in links_by_key.items():
-            if len(items) > 1:
+            has_v = any(it["mediatype"] == "video" for it in items)
+            has_a = any(it["mediatype"] == "audio" for it in items)
+            if has_v and has_a:
                 for item in items:
                     for target in items:
                         link_el = ET.SubElement(item["elem"], "link")
