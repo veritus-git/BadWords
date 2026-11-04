@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QPen, QFont, QCursor
 
 import config
-from gui.utils import get_svg_icon
+from gui.utils import _txt, get_svg_icon
 
 
 class FileDropZone(QWidget):
@@ -49,12 +49,26 @@ class FileDropZone(QWidget):
         ext = os.path.splitext(file_path)[1].lower()
         return ext in cls.SUPPORTED_EXTENSIONS
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, lang: str = None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setObjectName("file_drop_zone")
         self.setFixedHeight(config.S(118))
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        if lang:
+            self._lang = lang
+        elif parent and hasattr(parent, 'current_lang'):
+            self._lang = parent.current_lang
+        elif parent and hasattr(parent, '_lang'):
+            self._lang = parent._lang
+        else:
+            try:
+                import osdoc
+                prefs = osdoc.load_preferences() or {}
+                self._lang = prefs.get("gui_lang", "en")
+            except Exception:
+                self._lang = "en"
 
         self._files: list[str] = []
         self._current_file: str = ""
@@ -278,14 +292,18 @@ class FileDropZone(QWidget):
         multi_l.addWidget(self.scroll_area)
         self.main_layout.addWidget(self.multi_container)
 
-    def set_texts(self, prompt: str = None, subprompt: str = None, add_txt: str = None, clear_txt: str = None, queue_txt: str = None):
+    def set_texts(self, prompt: str = None, subprompt: str = None, add_txt: str = None, clear_txt: str = None, queue_txt: str = None, lang: str = None):
         """Sets localized prompt and control texts."""
+        if lang:
+            self._lang = lang
         if prompt: self.lbl_prompt.setText(prompt)
         if subprompt: self.lbl_subprompt.setText(subprompt)
         if add_txt and hasattr(self, 'btn_multi_add'):
             self.btn_multi_add.setText(f"+ {add_txt}" if not add_txt.startswith("+") else add_txt)
         if clear_txt and hasattr(self, 'btn_multi_clear'):
             self.btn_multi_clear.setText(clear_txt)
+        if hasattr(self, 'btn_clear') and hasattr(self, '_lang'):
+            self.btn_clear.setToolTip(_txt(self._lang, "tt_clear_file", "Clear file"))
         if queue_txt:
             self._queue_prefix = queue_txt
 
