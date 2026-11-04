@@ -1212,10 +1212,10 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
     Builds an OpenTimelineIO (.otio) JSON timeline file.
     Fully open-source standard created by Pixar / Academy Software Foundation,
     natively imported by DaVinci Resolve, Premiere, and modern post-production suites.
-    Includes explicit available_range and metadata to ensure 100% stability in DaVinci Resolve.
+    Uses clean absolute local file paths, matched track lengths, and complete schema
+    fields to guarantee 100% stability and prevent DaVinci Resolve freezes.
     """
     try:
-        import json
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
         if not kept_ops:
             return False, "Brak operacji cięcia do wyeksportowania."
@@ -1238,177 +1238,347 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                 "audio_channels": max(1, int(c.get("audio_channels", 2))),
             })
 
-        tracks_children = []
+        # Try using opentimelineio package if available
+        try:
+            import opentimelineio as otio
+            tl = otio.schema.Timeline(name=timeline_name)
 
-        # ── Video Track ───────────────────────────────────────────────────────
-        any_video = any(c["has_video"] for c in processed_clips)
-        if any_video:
-            v_children = []
-            dest_pos = 0
-            curr_v_track_head = 0
+            # Video Track
+            any_video = any(c["has_video"] for c in processed_clips)
+            if any_video:
+                v_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
+                dest_pos = 0
+                curr_v_track_head = 0
 
-            for op in kept_ops:
-                op_dur = op["e"] - op["s"]
-                for clip in processed_clips:
-                    ov_start = max(op["s"], clip["rel_start"])
-                    ov_end = min(op["e"], clip["rel_end"])
-                    if ov_end > ov_start and clip["has_video"]:
-                        offset_in_clip = ov_start - clip["rel_start"]
-                        src_in = clip["src_in"] + offset_in_clip
-                        seg_dur = ov_end - ov_start
-                        op_offset = ov_start - op["s"]
-                        ci_start = dest_pos + op_offset
+                for op in kept_ops:
+                    op_dur = op["e"] - op["s"]
+                    for clip in processed_clips:
+                        ov_start = max(op["s"], clip["rel_start"])
+                        ov_end = min(op["e"], clip["rel_end"])
+                        if ov_end > ov_start and clip["has_video"]:
+                            offset_in_clip = ov_start - clip["rel_start"]
+                            src_in = clip["src_in"] + offset_in_clip
+                            seg_dur = ov_end - ov_start
+                            op_offset = ov_start - op["s"]
+                            ci_start = dest_pos + op_offset
 
-                        # If there is a gap before this clipitem, insert Gap
-                        if ci_start > curr_v_track_head:
-                            gap_dur = ci_start - curr_v_track_head
+                            if ci_start > curr_v_track_head:
+                                gap_dur = ci_start - curr_v_track_head
+                                v_track.append(otio.schema.Gap(
+                                    source_range=otio.opentime.TimeRange(
+                                        start_time=otio.opentime.RationalTime(0, fps),
+                                        duration=otio.opentime.RationalTime(gap_dur, fps)
+                                    )
+                                ))
+                                curr_v_track_head = ci_start
+
+                            clip_item = otio.schema.Clip(
+                                name=clip["name"],
+                                source_range=otio.opentime.TimeRange(
+                                    start_time=otio.opentime.RationalTime(src_in, fps),
+                                    duration=otio.opentime.RationalTime(seg_dur, fps)
+                                ),
+                                media_reference=otio.schema.ExternalReference(
+                                    target_url=clip["path"],
+                                    available_range=otio.opentime.TimeRange(
+                                        start_time=otio.opentime.RationalTime(0, fps),
+                                        duration=otio.opentime.RationalTime(clip["total_frames"], fps)
+                                    )
+                                )
+                            )
+                            v_track.append(clip_item)
+                            curr_v_track_head = ci_start + seg_dur
+
+                    dest_pos += op_dur
+
+                if curr_v_track_head < total_dest_frames:
+                    v_track.append(otio.schema.Gap(
+                        source_range=otio.opentime.TimeRange(
+                            start_time=otio.opentime.RationalTime(0, fps),
+                            duration=otio.opentime.RationalTime(total_dest_frames - curr_v_track_head, fps)
+                        )
+                    ))
+
+                tl.tracks.append(v_track)
+
+            # Audio Tracks
+            max_ch = max((c["audio_channels"] for c in processed_clips), default=2) if preserve_audio_tracks else 2
+            num_audio_tracks = max(1, min(max_ch, 8))
+
+            for t_idx in range(1, num_audio_tracks + 1):
+                a_track = otio.schema.Track(name=f"A{t_idx}", kind=otio.schema.TrackKind.Audio)
+                dest_pos = 0
+                curr_a_track_head = 0
+
+                for op in kept_ops:
+                    op_dur = op["e"] - op["s"]
+                    for clip in processed_clips:
+                        ov_start = max(op["s"], clip["rel_start"])
+                        ov_end = min(op["e"], clip["rel_end"])
+                        if ov_end > ov_start:
+                            offset_in_clip = ov_start - clip["rel_start"]
+                            src_in = clip["src_in"] + offset_in_clip
+                            seg_dur = ov_end - ov_start
+                            op_offset = ov_start - op["s"]
+                            ci_start = dest_pos + op_offset
+
+                            if ci_start > curr_a_track_head:
+                                gap_dur = ci_start - curr_a_track_head
+                                a_track.append(otio.schema.Gap(
+                                    source_range=otio.opentime.TimeRange(
+                                        start_time=otio.opentime.RationalTime(0, fps),
+                                        duration=otio.opentime.RationalTime(gap_dur, fps)
+                                    )
+                                ))
+                                curr_a_track_head = ci_start
+
+                            clip_item = otio.schema.Clip(
+                                name=clip["name"],
+                                source_range=otio.opentime.TimeRange(
+                                    start_time=otio.opentime.RationalTime(src_in, fps),
+                                    duration=otio.opentime.RationalTime(seg_dur, fps)
+                                ),
+                                media_reference=otio.schema.ExternalReference(
+                                    target_url=clip["path"],
+                                    available_range=otio.opentime.TimeRange(
+                                        start_time=otio.opentime.RationalTime(0, fps),
+                                        duration=otio.opentime.RationalTime(clip["total_frames"], fps)
+                                    )
+                                )
+                            )
+                            a_track.append(clip_item)
+                            curr_a_track_head = ci_start + seg_dur
+
+                    dest_pos += op_dur
+
+                if curr_a_track_head < total_dest_frames:
+                    a_track.append(otio.schema.Gap(
+                        source_range=otio.opentime.TimeRange(
+                            start_time=otio.opentime.RationalTime(0, fps),
+                            duration=otio.opentime.RationalTime(total_dest_frames - curr_a_track_head, fps)
+                        )
+                    ))
+
+                tl.tracks.append(a_track)
+
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            otio.adapters.write_to_file(tl, output_path)
+            log_info(f"build_standalone_otio: wrote {output_path} via opentimelineio")
+            return True, output_path
+
+        except ImportError:
+            # Pure Python JSON fallback if opentimelineio package not installed
+            import json
+            tracks_children = []
+
+            # Video Track
+            any_video = any(c["has_video"] for c in processed_clips)
+            if any_video:
+                v_children = []
+                dest_pos = 0
+                curr_v_track_head = 0
+
+                for op in kept_ops:
+                    op_dur = op["e"] - op["s"]
+                    for clip in processed_clips:
+                        ov_start = max(op["s"], clip["rel_start"])
+                        ov_end = min(op["e"], clip["rel_end"])
+                        if ov_end > ov_start and clip["has_video"]:
+                            offset_in_clip = ov_start - clip["rel_start"]
+                            src_in = clip["src_in"] + offset_in_clip
+                            seg_dur = ov_end - ov_start
+                            op_offset = ov_start - op["s"]
+                            ci_start = dest_pos + op_offset
+
+                            if ci_start > curr_v_track_head:
+                                gap_dur = ci_start - curr_v_track_head
+                                v_children.append({
+                                    "OTIO_SCHEMA": "Gap.1",
+                                    "metadata": {},
+                                    "name": "Gap",
+                                    "source_range": {
+                                        "OTIO_SCHEMA": "TimeRange.1",
+                                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                                        "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(gap_dur)}
+                                    },
+                                    "effects": [],
+                                    "markers": [],
+                                    "enabled": True
+                                })
+                                curr_v_track_head = ci_start
+
                             v_children.append({
-                                "OTIO_SCHEMA": "Gap.1",
+                                "OTIO_SCHEMA": "Clip.1",
                                 "metadata": {},
-                                "name": "Gap",
+                                "name": clip["name"],
                                 "source_range": {
                                     "OTIO_SCHEMA": "TimeRange.1",
-                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
-                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(gap_dur)}
+                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(src_in)},
+                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(seg_dur)}
+                                },
+                                "effects": [],
+                                "markers": [],
+                                "enabled": True,
+                                "media_reference": {
+                                    "OTIO_SCHEMA": "ExternalReference.1",
+                                    "metadata": {},
+                                    "name": clip["name"],
+                                    "target_url": clip["path"],
+                                    "available_range": {
+                                        "OTIO_SCHEMA": "TimeRange.1",
+                                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                                        "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["total_frames"])}
+                                    }
                                 }
                             })
-                            curr_v_track_head = ci_start
+                            curr_v_track_head = ci_start + seg_dur
 
-                        v_children.append({
-                            "OTIO_SCHEMA": "Clip.1",
-                            "metadata": {},
-                            "name": clip["name"],
-                            "source_range": {
-                                "OTIO_SCHEMA": "TimeRange.1",
-                                "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(src_in)},
-                                "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(seg_dur)}
-                            },
-                            "media_reference": {
-                                "OTIO_SCHEMA": "ExternalReference.1",
-                                "metadata": {},
-                                "target_url": _path_to_fileurl(clip["path"]),
-                                "available_range": {
-                                    "OTIO_SCHEMA": "TimeRange.1",
-                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
-                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["total_frames"])}
-                                }
-                            }
-                        })
-                        curr_v_track_head = ci_start + seg_dur
+                    dest_pos += op_dur
 
-                dest_pos += op_dur
+                if curr_v_track_head < total_dest_frames:
+                    v_children.append({
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "Gap",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                            "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(total_dest_frames - curr_v_track_head)}
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": True
+                    })
 
-            # Trailing gap if any
-            if curr_v_track_head < total_dest_frames:
-                v_children.append({
-                    "OTIO_SCHEMA": "Gap.1",
+                tracks_children.append({
+                    "OTIO_SCHEMA": "Track.1",
                     "metadata": {},
-                    "name": "Gap",
-                    "source_range": {
-                        "OTIO_SCHEMA": "TimeRange.1",
-                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
-                        "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(total_dest_frames - curr_v_track_head)}
-                    }
+                    "name": "V1",
+                    "kind": "Video",
+                    "source_range": None,
+                    "effects": [],
+                    "markers": [],
+                    "enabled": True,
+                    "children": v_children
                 })
 
-            tracks_children.append({
-                "OTIO_SCHEMA": "Track.1",
-                "metadata": {},
-                "name": "V1",
-                "kind": "Video",
-                "children": v_children
-            })
+            # Audio Tracks
+            max_ch = max((c["audio_channels"] for c in processed_clips), default=2) if preserve_audio_tracks else 2
+            num_audio_tracks = max(1, min(max_ch, 8))
 
-        # ── Audio Tracks ──────────────────────────────────────────────────────
-        max_ch = max((c["audio_channels"] for c in processed_clips), default=2) if preserve_audio_tracks else 2
-        num_audio_tracks = max(1, min(max_ch, 8))
+            for t_idx in range(1, num_audio_tracks + 1):
+                a_children = []
+                dest_pos = 0
+                curr_a_track_head = 0
 
-        for t_idx in range(1, num_audio_tracks + 1):
-            a_children = []
-            dest_pos = 0
-            curr_a_track_head = 0
+                for op in kept_ops:
+                    op_dur = op["e"] - op["s"]
+                    for clip in processed_clips:
+                        ov_start = max(op["s"], clip["rel_start"])
+                        ov_end = min(op["e"], clip["rel_end"])
+                        if ov_end > ov_start:
+                            offset_in_clip = ov_start - clip["rel_start"]
+                            src_in = clip["src_in"] + offset_in_clip
+                            seg_dur = ov_end - ov_start
+                            op_offset = ov_start - op["s"]
+                            ci_start = dest_pos + op_offset
 
-            for op in kept_ops:
-                op_dur = op["e"] - op["s"]
-                for clip in processed_clips:
-                    ov_start = max(op["s"], clip["rel_start"])
-                    ov_end = min(op["e"], clip["rel_end"])
-                    if ov_end > ov_start:
-                        offset_in_clip = ov_start - clip["rel_start"]
-                        src_in = clip["src_in"] + offset_in_clip
-                        seg_dur = ov_end - ov_start
-                        op_offset = ov_start - op["s"]
-                        ci_start = dest_pos + op_offset
+                            if ci_start > curr_a_track_head:
+                                gap_dur = ci_start - curr_a_track_head
+                                a_children.append({
+                                    "OTIO_SCHEMA": "Gap.1",
+                                    "metadata": {},
+                                    "name": "Gap",
+                                    "source_range": {
+                                        "OTIO_SCHEMA": "TimeRange.1",
+                                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                                        "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(gap_dur)}
+                                    },
+                                    "effects": [],
+                                    "markers": [],
+                                    "enabled": True
+                                })
+                                curr_a_track_head = ci_start
 
-                        if ci_start > curr_a_track_head:
-                            gap_dur = ci_start - curr_a_track_head
                             a_children.append({
-                                "OTIO_SCHEMA": "Gap.1",
+                                "OTIO_SCHEMA": "Clip.1",
                                 "metadata": {},
-                                "name": "Gap",
+                                "name": clip["name"],
                                 "source_range": {
                                     "OTIO_SCHEMA": "TimeRange.1",
-                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
-                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(gap_dur)}
+                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(src_in)},
+                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(seg_dur)}
+                                },
+                                "effects": [],
+                                "markers": [],
+                                "enabled": True,
+                                "media_reference": {
+                                    "OTIO_SCHEMA": "ExternalReference.1",
+                                    "metadata": {},
+                                    "name": clip["name"],
+                                    "target_url": clip["path"],
+                                    "available_range": {
+                                        "OTIO_SCHEMA": "TimeRange.1",
+                                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                                        "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["total_frames"])}
+                                    }
                                 }
                             })
-                            curr_a_track_head = ci_start
+                            curr_a_track_head = ci_start + seg_dur
 
-                        a_children.append({
-                            "OTIO_SCHEMA": "Clip.1",
-                            "metadata": {},
-                            "name": clip["name"],
-                            "source_range": {
-                                "OTIO_SCHEMA": "TimeRange.1",
-                                "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(src_in)},
-                                "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(seg_dur)}
-                            },
-                            "media_reference": {
-                                "OTIO_SCHEMA": "ExternalReference.1",
-                                "metadata": {},
-                                "target_url": _path_to_fileurl(clip["path"]),
-                                "available_range": {
-                                    "OTIO_SCHEMA": "TimeRange.1",
-                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
-                                    "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["total_frames"])}
-                                }
-                            }
-                        })
-                        curr_a_track_head = ci_start + seg_dur
+                    dest_pos += op_dur
 
-                dest_pos += op_dur
+                if curr_a_track_head < total_dest_frames:
+                    a_children.append({
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "Gap",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
+                            "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(total_dest_frames - curr_a_track_head)}
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": True
+                    })
 
-            tracks_children.append({
-                "OTIO_SCHEMA": "Track.1",
+                tracks_children.append({
+                    "OTIO_SCHEMA": "Track.1",
+                    "metadata": {},
+                    "name": f"A{t_idx}",
+                    "kind": "Audio",
+                    "source_range": None,
+                    "effects": [],
+                    "markers": [],
+                    "enabled": True
+,
+                    "children": a_children
+                })
+
+            otio_doc = {
+                "OTIO_SCHEMA": "Timeline.1",
                 "metadata": {},
-                "name": f"A{t_idx}",
-                "kind": "Audio",
-                "children": a_children
-            })
-
-        otio_doc = {
-            "OTIO_SCHEMA": "Timeline.1",
-            "metadata": {},
-            "name": timeline_name,
-            "global_start_time": {
-                "OTIO_SCHEMA": "RationalTime.1",
-                "rate": fps,
-                "value": 0.0
-            },
-            "tracks": {
-                "OTIO_SCHEMA": "Stack.1",
-                "metadata": {},
-                "name": "tracks",
-                "children": tracks_children
+                "name": timeline_name,
+                "global_start_time": None,
+                "tracks": {
+                    "OTIO_SCHEMA": "Stack.1",
+                    "metadata": {},
+                    "name": "tracks",
+                    "source_range": None,
+                    "effects": [],
+                    "markers": [],
+                    "enabled": True,
+                    "children": tracks_children
+                }
             }
-        }
 
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(otio_doc, f, indent=2)
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(otio_doc, f, indent=2)
 
-        log_info(f"build_standalone_otio: wrote {output_path}")
-        return True, output_path
+            log_info(f"build_standalone_otio: wrote {output_path} via json fallback")
+            return True, output_path
 
     except Exception as e:
         import traceback
@@ -1422,8 +1592,10 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                             timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
     """
     Builds an Apple Final Cut Pro X XML (.fcpxml).
-    Conforms video on V1 and audio on A1/A2 with synchronized offsets and format matching,
-    preventing DaVinci Resolve from scattering cut items into separate audio tracks.
+    Conforms video on V1 and audio on A1/A2 with synchronized offsets and format matching.
+    When preserve_audio_tracks is enabled, assigns distinct sub-roles to each audio channel
+    (dialogue.dialogue-1 -> A1, dialogue.dialogue-2 -> A2), ensuring clean track separation
+    without scattering cut pieces into individual extra tracks.
     """
     try:
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
@@ -1493,6 +1665,7 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
 
                     aid = asset_map.get(c["path"], "r2")
                     has_vid = bool(c.get("has_video"))
+                    audio_ch = max(1, int(c.get("audio_channels", 2)))
 
                     clip_kwargs = {
                         "ref": aid,
@@ -1500,11 +1673,17 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                         "offset": to_time_str(ci_start),
                         "duration": to_time_str(seg_dur),
                         "start": to_time_str(src_in),
-                        "audioRole": "dialogue"
                     }
+                    if not preserve_audio_tracks:
+                        clip_kwargs["audioRole"] = "dialogue"
                     if has_vid:
                         clip_kwargs["format"] = "r1"
-                    ET.SubElement(spine, "asset-clip", **clip_kwargs)
+
+                    clip_elem = ET.SubElement(spine, "asset-clip", **clip_kwargs)
+
+                    if preserve_audio_tracks:
+                        for ch_idx in range(1, audio_ch + 1):
+                            ET.SubElement(clip_elem, "audio-channel-source", srcCh=str(ch_idx), role=f"dialogue.dialogue-{ch_idx}")
 
             dest_pos += op_dur
 
@@ -1524,11 +1703,10 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
                          timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
     """
     Builds a CMX 3600 Edit Decision List (.edl).
-    Uses distinct reel identifiers and standard CMX conformity comments (* FROM CLIP NAME / * SOURCE FILE)
-    with dedicated video and audio event lines.
+    Uses industry-standard AX reel identifier and clean CMX conformity comments (* FROM CLIP NAME)
+    with synchronized track codes (B for Both video+audio, AA for audio-only, V for video-only).
     """
     try:
-        import re
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
         if not kept_ops:
             return False, "Brak operacji cięcia do wyeksportowania."
@@ -1538,14 +1716,6 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
             "FCM: NON-DROP FRAME",
             ""
         ]
-
-        # Map each clip path to a unique 8-character reel identifier
-        clip_reels = {}
-        for idx, c in enumerate(clips_info):
-            stem = os.path.splitext(os.path.basename(c["path"]))[0]
-            clean_stem = re.sub(r'[^A-Za-z0-9]', '', stem).upper()[:5]
-            reel = f"{idx+1:02d}_{clean_stem}"[:8]
-            clip_reels[c["path"]] = reel
 
         event_idx = 1
         dest_pos = 0
@@ -1572,37 +1742,27 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
                     dst_in_tc = _format_timecode_edl(ci_start, fps)
                     dst_out_tc = _format_timecode_edl(ci_end, fps)
 
-                    reel = clip_reels.get(c["path"], f"{event_idx:03d}")
                     clip_name = os.path.basename(c["path"])
                     has_video = bool(c.get("has_video"))
                     audio_ch = max(1, int(c.get("audio_channels", 2)))
 
+                    # Determine track code in CMX 3600:
+                    # 'B'  = Both Video and Audio channels (synchronized)
+                    # 'V'  = Video only
+                    # 'AA' = Audio stereo / multi
+                    # 'A'  = Audio mono
                     if has_video:
-                        lines.append(f"{event_idx:03d}  {reel:<8} V     C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
-                        lines.append(f"* FROM CLIP NAME: {clip_name}")
-                        lines.append(f"* SOURCE FILE: {c['path']}")
-                        lines.append("")
-                        event_idx += 1
-
-                    if preserve_audio_tracks:
-                        lines.append(f"{event_idx:03d}  {reel:<8} A     C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
-                        lines.append(f"* FROM CLIP NAME: {clip_name}")
-                        lines.append(f"* SOURCE FILE: {c['path']}")
-                        lines.append("")
-                        event_idx += 1
-
-                        if audio_ch >= 2:
-                            lines.append(f"{event_idx:03d}  {reel:<8} A2    C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
-                            lines.append(f"* FROM CLIP NAME: {clip_name}")
-                            lines.append(f"* SOURCE FILE: {c['path']}")
-                            lines.append("")
-                            event_idx += 1
+                        trk = "B"
+                    elif audio_ch >= 2:
+                        trk = "AA"
                     else:
-                        lines.append(f"{event_idx:03d}  {reel:<8} AA    C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
-                        lines.append(f"* FROM CLIP NAME: {clip_name}")
-                        lines.append(f"* SOURCE FILE: {c['path']}")
-                        lines.append("")
-                        event_idx += 1
+                        trk = "A"
+
+                    # 001  AX       B     C        00:00:00:00 00:00:05:00 00:00:00:00 00:00:05:00
+                    lines.append(f"{event_idx:03d}  AX       {trk:<5} C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
+                    lines.append(f"* FROM CLIP NAME: {clip_name}")
+                    lines.append("")
+                    event_idx += 1
 
             dest_pos += op_dur
 
@@ -1613,5 +1773,6 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
         return True, output_path
     except Exception as e:
         return False, str(e)
+
 
 
