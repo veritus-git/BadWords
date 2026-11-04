@@ -121,15 +121,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             try:
                 cmd = [
                     "ffprobe", "-v", "error",
-                    "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate,channels",
+                    "-show_entries", "format=duration:format_tags=time_reference,timecode:stream=codec_type,width,height,r_frame_rate,channels,sample_rate:stream_tags=timecode",
                     "-of", "json", fp
                 ]
                 res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, **sp_kwargs)
+                start_tc_sec = 0.0
                 if res.returncode == 0 and res.stdout.strip():
                     p_data = json.loads(res.stdout.strip())
                     fmt = p_data.get("format", {})
                     if fmt.get("duration"):
                         dur = max(0.1, float(fmt["duration"]))
+                    sr = 48000
                     for s in p_data.get("streams", []):
                         if s.get("codec_type") == "video" and not has_video:
                             has_video = True
@@ -143,8 +145,34 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                                 fps = float(rf)
                         elif s.get("codec_type") == "audio":
                             audio_channels = max(1, int(s.get("channels", 2)))
+                            if s.get("sample_rate"):
+                                try: sr = int(s["sample_rate"])
+                                except Exception: pass
+
+                    # Extract start timecode: BWF time_reference or timecode tag
+                    fmt_tags = fmt.get("tags", {})
+                    time_ref = fmt_tags.get("time_reference")
+                    if time_ref and str(time_ref).isdigit():
+                        start_tc_sec = int(time_ref) / float(sr)
+                    else:
+                        tc_str = fmt_tags.get("timecode")
+                        if not tc_str:
+                            for s in p_data.get("streams", []):
+                                stags = s.get("tags", {})
+                                if stags.get("timecode"):
+                                    tc_str = stags["timecode"]
+                                    break
+                        if tc_str and ":" in tc_str:
+                            try:
+                                parts = tc_str.replace(";", ":").split(":")
+                                if len(parts) == 4:
+                                    h, m, s, f = map(float, parts)
+                                    eff_fps = fps if fps > 0 else 24.0
+                                    start_tc_sec = h * 3600.0 + m * 60.0 + s + (f / eff_fps)
+                            except Exception:
+                                pass
             except Exception:
-                pass
+                start_tc_sec = 0.0
 
             clips_info.append({
                 "index": idx,
@@ -155,7 +183,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 "fps": fps,
                 "width": width,
                 "height": height,
-                "audio_channels": audio_channels
+                "audio_channels": audio_channels,
+                "start_tc_sec": start_tc_sec
             })
             accum_offset += dur
 
