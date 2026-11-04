@@ -533,5 +533,12 @@
   "msg_export_failed": "Timeline konnte nicht exportiert werden:",
   "lbl_res_original": "Original",
   "tt_remove_clip_from_queue": "Diesen Clip aus der Warteschlange entfernen",
-  "tt_clear_file": "Datei löschen / Andere auswählen"
+  "tt_clear_file": "Datei löschen / Andere auswählen",
+  "dlg_clip_linking": "Clip-Verknüpfung",
+  "dlg_link_av": "Video & Audio verknüpfen",
+  "dlg_link_all": "Alle Spuren verknüpfen",
+  "lbl_link_av_clips": "Passendes Audio & Video verknüpfen",
+  "tt_link_av_clips": "Verknüpft Audiospuren automatisch mit dem entsprechenden Videoclip derselben Datei auf der DaVinci Resolve-Timeline.",
+  "lbl_link_all_cut_tracks": "Alle Spuren im Schnitt verknüpfen",
+  "tt_link_all_cut_tracks": "Verknüpft alle Video- und Audiospuren an jeder Schnittstelle miteinander."
 }

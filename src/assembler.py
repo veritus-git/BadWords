@@ -1007,58 +1007,11 @@ def _format_timecode_edl(frame, fps: float) -> str:
     return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
 
 
-def _probe_file_start_tc(file_path: str, fps: float = 24.0) -> float:
-    """
-    Extracts the media file's start timecode in seconds using ffprobe.
-    Supports Broadcast Wave (BWF) time_reference chunk, QuickTime/MP4/MXF
-    timecode track tags, and container-level format timecode.
-    Returns 0.0 if no non-zero timecode is found.
-    """
-    if not file_path or not os.path.isfile(file_path):
-        return 0.0
-    try:
-        import subprocess, json
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format_tags=time_reference,timecode:stream=codec_type,sample_rate:stream_tags=timecode",
-            "-of", "json", file_path
-        ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3)
-        if res.returncode != 0 or not res.stdout.strip():
-            return 0.0
-        data = json.loads(res.stdout)
-        fmt_tags = data.get("format", {}).get("tags", {})
-        time_ref = fmt_tags.get("time_reference")
-        if time_ref and str(time_ref).isdigit():
-            sr = 48000
-            for s in data.get("streams", []):
-                if s.get("codec_type") == "audio" and s.get("sample_rate"):
-                    try: sr = int(s["sample_rate"])
-                    except Exception: pass
-                    break
-            return int(time_ref) / float(sr)
-        tc_str = fmt_tags.get("timecode")
-        if not tc_str:
-            for s in data.get("streams", []):
-                stags = s.get("tags", {})
-                if stags.get("timecode"):
-                    tc_str = stags["timecode"]
-                    break
-        if tc_str and ":" in tc_str:
-            parts = tc_str.replace(";", ":").split(":")
-            if len(parts) == 4:
-                h, m, s, f = map(float, parts)
-                eff_fps = fps if fps > 0 else 24.0
-                return h * 3600.0 + m * 60.0 + s + (f / eff_fps)
-    except Exception:
-        pass
-    return 0.0
-
-
 def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                               fps: float = 24.0, width: int = 1920, height: int = 1080,
                               preserve_audio_tracks: bool = True,
-                              timeline_name: str = "BadWords Sequence") -> tuple[bool, str]:
+                              timeline_name: str = "BadWords Sequence",
+                              link_all_tracks: bool = False) -> tuple[bool, str]:
     """
     Builds a frame-accurate Final Cut Pro 7 XML (<xmeml version="5">) for standalone files.
     References only original source files on disk (never proxies).
@@ -1081,22 +1034,15 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
         for c in clips_info:
             start_f = int(round(float(c.get("offset", 0.0)) * fps))
             dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
-            start_tc_sec = c.get("start_tc_sec")
-            if (start_tc_sec is None or start_tc_sec == 0.0) and c.get("path") and os.path.isfile(c["path"]):
-                start_tc_sec = _probe_file_start_tc(c["path"], fps)
-            start_tc_sec = float(start_tc_sec or 0.0)
-            start_tc_frames = int(round(start_tc_sec * fps))
 
             processed_clips.append({
                 "path": c["path"],
                 "name": os.path.basename(c["path"]),
                 "rel_start": start_f,
                 "rel_end": start_f + dur_f,
-                "src_in": start_tc_frames,
-                "src_out": start_tc_frames + dur_f,
+                "src_in": 0,
+                "src_out": dur_f,
                 "total_frames": dur_f,
-                "start_tc_frames": start_tc_frames,
-                "start_tc_sec": start_tc_sec,
                 "has_video": bool(c.get("has_video", False)),
                 "audio_channels": max(1, int(c.get("audio_channels", 2))),
             })
@@ -1152,26 +1098,15 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
 
                 # Find clip total duration in frames and metadata
                 match_dur = 0
-                clip_start_tc = 0
                 clip_has_vid = False
                 clip_ch = 2
                 for pc in processed_clips:
                     if pc["path"] == fp:
                         match_dur = max(match_dur, pc["total_frames"])
-                        clip_start_tc = pc.get("start_tc_frames", 0)
                         clip_has_vid = pc.get("has_video", False)
                         clip_ch = pc.get("audio_channels", 2)
                 if match_dur > 0:
                     ET.SubElement(file_el, "duration").text = str(match_dur)
-
-                if clip_start_tc > 0:
-                    tc_el = ET.SubElement(file_el, "timecode")
-                    r_tc = ET.SubElement(tc_el, "rate")
-                    ET.SubElement(r_tc, "timebase").text = str(timebase)
-                    ET.SubElement(r_tc, "ntsc").text = ntsc_str
-                    ET.SubElement(tc_el, "string").text = _format_timecode_edl(clip_start_tc, fps)
-                    ET.SubElement(tc_el, "frame").text = str(clip_start_tc)
-                    ET.SubElement(tc_el, "displayformat").text = "NDF"
 
                 media_sub = ET.SubElement(file_el, "media")
                 if clip_has_vid:
@@ -1200,7 +1135,7 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                     ov_end = min(op["e"], clip["rel_end"])
                     if ov_end > ov_start and clip["has_video"]:
                         offset_in_clip = ov_start - clip["rel_start"]
-                        src_in = clip["src_in"] + offset_in_clip
+                        src_in = offset_in_clip
                         seg_dur = ov_end - ov_start
                         src_out = src_in + seg_dur
                         op_offset = ov_start - op["s"]
@@ -1220,7 +1155,8 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         ET.SubElement(ci, "out").text = str(src_out)
                         make_file_elem(ci, clip["path"])
 
-                        links_by_key[(op_idx, clip_idx)].append({
+                        l_key = op_idx if link_all_tracks else (op_idx, clip_idx)
+                        links_by_key[l_key].append({
                             "id": f"clipitem-v1-{ci_counter_v[0]}",
                             "mediatype": "video",
                             "trackindex": 1,
@@ -1277,7 +1213,7 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         src_ch = t_idx if t_idx <= clip_ch else (1 if clip_ch == 1 else ((t_idx - 1) % clip_ch + 1))
 
                         offset_in_clip = ov_start - clip["rel_start"]
-                        src_in = clip["src_in"] + offset_in_clip
+                        src_in = offset_in_clip
                         seg_dur = ov_end - ov_start
                         src_out = src_in + seg_dur
                         op_offset = ov_start - op["s"]
@@ -1308,8 +1244,9 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         ET.SubElement(st, "mediatype").text = "audio"
                         ET.SubElement(st, "trackindex").text = str(src_ch if preserve_audio_tracks else 1)
 
-                        if clip["has_video"]:
-                            links_by_key[(op_idx, clip_idx)].append({
+                        if clip["has_video"] or link_all_tracks:
+                            l_key = op_idx if link_all_tracks else (op_idx, clip_idx)
+                            links_by_key[l_key].append({
                                 "id": f"clipitem-a{t_idx}-{track_ci_idx}",
                                 "mediatype": "audio",
                                 "trackindex": t_idx,
@@ -1384,22 +1321,15 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
         for c in clips_info:
             start_f = int(round(float(c.get("offset", 0.0)) * fps))
             dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
-            start_tc_sec = c.get("start_tc_sec")
-            if (start_tc_sec is None or start_tc_sec == 0.0) and c.get("path") and os.path.isfile(c["path"]):
-                start_tc_sec = _probe_file_start_tc(c["path"], fps)
-            start_tc_sec = float(start_tc_sec or 0.0)
-            start_tc_frames = int(round(start_tc_sec * fps))
 
             processed_clips.append({
                 "path": c["path"],
                 "name": os.path.basename(c["path"]),
                 "rel_start": start_f,
                 "rel_end": start_f + dur_f,
-                "src_in": start_tc_frames,
-                "src_out": start_tc_frames + dur_f,
+                "src_in": 0,
+                "src_out": dur_f,
                 "total_frames": dur_f,
-                "start_tc_frames": start_tc_frames,
-                "start_tc_sec": start_tc_sec,
                 "has_video": bool(c.get("has_video", False)),
                 "audio_channels": max(1, int(c.get("audio_channels", 2))),
             })
@@ -1423,7 +1353,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                         ov_end = min(op["e"], clip["rel_end"])
                         if ov_end > ov_start and clip["has_video"]:
                             offset_in_clip = ov_start - clip["rel_start"]
-                            src_in = clip["src_in"] + offset_in_clip
+                            src_in = offset_in_clip
                             seg_dur = ov_end - ov_start
                             op_offset = ov_start - op["s"]
                             ci_start = dest_pos + op_offset
@@ -1447,7 +1377,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                                 media_reference=otio.schema.ExternalReference(
                                     target_url=clip["path"],
                                     available_range=otio.opentime.TimeRange(
-                                        start_time=otio.opentime.RationalTime(clip["start_tc_frames"], fps),
+                                        start_time=otio.opentime.RationalTime(0, fps),
                                         duration=otio.opentime.RationalTime(clip["total_frames"], fps)
                                     )
                                 )
@@ -1479,7 +1409,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                     ov_end = min(op["e"], clip["rel_end"])
                     if ov_end > ov_start:
                         offset_in_clip = ov_start - clip["rel_start"]
-                        src_in = clip["src_in"] + offset_in_clip
+                        src_in = offset_in_clip
                         seg_dur = ov_end - ov_start
                         op_offset = ov_start - op["s"]
                         ci_start = dest_pos + op_offset
@@ -1503,7 +1433,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                             media_reference=otio.schema.ExternalReference(
                                 target_url=clip["path"],
                                 available_range=otio.opentime.TimeRange(
-                                    start_time=otio.opentime.RationalTime(clip["start_tc_frames"], fps),
+                                    start_time=otio.opentime.RationalTime(0, fps),
                                     duration=otio.opentime.RationalTime(clip["total_frames"], fps)
                                 )
                             )
@@ -1547,7 +1477,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                         ov_end = min(op["e"], clip["rel_end"])
                         if ov_end > ov_start and clip["has_video"]:
                             offset_in_clip = ov_start - clip["rel_start"]
-                            src_in = clip["src_in"] + offset_in_clip
+                            src_in = offset_in_clip
                             seg_dur = ov_end - ov_start
                             op_offset = ov_start - op["s"]
                             ci_start = dest_pos + op_offset
@@ -1588,7 +1518,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                                     "target_url": clip["path"],
                                     "available_range": {
                                         "OTIO_SCHEMA": "TimeRange.1",
-                                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["start_tc_frames"])},
+                                        "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
                                         "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["total_frames"])}
                                     }
                                 }
@@ -1636,7 +1566,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                     ov_end = min(op["e"], clip["rel_end"])
                     if ov_end > ov_start:
                         offset_in_clip = ov_start - clip["rel_start"]
-                        src_in = clip["src_in"] + offset_in_clip
+                        src_in = offset_in_clip
                         seg_dur = ov_end - ov_start
                         op_offset = ov_start - op["s"]
                         ci_start = dest_pos + op_offset
@@ -1677,7 +1607,7 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                                 "target_url": clip["path"],
                                 "available_range": {
                                     "OTIO_SCHEMA": "TimeRange.1",
-                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["start_tc_frames"])},
+                                    "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": 0.0},
                                     "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": fps, "value": float(clip["total_frames"])}
                                 }
                             }
@@ -1782,12 +1712,6 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
             has_vid = bool(c.get("has_video"))
             ch = max(1, int(c.get("audio_channels", 2)))
 
-            start_tc_sec = c.get("start_tc_sec")
-            if (start_tc_sec is None or start_tc_sec == 0.0) and c.get("path") and os.path.isfile(c["path"]):
-                start_tc_sec = _probe_file_start_tc(c["path"], fps)
-            start_tc_sec = float(start_tc_sec or 0.0)
-            start_tc_frames = int(round(start_tc_sec * fps))
-
             asset_attribs = {
                 "id": aid,
                 "name": os.path.basename(c["path"]),
@@ -1798,8 +1722,6 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                 "audioSources": "1",
                 "audioChannels": str(ch)
             }
-            if start_tc_frames > 0:
-                asset_attribs["start"] = to_time_str(start_tc_frames)
             if has_vid:
                 asset_attribs["format"] = "r1"
             ET.SubElement(resources, "asset", **asset_attribs)
@@ -1820,12 +1742,6 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                 dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
                 rel_end = start_f + dur_f
 
-                start_tc_sec = c.get("start_tc_sec")
-                if (start_tc_sec is None or start_tc_sec == 0.0) and c.get("path") and os.path.isfile(c["path"]):
-                    start_tc_sec = _probe_file_start_tc(c["path"], fps)
-                start_tc_sec = float(start_tc_sec or 0.0)
-                start_tc_frames = int(round(start_tc_sec * fps))
-
                 ov_start = max(op["s"], start_f)
                 ov_end = min(op["e"], rel_end)
                 if ov_end > ov_start:
@@ -1843,13 +1759,9 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                         "name": os.path.basename(c["path"]),
                         "offset": to_time_str(ci_start),
                         "duration": to_time_str(seg_dur),
-                        "start": to_time_str(start_tc_frames + src_in),
+                        "start": to_time_str(src_in),
                         "audioRole": "dialogue"
                     }
-                    if has_vid:
-                        clip_kwargs["format"] = "r1"
-
-                    ET.SubElement(spine, "asset-clip", **clip_kwargs)
                     if has_vid:
                         clip_kwargs["format"] = "r1"
 
@@ -1900,14 +1812,8 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
                 ov_start = max(op["s"], start_f)
                 ov_end = min(op["e"], rel_end)
                 if ov_end > ov_start:
-                    start_tc_sec = c.get("start_tc_sec")
-                    if (start_tc_sec is None or start_tc_sec == 0.0) and c.get("path") and os.path.isfile(c["path"]):
-                        start_tc_sec = _probe_file_start_tc(c["path"], fps)
-                    start_tc_sec = float(start_tc_sec or 0.0)
-                    start_tc_frames = int(round(start_tc_sec * fps))
-
                     seg_dur = ov_end - ov_start
-                    src_in = start_tc_frames + (ov_start - start_f)
+                    src_in = ov_start - start_f
                     src_out = src_in + seg_dur
                     op_offset = ov_start - op["s"]
                     ci_start = dest_pos + op_offset

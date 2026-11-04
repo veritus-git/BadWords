@@ -533,5 +533,12 @@
   "msg_export_failed": "Exporteren van tijdlijn mislukt:",
   "lbl_res_original": "Origineel",
   "tt_remove_clip_from_queue": "Verwijder deze clip uit de wachtrij",
-  "tt_clear_file": "Bestand wissen / Kies een ander"
+  "tt_clear_file": "Bestand wissen / Kies een ander",
+  "dlg_clip_linking": "Clipkoppeling",
+  "dlg_link_av": "Video en audio koppelen",
+  "dlg_link_all": "Alle tracks koppelen",
+  "lbl_link_av_clips": "Bijpassende audio & video koppelen",
+  "tt_link_av_clips": "Koppelt audiotracks automatisch aan de bijbehorende videoclip van hetzelfde bestand op de DaVinci Resolve-tijdlijn.",
+  "lbl_link_all_cut_tracks": "Alle tracks in de snede koppelen",
+  "tt_link_all_cut_tracks": "Koppelt alle video- en audiotracks die bij elke snede zijn geknipt samen."
 }

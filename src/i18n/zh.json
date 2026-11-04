@@ -533,5 +533,12 @@
   "msg_export_failed": "导出时间轴失败：",
   "lbl_res_original": "原始",
   "tt_remove_clip_from_queue": "从队列中移除此剪辑",
-  "tt_clear_file": "清除文件 / 选择其他文件"
+  "tt_clear_file": "清除文件 / 选择其他文件",
+  "dlg_clip_linking": "片段链接",
+  "dlg_link_av": "链接视频与音频",
+  "dlg_link_all": "链接所有轨道",
+  "lbl_link_av_clips": "链接匹配的音频与视频",
+  "tt_link_av_clips": "在 DaVinci Resolve 时间线上自动将音频轨道与同一文件的对应视频片段链接。",
+  "lbl_link_all_cut_tracks": "链接剪切处的所有轨道",
+  "tt_link_all_cut_tracks": "将每个剪切点处的所有视频和音频轨道组合链接在一起。"
 }

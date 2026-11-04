@@ -2055,7 +2055,7 @@ class ResolveHandler:
             log_error(f"filter_xml_tracks error: {e}")
             return False
 
-    def apply_ops_cuts_to_timeline_xml(self, xml_path, ops, output_path, audio_only_mode=False, tl_start_frame=None, audio_track_filter=None, video_track_filter=None, preserve_track_order=False):
+    def apply_ops_cuts_to_timeline_xml(self, xml_path, ops, output_path, audio_only_mode=False, tl_start_frame=None, audio_track_filter=None, video_track_filter=None, preserve_track_order=False, link_av_clips=True, link_all_tracks=False):
         """
         Takes Resolve's NATIVE FCP7 XML export of a timeline and applies the
         BadWords op-cuts to it, producing a new XML ready for import.
@@ -2195,118 +2195,153 @@ class ResolveHandler:
             color_schedule = {}  # dest_start → color|None
             ci_id_counter = [0]
             emitted_fids = set()
+            from collections import defaultdict
+            links_map = defaultdict(list)
 
-            for track in root.iter('track'):
-                original_items = [ci for ci in track if ci.tag in ('clipitem', 'generatoritem')]
-                for ci in original_items:
-                    track.remove(ci)
+            for sec_name in ('video', 'audio'):
+                is_vid_sec = (sec_name == 'video')
+                for sec_el in root.iter(sec_name):
+                    tracks = list(sec_el.findall('track'))
+                    for track_idx_0, track in enumerate(tracks):
+                        track_idx = track_idx_0 + 1
+                        track_ci_counter = 0
+                        original_items = [ci for ci in track if ci.tag in ('clipitem', 'generatoritem')]
+                        for ci in original_items:
+                            track.remove(ci)
 
-                has_normal_clips = any(item.find('file') is not None for item in original_items)
+                        has_normal_clips = any(item.find('file') is not None for item in original_items)
 
-                for ci in original_items:
-                    if has_normal_clips and ci.find('sequence') is not None:
-                        continue
+                        for ci in original_items:
+                            if has_normal_clips and ci.find('sequence') is not None:
+                                continue
 
-                    s_el  = ci.find('start')
-                    e_el  = ci.find('end')
-                    in_el = ci.find('in')
-                    out_el = ci.find('out')
+                            s_el  = ci.find('start')
+                            e_el  = ci.find('end')
+                            in_el = ci.find('in')
+                            out_el = ci.find('out')
 
-                    if s_el is None or e_el is None:
-                        continue
-                    try:
-                        abs_s = int(s_el.text)
-                        abs_e = int(e_el.text)
-                    except (ValueError, TypeError):
-                        continue
+                            if s_el is None or e_el is None:
+                                continue
+                            try:
+                                abs_s = int(s_el.text)
+                                abs_e = int(e_el.text)
+                            except (ValueError, TypeError):
+                                continue
 
-                    # Convert to 0-based
-                    src_s = abs_s - xml_base_offset
-                    src_e = abs_e - xml_base_offset
-                    orig_dur = src_e - src_s
+                            # Convert to 0-based
+                            src_s = abs_s - xml_base_offset
+                            src_e = abs_e - xml_base_offset
+                            orig_dur = src_e - src_s
 
-                    # Source in/out (media head offsets)
-                    try:    src_in  = int(in_el.text)  if in_el  is not None and in_el.text  else 0
-                    except (ValueError, AttributeError) as e:
-                        log_error(f"apply_ops_cuts: failed to parse src_in '{in_el.text if in_el is not None else None}': {e}")
-                        src_in  = 0
-                    try:    src_out = int(out_el.text) if out_el is not None and out_el.text else src_in + orig_dur
-                    except (ValueError, AttributeError) as e:
-                        log_error(f"apply_ops_cuts: failed to parse src_out '{out_el.text if out_el is not None else None}': {e}")
-                        src_out = src_in + orig_dur
+                            # Source in/out (media head offsets)
+                            try:    src_in  = int(in_el.text)  if in_el  is not None and in_el.text  else 0
+                            except (ValueError, AttributeError) as e:
+                                log_error(f"apply_ops_cuts: failed to parse src_in '{in_el.text if in_el is not None else None}': {e}")
+                                src_in  = 0
+                            try:    src_out = int(out_el.text) if out_el is not None and out_el.text else src_in + orig_dur
+                            except (ValueError, AttributeError) as e:
+                                log_error(f"apply_ops_cuts: failed to parse src_out '{out_el.text if out_el is not None else None}': {e}")
+                                src_out = src_in + orig_dur
 
-                    # Find all op-overlaps for this clipitem
-                    for i, op in enumerate(sorted_ops):
-                        overlap_s = max(src_s, op['s'])
-                        overlap_e = min(src_e, op['e'])
-                        if overlap_e <= overlap_s:
-                            continue
+                            # Find all op-overlaps for this clipitem
+                            for i, op in enumerate(sorted_ops):
+                                overlap_s = max(src_s, op['s'])
+                                overlap_e = min(src_e, op['e'])
+                                if overlap_e <= overlap_s:
+                                    continue
 
-                        clip_offset = overlap_s - src_s
-                        seg_dur     = overlap_e - overlap_s
+                                clip_offset = overlap_s - src_s
+                                seg_dur     = overlap_e - overlap_s
 
-                        new_dest_rel = dest_offsets[i] + (overlap_s - op['s'])
-                        new_dest_s = new_dest_rel + xml_base_offset
-                        new_dest_e = new_dest_s + seg_dur
-                        new_src_in  = src_in  + clip_offset
-                        new_src_out = new_src_in + seg_dur
+                                new_dest_rel = dest_offsets[i] + (overlap_s - op['s'])
+                                new_dest_s = new_dest_rel + xml_base_offset
+                                new_dest_e = new_dest_s + seg_dur
+                                new_src_in  = src_in  + clip_offset
+                                new_src_out = new_src_in + seg_dur
 
-                        new_ci = copy.deepcopy(ci)
-                        ci_id_counter[0] += 1
-                        new_ci.set('id', f"bw-ci-{ci_id_counter[0]}")
+                                new_ci = copy.deepcopy(ci)
+                                ci_id_counter[0] += 1
+                                track_ci_counter += 1
+                                new_ci_id = f"bw-ci-{ci_id_counter[0]}"
+                                new_ci.set('id', new_ci_id)
 
-                        # Remove stale links referencing original uncut IDs
-                        for l in list(new_ci.findall('link')):
-                            new_ci.remove(l)
+                                # Remove stale links referencing original uncut IDs
+                                for l in list(new_ci.findall('link')):
+                                    new_ci.remove(l)
 
-                        orig_ci_dur = ci.findtext('duration')
-                        def _set(el_name, val):
-                            el = new_ci.find(el_name)
-                            if el is None:
-                                el = ET.SubElement(new_ci, el_name)
-                            el.text = str(val)
+                                orig_ci_dur = ci.findtext('duration')
+                                def _set(el_name, val):
+                                    el = new_ci.find(el_name)
+                                    if el is None:
+                                        el = ET.SubElement(new_ci, el_name)
+                                    el.text = str(val)
 
-                        _set('start',    new_dest_s)
-                        _set('end',      new_dest_e)
-                        if orig_ci_dur:
-                            _set('duration', orig_ci_dur)
-                        else:
-                            _set('duration', seg_dur)
-                        _set('in',       new_src_in)
-                        _set('out',      new_src_out)
-
-                        file_el = new_ci.find('file')
-                        if file_el is not None:
-                            fid = file_el.get('id')
-                            reg = file_registry.get(fid)
-                            if reg and reg['has_valid_file']:
-                                # REAL PHYSICAL MEDIA FILE on disk — full master definition once, then shallow ref
-                                new_ci.tag = 'clipitem'
-                                if fid not in emitted_fids:
-                                    emitted_fids.add(fid)
-                                    new_ci.remove(file_el)
-                                    new_ci.append(copy.deepcopy(reg['elem']))
+                                _set('start',    new_dest_s)
+                                _set('end',      new_dest_e)
+                                if orig_ci_dur:
+                                    _set('duration', orig_ci_dur)
                                 else:
-                                    for c in list(file_el):
-                                        file_el.remove(c)
-                            elif reg:
-                                new_ci.tag = 'clipitem'
-                                if fid not in emitted_fids:
-                                    emitted_fids.add(fid)
-                                    new_ci.remove(file_el)
-                                    new_ci.append(copy.deepcopy(reg['elem']))
-                                else:
-                                    for c in list(file_el):
-                                        file_el.remove(c)
-                            else:
-                                # Non-physical file (compound clip, generator, title, solid)
-                                new_ci.tag = 'generatoritem'
-                                new_ci.remove(file_el)
-                                for st in list(new_ci.findall('sourcetrack')):
-                                    new_ci.remove(st)
+                                    _set('duration', seg_dur)
+                                _set('in',       new_src_in)
+                                _set('out',      new_src_out)
 
-                        track.append(new_ci)
-                        color_schedule[new_dest_rel] = op_color_for_src(op['s'])
+                                fid = None
+                                file_el = new_ci.find('file')
+                                if file_el is not None:
+                                    fid = file_el.get('id')
+                                    reg = file_registry.get(fid)
+                                    if reg and reg['has_valid_file']:
+                                        # REAL PHYSICAL MEDIA FILE on disk — full master definition once, then shallow ref
+                                        new_ci.tag = 'clipitem'
+                                        if fid not in emitted_fids:
+                                            emitted_fids.add(fid)
+                                            new_ci.remove(file_el)
+                                            new_ci.append(copy.deepcopy(reg['elem']))
+                                        else:
+                                            for c in list(file_el):
+                                                file_el.remove(c)
+                                    elif reg:
+                                        new_ci.tag = 'clipitem'
+                                        if fid not in emitted_fids:
+                                            emitted_fids.add(fid)
+                                            new_ci.remove(file_el)
+                                            new_ci.append(copy.deepcopy(reg['elem']))
+                                        else:
+                                            for c in list(file_el):
+                                                file_el.remove(c)
+                                    else:
+                                        # Non-physical file (compound clip, generator, title, solid)
+                                        new_ci.tag = 'generatoritem'
+                                        new_ci.remove(file_el)
+                                        for st in list(new_ci.findall('sourcetrack')):
+                                            new_ci.remove(st)
+
+                                track.append(new_ci)
+                                color_schedule[new_dest_rel] = op_color_for_src(op['s'])
+
+                                l_key = i if link_all_tracks else (i, fid if fid else f"nonfile_{new_ci_id}")
+                                links_map[l_key].append({
+                                    'elem': new_ci,
+                                    'id': new_ci_id,
+                                    'mediatype': 'video' if is_vid_sec else 'audio',
+                                    'trackindex': track_idx,
+                                    'clipindex': track_ci_counter,
+                                    'file_id': fid
+                                })
+
+            # ── 3.2. Rebuild XML Links between matching Video and Audio ───────────
+            if link_av_clips or link_all_tracks:
+                for group_key, items in links_map.items():
+                    has_v = any(it['mediatype'] == 'video' for it in items)
+                    has_a = any(it['mediatype'] == 'audio' for it in items)
+                    if has_v and has_a and len(items) > 1:
+                        for item in items:
+                            for target in items:
+                                link_el = ET.SubElement(item['elem'], 'link')
+                                ET.SubElement(link_el, 'linkclipref').text = target['id']
+                                ET.SubElement(link_el, 'mediatype').text = target['mediatype']
+                                ET.SubElement(link_el, 'trackindex').text = str(target['trackindex'])
+                                ET.SubElement(link_el, 'clipindex').text = str(target['clipindex'])
 
             # ── 3.5. Track Packing (when preserve_track_order is False) ───────────
             if not preserve_track_order:

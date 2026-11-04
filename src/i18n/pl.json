@@ -533,5 +533,12 @@
   "msg_export_failed": "Nie udało się wyeksportować osi czasu:",
   "lbl_res_original": "Oryginalna",
   "tt_remove_clip_from_queue": "Usuń ten klip z kolejki",
-  "tt_clear_file": "Wyczyść plik / Wybierz inny"
+  "tt_clear_file": "Wyczyść plik / Wybierz inny",
+  "dlg_clip_linking": "Powiązania klipów",
+  "dlg_link_av": "Linkuj Video z Audio",
+  "dlg_link_all": "Zepnij wszystkie ścieżki",
+  "lbl_link_av_clips": "Linkuj Audio i Video klipu",
+  "tt_link_av_clips": "Automatycznie powiązuje ścieżki audio z odpowiadającym im obrazem wideo z tego samego pliku na osi czasu DaVinci Resolve.",
+  "lbl_link_all_cut_tracks": "Zepnij wszystkie warstwy w cięciu",
+  "tt_link_all_cut_tracks": "Spina w jedną grupę wszystkie ścieżki wideo i audio przecinane w danym cięciu."
 }

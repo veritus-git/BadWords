@@ -1399,6 +1399,46 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_bottom, self.txt("lbl_force_xml_assembly"), w_force_xml,
                  False, lambda v: self.tgl_force_xml_assembly.setChecked(v, animated=True))
 
+        # Link matching A/V toggle
+        self.tgl_link_av_clips = ToggleSwitch()
+        self.tgl_link_av_clips.setChecked(
+            bool(_bot_prefs.get("link_av_clips",
+                                _cfg_bot.DEFAULT_SETTINGS["link_av_clips"])),
+            animated=False
+        )
+        self.tgl_link_av_clips.toggled.connect(
+            lambda checked: self.engine.save_preferences({"link_av_clips": checked})
+        )
+        w_link_av = QWidget()
+        l_link_av = QHBoxLayout(w_link_av)
+        l_link_av.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_link_av.addStretch()
+        l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
+        l_link_av.addSpacing(config.S(8))
+        l_link_av.addWidget(self.tgl_link_av_clips)
+        self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
+                 False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
+
+        # Link all cut tracks toggle
+        self.tgl_link_all_cut_tracks = ToggleSwitch()
+        self.tgl_link_all_cut_tracks.setChecked(
+            bool(_bot_prefs.get("link_all_cut_tracks",
+                                _cfg_bot.DEFAULT_SETTINGS["link_all_cut_tracks"])),
+            animated=False
+        )
+        self.tgl_link_all_cut_tracks.toggled.connect(
+            lambda checked: self.engine.save_preferences({"link_all_cut_tracks": checked})
+        )
+        w_link_all = QWidget()
+        l_link_all = QHBoxLayout(w_link_all)
+        l_link_all.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_link_all.addStretch()
+        l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
+        l_link_all.addSpacing(config.S(8))
+        l_link_all.addWidget(self.tgl_link_all_cut_tracks)
+        self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
+                 False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
+
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
         self.tgl_timestamp_precise = ToggleSwitch()
         self.tgl_timestamp_precise.setChecked(
@@ -2584,6 +2624,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
             'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
             'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
+            'link_av_clips':        self._safe_get('tgl_link_av_clips', old_prefs.get('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'isChecked'),
+            'link_all_cut_tracks':  self._safe_get('tgl_link_all_cut_tracks', old_prefs.get('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'isChecked'),
             'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
             'show_panel_headers':   self._safe_get('tgl_show_panel_headers', old_prefs.get('show_panel_headers', True), 'isChecked'),
             'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
@@ -2689,6 +2731,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._safe_set('chk_sync_davinci', _g('sync_davinci_chapter', True), 'setChecked')
         self._safe_set('tgl_xml_preserve_track_order', _g('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'setChecked')
         self._safe_set('tgl_force_xml_assembly', _g('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'setChecked')
+        self._safe_set('tgl_link_av_clips', _g('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'setChecked')
+        self._safe_set('tgl_link_all_cut_tracks', _g('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'setChecked')
         self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
         self._safe_set('tgl_show_panel_headers', _g('show_panel_headers', True), 'setChecked')
         self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')

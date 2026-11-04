@@ -533,5 +533,12 @@
   "msg_export_failed": "No se pudo exportar la línea de tiempo:",
   "lbl_res_original": "Original",
   "tt_remove_clip_from_queue": "Eliminar este clip de la cola",
-  "tt_clear_file": "Borrar archivo / Elegir otro"
+  "tt_clear_file": "Borrar archivo / Elegir otro",
+  "dlg_clip_linking": "Vinculación de clips",
+  "dlg_link_av": "Vincular vídeo y audio",
+  "dlg_link_all": "Vincular todas las pistas",
+  "lbl_link_av_clips": "Vincular Audio y Vídeo coincidentes",
+  "tt_link_av_clips": "Vincula automáticamente las pistas de audio con su clip de vídeo correspondiente del mismo archivo en la línea de tiempo de DaVinci Resolve.",
+  "lbl_link_all_cut_tracks": "Vincular todas las pistas en el corte",
+  "tt_link_all_cut_tracks": "Vincula todas las pistas de vídeo y audio cortadas en cada punto juntas."
 }

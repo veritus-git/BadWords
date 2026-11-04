@@ -111,6 +111,10 @@ DEFAULT_SETTINGS = {
     # False (default): automatically select DRT on Studio / <21.1 and XML on Free 21.1+
     # True: always assemble using the FCP7 XML pipeline regardless of Resolve version
     "force_xml_assembly": False,
+    # True (default): automatically link matching video & audio originating from the same media clip
+    "link_av_clips": True,
+    # False (default): link all video and audio tracks together across each cut slice
+    "link_all_cut_tracks": False,
     # ── Transcript timestamps ───────────────────────────────────────────────
     # False (default): timestamps rounded to nearest second, e.g. [01:08]
     # True: full millisecond precision, e.g. [01:07.986]

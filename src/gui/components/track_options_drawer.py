@@ -182,6 +182,17 @@ class TrackOptionsDrawer(QWidget):
             self.v_track_checkboxes[idx] = cb
         inner_layout.addWidget(self.w_v_cust_list)
 
+        inner_layout.addSpacing(config.S(2))
+
+        # Clip linking section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_clip_linking')))
+
+        self.tgl_link_av = ToggleSwitch()
+        self.tgl_link_all = ToggleSwitch()
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all))
+
         self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
         self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
         self.tgl_a_cust.toggled.connect(lambda c: self._update_a_radios('cust', c))
@@ -189,6 +200,9 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_v_all.toggled.connect(lambda c: self._update_v_radios('all', c))
         self.tgl_v_none.toggled.connect(lambda c: self._update_v_radios('none', c))
         self.tgl_v_cust.toggled.connect(lambda c: self._update_v_radios('cust', c))
+
+        self.tgl_link_av.toggled.connect(lambda _: self.save_config())
+        self.tgl_link_all.toggled.connect(lambda _: self.save_config())
 
         self.load_config()
 
@@ -388,6 +402,12 @@ class TrackOptionsDrawer(QWidget):
                 self.w_v_cust_list.setMaximumHeight(16777215)
             else:
                 self.w_v_cust_list.setMaximumHeight(0)
+
+            prefs = self.engine.load_preferences() if self.engine else {}
+            link_av = prefs.get('link_av_clips', True)
+            link_all = prefs.get('link_all_cut_tracks', False)
+            self.tgl_link_av.setChecked(bool(link_av), animated=False)
+            self.tgl_link_all.setChecked(bool(link_all), animated=False)
         finally:
             self._block_signals = False
 
@@ -414,6 +434,12 @@ class TrackOptionsDrawer(QWidget):
         src = getattr(self.parent_gui, '_transcription_source', None)
         if isinstance(src, dict):
             src['assembly_track_config'] = res
+
+        if self.engine:
+            prefs = self.engine.load_preferences() or {}
+            prefs['link_av_clips'] = bool(self.tgl_link_av.isChecked())
+            prefs['link_all_cut_tracks'] = bool(self.tgl_link_all.isChecked())
+            self.engine.save_preferences(prefs)
 
     def _get_project_tracks(self):
         audio_tracks = []

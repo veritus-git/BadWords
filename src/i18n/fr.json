@@ -533,5 +533,12 @@
   "msg_export_failed": "Échec de l'exportation de la timeline :",
   "lbl_res_original": "Originale",
   "tt_remove_clip_from_queue": "Supprimer ce clip de la file d'attente",
-  "tt_clear_file": "Effacer le fichier / Choisir un autre"
+  "tt_clear_file": "Effacer le fichier / Choisir un autre",
+  "dlg_clip_linking": "Liaison des clips",
+  "dlg_link_av": "Lier vidéo et audio",
+  "dlg_link_all": "Lier toutes les pistes",
+  "lbl_link_av_clips": "Lier Audio et Vidéo correspondants",
+  "tt_link_av_clips": "Lie automatiquement les pistes audio à leur clip vidéo correspondant du même fichier sur la timeline DaVinci Resolve.",
+  "lbl_link_all_cut_tracks": "Lier toutes les pistes du cut",
+  "tt_link_all_cut_tracks": "Lie ensemble toutes les pistes vidéo et audio découpées à chaque point."
 }

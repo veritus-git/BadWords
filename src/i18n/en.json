@@ -533,5 +533,12 @@
   "msg_export_failed": "Failed to export timeline:",
   "lbl_res_original": "Original",
   "tt_remove_clip_from_queue": "Remove this clip from queue",
-  "tt_clear_file": "Clear file / Choose another"
+  "tt_clear_file": "Clear file / Choose another",
+  "dlg_clip_linking": "Clip linking",
+  "dlg_link_av": "Link Video & Audio",
+  "dlg_link_all": "Link all tracks",
+  "lbl_link_av_clips": "Link matching Audio & Video",
+  "tt_link_av_clips": "Automatically links audio tracks to their corresponding video clip from the same file on the DaVinci Resolve timeline.",
+  "lbl_link_all_cut_tracks": "Link all tracks in cut",
+  "tt_link_all_cut_tracks": "Links all video and audio tracks cut at each slice together."
 }

@@ -533,5 +533,12 @@
   "msg_export_failed": "Impossibile esportare la timeline:",
   "lbl_res_original": "Originale",
   "tt_remove_clip_from_queue": "Rimuovi questo clip dalla coda",
-  "tt_clear_file": "Cancella file / Scegli un altro"
+  "tt_clear_file": "Cancella file / Scegli un altro",
+  "dlg_clip_linking": "Collegamento clip",
+  "dlg_link_av": "Collega video e audio",
+  "dlg_link_all": "Collega tutte le tracce",
+  "lbl_link_av_clips": "Collega Audio e Video corrispondenti",
+  "tt_link_av_clips": "Collega automaticamente le tracce audio alla clip video corrispondente dello stesso file sulla timeline di DaVinci Resolve.",
+  "lbl_link_all_cut_tracks": "Collega tutte le tracce nel taglio",
+  "tt_link_all_cut_tracks": "Collega insieme tutte le tracce video e audio tagliate in ciascun punto."
 }

@@ -149,30 +149,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                                 try: sr = int(s["sample_rate"])
                                 except Exception: pass
 
-                    # Extract start timecode: BWF time_reference or timecode tag
-                    fmt_tags = fmt.get("tags", {})
-                    time_ref = fmt_tags.get("time_reference")
-                    if time_ref and str(time_ref).isdigit():
-                        start_tc_sec = int(time_ref) / float(sr)
-                    else:
-                        tc_str = fmt_tags.get("timecode")
-                        if not tc_str:
-                            for s in p_data.get("streams", []):
-                                stags = s.get("tags", {})
-                                if stags.get("timecode"):
-                                    tc_str = stags["timecode"]
-                                    break
-                        if tc_str and ":" in tc_str:
-                            try:
-                                parts = tc_str.replace(";", ":").split(":")
-                                if len(parts) == 4:
-                                    h, m, s, f = map(float, parts)
-                                    eff_fps = fps if fps > 0 else 24.0
-                                    start_tc_sec = h * 3600.0 + m * 60.0 + s + (f / eff_fps)
-                            except Exception:
-                                pass
             except Exception:
-                start_tc_sec = 0.0
+                pass
 
             clips_info.append({
                 "index": idx,
@@ -183,8 +161,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 "fps": fps,
                 "width": width,
                 "height": height,
-                "audio_channels": audio_channels,
-                "start_tc_sec": start_tc_sec
+                "audio_channels": audio_channels
             })
             accum_offset += dur
 
@@ -2300,13 +2277,17 @@ except Exception as e:
                         # Get the authoritative timeline start frame from Resolve API
                         # (same as DRT path uses target_tl.GetStartFrame())
                         tl_start_frame = self.resolve_handler.get_timeline_start_frame()
+                        link_av = settings.get("link_av_clips", True)
+                        link_all = settings.get("link_all_cut_tracks", False)
                         ok_cut, color_schedule = self.resolve_handler.apply_ops_cuts_to_timeline_xml(
                             src_xml_path, clean_ops, cut_xml_path,
                             audio_only_mode=audio_only_mode,
                             tl_start_frame=tl_start_frame,
                             audio_track_filter=audio_track_filter,
                             video_track_filter=video_track_filter,
-                            preserve_track_order=preserve_track_order
+                            preserve_track_order=preserve_track_order,
+                            link_av_clips=link_av,
+                            link_all_tracks=link_all
                         )
                         time.sleep(0.05)
 
