@@ -521,5 +521,6 @@
   "lbl_queue": "Wachtrij",
   "btn_add": "Toevoegen",
   "btn_open_folder": "Map openen",
-  "btn_browse": "Bladeren..."
+  "btn_browse": "Bladeren...",
+  "tt_export_preserve_audio": "Ingeschakeld: Behoudt alle afzonderlijke audiosporen en -kanalen van bronbestanden (bijv. A1, A2, A3...) en plaatst elk kanaal op een eigen tijdlijnspoor.\n\nUitgeschakeld: Alle audiokanalen worden gemixt naar een standaard stereopaar (A1-A2)."
 }

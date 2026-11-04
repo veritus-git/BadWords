@@ -66,6 +66,24 @@ def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2)
     return get_svg_icon(svg, size)
 
 
+def get_export_icon(size: int = 13, color: str = "#ffffff") -> QIcon:
+    """Returns the export/upload icon from assets/layout/upload-bold-arrow-icon.svg rendered with the given color."""
+    try:
+        p = get_layout_icon_path("upload-bold-arrow-icon.svg")
+        if os.path.isfile(p):
+            with open(p, "r", encoding="utf-8") as f:
+                svg_data = f.read()
+            if 'fill=' not in svg_data:
+                svg_data = svg_data.replace('<path ', f'<path fill="{color}" ')
+            else:
+                import re
+                svg_data = re.sub(r'fill="[^"]*"', f'fill="{color}"', svg_data)
+            return get_svg_icon(svg_data, size)
+    except Exception:
+        pass
+    return QIcon()
+
+
 def get_icon_path(icon_name: str = "default") -> str:
     """Returns absolute path to an app icon (.ico on Windows, .png/.icns on Unix), checking assets/icons."""
     try:

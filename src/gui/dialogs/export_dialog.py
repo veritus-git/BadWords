@@ -16,19 +16,19 @@ All generated XML/OTIO files strictly reference original media files on disk (ne
 
 import os
 import time
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QSize
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
-    QFrame, QLineEdit, QFileDialog, QButtonGroup, QRadioButton
+    QFrame, QLineEdit, QFileDialog
 )
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QCursor, QPixmap
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import CustomDropdown, ToggleSwitch
 from gui.dialogs.msgbox import CustomMsgBox
-from gui.utils import _app_icon, _txt
+from gui.utils import _app_icon, _txt, get_export_icon, get_layout_icon_path
 import assembler
 
 
@@ -54,8 +54,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowModality(Qt.WindowModal)
         self.setWindowIcon(_app_icon())
 
-        self.setMinimumWidth(config.S(540))
-        self.setFixedHeight(config.S(530))
+        self.setMinimumWidth(config.S(530))
+        self.setFixedHeight(config.S(385))
 
         self._init_metadata()
         self._build_ui()
@@ -67,10 +67,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
     def _init_metadata(self):
         """Analyzes clips_info to determine default FPS, resolution, and hint text."""
-        # Detect FPS
         video_fps_list = [c["fps"] for c in self.clips_info if c.get("has_video") and c.get("fps", 0) > 0]
         if video_fps_list:
-            # Check if all same
             first_fps = video_fps_list[0]
             if all(abs(f - first_fps) < 0.05 for f in video_fps_list):
                 self.default_fps = round(first_fps, 3)
@@ -83,7 +81,6 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             self.default_fps = 24.0
             self.fps_hint = ""
 
-        # Detect Resolution
         video_clips = [c for c in self.clips_info if c.get("has_video")]
         if video_clips:
             self.default_width = video_clips[0].get("width", 1920)
@@ -92,7 +89,6 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             self.default_width = 1920
             self.default_height = 1080
 
-        # Default destination folder
         first_path = self.clips_info[0]["path"] if self.clips_info else ""
         if first_path and os.path.isfile(first_path):
             self.default_dir = os.path.dirname(os.path.abspath(first_path))
@@ -102,17 +98,53 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             self.default_dir = os.path.expanduser("~")
             self.default_seq_name = f"BadWords_Timeline_{time.strftime('%Y%m%d_%H%M')}"
 
+    def _create_info_icon(self, tooltip_key: str) -> QLabel:
+        """Creates an (i) info icon that opens the tooltip with explanation."""
+        if hasattr(self.parent_gui, "_create_info_icon"):
+            try:
+                icon_lbl = self.parent_gui._create_info_icon(tooltip_key)
+                if icon_lbl:
+                    return icon_lbl
+            except Exception:
+                pass
+
+        info = QLabel()
+        info_icon_path = get_layout_icon_path("information.png")
+        if os.path.exists(info_icon_path):
+            pix = QPixmap(info_icon_path)
+            dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
+            size = config.S(16)
+            scaled_pix = pix.scaled(int(size * dpr), int(size * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pix.setDevicePixelRatio(dpr)
+            info.setPixmap(scaled_pix)
+        else:
+            info.setText("🛈")
+            info.setStyleSheet("color: #888888; font-size: 11pt;")
+
+        tt_text = self._t(tooltip_key, tooltip_key)
+        info.custom_tooltip_text = tt_text
+        info.setToolTip(tt_text)
+        info.setCursor(Qt.WhatsThisCursor)
+        if hasattr(self.parent_gui, 'shared_tooltip'):
+            info.enterEvent = lambda e: self.parent_gui.shared_tooltip.show_global(info.custom_tooltip_text, QCursor.pos())
+            info.leaveEvent = lambda e: self.parent_gui.shared_tooltip.hide()
+        return info
+
     def _build_ui(self):
         self.setStyleSheet(f"""
             QDialog, ExportDialog {{ background-color: transparent; }}
             QFrame#MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #333333;
-                border-radius: {config.S(8)}px;
+                border-radius: 0px;
+            }}
+            QLabel {{
+                border: none;
+                background: transparent;
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
-                font-size: {config.FS(13)}pt;
+                font-size: {config.FS(12.5)}pt;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
             }}
@@ -121,16 +153,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
                 font-size: {config.FS(8.5)}pt;
                 font-family: "{config.UI_FONT_NAME}";
             }}
-            QLabel.section_lbl {{
-                color: #d4d4d4;
-                font-size: {config.FS(8.5)}pt;
-                font-weight: bold;
-                font-family: "{config.UI_FONT_NAME}";
-            }}
             QLineEdit {{
                 background-color: #1a1a1a;
                 color: #ffffff;
-                border: 1px solid #3a3a3a;
+                border: 1px solid #333333;
                 border-radius: {config.S(4)}px;
                 padding: {config.S(4)}px {config.S(8)}px;
                 font-family: "{config.UI_FONT_NAME}";
@@ -142,7 +168,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         outer_l = QVBoxLayout(self)
-        outer_l.setContentsMargins(1, 1, 1, 1)
+        outer_l.setContentsMargins(0, 0, 0, 0)
 
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
@@ -165,8 +191,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # Body container
         container = QWidget(self.inner_frame)
         c_lay = QVBoxLayout(container)
-        c_lay.setContentsMargins(config.S(20), config.S(14), config.S(20), config.S(16))
-        c_lay.setSpacing(config.S(12))
+        c_lay.setContentsMargins(config.S(22), config.S(12), config.S(22), config.S(14))
+        c_lay.setSpacing(config.S(9))
 
         # Header titles
         h_row = QVBoxLayout()
@@ -179,94 +205,49 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         h_row.addWidget(lbl_sub)
         c_lay.addLayout(h_row)
 
-        # ── 1. Format Selection Cards ─────────────────────────────────────────
+        c_lay.addSpacing(config.S(3))
+
+        label_w = config.S(145)
+
+        # ── 1. Export Format (Dropdown) ───────────────────────────────────────
+        r_fmt = QHBoxLayout()
+        r_fmt.setSpacing(config.S(8))
         lbl_fmt = QLabel(self._t("lbl_export_format", "Format eksportu:"))
-        lbl_fmt.setProperty("class", "section_lbl")
-        c_lay.addWidget(lbl_fmt)
+        lbl_fmt.setFixedWidth(label_w)
+        lbl_fmt.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        r_fmt.addWidget(lbl_fmt)
 
-        self.btn_group_fmt = QButtonGroup(self)
-        h_formats = QHBoxLayout()
-        h_formats.setSpacing(config.S(8))
-
-        self.formats = [
-            ("fcp7_xml", "FCP 7 XML (.xml)", "DaVinci Resolve / Premiere"),
-            ("otio", "OpenTimelineIO (.otio)", "Otwarty format (DaVinci/NLE)"),
-            ("fcpxml", "FCPXML (.fcpxml)", "Final Cut Pro X / Resolve"),
-            ("edl", "CMX 3600 (.edl)", "Lista cięć montażowych"),
+        self.format_items = [
+            ("fcp7_xml", "Final Cut Pro 7 XML (.xml)"),
+            ("otio",     "OpenTimelineIO (.otio)"),
+            ("fcpxml",   "Apple FCPXML (.fcpxml)"),
+            ("edl",      "CMX 3600 EDL (.edl)"),
         ]
+        self.format_labels = [name for _, name in self.format_items]
+        self.combo_fmt = CustomDropdown(self.format_labels)
+        self.combo_fmt.setText(self.format_labels[0])
+        self.combo_fmt.setFixedHeight(config.S(28))
+        r_fmt.addWidget(self.combo_fmt, 1)
+        c_lay.addLayout(r_fmt)
 
-        self.radio_buttons = {}
-        for idx, (fmt_id, fmt_name, fmt_desc) in enumerate(self.formats):
-            card = QFrame()
-            card.setCursor(Qt.PointingHandCursor)
-            card.setStyleSheet(f"""
-                QFrame {{
-                    background-color: #1e1e1e;
-                    border: 1px solid #333333;
-                    border-radius: {config.S(5)}px;
-                    padding: {config.S(4)}px;
-                }}
-                QFrame:hover {{
-                    border-color: #38c172;
-                    background-color: #242424;
-                }}
-            """)
-            card_l = QVBoxLayout(card)
-            card_l.setContentsMargins(config.S(6), config.S(6), config.S(6), config.S(6))
-            card_l.setSpacing(config.S(2))
-
-            rb = QRadioButton(fmt_name)
-            rb.setStyleSheet(f"""
-                QRadioButton {{
-                    color: #ffffff; font-weight: bold; font-size: {config.FS(8.5)}pt;
-                    font-family: "{config.UI_FONT_NAME}";
-                }}
-                QRadioButton::indicator {{
-                    width: {config.S(13)}px; height: {config.S(13)}px;
-                }}
-            """)
-            if idx == 0:
-                rb.setChecked(True)
-            self.btn_group_fmt.addButton(rb, idx)
-            self.radio_buttons[fmt_id] = rb
-            card_l.addWidget(rb)
-
-            lbl_d = QLabel(fmt_desc)
-            lbl_d.setStyleSheet(f"color: #888888; font-size: {config.FS(7.0)}pt; font-family: '{config.UI_FONT_NAME}'; padding-left: {config.S(18)}px;")
-            card_l.addWidget(lbl_d)
-
-            h_formats.addWidget(card, 1)
-
-        c_lay.addLayout(h_formats)
-
-        # ── 2. Sequence Parameters (Name, FPS, Resolution) ───────────────────
-        params_box = QFrame()
-        params_box.setStyleSheet(f"""
-            QFrame {{
-                background-color: #181818;
-                border: 1px solid #282828;
-                border-radius: {config.S(6)}px;
-            }}
-        """)
-        p_lay = QVBoxLayout(params_box)
-        p_lay.setContentsMargins(config.S(12), config.S(10), config.S(12), config.S(10))
-        p_lay.setSpacing(config.S(8))
-
-        # Row 1: Sequence Name
+        # ── 2. Sequence Name ──────────────────────────────────────────────────
         r_name = QHBoxLayout()
+        r_name.setSpacing(config.S(8))
         lbl_name = QLabel(self._t("lbl_export_seq_name", "Nazwa sekwencji:"))
-        lbl_name.setFixedWidth(config.S(130))
+        lbl_name.setFixedWidth(label_w)
         lbl_name.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_name.addWidget(lbl_name)
 
         self.txt_seq_name = QLineEdit(self.default_seq_name)
+        self.txt_seq_name.setFixedHeight(config.S(28))
         r_name.addWidget(self.txt_seq_name, 1)
-        p_lay.addLayout(r_name)
+        c_lay.addLayout(r_name)
 
-        # Row 2: FPS
+        # ── 3. Timeline Frame Rate ────────────────────────────────────────────
         r_fps = QHBoxLayout()
+        r_fps.setSpacing(config.S(8))
         lbl_fps = QLabel(self._t("lbl_export_fps", "Klatkaż osi czasu:"))
-        lbl_fps.setFixedWidth(config.S(130))
+        lbl_fps.setFixedWidth(label_w)
         lbl_fps.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_fps.addWidget(lbl_fps)
 
@@ -277,19 +258,20 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         self.combo_fps = CustomDropdown(self.fps_options)
         self.combo_fps.setText(def_fps_str)
-        self.combo_fps.setFixedHeight(config.S(26))
+        self.combo_fps.setFixedHeight(config.S(28))
         r_fps.addWidget(self.combo_fps, 1)
-        p_lay.addLayout(r_fps)
+        c_lay.addLayout(r_fps)
 
         if self.fps_hint:
             lbl_f_hint = QLabel(self.fps_hint)
-            lbl_f_hint.setStyleSheet(f"color: #38c172; font-size: {config.FS(7.5)}pt; font-style: italic; margin-left: {config.S(135)}px;")
-            p_lay.addWidget(lbl_f_hint)
+            lbl_f_hint.setStyleSheet(f"color: #38c172; font-size: {config.FS(7.5)}pt; font-style: italic; margin-left: {label_w + config.S(8)}px;")
+            c_lay.addWidget(lbl_f_hint)
 
-        # Row 3: Resolution
+        # ── 4. Timeline Resolution ────────────────────────────────────────────
         r_res = QHBoxLayout()
+        r_res.setSpacing(config.S(8))
         lbl_res = QLabel(self._t("lbl_export_res", "Rozdzielczość osi:"))
-        lbl_res.setFixedWidth(config.S(130))
+        lbl_res.setFixedWidth(label_w)
         lbl_res.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_res.addWidget(lbl_res)
 
@@ -303,51 +285,57 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         ]
         self.combo_res = CustomDropdown(self.res_options)
         self.combo_res.setText(self.res_options[0])
-        self.combo_res.setFixedHeight(config.S(26))
+        self.combo_res.setFixedHeight(config.S(28))
         r_res.addWidget(self.combo_res, 1)
-        p_lay.addLayout(r_res)
+        c_lay.addLayout(r_res)
 
-        # Row 4: Preserve audio tracks switch
+        # ── 5. Audio Track Preservation (with Info Icon) ──────────────────────
         r_audio = QHBoxLayout()
+        r_audio.setSpacing(config.S(6))
+
         lbl_aud = QLabel(self._t("lbl_export_preserve_audio", "Zachowaj oryginalne ścieżki audio (A1, A2...)"))
         lbl_aud.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
-        r_audio.addWidget(lbl_aud, 1)
+        r_audio.addWidget(lbl_aud)
+
+        # (i) Information icon with comprehensive explanation tooltip
+        info_aud = self._create_info_icon("tt_export_preserve_audio")
+        r_audio.addWidget(info_aud)
+        r_audio.addStretch(1)
 
         self.tgl_audio = ToggleSwitch()
         self.tgl_audio.setChecked(True)
         r_audio.addWidget(self.tgl_audio)
-        p_lay.addLayout(r_audio)
+        c_lay.addLayout(r_audio)
 
-        c_lay.addWidget(params_box)
-
-        # ── 3. Destination Folder ─────────────────────────────────────────────
+        # ── 6. Destination Folder ─────────────────────────────────────────────
         r_dest = QHBoxLayout()
-        r_dest.setSpacing(config.S(6))
+        r_dest.setSpacing(config.S(8))
 
         lbl_dst = QLabel(self._t("lbl_export_dest", "Katalog zapisu:"))
-        lbl_dst.setFixedWidth(config.S(110))
-        lbl_dst.setStyleSheet(f"color: #d4d4d4; font-size: {config.FS(8.5)}pt; font-weight: bold; font-family: '{config.UI_FONT_NAME}';")
+        lbl_dst.setFixedWidth(label_w)
+        lbl_dst.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_dest.addWidget(lbl_dst)
 
         self.txt_dest_dir = QLineEdit(self.default_dir)
+        self.txt_dest_dir.setFixedHeight(config.S(28))
         r_dest.addWidget(self.txt_dest_dir, 1)
 
         btn_browse = QPushButton(self._t("btn_browse", "Przeglądaj..."))
         btn_browse.setCursor(Qt.PointingHandCursor)
+        btn_browse.setFixedHeight(config.S(28))
         btn_browse.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #ffffff; border: 1px solid #3a3a3a;
-                border-radius: {config.S(4)}px; padding: {config.S(4)}px {config.S(10)}px;
+                border-radius: {config.S(4)}px; padding: 0px {config.S(12)}px;
                 font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(8.5)}pt;
             }}
             QPushButton:hover {{ background-color: #333333; }}
         """)
         btn_browse.clicked.connect(self._on_browse_dest)
         r_dest.addWidget(btn_browse)
-
         c_lay.addLayout(r_dest)
 
-        c_lay.addStretch(1)
+        c_lay.addSpacing(config.S(8))
 
         # ── Bottom Action Buttons ─────────────────────────────────────────────
         h_actions = QHBoxLayout()
@@ -356,10 +344,11 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         btn_cancel = QPushButton(self._t("btn_cancel", "Anuluj"))
         btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setFixedHeight(config.S(32))
         btn_cancel.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #a0a0a0; border: 1px solid #3a3a3a;
-                border-radius: {config.S(4)}px; padding: {config.S(6)}px {config.S(18)}px;
+                border-radius: {config.S(4)}px; padding: 0px {config.S(18)}px;
                 font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9)}pt; font-weight: bold;
             }}
             QPushButton:hover {{ color: #ffffff; background-color: #2d2d2d; }}
@@ -369,10 +358,13 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         self.btn_export = QPushButton(self._t("btn_export", "Eksportuj"))
         self.btn_export.setCursor(Qt.PointingHandCursor)
+        self.btn_export.setFixedHeight(config.S(32))
+        self.btn_export.setIcon(get_export_icon(config.S(13), "#ffffff"))
+        self.btn_export.setIconSize(QSize(config.S(14), config.S(11)))
         self.btn_export.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1a7a3e; color: #ffffff; border: none;
-                border-radius: {config.S(4)}px; padding: {config.S(6)}px {config.S(24)}px;
+                border-radius: {config.S(4)}px; padding: 0px {config.S(22)}px;
                 font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
             }}
             QPushButton:hover {{ background-color: #219653; }}
@@ -399,11 +391,13 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
     def _on_execute_export(self):
         """Builds and writes the selected timeline file."""
-        selected_idx = self.btn_group_fmt.checkedId()
-        if selected_idx < 0 or selected_idx >= len(self.formats):
-            selected_idx = 0
+        selected_text = self.combo_fmt.text()
+        fmt_id = "fcp7_xml"
+        for fid, fname in self.format_items:
+            if fname == selected_text:
+                fmt_id = fid
+                break
 
-        fmt_id = self.formats[selected_idx][0]
         ext_map = {
             "fcp7_xml": ".xml",
             "otio":     ".otio",
@@ -466,6 +460,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         self.btn_export.setEnabled(True)
         self.btn_export.setText(self._t("btn_export", "Eksportuj"))
+        self.btn_export.setIcon(get_export_icon(config.S(13), "#ffffff"))
 
         if ok:
             succ_dlg = CustomMsgBox(

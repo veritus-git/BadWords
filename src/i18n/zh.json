@@ -521,5 +521,6 @@
   "lbl_queue": "队列",
   "btn_add": "添加",
   "btn_open_folder": "打开文件夹",
-  "btn_browse": "浏览..."
+  "btn_browse": "浏览...",
+  "tt_export_preserve_audio": "启用时：保留源媒体文件中的所有独立音频轨道和声道（如 A1、A2、A3...），并将每个声道放置在时间轴的专用轨道上。\n\n禁用时：所有音频声道将混音为标准立体声对（A1-A2）。"
 }

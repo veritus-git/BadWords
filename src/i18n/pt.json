@@ -521,5 +521,6 @@
   "lbl_queue": "Fila",
   "btn_add": "Adicionar",
   "btn_open_folder": "Abrir pasta",
-  "btn_browse": "Procurar..."
+  "btn_browse": "Procurar...",
+  "tt_export_preserve_audio": "Quando ativado: Preserva todas as faixas e canais de áudio discretos dos arquivos de origem (ex.: A1, A2, A3...), colocando cada canal em uma faixa dedicada na linha do tempo.\n\nQuando desativado: Todos os canais de áudio serão mixados em um par estéreo padrão (A1-A2)."
 }

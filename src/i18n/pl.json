@@ -521,5 +521,6 @@
   "lbl_queue": "Kolejka",
   "btn_add": "Dodaj",
   "btn_open_folder": "Otwórz folder",
-  "btn_browse": "Przeglądaj..."
+  "btn_browse": "Przeglądaj...",
+  "tt_export_preserve_audio": "Gdy włączone: Zachowuje wszystkie niezależne ścieżki i kanały audio z plików źródłowych (np. A1, A2, A3...), umieszczając każdy kanał na osobnej ścieżce na osi czasu.\n\nGdy wyłączone: Wszystkie kanały audio zostaną zmiksowane do pojedynczej ścieżki stereo (A1-A2)."
 }

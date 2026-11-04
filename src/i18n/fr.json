@@ -521,5 +521,6 @@
   "lbl_queue": "File",
   "btn_add": "Ajouter",
   "btn_open_folder": "Ouvrir le dossier",
-  "btn_browse": "Parcourir..."
+  "btn_browse": "Parcourir...",
+  "tt_export_preserve_audio": "Activé : Conserve toutes les pistes et canaux audio distincts des fichiers sources (ex. A1, A2, A3...), en plaçant chaque canal sur une piste dédiée de la timeline.\n\nDésactivé : Tous les canaux audio seront mixés en une piste stéréo standard (A1-A2)."
 }

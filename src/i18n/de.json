@@ -521,5 +521,6 @@
   "lbl_queue": "Warteschlange",
   "btn_add": "Hinzufügen",
   "btn_open_folder": "Ordner öffnen",
-  "btn_browse": "Durchsuchen..."
+  "btn_browse": "Durchsuchen...",
+  "tt_export_preserve_audio": "Wenn aktiviert: Behält alle separaten Audiospuren und Kanäle der Quelldateien bei (z. B. A1, A2, A3...) und platziert jeden Kanal auf einer eigenen Timeline-Spur.\n\nWenn deaktiviert: Alle Audiokanäle werden auf ein Stereo-Paar (A1-A2) heruntergemischt."
 }

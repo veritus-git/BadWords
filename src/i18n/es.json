@@ -521,5 +521,6 @@
   "lbl_queue": "Cola",
   "btn_add": "Añadir",
   "btn_open_folder": "Abrir carpeta",
-  "btn_browse": "Examinar..."
+  "btn_browse": "Examinar...",
+  "tt_export_preserve_audio": "Activado: Conserva todas las pistas y canales de audio discretos de los archivos de origen (por ejemplo, A1, A2, A3...), colocando cada canal en una pista de línea de tiempo dedicada.\n\nDesactivado: Todos los canales de audio se mezclarán en un par estéreo estándar (A1-A2)."
 }

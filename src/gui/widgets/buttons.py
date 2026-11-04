@@ -2381,16 +2381,48 @@ class AssembleSplitButton(QFrame):
     def set_export_mode(self, is_export: bool):
         """Switches the button between DaVinci Resolve Assemble (split button) and Standalone Export (single button)."""
         self._is_export_mode = bool(is_export)
+        from PySide6.QtGui import QIcon
+        from PySide6.QtCore import QSize
         if is_export:
             self.sep.hide()
             self.btn_arrow.hide()
             text = self.parent_gui.txt("btn_export", "Export") if hasattr(self.parent_gui, 'txt') else "Export"
             self.btn_main.setText(text)
+            from gui.utils import get_export_icon
+            self.btn_main.setIcon(get_export_icon(config.S(13), "#ffffff"))
+            self.btn_main.setIconSize(QSize(config.S(14), config.S(11)))
+            self.btn_main.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: #ffffff;
+                    font-weight: bold;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: {config.FS(10)}pt;
+                    border: none;
+                    padding-left: {config.S(10)}px;
+                    padding-right: {config.S(10)}px;
+                    text-align: center;
+                }}
+            """)
         else:
+            self.btn_main.setIcon(QIcon())
             self.sep.show()
             self.btn_arrow.show()
             text = self.parent_gui.txt("btn_assemble", "Assemble") if hasattr(self.parent_gui, 'txt') else "Assemble"
             self.btn_main.setText(text)
+            self.btn_main.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: #ffffff;
+                    font-weight: bold;
+                    font-family: "{config.UI_FONT_NAME}";
+                    font-size: {config.FS(10)}pt;
+                    border: none;
+                    padding-left: {config.S(14)}px;
+                    padding-right: {config.S(10)}px;
+                    text-align: center;
+                }}
+            """)
 
     def set_assemble_enabled(self, enabled: bool, custom_text: str = None):
         """Enable or disable the Assemble button with visual transition and dimming."""
@@ -2399,17 +2431,24 @@ class AssembleSplitButton(QFrame):
         self.btn_main.setEnabled(enabled)
         self.btn_arrow.setEnabled(enabled)
 
-        from PySide6.QtCore import Qt
-        from PySide6.QtGui import QColor
+        from PySide6.QtCore import Qt, QSize
+        from PySide6.QtGui import QColor, QIcon
 
         if custom_text is not None:
             self.btn_main.setText(custom_text)
+            if getattr(self, '_is_export_mode', False):
+                self.btn_main.setIcon(QIcon())
         elif enabled:
             if getattr(self, '_is_export_mode', False):
                 self.btn_main.setText(self.parent_gui.txt("btn_export", "Export") if hasattr(self.parent_gui, 'txt') else "Export")
+                from gui.utils import get_export_icon
+                self.btn_main.setIcon(get_export_icon(config.S(13), "#ffffff"))
+                self.btn_main.setIconSize(QSize(config.S(14), config.S(11)))
             elif hasattr(self.parent_gui, 'txt'):
+                self.btn_main.setIcon(QIcon())
                 self.btn_main.setText(self.parent_gui.txt("btn_assemble"))
             else:
+                self.btn_main.setIcon(QIcon())
                 self.btn_main.setText("Assemble")
 
         r = config.S(4)

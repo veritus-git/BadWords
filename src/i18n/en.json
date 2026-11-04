@@ -521,5 +521,6 @@
   "lbl_queue": "Queue",
   "btn_add": "Add",
   "btn_open_folder": "Open Folder",
-  "btn_browse": "Browse..."
+  "btn_browse": "Browse...",
+  "tt_export_preserve_audio": "When enabled: Preserves all discrete audio tracks and channels from source media files (e.g., A1, A2, A3...), placing each channel on a dedicated timeline track.\n\nWhen disabled: All audio channels will be mixed down into a standard stereo pair (A1-A2)."
 }
