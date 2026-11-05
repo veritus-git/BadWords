@@ -78,7 +78,12 @@ class PreviewToggleBtn(QPushButton):
         """)
 
         from gui.utils import get_layout_icon_path
-        svg_name = "timeline-preview.svg" if mode == "timeline" else "video-preview.svg"
+        if mode == "timeline":
+            svg_name = "timeline-preview.svg"
+        elif mode == "skip_cuts":
+            svg_name = "skip-cuts.svg"
+        else:
+            svg_name = "video-preview.svg"
         svg_path = get_layout_icon_path(svg_name)
         self._renderer = None
         if os.path.isfile(svg_path):
@@ -360,6 +365,16 @@ class AudioPreviewWidget(QFrame):
         self.btn_toggle_timeline.clicked.connect(self.toggle_timeline_preview)
         left_layout.addWidget(self.btn_toggle_timeline)
 
+        # Skip cut sections during playback toggle
+        self.btn_skip_cuts = PreviewToggleBtn("skip_cuts", parent=self)
+        prefs = getattr(self.main_window, "engine", None) and self.main_window.engine.load_preferences() or {}
+        skip_cuts_pref = bool(prefs.get("preview_skip_cuts", False))
+        self.skip_cuts = skip_cuts_pref
+        self.btn_skip_cuts.setChecked(skip_cuts_pref)
+        self.btn_skip_cuts.setToolTip(self.main_window.txt("tt_skip_cuts", "Skip cut sections during playback") if self.main_window else "Skip cut sections during playback")
+        self.btn_skip_cuts.clicked.connect(self.toggle_skip_cuts)
+        left_layout.addWidget(self.btn_skip_cuts)
+
         left_layout.addStretch()
 
         # --- Center Section: Playback Controls ---
@@ -476,6 +491,15 @@ class AudioPreviewWidget(QFrame):
         self.show_video = self.btn_toggle_video.isChecked()
         self._apply_modularity_state()
         self._save_modularity_prefs()
+
+    def toggle_skip_cuts(self) -> None:
+        """Toggles real-time skipping of cut sections during playback."""
+        self.skip_cuts = self.btn_skip_cuts.isChecked()
+        if self.main_window and hasattr(self.main_window, "engine"):
+            try:
+                self.main_window.engine.save_preferences({"preview_skip_cuts": self.skip_cuts})
+            except Exception:
+                pass
 
     def _save_modularity_prefs(self) -> None:
         if self.main_window and hasattr(self.main_window, "engine"):
@@ -913,38 +937,36 @@ class AudioPreviewWidget(QFrame):
             self.player.play()
         self.video_preview_widget.show_placeholder(False)
 
-    def load_assembled_audio(self, assembled_audio_path: str, clean_ops: List[Dict[str, Any]]) -> None:
-        """Switches playback to the newly assembled timeline audio."""
-        if os.path.exists(assembled_audio_path):
-            self.original_audio_path = assembled_audio_path
-            self.clean_ops = clean_ops
-            self.player.setSource(QUrl.fromLocalFile(assembled_audio_path))
-            self.lbl_status.hide()
-            self.controls_widget.show()
-            if self.slider_seek:
-                self.slider_seek.show()
-            self._apply_modularity_state()
+    def load_assembled_audio(self, assembled_audio_path: Optional[str] = None, clean_ops: Optional[List[Dict[str, Any]]] = None) -> None:
+        """Called after timeline assembly. Keeps full timeline audio intact and activates real-time skip-cuts."""
+        self.clean_ops = None
+        self.lbl_status.hide()
+        self.controls_widget.show()
+        if self.slider_seek:
+            self.slider_seek.show()
+        self._apply_modularity_state()
 
-            if getattr(self, "is_collapsed", False):
-                self.content_widget.hide()
-            else:
-                self.content_widget.show()
+        if getattr(self, "is_collapsed", False):
+            self.content_widget.hide()
+        else:
+            self.content_widget.show()
 
-            if self.slider_seek:
-                self.slider_seek.setValue(0)
-            self.current_word_idx = -1
-            self.last_jumped_ts = -1.0
-            self._clear_highlights()
-            self.show()
+        # Enable skip cuts by default after assembly so playback previews the assembled cuts
+        self.skip_cuts = True
+        if hasattr(self, "btn_skip_cuts"):
+            self.btn_skip_cuts.setChecked(True)
 
-            # Keep timeline preview cuts and markings persistent
-            words = []
-            if self.main_window and hasattr(self.main_window, "text_canvas"):
-                words = getattr(self.main_window.text_canvas, "words_data", []) or []
-            if not words and hasattr(self, "waveform_timeline"):
-                words = getattr(self.waveform_timeline, "_words_data", []) or []
-            if words and hasattr(self, "waveform_timeline"):
-                self.waveform_timeline.set_words_data(words)
+        self._clear_highlights()
+        self.show()
+
+        # Keep timeline preview cuts and markings persistent
+        words = []
+        if self.main_window and hasattr(self.main_window, "text_canvas"):
+            words = getattr(self.main_window.text_canvas, "words_data", []) or []
+        if not words and hasattr(self, "waveform_timeline"):
+            words = getattr(self.waveform_timeline, "_words_data", []) or []
+        if words and hasattr(self, "waveform_timeline"):
+            self.waveform_timeline.set_words_data(words)
 
     # -------------------------------------------------------------------------
     # Playback Controls & Sync
@@ -964,13 +986,13 @@ class AudioPreviewWidget(QFrame):
 
     def get_total_duration(self) -> float:
         """Returns the actual timeline/project audio duration in seconds."""
+        if hasattr(self, "waveform_timeline") and getattr(self.waveform_timeline, "_duration", 0.0) > 0:
+            return self.waveform_timeline._duration
         if self.clean_ops:
             fps = getattr(self.main_window.resolve_handler, "fps", 24.0) if self.main_window else 24.0
             total_f = sum(op["e"] - op["s"] for op in self.clean_ops)
             if total_f > 0:
                 return total_f / fps
-        if hasattr(self, "waveform_timeline") and getattr(self.waveform_timeline, "_duration", 0.0) > 0:
-            return self.waveform_timeline._duration
         canvas = getattr(self.main_window, "text_canvas", None)
         if canvas and getattr(canvas, "words_data", None):
             return float(canvas.words_data[-1].get("end", 0.0))
@@ -1176,6 +1198,24 @@ class AudioPreviewWidget(QFrame):
             return
 
         audio_t = max(0.0, self._get_audio_t())
+
+        # Real-time skipping of cut sections during active playback
+        if getattr(self, "skip_cuts", False) and self.player.playbackState() == QMediaPlayer.PlayingState:
+            wf_tl = getattr(self, "waveform_timeline", None)
+            cut_ranges = getattr(wf_tl, "_cut_ranges", None) if wf_tl else None
+            if cut_ranges:
+                for i, (c_start, c_end, _) in enumerate(cut_ranges):
+                    if c_start <= audio_t < c_end - 0.02:
+                        jump_target = c_end
+                        for next_start, next_end, _ in cut_ranges[i + 1:]:
+                            if next_start <= jump_target + 0.04:
+                                jump_target = max(jump_target, next_end)
+                            else:
+                                break
+                        if jump_target > audio_t + 0.015:
+                            self.set_position_ms(int(jump_target * 1000))
+                            return
+
         orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t
 
         dur = self.get_total_duration()

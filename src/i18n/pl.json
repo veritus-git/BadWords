@@ -483,6 +483,7 @@
   "tt_assembly_locked_transcription": "Opcja zablokowana do czasu zakończenia transkrypcji",
   "lbl_timeline_ready": "A1: Oczekiwanie na ścieżkę audio",
   "status_importing_project": "Wczytywanie projektu...",
+  "tt_skip_cuts": "Pomiń wycięte fragmenty podczas odtwarzania",
   "lbl_force_xml_assembly": "Wymuś składanie przez XML",
   "tt_force_xml_assembly": "Wymusza składanie osi czasu za pomocą FCP7 XML zamiast natywnego DRT. Jeśli zależy Ci na zachowaniu elementów specyficznych dla DaVinci Resolve (np. Fusion, zaawansowane efekty, generatory), wybierz DRT. Jeśli kluczowe jest linkowanie audio i wideo, wybierz XML. W DaVinci Resolve Free 21.1+ format DRT jest nieobsługiwany przez skrypty i zawsze używany jest XML. Opcja ma znaczenie dla wersji Studio lub Free starszych niż 21.1.",
   "tt_linking_requires_xml": "Linkowanie klipów na osi czasu wymaga składania przez XML (FCP7 XML). Plik .drt nie obsługuje zarządzania linkowaniem ścieżek z zewnątrz. Włącz opcję 'Wymuś składanie przez XML' w Ustawieniach, aby aktywować linkowanie.",

@@ -205,6 +205,18 @@ class ResolveHandler:
                             self.fps = 24.0
                     else:
                         self.fps = 24.0
+
+                    try:
+                        if hasattr(self.resolve, 'GetVersion'):
+                            v = self.resolve.GetVersion()
+                            if isinstance(v, (list, tuple)):
+                                self.bridge_version = ".".join(str(x) for x in v[:3])
+                            elif isinstance(v, str):
+                                self.bridge_version = v
+                        if hasattr(self.resolve, 'GetProductName'):
+                            self.bridge_product_name = str(self.resolve.GetProductName() or "")
+                    except Exception:
+                        pass
                     
                     log_info(f"Connected to Resolve (native). Project: {self.project.GetName()}, FPS: {self.fps}")
                     return
@@ -291,10 +303,10 @@ class ResolveHandler:
         """Returns True if running DaVinci Resolve Free 21.1 or newer."""
         import re
 
-        # 1. Authoritative check via active Bridge connection (live Resolve instance)
-        if self.backend == 'bridge':
-            prod = (getattr(self, 'bridge_product_name', '') or '').lower()
-            ver = getattr(self, 'bridge_version', '') or ''
+        # 1. Authoritative check via active Bridge or Native connection (live Resolve instance)
+        prod = (getattr(self, 'bridge_product_name', '') or '').lower()
+        ver = getattr(self, 'bridge_version', '') or ''
+        if prod or ver:
             is_studio = 'studio' in prod
             if is_studio:
                 return False

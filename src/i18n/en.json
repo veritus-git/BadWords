@@ -483,6 +483,7 @@
   "tt_assembly_locked_transcription": "This option is locked until transcription is complete",
   "lbl_timeline_ready": "A1: Ready for timeline audio",
   "status_importing_project": "Loading project...",
+  "tt_skip_cuts": "Skip cut sections during playback",
   "lbl_force_xml_assembly": "Force XML Timeline Assembly",
   "tt_force_xml_assembly": "Forces timeline assembly via FCP7 XML instead of native DRT. If you need to preserve Resolve-specific elements (e.g. Fusion, complex effects, generators), use DRT. If audio/video clip linking is essential, XML is recommended. In Resolve Free 21.1+, DRT is unsupported via scripting and XML is used automatically. This option primarily applies to Resolve Studio or Free versions older than 21.1.",
   "tt_linking_requires_xml": "Clip linking on the timeline requires XML assembly (FCP7 XML). The .drt format does not support external track linking. Enable 'Force XML Assembly' in Settings to activate linking.",

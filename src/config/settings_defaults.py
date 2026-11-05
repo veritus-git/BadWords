@@ -111,9 +111,9 @@ DEFAULT_SETTINGS = {
     # False (default): audio tracks are re-mapped sequentially (A1, A2, A3...)
     # True: original source track indices are preserved in the output timeline
     "xml_preserve_track_order": False,
-    # False (default): automatically select DRT on Studio / <21.1 and XML on Free 21.1+
-    # True: always assemble using the FCP7 XML pipeline regardless of Resolve version
-    "force_xml_assembly": False,
+    # True (default): always assemble using the FCP7 XML pipeline (supports track linking & 100% online clips)
+    # False: use native .drt (retains Fusion comps & Resolve generators, but cannot link cut tracks; Studio only)
+    "force_xml_assembly": True,
     # True (default): automatically link matching video & audio originating from the same media clip
     "link_av_clips": True,
     # False (default): link all video and audio tracks together across each cut slice

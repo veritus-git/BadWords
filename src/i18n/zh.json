@@ -557,5 +557,6 @@
   "opt_mouse_brush": "画笔涂抹模式",
   "opt_mouse_none": "已禁用",
   "tt_mouse_lmb_mode": "左键在转录画布中的行为。框选模式允许像在Windows桌面一样拖动矩形框选择单词。",
-  "tt_mouse_rmb_mode": "右键在转录画布中的行为。画笔涂抹模式可在光标滑过单词时连续进行标记。"
+  "tt_mouse_rmb_mode": "右键在转录画布中的行为。画笔涂抹模式可在光标滑过单词时连续进行标记。",
+  "tt_skip_cuts": "播放时跳过剪辑部分"
 }

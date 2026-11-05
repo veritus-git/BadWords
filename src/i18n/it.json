@@ -557,5 +557,6 @@
   "opt_mouse_brush": "Pennello di marcatura",
   "opt_mouse_none": "Disabilitato",
   "tt_mouse_lmb_mode": "Comportamento del tasto sinistro. La selezione a rettangolo consente di trascinare un riquadro in stile desktop sulle parole.",
-  "tt_mouse_rmb_mode": "Comportamento del tasto destro. Il pennello evidenzia le parole continuamente al passaggio del cursore."
+  "tt_mouse_rmb_mode": "Comportamento del tasto destro. Il pennello evidenzia le parole continuamente al passaggio del cursore.",
+  "tt_skip_cuts": "Salta le sezioni tagliate durante la riproduzione"
 }

@@ -557,5 +557,6 @@
   "opt_mouse_brush": "Pintado con pincel",
   "opt_mouse_none": "Desactivado",
   "tt_mouse_lmb_mode": "Comportamiento del botón izquierdo. La selección por marco permite arrastrar un cuadro estilo escritorio sobre las palabras.",
-  "tt_mouse_rmb_mode": "Comportamiento del botón derecho. El pincel marca las palabras continuamente al pasar el cursor sobre ellas."
+  "tt_mouse_rmb_mode": "Comportamiento del botón derecho. El pincel marca las palabras continuamente al pasar el cursor sobre ellas.",
+  "tt_skip_cuts": "Omitir secciones cortadas durante la reproducción"
 }

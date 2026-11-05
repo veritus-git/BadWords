@@ -738,13 +738,16 @@ class WaveformTimelineWidget(QWidget):
                 seg_w = max(1.0, x1 - x0)
                 seg_rect = QRectF(x0, ry, seg_w, rh)
 
-                # Base clip color
-                painter.fillRect(seg_rect, seg["color"])
-
                 if seg["is_cut"]:
-                    # Visible darkening over the underlying base color for cut elements
-                    painter.fillRect(seg_rect, QColor(0, 0, 0, 150))
+                    # Cut elements: clean, matte disabled charcoal grey (matches DaVinci Resolve disabled clips)
+                    painter.fillRect(seg_rect, QColor(36, 38, 42))
+                    # Subtle dark seam borders
+                    painter.setPen(QPen(QColor(24, 25, 28), 1.0))
+                    painter.drawLine(QPointF(x0, ry), QPointF(x1, ry))
+                    painter.drawLine(QPointF(x0, ry + rh), QPointF(x1, ry + rh))
                 else:
+                    # Base clip color
+                    painter.fillRect(seg_rect, seg["color"])
                     # Subtle top highlight
                     painter.setPen(QPen(seg["color"].lighter(112), 1.0))
                     painter.drawLine(QPointF(x0, ry), QPointF(x1, ry))
@@ -837,7 +840,7 @@ class WaveformTimelineWidget(QWidget):
                 painter.setPen(QPen(QColor("#f0fcf6"), 1.0))
                 painter.drawLine(QPointF(rx, mid_y), QPointF(rx + rw, mid_y))
 
-            # Diagonal hatching overlay in #4d4d4d over cut segments (thicker, spaced-out, darker base)
+            # Clean cut overlay: mute waveform to dark slate and apply Anti-Moiré hatching on wide cuts
             for seg in segments:
                 if not seg["is_cut"]:
                     continue
@@ -853,23 +856,27 @@ class WaveformTimelineWidget(QWidget):
                 painter.save()
                 painter.setClipRect(seg_rect)
 
-                # 1. Darken the background noticeably so underlying color is visible but clearly dimmed
-                painter.fillRect(seg_rect, QColor(0, 0, 0, 150))
+                # 1. Mute the white waveform over the cut segment into dark slate grey (#50545c)
+                painter.fillRect(seg_rect, QColor(36, 38, 42, 190))
 
-                # 2. Draw thicker, wider-spaced custom diagonal hatching lines (#4d4d4d / #545454)
-                hatch_pen = QPen(QColor(84, 84, 84, 230), float(config.S(2.2)), Qt.SolidLine, Qt.FlatCap)
-                painter.setPen(hatch_pen)
-                step = float(config.S(16.0))
+                # 2. Anti-Moiré Level-Of-Detail Hatching:
+                # When zoomed out (narrow cuts < 14px on screen), NO diagonal lines are drawn.
+                # This completely eliminates the jagged barcode/zebra clutter across the timeline!
+                # When zoomed in or over wide pauses (>= 14px), draw very fine 1.0px subtle hatching lines.
+                if seg_w >= float(config.S(14.0)):
+                    hatch_pen = QPen(QColor(68, 72, 80, 160), 1.0, Qt.SolidLine, Qt.FlatCap)
+                    painter.setPen(hatch_pen)
+                    step = float(config.S(10.0))
 
-                start_diag = x0 - rh
-                end_diag = x1 + rh
-                cur_x = start_diag - (start_diag % step)
-                while cur_x < end_diag:
-                    painter.drawLine(QPointF(cur_x, ry + rh), QPointF(cur_x + rh, ry))
-                    cur_x += step
+                    start_diag = x0 - rh
+                    end_diag = x1 + rh
+                    cur_x = start_diag - (start_diag % step)
+                    while cur_x < end_diag:
+                        painter.drawLine(QPointF(cur_x, ry + rh), QPointF(cur_x + rh, ry))
+                        cur_x += step
 
-                # 3. Divider seams at cut start/end in #4d4d4d
-                painter.setPen(QPen(QColor(80, 80, 80, 240), float(config.S(1.2))))
+                # 3. Clean divider seams at cut start/end in #36383e
+                painter.setPen(QPen(QColor(48, 50, 56, 220), 1.0))
                 painter.drawLine(QPointF(x0, ry), QPointF(x0, ry + rh))
                 painter.drawLine(QPointF(x1, ry), QPointF(x1, ry + rh))
                 painter.restore()

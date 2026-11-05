@@ -3499,83 +3499,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             except Exception:
                 pass
         
-        # Audio preview mapping
-        if hasattr(self, 'audio_preview') and getattr(self, '_assembly_prefs', None):
-            words = self._get_clean_words_data()
-            if words and words[0].get('meta_audio_path'):
-                audio_path = words[0].get('meta_audio_path')
-                import os
-                if clean_ops:
-                    fps = getattr(self.resolve_handler, 'fps', 24.0)
-                    ffmpeg_cmd = self.engine.os_doc.get_ffmpeg_cmd()
-                    if ffmpeg_cmd and os.path.exists(audio_path):
-                        assembled_audio_path = audio_path.replace(".wav", "_assembled.wav")
-                        from PySide6.QtCore import QThread, Signal
-                        
-                        class WavAssemblyThread(QThread):
-                            finished = Signal(str, list)
-                            def __init__(self, parent, in_path, out_path, ops, fps, ffmpeg_cmd, sp_kwargs):
-                                super().__init__(parent)
-                                self.in_path = in_path
-                                self.out_path = out_path
-                                self.ops = ops
-                                self.fps = fps
-                                self.ffmpeg_cmd = ffmpeg_cmd
-                                self.sp_kwargs = sp_kwargs
-                            def run(self):
-                                import wave
-                                import subprocess
-                                import os
-                                import tempfile
-                                try:
-                                    temp_wav_src = tempfile.mktemp(suffix=".wav")
-                                    decode_cmd = [
-                                        self.ffmpeg_cmd, "-y", "-i", self.in_path,
-                                        "-acodec", "pcm_s16le", temp_wav_src
-                                    ]
-                                    subprocess.run(decode_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self.sp_kwargs)
-                                    
-                                    if not os.path.exists(temp_wav_src):
-                                        raise Exception("FFmpeg decode failed to produce WAV file.")
-                                        
-                                    with wave.open(temp_wav_src, 'rb') as w_in:
-                                        params = w_in.getparams()
-                                        nframes = w_in.getnframes()
-                                        with wave.open(self.out_path, 'wb') as w_out:
-                                            w_out.setparams(params)
-                                            sr = params.framerate
-                                            
-                                            for op in self.ops:
-                                                start_s = op['s'] / self.fps
-                                                end_s = op['e'] / self.fps
-                                                
-                                                start_frame = int(start_s * sr)
-                                                end_frame = int(end_s * sr)
-                                                
-                                                # Clamp to available frames to prevent wave.Error
-                                                start_frame = max(0, min(start_frame, nframes))
-                                                end_frame = max(0, min(end_frame, nframes))
-                                                
-                                                frames_to_read = max(0, end_frame - start_frame)
-                                                
-                                                if frames_to_read > 0:
-                                                    w_in.setpos(start_frame)
-                                                    data = w_in.readframes(frames_to_read)
-                                                    w_out.writeframes(data)
-                                                    
-                                    try: os.remove(temp_wav_src)
-                                    except: pass
-                                    self.finished.emit(self.out_path, self.ops)
-                                except Exception as e:
-                                    from osdoc import log_error
-                                    log_error(f"Wav assembly exception: {e}")
-                                    
-                        kwargs = self.engine.os_doc.get_subprocess_kwargs()
-                        self._ffmpeg_thread = WavAssemblyThread(self, audio_path, assembled_audio_path, clean_ops, fps, ffmpeg_cmd, kwargs)
-                        self._ffmpeg_thread.finished.connect(self.audio_preview.load_assembled_audio)
-                        self._ffmpeg_thread.start()
-                else:
-                    self.audio_preview.check_audio_availability()
+        # Audio preview mapping & real-time skip-cuts activation
+        if hasattr(self, 'audio_preview'):
+            self.audio_preview.load_assembled_audio()
         
         is_sbs = getattr(self.text_canvas, 'is_sbs_mode', False)
         if hasattr(self, '_panel_left') and not is_sbs: self._panel_left.show()
@@ -3598,8 +3524,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._title_bar.chapter_dropdown.setText(chapter_name)
         self._title_bar.update_dropdown_placement()
         
-        # Load the new state
+        # Load the new state & refresh waveform cuts
         self.text_canvas.load_data(new_words)
+        self._refresh_cut_preview()
         self._show_transcript_view()
         
         dlg = CustomMsgBox(self, self.txt("msg_success"), self.txt("msg_timeline_assembled_succes"), self.txt("btn_ok"))

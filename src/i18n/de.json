@@ -557,5 +557,6 @@
   "opt_mouse_brush": "Pinsel-Markierung",
   "opt_mouse_none": "Deaktiviert",
   "tt_mouse_lmb_mode": "Verhalten der linken Maustaste. Die Rahmenauswahl ermöglicht das Aufziehen eines Auswahlrechtecks wie auf dem Desktop.",
-  "tt_mouse_rmb_mode": "Verhalten der rechten Maustaste. Die Pinsel-Markierung färbt Wörter beim Überfahren ein."
+  "tt_mouse_rmb_mode": "Verhalten der rechten Maustaste. Die Pinsel-Markierung färbt Wörter beim Überfahren ein.",
+  "tt_skip_cuts": "Geschnittene Abschnitte bei der Wiedergabe überspringen"
 }

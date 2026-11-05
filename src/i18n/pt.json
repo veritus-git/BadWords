@@ -557,5 +557,6 @@
   "opt_mouse_brush": "Pintura com pincel",
   "opt_mouse_none": "Desativado",
   "tt_mouse_lmb_mode": "Comportamento do botão esquerdo. A seleção por retângulo permite arrastrar uma caixa estilo área de trabalho sobre as palavras.",
-  "tt_mouse_rmb_mode": "Comportamento do botão direito. A pintura com pincel marca as palavras continuamente ao passar o cursor sobre elas."
+  "tt_mouse_rmb_mode": "Comportamento do botão direito. A pintura com pincel marca as palavras continuamente ao passar o cursor sobre elas.",
+  "tt_skip_cuts": "Pular seções cortadas durante a reprodução"
 }

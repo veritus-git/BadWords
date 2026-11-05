@@ -974,9 +974,10 @@ local function do_import_timeline_file(file_path, timeline_name)
     else
         local import_options = nil
         if timeline_name and timeline_name ~= "" then
+            -- Prefer importSourceClips = false so Resolve links to existing Media Pool clips (avoids red/offline clips)
             import_options = {
                 timelineName = timeline_name,
-                importSourceClips = true
+                importSourceClips = false
             }
         end
         if import_options then
@@ -984,9 +985,9 @@ local function do_import_timeline_file(file_path, timeline_name)
             if ok and res then imported = res end
         end
         if not imported and timeline_name and timeline_name ~= "" then
-            -- Fallback with importSourceClips = false if needed
+            -- Fallback with importSourceClips = true if media pool linking is needed from scratch
             local ok, res = pcall(function()
-                return mp:ImportTimelineFromFile(file_path, { timelineName = timeline_name, importSourceClips = false })
+                return mp:ImportTimelineFromFile(file_path, { timelineName = timeline_name, importSourceClips = true })
             end)
             if ok and res then imported = res end
         end
