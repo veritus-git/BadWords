@@ -1,9 +1,15 @@
 # BadWords - Complete User Guide & Manual
 
-> **Documentation for BadWords release: 3.2.4**
+> [!WARNING]
+> ### ⚠️ Outdated Manual Notice (Written for Version 3.2.4)
+> **Please note:** This comprehensive user guide and manual was written for **BadWords 3.2.4**, which is an older release.
+> 
+> BadWords has since transitioned to **v4.0**, introducing major new workflows and structural overhauls (such as standalone media import with multi-format timeline export, marquee box selection, interactive timeline waveform preview with real-time cut skipping, live in-RAM silence tuning, and FCP7 XML timeline assembly).
+> 
+> An updated manual dedicated to the latest version will be created and published as soon as I can manage it. In the meantime, this guide still provides useful explanations of core concepts and general workflows, but please keep in mind that many UI elements, shortcuts, and settings differ in the newer version!
 
-> [!WARNING]  
-> **Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub - Pull Requests are also welcome!
+> [!NOTE]  
+> **Documentation Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub - Pull Requests are also welcome!
 
 ## Table of Contents
 

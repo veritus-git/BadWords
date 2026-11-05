@@ -440,6 +440,10 @@ class TrackOptionsDrawer(QWidget):
             is_file_source = (src.get('source_type') == 'file')
             linking_enabled = is_file_source or force_xml
 
+            if hasattr(self, 'tgl_link_av'):
+                self.tgl_link_av.set_blocked(not linking_enabled)
+            if hasattr(self, 'tgl_link_all'):
+                self.tgl_link_all.set_blocked(not linking_enabled)
             if hasattr(self, 'w_linking_box'):
                 self.w_linking_box.setAttribute(Qt.WA_TransparentForMouseEvents, not linking_enabled)
 

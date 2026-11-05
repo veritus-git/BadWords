@@ -1620,6 +1620,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             parent_main = self.parent() or getattr(self, 'main_window', None)
             is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
             enabled = is_file or force_xml_on
+            self.tgl_link_av_clips.set_blocked(not enabled)
+            self.tgl_link_all_cut_tracks.set_blocked(not enabled)
             row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
             row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
             tt = "" if enabled else self.txt("tt_linking_requires_xml")

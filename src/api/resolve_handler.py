@@ -2031,10 +2031,38 @@ class ResolveHandler:
 
     # ── XML Pre-filter Pipeline ─────────────────────────────────────────────
 
-    def export_timeline_drt(self, timeline_name: str, output_path: str) -> tuple[bool, int]:
+    def can_use_drt(self, timeline_name: str = None) -> bool:
+        """
+        Fast probe to check if native DRT export is supported and non-blocking on this Resolve instance.
+        Returns False immediately without freezing UI if DRT export is blocked or restricted.
+        """
+        if self.is_free_21_1_or_newer():
+            return False
+
+        if hasattr(self, '_drt_probe_cached') and self._drt_probe_cached is not None:
+            return self._drt_probe_cached
+
+        temp_probe_path = os.path.join(self.os_doc.get_temp_folder(), f"bw_drt_probe_{int(time.time())}.drt")
+        try:
+            ok, _ = self.export_timeline_drt(timeline_name or "", temp_probe_path, timeout_secs=2.0)
+            self._drt_probe_cached = bool(ok)
+            try:
+                if os.path.exists(temp_probe_path):
+                    os.remove(temp_probe_path)
+            except Exception:
+                pass
+            log_info(f"can_use_drt: DRT capability probe result: {self._drt_probe_cached}")
+            return self._drt_probe_cached
+        except Exception as e:
+            log_info(f"can_use_drt: DRT capability probe exception: {e}")
+            self._drt_probe_cached = False
+            return False
+
+    def export_timeline_drt(self, timeline_name: str, output_path: str, timeout_secs: float = 3.0) -> tuple[bool, int]:
         """
         Exports the named timeline as native .drt to output_path.
         Returns (success: bool, start_frame: int).
+        Uses a fast timeout (default 3.0s) so blocked exports never freeze the UI.
         """
         if self.backend == 'bridge':
             if self.is_free_21_1_or_newer():
@@ -2044,7 +2072,7 @@ class ResolveHandler:
                 res = self.bridge_client.call("ExportTimelineDrt", {
                     "timeline_name": timeline_name,
                     "output_path": output_path
-                }, timeout_secs=10.0)
+                }, timeout_secs=timeout_secs)
                 if res and res.get("ok"):
                     return True, int(res.get("start_frame") or 0)
                 log_error(f"export_timeline_drt (bridge) failed: {res}")

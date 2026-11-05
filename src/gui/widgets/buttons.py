@@ -644,6 +644,7 @@ class ToggleSwitch(QWidget):
         self._thumb_x = float(config.S(2))
         self._bg_color = QColor("#555555")
         self._opacity = 1.0
+        self._blocked = False
         
         # Animators
         self._anim_group = QPropertyAnimation(self, b"thumb_x", self)
@@ -690,13 +691,18 @@ class ToggleSwitch(QWidget):
         
         self.toggled.emit(self._is_checked)
 
+    def set_blocked(self, blocked: bool):
+        self._blocked = bool(blocked)
+        self.setCursor(Qt.ArrowCursor if blocked else Qt.PointingHandCursor)
+        self.update()
+
     def mousePressEvent(self, event):
-        if not self.isEnabled():
+        if not self.isEnabled() or getattr(self, "_blocked", False):
             return
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if not self.isEnabled():
+        if not self.isEnabled() or getattr(self, "_blocked", False):
             return
         if event.button() == Qt.LeftButton:
             self._is_checked = not self._is_checked
@@ -733,8 +739,6 @@ class ToggleSwitch(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         eff_op = getattr(self, "_opacity", 1.0)
-        if not self.isEnabled():
-            eff_op = min(eff_op, 0.35)
         p.setOpacity(eff_op)
         
         # Draw background capsule
