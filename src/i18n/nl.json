@@ -559,5 +559,8 @@
   "opt_mouse_none": "Uitgeschakeld",
   "tt_mouse_lmb_mode": "Gedrag van de linkermuisknop. Met kaderselectie kunt u een selectievak zoals op het bureaublad over woorden slepen.",
   "tt_mouse_rmb_mode": "Gedrag van de rechtermuisknop. Met penseelmarkering kleurt u woorden continu in terwijl u eroverheen sleept.",
-  "tt_skip_cuts": "Overgeslagen geknipte secties tijdens het afspelen"
+  "tt_skip_cuts": "Overgeslagen geknipte secties tijdens het afspelen",
+  "lbl_resolve_render_timeline_proxy": "Genereer DaVinci tijdlijn videovoorbeeld proxy",
+  "tt_resolve_render_timeline_proxy": "Wanneer complexe videobewerkingen, b-roll, titels of overgangen worden gedetecteerd, wordt na Whisper op de achtergrond een lichte 360p-proxy gerenderd.",
+  "status_rendering_resolve_proxy": "DaVinci tijdlijn videovoorbeeld renderen..."
 }

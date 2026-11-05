@@ -118,6 +118,11 @@ DEFAULT_SETTINGS = {
     "link_av_clips": True,
     # False (default): link all video and audio tracks together across each cut slice
     "link_all_cut_tracks": False,
+    # ── DaVinci Timeline Video Preview ───────────────────────────────────────
+    # True (default): in DaVinci Resolve mode, render a lightweight 360p video proxy in background
+    # when complex video edits, cuts, b-roll, or transitions are detected on the timeline.
+    # Runs AFTER Whisper finishes to avoid GPU VRAM contention.
+    "resolve_render_timeline_proxy": True,
     # ── Transcript timestamps ───────────────────────────────────────────────
     # False (default): timestamps rounded to nearest second, e.g. [01:08]
     # True: full millisecond precision, e.g. [01:07.986]

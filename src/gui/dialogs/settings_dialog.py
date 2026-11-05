@@ -1563,6 +1563,15 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_bottom, self.txt("lbl_force_xml_assembly"), w_force_xml,
                  False, lambda v: self.tgl_force_xml_assembly.setChecked(v, animated=True))
 
+        # Link matching A/V and Link all cut tracks container (fades smoothly without palette flashes)
+        w_linking_container = QWidget()
+        l_linking_form = QFormLayout(w_linking_container)
+        l_linking_form.setContentsMargins(0, 0, 0, 0)
+        l_linking_form.setHorizontalSpacing(form_bottom.horizontalSpacing())
+        l_linking_form.setVerticalSpacing(form_bottom.verticalSpacing())
+        l_linking_form.setLabelAlignment(Qt.AlignLeft)
+        l_linking_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+
         # Link matching A/V toggle
         self.tgl_link_av_clips = ToggleSwitch()
         self.tgl_link_av_clips.setChecked(
@@ -1580,7 +1589,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
         l_link_av.addSpacing(config.S(8))
         l_link_av.addWidget(self.tgl_link_av_clips)
-        lbl_link_av, row_link_av = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
+        lbl_link_av, row_link_av = self._add_row(l_linking_form, self.txt("lbl_link_av_clips"), w_link_av,
                  False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
 
         # Link all cut tracks toggle
@@ -1600,52 +1609,38 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
         l_link_all.addSpacing(config.S(8))
         l_link_all.addWidget(self.tgl_link_all_cut_tracks)
-        lbl_link_all, row_link_all = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
+        lbl_link_all, row_link_all = self._add_row(l_linking_form, self.txt("lbl_link_all_cut_tracks"), w_link_all,
                  False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
 
-        eff_av_lbl = QGraphicsOpacityEffect(lbl_link_av)
-        eff_av_row = QGraphicsOpacityEffect(row_link_av)
-        lbl_link_av.setGraphicsEffect(eff_av_lbl)
-        row_link_av.setGraphicsEffect(eff_av_row)
+        form_bottom.addRow(w_linking_container)
 
-        eff_all_lbl = QGraphicsOpacityEffect(lbl_link_all)
-        eff_all_row = QGraphicsOpacityEffect(row_link_all)
-        lbl_link_all.setGraphicsEffect(eff_all_lbl)
-        row_link_all.setGraphicsEffect(eff_all_row)
+        opacity_effect = QGraphicsOpacityEffect(w_linking_container)
+        w_linking_container.setGraphicsEffect(opacity_effect)
 
         self._linking_anim = QVariantAnimation(self)
         self._linking_anim.setDuration(250)
         self._linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
-        def _apply_op(val):
-            eff_av_lbl.setOpacity(val)
-            eff_av_row.setOpacity(val)
-            eff_all_lbl.setOpacity(val)
-            eff_all_row.setOpacity(val)
-        self._linking_anim.valueChanged.connect(_apply_op)
+        self._linking_anim.valueChanged.connect(lambda val: opacity_effect.setOpacity(val))
 
         def _update_linking_availability(force_xml_on: bool, animated: bool = False):
             parent_main = self.parent() or getattr(self, 'main_window', None)
             is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
             enabled = is_file or force_xml_on
-            self.tgl_link_av_clips.setEnabled(enabled)
-            self.tgl_link_all_cut_tracks.setEnabled(enabled)
+            w_linking_container.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
             tt = "" if enabled else self.txt("tt_linking_requires_xml")
+            w_linking_container.setToolTip(tt)
             w_link_av.setToolTip(tt)
             w_link_all.setToolTip(tt)
-            if lbl_link_av:
-                lbl_link_av.setToolTip(tt)
-            if lbl_link_all:
-                lbl_link_all.setToolTip(tt)
 
             target_op = 1.0 if enabled else 0.35
             if animated:
                 self._linking_anim.stop()
-                self._linking_anim.setStartValue(eff_av_lbl.opacity())
+                self._linking_anim.setStartValue(opacity_effect.opacity())
                 self._linking_anim.setEndValue(target_op)
                 self._linking_anim.start()
             else:
                 self._linking_anim.stop()
-                _apply_op(target_op)
+                opacity_effect.setOpacity(target_op)
 
             if parent_main and hasattr(parent_main, 'w_track_options'):
                 try:
@@ -1654,6 +1649,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     pass
 
         _update_linking_availability(self.tgl_force_xml_assembly.isChecked(), animated=False)
+
+        # DaVinci timeline video proxy render toggle
+        self.tgl_resolve_render_timeline_proxy = ToggleSwitch()
+        self.tgl_resolve_render_timeline_proxy.setChecked(
+            bool(_bot_prefs.get("resolve_render_timeline_proxy",
+                                _cfg_bot.DEFAULT_SETTINGS["resolve_render_timeline_proxy"])),
+            animated=False
+        )
+        self.tgl_resolve_render_timeline_proxy.toggled.connect(
+            lambda checked: self.engine.save_preferences({"resolve_render_timeline_proxy": checked})
+        )
+        w_res_proxy = QWidget()
+        l_res_proxy = QHBoxLayout(w_res_proxy)
+        l_res_proxy.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_res_proxy.addStretch()
+        l_res_proxy.addWidget(self._get_info_icon("tt_resolve_render_timeline_proxy"))
+        l_res_proxy.addSpacing(config.S(8))
+        l_res_proxy.addWidget(self.tgl_resolve_render_timeline_proxy)
+        self._add_row(form_bottom, self.txt("lbl_resolve_render_timeline_proxy"), w_res_proxy,
+                 False, lambda v: self.tgl_resolve_render_timeline_proxy.setChecked(v, animated=True))
 
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
         self.tgl_timestamp_precise = ToggleSwitch()
@@ -2866,6 +2881,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
             'link_av_clips':        self._safe_get('tgl_link_av_clips', old_prefs.get('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'isChecked'),
             'link_all_cut_tracks':  self._safe_get('tgl_link_all_cut_tracks', old_prefs.get('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'isChecked'),
+            'resolve_render_timeline_proxy': self._safe_get('tgl_resolve_render_timeline_proxy', old_prefs.get('resolve_render_timeline_proxy', config.DEFAULT_SETTINGS['resolve_render_timeline_proxy']), 'isChecked'),
             'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
             'show_panel_headers':   self._safe_get('tgl_show_panel_headers', old_prefs.get('show_panel_headers', True), 'isChecked'),
             'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
@@ -2986,6 +3002,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._safe_set('tgl_force_xml_assembly', _g('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'setChecked')
         self._safe_set('tgl_link_av_clips', _g('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'setChecked')
         self._safe_set('tgl_link_all_cut_tracks', _g('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'setChecked')
+        self._safe_set('tgl_resolve_render_timeline_proxy', _g('resolve_render_timeline_proxy', config.DEFAULT_SETTINGS['resolve_render_timeline_proxy']), 'setChecked')
         self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
         self._safe_set('tgl_show_panel_headers', _g('show_panel_headers', True), 'setChecked')
         self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')

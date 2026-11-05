@@ -559,5 +559,8 @@
   "opt_mouse_none": "Desactivado",
   "tt_mouse_lmb_mode": "Comportamiento del botón izquierdo. La selección por marco permite arrastrar un cuadro estilo escritorio sobre las palabras.",
   "tt_mouse_rmb_mode": "Comportamiento del botón derecho. El pincel marca las palabras continuamente al pasar el cursor sobre ellas.",
-  "tt_skip_cuts": "Omitir secciones cortadas durante la reproducción"
+  "tt_skip_cuts": "Omitir secciones cortadas durante la reproducción",
+  "lbl_resolve_render_timeline_proxy": "Renderizar proxy de previsualización de línea de tiempo DaVinci",
+  "tt_resolve_render_timeline_proxy": "Cuando se detectan ediciones complejas, recursos b-roll, títulos o transiciones en DaVinci, se renderiza un proxy ligero de 360p en segundo plano tras finalizar Whisper.",
+  "status_rendering_resolve_proxy": "Renderizando previsualización de línea de tiempo DaVinci..."
 }

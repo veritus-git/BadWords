@@ -559,5 +559,8 @@
   "opt_mouse_none": "Deaktiviert",
   "tt_mouse_lmb_mode": "Verhalten der linken Maustaste. Die Rahmenauswahl ermöglicht das Aufziehen eines Auswahlrechtecks wie auf dem Desktop.",
   "tt_mouse_rmb_mode": "Verhalten der rechten Maustaste. Die Pinsel-Markierung färbt Wörter beim Überfahren ein.",
-  "tt_skip_cuts": "Geschnittene Abschnitte bei der Wiedergabe überspringen"
+  "tt_skip_cuts": "Geschnittene Abschnitte bei der Wiedergabe überspringen",
+  "lbl_resolve_render_timeline_proxy": "DaVinci Timeline-Videovorschau-Proxy rendern",
+  "tt_resolve_render_timeline_proxy": "Wenn komplexe Videoschnitte, B-Roll, Texte oder Übergänge auf der DaVinci-Timeline erkannt werden, wird nach Abschluss von Whisper im Hintergrund ein leichtes 360p-Proxy gerendert.",
+  "status_rendering_resolve_proxy": "DaVinci Timeline-Videovorschau wird gerendert..."
 }

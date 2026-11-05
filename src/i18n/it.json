@@ -559,5 +559,8 @@
   "opt_mouse_none": "Disabilitato",
   "tt_mouse_lmb_mode": "Comportamento del tasto sinistro. La selezione a rettangolo consente di trascinare un riquadro in stile desktop sulle parole.",
   "tt_mouse_rmb_mode": "Comportamento del tasto destro. Il pennello evidenzia le parole continuamente al passaggio del cursore.",
-  "tt_skip_cuts": "Salta le sezioni tagliate durante la riproduzione"
+  "tt_skip_cuts": "Salta le sezioni tagliate durante la riproduzione",
+  "lbl_resolve_render_timeline_proxy": "Genera proxy anteprima video timeline DaVinci",
+  "tt_resolve_render_timeline_proxy": "Quando vengono rilevati tagli complessi, b-roll, titoli o transizioni sulla timeline DaVinci, viene renderizzato un proxy leggero a 360p in background dopo Whisper.",
+  "status_rendering_resolve_proxy": "Rendering anteprima video timeline DaVinci..."
 }

@@ -721,6 +721,134 @@ handlers.RenderAudio = function(req)
     return { ok = true, file_path = expected_wav }
 end
 
+handlers.CheckComplexVideo = function(req)
+    if not res_app then return { ok = false, error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { ok = false, error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { ok = false, error = "Timeline not found" } end
+
+    local v_count = tl:GetTrackCount("video") or 0
+    if v_count > 1 then
+        for i = 2, v_count do
+            local items = tl:GetItemListInTrack("video", i) or {}
+            if #items > 0 then
+                return { ok = true, is_complex = true, reason = "Multiple active video tracks" }
+            end
+        end
+    end
+
+    local items_v1 = tl:GetItemListInTrack("video", 1) or {}
+    if #items_v1 > 0 then
+        local prev_end = nil
+        for i, it in ipairs(items_v1) do
+            local s_f = it:GetStart()
+            local dur_f = it:GetDuration()
+            local left_off = it:GetLeftOffset() or 0
+            if left_off > 0 then
+                return { ok = true, is_complex = true, reason = "Trimmed in-point" }
+            end
+            if prev_end ~= nil and s_f ~= prev_end then
+                return { ok = true, is_complex = true, reason = "Gaps or cuts between video items" }
+            end
+            prev_end = s_f + dur_f
+            local mpi = it:GetMediaPoolItem()
+            if not mpi then
+                return { ok = true, is_complex = true, reason = "Fusion title or generator" }
+            end
+        end
+    end
+
+    return { ok = true, is_complex = false }
+end
+
+handlers.RenderVideoProxy = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local export_path = req.export_path or ""
+    local unique_id = req.unique_id or "BW_timeline_preview"
+    local tl_name = req.timeline_name
+
+    local current_tl = resolve_and_activate_timeline(proj, tl_name)
+    if not current_tl then return { error = "Timeline not found" } end
+
+    pcall(function() res_app:OpenPage("edit") end)
+
+    proj:DeleteAllRenderJobs()
+    local r_settings = {
+        TargetDir = export_path,
+        CustomName = unique_id,
+        ExportAudio = true,
+        ExportVideo = true,
+        SelectAllFrames = 1,
+        CustomResolution = true,
+        ResolutionWidth = 640,
+        ResolutionHeight = 360
+    }
+
+    pcall(function()
+        local fmts = proj:GetRenderFormats() or {}
+        local fmt = "mp4"
+        if not fmts[fmt] and fmts["mov"] then fmt = "mov" elseif not fmts[fmt] and fmts["QuickTime"] then fmt = "QuickTime" end
+        local codecs = proj:GetRenderCodecs(fmt) or {}
+        local c = "H264"
+        if not codecs[c] and codecs["H.264"] then c = "H.264" end
+        proj:SetCurrentRenderFormatAndCodec(fmt, c)
+    end)
+
+    proj:SetRenderSettings(r_settings)
+
+    local job_id = proj:AddRenderJob()
+    if not job_id or job_id == "" then
+        return { error = "Failed to add video render job" }
+    end
+
+    proj:StartRendering(job_id)
+
+    local render_error = nil
+    while true do
+        bmd.wait(0.25)
+        local status = proj:GetRenderJobStatus(job_id)
+        if status then
+            local s_job = status.JobStatus or status.Status or ""
+            if s_job == "Complete" then
+                break
+            elseif s_job == "Cancelled" or s_job == "Failed" then
+                render_error = "Render job " .. s_job
+                break
+            end
+        else
+            break
+        end
+    end
+
+    pcall(function() proj:SetRenderSettings({ SelectAllFrames = 1 }) end)
+    pcall(function() res_app:OpenPage("edit") end)
+
+    if render_error then
+        return { error = render_error }
+    end
+
+    local sep = "/"
+    local candidates = {
+        export_path .. sep .. unique_id .. ".mp4",
+        export_path .. sep .. unique_id .. ".mov",
+        export_path .. sep .. unique_id .. ".mkv",
+    }
+    for _, cand in ipairs(candidates) do
+        if bmd.fileexists(cand) then
+            return { ok = true, file_path = cand }
+        end
+    end
+
+    return { error = "Rendered proxy file not found" }
+end
+
 handlers.ExportTimelineDrt = function(req)
     if not res_app then return { error = "Resolve API object not available" } end
     local pm = res_app:GetProjectManager()

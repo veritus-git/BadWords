@@ -236,7 +236,67 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             try: os.remove(concat_txt)
             except Exception: pass
 
-    def generate_preview_proxy(self, clips_info: list, output_proxy_mp4: str, target_fps=30.0, callback_status=None) -> bool:
+    def _get_fast_video_encoder_args(self) -> list:
+        """Determines best hardware-accelerated H.264 encoder args for ultra-fast proxy generation."""
+        if hasattr(self, "_cached_video_encoder_args") and self._cached_video_encoder_args:
+            return list(self._cached_video_encoder_args)
+
+        sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, 'get_subprocess_kwargs') else {}
+
+        # 1. Try NVIDIA NVENC
+        try:
+            test_cmd = [
+                self.ffmpeg_cmd, "-y",
+                "-f", "lavfi", "-i", "testsrc=size=64x64:rate=30",
+                "-t", "0.1",
+                "-c:v", "h264_nvenc",
+                "-f", "null", "-"
+            ]
+            r = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **sp_kwargs)
+            if r.returncode == 0:
+                self._cached_video_encoder_args = ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "constqp", "-qp", "32", "-g", "30"]
+                return list(self._cached_video_encoder_args)
+        except Exception:
+            pass
+
+        # 2. Try macOS VideoToolbox
+        if platform.system() == "Darwin":
+            try:
+                test_cmd = [
+                    self.ffmpeg_cmd, "-y",
+                    "-f", "lavfi", "-i", "testsrc=size=64x64:rate=30",
+                    "-t", "0.1",
+                    "-c:v", "h264_videotoolbox",
+                    "-f", "null", "-"
+                ]
+                r = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **sp_kwargs)
+                if r.returncode == 0:
+                    self._cached_video_encoder_args = ["-c:v", "h264_videotoolbox", "-b:v", "1200k", "-g", "30"]
+                    return list(self._cached_video_encoder_args)
+            except Exception:
+                pass
+
+        # 3. Try Intel QSV
+        try:
+            test_cmd = [
+                self.ffmpeg_cmd, "-y",
+                "-f", "lavfi", "-i", "testsrc=size=64x64:rate=30",
+                "-t", "0.1",
+                "-c:v", "h264_qsv",
+                "-f", "null", "-"
+            ]
+            r = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **sp_kwargs)
+            if r.returncode == 0:
+                self._cached_video_encoder_args = ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "32", "-g", "30"]
+                return list(self._cached_video_encoder_args)
+        except Exception:
+            pass
+
+        # 4. Fallback to CPU libx264
+        self._cached_video_encoder_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-crf", "32", "-g", "30"]
+        return list(self._cached_video_encoder_args)
+
+    def generate_preview_proxy(self, clips_info: list, output_proxy_mp4: str, target_fps=30.0, callback_status=None, is_cancelled_cb=None) -> bool:
         """
         Generates an ultra-fast, lightweight 360p H.264 preview proxy with short GOP
         for 100% stutter-free playback and scrubbing in QMediaPlayer.
@@ -255,9 +315,12 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         temp_dir = os.path.dirname(output_proxy_mp4)
         part_proxies = []
         concat_txt = os.path.join(temp_dir, f"concat_proxy_{os.getpid()}_{int(time.time())}.txt")
+        v_enc_args = self._get_fast_video_encoder_args()
 
         try:
             for idx, clip in enumerate(clips_info):
+                if is_cancelled_cb and is_cancelled_cb():
+                    return False
                 if callback_status:
                     callback_status(self.txt("status_generating_proxy", idx=idx+1, total=len(clips_info)))
                 part_path = os.path.join(temp_dir, f"tmp_proxy_part_{idx}_{os.getpid()}_{int(time.time())}.mp4")
@@ -266,9 +329,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                         self.ffmpeg_cmd, "-y",
                         "-threads", "0",
                         "-i", clip["path"],
+                        "-sws_flags", "fast_bilinear",
                         "-vf", "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1",
                         "-r", str(target_fps),
-                        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-crf", "32", "-g", "30",
+                    ] + v_enc_args + [
                         "-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1",
                         part_path
                     ]
@@ -280,7 +344,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                         "-f", "lavfi", "-i", f"color=c=black:s=640x360:r={target_fps}:d={dur_s}",
                         "-i", clip["path"],
                         "-map", "0:v:0", "-map", "1:a:0",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-crf", "32", "-g", "30",
+                    ] + v_enc_args + [
                         "-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1",
                         "-shortest",
                         part_path
@@ -291,6 +355,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 else:
                     log_error(f"Proxy generation failed for part {idx}: {res.stderr[-200:]}")
                     return False
+
+            if is_cancelled_cb and is_cancelled_cb():
+                return False
 
             if len(part_proxies) == 1:
                 import shutil

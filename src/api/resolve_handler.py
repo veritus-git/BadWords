@@ -747,6 +747,183 @@ class ResolveHandler:
 
         return target_file if render_ok else None
 
+    def has_complex_timeline_video(self, timeline_name: str = None) -> bool:
+        """
+        Detects if the timeline has complex video arrangements (multiple video tracks,
+        in-point trims, gaps, transitions, Fusion titles or generators) as opposed to
+        raw clips placed back-to-back.
+        """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("CheckComplexVideo", {
+                    "timeline_name": timeline_name or ""
+                }, timeout_secs=5.0)
+                if res and res.get("ok"):
+                    return bool(res.get("is_complex", False))
+            except Exception as e:
+                log_error(f"has_complex_timeline_video (bridge) error: {e}")
+            return False
+
+        if not self.project:
+            return False
+
+        try:
+            target_tl = self._resolve_target_timeline(timeline_name)
+            if not target_tl:
+                return False
+
+            v_count = target_tl.GetTrackCount("video") or 0
+            if v_count > 1:
+                for vi in range(2, v_count + 1):
+                    v_items = target_tl.GetItemListInTrack("video", vi) or []
+                    if len(v_items) > 0:
+                        return True
+
+            items_v1 = target_tl.GetItemListInTrack("video", 1) or []
+            if not items_v1:
+                return False
+
+            prev_end = None
+            for item in items_v1:
+                left_off = item.GetLeftOffset() or 0
+                if left_off > 0:
+                    return True  # Trimmed head / in-point
+                s_f = item.GetStart()
+                dur_f = item.GetDuration()
+                if prev_end is not None and s_f != prev_end:
+                    return True  # Gap between clips
+                prev_end = s_f + dur_f
+
+                mpi = item.GetMediaPoolItem()
+                if not mpi:
+                    return True  # Fusion title, solid color, generator, etc.
+
+                # Check if transitions exist
+                if hasattr(item, "GetLeftTransition") and item.GetLeftTransition():
+                    return True
+                if hasattr(item, "GetRightTransition") and item.GetRightTransition():
+                    return True
+
+            return False
+        except Exception as e:
+            log_error(f"has_complex_timeline_video error: {e}")
+            return False
+
+    def render_timeline_video_proxy(self, timeline_name: str, export_path: str, unique_id: str, progress_callback=None, is_cancelled_cb=None) -> str:
+        """
+        Renders an ultra-lightweight 360p H.264 video proxy in DaVinci Resolve
+        for 100% visual fidelity of edited timelines (grades, Fusion titles, b-roll, cuts).
+        Runs after transcription to prevent GPU/CUDA resource contention.
+        """
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("RenderVideoProxy", {
+                    "unique_id": unique_id,
+                    "export_path": export_path,
+                    "timeline_name": timeline_name
+                }, timeout_secs=600.0)
+                if res and res.get("ok"):
+                    return res.get("file_path")
+                else:
+                    log_error(f"render_timeline_video_proxy (bridge) failed: {res.get('error') if res else 'unknown'}")
+            except Exception as e:
+                log_error(f"render_timeline_video_proxy (bridge) error: {e}")
+            return None
+
+        if not self.project:
+            return None
+
+        target_file = None
+        original_timeline = self.timeline
+        switched_timeline = False
+
+        try:
+            target_tl = self._resolve_target_timeline(timeline_name)
+            if not target_tl:
+                return None
+
+            if target_tl != self.timeline:
+                self.project.SetCurrentTimeline(target_tl)
+                self.timeline = target_tl
+                switched_timeline = True
+
+            self.project.DeleteAllRenderJobs()
+
+            # Detect supported export formats & codecs
+            rf_formats = self.project.GetRenderFormats() or {}
+            fmt = "mp4" if "mp4" in rf_formats else ("mov" if "mov" in rf_formats else "QuickTime")
+            codecs = self.project.GetRenderCodecs(fmt) or {}
+            codec = "H264" if "H264" in codecs else ("H.264" if "H.264" in codecs else (list(codecs.keys())[0] if codecs else "H264"))
+
+            try:
+                self.project.SetCurrentRenderFormatAndCodec(fmt, codec)
+            except Exception:
+                pass
+
+            render_settings = {
+                "SelectAllFrames": 1,
+                "TargetDir":       export_path,
+                "CustomName":      unique_id,
+                "ExportVideo":     True,
+                "ExportAudio":     True,
+                "CustomResolution": True,
+                "ResolutionWidth":  640,
+                "ResolutionHeight": 360,
+                "AudioCodec":      "aac",
+                "AudioSampleRate": 48000,
+            }
+            self.project.SetRenderSettings(render_settings)
+
+            pid = self.project.AddRenderJob()
+            if not pid:
+                log_error("render_timeline_video_proxy: AddRenderJob returned None")
+                return None
+
+            started = self.project.StartRendering(pid)
+            if not started:
+                self.project.StartRendering()
+
+            deadline = time.time() + 600.0
+            while self.project.IsRenderingInProgress() and time.time() < deadline:
+                if is_cancelled_cb and is_cancelled_cb():
+                    try: self.project.StopRendering()
+                    except Exception: pass
+                    try: self.project.DeleteRenderJob(pid)
+                    except Exception: pass
+                    return None
+                time.sleep(0.2)
+
+            status = self.project.GetRenderJobStatus(pid)
+            try: self.project.DeleteRenderJob(pid)
+            except Exception: pass
+
+            render_ok = status.get("JobStatus") in ("Complete", "Completed") if isinstance(status, dict) else False
+            if not render_ok and isinstance(status, dict) and status and "JobStatus" not in status:
+                render_ok = True
+
+            # Detect output file
+            for ext in [".mp4", ".mov", ".mkv"]:
+                cand = os.path.join(export_path, f"{unique_id}{ext}")
+                if os.path.isfile(cand) and os.path.getsize(cand) > 0:
+                    target_file = cand
+                    break
+
+        except Exception as e:
+            log_error(f"render_timeline_video_proxy error: {e}")
+        finally:
+            try: self.project.SetRenderSettings({"SelectAllFrames": 1})
+            except Exception: pass
+            if self.resolve:
+                try: self.resolve.OpenPage("edit")
+                except Exception: pass
+            if switched_timeline and original_timeline:
+                try:
+                    self.project.SetCurrentTimeline(original_timeline)
+                    self.timeline = original_timeline
+                except Exception: pass
+
+        return target_file
+
     def _collect_clips_by_color(self, tl, color_name):
         clips = []
         for track_type in ["video", "audio"]:

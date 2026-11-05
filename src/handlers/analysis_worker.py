@@ -62,15 +62,72 @@ class BackgroundProxyWorker(QThread):
         self.clips_info = clips_info
         self.output_proxy_mp4 = output_proxy_mp4
         self.target_fps = target_fps
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
 
     def run(self):
         try:
             import os
-            ok = self.engine.generate_preview_proxy(self.clips_info, self.output_proxy_mp4, target_fps=self.target_fps)
+            ok = self.engine.generate_preview_proxy(
+                self.clips_info,
+                self.output_proxy_mp4,
+                target_fps=self.target_fps,
+                is_cancelled_cb=lambda: self._is_cancelled
+            )
+            if self._is_cancelled:
+                return
             if ok and os.path.isfile(self.output_proxy_mp4) and os.path.getsize(self.output_proxy_mp4) > 0:
                 self.proxy_ready.emit(self.output_proxy_mp4)
             else:
                 self.proxy_failed.emit("Proxy generation returned False")
+        except Exception as e:
+            self.proxy_failed.emit(str(e))
+
+
+class ResolveTimelineProxyWorker(QThread):
+    proxy_ready = Signal(str)
+    proxy_failed = Signal(str)
+    progress = Signal(int)
+
+    def __init__(self, engine, timeline_name: str, export_path: str, unique_id: str):
+        super().__init__()
+        self.engine = engine
+        self.timeline_name = timeline_name
+        self.export_path = export_path
+        self.unique_id = unique_id
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        try:
+            import os
+            handler = getattr(self.engine, 'resolve_handler', None)
+            if not handler:
+                self.proxy_failed.emit("Resolve handler not available")
+                return
+
+            def on_progress(p):
+                if not self._is_cancelled:
+                    self.progress.emit(p)
+
+            res_path = handler.render_timeline_video_proxy(
+                self.timeline_name,
+                self.export_path,
+                self.unique_id,
+                progress_callback=on_progress,
+                is_cancelled_cb=lambda: self._is_cancelled
+            )
+            if self._is_cancelled:
+                return
+
+            if res_path and os.path.isfile(res_path) and os.path.getsize(res_path) > 0:
+                self.proxy_ready.emit(res_path)
+            else:
+                self.proxy_failed.emit("Rendered proxy file not produced")
         except Exception as e:
             self.proxy_failed.emit(str(e))
 

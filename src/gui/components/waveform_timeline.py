@@ -612,6 +612,7 @@ class WaveformTimelineWidget(QWidget):
         if max_start <= 0.001 or self._zoom_level <= 1.01:
             self.scrollbar.setEnabled(False)
             self.scrollbar.blockSignals(True)
+            self.scrollbar.setRange(0, 0)
             self.scrollbar.setPageStep(1000)
             self.scrollbar.setValue(0)
             self.scrollbar.blockSignals(False)
@@ -620,19 +621,21 @@ class WaveformTimelineWidget(QWidget):
             self.scrollbar.setEnabled(True)
             self.scrollbar.show()
             page_ratio = min(1.0, vis_dur / max(0.001, self._duration))
-            page_step = int(page_ratio * 1000)
-            val = int((self._view_start_time / max_start) * (1000 - page_step))
+            page_step = max(1, int(page_ratio * 1000))
+            max_scroll = max(0, 1000 - page_step)
             self.scrollbar.blockSignals(True)
+            self.scrollbar.setRange(0, max_scroll)
             self.scrollbar.setPageStep(page_step)
-            self.scrollbar.setValue(max(0, min(1000 - page_step, val)))
+            val = int((self._view_start_time / max_start) * max_scroll) if max_start > 0 else 0
+            self.scrollbar.setValue(max(0, min(max_scroll, val)))
             self.scrollbar.blockSignals(False)
 
     def _on_scrollbar_changed(self, value: int) -> None:
         vis_dur = self.visible_duration()
         max_start = max(0.0, self._duration - vis_dur)
-        if max_start > 0:
-            max_val = max(1, 1000 - self.scrollbar.pageStep())
-            pct = max(0.0, min(1.0, value / float(max_val)))
+        max_scroll = self.scrollbar.maximum()
+        if max_start > 0 and max_scroll > 0:
+            pct = max(0.0, min(1.0, value / float(max_scroll)))
             self._view_start_time = pct * max_start
             self._needs_pixmap_rebuild = True
             self.update()
@@ -912,8 +915,8 @@ class WaveformTimelineWidget(QWidget):
             bg_notch_col = QColor("#141418")
 
             for i, clip in enumerate(self._clips_layout):
-                c_start = float(clip.get("start_s", 0.0))
-                c_end = float(clip.get("end_s", self._duration))
+                c_start = float(clip.get("start_s", clip.get("start", 0.0)))
+                c_end = float(clip.get("end_s", clip.get("end", self._duration)))
                 c_name = clip.get("name", f"Clip {i+1}")
                 if c_end <= t_start or c_start >= t_end:
                     continue
@@ -925,13 +928,13 @@ class WaveformTimelineWidget(QWidget):
                 # Vertical boundary seam line between clips (visible gap / divider)
                 seam_pen = QPen(bg_notch_col, float(config.S(1.8)))
                 painter.setPen(seam_pen)
-                if c_start > t_start:
+                if c_start > max(0.005, t_start) and cx0 < rx + rw:
                     painter.drawLine(QPointF(cx0, ry), QPointF(cx0, ry + rh))
-                if c_end < t_end:
+                if c_end < min(self._duration - 0.005, t_end) and cx1 > rx:
                     painter.drawLine(QPointF(cx1, ry), QPointF(cx1, ry + rh))
 
                 # Delicate rounded corners (fillets) at clip intersections (matching DaVinci Resolve)
-                if c_start > t_start:
+                if c_start > max(0.005, t_start) and cx0 < rx + rw:
                     # Top-left fillet of this clip
                     p_tl = QPainterPath()
                     p_tl.moveTo(cx0 + corner_r, ry)
@@ -948,7 +951,7 @@ class WaveformTimelineWidget(QWidget):
                     p_bl.arcTo(QRectF(cx0, ry + rh - 2 * corner_r, 2 * corner_r, 2 * corner_r), 180, 90)
                     painter.fillPath(p_bl, bg_notch_col)
 
-                if c_end < t_end:
+                if c_end < min(self._duration - 0.005, t_end) and cx1 > rx:
                     # Top-right fillet of this clip
                     p_tr = QPainterPath()
                     p_tr.moveTo(cx1 - corner_r, ry)
@@ -965,11 +968,11 @@ class WaveformTimelineWidget(QWidget):
                     p_br.arcTo(QRectF(cx1 - 2 * corner_r, ry + rh - 2 * corner_r, 2 * corner_r, 2 * corner_r), 0, -90)
                     painter.fillPath(p_br, bg_notch_col)
 
-                # Check for overlap with next clip
+                # Check for overlap with next clip (minimum 50ms overlap to ignore float precision jitter)
                 if i < len(self._clips_layout) - 1:
                     next_c = self._clips_layout[i + 1]
-                    next_start = float(next_c.get("start_s", 0.0))
-                    if next_start < c_end:
+                    next_start = float(next_c.get("start_s", next_c.get("start", 0.0)))
+                    if next_start < (c_end - 0.05):
                         # Overlap crossing!
                         ox0 = rx + ((max(t_start, next_start) - t_start) / vis_dur) * rw
                         ox1 = rx + ((min(t_end, c_end) - t_start) / vis_dur) * rw
@@ -981,10 +984,14 @@ class WaveformTimelineWidget(QWidget):
                             painter.drawLine(QPointF(ox0, ry), QPointF(ox0, ry + rh))
                             painter.drawLine(QPointF(ox1, ry), QPointF(ox1, ry + rh))
 
-                # Draw clip title badge
-                if c_name and cw > config.S(35):
-                    painter.setPen(QColor(245, 245, 245, 220))
-                    painter.drawText(QPointF(cx0 + float(config.S(6)), ry + rh - float(config.S(6))), c_name)
+                # Draw clip title badge with text eliding to avoid overflow
+                if c_name and cw > config.S(30):
+                    fm = painter.fontMetrics()
+                    avail_tw = cw - float(config.S(12))
+                    if avail_tw > float(config.S(15)):
+                        elided_name = fm.elidedText(c_name, Qt.ElideRight, int(avail_tw))
+                        painter.setPen(QColor(245, 245, 245, 220))
+                        painter.drawText(QPointF(cx0 + float(config.S(6)), ry + rh - float(config.S(6))), elided_name)
         else:
             clip_label = self._clip_name
             if clip_label:

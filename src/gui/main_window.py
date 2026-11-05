@@ -4012,7 +4012,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     layout.append({
                         "name": name,
                         "start": cur_t,
-                        "end": cur_t + dur
+                        "end": cur_t + dur,
+                        "start_s": cur_t,
+                        "end_s": cur_t + dur,
                     })
                     cur_t += dur
             elif not is_file_source and hasattr(self.engine, 'resolve_handler') and self.engine.resolve_handler:
@@ -4045,7 +4047,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         if hasattr(self, "_proxy_worker") and self._proxy_worker and self._proxy_worker.isRunning():
             try:
-                self._proxy_worker.terminate()
+                self._proxy_worker.cancel()
                 self._proxy_worker.wait(300)
             except Exception:
                 pass
@@ -4058,8 +4060,69 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_bg_proxy_ready(self, proxy_path: str):
         self.engine.current_proxy_video_path = proxy_path
-        if hasattr(self, "media_preview_bar") and self.media_preview_bar:
-            self.media_preview_bar.set_background_proxy_video(proxy_path)
+        ap = getattr(self, "audio_preview", None) or getattr(self, "media_preview_bar", None)
+        if ap:
+            ap.set_background_proxy_video(proxy_path)
+
+    def _maybe_start_resolve_timeline_proxy(self, selected_tl_name: str = None):
+        """Starts background micro-proxy render in DaVinci Resolve if timeline has complex cuts/titles."""
+        is_file_source = (self.src_toggle.active_tab == 1) if hasattr(self, 'src_toggle') else False
+        if is_file_source:
+            return
+        prefs = self.engine.load_preferences() if hasattr(self.engine, 'load_preferences') else {}
+        if not prefs.get("resolve_render_timeline_proxy", True):
+            return
+
+        if not hasattr(self.engine, 'resolve_handler') or not self.engine.resolve_handler:
+            return
+
+        tl_name = selected_tl_name or (self._transcription_source.get("timeline_name") if hasattr(self, "_transcription_source") else None)
+
+        # Check if timeline has complex video (cuts, trims, multiple tracks, titles)
+        try:
+            if not self.engine.resolve_handler.has_complex_timeline_video(tl_name):
+                return
+        except Exception as e:
+            from osdoc import log_warning
+            log_warning(f"has_complex_timeline_video error: {e}")
+            return
+
+        import time
+        temp_dir = self.engine.os_doc.get_temp_folder()
+        os.makedirs(temp_dir, exist_ok=True)
+        unique_id = f"BW_tl_proxy_{os.getpid()}_{int(time.time())}"
+
+        if hasattr(self, "_resolve_proxy_worker") and self._resolve_proxy_worker and self._resolve_proxy_worker.isRunning():
+            try:
+                self._resolve_proxy_worker.cancel()
+                self._resolve_proxy_worker.wait(300)
+            except Exception:
+                pass
+
+        ap = getattr(self, "audio_preview", None)
+        if ap and hasattr(ap, 'video_preview_widget'):
+            msg = self.txt("status_rendering_resolve_proxy", "Renderowanie podglądu osi czasu DaVinci...")
+            ap.video_preview_widget.show_loading(True, msg)
+
+        from handlers.analysis_worker import ResolveTimelineProxyWorker
+        self._resolve_proxy_worker = ResolveTimelineProxyWorker(self.engine, tl_name, temp_dir, unique_id)
+        self._resolve_proxy_worker.proxy_ready.connect(self._on_resolve_proxy_ready)
+        self._resolve_proxy_worker.proxy_failed.connect(self._on_resolve_proxy_failed)
+        self._resolve_proxy_worker.start()
+
+    def _on_resolve_proxy_ready(self, proxy_path: str):
+        self.engine.current_proxy_video_path = proxy_path
+        ap = getattr(self, "audio_preview", None) or getattr(self, "media_preview_bar", None)
+        if ap:
+            ap.set_background_proxy_video(proxy_path)
+
+    def _on_resolve_proxy_failed(self, err_msg: str):
+        from osdoc import log_warning
+        log_warning(f"Resolve timeline proxy failed: {err_msg}")
+        ap = getattr(self, "audio_preview", None)
+        if ap and hasattr(ap, 'video_preview_widget'):
+            ap.video_preview_widget.show_loading(False)
+            ap.video_preview_widget.show_placeholder(True, "DaVinci Resolve Timeline")
 
     def _set_live_transcription_lock(self, locked: bool):
         """Locks all actions that require a complete transcript while keeping marking mode and options functional."""
@@ -4436,6 +4499,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.lbl_analysis_duration.setVisible(True)
             if hasattr(self, 'p_main') and self.p_main:
                 self.p_main.resizeEvent(None)
+
+        # Check if DaVinci Resolve complex timeline video proxy should be generated in background
+        self._maybe_start_resolve_timeline_proxy(selected_tl_name)
 
 
     # ------------------------------------------------------------------

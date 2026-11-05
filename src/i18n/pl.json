@@ -559,5 +559,8 @@
   "opt_mouse_brush": "Malowanie pędzlem",
   "opt_mouse_none": "Wyłączone",
   "tt_mouse_lmb_mode": "Działanie lewego przycisku myszy w transkrypcji. Zaznaczanie ramką pozwala objąć słowa prostokątem w stylu pulpitu Windows.",
-  "tt_mouse_rmb_mode": "Działanie prawego przycisku myszy w transkrypcji. Malowanie pędzlem koloruje słowa po najechaniu kursorem."
+  "tt_mouse_rmb_mode": "Działanie prawego przycisku myszy w transkrypcji. Malowanie pędzlem koloruje słowa po najechaniu kursorem.",
+  "lbl_resolve_render_timeline_proxy": "Renderuj podgląd wideo osi czasu (DaVinci)",
+  "tt_resolve_render_timeline_proxy": "Gdy na osi czasu DaVinci zostaną wykryte cięcia, napisy, dodatkowe ścieżki wideo lub przejścia, w tle po zakończeniu Whisper wygenerowane zostanie lekkie proxy 360p, aby podgląd odzwierciedlał rzeczywisty montaż.",
+  "status_rendering_resolve_proxy": "Renderowanie podglądu osi czasu DaVinci..."
 }

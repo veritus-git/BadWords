@@ -559,5 +559,8 @@
   "opt_mouse_none": "已禁用",
   "tt_mouse_lmb_mode": "左键在转录画布中的行为。框选模式允许像在Windows桌面一样拖动矩形框选择单词。",
   "tt_mouse_rmb_mode": "右键在转录画布中的行为。画笔涂抹模式可在光标滑过单词时连续进行标记。",
-  "tt_skip_cuts": "播放时跳过剪辑部分"
+  "tt_skip_cuts": "播放时跳过剪辑部分",
+  "lbl_resolve_render_timeline_proxy": "渲染达芬奇时间线视频预览代理",
+  "tt_resolve_render_timeline_proxy": "当在达芬奇时间线上检测到复杂剪辑、空镜、字幕或转场时，Whisper 完成后会在后台渲染轻量级 360p 代理，以真实还原时间线画面。",
+  "status_rendering_resolve_proxy": "正在渲染达芬奇时间线视频预览..."
 }

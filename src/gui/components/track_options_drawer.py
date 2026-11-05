@@ -200,21 +200,22 @@ class TrackOptionsDrawer(QWidget):
 
         self.w_link_av = make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av, "tt_link_av_clips")
         self.w_link_all = make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all, "tt_link_all_cut_tracks")
-        inner_layout.addWidget(self.w_link_av)
-        inner_layout.addWidget(self.w_link_all)
 
-        self._eff_drawer_link_av = QGraphicsOpacityEffect(self.w_link_av)
-        self.w_link_av.setGraphicsEffect(self._eff_drawer_link_av)
-        self._eff_drawer_link_all = QGraphicsOpacityEffect(self.w_link_all)
-        self.w_link_all.setGraphicsEffect(self._eff_drawer_link_all)
+        self.w_linking_box = QWidget()
+        l_link_box = QVBoxLayout(self.w_linking_box)
+        l_link_box.setContentsMargins(0, 0, 0, 0)
+        l_link_box.setSpacing(config.S(2))
+        l_link_box.addWidget(self.w_link_av)
+        l_link_box.addWidget(self.w_link_all)
+        inner_layout.addWidget(self.w_linking_box)
+
+        self._eff_drawer_linking = QGraphicsOpacityEffect(self.w_linking_box)
+        self.w_linking_box.setGraphicsEffect(self._eff_drawer_linking)
 
         self._drawer_linking_anim = QVariantAnimation(self)
         self._drawer_linking_anim.setDuration(250)
         self._drawer_linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
-        def _set_drawer_linking_op(val):
-            self._eff_drawer_link_av.setOpacity(val)
-            self._eff_drawer_link_all.setOpacity(val)
-        self._drawer_linking_anim.valueChanged.connect(_set_drawer_linking_op)
+        self._drawer_linking_anim.valueChanged.connect(lambda val: self._eff_drawer_linking.setOpacity(val))
 
         self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
         self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
@@ -438,8 +439,8 @@ class TrackOptionsDrawer(QWidget):
             is_file_source = (src.get('source_type') == 'file')
             linking_enabled = is_file_source or force_xml
 
-            self.tgl_link_av.setEnabled(linking_enabled)
-            self.tgl_link_all.setEnabled(linking_enabled)
+            if hasattr(self, 'w_linking_box'):
+                self.w_linking_box.setAttribute(Qt.WA_TransparentForMouseEvents, not linking_enabled)
 
             tt = "" if linking_enabled else self.parent_gui.txt("tt_linking_requires_xml")
             if hasattr(self, 'w_link_av'):
@@ -448,16 +449,15 @@ class TrackOptionsDrawer(QWidget):
                 self.w_link_all.setToolTip(tt)
 
             target_op = 1.0 if linking_enabled else 0.35
-            if hasattr(self, '_drawer_linking_anim') and hasattr(self, '_eff_drawer_link_av'):
+            if hasattr(self, '_drawer_linking_anim') and hasattr(self, '_eff_drawer_linking'):
                 if self.isVisible():
                     self._drawer_linking_anim.stop()
-                    self._drawer_linking_anim.setStartValue(self._eff_drawer_link_av.opacity())
+                    self._drawer_linking_anim.setStartValue(self._eff_drawer_linking.opacity())
                     self._drawer_linking_anim.setEndValue(target_op)
                     self._drawer_linking_anim.start()
                 else:
                     self._drawer_linking_anim.stop()
-                    self._eff_drawer_link_av.setOpacity(target_op)
-                    self._eff_drawer_link_all.setOpacity(target_op)
+                    self._eff_drawer_linking.setOpacity(target_op)
         finally:
             self._block_signals = False
 

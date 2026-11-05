@@ -559,5 +559,8 @@
   "opt_mouse_brush": "Brush Painting",
   "opt_mouse_none": "Disabled",
   "tt_mouse_lmb_mode": "Transcript marking behavior for Left Mouse Button. Marquee Box allows dragging a desktop-style selection box across words.",
-  "tt_mouse_rmb_mode": "Transcript marking behavior for Right Mouse Button. Brush Painting marks words continuously as you drag over them."
+  "tt_mouse_rmb_mode": "Transcript marking behavior for Right Mouse Button. Brush Painting marks words continuously as you drag over them.",
+  "lbl_resolve_render_timeline_proxy": "Render DaVinci Timeline Preview Proxy",
+  "tt_resolve_render_timeline_proxy": "When complex video edits, b-roll, text titles, or transitions are detected on the DaVinci timeline, a lightweight 360p video proxy is rendered in the background after Whisper finishes so the preview matches your real timeline composition.",
+  "status_rendering_resolve_proxy": "Rendering DaVinci timeline video preview..."
 }

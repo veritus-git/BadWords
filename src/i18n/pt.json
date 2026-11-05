@@ -559,5 +559,8 @@
   "opt_mouse_none": "Desativado",
   "tt_mouse_lmb_mode": "Comportamento do botão esquerdo. A seleção por retângulo permite arrastrar uma caixa estilo área de trabalho sobre as palavras.",
   "tt_mouse_rmb_mode": "Comportamento do botão direito. A pintura com pincel marca as palavras continuamente ao passar o cursor sobre elas.",
-  "tt_skip_cuts": "Pular seções cortadas durante a reprodução"
+  "tt_skip_cuts": "Pular seções cortadas durante a reprodução",
+  "lbl_resolve_render_timeline_proxy": "Renderizar proxy de pré-visualização de timeline DaVinci",
+  "tt_resolve_render_timeline_proxy": "Quando edições complexas, b-roll, títulos ou transições são detectados na timeline do DaVinci, um proxy leve de 360p é renderizado em segundo plano após o Whisper.",
+  "status_rendering_resolve_proxy": "Renderizando pré-visualização de timeline do DaVinci..."
 }

@@ -559,5 +559,8 @@
   "opt_mouse_none": "Désactivé",
   "tt_mouse_lmb_mode": "Comportement du bouton gauche. La sélection par cadre permet d'étirer un rectangle de sélection comme sur le bureau.",
   "tt_mouse_rmb_mode": "Comportement du bouton droit. Le pinceau colore les mots en continu lors du survol.",
-  "tt_skip_cuts": "Ignorer les sections coupées pendant la lecture"
+  "tt_skip_cuts": "Ignorer les sections coupées pendant la lecture",
+  "lbl_resolve_render_timeline_proxy": "Générer le proxy d'aperçu vidéo de timeline DaVinci",
+  "tt_resolve_render_timeline_proxy": "Lorsque des coupes, titres, pistes b-roll ou transitions sont détectés sur DaVinci, un proxy léger 360p est généré en arrière-plan après Whisper.",
+  "status_rendering_resolve_proxy": "Génération de l'aperçu vidéo de la timeline DaVinci..."
 }
