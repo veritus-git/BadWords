@@ -16,6 +16,8 @@ import uuid
 import zipfile
 import copy
 import re
+import json
+import subprocess
 import xml.etree.ElementTree as ET
 
 from osdoc import log_info, log_warn, log_error, get_subprocess_kwargs
@@ -1007,6 +1009,106 @@ def _format_timecode_edl(frame, fps: float) -> str:
     return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
 
 
+_MEDIA_TC_CACHE: dict[tuple[str, float], tuple[int, str, float]] = {}
+
+
+def get_media_start_timecode_info(file_path: str, fps: float) -> tuple[int, str, float]:
+    """
+    Extracts embedded start timecode metadata from media file (BWF WAV, MP4/MOV, etc.).
+    Returns (start_frames, tc_string, start_seconds).
+    Caches results to avoid repeated ffprobe calls.
+    """
+    cache_key = (file_path, round(float(fps), 4))
+    if cache_key in _MEDIA_TC_CACHE:
+        return _MEDIA_TC_CACHE[cache_key]
+
+    default_res = (0, "00:00:00:00", 0.0)
+    if not file_path or not os.path.exists(file_path):
+        return default_res
+
+    try:
+        kwargs = get_subprocess_kwargs()
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format:stream",
+            "-of", "json", file_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8, **kwargs)
+        if res.returncode != 0:
+            _MEDIA_TC_CACHE[cache_key] = default_res
+            return default_res
+
+        data = json.loads(res.stdout)
+        fmt = data.get("format", {})
+        tags = fmt.get("tags", {})
+        streams = data.get("streams", [])
+
+        # 1. BWF WAV time_reference (samples since midnight / start)
+        if "time_reference" in tags:
+            try:
+                tref = int(tags["time_reference"])
+                sr = 48000
+                for s in streams:
+                    if s.get("codec_type") == "audio" and "sample_rate" in s:
+                        sr = int(s["sample_rate"])
+                        break
+                sec = tref / sr
+                f = int(round(sec * fps))
+                hh = int(sec // 3600)
+                mm = int((sec % 3600) // 60)
+                ss = int(sec % 60)
+                ff = int(round((sec - int(sec)) * fps))
+                tc_str = f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+                val = (f, tc_str, sec)
+                _MEDIA_TC_CACHE[cache_key] = val
+                return val
+            except Exception:
+                pass
+
+        # 2. Container or Stream timecode tag (e.g. MOV/MP4 or WAV timecode tag)
+        tc_tag = tags.get("timecode")
+        if not tc_tag:
+            for s in streams:
+                stags = s.get("tags", {})
+                if "timecode" in stags:
+                    tc_tag = stags["timecode"]
+                    break
+
+        if tc_tag and isinstance(tc_tag, str):
+            parts = [int(p) for p in tc_tag.replace(";", ":").split(":") if p.isdigit()]
+            if len(parts) == 4:
+                hh, mm, ss, ff = parts
+                f = int(round((hh * 3600 + mm * 60 + ss) * fps + ff))
+                sec = f / fps
+                val = (f, tc_tag, sec)
+                _MEDIA_TC_CACHE[cache_key] = val
+                return val
+
+        # 3. Container start_time
+        st = fmt.get("start_time")
+        if st:
+            try:
+                sec = float(st)
+                if sec > 0.001:
+                    f = int(round(sec * fps))
+                    hh = int(sec // 3600)
+                    mm = int((sec % 3600) // 60)
+                    ss = int(sec % 60)
+                    ff = int(round((sec - int(sec)) * fps))
+                    tc_str = f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+                    val = (f, tc_str, sec)
+                    _MEDIA_TC_CACHE[cache_key] = val
+                    return val
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    _MEDIA_TC_CACHE[cache_key] = default_res
+    return default_res
+
+
 def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                               fps: float = 24.0, width: int = 1920, height: int = 1080,
                               preserve_audio_tracks: bool = True,
@@ -1109,13 +1211,14 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                     ET.SubElement(file_el, "duration").text = str(match_dur)
 
                 # Timecode block inside file element: DaVinci Resolve strictly requires
-                # <timecode> on media files to conform and link audio tracks properly!
+                # <timecode> matching media embedded timecode to conform and link media online!
+                tc_frames, tc_str, _ = get_media_start_timecode_info(fp, float(timebase))
                 tc_el = ET.SubElement(file_el, "timecode")
                 r_tc = ET.SubElement(tc_el, "rate")
                 ET.SubElement(r_tc, "timebase").text = str(timebase)
                 ET.SubElement(r_tc, "ntsc").text = ntsc_str
-                ET.SubElement(tc_el, "string").text = "00:00:00:00"
-                ET.SubElement(tc_el, "frame").text = "0"
+                ET.SubElement(tc_el, "string").text = tc_str
+                ET.SubElement(tc_el, "frame").text = str(tc_frames)
                 ET.SubElement(tc_el, "displayformat").text = "NDF"
 
                 media_sub = ET.SubElement(file_el, "media")
@@ -1198,6 +1301,27 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                 ET.SubElement(grp, "downmix").text = "0"
                 ch_el = ET.SubElement(grp, "channel")
                 ET.SubElement(ch_el, "index").text = str(o_idx)
+        else:
+            ET.SubElement(audio_el, "numOutputChannels").text = "2"
+            fmt_a = ET.SubElement(audio_el, "format")
+            sc_a = ET.SubElement(fmt_a, "samplecharacteristics")
+            ET.SubElement(sc_a, "depth").text = "16"
+            ET.SubElement(sc_a, "samplerate").text = "48000"
+
+            outputs_el = ET.SubElement(audio_el, "outputs")
+            grp1 = ET.SubElement(outputs_el, "group")
+            ET.SubElement(grp1, "index").text = "1"
+            ET.SubElement(grp1, "numchannels").text = "1"
+            ET.SubElement(grp1, "downmix").text = "0"
+            ch1 = ET.SubElement(grp1, "channel")
+            ET.SubElement(ch1, "index").text = "1"
+
+            grp2 = ET.SubElement(outputs_el, "group")
+            ET.SubElement(grp2, "index").text = "2"
+            ET.SubElement(grp2, "numchannels").text = "1"
+            ET.SubElement(grp2, "downmix").text = "0"
+            ch2 = ET.SubElement(grp2, "channel")
+            ET.SubElement(ch2, "index").text = "2"
 
         for t_idx in range(1, num_audio_tracks + 1):
             track_ci_idx = 0
@@ -1249,10 +1373,44 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         ET.SubElement(ci, "out").text = str(src_out)
                         make_file_elem(ci, clip["path"])
 
-                        # Audio source track mapping
-                        st = ET.SubElement(ci, "sourcetrack")
-                        ET.SubElement(st, "mediatype").text = "audio"
-                        ET.SubElement(st, "trackindex").text = str(src_ch if preserve_audio_tracks else 1)
+                        if preserve_audio_tracks:
+                            # Audio source track mapping for separated mono tracks
+                            st = ET.SubElement(ci, "sourcetrack")
+                            ET.SubElement(st, "mediatype").text = "audio"
+                            ET.SubElement(st, "trackindex").text = str(src_ch)
+
+                            flt = ET.SubElement(ci, "filter")
+                            eff = ET.SubElement(flt, "effect")
+                            ET.SubElement(eff, "name").text = "Audio Pan"
+                            ET.SubElement(eff, "effectid").text = "audiopan"
+                            ET.SubElement(eff, "effectcategory").text = "audio"
+                            ET.SubElement(eff, "effecttype").text = "audio"
+                            ET.SubElement(eff, "mediatype").text = "audio"
+                            param = ET.SubElement(eff, "parameter")
+                            ET.SubElement(param, "parameterid").text = "pan"
+                            ET.SubElement(param, "name").text = "Pan"
+                            ET.SubElement(param, "value").text = "0"
+                        else:
+                            # Single stereo track mode:
+                            # If source has >= 2 channels, omit sourcetrack and pan filter so DaVinci Resolve
+                            # binds full native stereo (Ch 1 -> Left, Ch 2 -> Right) in Clip Attributes!
+                            # If source is genuinely mono (1 channel), map track 1 and pan center so audio plays in both ears.
+                            if clip_ch == 1:
+                                st = ET.SubElement(ci, "sourcetrack")
+                                ET.SubElement(st, "mediatype").text = "audio"
+                                ET.SubElement(st, "trackindex").text = "1"
+
+                                flt = ET.SubElement(ci, "filter")
+                                eff = ET.SubElement(flt, "effect")
+                                ET.SubElement(eff, "name").text = "Audio Pan"
+                                ET.SubElement(eff, "effectid").text = "audiopan"
+                                ET.SubElement(eff, "effectcategory").text = "audio"
+                                ET.SubElement(eff, "effecttype").text = "audio"
+                                ET.SubElement(eff, "mediatype").text = "audio"
+                                param = ET.SubElement(eff, "parameter")
+                                ET.SubElement(param, "parameterid").text = "pan"
+                                ET.SubElement(param, "name").text = "Pan"
+                                ET.SubElement(param, "value").text = "0"
 
                         if clip["has_video"] or link_all_tracks:
                             l_key = op_idx if link_all_tracks else (op_idx, clip_idx)
@@ -1263,20 +1421,6 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                                 "clipindex": track_ci_idx,
                                 "elem": ci
                             })
-
-                        # Audio Pan filter: Centers pan (0) so mono and single-track clips play
-                        # across both stereo channels (L+R) instead of hard-panning to the left ear.
-                        flt = ET.SubElement(ci, "filter")
-                        eff = ET.SubElement(flt, "effect")
-                        ET.SubElement(eff, "name").text = "Audio Pan"
-                        ET.SubElement(eff, "effectid").text = "audiopan"
-                        ET.SubElement(eff, "effectcategory").text = "audio"
-                        ET.SubElement(eff, "effecttype").text = "audio"
-                        ET.SubElement(eff, "mediatype").text = "audio"
-                        param = ET.SubElement(eff, "parameter")
-                        ET.SubElement(param, "parameterid").text = "pan"
-                        ET.SubElement(param, "name").text = "Pan"
-                        ET.SubElement(param, "value").text = "0"
 
                 dest_pos += op_dur
 
@@ -1722,11 +1866,13 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
             has_vid = bool(c.get("has_video"))
             ch = max(1, int(c.get("audio_channels", 2)))
 
+            tc_frames, tc_str, tc_sec = get_media_start_timecode_info(c["path"], fps)
+
             asset_attribs = {
                 "id": aid,
                 "name": os.path.basename(c["path"]),
                 "src": _path_to_fileurl(c["path"]),
-                "start": "0s",
+                "start": to_time_str(tc_frames) if tc_frames > 0 else "0s",
                 "duration": to_time_str(dur_frames),
                 "hasVideo": "1" if has_vid else "0",
                 "hasAudio": "1",
@@ -1767,12 +1913,13 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                     has_vid = bool(c.get("has_video"))
                     audio_ch = max(1, int(c.get("audio_channels", 2)))
 
+                    tc_frames, _, _ = get_media_start_timecode_info(c["path"], fps)
                     clip_kwargs = {
                         "ref": aid,
                         "name": os.path.basename(c["path"]),
                         "offset": to_time_str(ci_start),
                         "duration": to_time_str(seg_dur),
-                        "start": to_time_str(src_in),
+                        "start": to_time_str(tc_frames + src_in),
                         "audioRole": "dialogue"
                     }
                     if has_vid:
@@ -1831,8 +1978,9 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
                     ci_start = dest_pos + op_offset
                     ci_end = ci_start + seg_dur
 
-                    src_in_tc = _format_timecode_edl(src_in, fps)
-                    src_out_tc = _format_timecode_edl(src_out, fps)
+                    tc_frames, _, _ = get_media_start_timecode_info(c["path"], fps)
+                    src_in_tc = _format_timecode_edl(tc_frames + src_in, fps)
+                    src_out_tc = _format_timecode_edl(tc_frames + src_out, fps)
                     dst_in_tc = _format_timecode_edl(ci_start, fps)
                     dst_out_tc = _format_timecode_edl(ci_end, fps)
 

@@ -545,5 +545,10 @@
   "hint_fmt_otio": "Modern open tijdlijnformaat (Pixar/ASWF). Ondersteunt alle sporen en media. Opmerking: OTIO v1.0 definieert geen native clipkoppeling.",
   "hint_fmt_fcpxml": "Toegewijd aan Final Cut Pro X. In DaVinci Resolve vereist het importeren van externe audio (.wav) mogelijk vooraf importeren in de Media Pool.",
   "hint_fmt_edl": "Traditioneel CMX 3600 EDL-bandformaat voor enkele clips. Beperkt tot 1 videospoor en stereo-audio.",
-  "hint_fmt_edl_warning": "CMX 3600 EDL is een lineair bandformaat (1 videospoor, stereo). Voor projecten met meerdere clips of gemengde media wordt FCP 7 XML of OTIO sterk aanbevolen!"
+  "hint_fmt_edl_warning": "CMX 3600 EDL is een lineair bandformaat (1 videospoor, stereo). Voor projecten met meerdere clips of gemengde media wordt FCP 7 XML of OTIO sterk aanbevolen!",
+  "dlg_file_exists_title": "Bestand bestaat al",
+  "dlg_file_exists_msg": "Het bestand \"{name}\" bestaat al in de doelmap.\nWilt u het overschrijven of de naam wijzigen?",
+  "btn_overwrite": "Overschrijven",
+  "btn_rename": "Naam wijzigen",
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve ondersteunt het importeren van CMX 3600 EDL voor pure audioprojecten niet (videotrack vereist). Gebruik voor audiobestanden (.wav) FCP 7 XML (.xml) of OpenTimelineIO (.otio)!"
 }

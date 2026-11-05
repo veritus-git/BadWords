@@ -545,5 +545,10 @@
   "hint_fmt_otio": "Formato timeline aperto moderno (Pixar/ASWF). Supporta tutte le tracce e i media. Nota: La specifica OTIO v1.0 non definisce il collegamento nativo dei clip.",
   "hint_fmt_fcpxml": "Dedicato a Final Cut Pro X. In DaVinci Resolve, l'importazione di audio esterno (.wav) potrebbe richiedere il caricamento preliminare nel Media Pool.",
   "hint_fmt_edl": "Formato nastro tradizionale CMX 3600 EDL per clip singole. Limitato a 1 traccia video e audio stereo.",
-  "hint_fmt_edl_warning": "CMX 3600 EDL è un formato nastro lineare (1 traccia video, stereo). Per progetti multi-clip o misti, si consiglia vivamente FCP 7 XML o OTIO!"
+  "hint_fmt_edl_warning": "CMX 3600 EDL è un formato nastro lineare (1 traccia video, stereo). Per progetti multi-clip o misti, si consiglia vivamente FCP 7 XML o OTIO!",
+  "dlg_file_exists_title": "Il file esiste già",
+  "dlg_file_exists_msg": "Il file \"{name}\" esiste già nella cartella di destinazione.\nVuoi sovrascriverlo o modificare il nome?",
+  "btn_overwrite": "Sovrascrivi",
+  "btn_rename": "Rinomina",
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve non supporta l'importazione di CMX 3600 EDL per progetti solo audio (richiede traccia video). Per i file audio (.wav), usa FCP 7 XML (.xml) o OpenTimelineIO (.otio)!"
 }

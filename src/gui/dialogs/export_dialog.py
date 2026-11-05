@@ -313,16 +313,23 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         ]
         self.format_labels = [name for _, name in self.format_items]
         self.combo_fmt = CustomDropdown(self.format_labels)
+        self.combo_fmt.setProperty("pad_right", config.S(28))
         self.combo_fmt.setText(self.format_labels[0])
         self.combo_fmt.setFixedHeight(config.S(28))
         self.combo_fmt.valueChanged.connect(self._on_format_changed)
         r_fmt.addWidget(self.combo_fmt, 1)
 
-        # Tooltip icon indicator (question mark or exclamation) placed to the right of the dropdown
-        self.info_fmt = QLabel()
-        self.info_fmt.setFixedSize(config.S(24), config.S(28))
+        # Tooltip icon indicator (question mark or exclamation) placed literally INSIDE the dropdown area in the right corner!
+        self.info_fmt = QLabel(self.combo_fmt)
+        self.info_fmt.setFixedSize(config.S(16), config.S(20))
         self.info_fmt.setAlignment(Qt.AlignCenter)
         self.info_fmt.setCursor(Qt.PointingHandCursor)
+
+        fmt_inner_layout = QHBoxLayout(self.combo_fmt)
+        fmt_inner_layout.setContentsMargins(0, 0, config.S(8), 0)
+        fmt_inner_layout.setSpacing(0)
+        fmt_inner_layout.addStretch()
+        fmt_inner_layout.addWidget(self.info_fmt, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         def _on_fmt_enter(e):
             txt = getattr(self.info_fmt, 'custom_tooltip_text', '')
@@ -338,7 +345,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         self.info_fmt.enterEvent = _on_fmt_enter
         self.info_fmt.leaveEvent = _on_fmt_leave
-        r_fmt.addWidget(self.info_fmt, 0)
+        self.info_fmt.mousePressEvent = lambda e: self.combo_fmt.click()
         c_lay.addLayout(r_fmt)
 
         # ── 2. Sequence Name ──────────────────────────────────────────────────
@@ -525,29 +532,34 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self._update_format_hint()
 
     def _update_format_hint(self):
+        """Updates format SVG icon (question mark vs exclamation) and tooltip."""
         if not hasattr(self, 'info_fmt') or not self.info_fmt:
             return
         fmt_id = self._get_selected_format_id()
         num_clips = len(self.clips_info)
+        has_video = any(bool(c.get("has_video")) for c in self.clips_info)
         has_mixed = any(bool(c.get("has_video")) for c in self.clips_info) and any(not bool(c.get("has_video")) for c in self.clips_info)
         dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 2.0
 
         if fmt_id == "fcp7_xml":
             hint_text = self._t("hint_fmt_fcp7_xml", "Zalecany format uniwersalny. Pełne powiązanie wideo i audio (clip linking), rozbicie ścieżek oraz media mieszane.")
-            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#38c172", dpr)
+            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#38c172", dpr)
         elif fmt_id == "otio":
             hint_text = self._t("hint_fmt_otio", "Nowoczesny format otwarty (Pixar/ASWF). Obsługuje wszystkie ścieżki i media. Zgodnie ze specyfikacją OTIO v1, brak natywnego powiązania klipów.")
-            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#888888", dpr)
+            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#888888", dpr)
         elif fmt_id == "fcpxml":
             hint_text = self._t("hint_fmt_fcpxml", "Dedykowany dla Final Cut Pro X. W DaVinci Resolve import zewnętrznych plików audio (.wav) może wymagać ich wcześniejszego załadowania do Media Pool.")
-            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#888888", dpr)
+            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#888888", dpr)
         elif fmt_id == "edl":
-            if num_clips > 1 or has_mixed:
+            if not has_video:
+                hint_text = self._t("hint_fmt_edl_audio_warning", "DaVinci Resolve nie obsługuje importu list CMX 3600 EDL dla projektów czysto dźwiękowych (brak ścieżki wideo). Dla plików audio (.wav) wybierz format FCP 7 XML (.xml) lub OpenTimelineIO (.otio)!")
+                pix = self._render_svg_icon("exclamation-icon.svg", config.S(13), "#ffaa00", dpr)
+            elif num_clips > 1 or has_mixed:
                 hint_text = self._t("hint_fmt_edl_warning", "CMX 3600 EDL to format taśmowy (1 ścieżka wideo, stereo). Przy wielu/mieszanych klipach zalecany jest FCP 7 XML lub OTIO!")
-                pix = self._render_svg_icon("exclamation-icon.svg", config.S(17), "#ffaa00", dpr)
+                pix = self._render_svg_icon("exclamation-icon.svg", config.S(13), "#ffaa00", dpr)
             else:
                 hint_text = self._t("hint_fmt_edl", "Tradycyjny format CMX 3600 EDL dla pojedynczego klipu. Ograniczony do 1 ścieżki wideo i stereo.")
-                pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#888888", dpr)
+                pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#888888", dpr)
 
         self.info_fmt.setPixmap(pix)
         self.info_fmt.custom_tooltip_text = hint_text
@@ -626,6 +638,26 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         out_filename = f"{seq_name}{ext}"
         out_path = os.path.join(dest_dir, out_filename)
+
+        # Overwrite protection: prompt user before replacing an existing file
+        if os.path.exists(out_path):
+            exists_box = CustomMsgBox(
+                self,
+                title=self._t("dlg_file_exists_title", "Plik już istnieje"),
+                message=self._t("dlg_file_exists_msg", "Plik \"{name}\" już istnieje w wybranym katalogu.\nCzy chcesz go podmienić, czy zmienić nazwę?").format(name=out_filename),
+                btn_yes_text=self._t("btn_overwrite", "Podmień"),
+                btn_no_text=self._t("btn_rename", "Zmień nazwę"),
+                btn_cancel_text=self._t("btn_cancel", "Anuluj")
+            )
+            ret = exists_box.exec()
+            if ret == QDialog.Rejected:
+                # User chose "Zmień nazwę" -> abort export, focus txt_seq_name and select all
+                self.txt_seq_name.setFocus()
+                self.txt_seq_name.selectAll()
+                return
+            elif ret != QDialog.Accepted:
+                # User chose "Anuluj" or closed the modal -> abort export
+                return
 
         try:
             target_fps = float(self.combo_fps.text())

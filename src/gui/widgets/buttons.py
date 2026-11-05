@@ -1287,7 +1287,9 @@ class CustomDropdown(QPushButton):
         opt = QStyleOptionButton()
         self.initStyleOption(opt)
         pad_x = config.S(10) if bool(self.property("large_input")) else config.S(8)
-        avail = self.width() - 2 * pad_x - config.S(4)
+        pad_right = self.property("pad_right")
+        pad_r = int(pad_right) if pad_right is not None else pad_x
+        avail = self.width() - pad_x - pad_r - config.S(4)
         if avail > config.S(20) and opt.text:
             fm = opt.fontMetrics
             opt.text = fm.elidedText(opt.text, Qt.ElideRight, avail)
@@ -1300,6 +1302,8 @@ class CustomDropdown(QPushButton):
         is_large = bool(self.property("large_input"))
         fs = config.FS(10.5) if is_large else config.FS(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
+        pad_right = self.property("pad_right")
+        pad_r = int(pad_right) if pad_right is not None else pad_x
         rad = config.S(4) if is_large else config.S(3)
         h = (config.S(38) if is_large else config.S(30)) - 2
         self.setStyleSheet(f"""
@@ -1307,7 +1311,7 @@ class CustomDropdown(QPushButton):
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 text-align: {align_str};
-                padding: 0px {pad_x}px;
+                padding: 0px {pad_r}px 0px {pad_x}px;
                 border: 1px solid #3a3a3a;
                 border-radius: {rad}px;
                 min-height: {h}px;
