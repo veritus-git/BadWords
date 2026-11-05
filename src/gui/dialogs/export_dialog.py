@@ -97,7 +97,14 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
                 details = ", ".join(f"{f:g} FPS" for f in video_fps_list[:3])
                 self.fps_hint = self._t("hint_fps_mixed", f"Wykryto różne klatkaże: {details}").replace("{details}", details)
         else:
-            self.default_fps = 24.0
+            saved_fps = 24.0
+            if self.engine:
+                try:
+                    prefs = self.engine.load_preferences() or {}
+                    saved_fps = float(prefs.get("export_fps", 24.0))
+                except Exception:
+                    pass
+            self.default_fps = saved_fps
             self.fps_hint = ""
 
         video_clips = [c for c in self.clips_info if c.get("has_video")]
@@ -369,7 +376,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         lbl_fps.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_fps.addWidget(lbl_fps)
 
-        self.fps_options = ["23.976", "24.0", "25.0", "29.97", "30.0", "50.0", "59.94", "60.0"]
+        self.fps_options = ["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"]
         def_fps_str = f"{self.default_fps:g}"
         if def_fps_str not in self.fps_options:
             self.fps_options.append(def_fps_str)
@@ -713,6 +720,14 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.lbl_btn_export_icon.show()
 
         if ok:
+            if self.engine:
+                try:
+                    prefs = self.engine.load_preferences() or {}
+                    prefs["export_fps"] = target_fps
+                    self.engine.save_preferences(prefs)
+                except Exception:
+                    pass
+
             succ_dlg = CustomMsgBox(
                 self,
                 self._t("dlg_export_title", "Eksport zakończony"),

@@ -983,7 +983,12 @@ def _path_to_fileurl(path: str) -> str:
 
 
 def _get_fps_params(fps: float) -> tuple[int, str]:
-    """Returns (timebase: int, is_ntsc: str) for XML timeline specifications."""
+    """
+    Returns (timebase: int, is_ntsc: str) for XML timeline specifications.
+    Uses strict 0.005 threshold so standard integer frame rates (24, 30, 60)
+    remain NTSC="FALSE", while drop-frame/fractional rates (23.976, 29.97, 59.94)
+    are mapped to NTSC="TRUE".
+    """
     ntsc_map = {
         23.976: (24, "TRUE"),
         29.97:  (30, "TRUE"),
@@ -991,9 +996,41 @@ def _get_fps_params(fps: float) -> tuple[int, str]:
         59.94:  (60, "TRUE"),
     }
     for target_fps, (tb, ntsc) in ntsc_map.items():
-        if abs(fps - target_fps) < 0.05:
+        if abs(fps - target_fps) < 0.005:
             return tb, ntsc
     return int(round(fps)), "FALSE"
+
+
+def _get_fcpxml_fps_params(fps: float, height: int) -> tuple[str, str, any]:
+    """
+    Returns (format_name, frame_duration_str, to_time_str_fn) for Apple FCPXML.
+    Adheres strictly to the Apple FCPXML DTD standard rational fractions.
+    """
+    if abs(fps - 23.976) < 0.005:
+        name = f"FFVideoFormat{height}p2398"
+        frame_dur = "1001/24000s"
+        def to_time_str(frames: int) -> str:
+            return f"{frames * 1001}/24000s" if frames != 0 else "0s"
+        return name, frame_dur, to_time_str
+    elif abs(fps - 29.97) < 0.005:
+        name = f"FFVideoFormat{height}p2997"
+        frame_dur = "1001/30000s"
+        def to_time_str(frames: int) -> str:
+            return f"{frames * 1001}/30000s" if frames != 0 else "0s"
+        return name, frame_dur, to_time_str
+    elif abs(fps - 59.94) < 0.005:
+        name = f"FFVideoFormat{height}p5994"
+        frame_dur = "1001/60000s"
+        def to_time_str(frames: int) -> str:
+            return f"{frames * 1001}/60000s" if frames != 0 else "0s"
+        return name, frame_dur, to_time_str
+    else:
+        r_fps = int(round(fps)) if fps > 0 else 24
+        name = f"FFVideoFormat{height}p{r_fps}"
+        frame_dur = f"1/{r_fps}s"
+        def to_time_str(frames: int) -> str:
+            return f"{frames}/{r_fps}s" if frames != 0 else "0s"
+        return name, frame_dur, to_time_str
 
 
 def _format_timecode_edl(frame, fps: float) -> str:
@@ -1491,7 +1528,10 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
         # Try using opentimelineio package if available
         try:
             import opentimelineio as otio
-            tl = otio.schema.Timeline(name=timeline_name)
+            tl = otio.schema.Timeline(
+                name=timeline_name,
+                global_start_time=otio.opentime.RationalTime(0, fps)
+            )
 
             # Video Track
             any_video = any(c["has_video"] for c in processed_clips)
@@ -1801,7 +1841,11 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
                 "OTIO_SCHEMA": "Timeline.1",
                 "metadata": {},
                 "name": timeline_name,
-                "global_start_time": None,
+                "global_start_time": {
+                    "OTIO_SCHEMA": "RationalTime.1",
+                    "rate": float(fps),
+                    "value": 0.0
+                },
                 "tracks": {
                     "OTIO_SCHEMA": "Stack.1",
                     "metadata": {},
@@ -1845,16 +1889,9 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
 
         fcpxml = ET.Element("fcpxml", version="1.9")
         resources = ET.SubElement(fcpxml, "resources")
-        timebase, _ = _get_fps_params(fps)
-        is_ntsc = abs(fps - round(fps)) > 0.01
+        fmt_name, frame_dur_str, to_time_str = _get_fcpxml_fps_params(fps, height)
 
-        def to_time_str(frames: int) -> str:
-            if is_ntsc:
-                return f"{frames * 1001}/{int(round(fps * 1000))}s"
-            return f"{frames}/{int(round(fps))}s"
-
-        frame_dur_str = to_time_str(1)
-        ET.SubElement(resources, "format", id="r1", name=f"FFVideoFormat{height}p{int(round(fps))}",
+        ET.SubElement(resources, "format", id="r1", name=fmt_name,
                       frameDuration=frame_dur_str, width=str(width), height=str(height))
 
         asset_map = {}
@@ -1952,9 +1989,11 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
         if not kept_ops:
             return False, "Brak operacji cięcia do wyeksportowania."
 
+        is_drop = (abs(fps - 29.97) < 0.005 or abs(fps - 59.94) < 0.005)
         lines = [
             f"TITLE: {timeline_name}",
-            "FCM: NON-DROP FRAME",
+            f"FCM: {'DROP FRAME' if is_drop else 'NON-DROP FRAME'}",
+            f"* TIMEBASE: {fps:g}",
             ""
         ]
 
