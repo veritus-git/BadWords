@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "Vincular Áudio e Vídeo correspondentes",
   "tt_link_av_clips": "Vincula automaticamente as faixas de áudio ao clipe de vídeo correspondente do mesmo arquivo na linha de tempo do DaVinci Resolve.",
   "lbl_link_all_cut_tracks": "Vincular todas as faixas no corte",
-  "tt_link_all_cut_tracks": "Vincula todas as faixas de vídeo e áudio cortadas em cada ponto juntas."
+  "tt_link_all_cut_tracks": "Vincula todas as faixas de vídeo e áudio cortadas em cada ponto juntas.",
+  "hint_fmt_fcp7_xml": "Formato universal recomendado. Vinculação completa de clipes de áudio e vídeo, expansão multipista e mídia mista.",
+  "hint_fmt_otio": "Formato de linha do tempo aberto moderno (Pixar/ASWF). Suporta todas as faixas e mídias. Nota: A especificação OTIO v1.0 não define vinculação nativa de clipes.",
+  "hint_fmt_fcpxml": "Dedicado ao Final Cut Pro X. No DaVinci Resolve, a importação de áudio externo (.wav) pode exigir pré-importação no Media Pool.",
+  "hint_fmt_edl": "Formato de fita tradicional CMX 3600 EDL para clipes individuais. Limitado a 1 faixa de vídeo e áudio estéreo.",
+  "hint_fmt_edl_warning": "CMX 3600 EDL é um formato de fita linear (1 faixa de vídeo, estéreo). Para projetos com vários clipes ou mídia mista, recomenda-se fortemente FCP 7 XML ou OTIO!"
 }

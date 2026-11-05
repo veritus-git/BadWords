@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "Lier Audio et Vidéo correspondants",
   "tt_link_av_clips": "Lie automatiquement les pistes audio à leur clip vidéo correspondant du même fichier sur la timeline DaVinci Resolve.",
   "lbl_link_all_cut_tracks": "Lier toutes les pistes du cut",
-  "tt_link_all_cut_tracks": "Lie ensemble toutes les pistes vidéo et audio découpées à chaque point."
+  "tt_link_all_cut_tracks": "Lie ensemble toutes les pistes vidéo et audio découpées à chaque point.",
+  "hint_fmt_fcp7_xml": "Format universel recommandé. Liaison complète des clips audio/vidéo, expansion multi-pistes et médias mixtes.",
+  "hint_fmt_otio": "Format de timeline ouvert moderne (Pixar/ASWF). Prend en charge toutes les pistes et médias. Remarque : La spécification OTIO v1.0 ne définit pas la liaison native des clips.",
+  "hint_fmt_fcpxml": "Dédié à Final Cut Pro X. Dans DaVinci Resolve, l'importation de fichiers audio externes (.wav) peut nécessiter leur importation préalable dans le Media Pool.",
+  "hint_fmt_edl": "Format de bande traditionnel CMX 3600 EDL pour clips uniques. Limité à 1 piste vidéo et audio stéréo.",
+  "hint_fmt_edl_warning": "CMX 3600 EDL est un format de bande linéaire (1 piste vidéo, stéréo). Pour les projets multi-clips ou avec médias mixtes, FCP 7 XML ou OTIO est fortement recommandé !"
 }

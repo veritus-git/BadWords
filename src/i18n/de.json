@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "Passendes Audio & Video verknüpfen",
   "tt_link_av_clips": "Verknüpft Audiospuren automatisch mit dem entsprechenden Videoclip derselben Datei auf der DaVinci Resolve-Timeline.",
   "lbl_link_all_cut_tracks": "Alle Spuren im Schnitt verknüpfen",
-  "tt_link_all_cut_tracks": "Verknüpft alle Video- und Audiospuren an jeder Schnittstelle miteinander."
+  "tt_link_all_cut_tracks": "Verknüpft alle Video- und Audiospuren an jeder Schnittstelle miteinander.",
+  "hint_fmt_fcp7_xml": "Empfohlenes universelles Format. Vollständige Audio-Video-Clip-Verknüpfung, Mehrspur-Unterstützung und gemischte Medien.",
+  "hint_fmt_otio": "Modernes offenes Timeline-Format (Pixar/ASWF). Unterstützt alle Spuren und Medien. Hinweis: Die OTIO v1.0-Spezifikation definiert keine native Clip-Verknüpfung.",
+  "hint_fmt_fcpxml": "Optimiert für Final Cut Pro X. In DaVinci Resolve müssen externe Audiodateien (.wav) möglicherweise vorab in den Media Pool importiert werden.",
+  "hint_fmt_edl": "Traditionelles CMX 3600 EDL-Bandformat für einzelne Clips. Beschränkt auf 1 Videospur und Stereo-Audio.",
+  "hint_fmt_edl_warning": "CMX 3600 EDL ist ein lineares Bandformat (1 Videospur, Stereo). Für Multi-Clip- oder gemischte Projekte wird FCP 7 XML oder OTIO dringend empfohlen!"
 }

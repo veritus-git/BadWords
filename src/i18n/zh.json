@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "链接匹配的音频与视频",
   "tt_link_av_clips": "在 DaVinci Resolve 时间线上自动将音频轨道与同一文件的对应视频片段链接。",
   "lbl_link_all_cut_tracks": "链接剪切处的所有轨道",
-  "tt_link_all_cut_tracks": "将每个剪切点处的所有视频和音频轨道组合链接在一起。"
+  "tt_link_all_cut_tracks": "将每个剪切点处的所有视频和音频轨道组合链接在一起。",
+  "hint_fmt_fcp7_xml": "推荐的通用格式。完全支持音视频剪辑链接、多轨道拆分及混合媒体。",
+  "hint_fmt_otio": "现代开源时间线格式 (Pixar/ASWF)。支持所有轨道和媒体。注意：OTIO v1.0 规范不定义原生的跨轨道剪辑链接。",
+  "hint_fmt_fcpxml": "适用于 Final Cut Pro X。在 DaVinci Resolve 中，导入外部独立音频 (.wav) 可能需要先导入到媒体池中。",
+  "hint_fmt_edl": "传统的 CMX 3600 EDL 磁带格式，适用于单个剪辑。仅限 1 条视频轨和立体声音频。",
+  "hint_fmt_edl_warning": "CMX 3600 EDL 是线性磁带格式（1 条视频轨，立体声）。对于多剪辑或混合媒体项目，强烈推荐使用 FCP 7 XML 或 OTIO！"
 }

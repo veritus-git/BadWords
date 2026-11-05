@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "Linkuj Audio i Video klipu",
   "tt_link_av_clips": "Automatycznie powiązuje ścieżki audio z odpowiadającym im obrazem wideo z tego samego pliku na osi czasu DaVinci Resolve.",
   "lbl_link_all_cut_tracks": "Zepnij wszystkie warstwy w cięciu",
-  "tt_link_all_cut_tracks": "Spina w jedną grupę wszystkie ścieżki wideo i audio przecinane w danym cięciu."
+  "tt_link_all_cut_tracks": "Spina w jedną grupę wszystkie ścieżki wideo i audio przecinane w danym cięciu.",
+  "hint_fmt_fcp7_xml": "Zalecany format uniwersalny. Pełne powiązanie wideo i audio (clip linking), rozbicie ścieżek oraz media mieszane.",
+  "hint_fmt_otio": "Nowoczesny format otwarty (Pixar/ASWF). Obsługuje wszystkie ścieżki i media. Zgodnie ze specyfikacją OTIO v1.0, brak natywnego powiązania klipów między ścieżkami.",
+  "hint_fmt_fcpxml": "Dedykowany dla Final Cut Pro X. W DaVinci Resolve import zewnętrznych plików audio (.wav) może wymagać ich wcześniejszego załadowania do Media Pool.",
+  "hint_fmt_edl": "Tradycyjny format taśmowy CMX 3600 EDL dla pojedynczego klipu. Ograniczony do 1 ścieżki wideo i stereo.",
+  "hint_fmt_edl_warning": "CMX 3600 EDL to format taśmowy (1 ścieżka wideo, stereo). Przy wielu/mieszanych klipach zalecany jest FCP 7 XML lub OTIO!"
 }

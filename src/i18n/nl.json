@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "Bijpassende audio & video koppelen",
   "tt_link_av_clips": "Koppelt audiotracks automatisch aan de bijbehorende videoclip van hetzelfde bestand op de DaVinci Resolve-tijdlijn.",
   "lbl_link_all_cut_tracks": "Alle tracks in de snede koppelen",
-  "tt_link_all_cut_tracks": "Koppelt alle video- en audiotracks die bij elke snede zijn geknipt samen."
+  "tt_link_all_cut_tracks": "Koppelt alle video- en audiotracks die bij elke snede zijn geknipt samen.",
+  "hint_fmt_fcp7_xml": "Aanbevolen universeel formaat. Volledige audio-video clipkoppeling, meersporenuitbreiding en gemengde media.",
+  "hint_fmt_otio": "Modern open tijdlijnformaat (Pixar/ASWF). Ondersteunt alle sporen en media. Opmerking: OTIO v1.0 definieert geen native clipkoppeling.",
+  "hint_fmt_fcpxml": "Toegewijd aan Final Cut Pro X. In DaVinci Resolve vereist het importeren van externe audio (.wav) mogelijk vooraf importeren in de Media Pool.",
+  "hint_fmt_edl": "Traditioneel CMX 3600 EDL-bandformaat voor enkele clips. Beperkt tot 1 videospoor en stereo-audio.",
+  "hint_fmt_edl_warning": "CMX 3600 EDL is een lineair bandformaat (1 videospoor, stereo). Voor projecten met meerdere clips of gemengde media wordt FCP 7 XML of OTIO sterk aanbevolen!"
 }

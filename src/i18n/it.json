@@ -540,5 +540,10 @@
   "lbl_link_av_clips": "Collega Audio e Video corrispondenti",
   "tt_link_av_clips": "Collega automaticamente le tracce audio alla clip video corrispondente dello stesso file sulla timeline di DaVinci Resolve.",
   "lbl_link_all_cut_tracks": "Collega tutte le tracce nel taglio",
-  "tt_link_all_cut_tracks": "Collega insieme tutte le tracce video e audio tagliate in ciascun punto."
+  "tt_link_all_cut_tracks": "Collega insieme tutte le tracce video e audio tagliate in ciascun punto.",
+  "hint_fmt_fcp7_xml": "Formato universale consigliato. Collegamento completo di clip audio/video, espansione multitraccia e supporto per supporti misti.",
+  "hint_fmt_otio": "Formato timeline aperto moderno (Pixar/ASWF). Supporta tutte le tracce e i media. Nota: La specifica OTIO v1.0 non definisce il collegamento nativo dei clip.",
+  "hint_fmt_fcpxml": "Dedicato a Final Cut Pro X. In DaVinci Resolve, l'importazione di audio esterno (.wav) potrebbe richiedere il caricamento preliminare nel Media Pool.",
+  "hint_fmt_edl": "Formato nastro tradizionale CMX 3600 EDL per clip singole. Limitato a 1 traccia video e audio stereo.",
+  "hint_fmt_edl_warning": "CMX 3600 EDL è un formato nastro lineare (1 traccia video, stereo). Per progetti multi-clip o misti, si consiglia vivamente FCP 7 XML o OTIO!"
 }

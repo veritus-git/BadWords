@@ -54,8 +54,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowModality(Qt.WindowModal)
         self.setWindowIcon(_app_icon())
 
-        win_w = config.S(560)
-        win_h = config.S(415)
+        win_w = config.S(600)
+        win_h = config.S(495)
         self.setFixedSize(win_w, win_h)
 
         # Center over active main window or active screen
@@ -273,6 +273,19 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_fmt.addWidget(self.combo_fmt, 1)
         c_lay.addLayout(r_fmt)
 
+        r_hint = QHBoxLayout()
+        r_hint.setSpacing(0)
+        r_hint.setContentsMargins(0, config.S(3), 0, config.S(5))
+        sp_hint = QWidget()
+        sp_hint.setFixedWidth(label_w + config.S(8))
+        r_hint.addWidget(sp_hint)
+
+        self.lbl_format_hint = QLabel()
+        self.lbl_format_hint.setWordWrap(True)
+        self.lbl_format_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        r_hint.addWidget(self.lbl_format_hint, 1)
+        c_lay.addLayout(r_hint)
+
         # ── 2. Sequence Name ──────────────────────────────────────────────────
         r_name = QHBoxLayout()
         r_name.setSpacing(config.S(8))
@@ -443,6 +456,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         root_l.addWidget(container)
 
         self._update_audio_toggle_state(animate=False)
+        self._update_format_hint()
 
     def _get_selected_format_id(self) -> str:
         selected_text = self.combo_fmt.text() if hasattr(self, 'combo_fmt') else ""
@@ -453,6 +467,33 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
     def _on_format_changed(self, text: str):
         self._update_audio_toggle_state(animate=True)
+        self._update_format_hint()
+
+    def _update_format_hint(self):
+        if not hasattr(self, 'lbl_format_hint') or not self.lbl_format_hint:
+            return
+        fmt_id = self._get_selected_format_id()
+        num_clips = len(self.clips_info)
+        has_mixed = any(bool(c.get("has_video")) for c in self.clips_info) and any(not bool(c.get("has_video")) for c in self.clips_info)
+
+        base_style = f"font-size: {config.FS(8)}pt; font-family: '{config.UI_FONT_NAME}'; line-height: 1.35; padding: 1px 0px;"
+
+        if fmt_id == "fcp7_xml":
+            self.lbl_format_hint.setText(self._t("hint_fmt_fcp7_xml", "Zalecany format uniwersalny. Pełne powiązanie wideo i audio (clip linking), rozbicie ścieżek oraz media mieszane."))
+            self.lbl_format_hint.setStyleSheet(f"color: #38c172; {base_style}")
+        elif fmt_id == "otio":
+            self.lbl_format_hint.setText(self._t("hint_fmt_otio", "Nowoczesny format otwarty (Pixar/ASWF). Obsługuje wszystkie ścieżki i media. Zgodnie ze specyfikacją OTIO v1, brak natywnego powiązania klipów."))
+            self.lbl_format_hint.setStyleSheet(f"color: #999999; {base_style}")
+        elif fmt_id == "fcpxml":
+            self.lbl_format_hint.setText(self._t("hint_fmt_fcpxml", "Dedykowany dla Final Cut Pro X. W DaVinci Resolve import zewnętrznych plików audio (.wav) może wymagać ich wcześniejszego załadowania do Media Pool."))
+            self.lbl_format_hint.setStyleSheet(f"color: #999999; {base_style}")
+        elif fmt_id == "edl":
+            if num_clips > 1 or has_mixed:
+                self.lbl_format_hint.setText(self._t("hint_fmt_edl_warning", "CMX 3600 EDL to format taśmowy (1 ścieżka wideo, stereo). Przy wielu/mieszanych klipach zalecany jest FCP 7 XML lub OTIO!"))
+                self.lbl_format_hint.setStyleSheet(f"color: #ffaa00; font-weight: bold; {base_style}")
+            else:
+                self.lbl_format_hint.setText(self._t("hint_fmt_edl", "Tradycyjny format CMX 3600 EDL dla pojedynczego klipu. Ograniczony do 1 ścieżki wideo i stereo."))
+                self.lbl_format_hint.setStyleSheet(f"color: #999999; {base_style}")
 
     def _on_audio_toggled(self, checked: bool):
         if self._get_selected_format_id() == "fcp7_xml":

@@ -1108,6 +1108,16 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                 if match_dur > 0:
                     ET.SubElement(file_el, "duration").text = str(match_dur)
 
+                # Timecode block inside file element: DaVinci Resolve strictly requires
+                # <timecode> on media files to conform and link audio tracks properly!
+                tc_el = ET.SubElement(file_el, "timecode")
+                r_tc = ET.SubElement(tc_el, "rate")
+                ET.SubElement(r_tc, "timebase").text = str(timebase)
+                ET.SubElement(r_tc, "ntsc").text = ntsc_str
+                ET.SubElement(tc_el, "string").text = "00:00:00:00"
+                ET.SubElement(tc_el, "frame").text = "0"
+                ET.SubElement(tc_el, "displayformat").text = "NDF"
+
                 media_sub = ET.SubElement(file_el, "media")
                 if clip_has_vid:
                     v_sub = ET.SubElement(media_sub, "video")
@@ -1254,19 +1264,19 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                                 "elem": ci
                             })
 
-                        if preserve_audio_tracks:
-                            # Center pan filter so mono track plays in center
-                            flt = ET.SubElement(ci, "filter")
-                            eff = ET.SubElement(flt, "effect")
-                            ET.SubElement(eff, "name").text = "Audio Pan"
-                            ET.SubElement(eff, "effectid").text = "audiopan"
-                            ET.SubElement(eff, "effectcategory").text = "audio"
-                            ET.SubElement(eff, "effecttype").text = "audio"
-                            ET.SubElement(eff, "mediatype").text = "audio"
-                            param = ET.SubElement(eff, "parameter")
-                            ET.SubElement(param, "parameterid").text = "pan"
-                            ET.SubElement(param, "name").text = "Pan"
-                            ET.SubElement(param, "value").text = "0"
+                        # Audio Pan filter: Centers pan (0) so mono and single-track clips play
+                        # across both stereo channels (L+R) instead of hard-panning to the left ear.
+                        flt = ET.SubElement(ci, "filter")
+                        eff = ET.SubElement(flt, "effect")
+                        ET.SubElement(eff, "name").text = "Audio Pan"
+                        ET.SubElement(eff, "effectid").text = "audiopan"
+                        ET.SubElement(eff, "effectcategory").text = "audio"
+                        ET.SubElement(eff, "effecttype").text = "audio"
+                        ET.SubElement(eff, "mediatype").text = "audio"
+                        param = ET.SubElement(eff, "parameter")
+                        ET.SubElement(param, "parameterid").text = "pan"
+                        ET.SubElement(param, "name").text = "Pan"
+                        ET.SubElement(param, "value").text = "0"
 
                 dest_pos += op_dur
 
@@ -1716,15 +1726,18 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                 "id": aid,
                 "name": os.path.basename(c["path"]),
                 "src": _path_to_fileurl(c["path"]),
+                "start": "0s",
                 "duration": to_time_str(dur_frames),
                 "hasVideo": "1" if has_vid else "0",
                 "hasAudio": "1",
                 "audioSources": "1",
-                "audioChannels": str(ch)
+                "audioChannels": str(ch),
+                "audioRate": "48000"
             }
             if has_vid:
                 asset_attribs["format"] = "r1"
-            ET.SubElement(resources, "asset", **asset_attribs)
+            asset_el = ET.SubElement(resources, "asset", **asset_attribs)
+            ET.SubElement(asset_el, "media-rep", kind="original-media", src=_path_to_fileurl(c["path"]))
 
         total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
         library = ET.SubElement(fcpxml, "library")
@@ -1764,7 +1777,6 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
                     }
                     if has_vid:
                         clip_kwargs["format"] = "r1"
-
                     ET.SubElement(spine, "asset-clip", **clip_kwargs)
 
             dest_pos += op_dur
@@ -1828,23 +1840,25 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
                     has_video = bool(c.get("has_video"))
                     audio_ch = max(1, int(c.get("audio_channels", 2)))
 
-                    # Determine track code in CMX 3600:
-                    # 'B'  = Both Video and Audio channels (synchronized)
-                    # 'V'  = Video only
-                    # 'AA' = Audio stereo / multi
-                    # 'A'  = Audio mono
-                    if has_video:
-                        trk = "B"
-                    elif audio_ch >= 2:
-                        trk = "AA"
-                    else:
-                        trk = "A"
+                    any_project_video = any(bool(clip.get("has_video")) for clip in clips_info)
 
-                    # 001  AX       B     C        00:00:00:00 00:00:05:00 00:00:00:00 00:00:05:00
-                    lines.append(f"{event_idx:03d}  AX       {trk:<5} C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
-                    lines.append(f"* FROM CLIP NAME: {clip_name}")
-                    lines.append("")
-                    event_idx += 1
+                    if has_video:
+                        lines.append(f"{event_idx:03d}  AX       {'B':<5} C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
+                        lines.append(f"* FROM CLIP NAME: {clip_name}")
+                        lines.append("")
+                        event_idx += 1
+                    else:
+                        if any_project_video:
+                            # In a timeline with video, insert BL (Black) video generator so the video record timeline does not shift
+                            lines.append(f"{event_idx:03d}  BL       {'V':<5} C        00:00:00:00 {_format_timecode_edl(seg_dur, fps)} {dst_in_tc} {dst_out_tc}")
+                            lines.append(f"* FROM CLIP NAME: BLACK")
+                            lines.append("")
+                            event_idx += 1
+                        trk = "AA" if audio_ch >= 2 else "A"
+                        lines.append(f"{event_idx:03d}  AX       {trk:<5} C        {src_in_tc} {src_out_tc} {dst_in_tc} {dst_out_tc}")
+                        lines.append(f"* FROM CLIP NAME: {clip_name}")
+                        lines.append("")
+                        event_idx += 1
 
             dest_pos += op_dur
 
