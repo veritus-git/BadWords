@@ -54,6 +54,53 @@ def _get_system_font_families():
     return _CACHED_FONT_FAMILIES
 
 
+def _is_segmented_text(text: str) -> bool:
+    if not text:
+        return False
+    seg_texts = {
+        trans.get('opt_segmented_blocks')
+        for trans in getattr(config, 'TRANS', {}).values()
+        if 'opt_segmented_blocks' in trans
+    } | {
+        'Segmented blocks', 'Segmentowane bloki', 'Segmentierte Blöcke',
+        'Bloques segmentados', 'Blocs segmentés', 'Blocchi segmentati',
+        'Blocos segmentados', 'Сегментированные блоки', 'Сегментовані блоки',
+        'Gesegmenteerde blokken', '分段块'
+    }
+    return text in seg_texts
+
+
+def _is_continuous_text(text: str) -> bool:
+    if not text:
+        return False
+    cont_texts = {
+        trans.get('opt_continuous_flow')
+        for trans in getattr(config, 'TRANS', {}).values()
+        if 'opt_continuous_flow' in trans
+    } | {
+        'Continuous flow', 'Continuous Flow', 'Ciągły przepływ',
+        'Kontinuierlicher Fluss', 'Fluxo Contínuo', 'Flusso Continuo',
+        'Непрерывный поток', 'Continue Stroom', 'Flujo Continuo',
+        'Безперервний потік', 'Flux continu', '连续流式', '连续流'
+    }
+    return text in cont_texts
+
+
+def _get_mouse_mode_from_text(text: str, default: str = 'box') -> str:
+    if not text:
+        return default
+    box_texts = {trans.get('opt_mouse_box') for trans in getattr(config, 'TRANS', {}).values() if 'opt_mouse_box' in trans} | {'Box selection', 'Zaznaczanie obszarem'}
+    brush_texts = {trans.get('opt_mouse_brush') for trans in getattr(config, 'TRANS', {}).values() if 'opt_mouse_brush' in trans} | {'Brush selection', 'Pędzel / malowanie'}
+    none_texts = {trans.get('opt_mouse_none') for trans in getattr(config, 'TRANS', {}).values() if 'opt_mouse_none' in trans} | {'None', 'Brak'}
+    if text in box_texts:
+        return 'box'
+    if text in brush_texts:
+        return 'brush'
+    if text in none_texts:
+        return 'none'
+    return default
+
+
 class SettingsDialog(FramelessWindowMixin, _BaseDialog):
     """Settings Dialog — left category menu + right stacked pages.
     All I/O goes through engine.load_preferences / engine.save_preferences
@@ -62,7 +109,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
     # Fallback defaults (for revert buttons)
     DEFAULTS = {
-        'view_mode':          'continuous',
+        'view_mode':          'segmented',
         'offset':             0.133,
         'pad':                0.0,
         'snap_max':           0.25,
@@ -862,6 +909,38 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 self._initial_state['gui_lang'] = code
 
             target = config.TRANS.get(code, config.TRANS['en'])
+
+            # Update combo_view options and text to new language without altering the current mode
+            if hasattr(self, 'combo_view') and self.combo_view is not None:
+                cur_mode = self.combo_view.property("view_mode_key")
+                if not cur_mode or cur_mode not in ('segmented', 'continuous'):
+                    cur_txt = self.combo_view.currentText()
+                    cur_mode = 'segmented' if _is_segmented_text(cur_txt) else ('continuous' if _is_continuous_text(cur_txt) else prefs.get('view_mode', 'segmented'))
+                self.combo_view.setProperty("view_mode_key", cur_mode)
+                self.combo_view.options_list = [target.get("opt_continuous_flow", "Continuous flow"), target.get("opt_segmented_blocks", "Segmented blocks")]
+                self.combo_view.blockSignals(True)
+                self.combo_view.setText(target.get("opt_segmented_blocks" if cur_mode == "segmented" else "opt_continuous_flow"))
+                self.combo_view.blockSignals(False)
+
+            # Update mouse LMB/RMB options and text to new language without altering their selected modes
+            if hasattr(self, 'combo_mouse_lmb') and self.combo_mouse_lmb is not None:
+                cur_lmb = self.combo_mouse_lmb.property("mouse_mode_key") or _get_mouse_mode_from_text(self.combo_mouse_lmb.currentText(), prefs.get('mouse_lmb_mode', 'box'))
+                self.combo_mouse_lmb.setProperty("mouse_mode_key", cur_lmb)
+                self.combo_mouse_lmb.options_list = [target.get("opt_mouse_box", "Box selection"), target.get("opt_mouse_brush", "Brush selection"), target.get("opt_mouse_none", "None")]
+                lmb_map = {'box': target.get("opt_mouse_box", "Box selection"), 'brush': target.get("opt_mouse_brush", "Brush selection"), 'none': target.get("opt_mouse_none", "None")}
+                self.combo_mouse_lmb.blockSignals(True)
+                self.combo_mouse_lmb.setText(lmb_map.get(cur_lmb, target.get("opt_mouse_box", "Box selection")))
+                self.combo_mouse_lmb.blockSignals(False)
+
+            if hasattr(self, 'combo_mouse_rmb') and self.combo_mouse_rmb is not None:
+                cur_rmb = self.combo_mouse_rmb.property("mouse_mode_key") or _get_mouse_mode_from_text(self.combo_mouse_rmb.currentText(), prefs.get('mouse_rmb_mode', 'brush'))
+                self.combo_mouse_rmb.setProperty("mouse_mode_key", cur_rmb)
+                self.combo_mouse_rmb.options_list = [target.get("opt_mouse_brush", "Brush selection"), target.get("opt_mouse_box", "Box selection"), target.get("opt_mouse_none", "None")]
+                rmb_map = {'box': target.get("opt_mouse_box", "Box selection"), 'brush': target.get("opt_mouse_brush", "Brush selection"), 'none': target.get("opt_mouse_none", "None")}
+                self.combo_mouse_rmb.blockSignals(True)
+                self.combo_mouse_rmb.setText(rmb_map.get(cur_rmb, target.get("opt_mouse_brush", "Brush selection")))
+                self.combo_mouse_rmb.blockSignals(False)
+
             title   = target.get('msg_title_language_changed', 'Language Changed')
             message = target.get('msg_restart_lang_pending', target.get('msg_restart_lang', 'Language changed. Full changes will apply on restart.'))
             if hasattr(self, 'textedit_prompt') and self.textedit_prompt:
@@ -1245,9 +1324,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             options_getter=lambda: [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
         )
         is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
+        self.combo_view.setProperty("view_mode_key", "segmented" if is_seg else "continuous")
         self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
+        self.combo_view.valueChanged.connect(
+            lambda v: self.combo_view.setProperty(
+                "view_mode_key",
+                "segmented" if _is_segmented_text(v) else ("continuous" if _is_continuous_text(v) else self.combo_view.property("view_mode_key"))
+            )
+        )
         self._add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
-                 self.txt("opt_segmented_blocks"), self.combo_view.setValue)
+                 self.txt("opt_segmented_blocks"), lambda v: self.combo_view.setValue(self.txt("opt_segmented_blocks")))
 
         # Mouse selection mode — Left Mouse Button (LMB)
         mouse_lmb_items = [
@@ -1264,14 +1350,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             ]
         )
         curr_lmb = prefs.get('mouse_lmb_mode', 'box')
+        self.combo_mouse_lmb.setProperty("mouse_mode_key", curr_lmb)
         lmb_text_map = {
             'box': self.txt("opt_mouse_box"),
             'brush': self.txt("opt_mouse_brush"),
             'none': self.txt("opt_mouse_none")
         }
         self.combo_mouse_lmb.setText(lmb_text_map.get(curr_lmb, self.txt("opt_mouse_box")))
+        self.combo_mouse_lmb.valueChanged.connect(
+            lambda v: self.combo_mouse_lmb.setProperty(
+                "mouse_mode_key",
+                _get_mouse_mode_from_text(v, self.combo_mouse_lmb.property("mouse_mode_key") or "box")
+            )
+        )
         self._add_row(form_transcript, self.txt("lbl_mouse_lmb_mode"), self.combo_mouse_lmb,
-                 self.txt("opt_mouse_box"), self.combo_mouse_lmb.setValue, info_key="tt_mouse_lmb_mode")
+                 self.txt("opt_mouse_box"), lambda v: self.combo_mouse_lmb.setValue(self.txt("opt_mouse_box")), info_key="tt_mouse_lmb_mode")
 
         # Mouse selection mode — Right Mouse Button (RMB)
         mouse_rmb_items = [
@@ -1288,14 +1381,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             ]
         )
         curr_rmb = prefs.get('mouse_rmb_mode', 'brush')
+        self.combo_mouse_rmb.setProperty("mouse_mode_key", curr_rmb)
         rmb_text_map = {
             'brush': self.txt("opt_mouse_brush"),
             'box': self.txt("opt_mouse_box"),
             'none': self.txt("opt_mouse_none")
         }
         self.combo_mouse_rmb.setText(rmb_text_map.get(curr_rmb, self.txt("opt_mouse_brush")))
+        self.combo_mouse_rmb.valueChanged.connect(
+            lambda v: self.combo_mouse_rmb.setProperty(
+                "mouse_mode_key",
+                _get_mouse_mode_from_text(v, self.combo_mouse_rmb.property("mouse_mode_key") or "brush")
+            )
+        )
         self._add_row(form_transcript, self.txt("lbl_mouse_rmb_mode"), self.combo_mouse_rmb,
-                 self.txt("opt_mouse_brush"), self.combo_mouse_rmb.setValue, info_key="tt_mouse_rmb_mode")
+                 self.txt("opt_mouse_brush"), lambda v: self.combo_mouse_rmb.setValue(self.txt("opt_mouse_brush")), info_key="tt_mouse_rmb_mode")
 
         self._chunk_widgets = []
         def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
@@ -1349,8 +1449,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             for w in self._chunk_widgets:
                 w.setVisible(is_seg and not self._is_basic_mode)
         
-        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if v == self.txt("opt_segmented_blocks") else 0))
-        _update_chunk_state(1 if self.combo_view.currentText() == self.txt("opt_segmented_blocks") else 0)
+        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if _is_segmented_text(v) else 0))
+        _update_chunk_state(1 if is_seg else 0)
 
         # Font family, size, line height
         self.combo_font = SearchableDropdown(_get_system_font_families)
@@ -2686,27 +2786,29 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             lang_code = old_prefs.get('gui_lang', 'en')
             
         view_mode_val = self._safe_get('combo_view', '', 'currentText')
-        view_mode = 'segmented' if view_mode_val == self.txt("opt_segmented_blocks") else ('continuous' if view_mode_val else old_prefs.get('view_mode', 'segmented'))
+        prop_mode = self.combo_view.property("view_mode_key") if hasattr(self, 'combo_view') and self.combo_view else None
+        if prop_mode in ('segmented', 'continuous'):
+            view_mode = prop_mode
+        elif _is_segmented_text(view_mode_val):
+            view_mode = 'segmented'
+        elif _is_continuous_text(view_mode_val):
+            view_mode = 'continuous'
+        else:
+            view_mode = old_prefs.get('view_mode', 'segmented')
 
         lmb_text = self._safe_get('combo_mouse_lmb', '', 'currentText')
-        if lmb_text == self.txt("opt_mouse_box"):
-            lmb_mode = "box"
-        elif lmb_text == self.txt("opt_mouse_brush"):
-            lmb_mode = "brush"
-        elif lmb_text == self.txt("opt_mouse_none"):
-            lmb_mode = "none"
+        prop_lmb = self.combo_mouse_lmb.property("mouse_mode_key") if hasattr(self, 'combo_mouse_lmb') and self.combo_mouse_lmb else None
+        if prop_lmb in ('box', 'brush', 'none'):
+            lmb_mode = prop_lmb
         else:
-            lmb_mode = old_prefs.get('mouse_lmb_mode', 'box')
+            lmb_mode = _get_mouse_mode_from_text(lmb_text, old_prefs.get('mouse_lmb_mode', 'box'))
 
         rmb_text = self._safe_get('combo_mouse_rmb', '', 'currentText')
-        if rmb_text == self.txt("opt_mouse_brush"):
-            rmb_mode = "brush"
-        elif rmb_text == self.txt("opt_mouse_box"):
-            rmb_mode = "box"
-        elif rmb_text == self.txt("opt_mouse_none"):
-            rmb_mode = "none"
+        prop_rmb = self.combo_mouse_rmb.property("mouse_mode_key") if hasattr(self, 'combo_mouse_rmb') and self.combo_mouse_rmb else None
+        if prop_rmb in ('brush', 'box', 'none'):
+            rmb_mode = prop_rmb
         else:
-            rmb_mode = old_prefs.get('mouse_rmb_mode', 'brush')
+            rmb_mode = _get_mouse_mode_from_text(rmb_text, old_prefs.get('mouse_rmb_mode', 'brush'))
 
         try:
             shortcuts_dict = {k: v.get_sequence() for k, v in self.shortcut_inputs.items()}
@@ -2817,7 +2919,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         view_mode = _g('view_mode', 'segmented')
         if hasattr(self, 'combo_view') and self.combo_view is not None:
             self.combo_view.options_list = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+            self.combo_view.setProperty("view_mode_key", view_mode)
         self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
+
+        lmb_mode = _g('mouse_lmb_mode', 'box')
+        if hasattr(self, 'combo_mouse_lmb') and self.combo_mouse_lmb is not None:
+            self.combo_mouse_lmb.setProperty("mouse_mode_key", lmb_mode)
+            lmb_map = {'box': self.txt("opt_mouse_box"), 'brush': self.txt("opt_mouse_brush"), 'none': self.txt("opt_mouse_none")}
+            self._safe_set('combo_mouse_lmb', lmb_map.get(lmb_mode, self.txt("opt_mouse_box")), 'setText')
+
+        rmb_mode = _g('mouse_rmb_mode', 'brush')
+        if hasattr(self, 'combo_mouse_rmb') and self.combo_mouse_rmb is not None:
+            self.combo_mouse_rmb.setProperty("mouse_mode_key", rmb_mode)
+            rmb_map = {'brush': self.txt("opt_mouse_brush"), 'box': self.txt("opt_mouse_box"), 'none': self.txt("opt_mouse_none")}
+            self._safe_set('combo_mouse_rmb', rmb_map.get(rmb_mode, self.txt("opt_mouse_brush")), 'setText')
         self._safe_set('combo_font', _g('editor_font_family', config.UI_FONT_NAME), 'setText')
         self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
         self._safe_set('spin_lheight', _g('editor_line_height', 7), 'setValue')

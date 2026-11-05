@@ -205,7 +205,7 @@ class TranscriptionCanvas(QWidget):
         # Layout new tokens
         prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
         max_w = self.width() - 40
-        view_mode = prefs.get('view_mode', 'continuous')
+        view_mode = prefs.get('view_mode', 'segmented')
         precise_ts = prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])
 
         # Start cursor from the previous token if exists
@@ -459,7 +459,7 @@ class TranscriptionCanvas(QWidget):
         from PySide6.QtCore import QRect
         
         prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()
-        view_mode = prefs.get('view_mode', 'continuous')
+        view_mode = prefs.get('view_mode', 'segmented')
         
         is_rtl = False
         lang_pref = prefs.get('lang', 'Auto')
