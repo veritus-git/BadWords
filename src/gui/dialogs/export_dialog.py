@@ -27,6 +27,7 @@ import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import CustomDropdown, ToggleSwitch
+from gui.widgets.labels import IDETooltip
 from gui.dialogs.msgbox import CustomMsgBox
 from gui.utils import _app_icon, _txt, get_export_icon, get_export_pixmap, get_layout_icon_path
 import assembler
@@ -54,8 +55,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowModality(Qt.WindowModal)
         self.setWindowIcon(_app_icon())
 
-        win_w = config.S(600)
-        win_h = config.S(485)
+        self._local_tooltip = IDETooltip()
+
+        win_w = config.S(560)
+        win_h = config.S(415)
         self.setFixedSize(win_w, win_h)
 
         # Center over active main window or active screen
@@ -150,11 +153,54 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         def _on_enter(e):
             if not info.isEnabled():
                 return
-            if hasattr(self.parent_gui, 'shared_tooltip'):
-                self.parent_gui.shared_tooltip.show_global(info.custom_tooltip_text, QCursor.pos())
+            tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+            if tip:
+                tip.show_global(info.custom_tooltip_text, QCursor.pos())
+
+        def _on_leave(e):
+            tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+            if tip:
+                tip.hide()
+
         info.enterEvent = _on_enter
-        info.leaveEvent = lambda e: self.parent_gui.shared_tooltip.hide() if hasattr(self.parent_gui, 'shared_tooltip') else None
+        info.leaveEvent = _on_leave
         return info
+
+    def _render_svg_icon(self, svg_name: str, height: int, color: str, dpr: float = 2.0) -> QPixmap:
+        """Renders an SVG asset with custom fill color into a HighDPI QPixmap."""
+        try:
+            import re
+            from PySide6.QtSvg import QSvgRenderer
+            from PySide6.QtCore import QByteArray
+            p = get_layout_icon_path(svg_name)
+            if not os.path.exists(p):
+                return QPixmap()
+            with open(p, "r", encoding="utf-8") as f:
+                svg_data = f.read()
+
+            if re.search(r'\bfill="[^"]*"', svg_data):
+                svg_data = re.sub(r'\bfill="[^"]*"', f'fill="{color}"', svg_data)
+            else:
+                svg_data = svg_data.replace('<path ', f'<path fill="{color}" ')
+                if f'fill="{color}"' not in svg_data:
+                    svg_data = svg_data.replace('<svg ', f'<svg fill="{color}" ')
+
+            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+            vb = renderer.viewBoxF()
+            aspect = (vb.width() / vb.height()) if vb.height() > 0 else 1.0
+            w = max(1, int(round(height * aspect)))
+
+            pixmap = QPixmap(int(w * dpr), int(height * dpr))
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            renderer.render(painter)
+            painter.end()
+            pixmap.setDevicePixelRatio(dpr)
+            return pixmap
+        except Exception:
+            return QPixmap()
 
     def _build_ui(self):
         self.setStyleSheet(f"""
@@ -271,22 +317,29 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.combo_fmt.setFixedHeight(config.S(28))
         self.combo_fmt.valueChanged.connect(self._on_format_changed)
         r_fmt.addWidget(self.combo_fmt, 1)
+
+        # Tooltip icon indicator (question mark or exclamation) placed to the right of the dropdown
+        self.info_fmt = QLabel()
+        self.info_fmt.setFixedSize(config.S(24), config.S(28))
+        self.info_fmt.setAlignment(Qt.AlignCenter)
+        self.info_fmt.setCursor(Qt.PointingHandCursor)
+
+        def _on_fmt_enter(e):
+            txt = getattr(self.info_fmt, 'custom_tooltip_text', '')
+            if txt:
+                tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+                if tip:
+                    tip.show_global(txt, QCursor.pos())
+
+        def _on_fmt_leave(e):
+            tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+            if tip:
+                tip.hide()
+
+        self.info_fmt.enterEvent = _on_fmt_enter
+        self.info_fmt.leaveEvent = _on_fmt_leave
+        r_fmt.addWidget(self.info_fmt, 0)
         c_lay.addLayout(r_fmt)
-
-        self.w_hint_container = QWidget()
-        self.w_hint_container.setFixedHeight(config.S(54))
-        r_hint = QHBoxLayout(self.w_hint_container)
-        r_hint.setSpacing(0)
-        r_hint.setContentsMargins(0, 0, 0, 0)
-        sp_hint = QWidget()
-        sp_hint.setFixedWidth(label_w + config.S(8))
-        r_hint.addWidget(sp_hint)
-
-        self.lbl_format_hint = QLabel()
-        self.lbl_format_hint.setWordWrap(True)
-        self.lbl_format_hint.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        r_hint.addWidget(self.lbl_format_hint, 1)
-        c_lay.addWidget(self.w_hint_container)
 
         # ── 2. Sequence Name ──────────────────────────────────────────────────
         r_name = QHBoxLayout()
@@ -472,30 +525,33 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self._update_format_hint()
 
     def _update_format_hint(self):
-        if not hasattr(self, 'lbl_format_hint') or not self.lbl_format_hint:
+        if not hasattr(self, 'info_fmt') or not self.info_fmt:
             return
         fmt_id = self._get_selected_format_id()
         num_clips = len(self.clips_info)
         has_mixed = any(bool(c.get("has_video")) for c in self.clips_info) and any(not bool(c.get("has_video")) for c in self.clips_info)
-
-        base_style = f"font-size: {config.FS(8)}pt; font-family: '{config.UI_FONT_NAME}'; line-height: 1.35; padding: 1px 0px;"
+        dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 2.0
 
         if fmt_id == "fcp7_xml":
-            self.lbl_format_hint.setText(self._t("hint_fmt_fcp7_xml", "Zalecany format uniwersalny. Pełne powiązanie wideo i audio (clip linking), rozbicie ścieżek oraz media mieszane."))
-            self.lbl_format_hint.setStyleSheet(f"color: #38c172; {base_style}")
+            hint_text = self._t("hint_fmt_fcp7_xml", "Zalecany format uniwersalny. Pełne powiązanie wideo i audio (clip linking), rozbicie ścieżek oraz media mieszane.")
+            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#38c172", dpr)
         elif fmt_id == "otio":
-            self.lbl_format_hint.setText(self._t("hint_fmt_otio", "Nowoczesny format otwarty (Pixar/ASWF). Obsługuje wszystkie ścieżki i media. Zgodnie ze specyfikacją OTIO v1, brak natywnego powiązania klipów."))
-            self.lbl_format_hint.setStyleSheet(f"color: #999999; {base_style}")
+            hint_text = self._t("hint_fmt_otio", "Nowoczesny format otwarty (Pixar/ASWF). Obsługuje wszystkie ścieżki i media. Zgodnie ze specyfikacją OTIO v1, brak natywnego powiązania klipów.")
+            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#888888", dpr)
         elif fmt_id == "fcpxml":
-            self.lbl_format_hint.setText(self._t("hint_fmt_fcpxml", "Dedykowany dla Final Cut Pro X. W DaVinci Resolve import zewnętrznych plików audio (.wav) może wymagać ich wcześniejszego załadowania do Media Pool."))
-            self.lbl_format_hint.setStyleSheet(f"color: #999999; {base_style}")
+            hint_text = self._t("hint_fmt_fcpxml", "Dedykowany dla Final Cut Pro X. W DaVinci Resolve import zewnętrznych plików audio (.wav) może wymagać ich wcześniejszego załadowania do Media Pool.")
+            pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#888888", dpr)
         elif fmt_id == "edl":
             if num_clips > 1 or has_mixed:
-                self.lbl_format_hint.setText(self._t("hint_fmt_edl_warning", "CMX 3600 EDL to format taśmowy (1 ścieżka wideo, stereo). Przy wielu/mieszanych klipach zalecany jest FCP 7 XML lub OTIO!"))
-                self.lbl_format_hint.setStyleSheet(f"color: #ffaa00; font-weight: bold; {base_style}")
+                hint_text = self._t("hint_fmt_edl_warning", "CMX 3600 EDL to format taśmowy (1 ścieżka wideo, stereo). Przy wielu/mieszanych klipach zalecany jest FCP 7 XML lub OTIO!")
+                pix = self._render_svg_icon("exclamation-icon.svg", config.S(17), "#ffaa00", dpr)
             else:
-                self.lbl_format_hint.setText(self._t("hint_fmt_edl", "Tradycyjny format CMX 3600 EDL dla pojedynczego klipu. Ograniczony do 1 ścieżki wideo i stereo."))
-                self.lbl_format_hint.setStyleSheet(f"color: #999999; {base_style}")
+                hint_text = self._t("hint_fmt_edl", "Tradycyjny format CMX 3600 EDL dla pojedynczego klipu. Ograniczony do 1 ścieżki wideo i stereo.")
+                pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(16), "#888888", dpr)
+
+        self.info_fmt.setPixmap(pix)
+        self.info_fmt.custom_tooltip_text = hint_text
+        self.info_fmt.setToolTip(hint_text)
 
     def _on_audio_toggled(self, checked: bool):
         if self._get_selected_format_id() == "fcp7_xml":
@@ -643,3 +699,27 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
                 "OK"
             )
             err_dlg.exec()
+
+    def reject(self):
+        tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+        if tip:
+            tip.hide()
+        super().reject()
+
+    def accept(self):
+        tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+        if tip:
+            tip.hide()
+        super().accept()
+
+    def closeEvent(self, event):
+        tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+        if tip:
+            tip.hide()
+        super().closeEvent(event)
+
+    def hideEvent(self, event):
+        tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+        if tip:
+            tip.hide()
+        super().hideEvent(event)
