@@ -482,6 +482,7 @@
   "status_importing_project": "Loading project...",
   "lbl_force_xml_assembly": "Force XML Timeline Assembly",
   "tt_force_xml_assembly": "Forces timeline assembly to use the FCP7 XML pipeline instead of native DRT. Useful for testing XML assembly or on Resolve 21.1+ Free.",
+  "tt_linking_requires_xml": "时间轴上的片段链接需要通过 XML (FCP7 XML) 进行组合。.drt 格式不支持外部轨道链接。请在“设置”中启用“强制 XML 组合”以激活链接。",
   "status_assembly_drt_build": "Building DRT assembly...",
   "status_assembly_drt_import": "Importing DRT timeline...",
   "tool_colors": "剪辑中的颜色",

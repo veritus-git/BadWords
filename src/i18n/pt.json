@@ -481,6 +481,7 @@
   "status_importing_project": "Carregando projeto...",
   "lbl_force_xml_assembly": "Forçar montagem por XML",
   "tt_force_xml_assembly": "Força a montagem da linha do tempo usando o pipeline XML FCP7 em vez do DRT nativo.",
+  "tt_linking_requires_xml": "A vinculação de clipes na linha do tempo requer a montagem via XML (FCP7 XML). O formato .drt não oferece suporte à vinculação externa de faixas. Ative 'Forçar montagem por XML' nas Configurações para ativar a vinculação.",
   "status_assembly_drt_build": "Construindo montagem DRT...",
   "status_assembly_drt_import": "Importando timeline DRT...",
   "lbl_timeline_ready": "A1: Pronto para áudio da timeline",

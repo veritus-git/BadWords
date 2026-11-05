@@ -481,6 +481,7 @@
   "status_importing_project": "Загрузка проекта...",
   "lbl_force_xml_assembly": "Принудительная сборка через XML",
   "tt_force_xml_assembly": "Принудительно выполняет сборку таймлайна через FCP7 XML вместо нативного DRT.",
+  "tt_linking_requires_xml": "Связывание клипов на таймлайне требует сборки через XML (FCP7 XML). Формат .drt не поддерживает внешнее связывание дорожек. Включите 'Принудительная сборка через XML' в Настройках для активации связывания.",
   "status_assembly_drt_build": "Создание DRT монтажа...",
   "status_assembly_drt_import": "Импорт DRT таймлайна...",
   "lbl_timeline_ready": "A1: Готов для аудио таймлайна",

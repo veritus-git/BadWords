@@ -481,6 +481,7 @@
   "status_importing_project": "Projekt laden...",
   "lbl_force_xml_assembly": "XML-Timeline-Zusammenstellung erzwingen",
   "tt_force_xml_assembly": "Erzwingt das Zusammenstellen der Timeline über die FCP7-XML-Pipeline anstelle von nativem DRT.",
+  "tt_linking_requires_xml": "Das Verknüpfen von Clips auf der Timeline erfordert eine XML-Zusammenstellung (FCP7 XML). Das .drt-Format unterstützt keine externe Spurverknüpfung. Aktivieren Sie 'XML-Zusammenstellung erzwingen' in den Einstellungen, um die Verknüpfung zu aktivieren.",
   "status_assembly_drt_build": "DRT-Zusammenstellung wird erstellt...",
   "status_assembly_drt_import": "DRT-Timeline wird importiert...",
   "lbl_timeline_ready": "A1: Bereit für Timeline-Audio",

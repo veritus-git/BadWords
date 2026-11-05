@@ -481,6 +481,7 @@
   "status_importing_project": "Chargement du projet...",
   "lbl_force_xml_assembly": "Forcer l'assemblage par XML",
   "tt_force_xml_assembly": "Force l'assemblage de la timeline à utiliser le pipeline XML FCP7 au lieu du DRT natif.",
+  "tt_linking_requires_xml": "La liaison des clips sur la timeline nécessite l'assemblage via XML (FCP7 XML). Le format .drt ne prend pas en charge la liaison externe des pistes. Activez 'Forcer l'assemblage XML' dans les Paramètres pour activer la liaison.",
   "status_assembly_drt_build": "Construction de l'assemblage DRT...",
   "status_assembly_drt_import": "Importation de la timeline DRT...",
   "lbl_timeline_ready": "A1: Prêt pour l'audio de la timeline",

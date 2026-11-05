@@ -481,6 +481,7 @@
   "status_importing_project": "Project laden...",
   "lbl_force_xml_assembly": "Forceer XML-tijdlijnassemblage",
   "tt_force_xml_assembly": "Forceert tijdlijnassemblage via de FCP7 XML-pijplijn in plaats van native DRT.",
+  "tt_linking_requires_xml": "Het koppelen van clips op de tijdlijn vereist assemblage via XML (FCP7 XML). Het .drt-formaat ondersteunt geen externe sporkoppeling. Schakel 'Forceer XML-assemblage' in bij Instellingen om koppeling te activeren.",
   "status_assembly_drt_build": "DRT-montage opbouwen...",
   "status_assembly_drt_import": "DRT-tijdlijn importeren...",
   "lbl_timeline_ready": "A1: Gereed voor tijdlijnaudio",
