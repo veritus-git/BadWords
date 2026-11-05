@@ -433,7 +433,6 @@ class WaveformTimelineWidget(QWidget):
                 "is_cut": False,
                 "color": col,
             })
-            self._cut_ranges.append((s_s, e_s, f"{op_type}_solid"))
 
         for op in cut_ops:
             s_s = max(0.0, float(op.get('start_s', 0.0)))
@@ -840,7 +839,15 @@ class WaveformTimelineWidget(QWidget):
                 painter.setPen(QPen(QColor("#f0fcf6"), 1.0))
                 painter.drawLine(QPointF(rx, mid_y), QPointF(rx + rw, mid_y))
 
-            # Clean cut overlay: mute waveform to dark slate and apply Anti-Moiré hatching on wide cuts
+            # Clean cut overlay: mute waveform to dark slate and apply zoom-dependent progressive hatching
+            # Zoom-based smooth Anti-Moiré Level-Of-Detail:
+            # - Fully zoomed out (zoom < 1.8): hatching alpha = 0 (100% invisible, perfectly clean matte grey)
+            # - Zoom 1.8 to 5.0: hatching alpha smoothly fades in proportionally
+            # - Zoom >= 5.0: hatching reaches steady subtle alpha (150 out of 255)
+            zoom = float(getattr(self, "_zoom_level", 1.0))
+            fade_factor = max(0.0, min(1.0, (zoom - 1.8) / (5.0 - 1.8)))
+            hatch_alpha = int(fade_factor * 150)
+
             for seg in segments:
                 if not seg["is_cut"]:
                     continue
@@ -859,12 +866,10 @@ class WaveformTimelineWidget(QWidget):
                 # 1. Mute the white waveform over the cut segment into dark slate grey (#50545c)
                 painter.fillRect(seg_rect, QColor(36, 38, 42, 190))
 
-                # 2. Anti-Moiré Level-Of-Detail Hatching:
-                # When zoomed out (narrow cuts < 14px on screen), NO diagonal lines are drawn.
-                # This completely eliminates the jagged barcode/zebra clutter across the timeline!
-                # When zoomed in or over wide pauses (>= 14px), draw very fine 1.0px subtle hatching lines.
-                if seg_w >= float(config.S(14.0)):
-                    hatch_pen = QPen(QColor(68, 72, 80, 160), 1.0, Qt.SolidLine, Qt.FlatCap)
+                # 2. Progressive Zoom-Based Anti-Moiré Hatching:
+                # Fully invisible when zoomed out, smoothly transitions to subtle lines on zoom
+                if hatch_alpha > 5:
+                    hatch_pen = QPen(QColor(68, 72, 80, hatch_alpha), 1.0, Qt.SolidLine, Qt.FlatCap)
                     painter.setPen(hatch_pen)
                     step = float(config.S(10.0))
 

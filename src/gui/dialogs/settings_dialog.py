@@ -13,13 +13,13 @@ Settings dialog with multi-tab layout and real-time preferences management.
 
 import sys
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import (
     QFont
 )
 from PySide6.QtWidgets import (
     QApplication, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QSizePolicy, QFrame, QScrollArea,
-    QStackedWidget, QFormLayout, QLineEdit, QButtonGroup
+    QStackedWidget, QFormLayout, QLineEdit, QButtonGroup, QGraphicsOpacityEffect
 )
 
 import config
@@ -1550,7 +1550,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.tgl_force_xml_assembly.toggled.connect(
             lambda checked: (
                 self.engine.save_preferences({"force_xml_assembly": checked}),
-                _update_linking_availability(checked)
+                _update_linking_availability(checked, animated=True)
             )
         )
         w_force_xml = QWidget()
@@ -1580,7 +1580,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
         l_link_av.addSpacing(config.S(8))
         l_link_av.addWidget(self.tgl_link_av_clips)
-        lbl_link_av, _ = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
+        lbl_link_av, row_link_av = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
                  False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
 
         # Link all cut tracks toggle
@@ -1600,10 +1600,30 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
         l_link_all.addSpacing(config.S(8))
         l_link_all.addWidget(self.tgl_link_all_cut_tracks)
-        lbl_link_all, _ = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
+        lbl_link_all, row_link_all = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
                  False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
 
-        def _update_linking_availability(force_xml_on: bool):
+        eff_av_lbl = QGraphicsOpacityEffect(lbl_link_av)
+        eff_av_row = QGraphicsOpacityEffect(row_link_av)
+        lbl_link_av.setGraphicsEffect(eff_av_lbl)
+        row_link_av.setGraphicsEffect(eff_av_row)
+
+        eff_all_lbl = QGraphicsOpacityEffect(lbl_link_all)
+        eff_all_row = QGraphicsOpacityEffect(row_link_all)
+        lbl_link_all.setGraphicsEffect(eff_all_lbl)
+        row_link_all.setGraphicsEffect(eff_all_row)
+
+        self._linking_anim = QVariantAnimation(self)
+        self._linking_anim.setDuration(250)
+        self._linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        def _apply_op(val):
+            eff_av_lbl.setOpacity(val)
+            eff_av_row.setOpacity(val)
+            eff_all_lbl.setOpacity(val)
+            eff_all_row.setOpacity(val)
+        self._linking_anim.valueChanged.connect(_apply_op)
+
+        def _update_linking_availability(force_xml_on: bool, animated: bool = False):
             parent_main = self.parent() or getattr(self, 'main_window', None)
             is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
             enabled = is_file or force_xml_on
@@ -1614,17 +1634,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             w_link_all.setToolTip(tt)
             if lbl_link_av:
                 lbl_link_av.setToolTip(tt)
-                lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: {'#ffffff' if enabled else '#666666'};")
             if lbl_link_all:
                 lbl_link_all.setToolTip(tt)
-                lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: {'#ffffff' if enabled else '#666666'};")
+
+            target_op = 1.0 if enabled else 0.35
+            if animated:
+                self._linking_anim.stop()
+                self._linking_anim.setStartValue(eff_av_lbl.opacity())
+                self._linking_anim.setEndValue(target_op)
+                self._linking_anim.start()
+            else:
+                self._linking_anim.stop()
+                _apply_op(target_op)
+
             if parent_main and hasattr(parent_main, 'w_track_options'):
                 try:
                     parent_main.w_track_options.load_config()
                 except Exception:
                     pass
 
-        _update_linking_availability(self.tgl_force_xml_assembly.isChecked())
+        _update_linking_availability(self.tgl_force_xml_assembly.isChecked(), animated=False)
 
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
         self.tgl_timestamp_precise = ToggleSwitch()

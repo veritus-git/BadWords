@@ -13,11 +13,13 @@ Slide-out side panel for individual track options.
 
 
 from PySide6.QtWidgets import (
-    QLabel, QWidget, QScrollArea
+    QLabel, QWidget, QScrollArea, QHBoxLayout, QFrame, QGraphicsOpacityEffect
 )
 from PySide6.QtCore import (
     QAbstractAnimation,
-    Property
+    Property,
+    QVariantAnimation,
+    QEasingCurve
 )
 
 import config
@@ -120,15 +122,21 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_a_tr = ToggleSwitch()
         self.tgl_a_cust = ToggleSwitch()
 
-        def make_toggle_row(lbl_text, tgl):
+        def make_toggle_row(lbl_text, tgl, info_tooltip_key=None):
             w = QWidget()
             w.setFixedHeight(config.S(26))
             l = QHBoxLayout(w)
             l.setContentsMargins(config.S(2), 0, config.S(2), 0)
+            l.setSpacing(config.S(6))
             lbl = MarqueeLabel(lbl_text)
             l.addWidget(lbl, 1)
+            if info_tooltip_key and hasattr(self.parent_gui, '_create_info_icon'):
+                info_icon = self.parent_gui._create_info_icon(info_tooltip_key)
+                l.addWidget(info_icon)
+                w._info_icon = info_icon
             l.addWidget(tgl)
             w._lbl = lbl
+            w._tgl = tgl
             return w
 
         inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
@@ -190,10 +198,23 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_link_av = ToggleSwitch()
         self.tgl_link_all = ToggleSwitch()
 
-        self.w_link_av = make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av)
-        self.w_link_all = make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all)
+        self.w_link_av = make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av, "tt_link_av_clips")
+        self.w_link_all = make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all, "tt_link_all_cut_tracks")
         inner_layout.addWidget(self.w_link_av)
         inner_layout.addWidget(self.w_link_all)
+
+        self._eff_drawer_link_av = QGraphicsOpacityEffect(self.w_link_av)
+        self.w_link_av.setGraphicsEffect(self._eff_drawer_link_av)
+        self._eff_drawer_link_all = QGraphicsOpacityEffect(self.w_link_all)
+        self.w_link_all.setGraphicsEffect(self._eff_drawer_link_all)
+
+        self._drawer_linking_anim = QVariantAnimation(self)
+        self._drawer_linking_anim.setDuration(250)
+        self._drawer_linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        def _set_drawer_linking_op(val):
+            self._eff_drawer_link_av.setOpacity(val)
+            self._eff_drawer_link_all.setOpacity(val)
+        self._drawer_linking_anim.valueChanged.connect(_set_drawer_linking_op)
 
         self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
         self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
@@ -423,12 +444,20 @@ class TrackOptionsDrawer(QWidget):
             tt = "" if linking_enabled else self.parent_gui.txt("tt_linking_requires_xml")
             if hasattr(self, 'w_link_av'):
                 self.w_link_av.setToolTip(tt)
-                if hasattr(self.w_link_av, '_lbl'):
-                    self.w_link_av._lbl.setStyleSheet(f"font-size: {config.FS(9)}pt; color: {'#d0d0d0' if linking_enabled else '#555555'};")
             if hasattr(self, 'w_link_all'):
                 self.w_link_all.setToolTip(tt)
-                if hasattr(self.w_link_all, '_lbl'):
-                    self.w_link_all._lbl.setStyleSheet(f"font-size: {config.FS(9)}pt; color: {'#d0d0d0' if linking_enabled else '#555555'};")
+
+            target_op = 1.0 if linking_enabled else 0.35
+            if hasattr(self, '_drawer_linking_anim') and hasattr(self, '_eff_drawer_link_av'):
+                if self.isVisible():
+                    self._drawer_linking_anim.stop()
+                    self._drawer_linking_anim.setStartValue(self._eff_drawer_link_av.opacity())
+                    self._drawer_linking_anim.setEndValue(target_op)
+                    self._drawer_linking_anim.start()
+                else:
+                    self._drawer_linking_anim.stop()
+                    self._eff_drawer_link_av.setOpacity(target_op)
+                    self._eff_drawer_link_all.setOpacity(target_op)
         finally:
             self._block_signals = False
 

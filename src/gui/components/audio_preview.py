@@ -1188,6 +1188,36 @@ class AudioPreviewWidget(QFrame):
             current_audio_f += (op["e"] - op["s"])
         return current_audio_f / fps
 
+    def get_cut_intervals(self) -> List[Tuple[float, float]]:
+        """Returns sorted, merged (start_s, end_s) intervals of active cut sections."""
+        wf_tl = getattr(self, "waveform_timeline", None)
+        if not wf_tl:
+            return []
+        cuts = []
+        for seg in getattr(wf_tl, "_timeline_segments", []):
+            if seg.get("is_cut"):
+                s_s = float(seg.get("start_s", 0.0))
+                e_s = float(seg.get("end_s", 0.0))
+                if e_s > s_s + 0.01:
+                    cuts.append((s_s, e_s))
+        if not cuts:
+            for r in getattr(wf_tl, "_cut_ranges", []):
+                if len(r) >= 2:
+                    s_s, e_s = float(r[0]), float(r[1])
+                    if e_s > s_s + 0.01:
+                        cuts.append((s_s, e_s))
+        if not cuts:
+            return []
+        cuts.sort(key=lambda x: x[0])
+        merged = [cuts[0]]
+        for cur in cuts[1:]:
+            prev_s, prev_e = merged[-1]
+            if cur[0] <= prev_e + 0.03:
+                merged[-1] = (prev_s, max(prev_e, cur[1]))
+            else:
+                merged.append(cur)
+        return merged
+
     def sync_playback(self) -> None:
         """60 FPS synchronization tick for playhead, waveform, video, and words."""
         if getattr(self, "is_collapsed", False):
@@ -1201,20 +1231,13 @@ class AudioPreviewWidget(QFrame):
 
         # Real-time skipping of cut sections during active playback
         if getattr(self, "skip_cuts", False) and self.player.playbackState() == QMediaPlayer.PlayingState:
-            wf_tl = getattr(self, "waveform_timeline", None)
-            cut_ranges = getattr(wf_tl, "_cut_ranges", None) if wf_tl else None
-            if cut_ranges:
-                for i, (c_start, c_end, _) in enumerate(cut_ranges):
-                    if c_start <= audio_t < c_end - 0.02:
-                        jump_target = c_end
-                        for next_start, next_end, _ in cut_ranges[i + 1:]:
-                            if next_start <= jump_target + 0.04:
-                                jump_target = max(jump_target, next_end)
-                            else:
-                                break
-                        if jump_target > audio_t + 0.015:
-                            self.set_position_ms(int(jump_target * 1000))
-                            return
+            cut_intervals = self.get_cut_intervals()
+            if cut_intervals:
+                for c_start, c_end in cut_intervals:
+                    if c_start - 0.01 <= audio_t < c_end - 0.02:
+                        target_ms = int((c_end + 0.015) * 1000)
+                        self.set_position_ms(target_ms)
+                        return
 
         orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t
 
