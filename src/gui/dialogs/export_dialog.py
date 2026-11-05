@@ -55,7 +55,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowIcon(_app_icon())
 
         win_w = config.S(600)
-        win_h = config.S(495)
+        win_h = config.S(485)
         self.setFixedSize(win_w, win_h)
 
         # Center over active main window or active screen
@@ -273,18 +273,20 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_fmt.addWidget(self.combo_fmt, 1)
         c_lay.addLayout(r_fmt)
 
-        r_hint = QHBoxLayout()
+        self.w_hint_container = QWidget()
+        self.w_hint_container.setFixedHeight(config.S(54))
+        r_hint = QHBoxLayout(self.w_hint_container)
         r_hint.setSpacing(0)
-        r_hint.setContentsMargins(0, config.S(3), 0, config.S(5))
+        r_hint.setContentsMargins(0, 0, 0, 0)
         sp_hint = QWidget()
         sp_hint.setFixedWidth(label_w + config.S(8))
         r_hint.addWidget(sp_hint)
 
         self.lbl_format_hint = QLabel()
         self.lbl_format_hint.setWordWrap(True)
-        self.lbl_format_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.lbl_format_hint.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         r_hint.addWidget(self.lbl_format_hint, 1)
-        c_lay.addLayout(r_hint)
+        c_lay.addWidget(self.w_hint_container)
 
         # ── 2. Sequence Name ──────────────────────────────────────────────────
         r_name = QHBoxLayout()
