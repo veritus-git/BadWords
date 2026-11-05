@@ -1150,7 +1150,8 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                               fps: float = 24.0, width: int = 1920, height: int = 1080,
                               preserve_audio_tracks: bool = True,
                               timeline_name: str = "BadWords Sequence",
-                              link_all_tracks: bool = False) -> tuple[bool, str]:
+                              link_all_tracks: bool = False,
+                              link_av_clips: bool = True) -> tuple[bool, str]:
     """
     Builds a frame-accurate Final Cut Pro 7 XML (<xmeml version="5">) for standalone files.
     References only original source files on disk (never proxies).
@@ -1305,14 +1306,15 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                         ET.SubElement(ci, "out").text = str(src_out)
                         make_file_elem(ci, clip["path"])
 
-                        l_key = op_idx if link_all_tracks else (op_idx, clip_idx)
-                        links_by_key[l_key].append({
-                            "id": f"clipitem-v1-{ci_counter_v[0]}",
-                            "mediatype": "video",
-                            "trackindex": 1,
-                            "clipindex": ci_counter_v[0],
-                            "elem": ci
-                        })
+                        if link_all_tracks or link_av_clips:
+                            l_key = op_idx if link_all_tracks else (op_idx, clip_idx)
+                            links_by_key[l_key].append({
+                                "id": f"clipitem-v1-{ci_counter_v[0]}",
+                                "mediatype": "video",
+                                "trackindex": 1,
+                                "clipindex": ci_counter_v[0],
+                                "elem": ci
+                            })
 
                 dest_pos += op_dur
         else:
@@ -1449,7 +1451,7 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
                                 ET.SubElement(param, "name").text = "Pan"
                                 ET.SubElement(param, "value").text = "0"
 
-                        if clip["has_video"] or link_all_tracks:
+                        if link_all_tracks or link_av_clips:
                             l_key = op_idx if link_all_tracks else (op_idx, clip_idx)
                             links_by_key[l_key].append({
                                 "id": f"clipitem-a{t_idx}-{track_ci_idx}",
@@ -1461,18 +1463,17 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
 
                 dest_pos += op_dur
 
-        # Build link elements across linked video and audio items (only for clips that have video)
-        for seg_key, items in links_by_key.items():
-            has_v = any(it["mediatype"] == "video" for it in items)
-            has_a = any(it["mediatype"] == "audio" for it in items)
-            if has_v and has_a:
-                for item in items:
-                    for target in items:
-                        link_el = ET.SubElement(item["elem"], "link")
-                        ET.SubElement(link_el, "linkclipref").text = target["id"]
-                        ET.SubElement(link_el, "mediatype").text = target["mediatype"]
-                        ET.SubElement(link_el, "trackindex").text = str(target["trackindex"])
-                        ET.SubElement(link_el, "clipindex").text = str(target["clipindex"])
+        # Build link elements across linked items (video-audio, audio-audio, etc.)
+        if link_all_tracks or link_av_clips:
+            for seg_key, items in links_by_key.items():
+                if len(items) > 1:
+                    for item in items:
+                        for target in items:
+                            link_el = ET.SubElement(item["elem"], "link")
+                            ET.SubElement(link_el, "linkclipref").text = target["id"]
+                            ET.SubElement(link_el, "mediatype").text = target["mediatype"]
+                            ET.SubElement(link_el, "trackindex").text = str(target["trackindex"])
+                            ET.SubElement(link_el, "clipindex").text = str(target["clipindex"])
 
         # Save XML to output path
         raw_xml = ET.tostring(xmeml, encoding="unicode")

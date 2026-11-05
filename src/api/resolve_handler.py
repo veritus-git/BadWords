@@ -2332,9 +2332,7 @@ class ResolveHandler:
             # ── 3.2. Rebuild XML Links between matching Video and Audio ───────────
             if link_av_clips or link_all_tracks:
                 for group_key, items in links_map.items():
-                    has_v = any(it['mediatype'] == 'video' for it in items)
-                    has_a = any(it['mediatype'] == 'audio' for it in items)
-                    if has_v and has_a and len(items) > 1:
+                    if len(items) > 1:
                         for item in items:
                             for target in items:
                                 link_el = ET.SubElement(item['elem'], 'link')

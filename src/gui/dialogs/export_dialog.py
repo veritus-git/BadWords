@@ -689,13 +689,15 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         prefs = self.engine.load_preferences() if self.engine else {}
         link_all = prefs.get("link_all_cut_tracks", False)
+        link_av = prefs.get("link_av_clips", True)
 
         if fmt_id == "fcp7_xml":
             ok, msg = assembler.build_standalone_fcp7_xml(
                 self.clips_info, ops, out_path,
                 fps=target_fps, width=width, height=height,
                 preserve_audio_tracks=preserve_audio, timeline_name=seq_name,
-                link_all_tracks=link_all
+                link_all_tracks=link_all,
+                link_av_clips=link_av
             )
         elif fmt_id == "otio":
             ok, msg = assembler.build_standalone_otio(
