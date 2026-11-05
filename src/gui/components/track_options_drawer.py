@@ -190,8 +190,10 @@ class TrackOptionsDrawer(QWidget):
         self.tgl_link_av = ToggleSwitch()
         self.tgl_link_all = ToggleSwitch()
 
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av))
-        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all))
+        self.w_link_av = make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av)
+        self.w_link_all = make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all)
+        inner_layout.addWidget(self.w_link_av)
+        inner_layout.addWidget(self.w_link_all)
 
         self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
         self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
@@ -408,6 +410,25 @@ class TrackOptionsDrawer(QWidget):
             link_all = prefs.get('link_all_cut_tracks', False)
             self.tgl_link_av.setChecked(bool(link_av), animated=False)
             self.tgl_link_all.setChecked(bool(link_all), animated=False)
+
+            # In Resolve mode, linking requires XML assembly
+            force_xml = bool(prefs.get('force_xml_assembly', False))
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            is_file_source = (src.get('source_type') == 'file')
+            linking_enabled = is_file_source or force_xml
+
+            self.tgl_link_av.setEnabled(linking_enabled)
+            self.tgl_link_all.setEnabled(linking_enabled)
+
+            tt = "" if linking_enabled else self.parent_gui.txt("tt_linking_requires_xml")
+            if hasattr(self, 'w_link_av'):
+                self.w_link_av.setToolTip(tt)
+                if hasattr(self.w_link_av, '_lbl'):
+                    self.w_link_av._lbl.setStyleSheet(f"font-size: {config.FS(9)}pt; color: {'#d0d0d0' if linking_enabled else '#555555'};")
+            if hasattr(self, 'w_link_all'):
+                self.w_link_all.setToolTip(tt)
+                if hasattr(self.w_link_all, '_lbl'):
+                    self.w_link_all._lbl.setStyleSheet(f"font-size: {config.FS(9)}pt; color: {'#d0d0d0' if linking_enabled else '#555555'};")
         finally:
             self._block_signals = False
 

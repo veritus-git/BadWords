@@ -1448,7 +1448,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             animated=False
         )
         self.tgl_force_xml_assembly.toggled.connect(
-            lambda checked: self.engine.save_preferences({"force_xml_assembly": checked})
+            lambda checked: (
+                self.engine.save_preferences({"force_xml_assembly": checked}),
+                _update_linking_availability(checked)
+            )
         )
         w_force_xml = QWidget()
         l_force_xml = QHBoxLayout(w_force_xml)
@@ -1477,7 +1480,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
         l_link_av.addSpacing(config.S(8))
         l_link_av.addWidget(self.tgl_link_av_clips)
-        self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
+        lbl_link_av, _ = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
                  False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
 
         # Link all cut tracks toggle
@@ -1497,8 +1500,31 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
         l_link_all.addSpacing(config.S(8))
         l_link_all.addWidget(self.tgl_link_all_cut_tracks)
-        self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
+        lbl_link_all, _ = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
                  False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
+
+        def _update_linking_availability(force_xml_on: bool):
+            parent_main = self.parent() or getattr(self, 'main_window', None)
+            is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
+            enabled = is_file or force_xml_on
+            self.tgl_link_av_clips.setEnabled(enabled)
+            self.tgl_link_all_cut_tracks.setEnabled(enabled)
+            tt = "" if enabled else self.txt("tt_linking_requires_xml")
+            w_link_av.setToolTip(tt)
+            w_link_all.setToolTip(tt)
+            if lbl_link_av:
+                lbl_link_av.setToolTip(tt)
+                lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: {'#ffffff' if enabled else '#666666'};")
+            if lbl_link_all:
+                lbl_link_all.setToolTip(tt)
+                lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: {'#ffffff' if enabled else '#666666'};")
+            if parent_main and hasattr(parent_main, 'w_track_options'):
+                try:
+                    parent_main.w_track_options.load_config()
+                except Exception:
+                    pass
+
+        _update_linking_availability(self.tgl_force_xml_assembly.isChecked())
 
         # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
         self.tgl_timestamp_precise = ToggleSwitch()

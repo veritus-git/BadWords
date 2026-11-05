@@ -859,11 +859,17 @@ class AudioPreviewWidget(QFrame):
                 f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)
             )
 
-        # Check if we have multiple video clips needing proxy
+        # Check if we have multiple video clips needing proxy or multi-clip Resolve timeline
         num_video_clips = len([sf for sf in source_files if os.path.splitext(sf)[1].lower() in (".mov", ".mp4", ".m4v", ".mkv", ".avi", ".webm")])
         is_bg_proxy_pending = (num_video_clips > 1 and not (proxy_path and os.path.isfile(proxy_path)))
+        is_resolve = (snap.get("source_type") == "resolve")
+        clips_count = len(getattr(self.main_window, '_current_clips_layout', []) or [])
 
-        if is_bg_proxy_pending:
+        if (is_resolve and clips_count > 1 and not (proxy_path and os.path.isfile(proxy_path))):
+            target_source = audio_path
+            self.video_preview_widget.show_loading(False)
+            self.video_preview_widget.show_placeholder(True, "DaVinci Resolve Timeline")
+        elif is_bg_proxy_pending:
             target_source = audio_path
             msg = self.main_window.txt("status_generating_proxy_bg") if self.main_window and hasattr(self.main_window, "txt") else "Generating video preview..."
             self.video_preview_widget.show_loading(True, msg)
@@ -931,8 +937,14 @@ class AudioPreviewWidget(QFrame):
             self._clear_highlights()
             self.show()
 
-            self.waveform_timeline.load_from_audio(assembled_audio_path, clip_name="A1: Assembled Timeline")
-            self.waveform_timeline.set_words_data([])
+            # Keep timeline preview cuts and markings persistent
+            words = []
+            if self.main_window and hasattr(self.main_window, "text_canvas"):
+                words = getattr(self.main_window.text_canvas, "words_data", []) or []
+            if not words and hasattr(self, "waveform_timeline"):
+                words = getattr(self.waveform_timeline, "_words_data", []) or []
+            if words and hasattr(self, "waveform_timeline"):
+                self.waveform_timeline.set_words_data(words)
 
     # -------------------------------------------------------------------------
     # Playback Controls & Sync

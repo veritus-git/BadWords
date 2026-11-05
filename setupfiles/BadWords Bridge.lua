@@ -1438,6 +1438,22 @@ handlers.GetTimelineStructure = function(req)
                 pcall(function() lo = tonumber(item:GetLeftOffset()) or 0 end)
                 local cname = ""
                 pcall(function() cname = item:GetName() or "" end)
+                if not cname or cname == "" then
+                    pcall(function()
+                        local mpi = item:GetMediaPoolItem()
+                        if mpi then
+                            cname = mpi:GetName() or ""
+                            if not cname or cname == "" then
+                                local cp = mpi:GetClipProperty("Clip Name")
+                                if cp and cp ~= "" then cname = cp end
+                            end
+                            if not cname or cname == "" then
+                                local fp = mpi:GetClipProperty("File Name")
+                                if fp and fp ~= "" then cname = fp end
+                            end
+                        end
+                    end)
+                end
                 table.insert(track_clips, { start = s, duration = d, left_offset = lo, name = cname })
             end
             if #track_clips > 0 then

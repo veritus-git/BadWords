@@ -1129,8 +1129,23 @@ class ResolveHandler:
                                     continue
                                 s_s = max(0.0, abs_s / fps)
                                 dur_s = max(0.0, dur / fps)
+                                c_name = ""
+                                try:
+                                    c_name = item.GetName() or ""
+                                except Exception:
+                                    pass
+                                if not c_name:
+                                    try:
+                                        mpi = item.GetMediaPoolItem()
+                                        if mpi:
+                                            c_name = mpi.GetName() or mpi.GetClipProperty("Clip Name") or mpi.GetClipProperty("File Name") or ""
+                                    except Exception:
+                                        pass
+                                if not c_name:
+                                    c_name = f"A{ai} Clip"
+
                                 clips_layout.append({
-                                    "name": item.GetName() or f"A{ai} Clip",
+                                    "name": c_name,
                                     "start_s": s_s,
                                     "end_s": s_s + dur_s,
                                     "track": ai,
@@ -1149,6 +1164,29 @@ class ResolveHandler:
             if key not in seen:
                 seen.add(key)
                 unique_clips.append(c)
+
+        # Fallback: if clip names are generic or empty, enrich from get_direct_audio_info
+        try:
+            has_generic_names = any(not c.get("name") or c.get("name").startswith("Clip ") for c in unique_clips)
+            if has_generic_names:
+                d_info = self.get_direct_audio_info(timeline_name, track_indices)
+                d_clips = (d_info or {}).get("clips", [])
+                if d_clips:
+                    for i, c in enumerate(unique_clips):
+                        if not c.get("name") or c.get("name").startswith("Clip "):
+                            c_dur = c["end_s"] - c["start_s"]
+                            best_match = None
+                            for dc in d_clips:
+                                if abs(dc.get("duration_s", 0.0) - c_dur) < 0.05:
+                                    best_match = dc
+                                    break
+                            if best_match and best_match.get("file_path"):
+                                c["name"] = os.path.basename(best_match["file_path"])
+                            elif i < len(d_clips) and d_clips[i].get("file_path"):
+                                c["name"] = os.path.basename(d_clips[i]["file_path"])
+        except Exception as e:
+            pass
+
         return unique_clips
 
 

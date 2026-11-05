@@ -3695,6 +3695,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.waveform_timeline.load_from_audio(words_data[0]["meta_audio_path"], track_name=track_label)
             if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
                 self.waveform_timeline.set_clips_layout(self._current_clips_layout)
+            self.waveform_timeline.set_words_data(words_data)
 
     def _on_more_accurate_toggled(self, checked: bool):
         self.engine.save_preferences({"ai_more_accurate": checked})
@@ -4273,10 +4274,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if wf_tl:
             if chunk_audio and not getattr(wf_tl, '_audio_path', None):
                 wf_tl.load_from_audio(chunk_audio)
-            if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
+            if hasattr(self, '_current_clips_layout') and self._current_clips_layout and not wf_tl._clips_layout:
                 wf_tl.set_clips_layout(self._current_clips_layout)
-            if words:
-                wf_tl.set_words_data(words)
 
             end_s = float(chunk_info.get("end", 0.0))
             dur = getattr(wf_tl, '_duration', 0.0)
