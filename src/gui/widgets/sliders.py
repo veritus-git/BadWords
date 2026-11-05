@@ -37,6 +37,12 @@ class JumpSlider(QSlider):
         self.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
         self._hovered = False
         self._dragging = False
+        self._transcription_ratio = None
+
+    def set_transcription_progress(self, ratio: float = None):
+        """Sets transcription progress ratio (0.0 to 1.0) or None to clear."""
+        self._transcription_ratio = max(0.0, min(1.0, float(ratio))) if ratio is not None else None
+        self.update()
 
     def enterEvent(self, ev):
         self._hovered = True
@@ -59,6 +65,8 @@ class JumpSlider(QSlider):
             w = max(1, self.width())
             pos_x = ev.position().x() if hasattr(ev, 'position') else ev.x()
             ratio = max(0.0, min(1.0, pos_x / float(w)))
+            if self._transcription_ratio is not None:
+                ratio = min(ratio, self._transcription_ratio)
             val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
             self.setValue(val)
             self.sliderPressed.emit()
@@ -74,6 +82,8 @@ class JumpSlider(QSlider):
             w = max(1, self.width())
             pos_x = ev.position().x() if hasattr(ev, 'position') else ev.x()
             ratio = max(0.0, min(1.0, pos_x / float(w)))
+            if self._transcription_ratio is not None:
+                ratio = min(ratio, self._transcription_ratio)
             val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
             self.setValue(val)
             self.sliderMoved.emit(val)
@@ -116,6 +126,13 @@ class JumpSlider(QSlider):
         if played_w > 0:
             painter.setBrush(QColor("#1ed760"))
             painter.drawRoundedRect(QRectF(0.0, cy - line_h / 2.0, played_w, line_h), radius, radius)
+
+        # 2.5. Transcription boundary tick mark (kreseczka showing transcription extent)
+        if self._transcription_ratio is not None:
+            tick_x = max(0.0, min(w, w * self._transcription_ratio))
+            tick_h = line_h + float(self.config.S(6.0))
+            painter.setPen(QPen(QColor("#dddddd"), float(self.config.S(2.0)), Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(tick_x, cy - tick_h / 2.0), QPointF(tick_x, cy + tick_h / 2.0))
 
         # 3. Smooth white circle dot (kropka: 5px radius idle, 6.5px hover/drag)
         r = float(self.config.S(6.5 if (self._hovered or self._dragging) else 5.0))

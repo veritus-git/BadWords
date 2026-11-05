@@ -1068,6 +1068,89 @@ class ResolveHandler:
         self._tracks_cache[cache_key] = res
         return res
 
+    def get_timeline_clips_layout(self, timeline_name=None, track_indices=None) -> list[dict]:
+        """
+        Returns a sorted list of clip boundary dicts for timeline preview:
+        [{"name": str, "start_s": float, "end_s": float, "track": int, "track_type": str}]
+        Supports gaps, overlaps, and multi-track inspection across Direct API and Mailbox Bridge.
+        """
+        clips_layout = []
+        fps = float(self.fps or 24.0)
+
+        if self.backend == 'bridge':
+            try:
+                res = self.bridge_client.call("GetTimelineStructure", {
+                    "timeline_name": timeline_name or ""
+                }, timeout_secs=5.0)
+                if res and res.get("ok"):
+                    fps = float(res.get("fps") or fps)
+                    tracks = res.get("tracks", [])
+                    filtered_tracks = []
+                    if track_indices:
+                        filtered_tracks = [t for t in tracks if t.get("type") == "audio" and t.get("index") in track_indices]
+                    if not filtered_tracks:
+                        filtered_tracks = [t for t in tracks if t.get("type") == "audio"]
+                    if not filtered_tracks:
+                        filtered_tracks = [t for t in tracks if t.get("type") == "video"]
+
+                    for tr in filtered_tracks:
+                        tr_idx = tr.get("index", 1)
+                        tr_type = tr.get("type", "audio")
+                        for c in tr.get("clips", []):
+                            s_s = max(0.0, float(c.get("start", 0)) / fps)
+                            dur_s = max(0.0, float(c.get("duration", 0)) / fps)
+                            if dur_s <= 0.001:
+                                continue
+                            clips_layout.append({
+                                "name": c.get("name") or f"Clip {len(clips_layout)+1}",
+                                "start_s": s_s,
+                                "end_s": s_s + dur_s,
+                                "track": tr_idx,
+                                "track_type": tr_type
+                            })
+            except Exception as e:
+                log_error(f"get_timeline_clips_layout (bridge) error: {e}")
+
+        elif self.project:
+            try:
+                target_tl = self._resolve_target_timeline(timeline_name)
+                if target_tl:
+                    fps = float(self.fps or target_tl.GetSetting("timelineFrameRate") or 24.0)
+                    tl_start_frame = int(target_tl.GetStartFrame() or 0)
+                    a_count = target_tl.GetTrackCount("audio") or 0
+                    check_tracks = track_indices if track_indices else list(range(1, a_count + 1))
+                    for ai in check_tracks:
+                        items = target_tl.GetItemListInTrack("audio", ai) or []
+                        for item in items:
+                            try:
+                                abs_s = int(item.GetStart()) - tl_start_frame
+                                dur = int(item.GetDuration())
+                                if dur <= 0:
+                                    continue
+                                s_s = max(0.0, abs_s / fps)
+                                dur_s = max(0.0, dur / fps)
+                                clips_layout.append({
+                                    "name": item.GetName() or f"A{ai} Clip",
+                                    "start_s": s_s,
+                                    "end_s": s_s + dur_s,
+                                    "track": ai,
+                                    "track_type": "audio"
+                                })
+                            except Exception:
+                                pass
+            except Exception as e:
+                log_error(f"get_timeline_clips_layout (direct) error: {e}")
+
+        # Deduplicate overlapping identical intervals on multiple tracks and sort by start_s
+        unique_clips = []
+        seen = set()
+        for c in sorted(clips_layout, key=lambda x: (x["start_s"], x["end_s"])):
+            key = (round(c["start_s"], 3), round(c["end_s"], 3))
+            if key not in seen:
+                seen.add(key)
+                unique_clips.append(c)
+        return unique_clips
+
 
     def get_next_badwords_edit_index(self, original_name):
         """
@@ -2293,24 +2376,17 @@ class ResolveHandler:
                                     if reg and reg['has_valid_file']:
                                         # REAL PHYSICAL MEDIA FILE on disk — full master definition once, then shallow ref
                                         new_ci.tag = 'clipitem'
+                                        file_idx = list(new_ci).index(file_el)
                                         if fid not in emitted_fids:
                                             emitted_fids.add(fid)
                                             new_ci.remove(file_el)
-                                            new_ci.append(copy.deepcopy(reg['elem']))
+                                            new_ci.insert(file_idx, copy.deepcopy(reg['elem']))
                                         else:
                                             for c in list(file_el):
                                                 file_el.remove(c)
-                                    elif reg:
-                                        new_ci.tag = 'clipitem'
-                                        if fid not in emitted_fids:
-                                            emitted_fids.add(fid)
-                                            new_ci.remove(file_el)
-                                            new_ci.append(copy.deepcopy(reg['elem']))
-                                        else:
-                                            for c in list(file_el):
-                                                file_el.remove(c)
+                                            file_el.text = None
                                     else:
-                                        # Non-physical file (compound clip, generator, title, solid)
+                                        # Non-physical file (compound clip, generator, title, solid, adjustment clip)
                                         new_ci.tag = 'generatoritem'
                                         new_ci.remove(file_el)
                                         for st in list(new_ci.findall('sourcetrack')):

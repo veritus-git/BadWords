@@ -2641,6 +2641,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         }
         self._fs_settings = settings
 
+        self._detect_and_store_clips_layout(is_file_source, source_files, selected_tl_name, track_indices)
         if is_file_source and source_files:
             self._maybe_start_background_proxy(source_files)
 
@@ -3692,6 +3693,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             tl_name = self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else ""
             track_label = f"A1: {tl_name}" if tl_name else "A1: Timeline Audio"
             self.waveform_timeline.load_from_audio(words_data[0]["meta_audio_path"], track_name=track_label)
+            if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
+                self.waveform_timeline.set_clips_layout(self._current_clips_layout)
 
     def _on_more_accurate_toggled(self, checked: bool):
         self.engine.save_preferences({"ai_more_accurate": checked})
@@ -4054,6 +4057,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # 4. Start QThread targeting self.engine.run_analysis_pipeline()
         import time
         self._transcription_start_time = time.time()
+        self._detect_and_store_clips_layout(is_file_source, source_files, selected_tl_name, track_indices)
         if is_file_source and source_files:
             self._maybe_start_background_proxy(source_files)
         self._analysis_worker = AnalysisWorker(self.engine, 'run_analysis_pipeline', settings)
@@ -4063,6 +4067,36 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._analysis_worker.finished_ok.connect(self._on_analysis_finished)
         self._analysis_worker.error.connect(self._on_analysis_error)
         self._analysis_worker.start()
+
+    def _detect_and_store_clips_layout(self, is_file_source: bool, source_files: list, selected_tl_name: str, track_indices: list):
+        """Extracts and stores clip boundaries for multi-clip visual layout on the timeline ribbon."""
+        layout = []
+        try:
+            if is_file_source and source_files and len(source_files) > 1:
+                clips_info = getattr(self.engine, "current_clips_info", None)
+                if not clips_info:
+                    clips_info = self.engine.probe_media_files(source_files)
+                    self.engine.current_clips_info = clips_info
+                cur_t = 0.0
+                for c in (clips_info or []):
+                    dur = float(c.get("duration", 0.0))
+                    name = c.get("name") or os.path.basename(c.get("path", ""))
+                    layout.append({
+                        "name": name,
+                        "start": cur_t,
+                        "end": cur_t + dur
+                    })
+                    cur_t += dur
+            elif not is_file_source and hasattr(self.engine, 'resolve_handler') and self.engine.resolve_handler:
+                layout = self.engine.resolve_handler.get_timeline_clips_layout(selected_tl_name, track_indices)
+        except Exception as e:
+            from osdoc import log_warning
+            log_warning(f"_detect_and_store_clips_layout: {e}")
+
+        self._current_clips_layout = layout
+        wf_tl = getattr(self, 'waveform_timeline', None) or getattr(getattr(self, 'audio_preview', None), 'waveform_timeline', None)
+        if wf_tl:
+            wf_tl.set_clips_layout(layout)
 
     def _maybe_start_background_proxy(self, source_files: list):
         if not source_files or len(source_files) <= 1:
@@ -4205,6 +4239,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                             active_wav,
                             clip_name=f"A1: {selected_tl_name or 'Timeline Audio'}"
                         )
+                        if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
+                            self.audio_preview.waveform_timeline.set_clips_layout(self._current_clips_layout)
 
             # Launch Top Dynamic Island with initial status
             if hasattr(self, 'top_island'):
@@ -4237,13 +4273,39 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if wf_tl:
             if chunk_audio and not getattr(wf_tl, '_audio_path', None):
                 wf_tl.load_from_audio(chunk_audio)
+            if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
+                wf_tl.set_clips_layout(self._current_clips_layout)
             if words:
                 wf_tl.set_words_data(words)
+
+            end_s = float(chunk_info.get("end", 0.0))
+            dur = getattr(wf_tl, '_duration', 0.0)
+            cur_trans_t = end_s
+            if cur_trans_t <= 0.0 and pct > 0 and dur > 0:
+                cur_trans_t = (pct / 100.0) * dur
+
+            if cur_trans_t > 0.0:
+                wf_tl.set_transcription_progress(cur_trans_t)
+                slider = getattr(self, 'slider_seek', None) or getattr(getattr(self, 'audio_preview', None), 'slider_seek', None)
+                if slider and dur > 0:
+                    slider.set_transcription_progress(min(1.0, cur_trans_t / dur))
 
     def _on_analysis_progress(self, val):
         self._update_processing_progress(val)
         if hasattr(self, 'top_island') and getattr(self.top_island, '_state', '') == 'working':
             self.top_island.update_percent(val)
+
+        if getattr(self, '_is_live_transcribing', False) and val >= 0:
+            wf_tl = getattr(self, 'waveform_timeline', None) or getattr(getattr(self, 'audio_preview', None), 'waveform_timeline', None)
+            slider = getattr(self, 'slider_seek', None) or getattr(getattr(self, 'audio_preview', None), 'slider_seek', None)
+            ratio = val / 100.0
+            if slider:
+                slider.set_transcription_progress(ratio)
+            if wf_tl and getattr(wf_tl, '_duration', 0.0) > 0:
+                trans_t = ratio * wf_tl._duration
+                curr_t = getattr(wf_tl, '_transcribed_until_s', None)
+                if curr_t is None or trans_t > curr_t:
+                    wf_tl.set_transcription_progress(trans_t)
 
     def _on_analysis_status(self, msg):
         if hasattr(self, 'lbl_processing_status'):
@@ -4252,6 +4314,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.top_island.set_status(msg)
 
     def _on_analysis_error(self, err):
+        wf_tl = getattr(self, 'waveform_timeline', None) or getattr(getattr(self, 'audio_preview', None), 'waveform_timeline', None)
+        slider = getattr(self, 'slider_seek', None) or getattr(getattr(self, 'audio_preview', None), 'slider_seek', None)
+        if wf_tl:
+            wf_tl.set_transcription_progress(None)
+        if slider:
+            slider.set_transcription_progress(None)
         # Stop hint rotation on Page 1
         if hasattr(self, '_hint_timer') and self._hint_timer is not None:
             try: self._hint_timer.stop()
@@ -4414,6 +4482,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         if hasattr(self, 'audio_preview'):
             self.audio_preview.check_audio_availability()
+
+        # Clear live transcription progress boundary & unblock seek
+        wf_tl = getattr(self, 'waveform_timeline', None) or getattr(getattr(self, 'audio_preview', None), 'waveform_timeline', None)
+        slider = getattr(self, 'slider_seek', None) or getattr(getattr(self, 'audio_preview', None), 'slider_seek', None)
+        if wf_tl:
+            wf_tl.set_transcription_progress(None)
+            if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
+                wf_tl.set_clips_layout(self._current_clips_layout)
+        if slider:
+            slider.set_transcription_progress(None)
         
         # Load pre-calculated SBS cache if it exists (from initial transcript auto-compare)
         if getattr(self.engine, 'sbs_cache', None):

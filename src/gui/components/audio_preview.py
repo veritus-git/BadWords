@@ -887,6 +887,8 @@ class AudioPreviewWidget(QFrame):
 
         # Configure Waveform Timeline Ribbon
         self.waveform_timeline.load_from_audio(audio_path, clip_name=clip_name)
+        if self.main_window and hasattr(self.main_window, '_current_clips_layout') and self.main_window._current_clips_layout:
+            self.waveform_timeline.set_clips_layout(self.main_window._current_clips_layout)
         self.waveform_timeline.set_words_data(words)
 
     def set_background_proxy_video(self, proxy_path: str):

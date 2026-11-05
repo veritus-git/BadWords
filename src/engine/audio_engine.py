@@ -1544,7 +1544,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                             'e': s_e,
                             'start_s': s_s / fps,
                             'end_s': s_e / fps,
-                            'cut_type': 'silence_cut'
+                            'cut_type': 'silence_cut',
+                            'source_type': 'silence'
                         })
 
         ops_raw.sort(key=lambda x: x['s'])
@@ -1612,7 +1613,8 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     'e': op['e'],
                     'start_s': op['s'] / fps,
                     'end_s': op['e'] / fps,
-                    'cut_type': f"{primary_name}_cut"
+                    'cut_type': f"{primary_name}_cut",
+                    'source_type': op['type']
                 })
                 continue
 

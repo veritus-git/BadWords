@@ -1436,7 +1436,9 @@ handlers.GetTimelineStructure = function(req)
                 local d = tonumber(item:GetDuration()) or 0
                 local lo = 0
                 pcall(function() lo = tonumber(item:GetLeftOffset()) or 0 end)
-                table.insert(track_clips, { start = s, duration = d, left_offset = lo })
+                local cname = ""
+                pcall(function() cname = item:GetName() or "" end)
+                table.insert(track_clips, { start = s, duration = d, left_offset = lo, name = cname })
             end
             if #track_clips > 0 then
                 table.insert(tracks, { type = tt, index = idx, clips = track_clips })

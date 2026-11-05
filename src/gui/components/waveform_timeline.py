@@ -60,6 +60,22 @@ RESOLVE_CLIP_COLORS = {
 CUT_VOID_COLOR = QColor("#0e0e0e")
 
 
+def get_segment_color(op_type: str) -> QColor:
+    """Resolves timeline segment color for standard and custom marker types."""
+    s = str(op_type).lower().strip()
+    if s in RESOLVE_CLIP_COLORS:
+        return RESOLVE_CLIP_COLORS[s]
+    if s.startswith("custom_"):
+        cname = s.split("_", 1)[1]
+        hex_c = getattr(config, "RESOLVE_COLORS_HEX", {}).get(cname.capitalize()) or getattr(config, "RESOLVE_COLORS_HEX", {}).get(cname)
+        if hex_c:
+            return QColor(hex_c)
+    hex_c = getattr(config, "RESOLVE_COLORS_HEX", {}).get(s.capitalize())
+    if hex_c:
+        return QColor(hex_c)
+    return RESOLVE_CLIP_COLORS["normal"]
+
+
 class WaveformWorker(QThread):
     """Background worker thread to extract waveform peaks without freezing the Qt UI."""
     peaks_ready = Signal(object, str)  # WaveformPeaks, audio_path
@@ -132,6 +148,12 @@ class WaveformTimelineWidget(QWidget):
         self._words_data: Optional[List[Dict[str, Any]]] = None
         self._cut_ranges: List[Tuple[float, float, str]] = []  # (start_s, end_s, type)
         self._timeline_segments: List[Dict[str, Any]] = []
+
+        # Live transcription boundary (seconds)
+        self._transcribed_until_s: Optional[float] = None
+
+        # Multi-clip layout table (list of {start_s, end_s, name, track})
+        self._clips_layout: List[Dict[str, Any]] = []
 
         # Pre-rendered cache
         self._waveform_pixmap: Optional[QPixmap] = None
@@ -251,6 +273,24 @@ class WaveformTimelineWidget(QWidget):
         self._zoom_level = 1.0
         self._view_start_time = 0.0
         self._sync_scrollbar()
+        self._needs_pixmap_rebuild = True
+        self.update()
+
+    def set_transcription_progress(self, seconds: Optional[float]) -> None:
+        """
+        Sets the live transcription progress boundary in seconds.
+        Everything to the right is greyed out as inactive until transcribed.
+        Pass None to remove the boundary (transcription finished).
+        """
+        self._transcribed_until_s = max(0.0, float(seconds)) if seconds is not None else None
+        self.update()
+
+    def set_clips_layout(self, clips: Optional[List[Dict[str, Any]]]) -> None:
+        """
+        Sets multi-clip layout table (list of {start_s, end_s, name, track})
+        for standalone files or Resolve timeline tracks.
+        """
+        self._clips_layout = clips or []
         self._needs_pixmap_rebuild = True
         self.update()
 
@@ -383,11 +423,12 @@ class WaveformTimelineWidget(QWidget):
             if e_s <= s_s:
                 continue
             op_type = (op.get('type') or 'normal').lower()
-            col = RESOLVE_CLIP_COLORS.get(op_type, RESOLVE_CLIP_COLORS["normal"])
+            col = get_segment_color(op_type)
             raw_segments.append({
                 "start_s": s_s,
                 "end_s": e_s,
                 "type": op_type,
+                "source_type": op_type,
                 "is_cut": False,
                 "color": col,
             })
@@ -401,12 +442,15 @@ class WaveformTimelineWidget(QWidget):
             if e_s <= s_s:
                 continue
             cut_type = str(op.get('cut_type', 'silence_cut')).lower()
+            source_type = str(op.get('source_type') or cut_type.replace('_cut', '')).lower()
+            col = get_segment_color(source_type)
             raw_segments.append({
                 "start_s": s_s,
                 "end_s": e_s,
                 "type": cut_type,
+                "source_type": source_type,
                 "is_cut": True,
-                "color": CUT_VOID_COLOR,
+                "color": col,
             })
             self._cut_ranges.append((s_s, e_s, cut_type))
 
@@ -446,6 +490,8 @@ class WaveformTimelineWidget(QWidget):
         seconds = max(0.0, seconds)
         if self._duration > 0:
             seconds = min(self._duration, seconds)
+        if self._transcribed_until_s is not None:
+            seconds = min(self._transcribed_until_s, seconds)
 
         if abs(self._playhead_time - seconds) > 0.001:
             self._playhead_time = seconds
@@ -488,6 +534,8 @@ class WaveformTimelineWidget(QWidget):
         self._playhead_time = 0.0
         self._words_data = None
         self._cut_ranges.clear()
+        self._transcribed_until_s = None
+        self._clips_layout = []
         self._zoom_level = 1.0
         self._view_start_time = 0.0
         self._sync_scrollbar()
@@ -688,11 +736,13 @@ class WaveformTimelineWidget(QWidget):
                 seg_w = max(1.0, x1 - x0)
                 seg_rect = QRectF(x0, ry, seg_w, rh)
 
+                # Base clip color
+                painter.fillRect(seg_rect, seg["color"])
+
                 if seg["is_cut"]:
-                    painter.fillRect(seg_rect, CUT_VOID_COLOR)
-                    painter.fillRect(seg_rect, QBrush(QColor(22, 22, 22), Qt.BDiagPattern))
+                    # Subtle darkening over the underlying base color for cut elements
+                    painter.fillRect(seg_rect, QColor(0, 0, 0, 70))
                 else:
-                    painter.fillRect(seg_rect, seg["color"])
                     # Subtle top highlight
                     painter.setPen(QPen(seg["color"].lighter(112), 1.0))
                     painter.drawLine(QPointF(x0, ry), QPointF(x1, ry))
@@ -701,7 +751,8 @@ class WaveformTimelineWidget(QWidget):
                     painter.drawLine(QPointF(x0, ry + rh), QPointF(x1, ry + rh))
 
                 # Vertical divider seam at cut point
-                painter.setPen(QPen(QColor(16, 16, 16), 1.0))
+                seam_col = QColor(77, 77, 77) if seg["is_cut"] else QColor(16, 16, 16)
+                painter.setPen(QPen(seam_col, 1.0))
                 painter.drawLine(QPointF(x0, ry), QPointF(x0, ry + rh))
                 painter.drawLine(QPointF(x1, ry), QPointF(x1, ry + rh))
 
@@ -790,7 +841,7 @@ class WaveformTimelineWidget(QWidget):
                 painter.setPen(QPen(QColor("#f0fcf6"), 1.0))
                 painter.drawLine(QPointF(rx, mid_y), QPointF(rx + rw, mid_y))
 
-            # Mask cut voids & diagonal hatching over the waveform in cut segments
+            # Subtle strikethrough / diagonal hatching overlay in #4d4d4d over cut segments
             for seg in segments:
                 if not seg["is_cut"]:
                     continue
@@ -803,9 +854,12 @@ class WaveformTimelineWidget(QWidget):
                 seg_w = max(1.0, x1 - x0)
                 seg_rect = QRectF(x0, ry, seg_w, rh)
 
-                painter.fillRect(seg_rect, QColor(14, 14, 14, 235))
-                painter.fillRect(seg_rect, QBrush(QColor(0, 0, 0, 210), Qt.BDiagPattern))
-                painter.setPen(QPen(QColor(10, 10, 10, 255), 1.0))
+                # Subtle dimming (semi-transparent, keeping underlying color and waveform clearly visible!)
+                painter.fillRect(seg_rect, QColor(0, 0, 0, 85))
+                # Subtle diagonal hatching in #4d4d4d
+                painter.fillRect(seg_rect, QBrush(QColor(77, 77, 77, 180), Qt.BDiagPattern))
+                # Subtle divider seam at cut point in #4d4d4d
+                painter.setPen(QPen(QColor(77, 77, 77, 210), 1.0))
                 painter.drawLine(QPointF(x0, ry), QPointF(x0, ry + rh))
                 painter.drawLine(QPointF(x1, ry), QPointF(x1, ry + rh))
 
@@ -825,15 +879,55 @@ class WaveformTimelineWidget(QWidget):
         painter.setPen(border_pen)
         painter.drawPath(clip_path)
 
-        # 6. Clip Name Label (matching Screenshot 1: clean white text in bottom-left corner)
+        # 6. Multi-Clip Boundaries, Gaps, Overlaps, and Clip Labels
         badge_font = QFont(config.UI_FONT_NAME, config.FS(8))
         badge_font.setBold(False)
         painter.setFont(badge_font)
 
-        clip_label = self._clip_name
-        if clip_label:
-            painter.setPen(QColor(245, 245, 245, 230))
-            painter.drawText(QPointF(rx + float(config.S(8)), ry + rh - float(config.S(6))), clip_label)
+        if self._clips_layout and len(self._clips_layout) > 0:
+            for i, clip in enumerate(self._clips_layout):
+                c_start = float(clip.get("start_s", 0.0))
+                c_end = float(clip.get("end_s", self._duration))
+                c_name = clip.get("name", f"Clip {i+1}")
+                if c_end <= t_start or c_start >= t_end:
+                    continue
+
+                cx0 = rx + ((max(t_start, c_start) - t_start) / vis_dur) * rw
+                cx1 = rx + ((min(t_end, c_end) - t_start) / vis_dur) * rw
+                cw = max(2.0, cx1 - cx0)
+
+                # Vertical boundary seam line between clips (visible gap / divider)
+                painter.setPen(QPen(QColor("#0e0e0e"), float(config.S(2.2))))
+                if c_start > t_start:
+                    painter.drawLine(QPointF(cx0, ry), QPointF(cx0, ry + rh))
+                if c_end < t_end:
+                    painter.drawLine(QPointF(cx1, ry), QPointF(cx1, ry + rh))
+
+                # Check for overlap with next clip
+                if i < len(self._clips_layout) - 1:
+                    next_c = self._clips_layout[i + 1]
+                    next_start = float(next_c.get("start_s", 0.0))
+                    if next_start < c_end:
+                        # Overlap crossing!
+                        ox0 = rx + ((max(t_start, next_start) - t_start) / vis_dur) * rw
+                        ox1 = rx + ((min(t_end, c_end) - t_start) / vis_dur) * rw
+                        ow = max(1.0, ox1 - ox0)
+                        if ow > 0:
+                            o_rect = QRectF(ox0, ry, ow, rh)
+                            painter.fillRect(o_rect, QBrush(QColor(255, 255, 255, 30), Qt.CrossPattern))
+                            painter.setPen(QPen(QColor(255, 255, 255, 130), 1.0, Qt.DotLine))
+                            painter.drawLine(QPointF(ox0, ry), QPointF(ox0, ry + rh))
+                            painter.drawLine(QPointF(ox1, ry), QPointF(ox1, ry + rh))
+
+                # Draw clip title badge
+                if c_name and cw > config.S(35):
+                    painter.setPen(QColor(245, 245, 245, 220))
+                    painter.drawText(QPointF(cx0 + float(config.S(6)), ry + rh - float(config.S(6))), c_name)
+        else:
+            clip_label = self._clip_name
+            if clip_label:
+                painter.setPen(QColor(245, 245, 245, 230))
+                painter.drawText(QPointF(rx + float(config.S(8)), ry + rh - float(config.S(6))), clip_label)
 
         painter.end()
 
@@ -911,7 +1005,28 @@ class WaveformTimelineWidget(QWidget):
         rw = clip_rect.width()
         rh = clip_rect.height()
 
-        # 2. Draw Red Playhead (matching Screenshot 1: vertical red line + top red circular pin marker)
+        # 1.5 Live Transcription Greyout Overlay (if transcription is in progress)
+        if self._duration > 0 and self._transcribed_until_s is not None and self._transcribed_until_s < self._duration:
+            vis_dur = self.visible_duration()
+            t_start = self._view_start_time
+            t_end = t_start + vis_dur
+            prog_t = self._transcribed_until_s
+
+            if prog_t < t_end:
+                prog_x = rx + ((prog_t - t_start) / vis_dur) * rw
+                untrans_left = max(rx, prog_x)
+                untrans_w = (rx + rw) - untrans_left
+                if untrans_w > 0:
+                    # Inactive greyout wash over untranscribed territory
+                    painter.fillRect(QRectF(untrans_left, ry, untrans_w, rh), QColor(22, 22, 26, 215))
+
+                # Sleek boundary line at the live transcription front
+                if rx <= prog_x <= rx + rw:
+                    pen_trans = QPen(QColor(160, 160, 175, 220), config.S(1.5), Qt.DashLine)
+                    painter.setPen(pen_trans)
+                    painter.drawLine(QPointF(prog_x, ry), QPointF(prog_x, ry + rh))
+
+        # 2. Draw DaVinci Resolve Style Playhead (downward pentagon chevron head + vertical hairline)
         if self._duration > 0:
             vis_dur = self.visible_duration()
             t_start = self._view_start_time
@@ -921,16 +1036,28 @@ class WaveformTimelineWidget(QWidget):
                 pct = (self._playhead_time - t_start) / vis_dur
                 playhead_x = rx + (pct * rw)
 
-                # Vertical red line through the clip
-                line_pen = QPen(QColor("#ff3b30"), config.S(1.8))
-                painter.setPen(line_pen)
-                painter.drawLine(QPointF(playhead_x, ry), QPointF(playhead_x, ry + rh))
+                # Playhead geometry (DaVinci Resolve vector shape)
+                hw = float(config.S(5.5))        # Half width of top bar
+                stem_h = float(config.S(5.0))    # Height of vertical side edges
+                head_h = float(config.S(12.0))   # Total height to downward tip
 
-                # Top red circular marker (radius ~4.5px, matching Screenshot 1!)
-                marker_radius = float(config.S(4.5))
-                painter.setPen(QPen(QColor("#c0392b"), 1.0))
-                painter.setBrush(QBrush(QColor("#ff3b30")))
-                painter.drawEllipse(QPointF(playhead_x, ry + marker_radius), marker_radius, marker_radius)
+                head_poly = QPolygonF([
+                    QPointF(playhead_x - hw, ry),
+                    QPointF(playhead_x + hw, ry),
+                    QPointF(playhead_x + hw, ry + stem_h),
+                    QPointF(playhead_x, ry + head_h),
+                    QPointF(playhead_x - hw, ry + stem_h),
+                ])
+
+                # Vertical hairline extending from tip down to bottom of clip
+                line_pen = QPen(QColor("#ff3824"), config.S(1.5))
+                painter.setPen(line_pen)
+                painter.drawLine(QPointF(playhead_x, ry + head_h), QPointF(playhead_x, ry + rh))
+
+                # Draw solid Resolve playhead head
+                painter.setPen(QPen(QColor("#a82315"), config.S(0.8)))
+                painter.setBrush(QBrush(QColor("#ff3824")))
+                painter.drawPolygon(head_poly)
 
             # Optional scrubbing time tooltip
             if self._is_scrubbing or self._hover_x is not None:
@@ -1014,6 +1141,8 @@ class WaveformTimelineWidget(QWidget):
         pct = max(0.0, min(1.0, (mouse_x - rx) / rw))
         target_t = self._view_start_time + (pct * vis_dur)
         target_t = max(0.0, min(self._duration, target_t))
+        if self._transcribed_until_s is not None:
+            target_t = min(self._transcribed_until_s, target_t)
         self._playhead_time = target_t
         self.update()
 
