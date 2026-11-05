@@ -2382,7 +2382,7 @@ except Exception as e:
 
                                 import_options = {
                                     "timelineName": new_tl_name,
-                                    "importSourceClips": False
+                                    "importSourceClips": True
                                 }
                                 new_tl = self.resolve_handler.media_pool.ImportTimelineFromFile(
                                     cut_xml_path,
@@ -2400,6 +2400,11 @@ except Exception as e:
                                     actual_name = new_tl.GetName()
                                     log_info(f"assemble_timeline: XML import OK → '{actual_name}'")
                                     xml_tl_name = actual_name
+                                    try:
+                                        self.resolve_handler.project.SetCurrentTimeline(new_tl)
+                                        self.resolve_handler.timeline = new_tl
+                                    except Exception:
+                                        pass
                                     bw_bin = self.resolve_handler.get_badwords_root_bin()
                                     if bw_bin:
                                         try:

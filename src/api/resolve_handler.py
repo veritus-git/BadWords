@@ -2185,7 +2185,7 @@ class ResolveHandler:
             if root_folder:
                 self.media_pool.SetCurrentFolder(root_folder)
 
-            import_options = {"importSourceClips": False}
+            import_options = {"importSourceClips": True}
             if timeline_name:
                 import_options["timelineName"] = timeline_name
 
@@ -2601,17 +2601,12 @@ class ResolveHandler:
                                     fid = file_el.get('id')
                                     reg = file_registry.get(fid)
                                     if reg and reg['has_valid_file']:
-                                        # REAL PHYSICAL MEDIA FILE on disk — full master definition once, then shallow ref
+                                        # REAL PHYSICAL MEDIA FILE on disk — full master definition with pathurl on every clipitem
+                                        # to guarantee 100% online clips without relying on Resolve shallow ref resolver
                                         new_ci.tag = 'clipitem'
                                         file_idx = list(new_ci).index(file_el)
-                                        if fid not in emitted_fids:
-                                            emitted_fids.add(fid)
-                                            new_ci.remove(file_el)
-                                            new_ci.insert(file_idx, copy.deepcopy(reg['elem']))
-                                        else:
-                                            for c in list(file_el):
-                                                file_el.remove(c)
-                                            file_el.text = None
+                                        new_ci.remove(file_el)
+                                        new_ci.insert(file_idx, copy.deepcopy(reg['elem']))
                                     else:
                                         # Non-physical file (compound clip, generator, title, solid, adjustment clip)
                                         new_ci.tag = 'generatoritem'

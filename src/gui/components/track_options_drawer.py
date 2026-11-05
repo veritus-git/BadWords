@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel, QWidget, QScrollArea, QHBoxLayout, QFrame, QGraphicsOpacityEffect
 )
 from PySide6.QtCore import (
+    Qt,
     QAbstractAnimation,
     Property,
     QVariantAnimation,

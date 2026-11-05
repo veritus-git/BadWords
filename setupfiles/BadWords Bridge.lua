@@ -1102,10 +1102,10 @@ local function do_import_timeline_file(file_path, timeline_name)
     else
         local import_options = nil
         if timeline_name and timeline_name ~= "" then
-            -- Prefer importSourceClips = false so Resolve links to existing Media Pool clips (avoids red/offline clips)
+            -- importSourceClips = true ensures DaVinci imports & links source clips so clips are never offline/red
             import_options = {
                 timelineName = timeline_name,
-                importSourceClips = false
+                importSourceClips = true
             }
         end
         if import_options then
