@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "Die Datei \"{name}\" existiert bereits im Zielordner.\nMöchten Sie sie überschreiben oder den Namen ändern?",
   "btn_overwrite": "Überschreiben",
   "btn_rename": "Umbenennen",
-  "hint_fmt_edl_audio_warning": "DaVinci Resolve unterstützt keinen Import von CMX 3600 EDL für reine Audioprojekte (erfordert Videospur). Verwenden Sie für Audiodateien (.wav) FCP 7 XML (.xml) oder OpenTimelineIO (.otio)!"
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve unterstützt keinen Import von CMX 3600 EDL für reine Audioprojekte (erfordert Videospur). Verwenden Sie für Audiodateien (.wav) FCP 7 XML (.xml) oder OpenTimelineIO (.otio)!",
+  "lbl_mouse_lmb_mode": "Linke Maustaste (LMB)",
+  "lbl_mouse_rmb_mode": "Rechte Maustaste (RMB)",
+  "opt_mouse_box": "Rahmenauswahl (Bereich)",
+  "opt_mouse_brush": "Pinsel-Markierung",
+  "opt_mouse_none": "Deaktiviert",
+  "tt_mouse_lmb_mode": "Verhalten der linken Maustaste. Die Rahmenauswahl ermöglicht das Aufziehen eines Auswahlrechtecks wie auf dem Desktop.",
+  "tt_mouse_rmb_mode": "Verhalten der rechten Maustaste. Die Pinsel-Markierung färbt Wörter beim Überfahren ein."
 }

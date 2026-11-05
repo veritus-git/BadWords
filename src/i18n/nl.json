@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "Het bestand \"{name}\" bestaat al in de doelmap.\nWilt u het overschrijven of de naam wijzigen?",
   "btn_overwrite": "Overschrijven",
   "btn_rename": "Naam wijzigen",
-  "hint_fmt_edl_audio_warning": "DaVinci Resolve ondersteunt het importeren van CMX 3600 EDL voor pure audioprojecten niet (videotrack vereist). Gebruik voor audiobestanden (.wav) FCP 7 XML (.xml) of OpenTimelineIO (.otio)!"
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve ondersteunt het importeren van CMX 3600 EDL voor pure audioprojecten niet (videotrack vereist). Gebruik voor audiobestanden (.wav) FCP 7 XML (.xml) of OpenTimelineIO (.otio)!",
+  "lbl_mouse_lmb_mode": "Linkermuisknop (LMB)",
+  "lbl_mouse_rmb_mode": "Rechtermuisknop (RMB)",
+  "opt_mouse_box": "Kaderselectie (gebied)",
+  "opt_mouse_brush": "Penseelmarkering",
+  "opt_mouse_none": "Uitgeschakeld",
+  "tt_mouse_lmb_mode": "Gedrag van de linkermuisknop. Met kaderselectie kunt u een selectievak zoals op het bureaublad over woorden slepen.",
+  "tt_mouse_rmb_mode": "Gedrag van de rechtermuisknop. Met penseelmarkering kleurt u woorden continu in terwijl u eroverheen sleept."
 }

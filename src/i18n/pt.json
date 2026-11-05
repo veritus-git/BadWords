@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "O arquivo \"{name}\" já existe na pasta de destino.\nDeseja substituí-lo ou alterar o nome?",
   "btn_overwrite": "Substituir",
   "btn_rename": "Renomear",
-  "hint_fmt_edl_audio_warning": "O DaVinci Resolve não suporta importação de CMX 3600 EDL para projetos somente de áudio (requer faixa de vídeo). Para arquivos de áudio (.wav), use FCP 7 XML (.xml) ou OpenTimelineIO (.otio)!"
+  "hint_fmt_edl_audio_warning": "O DaVinci Resolve não suporta importação de CMX 3600 EDL para projetos somente de áudio (requer faixa de vídeo). Para arquivos de áudio (.wav), use FCP 7 XML (.xml) ou OpenTimelineIO (.otio)!",
+  "lbl_mouse_lmb_mode": "Botão esquerdo do mouse (LMB)",
+  "lbl_mouse_rmb_mode": "Botão direito do mouse (RMB)",
+  "opt_mouse_box": "Seleção por retângulo (área)",
+  "opt_mouse_brush": "Pintura com pincel",
+  "opt_mouse_none": "Desativado",
+  "tt_mouse_lmb_mode": "Comportamento do botão esquerdo. A seleção por retângulo permite arrastrar uma caixa estilo área de trabalho sobre as palavras.",
+  "tt_mouse_rmb_mode": "Comportamento do botão direito. A pintura com pincel marca as palavras continuamente ao passar o cursor sobre elas."
 }

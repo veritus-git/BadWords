@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "Il file \"{name}\" esiste già nella cartella di destinazione.\nVuoi sovrascriverlo o modificare il nome?",
   "btn_overwrite": "Sovrascrivi",
   "btn_rename": "Rinomina",
-  "hint_fmt_edl_audio_warning": "DaVinci Resolve non supporta l'importazione di CMX 3600 EDL per progetti solo audio (richiede traccia video). Per i file audio (.wav), usa FCP 7 XML (.xml) o OpenTimelineIO (.otio)!"
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve non supporta l'importazione di CMX 3600 EDL per progetti solo audio (richiede traccia video). Per i file audio (.wav), usa FCP 7 XML (.xml) o OpenTimelineIO (.otio)!",
+  "lbl_mouse_lmb_mode": "Tasto sinistro del mouse (LMB)",
+  "lbl_mouse_rmb_mode": "Tasto destro del mouse (RMB)",
+  "opt_mouse_box": "Selezione a rettangolo (area)",
+  "opt_mouse_brush": "Pennello di marcatura",
+  "opt_mouse_none": "Disabilitato",
+  "tt_mouse_lmb_mode": "Comportamento del tasto sinistro. La selezione a rettangolo consente di trascinare un riquadro in stile desktop sulle parole.",
+  "tt_mouse_rmb_mode": "Comportamento del tasto destro. Il pennello evidenzia le parole continuamente al passaggio del cursore."
 }

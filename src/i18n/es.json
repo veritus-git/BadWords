@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "El archivo \"{name}\" ya existe en la carpeta de destino.\n¿Desea sobrescribirlo o cambiar el nombre?",
   "btn_overwrite": "Sobrescribir",
   "btn_rename": "Cambiar nombre",
-  "hint_fmt_edl_audio_warning": "¡DaVinci Resolve no admite la importación de CMX 3600 EDL para proyectos de solo audio (requiere pista de video). Para archivos de audio (.wav), use FCP 7 XML (.xml) u OpenTimelineIO (.otio)!"
+  "hint_fmt_edl_audio_warning": "¡DaVinci Resolve no admite la importación de CMX 3600 EDL para proyectos de solo audio (requiere pista de video). Para archivos de audio (.wav), use FCP 7 XML (.xml) u OpenTimelineIO (.otio)!",
+  "lbl_mouse_lmb_mode": "Botón izquierdo del ratón (LMB)",
+  "lbl_mouse_rmb_mode": "Botón derecho del ratón (RMB)",
+  "opt_mouse_box": "Selección por marco (área)",
+  "opt_mouse_brush": "Pintado con pincel",
+  "opt_mouse_none": "Desactivado",
+  "tt_mouse_lmb_mode": "Comportamiento del botón izquierdo. La selección por marco permite arrastrar un cuadro estilo escritorio sobre las palabras.",
+  "tt_mouse_rmb_mode": "Comportamiento del botón derecho. El pincel marca las palabras continuamente al pasar el cursor sobre ellas."
 }

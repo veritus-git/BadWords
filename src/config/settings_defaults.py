@@ -43,6 +43,9 @@ DEFAULT_SETTINGS = {
     "transcript_layout":    "segmented",
     "settings_view_mode":   "basic",
     "show_panel_headers":   True,
+    # ── Mouse marking modes ──────────────────────────────────────────────────
+    "mouse_lmb_mode":       "box",          # "box" (Marquee selection / zaznaczanie ramką), "brush" (Pędzel), "none"
+    "mouse_rmb_mode":       "brush",        # "brush" (Pędzel / malowanie słowo po słowie), "box", "none"
     # ── Chunking ────────────────────────────────────────────────────────────
     "chunk_punct_count":    1,
     "chunk_max_words":      15,

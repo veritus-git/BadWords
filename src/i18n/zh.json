@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "文件 \"{name}\" 已存在于目标目录中。\n要覆盖它还是更改名称？",
   "btn_overwrite": "覆盖",
   "btn_rename": "更改名称",
-  "hint_fmt_edl_audio_warning": "DaVinci Resolve 不支持仅包含音频（无视频轨道）的项目的 CMX 3600 EDL 导入。对于音频文件 (.wav)，请使用 FCP 7 XML (.xml) 或 OpenTimelineIO (.otio)！"
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve 不支持仅包含音频（无视频轨道）的项目的 CMX 3600 EDL 导入。对于音频文件 (.wav)，请使用 FCP 7 XML (.xml) 或 OpenTimelineIO (.otio)！",
+  "lbl_mouse_lmb_mode": "鼠标左键 (LMB)",
+  "lbl_mouse_rmb_mode": "鼠标右键 (RMB)",
+  "opt_mouse_box": "框选模式 (区域选择)",
+  "opt_mouse_brush": "画笔涂抹模式",
+  "opt_mouse_none": "已禁用",
+  "tt_mouse_lmb_mode": "左键在转录画布中的行为。框选模式允许像在Windows桌面一样拖动矩形框选择单词。",
+  "tt_mouse_rmb_mode": "右键在转录画布中的行为。画笔涂抹模式可在光标滑过单词时连续进行标记。"
 }

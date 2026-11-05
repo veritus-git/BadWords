@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "Le fichier \"{name}\" existe déjà dans le dossier de destination.\nVoulez-vous l'écraser ou modifier le nom ?",
   "btn_overwrite": "Écraser",
   "btn_rename": "Renommer",
-  "hint_fmt_edl_audio_warning": "DaVinci Resolve ne prend pas en charge l'importation de listes CMX 3600 EDL pour les projets purement audio (piste vidéo requise). Pour les fichiers audio (.wav), utilisez FCP 7 XML (.xml) ou OpenTimelineIO (.otio) !"
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve ne prend pas en charge l'importation de listes CMX 3600 EDL pour les projets purement audio (piste vidéo requise). Pour les fichiers audio (.wav), utilisez FCP 7 XML (.xml) ou OpenTimelineIO (.otio) !",
+  "lbl_mouse_lmb_mode": "Bouton gauche de la souris (LMB)",
+  "lbl_mouse_rmb_mode": "Bouton droit de la souris (RMB)",
+  "opt_mouse_box": "Sélection par cadre (zone)",
+  "opt_mouse_brush": "Marquage au pinceau",
+  "opt_mouse_none": "Désactivé",
+  "tt_mouse_lmb_mode": "Comportement du bouton gauche. La sélection par cadre permet d'étirer un rectangle de sélection comme sur le bureau.",
+  "tt_mouse_rmb_mode": "Comportement du bouton droit. Le pinceau colore les mots en continu lors du survol."
 }

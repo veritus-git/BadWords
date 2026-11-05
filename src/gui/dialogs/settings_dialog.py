@@ -497,7 +497,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         finally:
             self.setUpdatesEnabled(True)
 
-    def _add_row(self, form, label_text, widget, default_val, setter_func):
+    def _add_row(self, form, label_text, widget, default_val, setter_func, info_key=None):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
@@ -519,9 +519,22 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         lbl = QLabel(label_text)
         lbl.setMinimumWidth(config.S(160))
         lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
-        form.addRow(lbl, container)
-        self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
-        return lbl, container
+
+        if info_key:
+            lbl_container = QWidget()
+            lbl_layout = QHBoxLayout(lbl_container)
+            lbl_layout.setContentsMargins(0, 0, 0, 0)
+            lbl_layout.setSpacing(6)
+            lbl_layout.addWidget(lbl)
+            lbl_layout.addWidget(self._get_info_icon(info_key))
+            lbl_layout.addStretch()
+            form.addRow(lbl_container, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl_container, container
+        else:
+            form.addRow(lbl, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl, container
 
     def _build_page(self, idx):
         if idx < 0 or idx >= self.stack.count():
@@ -1235,6 +1248,54 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
         self._add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
                  self.txt("opt_segmented_blocks"), self.combo_view.setValue)
+
+        # Mouse selection mode — Left Mouse Button (LMB)
+        mouse_lmb_items = [
+            self.txt("opt_mouse_box"),
+            self.txt("opt_mouse_brush"),
+            self.txt("opt_mouse_none")
+        ]
+        self.combo_mouse_lmb = CustomDropdown(
+            mouse_lmb_items,
+            options_getter=lambda: [
+                self.txt("opt_mouse_box"),
+                self.txt("opt_mouse_brush"),
+                self.txt("opt_mouse_none")
+            ]
+        )
+        curr_lmb = prefs.get('mouse_lmb_mode', 'box')
+        lmb_text_map = {
+            'box': self.txt("opt_mouse_box"),
+            'brush': self.txt("opt_mouse_brush"),
+            'none': self.txt("opt_mouse_none")
+        }
+        self.combo_mouse_lmb.setText(lmb_text_map.get(curr_lmb, self.txt("opt_mouse_box")))
+        self._add_row(form_transcript, self.txt("lbl_mouse_lmb_mode"), self.combo_mouse_lmb,
+                 self.txt("opt_mouse_box"), self.combo_mouse_lmb.setValue, info_key="tt_mouse_lmb_mode")
+
+        # Mouse selection mode — Right Mouse Button (RMB)
+        mouse_rmb_items = [
+            self.txt("opt_mouse_brush"),
+            self.txt("opt_mouse_box"),
+            self.txt("opt_mouse_none")
+        ]
+        self.combo_mouse_rmb = CustomDropdown(
+            mouse_rmb_items,
+            options_getter=lambda: [
+                self.txt("opt_mouse_brush"),
+                self.txt("opt_mouse_box"),
+                self.txt("opt_mouse_none")
+            ]
+        )
+        curr_rmb = prefs.get('mouse_rmb_mode', 'brush')
+        rmb_text_map = {
+            'brush': self.txt("opt_mouse_brush"),
+            'box': self.txt("opt_mouse_box"),
+            'none': self.txt("opt_mouse_none")
+        }
+        self.combo_mouse_rmb.setText(rmb_text_map.get(curr_rmb, self.txt("opt_mouse_brush")))
+        self._add_row(form_transcript, self.txt("lbl_mouse_rmb_mode"), self.combo_mouse_rmb,
+                 self.txt("opt_mouse_brush"), self.combo_mouse_rmb.setValue, info_key="tt_mouse_rmb_mode")
 
         self._chunk_widgets = []
         def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
@@ -2601,6 +2662,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         view_mode_val = self._safe_get('combo_view', '', 'currentText')
         view_mode = 'segmented' if view_mode_val == self.txt("opt_segmented_blocks") else ('continuous' if view_mode_val else old_prefs.get('view_mode', 'segmented'))
 
+        lmb_text = self._safe_get('combo_mouse_lmb', '', 'currentText')
+        if lmb_text == self.txt("opt_mouse_box"):
+            lmb_mode = "box"
+        elif lmb_text == self.txt("opt_mouse_brush"):
+            lmb_mode = "brush"
+        elif lmb_text == self.txt("opt_mouse_none"):
+            lmb_mode = "none"
+        else:
+            lmb_mode = old_prefs.get('mouse_lmb_mode', 'box')
+
+        rmb_text = self._safe_get('combo_mouse_rmb', '', 'currentText')
+        if rmb_text == self.txt("opt_mouse_brush"):
+            rmb_mode = "brush"
+        elif rmb_text == self.txt("opt_mouse_box"):
+            rmb_mode = "box"
+        elif rmb_text == self.txt("opt_mouse_none"):
+            rmb_mode = "none"
+        else:
+            rmb_mode = old_prefs.get('mouse_rmb_mode', 'brush')
+
         try:
             shortcuts_dict = {k: v.get_sequence() for k, v in self.shortcut_inputs.items()}
             # Merge in custom marker shortcuts
@@ -2618,6 +2699,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'telemetry_opt_in':   self._safe_get('chk_telemetry_opt_in', bool(old_prefs.get('telemetry_opt_in', False)), 'isChecked'),
             'telemetry_geo':      self._safe_get('chk_telemetry_geo', bool(old_prefs.get('telemetry_geo', False)), 'isChecked'),
             'view_mode':          view_mode,
+            'mouse_lmb_mode':     lmb_mode,
+            'mouse_rmb_mode':     rmb_mode,
             'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', config.UI_FONT_NAME), 'currentText'),
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),

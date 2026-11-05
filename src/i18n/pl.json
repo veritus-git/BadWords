@@ -550,5 +550,12 @@
   "dlg_file_exists_msg": "Plik \"{name}\" już istnieje w wybranym katalogu.\nCzy chcesz go podmienić, czy zmienić nazwę?",
   "btn_overwrite": "Podmień",
   "btn_rename": "Zmień nazwę",
-  "hint_fmt_edl_audio_warning": "DaVinci Resolve nie obsługuje importu list CMX 3600 EDL dla projektów czysto dźwiękowych (brak ścieżki wideo). Dla plików audio (.wav) wybierz format FCP 7 XML (.xml) lub OpenTimelineIO (.otio)!"
+  "hint_fmt_edl_audio_warning": "DaVinci Resolve nie obsługuje importu list CMX 3600 EDL dla projektów czysto dźwiękowych (brak ścieżki wideo). Dla plików audio (.wav) wybierz format FCP 7 XML (.xml) lub OpenTimelineIO (.otio)!",
+  "lbl_mouse_lmb_mode": "Lewy przycisk myszy (LPM)",
+  "lbl_mouse_rmb_mode": "Prawy przycisk myszy (PPM)",
+  "opt_mouse_box": "Zaznaczanie ramką (obszarowe)",
+  "opt_mouse_brush": "Malowanie pędzlem",
+  "opt_mouse_none": "Wyłączone",
+  "tt_mouse_lmb_mode": "Działanie lewego przycisku myszy w transkrypcji. Zaznaczanie ramką pozwala objąć słowa prostokątem w stylu pulpitu Windows.",
+  "tt_mouse_rmb_mode": "Działanie prawego przycisku myszy w transkrypcji. Malowanie pędzlem koloruje słowa po najechaniu kursorem."
 }

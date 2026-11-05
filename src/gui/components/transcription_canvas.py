@@ -17,7 +17,10 @@ from PySide6.QtWidgets import (
     QWidget
 )
 from PySide6.QtCore import (
-    Qt, QRect, QTimer
+    Qt, QRect, QRectF, QTimer
+)
+from PySide6.QtGui import (
+    QColor, QPen, QBrush, QPainter
 )
 
 import config
@@ -32,10 +35,20 @@ class TranscriptionCanvas(QWidget):
         self.words_data = []
         self.setCursor(Qt.ArrowCursor)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._last_dragged_id = -1
         # Eliminate system background erase and double-buffering compositing stalls on X11/Linux
         self.setAttribute(Qt.WA_OpaquePaintEvent, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
+
+        # --- SELECTION & MARKING STATE (Rubberband / Marquee box + Brush) ---
+        self._is_box_selecting = False
+        self._selection_start_pos = None
+        self._selection_current_pos = None
+        self._active_box_btn = None
+        self._is_painting = False
+        self._active_paint_btn = None
+        self._current_undo_action = None
 
         # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
         self._cached_visible_words = []
@@ -1133,12 +1146,138 @@ class TranscriptionCanvas(QWidget):
             for rect in active_underlines:
                 p.drawRoundedRect(rect, 1, 1)
 
+        # PASS 5: Rubberband / Marquee selection box
+        if getattr(self, '_is_box_selecting', False) and getattr(self, '_selection_start_pos', None) and getattr(self, '_selection_current_pos', None):
+            sel_rect = QRect(self._selection_start_pos, self._selection_current_pos).normalized()
+            if sel_rect.width() > 1 or sel_rect.height() > 1:
+                marker_col = self.get_current_marker_color()
+                fill_color = QColor(marker_col.red(), marker_col.green(), marker_col.blue(), 45)
+                border_color = QColor(marker_col.red(), marker_col.green(), marker_col.blue(), 210)
+
+                p.save()
+                p.setRenderHint(QPainter.Antialiasing, True)
+                p.setPen(QPen(border_color, 1.2, Qt.SolidLine))
+                p.setBrush(QBrush(fill_color))
+                p.drawRoundedRect(QRectF(sel_rect), 2.5, 2.5)
+                p.restore()
+
+    def get_current_marker_color(self) -> QColor:
+        """Returns the QColor corresponding to the currently selected marker tool."""
+        checked_btn = getattr(self.main_window, 'marker_btn_group', None) and self.main_window.marker_btn_group.checkedButton()
+        status = checked_btn.property('status_id') if checked_btn else None
+        if status == 'bad':
+            return QColor(config.WORD_BAD_BG)
+        elif status == 'repeat':
+            return QColor(config.WORD_REPEAT_BG)
+        elif status == 'typo':
+            return QColor(config.WORD_TYPO_BG)
+        elif status == 'eraser':
+            return QColor("#aaaaaa")
+        elif status and str(status).startswith("custom_"):
+            c_name = str(status).split("_", 1)[1]
+            hex_col = config.RESOLVE_COLORS_HEX.get(c_name, "#ffffff")
+            return QColor(hex_col)
+        return QColor(config.WORD_BAD_BG)
+
+    def get_mouse_modes(self):
+        """Returns (lmb_mode, rmb_mode) preference tuple."""
+        prefs = getattr(self.main_window.engine, 'load_preferences', lambda: {})() or {}
+        lmb = prefs.get('mouse_lmb_mode', 'box')
+        rmb = prefs.get('mouse_rmb_mode', 'brush')
+        return lmb, rmb
+
+    def _finish_box_selection(self, end_pos):
+        if not getattr(self, '_selection_start_pos', None):
+            return
+        sel_rect = QRect(self._selection_start_pos, end_pos).normalized()
+        is_single_click = (sel_rect.width() <= 4 and sel_rect.height() <= 4)
+
+        matched_words = []
+        for w in self._cached_visible_words:
+            if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'):
+                continue
+            w_rect = w.get('_rect')
+            if not w_rect:
+                continue
+            if is_single_click:
+                if w_rect.adjusted(-3, -1, 3, 1).contains(end_pos):
+                    matched_words.append(w)
+                    break
+            else:
+                if sel_rect.intersects(w_rect):
+                    matched_words.append(w)
+
+        if not matched_words:
+            return
+
+        checked_btn = getattr(self.main_window, 'marker_btn_group', None) and self.main_window.marker_btn_group.checkedButton()
+        status = checked_btn.property('status_id') if checked_btn else None
+        if status == 'eraser':
+            status = None
+
+        if self._current_undo_action is None:
+            self._current_undo_action = {"type": "paint", "changes": {}}
+        changes = self._current_undo_action['changes']
+
+        for w in matched_words:
+            ids_to_save = [w['id']]
+            if w.get('is_inaudible'):
+                start = w['id']
+                while start > 0 and (self.words_data[start-1].get('is_inaudible') or self.words_data[start-1].get('type') == 'silence'):
+                    start -= 1
+                end = w['id']
+                while end < len(self.words_data) - 1 and (self.words_data[end+1].get('is_inaudible') or self.words_data[end+1].get('type') == 'silence'):
+                    end += 1
+                ids_to_save = range(start, end + 1)
+
+            for wid in ids_to_save:
+                if wid not in changes and wid < len(self.words_data):
+                    old_w = self.words_data[wid]
+                    changes[wid] = {
+                        'status': old_w.get('status'),
+                        'manual_status': old_w.get('manual_status'),
+                        'algo_status': old_w.get('algo_status'),
+                        'is_auto': old_w.get('is_auto'),
+                        'selected': old_w.get('selected')
+                    }
+
+        import algorithms
+        id_map = {wo['id']: wo for wo in self.words_data}
+        layer_engine = getattr(self.main_window, '_calculate_visual_layer', None)
+        is_color_cut_fn = getattr(self.main_window, 'is_color_cut', None)
+
+        for w in matched_words:
+            updates = algorithms.propagate_status_change(self.words_data, w['id'], status)
+            if updates:
+                for wid, _raw in updates:
+                    word_obj = id_map.get(wid)
+                    if word_obj is None:
+                        continue
+                    word_obj['overlay_suppressed'] = True
+                    word_obj.pop('is_assembled_cut', None)
+                    if layer_engine:
+                        layer_engine(word_obj)
+                    if is_color_cut_fn:
+                        if is_color_cut_fn(word_obj.get('status')):
+                            self._cut_preview[wid] = 'cut'
+                        else:
+                            self._cut_preview.pop(wid, None)
+
+        if changes and self._current_undo_action:
+            if hasattr(self.main_window, 'undo_manager'):
+                self.main_window.undo_manager.push(self._current_undo_action)
+            if hasattr(self.main_window, '_refresh_cut_preview'):
+                self.main_window._refresh_cut_preview()
+            elif hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
+                self.main_window.waveform_timeline.set_words_data(self.words_data)
+        self._current_undo_action = None
+
     def _handle_mouse(self, pos):
         visible_words = self._cached_visible_words
         for w in visible_words:
             if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'):
                 continue
-                
+
             if '_rect' in w and w['_rect'].adjusted(-3, -1, 3, 1).contains(pos):
                 if w['id'] != self._last_dragged_id:
                     self._last_dragged_id = w['id']
@@ -1156,7 +1295,7 @@ class TranscriptionCanvas(QWidget):
                             end = w['id']
                             while end < len(self.words_data)-1 and (self.words_data[end+1].get('is_inaudible') or self.words_data[end+1].get('type') == 'silence'): end += 1
                             ids_to_save = range(start, end + 1)
-                        
+
                         changes = self._current_undo_action['changes']
                         for wid in ids_to_save:
                             if wid not in changes: # Save only the first state observed during this drag session
@@ -1205,18 +1344,18 @@ class TranscriptionCanvas(QWidget):
         prefs = getattr(self.main_window.engine, 'load_preferences', lambda: {})() or {}
         shortcuts = prefs.get('shortcuts', getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {}))
         jump_opt = shortcuts.get('jump_to_word', 'opt_ctrl_rmb')
-        
+
         expected_btn = Qt.RightButton if 'rmb' in jump_opt else Qt.LeftButton
-        
+
         if 'ctrl' in jump_opt: expected_mod = Qt.KeyboardModifier.ControlModifier
         elif 'alt' in jump_opt: expected_mod = Qt.KeyboardModifier.AltModifier
         elif 'shift' in jump_opt: expected_mod = Qt.KeyboardModifier.ShiftModifier
         else: expected_mod = Qt.KeyboardModifier.ControlModifier
-        
+
         # Querying global keyboard state prevents Qt's stuck modifier bug (especially after Alt-Tab)
         global_mods = QGuiApplication.queryKeyboardModifiers()
         active_mods = global_mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.ShiftModifier)
-        
+
         if event.button() == expected_btn:
             if active_mods == expected_mod:
                 for w in self._cached_visible_words:
@@ -1224,13 +1363,13 @@ class TranscriptionCanvas(QWidget):
                         continue
                     if '_rect' in w and w['_rect'].adjusted(-10, -5, 10, 5).contains(event.pos()):
                         start_time = w.get('start', 0.0)
-                        
+
                         audio_ts = start_time
-                        
+
                         is_assembled = False
                         if hasattr(self.main_window, '_current_chapter_idx') and self.main_window._current_chapter_idx > 0:
                             is_assembled = True
-                            
+
                         # Use the engine's pre-calculated anchor point if available
                         audio_ts = start_time
                         if 'anchor_start' in w:
@@ -1243,17 +1382,17 @@ class TranscriptionCanvas(QWidget):
                                 prefs = self.main_window.engine.load_preferences() or {}
                                 if getattr(self.main_window.engine, 'resolve_handler', None):
                                     fps = getattr(self.main_window.engine.resolve_handler, 'fps', 24.0)
-                                    
+
                             offset_s = prefs.get('offset', 0.133)
                             snap_max = prefs.get('snap_max', 0.25)
-                            
+
                             offset_f = int(round(offset_s * fps))
                             snap_f = int(round(snap_max * fps))
-                            
+
                             def t2f(t): return int(round(t * fps))
-                            
+
                             w_start_f = t2f(start_time) + offset_f
-                            
+
                             if hasattr(self, 'words_data'):
                                 for dw in self.words_data:
                                     if dw.get('type') == 'silence':
@@ -1265,9 +1404,9 @@ class TranscriptionCanvas(QWidget):
                                         if abs(w_start_f - s_end_f) <= snap_f:
                                             w_start_f = s_end_f
                                             break
-                                            
+
                             audio_ts = max(0.0, w_start_f / fps)
-                            
+
                         idx = -1
                         try:
                             idx = self.words_data.index(w)
@@ -1282,26 +1421,71 @@ class TranscriptionCanvas(QWidget):
                         elif hasattr(self.main_window, 'audio_preview') and self.main_window.audio_preview.is_preview_active():
                             # When on marking mode but audio preview is running
                             self.main_window.audio_preview.set_position_ms(int(audio_ts * 1000), force_word_idx=idx)
-                            
+
                         if hasattr(self.main_window, '_jump_playhead'):
                             from PySide6.QtCore import QTimer
                             QTimer.singleShot(0, lambda t=audio_ts: self.main_window._jump_playhead(t))
                         break
                 return  # Block painting if jump shortcut was used
 
+        # Prevent dual-button conflict while dragging
+        if getattr(self, '_is_box_selecting', False) or getattr(self, '_is_painting', False):
+            return
+
+        lmb_mode, rmb_mode = self.get_mouse_modes()
         if event.button() == Qt.LeftButton:
+            action_mode = lmb_mode
+        elif event.button() == Qt.RightButton:
+            action_mode = rmb_mode
+        else:
+            action_mode = None
+
+        if action_mode == 'box':
+            self._is_box_selecting = True
+            self._active_box_btn = event.button()
+            self._selection_start_pos = event.pos()
+            self._selection_current_pos = event.pos()
+            self._current_undo_action = {"type": "paint", "changes": {}}
+            self.update()
+        elif action_mode == 'brush':
             self._is_painting = True
+            self._active_paint_btn = event.button()
             self._last_dragged_id = -1
             self._current_undo_action = {"type": "paint", "changes": {}}
             self._handle_mouse(event.pos())
 
     def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.LeftButton and getattr(self, '_is_painting', False):
+        if getattr(self, '_is_box_selecting', False) and (event.buttons() & getattr(self, '_active_box_btn', Qt.NoButton)):
+            self._selection_current_pos = event.pos()
+            try:
+                scroll = getattr(self.main_window, 'scroll_area', None)
+                if scroll is not None and hasattr(scroll, 'viewport') and scroll.viewport() is not None:
+                    vp = scroll.viewport()
+                    g_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    vp_pt = vp.mapFromGlobal(g_pos)
+                    vbar = scroll.verticalScrollBar()
+                    if hasattr(vp_pt, 'y') and hasattr(vbar, 'setValue'):
+                        if vp_pt.y() < 25:
+                            vbar.setValue(vbar.value() - 15)
+                        elif vp_pt.y() > vp.height() - 25:
+                            vbar.setValue(vbar.value() + 15)
+            except Exception:
+                pass
+            self.update()
+        elif getattr(self, '_is_painting', False) and (event.buttons() & getattr(self, '_active_paint_btn', Qt.NoButton)):
             self._handle_mouse(event.pos())
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if getattr(self, '_is_box_selecting', False) and event.button() == getattr(self, '_active_box_btn', None):
+            self._is_box_selecting = False
+            self._active_box_btn = None
+            self._finish_box_selection(event.pos())
+            self._selection_start_pos = None
+            self._selection_current_pos = None
+            self.update()
+        elif getattr(self, '_is_painting', False) and event.button() == getattr(self, '_active_paint_btn', None):
             self._is_painting = False
+            self._active_paint_btn = None
             action = getattr(self, '_current_undo_action', None)
             if action and action.get('changes'):
                 if hasattr(self.main_window, 'undo_manager'):
@@ -1311,5 +1495,17 @@ class TranscriptionCanvas(QWidget):
                 elif hasattr(self.main_window, 'waveform_timeline') and self.main_window.waveform_timeline:
                     self.main_window.waveform_timeline.set_words_data(self.words_data)
             self._current_undo_action = None
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            if getattr(self, '_is_box_selecting', False):
+                self._is_box_selecting = False
+                self._selection_start_pos = None
+                self._selection_current_pos = None
+                self._active_box_btn = None
+                self._current_undo_action = None
+                self.update()
+                return
+        super().keyPressEvent(event)
 
 # ==========================================
