@@ -643,6 +643,7 @@ class ToggleSwitch(QWidget):
         # Internal animation states
         self._thumb_x = float(config.S(2))
         self._bg_color = QColor("#555555")
+        self._opacity = 1.0
         
         # Animators
         self._anim_group = QPropertyAnimation(self, b"thumb_x", self)
@@ -724,11 +725,17 @@ class ToggleSwitch(QWidget):
         self._anim_group.start()
         self._color_anim.start()
 
+    def set_opacity(self, opacity: float):
+        self._opacity = max(0.0, min(1.0, float(opacity)))
+        self.update()
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        eff_op = getattr(self, "_opacity", 1.0)
         if not self.isEnabled():
-            p.setOpacity(0.35)
+            eff_op = min(eff_op, 0.35)
+        p.setOpacity(eff_op)
         
         # Draw background capsule
         p.setPen(Qt.NoPen)

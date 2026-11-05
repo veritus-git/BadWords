@@ -4076,11 +4076,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not hasattr(self.engine, 'resolve_handler') or not self.engine.resolve_handler:
             return
 
-        tl_name = selected_tl_name or (self._transcription_source.get("timeline_name") if hasattr(self, "_transcription_source") else None)
+        tl_name = selected_tl_name or (self._transcription_source.get("timeline_name") if hasattr(self, "_transcription_source") and self._transcription_source else None)
+        if not tl_name and hasattr(self, 'combo_tl_0') and self.combo_tl_0:
+            tl_name = self.combo_tl_0.text()
 
         # Check if timeline has complex video (cuts, trims, multiple tracks, titles)
         try:
-            if not self.engine.resolve_handler.has_complex_timeline_video(tl_name):
+            from osdoc import log_info, log_warning
+            is_complex = self.engine.resolve_handler.has_complex_timeline_video(tl_name)
+            log_info(f"_maybe_start_resolve_timeline_proxy: tl_name='{tl_name}', is_complex={is_complex}")
+            if not is_complex:
                 return
         except Exception as e:
             from osdoc import log_warning

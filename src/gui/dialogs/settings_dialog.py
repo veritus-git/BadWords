@@ -1563,15 +1563,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._add_row(form_bottom, self.txt("lbl_force_xml_assembly"), w_force_xml,
                  False, lambda v: self.tgl_force_xml_assembly.setChecked(v, animated=True))
 
-        # Link matching A/V and Link all cut tracks container (fades smoothly without palette flashes)
-        w_linking_container = QWidget()
-        l_linking_form = QFormLayout(w_linking_container)
-        l_linking_form.setContentsMargins(0, 0, 0, 0)
-        l_linking_form.setHorizontalSpacing(form_bottom.horizontalSpacing())
-        l_linking_form.setVerticalSpacing(form_bottom.verticalSpacing())
-        l_linking_form.setLabelAlignment(Qt.AlignLeft)
-        l_linking_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-
         # Link matching A/V toggle
         self.tgl_link_av_clips = ToggleSwitch()
         self.tgl_link_av_clips.setChecked(
@@ -1589,7 +1580,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
         l_link_av.addSpacing(config.S(8))
         l_link_av.addWidget(self.tgl_link_av_clips)
-        lbl_link_av, row_link_av = self._add_row(l_linking_form, self.txt("lbl_link_av_clips"), w_link_av,
+        lbl_link_av, row_link_av = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
                  False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
 
         # Link all cut tracks toggle
@@ -1609,38 +1600,45 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
         l_link_all.addSpacing(config.S(8))
         l_link_all.addWidget(self.tgl_link_all_cut_tracks)
-        lbl_link_all, row_link_all = self._add_row(l_linking_form, self.txt("lbl_link_all_cut_tracks"), w_link_all,
+        lbl_link_all, row_link_all = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
                  False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
 
-        form_bottom.addRow(w_linking_container)
-
-        opacity_effect = QGraphicsOpacityEffect(w_linking_container)
-        w_linking_container.setGraphicsEffect(opacity_effect)
-
         self._linking_anim = QVariantAnimation(self)
-        self._linking_anim.setDuration(250)
+        self._linking_anim.setDuration(200)
         self._linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
-        self._linking_anim.valueChanged.connect(lambda val: opacity_effect.setOpacity(val))
+
+        def _apply_linking_opacity(val: float):
+            lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.tgl_link_av_clips.set_opacity(val)
+            self.tgl_link_all_cut_tracks.set_opacity(val)
+
+        self._linking_anim.valueChanged.connect(_apply_linking_opacity)
+        self._curr_linking_op = 1.0
 
         def _update_linking_availability(force_xml_on: bool, animated: bool = False):
             parent_main = self.parent() or getattr(self, 'main_window', None)
             is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
             enabled = is_file or force_xml_on
-            w_linking_container.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
+            row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
+            row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
             tt = "" if enabled else self.txt("tt_linking_requires_xml")
-            w_linking_container.setToolTip(tt)
             w_link_av.setToolTip(tt)
             w_link_all.setToolTip(tt)
+            lbl_link_av.setToolTip(tt)
+            lbl_link_all.setToolTip(tt)
 
             target_op = 1.0 if enabled else 0.35
             if animated:
                 self._linking_anim.stop()
-                self._linking_anim.setStartValue(opacity_effect.opacity())
+                self._linking_anim.setStartValue(self._curr_linking_op)
                 self._linking_anim.setEndValue(target_op)
+                self._curr_linking_op = target_op
                 self._linking_anim.start()
             else:
                 self._linking_anim.stop()
-                opacity_effect.setOpacity(target_op)
+                self._curr_linking_op = target_op
+                _apply_linking_opacity(target_op)
 
             if parent_main and hasattr(parent_main, 'w_track_options'):
                 try:

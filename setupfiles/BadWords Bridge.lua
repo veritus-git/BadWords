@@ -783,7 +783,7 @@ handlers.RenderVideoProxy = function(req)
     local r_settings = {
         TargetDir = export_path,
         CustomName = unique_id,
-        ExportAudio = true,
+        ExportAudio = false, -- Video preview proxy only needs video! BadWords plays audio directly from extracted WAV
         ExportVideo = true,
         SelectAllFrames = 1,
         CustomResolution = true,
@@ -804,6 +804,14 @@ handlers.RenderVideoProxy = function(req)
     proj:SetRenderSettings(r_settings)
 
     local job_id = proj:AddRenderJob()
+    if not job_id or job_id == "" then
+        -- Fallback: retry without CustomResolution
+        r_settings.CustomResolution = nil
+        r_settings.ResolutionWidth = nil
+        r_settings.ResolutionHeight = nil
+        proj:SetRenderSettings(r_settings)
+        job_id = proj:AddRenderJob()
+    end
     if not job_id or job_id == "" then
         return { error = "Failed to add video render job" }
     end

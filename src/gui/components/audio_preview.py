@@ -1235,8 +1235,13 @@ class AudioPreviewWidget(QFrame):
             if cut_intervals:
                 for c_start, c_end in cut_intervals:
                     if c_start - 0.01 <= audio_t < c_end - 0.02:
-                        target_ms = int((c_end + 0.015) * 1000)
+                        target_ms = int(c_end * 1000)
+                        # De-click buffer protection: temporarily mute audio output right before seeking
+                        # to eliminate acoustic pop/click caused by buffer interruption mid-wave
+                        if getattr(self, "audio_output", None):
+                            self.audio_output.setMuted(True)
                         self.set_position_ms(target_ms)
+                        QTimer.singleShot(35, lambda: self.audio_output.setMuted(False) if getattr(self, "audio_output", None) else None)
                         return
 
         orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t

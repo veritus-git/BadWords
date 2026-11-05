@@ -2279,11 +2279,19 @@ except Exception as e:
                 # Also skip DRT if user explicitly enabled force_xml_assembly or BADWORDS_FORCE_XML=1.
                 skip_drt = False
                 force_xml = bool(prefs.get("force_xml_assembly", False)) or (os.environ.get("BADWORDS_FORCE_XML") == "1")
-                if force_xml:
-                    log_info("assemble_timeline: force_xml_assembly active — bypassing DRT path directly to XML.")
-                    skip_drt = True
-                elif hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer():
+                has_linking = bool(settings.get("link_av_clips", False)) or bool(settings.get("link_all_cut_tracks", False))
+
+                # Rule: If user did NOT select any linking option in assemble drawer,
+                # attempt native .drt first! If .drt fails or is blocked (Free 21.1+), fall back to XML.
+                # If linking is requested, route to XML to inject link relationships.
+                if hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer():
                     log_info("assemble_timeline: Resolve Free 21.1+ detected — bypassing DRT path directly to TIER 2 XML.")
+                    skip_drt = True
+                elif has_linking:
+                    log_info("assemble_timeline: Clip linking requested — routing to FCP7 XML to inject link relationships.")
+                    skip_drt = True
+                elif force_xml:
+                    log_info("assemble_timeline: force_xml_assembly active — bypassing DRT path directly to XML.")
                     skip_drt = True
 
                 if not skip_drt:

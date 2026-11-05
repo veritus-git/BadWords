@@ -865,16 +865,22 @@ class ResolveHandler:
                 "TargetDir":       export_path,
                 "CustomName":      unique_id,
                 "ExportVideo":     True,
-                "ExportAudio":     True,
+                "ExportAudio":     False,  # Video preview proxy only needs video! BadWords plays audio directly from WAV
                 "CustomResolution": True,
                 "ResolutionWidth":  640,
                 "ResolutionHeight": 360,
-                "AudioCodec":      "aac",
-                "AudioSampleRate": 48000,
             }
             self.project.SetRenderSettings(render_settings)
 
             pid = self.project.AddRenderJob()
+            if not pid:
+                # Retry without CustomResolution in case platform/tier restricts custom dimensions
+                render_settings.pop("CustomResolution", None)
+                render_settings.pop("ResolutionWidth", None)
+                render_settings.pop("ResolutionHeight", None)
+                self.project.SetRenderSettings(render_settings)
+                pid = self.project.AddRenderJob()
+
             if not pid:
                 log_error("render_timeline_video_proxy: AddRenderJob returned None")
                 return None
@@ -2601,12 +2607,18 @@ class ResolveHandler:
                                     fid = file_el.get('id')
                                     reg = file_registry.get(fid)
                                     if reg and reg['has_valid_file']:
-                                        # REAL PHYSICAL MEDIA FILE on disk — full master definition with pathurl on every clipitem
-                                        # to guarantee 100% online clips without relying on Resolve shallow ref resolver
+                                        # REAL PHYSICAL MEDIA FILE on disk:
+                                        # FCP7 XML spec requires master definition on FIRST occurrence,
+                                        # and shallow reference <file id="..." /> on all subsequent occurrences.
                                         new_ci.tag = 'clipitem'
                                         file_idx = list(new_ci).index(file_el)
                                         new_ci.remove(file_el)
-                                        new_ci.insert(file_idx, copy.deepcopy(reg['elem']))
+                                        if fid not in emitted_fids:
+                                            emitted_fids.add(fid)
+                                            new_ci.insert(file_idx, copy.deepcopy(reg['elem']))
+                                        else:
+                                            shallow_el = ET.Element('file', {'id': fid})
+                                            new_ci.insert(file_idx, shallow_el)
                                     else:
                                         # Non-physical file (compound clip, generator, title, solid, adjustment clip)
                                         new_ci.tag = 'generatoritem'
