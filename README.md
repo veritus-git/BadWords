@@ -27,18 +27,13 @@
 
 <br>
 
-> [!IMPORTANT]
-> ### BadWords v4 - Active Development & Early Access Notice
->
-> **BadWords v4 is still actively in development** and does not yet have every single feature I originally envisioned. 
+> [!NOTE]
+> ### BadWords v4 — Work in Progress & Early Access
+> **BadWords v4 is still actively in development** and doesn't have every feature I planned yet.
 > 
-> **Why release it now?**  
-> The previous release (v3.2.4) came out quite a while ago, and more critically, it became completely unusable on fresh installations due to a breaking upstream change in PyAV (which removed an internal argument used by Faster-Whisper). At the same time, an immense number of upgrades, optimizations, and new tools had already accumulated in my local development tree. Rather than holding everything back, I worked hard to bring this version into a solid, functional state so that everyone can actually use BadWords again.
+> I'm releasing it now because version 3.2.4 broke on fresh installs due to an upstream PyAV update, and months of improvements and new tools were sitting in dev. Instead of keeping it unreleased forever, I wanted to get a working version into your hands.
 > 
-> **Because v4 is in active development, encountering bugs, quirks, or rough edges IS possible.**  
-> If you run into **ANY bug, crash, or unexpected behavior**, or if something feels **unintuitive, confusing, or awkward and uncomfortable to use** - **I warmly encourage and genuinely ASK you to reach out!** Please open an [Issue on GitHub](https://github.com/veritus-git/BadWords/issues) or email me directly at **[badwords.git@gmail.com](mailto:badwords.git@gmail.com)**.
-> 
-> As an 18-year-old solo developer, it is impossible for me to test every conceivable hardware setup, operating system configuration, audio format, and DaVinci Resolve project edge-case on my own. Your bug reports, feedback, and suggestions are what allow me to fix issues quickly, add new features, and keep pushing BadWords forward. If anything at all is unclear about how to use the app, please don't hesitate to reach out!
+> Since it's an active development build, **you might hit bugs, rough edges, or things that feel clunky or unintuitive**. If you run into anything at all, please let me know — open an [Issue on GitHub](https://github.com/veritus-git/BadWords/issues) or write to me at **[badwords.git@gmail.com](mailto:badwords.git@gmail.com)**. I'm an 18-year-old solo developer, so feedback from real editing sessions is the only way I can find edge-case bugs and keep improving the app.
 
 <br>
 
@@ -89,67 +84,18 @@ Here is what makes BadWords stand out from other editing tools:
 
 ## <img src="repo/icons/flame.svg" alt="What's New" width="30" height="30" valign="text-bottom"> What's New in 4.0?
 
-Version 4.0 is a monumental leap forward for BadWords. What started as an urgent update to fix breaking upstream dependencies and improve timeline assembly turned into the largest overhaul in the project's history. Here is a breakdown of the most important new features, workflows, and performance enhancements designed for you:
+Version 4.0 is a major overhaul of BadWords. It brings standalone file workflows, faster marking, live silence tuning, and fixed timeline assembly:
 
-* **Fully Functional Standalone Mode (No DaVinci Resolve Required!):**
-  You no longer need DaVinci Resolve running to use BadWords! You can now load media files (video or audio) directly from your disk or drag and drop multiple files into the standalone file queue.
-  * **Multi-Format Timeline Export:** Export your cut project directly into 4 industry-standard timeline formats:
-    * **Final Cut Pro 7 XML (`.xml`)** — Universal format for DaVinci Resolve, Adobe Premiere Pro, and more.
-    * **Final Cut Pro XML (`.fcpxml`)** — For modern Final Cut Pro workflows.
-    * **OpenTimelineIO (`.otio`)** — The modern open-source standard for timeline interchange.
-    * **CMX 3600 EDL (`.edl`)** — Classic linear edit decision list.
-  * **Lightweight Background Proxies:** Automatically generates fast 360p video preview proxies so you can scrub and preview massive 4K/8K camera footage with zero lag.
-  * **Conforming & Timecode Support:** Automatic sequence framerate conformity, Broadcast Wave (BWF) timecode conforming, multi-track audio preservation, and stereo downmix/pan routing.
-
-* **More intuitive and productive Text Marking: Marquee Box Selection & Brush Painting:**
-  * **Desktop-Style Marquee Box Selection:** Selecting and marking dialogue is now faster and more intuitive than ever. Just click and drag your cursor over words (just like drawing a selection rectangle on your computer desktop!) to highlight and color-code chunks of words in bulk.
-  * **Configurable Mouse Modes:** The classic word-by-word painting mode hasn't gone anywhere! You can seamlessly switch between **Marquee Selection** and **Brush Painting**, and freely configure which action is bound to the Left vs. Right Mouse Button in Settings.
-  * **Live Strikethrough Cut Preview:** Words marked for deletion are now visually struck through with a continuous line directly in the transcript editor, giving you an immediate preview of what Assemble will remove.
-
-* **Advanced Silence Detection with Real-Time In-RAM Tuning:**
-  The Silence Detection sidebar panel has been thoroughly redesigned to give you complete creative control over your pacing:
-  * **Independent Controls:** Separate switches for **Detect and cut silence** vs **Detect and mark silence**.
-  * **Decibel Threshold & Duration Sliders:** Dedicated sliders for Silence Threshold (-80 dB to -10 dB), Min Silence Duration, and Min Clip Duration.
-  * **Pauses to Remove (%):** Choose to eliminate 100% of dead air or retain a custom percentage of pauses for a natural conversational flow.
-  * **Keep Pause Padding (s):** Adds a customizable safety buffer (default: 0.10s) before and after speech to guarantee you never clip the start or trailing end of a word.
-  * **Instant In-RAM Recalculation:** Adjusting any slider recalculates silence cuts directly from RAM waveform peaks **fast** without re-running FFmpeg or freezing the interface. You get live pause counters and duration stats (`226 pauses marked - 3:37 (26%)`) updated in real time!
-
-* **Interactive Timeline Preview with Real-Time Cut Skipping:**
-  The bottom audio/video player has been upgraded into a comprehensive Timeline Preview:
-  * **Waveform & Progressive Cut Hatching:** Visualizes your entire timeline waveform with progressive cut hatching (dynamic diagonal stripes scaling with zoom level) and rounded clip boundary notches.
-  * **Real-Time Cut Skipping:** Hit Play, and the player will dynamically skip over all cut and silence zones in real time! You can now listen to exactly how your rough-cut will sound before assembling or exporting.
-  * **Integrated Video Preview:** Scrub and preview video clips seamlessly alongside the waveform, with playhead clamping, click-to-seek navigation, and persistent preview retention across assembly passes.
-
-* **Apple Silicon Hardware Acceleration: ~11x Faster via `mlx-whisper` (macOS):**
-  Mac users rejoice! On Apple Silicon (M1, M2, M3, M4, M5), BadWords now utilizes native Apple Metal GPU acceleration through `mlx-whisper`.
-  * **Up to ~11x faster** than CPU faster-whisper (transcribing multi-minute audio in seconds rather than minutes).
-  * Fully preserves verbatim prompt engineering, sound-island clustering, and filler word detection.
-  * Automatically falls back to CPU faster-whisper if MLX is unavailable.
-  * Includes CPU topology optimizations for Intel and Apple Silicon to avoid E-core stalls and thread contention.
-
-* **Timeline Assembly Paradigm Shift: FCP7 XML Default + Native DRT Option:**
-  * **FCP7 XML by Default:** BadWords now defaults to Final Cut Pro 7 XML assembly. This eliminates DaVinci Resolve's long-standing `.drt` limitation where cut audio and video tracks became unlinked. In XML, clips remain linked and synchronized out of the box!
-  * **Full DaVinci Free 21.1+ Parity:** Completely circumvents Blackmagic's decision to block `.drt` script imports in DaVinci Resolve Free 21.1+.
-  * **Native `.drt` Still Supported:** DaVinci Resolve Studio users (and Free < 21.1) who want 100% preservation of Color grades, Fusion comps, Fairlight plugins, and OFX can re-enable native `.drt` assembly in Settings at any time. (losing linking feature)
-
-* **Chunked Live-Streaming Transcription & Zero-Lag UI:**
-  * Watch your transcript materialize in real-time chunks with an animated TopStatusIsland indicator and token reveal.
-  * Powered by an O(1) incremental layout rendering engine with dirty-rect painting, keeping the app buttery-smooth even with multi-hour timelines.
-  * GPU yield micro-pauses prevent GPU starvation and keep your desktop responsive while transcribing.
-
-* **Fix for Upstream PyAV 19 Crash:**
-  * Fixed the critical upstream breaking change where PyAV 19.0.0 removed the `metadata_errors` argument from `av.open()`, which caused fresh installs of BadWords 3.2.4 and `faster-whisper` to crash with a `TypeError`.
-  * Injected runtime compatibility shims and pinned `av<19` across all installers and updaters.
-
-* **Dedicated "Colors in this edit" Panel & UI Overhaul:**
-  * A dedicated Colors panel in the sidebar with an active color legend, color counters, and one-click bulk removal.
-  * Dynamic header spacing and customizable UI panel visibility.
-  * High-DPI and resolution-independent UI scaling across small and ultra-wide monitors.
-  * Added Simplified Chinese (`zh`) UI translation, bringing official localization to 11 languages.
-
-* **Modern Cross-Platform Rust GUI Installer & Standalone Launchers:**
-  * Brand-new graphical setup wizard built in Rust (egui) featuring dual animated progress bars, live pip output streaming, system registry integration, and automatic fallback to terminal setup.
-  * Native single-binary standalone desktop launchers for Windows (`.exe`), Linux (ELF), and macOS (Mach-O).
+* **Standalone Mode (No DaVinci Resolve required):** You can now drop audio or video files directly into BadWords without having Resolve open. For video, lightweight 360p proxies are created in the background for smooth playback. When done, export your cut timeline directly to **Final Cut Pro 7 XML (`.xml`)**, **FCPXML**, **OpenTimelineIO (`.otio`)**, or **CMX 3600 EDL (`.edl`)**.
+* **Marquee Box Selection:** Click and drag your cursor over words to highlight text in bulk, exactly like selecting files on a desktop. The original brush painting mode is still available and can be mapped to right-click or swapped in Settings.
+* **Live Cut Strikethrough:** Cut words are now visually crossed out with a continuous strikethrough in the transcript editor, giving you an immediate preview of what will be removed.
+* **Real-Time Silence Tuning:** Reworked silence panel with sliders for threshold (dB), minimum pause duration, keep padding (buffer around words), and percentage of pauses to remove. Everything recalculates instantly in RAM without waiting for background FFmpeg passes.
+* **Timeline Preview with Real-Time Cut Skipping:** The bottom player displays your waveform with cut zones. Hit play, and it actively skips over cut sections in real time so you can hear how the edit flows before assembling.
+* **Apple Silicon GPU Acceleration (macOS):** Native Metal GPU transcription using `mlx-whisper` on M1–M5 Macs, running up to ~11x faster than CPU with the exact same verbatim accuracy.
+* **FCP7 XML Assembly by Default:** Switched default assembly to FCP7 XML to solve DaVinci Resolve's long-standing issue where `.drt` imports broke clip linking. Video and audio now stay linked. (Studio users who want to keep Fusion comps or Color node trees can still enable native `.drt` assembly in Settings).
+* **PyAV 19 Compatibility Fix:** Fixed the upstream crash that completely broke fresh installs of 3.2.4.
+* **Live Chunked Streaming:** Transcripts now appear live in chunks with a smooth status indicator without UI stutter.
+* **Rust GUI Installer & Launchers:** Replaced old setup scripts with a modern, lightweight installer built in Rust, plus standalone executable launchers.
 
 ---
 
