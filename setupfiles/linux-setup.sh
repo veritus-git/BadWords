@@ -39,9 +39,6 @@ fi
 
 # ── Helper: Rich Terminal Python Fallback ─────────────────────
 invoke_python_fallback() {
-    clear
-    echo -e "user@computer:~$ curl -fsSL \"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh\" | bash"
-    echo -e "\033[36mDownloading BadWords Setup for Linux...\033[0m"
     echo ""
     echo -e "\033[36m========================================================================\033[0m"
     echo -e "\033[33m [!] Security & Compatibility Notice:\033[0m"
@@ -53,7 +50,13 @@ invoke_python_fallback() {
     echo -e "  \033[90m[2] Exit\033[0m"
     echo -e "\033[36m========================================================================\033[0m"
 
-    read -r -p "Select an option [1 or 2]: " choice
+    choice="1"
+    if [ -e /dev/tty ]; then
+        read -r -p "Select an option [1 or 2, default: 1]: " user_choice < /dev/tty || true
+        if [ -n "$user_choice" ]; then
+            choice="$user_choice"
+        fi
+    fi
     if [ "$choice" != "1" ]; then
         echo "Setup closed."
         exit 0

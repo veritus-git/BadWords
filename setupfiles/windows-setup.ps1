@@ -39,9 +39,6 @@ New-Item -ItemType Directory -Path $BW_TMP -Force | Out-Null
 
 # -- Helper: Run Rich Terminal Python Fallback -----------------
 function Invoke-PythonFallback() {
-    Clear-Host
-    Write-Host "PS C:\Users\User> irm `"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1`" | iex" -ForegroundColor White
-    Write-Host "Downloading BadWords Setup..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " [!] Windows Security Notice:" -ForegroundColor Yellow
@@ -53,7 +50,10 @@ function Invoke-PythonFallback() {
     Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
     Write-Host "========================================================================" -ForegroundColor Cyan
     
-    $choice = Read-Host "Select an option [1 or 2]"
+    $choice = Read-Host "Select an option [1 or 2, default: 1]"
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+        $choice = "1"
+    }
     if ($choice -ne "1") {
         Write-Host "Setup cancelled by user." -ForegroundColor Yellow
         exit 0
