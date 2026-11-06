@@ -1,5 +1,5 @@
-# <img src="assets/icons/icon_default.png" alt="BadWords Logo" width="48" height="48" valign="middle" />&nbsp; BadWords
-**Cleaner Timelines, Faster. Simpler Rough-Cutting for DaVinci Resolve.**
+# <img src="repo/banner.svg" alt="BadWords Logo" height="52" valign="middle" />&nbsp;
+**Cleaner Timelines, Faster. The AI Rough Cut Studio — Built for DaVinci Resolve & Beyond.**
 
 <br>
 
@@ -27,25 +27,30 @@
 
 <br>
 
-> [!WARNING]
-> ### ⚠️ Compatibility Notice: DaVinci Resolve Free 21.1+
-> The current release (**v3.2.4**) does **not** work with **DaVinci Resolve Free 21.1+** due to external scripting and API restrictions introduced by Blackmagic Design in that update.
+> [!IMPORTANT]
+> ### BadWords v4 - Active Development & Early Access Notice
+>
+> **BadWords v4 is still actively in development** and does not yet have every single feature I originally envisioned. 
 > 
-> **To use BadWords right now, you must:**
-> * Use **DaVinci Resolve Studio** (all versions are fully supported), **OR**
-> * Downgrade to **DaVinci Resolve Free older than v21.1** (e.g. 21.0.3, 19.x, 18.x).
+> **Why release it now?**  
+> The previous release (v3.2.4) came out quite a while ago, and more critically, it became completely unusable on fresh installations due to a breaking upstream change in PyAV (which removed an internal argument used by Faster-Whisper). At the same time, an immense number of upgrades, optimizations, and new tools had already accumulated in my local development tree. Rather than holding everything back, I worked hard to bring this version into a solid, functional state so that everyone can actually use BadWords again.
 > 
-> 🛠️ **Under Active Development:** I am actively working on the next major release (**v4.0**), which restores full connectivity for DaVinci Resolve Free 21.1+ through a dedicated IPC bridge. The update will be available soon!
+> **Because v4 is in active development, encountering bugs, quirks, or rough edges IS possible.**  
+> If you run into **ANY bug, crash, or unexpected behavior**, or if something feels **unintuitive, confusing, or awkward and uncomfortable to use** - **I warmly encourage and genuinely ASK you to reach out!** Please open an [Issue on GitHub](https://github.com/veritus-git/BadWords/issues) or email me directly at **[badwords.git@gmail.com](mailto:badwords.git@gmail.com)**.
+> 
+> As an 18-year-old solo developer, it is impossible for me to test every conceivable hardware setup, operating system configuration, audio format, and DaVinci Resolve project edge-case on my own. Your bug reports, feedback, and suggestions are what allow me to fix issues quickly, add new features, and keep pushing BadWords forward. If anything at all is unclear about how to use the app, please don't hesitate to reach out!
 
 <br>
 
 ## <img src="repo/icons/info.svg" alt="Info" width="30" height="30" valign="text-bottom"> What is it?
 
-**BadWords** is a plugin-app for DaVinci Resolve built for anyone dealing with dialogue-heavy footage (podcasts, talking heads, gameplays). Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your workflow into an easy text-editing experience.
+**BadWords** is an all-in-one **AI Rough Cut Studio** built for video creators, editors, and anyone dealing with dialogue-heavy footage (podcasts, talking heads, interviews, gameplays). While deeply integrated with DaVinci Resolve, BadWords is no longer just a plugin — it now operates as a complete, standalone rough-cutting workstation capable of exporting cut timelines to **any NLE** (DaVinci Resolve, Adobe Premiere Pro, Apple Final Cut Pro, and more).
 
-It uses local AI (Faster-Whisper) to give you a full transcript of your audio. You can then color-code mistakes, compare it against your original script, and with one click, send the processed timeline back to Resolve — complete with markers and cuts. 
+Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your rough-cutting workflow into an easy, intuitive text-editing experience.
 
-BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the final polishing to you.
+It uses local AI (Faster-Whisper & Apple MLX) to give you an ultra-precise verbatim transcript of your dialogue. You can color-code mistakes, compare it against your original script, tune silence cuts live in real time, preview cuts before assembling, and with one click, send the processed timeline back to Resolve — complete with markers, linked clips, and cuts — or export an interchange timeline for your editor of choice.
+
+BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the creative polishing to you.
 
 ## <img src="repo/icons/sparkles.svg" alt="Key Features" width="30" height="30" valign="text-bottom"> Key Features
 
@@ -61,13 +66,13 @@ Here is what makes BadWords stand out from other editing tools:
 
 ## <img src="repo/icons/workflow.svg" alt="How it works" width="30" height="30" valign="text-bottom"> How it works
 
-1. **Select & Transcribe:** Launch BadWords directly from Resolve, pick your audio tracks, and hit Analyze. The AI transcribes everything.
+1. **Select & Transcribe:** Launch BadWords directly from Resolve (or run in Standalone Mode by picking media files from disk), select your audio tracks, and hit Analyze. The AI transcribes everything.
 2. **Edit like a Document:** Your audio opens as text in an IDE-inspired editor. You (or the algorithm) can paint words with different colors:
-   * **Red** — Filler words / obvious mistakes to remove
-   * **Blue** — Retakes / duplicates
-   * **Green** — Typos / close matches
+   * **Red** - Filler words / obvious mistakes to remove
+   * **Blue** - Retakes / duplicates
+   * **Green** - Typos / close matches
 3. **Compare to Script or Analyze Standalone:** If you have an original script, BadWords can automatically compare it against your transcript to highlight deviations. No script? No problem! Use the Standalone Analysis to automatically detect stutters, false starts, and retakes from the raw audio.
-4. **Assemble Timeline:** Once you're done playing with the text, hit Assemble. BadWords automatically generates a **brand new, clean timeline** inside Resolve with all your cuts and color markers applied perfectly.
+4. **Assemble or Export Timeline:** Once you're done playing with the text, hit Assemble (or Export). BadWords automatically generates a **brand new, clean timeline** inside Resolve with all your cuts and color markers applied perfectly, or exports a universal XML/EDL timeline for your NLE of choice.
 
 <p align="center">
   <img src="repo/heatmap_preview.png" alt="BadWords Heatmap" width="85%">
@@ -82,54 +87,129 @@ Here is what makes BadWords stand out from other editing tools:
 
 ---
 
-## <img src="repo/icons/flame.svg" alt="What's New" width="30" height="30" valign="text-bottom"> What's New in 3.2?
+## <img src="repo/icons/flame.svg" alt="What's New" width="30" height="30" valign="text-bottom"> What's New in 4.0?
 
-Version 3.2 is another massive update. I dug deep into the core code to fix some of the most annoying bugs and completely rewrote how BadWords builds your final timeline. Here is what I managed to put together:
+Version 4.0 is a monumental leap forward for BadWords. What started as an urgent update to fix breaking upstream dependencies and improve timeline assembly turned into the largest overhaul in the project's history. Here is a breakdown of the most important new features, workflows, and performance enhancements designed for you:
 
-* **Audio Preview:** You can finally hear how a specific word sounds right inside the transcript! I added a small built-in player so there's no more guessing if a cut is correct. It is not perfect, as it doesnt light up words exactly when they are spoken, but instead it shows where Whisper thinks the words are and what are its boundaries.
-* **Project Saves (.bws) & AutoSave:** BadWords now has its own `.bws` file extension so you can properly save your work. I also built a background AutoSave. If the app randomly crashes, you won't lose everything - it will give you an option to restore your session when you reopen it!
-* **New Timeline Assembly (.drt):** I remade the assembly process from the ground up. BadWords now manipulates DaVinci's native `.drt` file. This means complex timelines finally work without breaking things like adjustment clips or proxies! (Clip linking still sadly breaks during assembly, and for what I can see there is no fix for it because of Davinci Resolve nature but maybe I will find out the way in the feature)
-* **Track Selection Menu:** I added a track selection menu where you can choose exactly which audio and video tracks BadWords should use when putting together the final timeline.
-* **Engine v2 & Performance Boost:** I completely revamped the core transcription engine! By removing the heavy PyTorch dependency and fully transitioning to pure `faster-whisper`, the installation size is now much smaller (around 4GB without models). Plus, CPU transcription is significantly optimized - reaching up to 1.7x real-time speed even on large models (before it was around 1x real-time speed)!
-* **Ultra Precise Chunking by Default:** The `Ultra precise (chunking)` mode is now the absolute default processing method! Since BadWords relies solely on perfect verbatim transcription, this decision was crucial - only chunking can consistently offer the extreme level of precision and accuracy required to catch every tiny detail.
-* **Maximized Cutting Precision:** I dug deep into the core cutting logic to purge outdated hardcoded values and introduced a global temporal offset. While achieving true sub-50ms accuracy is still a challenge, these optimizations push BadWords' verbatim cutting precision to the absolute edge of what's currently possible on the market!
-* **Advanced Color Cutting:** You now have the ultimate flexibility during the Assembly phase. The 'Assembly' page has been extended so you can choose to cut and manipulate every single marker color exactly how you want.
-* **Quality of Life & Fixes:**
-  * **Precision & Navigation Fixes:** Fixed the annoying audio preview temporal drift and resolved inaccuracies with the "Jump to Word" feature
-  * **Installer Updates:** Updated the installer and updater to handle the new lightweight dependencies seamlessly, and removed old unused legacy installers.
-  * **UI & Settings Fixes:** Fixed a small bug with the Turbo Large model, adjusted the marquee effect function, and squashed various small bugs across the UI and settings.
-  * **Silence Detection Fix:** Fixed a bug that left unmarked "islands" of silence at the very start and end of the audio.
-  * **Mac UI Fixes:** Made UI more spacious and switched the rendering engine on macOS as attempt to fix the weird bugs and glitches. Altough it still has some problems. I would really appreciate a pull request if you know how to fix it!
+* **Fully Functional Standalone Mode (No DaVinci Resolve Required!):**
+  You no longer need DaVinci Resolve running to use BadWords! You can now load media files (video or audio) directly from your disk or drag and drop multiple files into the standalone file queue.
+  * **Multi-Format Timeline Export:** Export your cut project directly into 4 industry-standard timeline formats:
+    * **Final Cut Pro 7 XML (`.xml`)** — Universal format for DaVinci Resolve, Adobe Premiere Pro, and more.
+    * **Final Cut Pro XML (`.fcpxml`)** — For modern Final Cut Pro workflows.
+    * **OpenTimelineIO (`.otio`)** — The modern open-source standard for timeline interchange.
+    * **CMX 3600 EDL (`.edl`)** — Classic linear edit decision list.
+  * **Lightweight Background Proxies:** Automatically generates fast 360p video preview proxies so you can scrub and preview massive 4K/8K camera footage with zero lag.
+  * **Conforming & Timecode Support:** Automatic sequence framerate conformity, Broadcast Wave (BWF) timecode conforming, multi-track audio preservation, and stereo downmix/pan routing.
+
+* **More intuitive and productive Text Marking: Marquee Box Selection & Brush Painting:**
+  * **Desktop-Style Marquee Box Selection:** Selecting and marking dialogue is now faster and more intuitive than ever. Just click and drag your cursor over words (just like drawing a selection rectangle on your computer desktop!) to highlight and color-code chunks of words in bulk.
+  * **Configurable Mouse Modes:** The classic word-by-word painting mode hasn't gone anywhere! You can seamlessly switch between **Marquee Selection** and **Brush Painting**, and freely configure which action is bound to the Left vs. Right Mouse Button in Settings.
+  * **Live Strikethrough Cut Preview:** Words marked for deletion are now visually struck through with a continuous line directly in the transcript editor, giving you an immediate preview of what Assemble will remove.
+
+* **Advanced Silence Detection with Real-Time In-RAM Tuning:**
+  The Silence Detection sidebar panel has been thoroughly redesigned to give you complete creative control over your pacing:
+  * **Independent Controls:** Separate switches for **Detect and cut silence** vs **Detect and mark silence**.
+  * **Decibel Threshold & Duration Sliders:** Dedicated sliders for Silence Threshold (-80 dB to -10 dB), Min Silence Duration, and Min Clip Duration.
+  * **Pauses to Remove (%):** Choose to eliminate 100% of dead air or retain a custom percentage of pauses for a natural conversational flow.
+  * **Keep Pause Padding (s):** Adds a customizable safety buffer (default: 0.10s) before and after speech to guarantee you never clip the start or trailing end of a word.
+  * **Instant In-RAM Recalculation:** Adjusting any slider recalculates silence cuts directly from RAM waveform peaks **fast** without re-running FFmpeg or freezing the interface. You get live pause counters and duration stats (`226 pauses marked - 3:37 (26%)`) updated in real time!
+
+* **Interactive Timeline Preview with Real-Time Cut Skipping:**
+  The bottom audio/video player has been upgraded into a comprehensive Timeline Preview:
+  * **Waveform & Progressive Cut Hatching:** Visualizes your entire timeline waveform with progressive cut hatching (dynamic diagonal stripes scaling with zoom level) and rounded clip boundary notches.
+  * **Real-Time Cut Skipping:** Hit Play, and the player will dynamically skip over all cut and silence zones in real time! You can now listen to exactly how your rough-cut will sound before assembling or exporting.
+  * **Integrated Video Preview:** Scrub and preview video clips seamlessly alongside the waveform, with playhead clamping, click-to-seek navigation, and persistent preview retention across assembly passes.
+
+* **Apple Silicon Hardware Acceleration: ~11x Faster via `mlx-whisper` (macOS):**
+  Mac users rejoice! On Apple Silicon (M1, M2, M3, M4, M5), BadWords now utilizes native Apple Metal GPU acceleration through `mlx-whisper`.
+  * **Up to ~11x faster** than CPU faster-whisper (transcribing multi-minute audio in seconds rather than minutes).
+  * Fully preserves verbatim prompt engineering, sound-island clustering, and filler word detection.
+  * Automatically falls back to CPU faster-whisper if MLX is unavailable.
+  * Includes CPU topology optimizations for Intel and Apple Silicon to avoid E-core stalls and thread contention.
+
+* **Timeline Assembly Paradigm Shift: FCP7 XML Default + Native DRT Option:**
+  * **FCP7 XML by Default:** BadWords now defaults to Final Cut Pro 7 XML assembly. This eliminates DaVinci Resolve's long-standing `.drt` limitation where cut audio and video tracks became unlinked. In XML, clips remain linked and synchronized out of the box!
+  * **Full DaVinci Free 21.1+ Parity:** Completely circumvents Blackmagic's decision to block `.drt` script imports in DaVinci Resolve Free 21.1+.
+  * **Native `.drt` Still Supported:** DaVinci Resolve Studio users (and Free < 21.1) who want 100% preservation of Color grades, Fusion comps, Fairlight plugins, and OFX can re-enable native `.drt` assembly in Settings at any time. (losing linking feature)
+
+* **Chunked Live-Streaming Transcription & Zero-Lag UI:**
+  * Watch your transcript materialize in real-time chunks with an animated TopStatusIsland indicator and token reveal.
+  * Powered by an O(1) incremental layout rendering engine with dirty-rect painting, keeping the app buttery-smooth even with multi-hour timelines.
+  * GPU yield micro-pauses prevent GPU starvation and keep your desktop responsive while transcribing.
+
+* **Fix for Upstream PyAV 19 Crash:**
+  * Fixed the critical upstream breaking change where PyAV 19.0.0 removed the `metadata_errors` argument from `av.open()`, which caused fresh installs of BadWords 3.2.4 and `faster-whisper` to crash with a `TypeError`.
+  * Injected runtime compatibility shims and pinned `av<19` across all installers and updaters.
+
+* **Dedicated "Colors in this edit" Panel & UI Overhaul:**
+  * A dedicated Colors panel in the sidebar with an active color legend, color counters, and one-click bulk removal.
+  * Dynamic header spacing and customizable UI panel visibility.
+  * High-DPI and resolution-independent UI scaling across small and ultra-wide monitors.
+  * Added Simplified Chinese (`zh`) UI translation, bringing official localization to 11 languages.
+
+* **Modern Cross-Platform Rust GUI Installer & Standalone Launchers:**
+  * Brand-new graphical setup wizard built in Rust (egui) featuring dual animated progress bars, live pip output streaming, system registry integration, and automatic fallback to terminal setup.
+  * Native single-binary standalone desktop launchers for Windows (`.exe`), Linux (ELF), and macOS (Mach-O).
 
 ---
 
 <a id="installation"></a>
 ## <img src="repo/icons/wrench.svg" alt="Installation & Setup" width="30" height="30" valign="text-bottom"> Installation & Setup
 
-I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. You don't need to manually download zip files, configure paths, or install dependencies.
+I know that installing plugins can sometimes be a headache. That's why I made BadWords use a **unified, one-click installation process** that looks and works exactly the same on every operating system. You don't need to manually download zip files, configure Python paths, or install dependencies - the setup handles everything automatically.
+
+In version 4.0, BadWords features a **brand new Graphical User Interface** for easier and more accessible instalation process - **it's as easy as it gets!**
 
 ### <img src="repo/icons/download.svg" alt="Installation Process" width="24" height="24" valign="text-bottom"> The Installation Process
 
-1. **Copy the command** for your specific operating system from the section below.
+1. **Copy the command** for your specific operating system from the [section below](#-option-1-automated-setup-commands-recommended).
 2. **Paste the command** into your terminal (PowerShell on Windows, Terminal on macOS/Linux) and press **Enter**.
-3. Wait for the script to prepare the environment. The following BadWords Setup menu will appear:
+3. The **BadWords Setup** window will appear
+4. Skip Welcome Screen with `Enter`, then **select `1`** (you can click with your mouse or simply press **`1`** on your keyboard).
 
 <p align="center">
-  <img src="repo/setup_preview.png" alt="BadWords Setup Preview" width="70%">
+  <img src="repo/gui_setup_preview.png" alt="BadWords GUI Setup Preview" width="70%">
 </p>
 
-4. **Press `1`** for the standard installation.
-5. Provide a path where you want BadWords (~4GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
-6. Wait for the download to complete (It will take a while because its downloading heavy libraries), and once you see the success message, you can safely **close the terminal**. 
+5. **Confirm the install path** (~4GB for core files + AI models), or browse/type in a custom destination path.
+6. Wait for the setup to finish. When it's done you can simply Launch BadWords as normal desktop app or open it from DaVinci Resolve: **Workspace** → **Scripts** → **BadWords**
 
-> **Note:** As you can see on the screenshot above, the installer menu gives you 4 other options besides standard installation. In the future, you can use the exact same command to Update your app, Repair broken files, Move the installation to another drive, or completely Uninstall BadWords!
+<br>
+
+> As you can see on the screenshot above, the installer menu gives you **5** other options besides standard installation. In the future, you can use the exact same command to *Update* your app (if automatic update fails), *Repair* broken files, *Move* the installation to another drive, *Reinstall* or completely *Uninstall* BadWords!
+
+> [!NOTE]
+> ### 🛡️ Security Notice (Windows SAC & macOS Gatekeeper)
+> BadWords is a **100% free and open-source project created by an independent solo developer**. Since I don't have an expensive $400/yr commercial code-signing certificate, security filters like **Windows 11 Smart App Control** or **macOS Gatekeeper** may flag the newly compiled graphical binary.
+> 
+> If that happens, the setup script **automatically detects the block and gives you an option to run the Terminal Setup (option 1)**:
+>
+> <p align="center">
+>   <img src="repo/sac_notice.png" alt="Security Fallback Notice" width="70%">
+> </p>
+>
+
+### <img src="repo/icons/terminal.svg" alt="Terminal Setup" width="24" height="24" valign="text-bottom"> Fallback: Terminal Setup
+
+If your system blocks the graphical window, the terminal setup offers **100% of the exact same features and tools**:
+
+<p align="center">
+  <img src="repo/cli_setup_preview.png" alt="Terminal Setup Preview" width="65%">
+</p>
+
+1. **Press `1`** for standard installation.
+2. Choose whether to create **Desktop and Start Menu shortcuts** (`Y/n`).
+3. Provide a path where you want BadWords (~4GB) and your chosen AI models to be installed, or simply **press Enter** to use the default location.
+4. Wait for the download and setup to complete.
+5. Press **Enter** to launch BadWords (or **n** to skip it).
+
+<br>
 
 ---
 
-### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Option 1: Automated Terminal Command (Recommended)
-The absolute easiest way to start the setup. It securely downloads and runs the open-source installer script directly from this repository.
-
-> 🔍 *Note: The commands below only prepare your system before running the main installer. [You can view the core setup.py script here](https://github.com/veritus-git/BadWords/blob/main/setupfiles/setup.py).*
+<a id="automated-setup-commands"></a>
+### <img src="repo/icons/terminal.svg" alt="Option 1" width="24" height="24" valign="text-bottom"> Option 1: Automated Setup Commands (Recommended)
+The absolute easiest way to start the setup. It securely downloads and runs the lightweight setup wizard directly from this repository.
 
 <br>
 
@@ -140,20 +220,14 @@ Open the Start Menu, search for **PowerShell**, open it, paste the following com
 irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1" | iex
 ```
 
-
 <br>
 
 #### <img src="repo/icons/apple.svg" alt="macOS" width="20" height="20" valign="text-bottom"> macOS
-> [!WARNING]
-> BadWords will not work with the Mac App Store version of DaVinci Resolve. Re-install from the [official website](https://www.blackmagicdesign.com/products/davinciresolve/) if needed.
-
-
 Open the **Terminal** app (search with Spotlight `Cmd + Space`), paste the following command, and press **Enter**:
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh" | bash
 ```
-
 
 <br>
 
@@ -168,24 +242,26 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 
 ---
 
-### <img src="repo/icons/package.svg" alt="Option 2" width="24" height="24" valign="text-bottom"> Option 2: Manual Install
-Don't like pasting terminal commands? I completely understand! You can run the setup manually:
-1. Go to the [Releases page](https://github.com/veritus-git/BadWords/releases/latest) and download the Source Code `.zip`.
-2. Extract the folder somewhere on your drive.
-3. Open the `setupfiles` folder inside the extracted directory.
-4. Run the setup script dedicated to your OS:
-  * **macOS / Linux**: Open a terminal in the `setupfiles` folder and run:
-    ```
-    bash mac-setup.sh
-    ```
-    or on Linux:
-    ```
-    bash linux-setup.sh
-    ```
-  * **Windows**: Open PowerShell/CMD in the folder *setupfiles* and run:
-    ```
-    powershell -ExecutionPolicy Bypass -File .\windows-setup.ps1
-    ```
+### <img src="repo/icons/package.svg" alt="Option 2" width="24" height="24" valign="text-bottom"> Option 2: Manual Locall Setup
+Don't like running online terminal commands? You can download the pre-compiled standalone installer directly from the [Releases page](https://github.com/veritus-git/BadWords/releases/latest):
+
+**Windows:**
+  1. Download `badwords-setup-windows.exe`.
+  2. Double-click to run. *(If blocked by SmartScreen: right-click the file → **Properties** → check **Unblock** at the bottom → click **Apply**).*
+
+**macOS:**
+  1. Download `badwords-setup-macos`.
+  2. Open Terminal in your download folder, remove the macOS quarantine attribute, and launch the installer:
+     ```bash
+     xattr -d com.apple.quarantine badwords-setup-macos && chmod +x badwords-setup-macos && ./badwords-setup-macos
+     ```
+
+**Linux:**
+  1. Download `badwords-setup-linux`.
+  2. Double click to run or (if it fails) open terminal in the download folder, make it executable, and run:
+     ```bash
+     chmod +x badwords-setup-linux && ./badwords-setup-linux
+     ```
 
 ---
 
@@ -198,18 +274,80 @@ Pasting `curl` or `iex` commands can trigger red flags for cautious users. Here 
 
 ---
 
-## <img src="repo/icons/launch.svg" alt="Launching" width="30" height="30" valign="text-bottom"> Launching in DaVinci Resolve
+## <img src="repo/icons/launch.svg" alt="Launching" width="30" height="30" valign="text-bottom"> Launching & Compatibility by DaVinci Version
 
-1. Open DaVinci Resolve and navigate to a project timeline.
-2. At the very top menu bar, click on **Workspace** → **Scripts** → **BadWords**.
+Depending on whether you use **Standalone Mode**, **DaVinci Resolve Studio**, or **DaVinci Resolve Free**, and which version you have installed, here is how you can launch and connect BadWords:
 
-> **Important:** Your *first launch*, *first transcription*, and *first analysis* will take considerably longer than usual as the AI model completes its initial setup for your hardware. **All subsequent transcriptions are much faster.** <br>
+* **Standalone Mode (No DaVinci Resolve Needed):**  
+  *BadWords can now run completely independently from DaVinci Resolve!*
+  * **How to use:** Launch BadWords directly from your Desktop, Start Menu, or terminal. Drag and drop audio or video files directly into the file queue.
+  * **Export:** Cut your dialogue, tune silence, and export ready-to-import timelines to **Final Cut Pro 7 XML (`.xml`)**, **Final Cut Pro XML (`.fcpxml`)**, **OpenTimelineIO (`.otio`)**, or **CMX 3600 EDL (`.edl`)** for DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro, or any other NLE!
+
+* **DaVinci Resolve Studio (Any version):**  
+  *Full functionality with zero limitations.*
+  * **Option A (Desktop App):** Launch BadWords directly from your Desktop / Start Menu or terminal. Ensure that in DaVinci Resolve *Preferences → System → General*, **External scripting using** is set to **Local**. BadWords connects automatically via native IPC.
+  * **Option B (Embedded Mode):** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords** to launch it directly within Resolve.
+  * **Timeline Assembly:** Defaults to the **FCP7 XML pipeline** because it natively preserves audio-to-video clip linking. If you need to preserve Resolve-specific Color Page grades, Fusion comps, Fairlight FX, or plugins, you can switch to the native `.drt` pipeline in Settings with a single click.
+
+* **DaVinci Resolve Free (v21.0 and older):**  
+  *External scripting is locked by Blackmagic in the free edition, but embedded execution works.*
+  * **Option A (Embedded Mode):** Inside DaVinci Resolve, click **Workspace** → **Scripts** → **BadWords**.
+  * **Option B (Bridge Mode):** In Resolve, click **Workspace** → **Scripts** → **BadWords Bridge**, then launch BadWords from your Desktop / Start Menu.
+  * **Timeline Assembly:** Defaults to **FCP7 XML** with preserved clip linking; native `.drt` assembly is available as an option in Settings.
+
+* **DaVinci Resolve Free (v21.1+):**  
+  *In v21.1+, Blackmagic blocked both external scripting AND direct embedded Python scripts in the free edition.*
+  * **Bridge Mode (The only way to connect):**
+    1. Open DaVinci Resolve and load your project.
+    2. Click **Workspace** → **Scripts** → **BadWords Bridge** (runs once per Resolve session).
+    3. Launch BadWords from your Desktop or Start Menu - it connects automatically using the Lua bridge!
+  * **Timeline Assembly:** Powered by the robust **FCP7 XML assembly pipeline** (because Blackmagic disabled `.drt` script exports in Free 21.1+).
+
+---
+
+### <img src="repo/icons/workflow.svg" alt="Assembly Pipeline" width="24" height="24" valign="text-bottom"> Timeline Assembly: FCP7 XML (Default) vs. Native DRT (Optional)
+
+> [!NOTE]
+> **Evolution of Timeline Assembly in v4.0:**  
+> Previously, BadWords relied almost entirely on manipulating DaVinci's native `.drt` (DaVinci Resolve Timeline) file for assembly.  
+> Starting in **v4.0**, BadWords has transitioned to **Final Cut Pro 7 XML (`.xml`) as the default and recommended assembly pipeline**.
+> 
+> **Why switch to XML as the default?**
+> 1. **Native Clip Linking Preservation:** When importing a `.drt` timeline assembled via script, DaVinci Resolve has an internal limitation where cut audio and video clips lose their link on the timeline, unlinking them and causing massive editing friction. The XML pipeline natively preserves clip linking — your video and audio tracks remain linked and locked together!
+> 2. **Resolve Free 21.1+ Compatibility:** Blackmagic completely blocked `.drt` script exports and imports in DaVinci Resolve Free 21.1+. The XML pipeline ensures seamless rough-cutting for all users regardless of Resolve version or license.
+> 
+> **Do you still want Native `.drt`?**  
+> **Yes, it is still here!** Users of **DaVinci Resolve Studio** (and Free versions older than 21.1) can easily switch back to the `.drt` pipeline at any time directly in Settings (*Settings → Assembly → uncheck "Force FCP7 XML Assembly"*). If your workflow relies on preserving complex DaVinci-specific elements already applied to your clips before cutting (such as Color Page node trees & grades, Fusion compositions, Fairlight audio FX / VST plugins, or Resolve OFX), `.drt` remains fully supported.
+
+| Timeline Element / Feature | FCP7 XML Pipeline<br>*(Default in v4.0)* | Native .drt Pipeline<br>*(Studio & Free <21.1 Option)* |
+| :--- | :---: | :---: |
+| **Audio-Video Clip Linking** | ✅ **100% Linked & Preserved** *(Audio stays locked to video)* | ⚠️ **Unlinked** *(Resolve API limitation: cut audio & video clips become unlinked)* |
+| **Cuts, Ripple-Cut & In/Out Points** | ✅ 100% frame-accurate | ✅ 100% frame-accurate |
+| **Multi-Track Video & Audio** *(V1, V2..., A1, A2...)* | ✅ Fully Preserved | ✅ Fully Preserved |
+| **Media Files & Audio Waveforms** | ✅ Fully Preserved | ✅ Fully Preserved |
+| **Proxy Media & Playback** | ✅ Fully Supported *(Seamless relink to existing Media Pool proxies)* | ✅ Fully Supported *(Playback → Prefer Proxies)* |
+| **Clip Marker Colors on Timeline** | ✅ Preserved & Re-applied | ✅ Preserved & Re-applied |
+| **Basic Transforms** *(Position, Zoom, Crop, Opacity)* | ✅ Fully Preserved | ✅ Fully Preserved |
+| **Fractional Frame Rates** *(23.976, 29.97, 59.94 fps)* | ✅ 100% Frame-Accurate (Zero Drift) | ✅ 100% Frame-Accurate |
+| **Track Filtering & Selection** | ✅ Fully Supported | ✅ Fully Supported |
+| **Color Page Grading & Node Trees** | ⚠️ **Not Carried Over** *(Clips point to raw source files; grade after cutting or use Remote Grades)* | ✅ **100% Preserved** *(Nodes, LUTs, Qualifiers)* |
+| **Fusion Page Compositions on Clips** | ⚠️ **Not Carried Over** *(XML specification does not support Fusion nodes)* | ✅ **100% Preserved** |
+| **Fairlight Audio FX & VST Plugins** | ⚠️ **Not Carried Over** | ✅ **100% Preserved** *(EQ, Dynamics, VST)* |
+| **Resolve OFX & Neural Engine** *(Magic Mask, Blur)* | ⚠️ **Not Carried Over** | ✅ **100% Preserved** |
+| **Compound Clips & Nested Timelines** | ⚠️ May be flattened or imported as blank generators | ✅ **100% Preserved** |
+
+> [!TIP]
+> **Summary & Workflow Recommendation:**  
+> If you run BadWords on **raw footage (A-roll, talking-head videos, raw podcasts, interviews, gameplays)** before color grading and applying VFX — **the FCP7 XML pipeline is strictly superior and recommended**, because your cuts will keep audio and video clips linked together.  
+> If you have already created complex Color node trees or Fusion animations on your clips prior to rough-cutting, those Resolve-specific nodes are preserved in Studio (via `.drt`), which can be activated with a single click in Settings!
+
+> **Important:** Your *first launch*, *first transcription*, and *first analysis* will take considerably longer than usual as the AI model completes its initial setup for your hardware. **All subsequent transcriptions are typically much faster.** <br>
 > **Note:** Whisper models perform best with English and major European languages. Other languages are supported but might yield lower precision.
 
 ---
 
 ## <img src="repo/icons/list-checks.svg" alt="Requirements" width="30" height="30" valign="text-bottom"> Requirements
-- **App:** DaVinci Resolve (Free or Studio) — **Not from the App Store!**
+- **App:** DaVinci Resolve (Free or Studio, including Mac App Store edition)
 - **Hardware:** NVIDIA GPU highly recommended for acceleration (CPU-only mode is available).
 - **Disk Space:** ~4GB free space for the app, plus 1–5GB depending on your chosen AI models.
 

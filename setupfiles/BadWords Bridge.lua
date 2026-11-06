@@ -1,0 +1,1696 @@
+--[[
+    BadWords Bridge.lua
+    ===================
+    DaVinci Resolve Lua Bridge for BadWords.
+    Enables communication with BadWords desktop app across all DaVinci Resolve
+    versions (including DaVinci Resolve 21.1+ Free where Python scripting is removed
+    and Lua sandbox is tightened).
+
+    Runs completely within Resolve's Lua sandbox (no io, no ffi, no require).
+    Uses loadfile for request input and fusion:SetPrefs/SavePrefs for response output.
+]]
+
+---@diagnostic disable: undefined-global
+
+-- ---------------------------------------------------------------------------
+-- 1. Pure Lua Base64 Encoder
+-- ---------------------------------------------------------------------------
+local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local function base64_encode(data)
+    if not data or #data == 0 then return "" end
+    return ((data:gsub(".", function(x)
+        local r, b = "", x:byte()
+        for i = 8, 1, -1 do
+            r = r .. (b % 2 ^ i - b % 2 ^ (i - 1) >= 1 and "1" or "0")
+        end
+        return r
+    end) .. "0000"):gsub("%d%d%d?%d?%d?%d?", function(x)
+        if #x < 6 then return "" end
+        local c = 0
+        for i = 1, 6 do
+            c = c + (x:sub(i, i) == "1" and 2 ^ (6 - i) or 0)
+        end
+        return B64_CHARS:sub(c + 1, c + 1)
+    end) .. ({ "", "==", "=" })[#data % 3 + 1])
+end
+
+-- ---------------------------------------------------------------------------
+-- 2. Pure Lua JSON Encoder & Decoder (dkjson 2.5 simplified)
+-- ---------------------------------------------------------------------------
+local json = {}
+
+local pairs, type, tostring, tonumber = pairs, type, tostring, tonumber
+local floor = math.floor
+local strrep, gsub, strsub, strbyte, strchar = string.rep, string.gsub, string.sub, string.byte, string.char
+local concat = table.concat
+
+local function isarray(tbl)
+    local max, n = 0, 0
+    for k, v in pairs(tbl) do
+        if type(k) ~= "number" or k < 1 or floor(k) ~= k then
+            return false
+        end
+        if k > max then max = k end
+        n = n + 1
+    end
+    if max > n * 2 then return false end
+    return true, max
+end
+
+local escapecodes = {
+    ["\""] = "\\\"", ["\\"] = "\\\\", ["\b"] = "\\b", ["\f"] = "\\f",
+    ["\n"] = "\\n",  ["\r"] = "\\r",  ["\t"] = "\\t"
+}
+
+local function escapeutf8(uchar)
+    local val = escapecodes[uchar]
+    if val then return val end
+    local cp = strbyte(uchar)
+    if cp < 32 or cp == 127 then
+        return string.format("\\u%04x", cp)
+    end
+    return uchar
+end
+
+function json.encode(val)
+    local vtype = type(val)
+    if vtype == "nil" then
+        return "null"
+    elseif vtype == "boolean" then
+        return val and "true" or "false"
+    elseif vtype == "number" then
+        if val ~= val then return "null" end -- NaN
+        if val >= math.huge or val <= -math.huge then return "null" end
+        return tostring(val)
+    elseif vtype == "string" then
+        return '"' .. gsub(val, '[%z\1-\31\\"\127]', escapeutf8) .. '"'
+    elseif vtype == "table" then
+        local is_arr, arr_len = isarray(val)
+        if is_arr then
+            local parts = {}
+            for i = 1, arr_len do
+                parts[i] = json.encode(val[i])
+            end
+            return "[" .. concat(parts, ",") .. "]"
+        else
+            local parts = {}
+            for k, v in pairs(val) do
+                if type(k) == "string" or type(k) == "number" then
+                    parts[#parts + 1] = json.encode(tostring(k)) .. ":" .. json.encode(v)
+                end
+            end
+            return "{" .. concat(parts, ",") .. "}"
+        end
+    end
+    return "null"
+end
+
+-- Minimal JSON Decoder
+local function scan_white(str, pos)
+    while pos <= #str do
+        local c = strsub(str, pos, pos)
+        if c == ' ' or c == '\t' or c == '\n' or c == '\r' then
+            pos = pos + 1
+        else
+            break
+        end
+    end
+    return pos
+end
+
+local scan_value
+
+local function scan_string(str, pos)
+    pos = pos + 1
+    local start = pos
+    local chars = {}
+    while pos <= #str do
+        local c = strsub(str, pos, pos)
+        if c == '"' then
+            chars[#chars + 1] = strsub(str, start, pos - 1)
+            return concat(chars), pos + 1
+        elseif c == '\\' then
+            chars[#chars + 1] = strsub(str, start, pos - 1)
+            pos = pos + 1
+            local esc = strsub(str, pos, pos)
+            if esc == '"' or esc == '\\' or esc == '/' then
+                chars[#chars + 1] = esc
+            elseif esc == 'b' then chars[#chars + 1] = '\b'
+            elseif esc == 'f' then chars[#chars + 1] = '\f'
+            elseif esc == 'n' then chars[#chars + 1] = '\n'
+            elseif esc == 'r' then chars[#chars + 1] = '\r'
+            elseif esc == 't' then chars[#chars + 1] = '\t'
+            elseif esc == 'u' then
+                local hex = strsub(str, pos + 1, pos + 4)
+                if #hex == 4 then
+                    local cp = tonumber(hex, 16)
+                    if cp and cp < 128 then
+                        chars[#chars + 1] = strchar(cp)
+                    else
+                        chars[#chars + 1] = "\\u" .. hex
+                    end
+                    pos = pos + 4
+                end
+            end
+            pos = pos + 1
+            start = pos
+        else
+            pos = pos + 1
+        end
+    end
+    return nil, pos
+end
+
+local function scan_array(str, pos)
+    pos = pos + 1
+    local tbl = {}
+    pos = scan_white(str, pos)
+    if strsub(str, pos, pos) == ']' then return tbl, pos + 1 end
+    while pos <= #str do
+        local val
+        val, pos = scan_value(str, pos)
+        tbl[#tbl + 1] = val
+        pos = scan_white(str, pos)
+        local c = strsub(str, pos, pos)
+        if c == ']' then return tbl, pos + 1 end
+        if c ~= ',' then break end
+        pos = scan_white(str, pos + 1)
+    end
+    return tbl, pos
+end
+
+local function scan_object(str, pos)
+    pos = pos + 1
+    local tbl = {}
+    pos = scan_white(str, pos)
+    if strsub(str, pos, pos) == '}' then return tbl, pos + 1 end
+    while pos <= #str do
+        pos = scan_white(str, pos)
+        if strsub(str, pos, pos) ~= '"' then break end
+        local key
+        key, pos = scan_string(str, pos)
+        pos = scan_white(str, pos)
+        if strsub(str, pos, pos) ~= ':' then break end
+        pos = scan_white(str, pos + 1)
+        local val
+        val, pos = scan_value(str, pos)
+        tbl[key] = val
+        pos = scan_white(str, pos)
+        local c = strsub(str, pos, pos)
+        if c == '}' then return tbl, pos + 1 end
+        if c ~= ',' then break end
+        pos = scan_white(str, pos + 1)
+    end
+    return tbl, pos
+end
+
+scan_value = function(str, pos)
+    pos = scan_white(str, pos)
+    local c = strsub(str, pos, pos)
+    if c == '"' then
+        return scan_string(str, pos)
+    elseif c == '[' then
+        return scan_array(str, pos)
+    elseif c == '{' then
+        return scan_object(str, pos)
+    elseif c == 't' and strsub(str, pos, pos + 3) == 'true' then
+        return true, pos + 4
+    elseif c == 'f' and strsub(str, pos, pos + 4) == 'false' then
+        return false, pos + 5
+    elseif c == 'n' and strsub(str, pos, pos + 3) == 'null' then
+        return nil, pos + 4
+    else
+        -- Number
+        local start = pos
+        while pos <= #str do
+            local ch = strsub(str, pos, pos)
+            if (ch >= '0' and ch <= '9') or ch == '-' or ch == '+' or ch == '.' or ch == 'e' or ch == 'E' then
+                pos = pos + 1
+            else
+                break
+            end
+        end
+        local num = tonumber(strsub(str, start, pos - 1))
+        return num, pos
+    end
+end
+
+function json.decode(str)
+    if type(str) ~= "string" or #str == 0 then return nil end
+    local ok, res = pcall(function()
+        local v, _ = scan_value(str, 1)
+        return v
+    end)
+    return ok and res or nil
+end
+
+-- ---------------------------------------------------------------------------
+-- 3. Environment & Mailbox Detection
+-- ---------------------------------------------------------------------------
+local function detect_platform()
+    local jit_global = rawget(_G, "jit")
+    if jit_global and jit_global.os then
+        local os_name = jit_global.os
+        if os_name == "Windows" or os_name == "OSX" then
+            return os_name
+        end
+        return "Linux"
+    end
+    if os.getenv("WINDIR") ~= nil then
+        return "Windows"
+    end
+    if bmd.direxists("/Applications") then
+        return "OSX"
+    end
+    return "Linux"
+end
+
+local platform = detect_platform()
+local sep = (platform == "Windows") and "\\" or "/"
+
+-- Configuration: BadWords Installation Directory (injected by installer / auto-healer)
+local INSTALL_DIR = [[__BADWORDS_INSTALL_DIR__]]
+
+local function get_all_mailbox_dirs()
+    local dirs = {}
+    local seen = {}
+    local function add(d)
+        if d and d ~= "" and not seen[d] then
+            seen[d] = true
+            table.insert(dirs, d)
+        end
+    end
+
+    if INSTALL_DIR and INSTALL_DIR ~= "" and not INSTALL_DIR:find("^__") then
+        add(INSTALL_DIR .. sep .. "bridge")
+        add(INSTALL_DIR .. sep .. ".." .. sep .. "bridge")
+    end
+
+    if platform == "Windows" then
+        add((os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge")
+        add([[C:\ProgramData\BadWords\bridge]])
+    elseif platform == "OSX" then
+        add((os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge")
+    else
+        add("/mnt/dump/BadWords/src/bridge")
+        add("/mnt/dump/BadWords/bridge")
+        add("/mnt/dump/BadWords FILES/src/bridge")
+        add("/mnt/dump/BadWords FILES/bridge")
+        local xdg = os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share")
+        add(xdg .. "/BadWords/bridge")
+    end
+
+    return dirs
+end
+
+local all_mailbox_dirs = get_all_mailbox_dirs()
+local mailbox_dir = all_mailbox_dirs[1] or (INSTALL_DIR .. sep .. "bridge")
+local request_file = mailbox_dir .. sep .. "request.lua"
+local fallback_request_file = ((platform == "Windows") and ((os.getenv("LOCALAPPDATA") or "") .. "\\BadWords\\bridge\\request.lua") or ((os.getenv("HOME") or "") .. "/.local/share/BadWords/bridge/request.lua"))
+
+local fu = rawget(_G, "fusion") or rawget(_G, "fu")
+if fu == nil then
+    local r = rawget(_G, "resolve")
+    if r and type(r.Fusion) == "function" then
+        fu = r:Fusion()
+    end
+end
+
+local res_app = rawget(_G, "resolve")
+if res_app == nil and bmd and bmd.scriptapp then
+    pcall(function() res_app = bmd.scriptapp("Resolve") end)
+end
+
+-- ---------------------------------------------------------------------------
+-- 4. Bridge Response Helpers
+-- ---------------------------------------------------------------------------
+local function bridge_write(key, value)
+    if not fu then return end
+    for _ = 1, 5 do
+        local ok = pcall(function()
+            fu:SetPrefs(key, value)
+            fu:SavePrefs()
+        end)
+        if ok then return end
+        bmd.wait(0.05)
+    end
+end
+
+local function bridge_ack(id)
+    if not fu then return end
+    for _ = 1, 5 do
+        local ok = pcall(function()
+            fu:SetPrefs("Global.BadWordsBridge.Ack", id)
+            fu:SavePrefs()
+        end)
+        if ok then return end
+        bmd.wait(0.05)
+    end
+end
+
+local function bridge_respond(id, body_table)
+    if not fu then return end
+    local body_json = json.encode(body_table or {})
+    -- Escape non-ASCII bytes as \\uE0xx markers for ASCII safety
+    local safe = body_json:gsub("[\128-\255]", function(c)
+        return string.format("\\u%04x", 0xE000 + c:byte())
+    end)
+    local resp_str = id .. ":" .. base64_encode(safe)
+    for _ = 1, 5 do
+        local ok = pcall(function()
+            fu:SetPrefs("Global.BadWordsBridge.Ack", id)
+            fu:SetPrefs("Global.BadWordsBridge.Response", resp_str)
+            fu:SavePrefs()
+        end)
+        if ok then return end
+        bmd.wait(0.05)
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- 5. Resolve API Handlers for BadWords
+-- ---------------------------------------------------------------------------
+local handlers = rawget(_G, "BadWordsBridgeHandlers") or {}
+_G.BadWordsBridgeHandlers = handlers
+
+local function resolve_and_activate_timeline(proj, timeline_name)
+    if not proj then return nil end
+    local cur = proj:GetCurrentTimeline()
+    if not timeline_name or timeline_name == "" then
+        return cur
+    end
+    if cur and cur:GetName() == timeline_name then
+        return cur
+    end
+    local count = proj:GetTimelineCount() or 0
+    for i = 1, count do
+        local t = proj:GetTimelineByIndex(i)
+        if t and t:GetName() == timeline_name then
+            pcall(function() proj:SetCurrentTimeline(t) end)
+            return t
+        end
+    end
+    return cur
+end
+
+handlers.Ping = function()
+    return { ok = true, message = "Pong", platform = platform }
+end
+
+handlers.GetTimelineInfo = function(req)
+    if not res_app then
+        return { error = "Resolve API object not available" }
+    end
+    local pm = res_app:GetProjectManager()
+    if not pm then return { error = "GetProjectManager failed" } end
+    local proj = pm:GetCurrentProject()
+    if not proj then return { error = "No project open in DaVinci Resolve" } end
+
+    local proj_name = proj:GetName() or ""
+    local tl_count = proj:GetTimelineCount() or 0
+    local timelines = {}
+    for i = 1, tl_count do
+        local tl = proj:GetTimelineByIndex(i)
+        if tl then
+            timelines[#timelines + 1] = tl:GetName() or ("Timeline " .. tostring(i))
+        end
+    end
+
+    local current_tl = proj:GetCurrentTimeline()
+    local current_tl_name = ""
+    local fps = 24.0
+    local start_frame = 0
+
+    if current_tl then
+        current_tl_name = current_tl:GetName() or ""
+        fps = tonumber(current_tl:GetSetting("timelineFrameRate")) or 24.0
+        start_frame = tonumber(current_tl:GetStartFrame()) or 0
+    else
+        pcall(function()
+            fps = tonumber(proj:GetSetting("timelineFrameRate")) or 24.0
+        end)
+    end
+
+    local prod_name = ""
+    local ver_str = ""
+    pcall(function() prod_name = res_app:GetProductName() or "" end)
+    pcall(function() ver_str = res_app:GetVersionString() or "" end)
+
+    return {
+        ok = true,
+        project = proj_name,
+        current_timeline = current_tl_name,
+        timelines = timelines,
+        fps = fps,
+        start_frame = start_frame,
+        product_name = prod_name,
+        version = ver_str
+    }
+end
+
+handlers.GetAudioTracks = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { error = "Timeline not found" } end
+
+    local track_count = tl:GetTrackCount("audio") or 0
+    local tracks = {}
+    for i = 1, track_count do
+        local t_name = tl:GetTrackName("audio", i) or ("Audio " .. tostring(i))
+        tracks[#tracks + 1] = { index = i, name = t_name }
+    end
+
+    return { ok = true, tracks = tracks }
+end
+
+handlers.GetTimelineTracks = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { error = "Timeline not found" } end
+
+    local a_count = tl:GetTrackCount("audio") or 0
+    local a_tracks = {}
+    for i = 1, a_count do
+        local t_name = tl:GetTrackName("audio", i) or ("Audio " .. tostring(i))
+        a_tracks[#a_tracks + 1] = { index = i, name = t_name }
+    end
+
+    local v_count = tl:GetTrackCount("video") or 0
+    local v_tracks = {}
+    for i = 1, v_count do
+        local t_name = tl:GetTrackName("video", i) or ("Video " .. tostring(i))
+        v_tracks[#v_tracks + 1] = { index = i, name = t_name }
+    end
+
+    return { ok = true, audio_tracks = a_tracks, video_tracks = v_tracks }
+end
+
+handlers.GetDirectAudioInfo = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { error = "Timeline not found" } end
+
+    local track_indices = req and req.track_indices
+    if not track_indices or #track_indices == 0 then
+        local total_tracks = tl:GetTrackCount("audio") or 0
+        track_indices = {}
+        for i = 1, total_tracks do track_indices[i] = i end
+    end
+
+    local clips = {}
+    for _, tr_idx in ipairs(track_indices) do
+        local items = tl:GetItemListInTrack("audio", tr_idx)
+        if items then
+            for _, item in ipairs(items) do
+                local clip_name = item:GetName() or ""
+                local start_f = item:GetStart()
+                local dur_f = item:GetDuration()
+                local end_f = (start_f and dur_f) and (start_f + dur_f) or (item:GetEnd() or 0)
+                local left_offset = 0
+                pcall(function() left_offset = item:GetLeftOffset() or 0 end)
+                local file_path = ""
+                local mp_item = item:GetMediaPoolItem()
+                if mp_item then
+                    file_path = mp_item:GetClipProperty("File Path") or ""
+                end
+                clips[#clips + 1] = {
+                    track_index = tr_idx,
+                    track_type = "audio",
+                    name = clip_name,
+                    start_frame = start_f,
+                    end_frame = end_f,
+                    duration = dur_f,
+                    left_offset = left_offset,
+                    file_path = file_path
+                }
+            end
+        end
+    end
+
+    -- Also inspect video tracks so BadWords Video Preview can discover the original footage file
+    local v_count = 0
+    pcall(function() v_count = tl:GetTrackCount("video") or 0 end)
+    for v_idx = 1, v_count do
+        local items = tl:GetItemListInTrack("video", v_idx)
+        if items then
+            for _, item in ipairs(items) do
+                local mp_item = item:GetMediaPoolItem()
+                if mp_item then
+                    local fp = mp_item:GetClipProperty("File Path") or ""
+                    if fp ~= "" then
+                        clips[#clips + 1] = {
+                            track_index = v_idx,
+                            track_type = "video",
+                            name = item:GetName() or "",
+                            start_frame = item:GetStart(),
+                            end_frame = item:GetEnd(),
+                            duration = item:GetDuration(),
+                            file_path = fp
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    local start_f = 0
+    pcall(function() start_f = tl:GetStartFrame() or 0 end)
+    return { ok = true, clips = clips, start_frame = start_f }
+end
+
+handlers.RenderAudio = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local export_path = req.export_path or ""
+    local unique_id = req.unique_id or "badwords_render"
+    local tl_name = req.timeline_name
+    local track_indices = req.track_indices
+    local end_frame_override = req.end_frame_override
+
+    local current_tl = proj:GetCurrentTimeline()
+    if tl_name and tl_name ~= "" and (not current_tl or current_tl:GetName() ~= tl_name) then
+        local count = proj:GetTimelineCount() or 0
+        for i = 1, count do
+            local t = proj:GetTimelineByIndex(i)
+            if t and t:GetName() == tl_name then
+                pcall(function() proj:SetCurrentTimeline(t) end)
+                current_tl = t
+                break
+            end
+        end
+    end
+    if not current_tl then return { error = "Timeline not found" } end
+
+    -- Ensure we are on edit page for reliable track controls
+    pcall(function() res_app:OpenPage("edit") end)
+
+    -- Track isolation if specific tracks were selected
+    local muted_tracks = {}
+    if track_indices and #track_indices > 0 then
+        local a_count = current_tl:GetTrackCount("audio") or 0
+        if #track_indices < a_count then
+            local selected_set = {}
+            for _, idx in ipairs(track_indices) do selected_set[idx] = true end
+            for i = 1, a_count do
+                if not selected_set[i] then
+                    local is_enabled = true
+                    pcall(function()
+                        if current_tl.GetTrackEnable then is_enabled = current_tl:GetTrackEnable("audio", i)
+                        elseif current_tl.GetIsTrackEnabled then is_enabled = current_tl:GetIsTrackEnabled("audio", i)
+                        end
+                    end)
+                    if is_enabled then
+                        pcall(function()
+                            if current_tl.SetTrackEnable then current_tl:SetTrackEnable("audio", i, false)
+                            elseif current_tl.SetTrackEnabled then current_tl:SetTrackEnabled("audio", i, false)
+                            end
+                        end)
+                        table.insert(muted_tracks, i)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Configure Render Settings for WAV Audio
+    proj:DeleteAllRenderJobs()
+    pcall(function() proj:LoadRenderPreset("Audio Only") end)
+    local r_settings = {
+        TargetDir = export_path,
+        CustomName = unique_id,
+        ExportAudio = true,
+        ExportVideo = false,
+        AudioCodec = "wav",
+        AudioBitDepth = 16,
+        AudioSampleRate = 48000
+    }
+
+    local tl_start_frame = tonumber(current_tl:GetStartFrame()) or 0
+    if end_frame_override and tonumber(end_frame_override) and tonumber(end_frame_override) > 0 then
+        r_settings.SelectAllFrames = 0
+        r_settings.MarkIn = tl_start_frame
+        r_settings.MarkOut = tl_start_frame + tonumber(end_frame_override)
+    else
+        r_settings.SelectAllFrames = 1
+    end
+
+    proj:SetRenderSettings(r_settings)
+
+    local job_id = proj:AddRenderJob()
+    if not job_id or job_id == "" then
+        -- Restore tracks
+        for _, mi in ipairs(muted_tracks) do
+            pcall(function()
+                if current_tl.SetTrackEnable then current_tl:SetTrackEnable("audio", mi, true)
+                elseif current_tl.SetTrackEnabled then current_tl:SetTrackEnabled("audio", mi, true)
+                end
+            end)
+        end
+        return { error = "Failed to add render job" }
+    end
+
+    proj:StartRendering(job_id)
+
+    -- Wait for completion
+    local render_error = nil
+    while true do
+        bmd.wait(0.25)
+        local status = proj:GetRenderJobStatus(job_id)
+        if status then
+            local s_job = status.JobStatus or status.Status or ""
+            if s_job == "Complete" then
+                break
+            elseif s_job == "Cancelled" or s_job == "Failed" then
+                render_error = "Render job " .. s_job
+                break
+            end
+        else
+            break
+        end
+    end
+
+    -- Restore render range and return to edit page
+    pcall(function() proj:SetRenderSettings({ SelectAllFrames = 1 }) end)
+    pcall(function() res_app:OpenPage("edit") end)
+
+    -- Restore muted tracks
+    for _, mi in ipairs(muted_tracks) do
+        pcall(function()
+            if current_tl.SetTrackEnable then current_tl:SetTrackEnable("audio", mi, true)
+            elseif current_tl.SetTrackEnabled then current_tl:SetTrackEnabled("audio", mi, true)
+            end
+        end)
+    end
+
+    if render_error then
+        return { error = render_error }
+    end
+
+    local expected_wav = export_path .. sep .. unique_id .. ".wav"
+    if bmd.fileexists(expected_wav) then
+        return { ok = true, file_path = expected_wav }
+    end
+
+    -- If Resolve saved as .mov (e.g. QuickTime container) or another format, detect it
+    local candidates = {
+        export_path .. sep .. unique_id .. ".mov",
+        export_path .. sep .. unique_id .. ".mp4",
+        export_path .. sep .. unique_id .. ".m4a",
+    }
+    for _, cand in ipairs(candidates) do
+        if bmd.fileexists(cand) then
+            return { ok = true, file_path = cand }
+        end
+    end
+
+    return { ok = true, file_path = expected_wav }
+end
+
+handlers.CheckComplexVideo = function(req)
+    if not res_app then return { ok = false, error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { ok = false, error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { ok = false, error = "Timeline not found" } end
+
+    local v_count = tl:GetTrackCount("video") or 0
+    if v_count > 1 then
+        for i = 2, v_count do
+            local items = tl:GetItemListInTrack("video", i) or {}
+            if #items > 0 then
+                return { ok = true, is_complex = true, reason = "Multiple active video tracks" }
+            end
+        end
+    end
+
+    local items_v1 = tl:GetItemListInTrack("video", 1) or {}
+    if #items_v1 > 0 then
+        local prev_end = nil
+        for i, it in ipairs(items_v1) do
+            local s_f = it:GetStart()
+            local dur_f = it:GetDuration()
+            local left_off = it:GetLeftOffset() or 0
+            if left_off > 0 then
+                return { ok = true, is_complex = true, reason = "Trimmed in-point" }
+            end
+            if prev_end ~= nil and s_f ~= prev_end then
+                return { ok = true, is_complex = true, reason = "Gaps or cuts between video items" }
+            end
+            prev_end = s_f + dur_f
+            local mpi = it:GetMediaPoolItem()
+            if not mpi then
+                return { ok = true, is_complex = true, reason = "Fusion title or generator" }
+            end
+        end
+    end
+
+    return { ok = true, is_complex = false }
+end
+
+handlers.RenderVideoProxy = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local export_path = req.export_path or ""
+    local unique_id = req.unique_id or "BW_timeline_preview"
+    local tl_name = req.timeline_name
+
+    local current_tl = resolve_and_activate_timeline(proj, tl_name)
+    if not current_tl then return { error = "Timeline not found" } end
+
+    pcall(function() res_app:OpenPage("edit") end)
+
+    proj:DeleteAllRenderJobs()
+    local r_settings = {
+        TargetDir = export_path,
+        CustomName = unique_id,
+        ExportAudio = false, -- Video preview proxy only needs video! BadWords plays audio directly from extracted WAV
+        ExportVideo = true,
+        SelectAllFrames = 1,
+        CustomResolution = true,
+        ResolutionWidth = 640,
+        ResolutionHeight = 360
+    }
+
+    pcall(function()
+        local fmts = proj:GetRenderFormats() or {}
+        local fmt = "mp4"
+        if not fmts[fmt] and fmts["mov"] then fmt = "mov" elseif not fmts[fmt] and fmts["QuickTime"] then fmt = "QuickTime" end
+        local codecs = proj:GetRenderCodecs(fmt) or {}
+        local c = "H264"
+        if not codecs[c] and codecs["H.264"] then c = "H.264" end
+        proj:SetCurrentRenderFormatAndCodec(fmt, c)
+    end)
+
+    proj:SetRenderSettings(r_settings)
+
+    local job_id = proj:AddRenderJob()
+    if not job_id or job_id == "" then
+        -- Fallback: retry without CustomResolution
+        r_settings.CustomResolution = nil
+        r_settings.ResolutionWidth = nil
+        r_settings.ResolutionHeight = nil
+        proj:SetRenderSettings(r_settings)
+        job_id = proj:AddRenderJob()
+    end
+    if not job_id or job_id == "" then
+        return { error = "Failed to add video render job" }
+    end
+
+    proj:StartRendering(job_id)
+
+    local render_error = nil
+    while true do
+        bmd.wait(0.25)
+        local status = proj:GetRenderJobStatus(job_id)
+        if status then
+            local s_job = status.JobStatus or status.Status or ""
+            if s_job == "Complete" then
+                break
+            elseif s_job == "Cancelled" or s_job == "Failed" then
+                render_error = "Render job " .. s_job
+                break
+            end
+        else
+            break
+        end
+    end
+
+    pcall(function() proj:SetRenderSettings({ SelectAllFrames = 1 }) end)
+    pcall(function() res_app:OpenPage("edit") end)
+
+    if render_error then
+        return { error = render_error }
+    end
+
+    local sep = "/"
+    local candidates = {
+        export_path .. sep .. unique_id .. ".mp4",
+        export_path .. sep .. unique_id .. ".mov",
+        export_path .. sep .. unique_id .. ".mkv",
+    }
+    for _, cand in ipairs(candidates) do
+        if bmd.fileexists(cand) then
+            return { ok = true, file_path = cand }
+        end
+    end
+
+    return { error = "Rendered proxy file not found" }
+end
+
+handlers.ExportTimelineDrt = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { error = "Timeline not found" } end
+    local out_path = req and req.output_path
+    if not out_path or out_path == "" then return { error = "output_path missing" } end
+
+    out_path = out_path:gsub("\\", "/")
+    local export_type = res_app.EXPORT_DRT or 1
+    local export_subtype = res_app.EXPORT_NONE or 0
+    local ok = tl:Export(out_path, export_type, export_subtype)
+    local start_f = 0
+    pcall(function() start_f = tl:GetStartFrame() or 0 end)
+    return { ok = (ok == true or ok == 1), start_frame = start_f }
+end
+
+handlers.ExportTimelineXml = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { error = "Timeline not found" } end
+    local out_path = req and req.output_path
+    if not out_path or out_path == "" then return { error = "output_path missing" } end
+
+    out_path = out_path:gsub("\\", "/")
+    -- Export FCP XML (constant is 3 in DaVinci Resolve)
+    local export_type = res_app.EXPORT_FCP_7_XML or 3
+    local export_subtype = res_app.EXPORT_NONE or 0
+    local ok = tl:Export(out_path, export_type, export_subtype)
+    return { ok = (ok == true or ok == 1) }
+end
+
+handlers.CreateNestedTimeline = function(req)
+    local app = res_app or rawget(_G, "resolve") or (bmd and bmd.scriptapp and bmd.scriptapp("Resolve"))
+    if not app then return { error = "Resolve API object not available" } end
+    local pm = app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+
+    local src_name = req and req.source_timeline_name
+    local new_name = req and req.new_timeline_name
+    if not src_name or src_name == "" then return { error = "source_timeline_name missing" } end
+    if not new_name or new_name == "" then return { error = "new_timeline_name missing" } end
+
+    -- 1. Ensure source timeline exists
+    local src_tl = resolve_and_activate_timeline(proj, src_name)
+    if not src_tl then return { error = "Source timeline '" .. src_name .. "' not found" } end
+
+    -- 2. Find the MediaPoolItem representing this timeline in Media Pool
+    local function find_tl_item_recursive(folder, name)
+        local clips = folder:GetClipList() or {}
+        for _, c in ipairs(clips) do
+            local p = c:GetClipProperty() or {}
+            if p["Type"] == "Timeline" and c:GetName() == name then
+                return c
+            end
+        end
+        local sub_folders = folder:GetSubFolderList() or {}
+        for _, sf in ipairs(sub_folders) do
+            local found = find_tl_item_recursive(sf, name)
+            if found then return found end
+        end
+        return nil
+    end
+
+    local root = mp:GetRootFolder()
+    local src_item = find_tl_item_recursive(root, src_name)
+    if not src_item then
+        -- Fallback: check if any clip with this name exists in root or subfolders
+        local function find_any_clip(folder, name)
+            local clips = folder:GetClipList() or {}
+            for _, c in ipairs(clips) do
+                if c:GetName() == name then return c end
+            end
+            local sub_folders = folder:GetSubFolderList() or {}
+            for _, sf in ipairs(sub_folders) do
+                local found = find_any_clip(sf, name)
+                if found then return found end
+            end
+            return nil
+        end
+        src_item = find_any_clip(root, src_name)
+    end
+
+    if not src_item then
+        return { error = "MediaPoolItem for timeline '" .. src_name .. "' not found in Media Pool" }
+    end
+
+    -- 3. Create empty timeline and append source timeline as single nested clip
+    local new_tl = mp:CreateEmptyTimeline(new_name)
+    if not new_tl then
+        return { error = "CreateEmptyTimeline failed for '" .. new_name .. "'" }
+    end
+
+    proj:SetCurrentTimeline(new_tl)
+    local appended = mp:AppendToTimeline({ src_item })
+
+    local v_count = new_tl:GetTrackCount("video") or 0
+    local a_count = new_tl:GetTrackCount("audio") or 0
+
+    return {
+        ok = true,
+        timeline_name = new_name,
+        video_tracks = v_count,
+        audio_tracks = a_count
+    }
+end
+
+handlers.AssembleNestedTimeline = function(req)
+    local app = res_app or rawget(_G, "resolve") or (bmd and bmd.scriptapp and bmd.scriptapp("Resolve"))
+    if not app then return { error = "Resolve API object not available" } end
+    local pm = app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+
+    local src_name = req and req.source_timeline_name
+    local new_name = req and req.new_timeline_name
+    local ops = req and req.ops or {}
+    if not src_name or src_name == "" then return { error = "source_timeline_name missing" } end
+    if not new_name or new_name == "" then return { error = "new_timeline_name missing" } end
+    if #ops == 0 then return { error = "ops array is empty" } end
+
+    local function find_tl_item_recursive(folder, name)
+        local clips = folder:GetClipList() or {}
+        for _, c in ipairs(clips) do
+            local p = c:GetClipProperty() or {}
+            if p["Type"] == "Timeline" and c:GetName() == name then
+                return c
+            end
+        end
+        local sub_folders = folder:GetSubFolderList() or {}
+        for _, sf in ipairs(sub_folders) do
+            local found = find_tl_item_recursive(sf, name)
+            if found then return found end
+        end
+        return nil
+    end
+
+    local root = mp:GetRootFolder()
+    local src_item = find_tl_item_recursive(root, src_name)
+    if not src_item then
+        for _, c in ipairs(root:GetClipList() or {}) do
+            if c:GetName() == src_name then src_item = c; break end
+        end
+    end
+
+    if not src_item then
+        return { error = "MediaPoolItem for timeline '" .. tostring(src_name) .. "' not found in Media Pool" }
+    end
+
+    local new_tl = mp:CreateEmptyTimeline(new_name)
+    if not new_tl then
+        return { error = "CreateEmptyTimeline failed for '" .. tostring(new_name) .. "'" }
+    end
+
+    proj:SetCurrentTimeline(new_tl)
+
+    local clip_infos = {}
+    for _, op in ipairs(ops) do
+        local sf = math.floor(op.s or op.startFrame or 0)
+        local ef = math.floor(op.e or op.endFrame or 0)
+        if ef > sf then
+            table.insert(clip_infos, {
+                mediaPoolItem = src_item,
+                startFrame = sf,
+                endFrame = ef
+            })
+        end
+    end
+
+    if #clip_infos == 0 then
+        return { error = "No valid clip segments to append" }
+    end
+
+    local appended = mp:AppendToTimeline(clip_infos)
+    return {
+        ok = true,
+        timeline_name = new_name,
+        appended_count = #clip_infos
+    }
+end
+
+local function do_import_timeline_file(file_path, timeline_name)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+
+    if not file_path or file_path == "" then return { error = "file_path missing" } end
+    file_path = file_path:gsub("\\", "/")
+
+    -- Reset to root folder before import
+    pcall(function()
+        local rf = mp:GetRootFolder()
+        if rf then mp:SetCurrentFolder(rf) end
+    end)
+
+    -- Clean up any uncolored stale duplicate with the same target name before import
+    if timeline_name and timeline_name ~= "" then
+        pcall(function()
+            local total_tls = proj:GetTimelineCount() or 0
+            for i = total_tls, 1, -1 do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t:GetName() == timeline_name then
+                    local has_colors = false
+                    for _, tt in ipairs({"video", "audio"}) do
+                        local tc = t:GetTrackCount(tt) or 0
+                        for tr = 1, tc do
+                            local items = t:GetItemListInTrack(tt, tr) or {}
+                            for _, it in ipairs(items) do
+                                local c = it:GetClipColor()
+                                if c and c ~= "" and c ~= "None" and c ~= "null" then
+                                    has_colors = true
+                                    break
+                                end
+                            end
+                            if has_colors then break end
+                        end
+                        if has_colors then break end
+                    end
+                    if not has_colors then
+                        pcall(function() mp:DeleteTimelines({ t }) end)
+                    end
+                end
+            end
+        end)
+    end
+
+    local is_drt = string.lower(file_path):match("%.drt$") ~= nil
+    local initial_count = proj:GetTimelineCount() or 0
+    local imported = nil
+
+    if is_drt then
+        -- DRT does NOT support importOptions in Resolve API; pass only file_path ONCE
+        local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path) end)
+        if ok and res then imported = res end
+    else
+        local import_options = nil
+        if timeline_name and timeline_name ~= "" then
+            -- importSourceClips = true ensures DaVinci imports & links source clips so clips are never offline/red
+            import_options = {
+                timelineName = timeline_name,
+                importSourceClips = true
+            }
+        end
+        if import_options then
+            local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path, import_options) end)
+            if ok and res then imported = res end
+        end
+        if not imported and timeline_name and timeline_name ~= "" then
+            -- Fallback with importSourceClips = true if media pool linking is needed from scratch
+            local ok, res = pcall(function()
+                return mp:ImportTimelineFromFile(file_path, { timelineName = timeline_name, importSourceClips = true })
+            end)
+            if ok and res then imported = res end
+        end
+        local current_count = proj:GetTimelineCount() or 0
+        if not imported and current_count == initial_count then
+            local ok, res = pcall(function() return mp:ImportTimelineFromFile(file_path) end)
+            if ok and res then imported = res end
+        end
+    end
+
+    if not imported then
+        local count = proj:GetTimelineCount() or 0
+        if count > initial_count then
+            imported = proj:GetTimelineByIndex(count)
+        end
+    end
+
+    local imported_name = ""
+    if imported then
+        pcall(function() imported_name = imported:GetName() or "" end)
+        if timeline_name and timeline_name ~= "" and imported_name ~= timeline_name then
+            pcall(function()
+                imported:SetName(timeline_name)
+                imported_name = imported:GetName() or timeline_name
+            end)
+        end
+
+        -- Set imported timeline as current active timeline
+        pcall(function() proj:SetCurrentTimeline(imported) end)
+
+        -- Clean up any uncolored duplicate timeline with the exact same name
+        pcall(function()
+            local total_tls = proj:GetTimelineCount() or 0
+            for i = total_tls, 1, -1 do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t ~= imported and t:GetName() == imported_name then
+                    local has_colors = false
+                    for _, tt in ipairs({"video", "audio"}) do
+                        local tc = t:GetTrackCount(tt) or 0
+                        for tr = 1, tc do
+                            local items = t:GetItemListInTrack(tt, tr) or {}
+                            for _, it in ipairs(items) do
+                                local c = it:GetClipColor()
+                                if c and c ~= "" and c ~= "None" and c ~= "null" then
+                                    has_colors = true
+                                    break
+                                end
+                            end
+                            if has_colors then break end
+                        end
+                        if has_colors then break end
+                    end
+                    if not has_colors then
+                        pcall(function() mp:DeleteTimelines({ t }) end)
+                    end
+                end
+            end
+        end)
+
+        -- Move imported timeline into BadWords folder
+        pcall(function()
+            local root = mp:GetRootFolder()
+            if not root then return end
+            local sub_folders = root:GetSubFolderList() or {}
+            local bw_folder = nil
+            for _, f in ipairs(sub_folders) do
+                if f:GetName() == "BadWords" then
+                    bw_folder = f
+                    break
+                end
+            end
+            if not bw_folder then
+                bw_folder = mp:AddSubFolder(root, "BadWords")
+            end
+            if bw_folder then
+                local clips = root:GetClipList() or {}
+                for _, c in ipairs(clips) do
+                    if c:GetName() == imported_name then
+                        mp:MoveClips({c}, bw_folder)
+                        break
+                    end
+                end
+            end
+        end)
+    end
+
+    return { ok = (imported ~= nil), timeline_name = imported_name }
+end
+
+handlers.ImportTimelineDrt = function(req)
+    local p = req and (req.drt_path or req.file_path or req.xml_path)
+    local name = req and req.timeline_name
+    return do_import_timeline_file(p, name)
+end
+
+handlers.ImportTimelineXml = function(req)
+    local p = req and (req.xml_path or req.file_path or req.drt_path)
+    local name = req and req.timeline_name
+    return do_import_timeline_file(p, name)
+end
+
+handlers.ImportTimeline = function(req)
+    local p = req and (req.file_path or req.drt_path or req.xml_path)
+    local name = req and req.timeline_name
+    return do_import_timeline_file(p, name)
+end
+
+handlers.SetCurrentTimeline = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl_name = req and req.timeline_name
+    if not tl_name or tl_name == "" then
+        return { error = "Timeline name required" }
+    end
+
+    local cur = proj:GetCurrentTimeline()
+    if cur and cur:GetName() == tl_name then
+        local sf = tonumber(cur:GetStartFrame()) or 0
+        local fps = tonumber(cur:GetSetting("timelineFrameRate")) or 24.0
+        return { ok = true, timeline_name = tl_name, start_frame = sf, fps = fps }
+    end
+
+    local count = proj:GetTimelineCount() or 0
+    for i = 1, count do
+        local tl = proj:GetTimelineByIndex(i)
+        if tl and tl:GetName() == tl_name then
+            local ok = pcall(function() proj:SetCurrentTimeline(tl) end)
+            if ok then
+                local sf = tonumber(tl:GetStartFrame()) or 0
+                local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
+                return { ok = true, timeline_name = tl_name, start_frame = sf, fps = fps }
+            else
+                return { error = "SetCurrentTimeline failed" }
+            end
+        end
+    end
+    return { error = "Timeline not found: " .. tostring(tl_name) }
+end
+
+handlers.JumpToSeconds = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    pcall(function() res_app:OpenPage("edit") end)
+    local secs = tonumber(req and req.seconds) or 0
+
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = nil
+    local curr_tl = proj:GetCurrentTimeline()
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        if curr_tl and curr_tl:GetName() == req.timeline_name then
+            tl = curr_tl
+        else
+            local count = proj:GetTimelineCount() or 0
+            for i = 1, count do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t:GetName() == req.timeline_name then
+                    tl = t
+                    pcall(function() proj:SetCurrentTimeline(tl) end)
+                    break
+                end
+            end
+        end
+    end
+    if not tl then tl = curr_tl end
+    if not tl then return { error = "No timeline active" } end
+
+    local fps = tonumber(req and req.fps)
+    if not fps or fps <= 0 then
+        fps = tonumber(tl:GetSetting("timelineFrameRate")) or tonumber(proj:GetSetting("timelineFrameRate")) or 24.0
+    end
+    local start_f = tonumber(tl:GetStartFrame()) or 0
+    local target_f = start_f + floor(secs * fps + 0.5)
+
+    -- Convert frames to timecode hh:mm:ss:ff
+    local fps_int = floor(fps + 0.5)
+    if fps_int <= 0 then fps_int = 24 end
+
+    local f = floor(target_f % fps_int)
+    local total_sec = floor(target_f / fps_int)
+    local s = total_sec % 60
+    local total_m = floor(total_sec / 60)
+    local m = total_m % 60
+    local h = floor(total_m / 60)
+    local tc = string.format("%02d:%02d:%02d:%02d", h, m, s, f)
+
+    local set_ok = pcall(function() tl:SetCurrentTimecode(tc) end)
+    return { ok = set_ok, timecode = tc, target_frame = target_f }
+end
+
+handlers.ReapplyClipColors = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+
+    local tl = nil
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        local count = proj:GetTimelineCount() or 0
+        for i = 1, count do
+            local t = proj:GetTimelineByIndex(i)
+            if t and t:GetName() == req.timeline_name then
+                tl = t
+                break
+            end
+        end
+    end
+    if not tl then tl = proj:GetCurrentTimeline() end
+    if not tl then return { error = "No timeline active" } end
+
+    -- Activate timeline so SetClipColor succeeds
+    pcall(function() proj:SetCurrentTimeline(tl) end)
+
+    local schedule = req and req.color_schedule or {}
+    local sched = {}
+    local has_any_color = false
+    for _, item in ipairs(schedule) do
+        local sf = tonumber(item.start_frame)
+        local col = item.color
+        if sf and col and col ~= "" and col ~= "null" then
+            col = tostring(col)
+            col = col:sub(1, 1):upper() .. col:sub(2):lower()
+            sched[sf] = col
+            has_any_color = true
+        end
+    end
+
+    if not has_any_color then
+        return { ok = true, applied = 0 }
+    end
+
+    local tl_start = tl:GetStartFrame() or 0
+    local min_clip_start = nil
+
+    -- Find earliest clip start frame
+    for _, track_type in ipairs({"video", "audio"}) do
+        local count = tl:GetTrackCount(track_type) or 0
+        for tr = 1, count do
+            local items = tl:GetItemListInTrack(track_type, tr)
+            if items then
+                for _, clip in ipairs(items) do
+                    local s = tonumber(clip:GetStart())
+                    if s then
+                        if not min_clip_start or s < min_clip_start then
+                            min_clip_start = s
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local candidate_offsets = { tl_start }
+    if min_clip_start and min_clip_start ~= tl_start then
+        candidate_offsets[#candidate_offsets + 1] = min_clip_start
+    end
+    candidate_offsets[#candidate_offsets + 1] = 0
+
+    local function get_color_for_start(item_start)
+        for _, off in ipairs(candidate_offsets) do
+            local rel = item_start - off
+            for _, delta in ipairs({0, -1, 1, -2, 2}) do
+                local c = sched[rel + delta]
+                if c then return c end
+            end
+        end
+        return nil
+    end
+
+    local applied_count = 0
+    for _, track_type in ipairs({"video", "audio"}) do
+        local count = tl:GetTrackCount(track_type) or 0
+        for tr = 1, count do
+            local items = tl:GetItemListInTrack(track_type, tr)
+            if items then
+                for _, clip in ipairs(items) do
+                    local s = tonumber(clip:GetStart())
+                    if s then
+                        local col = get_color_for_start(s)
+                        if col then
+                            local ok = pcall(function() clip:SetClipColor(col) end)
+                            if ok then applied_count = applied_count + 1 end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Clean up any uncolored duplicate timeline with the same name
+    if req and req.timeline_name and req.timeline_name ~= "" then
+        pcall(function()
+            local total_tls = proj:GetTimelineCount() or 0
+            for i = total_tls, 1, -1 do
+                local t = proj:GetTimelineByIndex(i)
+                if t and t ~= tl and t:GetName() == req.timeline_name then
+                    local has_colors = false
+                    for _, tt in ipairs({"video", "audio"}) do
+                        local tc = t:GetTrackCount(tt) or 0
+                        for tr = 1, tc do
+                            local items = t:GetItemListInTrack(tt, tr) or {}
+                            for _, it in ipairs(items) do
+                                local c = it:GetClipColor()
+                                if c and c ~= "" and c ~= "None" and c ~= "null" then
+                                    has_colors = true
+                                    break
+                                end
+                            end
+                            if has_colors then break end
+                        end
+                        if has_colors then break end
+                    end
+                    if not has_colors then
+                        pcall(function() mp:DeleteTimelines({ t }) end)
+                    end
+                end
+            end
+        end)
+    end
+
+    return { ok = true, applied = applied_count }
+end
+
+handlers.OpenPage = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local p = (req and req.page_name) or "edit"
+    local ok = pcall(function() res_app:OpenPage(p) end)
+    return { ok = ok }
+end
+
+handlers.DeleteTimelineByName = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local mp = proj:GetMediaPool()
+    if not mp then return { error = "MediaPool not available" } end
+    local name = req and req.timeline_name
+    if not name or name == "" then return { error = "timeline_name missing" } end
+    local count = proj:GetTimelineCount() or 0
+    for i = count, 1, -1 do
+        local t = proj:GetTimelineByIndex(i)
+        if t and t:GetName() == name then
+            local ok = pcall(function() mp:DeleteTimelines({ t }) end)
+            return { ok = ok }
+        end
+    end
+    return { error = "Timeline not found" }
+end
+
+handlers.DeleteClipsByColor = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local color_name = req and req.color_name
+    if not color_name or color_name == "" then return { error = "color_name missing" } end
+    local new_timeline = (req and req.new_timeline == true)
+    local target_tl = proj:GetCurrentTimeline()
+    if not target_tl then return { error = "No active timeline" } end
+
+    local function collect_by_color(tl)
+        local found = {}
+        for _, tt in ipairs({"video", "audio"}) do
+            local tc = tl:GetTrackCount(tt) or 0
+            for i = 1, tc do
+                local track_color = ""
+                pcall(function() track_color = tl:GetTrackColor(tt, i) or "" end)
+                if not track_color or track_color == "" then
+                    track_color = (tt == "video") and "Blue" or "Green"
+                end
+                local items = tl:GetItemListInTrack(tt, i) or {}
+                for _, item in ipairs(items) do
+                    local c = item:GetClipColor()
+                    local actual_color = (c and c ~= "") and c or track_color
+                    if actual_color and string.lower(actual_color) == string.lower(color_name) then
+                        table.insert(found, item)
+                    end
+                end
+            end
+        end
+        return found
+    end
+
+    -- Nothing to cut: report it, and don't leave an identical "- Cut X" duplicate behind
+    if #collect_by_color(target_tl) == 0 then
+        return { ok = true, deleted = 0, timeline_name = target_tl:GetName() }
+    end
+
+    if new_timeline then
+        local base_name = target_tl:GetName() or "Timeline"
+        local new_name = base_name .. " - Cut " .. color_name
+        local dup_tl = nil
+        pcall(function() dup_tl = target_tl:DuplicateTimeline(new_name) end)
+        if not dup_tl then
+            pcall(function()
+                dup_tl = target_tl:DuplicateTimeline()
+                if dup_tl then dup_tl:SetName(new_name) end
+            end)
+        end
+        if dup_tl then
+            target_tl = dup_tl
+            pcall(function() proj:SetCurrentTimeline(target_tl) end)
+        end
+    end
+
+    -- A duplicated timeline has its own items, so collect again
+    local clips_to_delete = collect_by_color(target_tl)
+    if #clips_to_delete == 0 then
+        return { ok = true, deleted = 0, timeline_name = target_tl:GetName() }
+    end
+
+    -- pcall's first value only says "did not throw"; DeleteClips' own result is the second
+    local ok, res = pcall(function() return target_tl:DeleteClips(clips_to_delete, true) end)
+    if not (ok and res) then
+        ok, res = pcall(function() return target_tl:DeleteClips(clips_to_delete, false) end)
+    end
+    if not (ok and res) then
+        return { ok = false, deleted = 0, timeline_name = target_tl:GetName(),
+                 error = "DaVinci Resolve refused to delete the clips" }
+    end
+    return { ok = true, deleted = #clips_to_delete, timeline_name = target_tl:GetName() }
+end
+
+handlers.GetTimelineStructure = function(req)
+    if not res_app then return { error = "Resolve API object not available" } end
+    local pm = res_app:GetProjectManager()
+    local proj = pm and pm:GetCurrentProject()
+    if not proj then return { error = "No project open" } end
+    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    if not tl then return { error = "Timeline not found" } end
+
+    local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
+    local tl_start_frame = tonumber(tl:GetStartFrame()) or 0
+    local tracks = {}
+    for _, tt in ipairs({"video", "audio"}) do
+        local tc = tl:GetTrackCount(tt) or 0
+        for idx = 1, tc do
+            local items = tl:GetItemListInTrack(tt, idx) or {}
+            local track_clips = {}
+            for _, item in ipairs(items) do
+                local s = (tonumber(item:GetStart()) or 0) - tl_start_frame
+                local d = tonumber(item:GetDuration()) or 0
+                local lo = 0
+                pcall(function() lo = tonumber(item:GetLeftOffset()) or 0 end)
+                local cname = ""
+                pcall(function() cname = item:GetName() or "" end)
+                if not cname or cname == "" then
+                    pcall(function()
+                        local mpi = item:GetMediaPoolItem()
+                        if mpi then
+                            cname = mpi:GetName() or ""
+                            if not cname or cname == "" then
+                                local cp = mpi:GetClipProperty("Clip Name")
+                                if cp and cp ~= "" then cname = cp end
+                            end
+                            if not cname or cname == "" then
+                                local fp = mpi:GetClipProperty("File Name")
+                                if fp and fp ~= "" then cname = fp end
+                            end
+                        end
+                    end)
+                end
+                table.insert(track_clips, { start = s, duration = d, left_offset = lo, name = cname })
+            end
+            if #track_clips > 0 then
+                table.insert(tracks, { type = tt, index = idx, clips = track_clips })
+            end
+        end
+    end
+    return { ok = true, fps = fps, start_frame = tl_start_frame, tracks = tracks }
+end
+
+handlers.Exit = function()
+    return { ok = true, message = "Bridge shutting down" }, { quit = true }
+end
+
+-- ---------------------------------------------------------------------------
+-- 6. Main Server Loop
+-- ---------------------------------------------------------------------------
+print("=======================================================")
+print("[BadWords] Starting BadWords Bridge...")
+print("[BadWords] Mailbox directory: " .. tostring(mailbox_dir))
+print("[BadWords] Platform: " .. tostring(platform))
+print("[BadWords] Bridge ready. Waiting for BadWords desktop app...")
+print("=======================================================")
+
+-- Signal bridge status to trigger QFileSystemWatcher immediately on BadWords app
+bridge_write("Global.BadWordsBridge.Status", "Online")
+for _, d in ipairs(all_mailbox_dirs) do
+    pcall(function()
+        local f = io and io.open and io.open(d .. sep .. "bridge_status.json", "w")
+        if f then
+            f:write('{"status":"online"}')
+            f:close()
+        end
+    end)
+end
+
+local quitServer = false
+local last_request_id = ""
+
+while not quitServer do
+    bmd.wait(0.025)
+
+    local active_req_file = nil
+    for _, d in ipairs(all_mailbox_dirs) do
+        local cand = d .. sep .. "request.lua"
+        if bmd.fileexists(cand) then
+            active_req_file = cand
+            break
+        end
+    end
+    if not active_req_file and fallback_request_file and bmd.fileexists(fallback_request_file) then
+        active_req_file = fallback_request_file
+    end
+
+    if active_req_file then
+        local chunk = loadfile(active_req_file)
+        local ok, req = false, nil
+        if chunk then
+            ok, req = pcall(chunk)
+        end
+        -- Consume request file immediately so subsequent requests written by client are never deleted
+        pcall(function() os.remove(active_req_file) end)
+
+        if ok and type(req) == "table" and type(req.id) == "string" then
+            if req.id == last_request_id then
+                -- Request has already been processed; wait for next request
+                bmd.wait(0.025)
+            else
+                last_request_id = req.id
+
+                local data = json.decode(req.body)
+                local result = nil
+                local control = nil
+
+                if data and data.func then
+                    local handler = handlers[data.func]
+                    if handler then
+                        local h_ok, h_res, h_ctrl = pcall(handler, data)
+                        if h_ok then
+                            result = h_res or { ok = true }
+                            control = h_ctrl
+                        else
+                            result = { error = tostring(h_res) }
+                            print("[BadWords Bridge] Handler error: " .. tostring(h_res))
+                        end
+                    else
+                        result = { error = "Unknown function: " .. tostring(data.func) }
+                    end
+                else
+                    result = { error = "Invalid request JSON" }
+                end
+
+                bridge_respond(req.id, result)
+
+                if control and control.quit then
+                    quitServer = true
+                end
+            end
+        end
+    end
+end
+
+print("[BadWords] Bridge exited cleanly.")

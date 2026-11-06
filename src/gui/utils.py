@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+"""
+MODULE: utils.py
+ROLE: Core Module
+DESCRIPTION:
+Helper utilities for GUI (e.g., time formatting, icon loading).
+"""
+
+import os
+import platform
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtGui import QIcon, QFontDatabase, QPixmap
+from PySide6.QtCore import QByteArray
+import config
+
+
+def init_embedded_fonts():
+    """
+    Registers embedded Ubuntu font weights (Classic Bold, Regular, Light, Bold, Medium, Italic)
+    into the Qt Font Database from memory across all platforms (macOS, Windows, Linux).
+    """
+    try:
+        import zlib
+        import base64
+        from .fonts_data import EMBEDDED_FONTS
+
+        for b64_font in EMBEDDED_FONTS:
+            raw_data = zlib.decompress(base64.b64decode(b64_font))
+            QFontDatabase.addApplicationFontFromData(QByteArray(raw_data))
+    except Exception:
+        pass
+
+
+def get_svg_icon(svg_str: str, size: int = 12) -> QIcon:
+    """Renders an SVG string into a crisp, HighDPI anti-aliased QIcon."""
+    try:
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QPixmap, QPainter
+        from PySide6.QtCore import QByteArray, Qt
+        renderer = QSvgRenderer(QByteArray(svg_str.encode('utf-8')))
+        pixmap = QPixmap(size * 2, size * 2)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        renderer.render(painter)
+        painter.end()
+        pixmap.setDevicePixelRatio(2.0)
+        return QIcon(pixmap)
+    except Exception:
+        return QIcon()
+
+
+def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2) -> QIcon:
+    """Returns a modern, slender vector play icon for action buttons, optically centered on Y-axis."""
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+      <g transform="translate(0, {y_offset})">
+        <path d="M8 5.14v13.72a1 1 0 001.5.86l11.43-6.86a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z" fill="{color}"/>
+      </g>
+    </svg>'''
+    return get_svg_icon(svg, size)
+
+
+def get_export_pixmap(height: int = 11, color: str = "#ffffff", dpr: float = 2.0) -> QPixmap:
+    """Renders the export/upload SVG preserving its native 512x379.661 aspect ratio."""
+    try:
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QPixmap, QPainter
+        from PySide6.QtCore import QByteArray, Qt
+        p = get_layout_icon_path("upload-bold-arrow-icon.svg")
+        if os.path.isfile(p):
+            with open(p, "r", encoding="utf-8") as f:
+                svg_data = f.read()
+            if 'fill=' not in svg_data:
+                svg_data = svg_data.replace('<path ', f'<path fill="{color}" ')
+            else:
+                import re
+                svg_data = re.sub(r'fill="[^"]*"', f'fill="{color}"', svg_data)
+
+            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+            # Native aspect ratio: 512.0 / 379.661 = 1.34857
+            w = int(round(height * 512.0 / 379.661))
+            pixmap = QPixmap(int(w * dpr), int(height * dpr))
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            renderer.render(painter)
+            painter.end()
+            pixmap.setDevicePixelRatio(dpr)
+            return pixmap
+    except Exception:
+        pass
+    return QPixmap()
+
+
+def get_export_icon(size: int = 13, color: str = "#ffffff") -> QIcon:
+    """Returns the export/upload icon from assets/layout/upload-bold-arrow-icon.svg rendered with preserved aspect ratio."""
+    pix = get_export_pixmap(size, color)
+    if not pix.isNull():
+        return QIcon(pix)
+    return QIcon()
+
+
+def get_icon_path(icon_name: str = "default") -> str:
+    """Returns absolute path to an app icon (.ico on Windows, .png/.icns on Unix), checking assets/icons."""
+    try:
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        is_win = platform.system() == "Windows"
+        ext = ".ico" if is_win else ".png"
+
+        candidates = [
+            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}{ext}"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}{ext}"),
+            os.path.join(install_dir, "icons", f"icon_{icon_name}{ext}"),
+        ]
+
+        if is_win:
+            candidates.extend([
+                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.png"),
+                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.png"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.png"),
+            ])
+        elif platform.system() == "Darwin":
+            candidates.extend([
+                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
+            ])
+
+        for p in candidates:
+            if os.path.isfile(p):
+                return p
+
+        if icon_name != "default":
+            return get_icon_path("default")
+    except Exception:
+        pass
+    return ""
+
+
+def get_layout_dir() -> str:
+    """Returns absolute path to layout icons folder, looking directly in assets/layout."""
+    src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    prod_nested = os.path.join(src_dir, "assets", "layout")
+    if os.path.isdir(prod_nested):
+        return prod_nested
+    dev_layout = os.path.join(os.path.dirname(src_dir), "assets", "layout")
+    if os.path.isdir(dev_layout):
+        return dev_layout
+    prod_layout = os.path.join(src_dir, "layout")
+    if os.path.isdir(prod_layout):
+        return prod_layout
+    return prod_nested
+
+
+def get_layout_icon_path(icon_name: str) -> str:
+    """Returns path to a specific layout image asset."""
+    layout_dir = get_layout_dir()
+    return os.path.join(layout_dir, icon_name)
+
+
+def _app_icon() -> QIcon:
+    try:
+        import json
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        icon_name = "default"
+        settings_file = os.path.join(install_dir, "settings.json")
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                icon_name = data.get('app_icon', 'default')
+
+        icon_path = get_icon_path(icon_name)
+        if icon_path and os.path.exists(icon_path):
+            return QIcon(icon_path)
+    except Exception:
+        pass
+    return QIcon()
+
+
+def _titlebar_icon(icon_name: str = None) -> QIcon:
+    """Returns the no-background icon for titlebars, falling back to app_icon if missing."""
+    try:
+        if not icon_name:
+            import json
+            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            icon_name = "default"
+            settings_file = os.path.join(install_dir, "settings.json")
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    icon_name = data.get('app_icon', 'default')
+
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        candidates = [
+            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}_nobg.png"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}_nobg.png"),
+            os.path.join(install_dir, "icons", f"icon_{icon_name}_nobg.png"),
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                return QIcon(p)
+    except Exception:
+        pass
+    return _app_icon()
+
+
+def apply_dark_title_bar(window: QWidget):
+    """Forces the native Windows title bar to dark mode."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            # 20 is DWMWA_USE_IMMERSIVE_DARK_MODE in Windows 10/11
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(window.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4)
+        except Exception:
+            pass
+
+def _center_on_screen(widget: QWidget, w: int, h: int):
+    """Center *widget* on the screen under cursor (or primary screen)."""
+    from PySide6.QtGui import QGuiApplication, QCursor
+    screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+    if screen:
+        geo = screen.availableGeometry()
+        x = geo.x() + (geo.width()  - w) // 2
+        y = geo.y() + (geo.height() - h) // 2
+        widget.setGeometry(x, y, w, h)
+
+
+def _txt(lang: str, key: str, default: str = None, **kwargs) -> str:
+    """Return translation string for *key* in *lang*, falling back to 'en' or default."""
+    lang_dict = config.TRANS.get(lang, config.TRANS.get("en", {}))
+    en_dict = config.TRANS.get("en", {})
+    fallback = default if default is not None else key
+    text = lang_dict.get(key, en_dict.get(key, fallback))
+    if kwargs:
+        try:
+            return text.format(**kwargs)
+        except Exception:
+            return text
+    return text
+
+
+def _qwidget_txt(self, key: str, default: str = None, **kwargs) -> str:
+    w = self.window()
+    if hasattr(w, 'txt') and w != self:
+        try:
+            res = w.txt(key, default=default, **kwargs)
+            if res is not None:
+                return res
+        except Exception:
+            pass
+    return _txt("en", key, default=default, **kwargs)
+
+QWidget.txt = _qwidget_txt
+
+
+def set_macos_runtime_icon(icon_name: str = "default"):
+    """Dynamically updates the running application icon in macOS Dock and WindowServer."""
+    if platform.system() != "Darwin":
+        return
+    try:
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QIcon
+        icon_path = get_icon_path(icon_name)
+        if not icon_path or not os.path.exists(icon_path):
+            icon_path = get_icon_path("default")
+        if not icon_path or not os.path.exists(icon_path):
+            return
+
+        q_app = QApplication.instance()
+        if q_app:
+            q_app.setWindowIcon(QIcon(icon_path))
+
+        # Native AppKit dock tile icon update
+        import ctypes, ctypes.util
+        objc_path = ctypes.util.find_library('objc')
+        if not objc_path:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_path)
+
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+        msgSend = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_ptr = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_str = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p))
+
+        cls_NSString = objc.objc_getClass(b"NSString")
+        sel_stringWithUTF8 = objc.sel_registerName(b"stringWithUTF8String:")
+        ns_path = msgSend_str(cls_NSString, sel_stringWithUTF8, icon_path.encode('utf-8'))
+
+        cls_NSImage = objc.objc_getClass(b"NSImage")
+        sel_alloc = objc.sel_registerName(b"alloc")
+        sel_initWithContents = objc.sel_registerName(b"initWithContentsOfFile:")
+        msgSend_init = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+
+        img_alloc = msgSend(cls_NSImage, sel_alloc)
+        img = msgSend_init(img_alloc, sel_initWithContents, ns_path)
+
+        if img:
+            cls_NSApp = objc.objc_getClass(b"NSApplication")
+            sel_sharedApp = objc.sel_registerName(b"sharedApplication")
+            sel_setIcon = objc.sel_registerName(b"setApplicationIconImage:")
+            app = msgSend(cls_NSApp, sel_sharedApp)
+            if app:
+                msgSend_ptr(app, sel_setIcon, img)
+    except Exception:
+        pass
+
+
+def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str = "default"):
+    """
+    Ensures macOS Menu Bar displays app_name and Stage Manager/Dock show the BadWords icon
+    instead of Python and the python rocket icon in standalone mode.
+    """
+    if platform.system() != "Darwin":
+        return
+
+    # If icon_name was not explicitly specified, load user choice from settings.json
+    if icon_name == "default":
+        try:
+            import json
+            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            for cand_settings in [
+                os.path.join(install_dir, "settings.json"),
+                os.path.join(os.path.dirname(install_dir), "settings.json"),
+                os.path.join(os.path.expanduser("~"), "Library", "Application Support", "BadWords", "settings.json"),
+            ]:
+                if os.path.isfile(cand_settings):
+                    with open(cand_settings, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        icon_name = data.get('app_icon', 'default')
+                        break
+        except Exception:
+            pass
+
+    try:
+        import ctypes, ctypes.util
+        objc_path = ctypes.util.find_library('objc')
+        if not objc_path:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_path)
+
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+        msgSend = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_ptr = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        msgSend_str = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p))
+        msgSend_idx = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long))
+
+        cls_NSString = objc.objc_getClass(b"NSString")
+        sel_stringWithUTF8 = objc.sel_registerName(b"stringWithUTF8String:")
+        ns_name = msgSend_str(cls_NSString, sel_stringWithUTF8, app_name.encode('utf-8'))
+
+        # 1. Update [NSProcessInfo processInfo] setProcessName:
+        cls_NSProcessInfo = objc.objc_getClass(b"NSProcessInfo")
+        sel_processInfo = objc.sel_registerName(b"processInfo")
+        sel_setProcessName = objc.sel_registerName(b"setProcessName:")
+        p_info = msgSend(cls_NSProcessInfo, sel_processInfo)
+        if p_info and ns_name:
+            msgSend_ptr(p_info, sel_setProcessName, ns_name)
+
+        # 2. Update Application Menu title in NSApp.mainMenu if available
+        cls_NSApp = objc.objc_getClass(b"NSApplication")
+        sel_sharedApp = objc.sel_registerName(b"sharedApplication")
+        sel_mainMenu = objc.sel_registerName(b"mainMenu")
+        sel_itemAtIndex = objc.sel_registerName(b"itemAtIndex:")
+        sel_submenu = objc.sel_registerName(b"submenu")
+        sel_setTitle = objc.sel_registerName(b"setTitle:")
+
+        app = msgSend(cls_NSApp, sel_sharedApp)
+        if app and ns_name:
+            main_menu = msgSend(app, sel_mainMenu)
+            if main_menu:
+                first_item = msgSend_idx(main_menu, sel_itemAtIndex, 0)
+                if first_item:
+                    msgSend_ptr(first_item, sel_setTitle, ns_name)
+                    submenu = msgSend(first_item, sel_submenu)
+                    if submenu:
+                        msgSend_ptr(submenu, sel_setTitle, ns_name)
+
+        # 3. Set application icon image in Dock
+        set_macos_runtime_icon(icon_name)
+    except Exception:
+        pass
+
+
+def update_macos_bundle_icon(icon_name: str):
+    """Updates the icon.icns inside ~/Applications/BadWords.app, re-signs ad-hoc, and updates runtime icon."""
+    if platform.system() != "Darwin":
+        return
+    try:
+        import shutil, subprocess
+        home = os.path.expanduser("~")
+        app_bundle = os.path.join(home, "Applications", "BadWords.app")
+        if os.path.isdir(app_bundle):
+            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            icns_candidates = [
+                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
+            ]
+            target_icns = None
+            for c in icns_candidates:
+                if os.path.isfile(c):
+                    target_icns = c
+                    break
+
+            if target_icns:
+                dest_icns = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
+                shutil.copy2(target_icns, dest_icns)
+                subprocess.run(["touch", app_bundle], capture_output=True)
+                subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
+
+        # Also update running process icon immediately in Dock & WindowServer
+        set_macos_runtime_icon(icon_name)
+    except Exception:
+        pass
+
+
+

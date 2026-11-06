@@ -6,17 +6,14 @@
 
 """
 MODULE: osdoc.py
-ROLE: Tool Layer / System Abstraction
+ROLE: Core Module
 DESCRIPTION:
-Modified to force SELF-CONTAINED mode (v9.0).
-- Logs/Configs/Models in install dir.
-- FFmpeg detection prioritizes local 'bin' folder (Portable mode).
-- VENV detection for Python isolation.
-- NEW: Nvidia library detection for Auto-GPU config.
+File management and project document structure system.
 """
 
 import os
 import sys
+import time
 import platform
 import shutil
 import logging
@@ -26,6 +23,41 @@ import uuid
 import json
 import hashlib
 import ctypes
+
+# ==========================================
+# 0. WINDOWS SUBPROCESS SAFETY HOOK
+# ==========================================
+# Guarantees that ANY subprocess invoked anywhere in Python on Windows
+# NEVER creates a visible console window (conhost.exe).
+if sys.platform == "win32" or os.name == "nt":
+    try:
+        _orig_popen_init = subprocess.Popen.__init__
+        def _safe_popen_init(self, *args, **kwargs):
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            si = kwargs.get("startupinfo")
+            if si is None:
+                si = subprocess.STARTUPINFO()
+            si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
+            si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+            kwargs["startupinfo"] = si
+            if "stdin" not in kwargs or kwargs["stdin"] is None:
+                kwargs["stdin"] = subprocess.DEVNULL
+            return _orig_popen_init(self, *args, **kwargs)
+        subprocess.Popen.__init__ = _safe_popen_init
+    except Exception:
+        pass
+
+
+def get_subprocess_kwargs() -> dict:
+    """Module-level helper returning cross-platform hidden subprocess flags."""
+    if sys.platform == "win32" or os.name == "nt":
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
+        si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        cf = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        return {"startupinfo": si, "creationflags": cf, "stdin": subprocess.DEVNULL}
+    return {}
+
 
 # ==========================================
 # 1. LOGGING & STREAM PROXY
@@ -39,18 +71,29 @@ class ResolveStreamProxy:
     def __init__(self, stream, log_func):
         self.stream = stream
         self.log_func = log_func
+        self._buffer = ""
     
     def write(self, data):
         try:
-            txt = data.strip()
-            if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt: 
-                self.log_func(f"[STDOUT/ERR] {txt}")
+            self._buffer += data
+            if "\n" in self._buffer:
+                lines = self._buffer.split("\n")
+                self._buffer = lines.pop()
+                for line in lines:
+                    txt = line.rstrip("\r\n")
+                    if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt:
+                        self.log_func(f"[STDOUT/ERR] {txt}")
             self.stream.write(data)
         except Exception:
             pass  # StreamProxy: celowe wyciszenie błędów logowania (nie możemy logować błędu loggera)
     
     def flush(self):
         try:
+            if self._buffer:
+                txt = self._buffer.rstrip("\r\n")
+                if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt:
+                    self.log_func(f"[STDOUT/ERR] {txt}")
+                self._buffer = ""
             if hasattr(self.stream, 'flush'): self.stream.flush()
         except Exception:
             pass  # StreamProxy: flush może nie być obsługiwany przez wszystkie streamy
@@ -60,15 +103,28 @@ class ResolveStreamProxy:
 
 def log_info(msg):
     logging.info(msg)
-    try: print(f"[INFO] {msg}")
+    try:
+        print(f"[INFO] {msg}")
+        sys.stdout.flush()
     except Exception:
         pass  # log_info: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
 
 def log_error(msg):
     logging.error(msg)
-    try: print(f"[ERROR] {msg}", file=sys.__stderr__)
+    try:
+        if sys.__stderr__ is not None:
+            print(f"[ERROR] {msg}", file=sys.__stderr__)
+            sys.__stderr__.flush()
     except Exception:
         pass  # log_error: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
+
+def log_warn(msg):
+    logging.warning(msg)
+    try:
+        print(f"[WARN] {msg}")
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 # ==========================================
 # 2. OS DOCTOR CLASS
@@ -121,6 +177,10 @@ class OSDoctor:
         # Init Logging
         self._setup_logging()
         self._log_system_info()
+
+        # Windows-specific system bootstrapping: CUDA DLL injection
+        if self.is_win:
+            self.setup_cuda_dll_paths()
         
         # --- MIGRATE LEGACY CONFIG (pref.json → user.json + settings.json) ---
         self._migrate_legacy_config()
@@ -169,6 +229,33 @@ class OSDoctor:
         except Exception:
             return "unknown_" + str(uuid.getnode())
 
+    def is_legacy_updater_migration(self) -> bool:
+        """Check if this is an upgrade that occurred via legacy 3.x updater.py,
+        meaning native launchers, desktop integration, or the new installer are missing.
+        Returns False if installed via the new installer or marker exists."""
+        dirs_to_check = [self.install_dir, os.path.dirname(self.install_dir)]
+        for d in dirs_to_check:
+            marker = os.path.join(d, '.v4_migration_notified')
+            if os.path.isfile(marker):
+                return False
+
+        # Check if the new installer or native desktop launchers exist
+        for d in dirs_to_check:
+            if self.is_win:
+                has_launcher = os.path.isfile(os.path.join(d, 'BadWords.exe'))
+                has_installer = os.path.isfile(os.path.join(d, 'uninstall.exe'))
+            elif getattr(self, 'is_mac', False) or self.os_type == 'Darwin':
+                has_launcher = os.path.isdir(os.path.join(d, 'BadWords.app'))
+                has_installer = os.path.isfile(os.path.join(d, 'badwords-installer'))
+            else:
+                has_launcher = os.path.isfile(os.path.join(d, 'BadWords'))
+                has_installer = os.path.isfile(os.path.join(d, 'badwords-installer'))
+
+            if has_launcher or has_installer:
+                return False
+
+        return True
+
     # ==========================
     # CONFIG MIGRATION & LOADERS
     # ==========================
@@ -206,6 +293,12 @@ class OSDoctor:
             else:
                 # Everything else (layout prefs, offsets, model choices, etc.) → settings
                 settings[resolved] = value
+
+        # Upgrading from 3.x requires a one-time milestone notice ONLY if updated via legacy updater
+        if self.is_legacy_updater_migration():
+            settings['v4_migration_notified'] = False
+        else:
+            settings['v4_migration_notified'] = True
 
         # --- Save both new files ---
         try:
@@ -291,6 +384,23 @@ class OSDoctor:
             loaded["ai_initial_prompt"] = ""
             loaded["settings_version"] = current_version
             needs_save = True
+
+        # Force migration for default system fonts and milestone notice when upgrading from v3.x
+        if loaded and version_tuple(saved_version) < version_tuple("4.0.0"):
+            old_font = loaded.get("editor_font_family", "")
+            legacy_default_fonts = {"Segoe UI", "Segoe UI Variable", "Segoe UI Variable Display", "Noto Sans", "Ubuntu", "Helvetica Neue", "Arial", "sans-serif", "Sans"}
+            if old_font in legacy_default_fonts or not old_font:
+                new_font = _cfg.DEFAULT_SETTINGS.get("editor_font_family", "Ubuntu Sans")
+                if old_font != new_font:
+                    log_info(f"Migrating default editor_font_family from '{old_font}' to '{new_font}' (v3 -> v4 upgrade)")
+                    loaded["editor_font_family"] = new_font
+                    needs_save = True
+
+            if self.is_legacy_updater_migration():
+                loaded["v4_migration_notified"] = False
+                needs_save = True
+            else:
+                loaded["v4_migration_notified"] = True
             
         if loaded.get("settings_version") != current_version:
             loaded["settings_version"] = current_version
@@ -476,12 +586,20 @@ class OSDoctor:
     def _log_system_info(self):
         """Logs detailed system information for debugging."""
         log_info("="*30)
-        log_info(f"BadWords Session Started")
+        log_info("BadWords Session Started")
         log_info(f"OS: {self.os_type} {platform.release()}")
         log_info(f"Install Dir: {self.install_dir}")
         log_info(f"Bin Dir (FFmpeg): {self.bin_dir}")
         log_info(f"VENV Python: {self.get_venv_python_path()}")
         log_info(f"NVIDIA Support Detected: {self.has_nvidia_support()}")
+        try:
+            topo = self.get_cpu_topology()
+            if topo.get("is_apple_silicon"):
+                log_info(f"CPU Topology: {topo.get('chip_name', 'Apple Silicon')} (P-cores: {topo.get('p_cores')}, E-cores: {topo.get('e_cores')}, Rosetta: {topo.get('is_rosetta')})")
+            else:
+                log_info(f"CPU Topology: {topo.get('chip_name', platform.machine())} (Physical: {topo.get('physical_cores')}, Logical: {topo.get('logical_cores')})")
+        except Exception:
+            pass
         log_info("="*30)
 
     # ==========================
@@ -489,18 +607,57 @@ class OSDoctor:
     # ==========================
 
     def get_resolve_api_path(self) -> str:
-        """Returns the standard path for DaVinci Resolve Scripting API modules."""
+        """Returns the standard path for DaVinci Resolve Scripting API modules and exports env vars."""
         paths = []
         if self.is_mac:
-            paths.append("/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules")
+            paths.extend([
+                "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
+                "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/Modules",
+                "/Applications/DaVinci Resolve Studio/DaVinci Resolve.app/Contents/Libraries/Fusion/Modules",
+                "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/Modules",
+                "/Applications/DaVinci Resolve.app/Contents/Resources/Developer/Scripting/Modules",
+                "/Applications/DaVinci Resolve Studio.app/Contents/Resources/Developer/Scripting/Modules",
+            ])
+            if "RESOLVE_SCRIPT_LIB" not in os.environ:
+                candidates = [
+                    "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+                    "/Applications/DaVinci Resolve Studio/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+                    "/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/fusionscript.so",
+                    "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Libraries/fusionscript.so",
+                ]
+                for c in candidates:
+                    if os.path.exists(c):
+                        os.environ["RESOLVE_SCRIPT_LIB"] = c
+                        break
+            if "RESOLVE_SCRIPT_API" not in os.environ:
+                api_dir = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
+                if os.path.isdir(api_dir):
+                    os.environ["RESOLVE_SCRIPT_API"] = api_dir
+
         elif self.is_win:
             paths.append(os.path.join(
                 os.environ.get("PROGRAMDATA", "C:\\ProgramData"),
                 "Blackmagic Design", "DaVinci Resolve", "Support",
                 "Developer", "Scripting", "Modules"
             ))
+            if "RESOLVE_SCRIPT_LIB" not in os.environ:
+                c = "C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\fusionscript.dll"
+                if os.path.exists(c):
+                    os.environ["RESOLVE_SCRIPT_LIB"] = c
+
         elif self.is_linux:
-            paths.append("/opt/resolve/Developer/Scripting/Modules")
+            paths.extend([
+                "/opt/resolve/Developer/Scripting/Modules",
+                "/opt/resolve/libs/Fusion/Modules",
+            ])
+            if "RESOLVE_SCRIPT_LIB" not in os.environ:
+                c = "/opt/resolve/libs/Fusion/fusionscript.so"
+                if os.path.exists(c):
+                    os.environ["RESOLVE_SCRIPT_LIB"] = c
+            if "RESOLVE_SCRIPT_API" not in os.environ:
+                api_dir = "/opt/resolve/Developer/Scripting"
+                if os.path.isdir(api_dir):
+                    os.environ["RESOLVE_SCRIPT_API"] = api_dir
             
         for p in paths:
             if os.path.exists(p):
@@ -517,10 +674,601 @@ class OSDoctor:
                 
         return paths[0] if paths else ""
 
+    def get_resolve_installation_info(self) -> dict:
+        """
+        Detects installed DaVinci Resolve edition (Studio vs Free) and version.
+        Returns:
+            dict with keys:
+                installed (bool)
+                edition ('Studio' | 'Free' | 'Unknown')
+                version (str, e.g. '21.1.0')
+                version_tuple (tuple, e.g. (21, 1, 0))
+                is_21_1_or_newer (bool)
+        """
+        if hasattr(self, '_resolve_installation_info') and self._resolve_installation_info is not None:
+            return dict(self._resolve_installation_info)
+
+        info = {
+            "installed": False,
+            "edition": "Unknown",
+            "version": "",
+            "version_tuple": (0, 0, 0),
+            "is_21_1_or_newer": False,
+        }
+
+        if self.is_win:
+            try:
+                import winreg
+                for hkey in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                    for subkey in (
+                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                    ):
+                        try:
+                            key = winreg.OpenKey(hkey, subkey)
+                        except OSError:
+                            continue
+                        try:
+                            for i in range(winreg.QueryInfoKey(key)[0]):
+                                try:
+                                    sub_name = winreg.EnumKey(key, i)
+                                    sub_key = winreg.OpenKey(key, sub_name)
+                                    disp_name, _ = winreg.QueryValueEx(sub_key, "DisplayName")
+                                    if "DaVinci Resolve" in disp_name:
+                                        info["installed"] = True
+                                        info["edition"] = "Studio" if "Studio" in disp_name else "Free"
+                                        try:
+                                            ver, _ = winreg.QueryValueEx(sub_key, "DisplayVersion")
+                                            info["version"] = ver
+                                        except OSError:
+                                            pass
+                                        winreg.CloseKey(sub_key)
+                                        break
+                                    winreg.CloseKey(sub_key)
+                                except (OSError, ValueError):
+                                    continue
+                        finally:
+                            winreg.CloseKey(key)
+                        if info["installed"]:
+                            break
+                    if info["installed"]:
+                        break
+            except Exception as e:
+                log_warn(f"get_resolve_installation_info registry error: {e}")
+
+            exe_path = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe"
+            if os.path.isfile(exe_path):
+                info["installed"] = True
+                # Check for fraunhofer_aac.dll which is only bundled with DaVinci Resolve Studio
+                aac_dll = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\fraunhofer_aac.dll"
+                if os.path.isfile(aac_dll):
+                    info["edition"] = "Studio"
+                if not info["version"] or info["edition"] == "Unknown":
+                    try:
+                        import ctypes
+                        from ctypes import wintypes
+                        v_size = ctypes.windll.version.GetFileVersionInfoSizeW(exe_path, None)
+                        if v_size:
+                            buf = ctypes.create_string_buffer(v_size)
+                            if ctypes.windll.version.GetFileVersionInfoW(exe_path, 0, v_size, buf):
+                                lp_trans = ctypes.c_void_p()
+                                u_len = wintypes.UINT()
+                                if ctypes.windll.version.VerQueryValueW(buf, r'\VarFileInfo\Translation', ctypes.byref(lp_trans), ctypes.byref(u_len)) and u_len.value >= 4:
+                                    trans = ctypes.cast(lp_trans, ctypes.POINTER(wintypes.WORD))
+                                    lang, cp = trans[0], trans[1]
+                                    lp_buf = ctypes.c_wchar_p()
+                                    if not info["version"]:
+                                        sub = f'\\StringFileInfo\\{lang:04x}{cp:04x}\\ProductVersion'
+                                        if ctypes.windll.version.VerQueryValueW(buf, sub, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
+                                            info["version"] = lp_buf.value.strip()
+                                    if info["edition"] == "Unknown":
+                                        sub_prod = f'\\StringFileInfo\\{lang:04x}{cp:04x}\\ProductName'
+                                        if ctypes.windll.version.VerQueryValueW(buf, sub_prod, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
+                                            prod_name = lp_buf.value.strip()
+                                            info["edition"] = "Studio" if "Studio" in prod_name else "Free"
+                    except Exception as e:
+                        log_warn(f"Fast Win32 version check error: {e}")
+
+        elif self.is_mac:
+            # Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
+            # Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
+            # edition apart. Keep it "Unknown" so the native (Studio) connection is still tried.
+            candidate_apps = [
+                ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Unknown"),
+                ("/Applications/DaVinci Resolve.app", "Unknown"),
+            ]
+            chosen_app = None
+            for app_path, ed in candidate_apps:
+                if os.path.isdir(app_path):
+                    info["installed"] = True
+                    info["edition"] = ed
+                    chosen_app = app_path
+                    break
+
+            if chosen_app:
+                plist_path = os.path.join(chosen_app, "Contents", "Info.plist")
+                if os.path.isfile(plist_path):
+                    try:
+                        import plistlib
+                        with open(plist_path, "rb") as f:
+                            pl = plistlib.load(f)
+                            info["version"] = str(pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or "")
+                            bid = str(pl.get("CFBundleIdentifier") or "").lower()
+                            dname = str(pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or "").lower()
+                            if "studio" in bid or "studio" in dname:
+                                info["edition"] = "Studio"
+                    except Exception as e:
+                        log_warn(f"Failed to read Info.plist: {e}")
+
+        elif self.is_linux:
+            resolve_bin = "/opt/resolve/bin/resolve"
+            if os.path.isfile(resolve_bin):
+                info["installed"] = True
+
+                # 1. Check documentation files in /opt/resolve/docs/
+                for doc_name in ("ReadMe.html", "Welcome.txt", "License.html"):
+                    doc_path = os.path.join("/opt/resolve/docs", doc_name)
+                    if os.path.isfile(doc_path):
+                        try:
+                            with open(doc_path, "r", encoding="utf-8", errors="ignore") as f:
+                                doc_content = f.read(65536)
+                            import re
+                            if re.search(r"DaVinci\s+Resolve\s+Studio", doc_content, re.IGNORECASE):
+                                info["edition"] = "Studio"
+                            elif info["edition"] == "Unknown" and re.search(r"DaVinci\s+Resolve", doc_content, re.IGNORECASE):
+                                info["edition"] = "Free"
+
+                            if not info["version"]:
+                                vm = re.search(r"DaVinci\s+Resolve(?:\s+Studio)?\s+(?:Version\s+)?(\d+(?:\.\d+)+)", doc_content, re.IGNORECASE)
+                                if vm:
+                                    info["version"] = vm.group(1)
+                        except Exception:
+                            pass
+                        if info["edition"] == "Studio" and info["version"]:
+                            break
+
+                # 2. Check desktop application files (.desktop)
+                if info["edition"] != "Studio":
+                    desktop_dirs = [
+                        "/usr/share/applications",
+                        "/usr/local/share/applications",
+                        os.path.expanduser("~/.local/share/applications"),
+                    ]
+                    for d_dir in desktop_dirs:
+                        if not os.path.isdir(d_dir):
+                            continue
+                        try:
+                            for fname in os.listdir(d_dir):
+                                if "resolve" in fname.lower() or "davinci" in fname.lower():
+                                    fpath = os.path.join(d_dir, fname)
+                                    if os.path.isfile(fpath):
+                                        try:
+                                            with open(fpath, "r", encoding="utf-8", errors="ignore") as df:
+                                                df_content = df.read(16384)
+                                            import re
+                                            if re.search(r"Name=.*DaVinci\s+Resolve\s+Studio", df_content, re.IGNORECASE) or "resolve-studio" in fname.lower() or "studio" in fname.lower():
+                                                info["edition"] = "Studio"
+                                                break
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
+                        if info["edition"] == "Studio":
+                            break
+
+                # 3. Check native Linux package managers (RPM on Fedora/RHEL/openSUSE, Pacman on Arch, DPKG on Debian/Ubuntu)
+                if info["edition"] != "Studio":
+                    if shutil.which("rpm"):
+                        try:
+                            res = subprocess.run(["rpm", "-qa", "*resolve*", "*davinci*"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                            if "studio" in (res.stdout or "").lower():
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                    if info["edition"] != "Studio" and shutil.which("pacman"):
+                        try:
+                            res = subprocess.run(["pacman", "-Qs", "resolve"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                            if res.returncode == 0 and "studio" in (res.stdout or "").lower():
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                    if info["edition"] != "Studio" and shutil.which("dpkg"):
+                        try:
+                            res = subprocess.run(["dpkg", "-l", "*resolve*", "*davinci*"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                            if res.returncode == 0 and "studio" in (res.stdout or "").lower():
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+                # 4. Check resolve -v output (definitive CLI inspection)
+                if info["edition"] != "Studio" or not info["version"]:
+                    try:
+                        res = subprocess.run([resolve_bin, "-v"], capture_output=True, text=True, timeout=2, **self.get_subprocess_kwargs())
+                        out = (res.stdout or "") + " " + (res.stderr or "")
+                        if "studio" in out.lower():
+                            info["edition"] = "Studio"
+                        elif info["edition"] == "Unknown" and "davinci resolve" in out.lower():
+                            info["edition"] = "Free"
+
+                        if not info["version"]:
+                            import re
+                            m = re.search(r"(\d+\.\d+(?:\.\d+)?)", out)
+                            if m:
+                                info["version"] = m.group(1)
+                    except Exception:
+                        pass
+
+                # 5. Check license directory (.license with files)
+                if info["edition"] != "Studio":
+                    lic_dir = "/opt/resolve/.license"
+                    if os.path.isdir(lic_dir):
+                        try:
+                            if any(not f.startswith('.') for f in os.listdir(lic_dir)):
+                                info["edition"] = "Studio"
+                        except Exception:
+                            pass
+
+        # Default unknown edition to "Free" if Resolve is installed or utility dirs exist.
+        # Not on macOS: Studio and Free share the same app bundle there (see above), and
+        # guessing "Free" makes _connect() skip the native Studio connection entirely.
+        if info["edition"] == "Unknown" and not self.is_mac:
+            if info["installed"]:
+                info["edition"] = "Free"
+            else:
+                util_dirs = self.get_resolve_script_utility_dirs()
+                if any(os.path.isdir(d) for d in util_dirs):
+                    info["edition"] = "Free"
+
+        # Parse version tuple
+        if info["version"]:
+            import re
+            nums = re.findall(r"\d+", info["version"])
+            if nums:
+                t = tuple(int(x) for x in nums[:3])
+                while len(t) < 3:
+                    t = t + (0,)
+                info["version_tuple"] = t
+                info["is_21_1_or_newer"] = t >= (21, 1, 0)
+
+        self._resolve_installation_info = dict(info)
+        return info
+
+    def get_resolve_script_utility_dirs(self) -> list:
+        """Returns candidate Fusion/Scripts/Utility directories on this machine."""
+        dirs = []
+        if self.is_win:
+            for env_var in ("APPDATA", "PROGRAMDATA"):
+                base = os.environ.get(env_var)
+                if base:
+                    dirs.append(os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Support", "Fusion", "Scripts", "Utility"))
+                    dirs.append(os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+        elif self.is_mac:
+            dirs.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join("/Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+        elif self.is_linux:
+            dirs.append(os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join("/opt", "resolve", "libs", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join("/opt", "resolve", "Fusion", "Scripts", "Utility"))
+
+        unique = []
+        for d in dirs:
+            if d not in unique:
+                unique.append(d)
+        return unique
+
+    def generate_davinci_wrapper_content(self) -> str:
+        """Generates cross-platform BadWords.py wrapper script for DaVinci Resolve."""
+        install_str = self.install_dir.replace('\\', '/')
+        libs_str = os.path.join(self.install_dir, 'libs').replace('\\', '/')
+        main_script = os.path.join(self.install_dir, 'main.py').replace('\\', '/')
+        return f'''\
+import sys, os, traceback, builtins
+
+for _k in ("resolve", "bmd", "fusion", "fu"):
+    if _k in globals() and globals()[_k] is not None:
+        setattr(builtins, _k, globals()[_k])
+    elif _k in locals() and locals()[_k] is not None:
+        setattr(builtins, _k, locals()[_k])
+
+INSTALL_DIR = r'{install_str}'
+MAIN_SCRIPT = r'{main_script}'
+
+if not os.path.exists(MAIN_SCRIPT):
+    for _alt_cand in [
+        os.path.join(os.path.dirname(INSTALL_DIR), "main.py"),
+        os.path.join(os.path.dirname(INSTALL_DIR), "src", "main.py"),
+        os.path.join(INSTALL_DIR, "src", "main.py"),
+    ]:
+        if os.path.isfile(_alt_cand):
+            MAIN_SCRIPT = _alt_cand
+            break
+
+# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
+_candidates = [
+    r'{libs_str}',
+    os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "libs"),
+    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "venv", "Lib", "site-packages"),
+]
+
+for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    for _lib_sub in ("lib", "lib64"):
+        _v_lib = os.path.join(_base, "venv", _lib_sub)
+        if os.path.isdir(_v_lib):
+            try:
+                for _entry in os.listdir(_v_lib):
+                    _sp = os.path.join(_v_lib, _entry, "site-packages")
+                    if os.path.isdir(_sp) and _sp not in _candidates:
+                        _candidates.append(_sp)
+            except Exception:
+                pass
+
+for _sp_dir in _candidates:
+    if os.path.isdir(_sp_dir):
+        if _sp_dir in sys.path:
+            sys.path.remove(_sp_dir)
+        sys.path.insert(0, _sp_dir)
+
+for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.append(_p)
+
+# 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
+if sys.platform.startswith('win'):
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
+    if hasattr(os, 'add_dll_directory'):
+        for _sp_dir in _candidates:
+            if os.path.isdir(_sp_dir):
+                for _pkg in ['PySide6', 'shiboken6']:
+                    _p = os.path.join(_sp_dir, _pkg)
+                    if os.path.isdir(_p):
+                        try: os.add_dll_directory(_p)
+                        except Exception: pass
+                _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                if os.path.isdir(_nv_dir):
+                    import ctypes
+                    for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                        _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                        if os.path.isdir(_bin_p):
+                            try:
+                                os.add_dll_directory(_bin_p)
+                                os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                for _f in os.listdir(_bin_p):
+                                    if _f.endswith('.dll'):
+                                        try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                        except Exception: pass
+                            except Exception: pass
+
+# 3. Linux: Preload Qt6 shared libraries if needed
+if sys.platform.startswith('linux'):
+    import ctypes
+    for _sp_dir in _candidates:
+        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+        if os.path.isdir(_qt_lib_dir):
+            _qt_preload = [
+                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+            ]
+            for _lib in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib)
+                if os.path.exists(_p):
+                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except OSError: pass
+            break
+
+# 4. Launch main script
+def _launch_external():
+    import subprocess, shutil
+    clean_env = os.environ.copy()
+    clean_env["BADWORDS_EMBEDDED"] = "1"
+    if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
+        clean_paths = [p for p in clean_env['LD_LIBRARY_PATH'].split(os.pathsep) if 'resolve' not in p.lower()]
+        clean_env['LD_LIBRARY_PATH'] = os.pathsep.join(clean_paths)
+    for cand in [
+        os.path.join(INSTALL_DIR, 'BadWords'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords'),
+        os.path.join(INSTALL_DIR, 'BadWords.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords.exe'),
+    ]:
+        if os.path.isfile(cand) and (sys.platform.startswith('win') or os.access(cand, os.X_OK)):
+            try:
+                subprocess.Popen([cand, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+                print("[BadWords] Launched standalone binary:", cand)
+                return True
+            except Exception:
+                pass
+
+    py_cands = [
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'python.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'python.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python3'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python'),
+    ]
+    py_bin = next((p for p in py_cands if os.path.isfile(p)), None)
+    if not py_bin:
+        curr_exe = sys.executable or ""
+        if "resolve" not in curr_exe.lower() and os.path.isfile(curr_exe):
+            py_bin = curr_exe
+        elif sys.platform.startswith('win'):
+            py_bin = shutil.which('pythonw') or shutil.which('python') or 'python'
+        else:
+            py_bin = shutil.which('python3') or shutil.which('python') or 'python3'
+
+    subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+    print("[BadWords] Launched external process:", MAIN_SCRIPT)
+    return True
+
+if os.path.exists(MAIN_SCRIPT):
+    os.environ["BADWORDS_EMBEDDED"] = "1"
+    if "--embedded" not in sys.argv:
+        sys.argv.append("--embedded")
+    try:
+        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+        gv = globals().copy()
+        gv['__file__'] = MAIN_SCRIPT
+        exec(code, gv)
+    except Exception as e:
+        print("[BadWords] In-process execution failed:", e)
+        print("[BadWords] Falling back to external process launch...")
+        _launch_external()
+else:
+    print("CRITICAL: script not found at", MAIN_SCRIPT)
+'''
+
+    def sync_resolve_scripts(self, force: bool = False) -> None:
+        """
+        Auto-healing: ensures the correct scripts are installed in DaVinci Resolve based on edition and version.
+        - Studio (any version):
+            * BadWords.py: installed for Workspace -> Scripts
+            * BadWords Bridge.lua: NEVER installed (removed if present from all candidate directories)
+        - Free < 21.1:
+            * BadWords.py: installed for Workspace -> Scripts (native internal scripting)
+            * BadWords Bridge.lua: installed for Bridge fallback (external process launch)
+        - Free >= 21.1:
+            * BadWords Bridge.lua: installed (only supported connection mode)
+            * BadWords.py: NEVER installed (removed if present, because Python scripting is blocked in Free 21.1+)
+        """
+        try:
+            info = self.get_resolve_installation_info()
+            util_dirs = self.get_resolve_script_utility_dirs()
+            if not util_dirs:
+                return
+
+            is_studio = (info["edition"] == "Studio")
+            is_free_21_1 = (not is_studio and info["is_21_1_or_newer"])
+
+            # Robustly locate BadWords Bridge.lua source across all layouts
+            lua_src = None
+            for cand in [
+                os.path.join(self.install_dir, "setupfiles", "BadWords Bridge.lua"),
+                os.path.join(self.install_dir, "BadWords Bridge.lua"),
+                os.path.join(os.path.dirname(self.install_dir), "setupfiles", "BadWords Bridge.lua"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "BadWords Bridge.lua"),
+                getattr(self, 'resources_dir', '') and os.path.join(getattr(self, 'resources_dir', ''), "setupfiles", "BadWords Bridge.lua"),
+            ]:
+                if cand and os.path.isfile(cand):
+                    lua_src = cand
+                    break
+
+            wrapper_content = self.generate_davinci_wrapper_content()
+
+            # ── 1. BadWords.py Deployment ──────────────────────────────────────────
+            # Studio & Free < 21.1: BadWords.py is deployed for Workspace -> Scripts.
+            # Free >= 21.1: BadWords.py is removed (Python scripting blocked in Free 21.1+).
+            py_deployed = False
+            for ud in util_dirs:
+                if not os.path.isdir(ud):
+                    try: os.makedirs(ud, exist_ok=True)
+                    except Exception: continue
+                py_file = os.path.join(ud, "BadWords.py")
+                if is_free_21_1:
+                    # In Free 21.1+, remove BadWords.py from all candidate directories
+                    if os.path.isfile(py_file):
+                        try:
+                            os.remove(py_file)
+                            log_info(f"[Resolve Sync] Removed BadWords.py (Python scripting blocked in Resolve Free 21.1+): {py_file}")
+                        except Exception:
+                            pass
+                else:
+                    # Studio and Free < 21.1: install exactly once in primary directory
+                    if not py_deployed:
+                        try:
+                            existing_content = ""
+                            if os.path.isfile(py_file):
+                                try:
+                                    with open(py_file, "r", encoding="utf-8") as f:
+                                        existing_content = f.read()
+                                except Exception: pass
+                            should_write = force or (existing_content != wrapper_content)
+                            if should_write:
+                                with open(py_file, "w", encoding="utf-8") as f:
+                                    f.write(wrapper_content)
+                                try: os.chmod(py_file, 0o755)
+                                except Exception: pass
+                                log_info(f"[Resolve Sync] Installed BadWords.py at: {py_file}")
+                            py_deployed = True
+                        except Exception as e:
+                            log_warn(f"[Resolve Sync] Could not write BadWords.py to {ud}: {e}")
+                    else:
+                        # Clean duplicate from secondary directory
+                        if os.path.isfile(py_file):
+                            try:
+                                os.remove(py_file)
+                            except Exception: pass
+
+            # ── 2. BadWords Bridge.lua Deployment ──────────────────────────────────
+            # Studio: BadWords Bridge.lua MUST NOT be installed. If present, delete it.
+            # Free (both < 21.1 and >= 21.1): BadWords Bridge.lua MUST be installed.
+            primary_installed = False
+            for ud in util_dirs:
+                if not os.path.isdir(ud):
+                    try: os.makedirs(ud, exist_ok=True)
+                    except Exception: continue
+
+                lua_file = os.path.join(ud, "BadWords Bridge.lua")
+                if is_studio:
+                    # Remove from all candidate directories on Studio
+                    if os.path.isfile(lua_file):
+                        try:
+                            os.remove(lua_file)
+                            log_info(f"[Resolve Sync] Removed BadWords Bridge.lua (Studio uses native scripting): {lua_file}")
+                        except Exception:
+                            pass
+                else:
+                    # Free edition: deploy to primary directory
+                    if lua_src and os.path.isfile(lua_src):
+                        if not primary_installed:
+                            try:
+                                with open(lua_src, "r", encoding="utf-8") as lf:
+                                    l_code = lf.read()
+                                clean_inst = self.install_dir.replace('\\', '/')
+                                l_code = l_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+
+                                # Ensure bridge folder inside BadWords install directory exists
+                                bridge_dir = os.path.join(self.install_dir, "bridge")
+                                try: os.makedirs(bridge_dir, exist_ok=True)
+                                except Exception: pass
+
+                                should_write = force or not os.path.isfile(lua_file)
+                                if not should_write and os.path.isfile(lua_file):
+                                    if os.path.getmtime(lua_src) > os.path.getmtime(lua_file):
+                                        should_write = True
+                                if should_write:
+                                    with open(lua_file, "w", encoding="utf-8") as lf:
+                                        lf.write(l_code)
+                                    try: os.chmod(lua_file, 0o755)
+                                    except Exception: pass
+                                    log_info(f"[Resolve Sync] Installed BadWords Bridge.lua at: {lua_file}")
+                                primary_installed = True
+                            except Exception as e:
+                                log_warn(f"[Resolve Sync] Failed to sync BadWords Bridge.lua to {ud}: {e}")
+                        else:
+                            # Secondary directory: remove duplicate so only 1 entry appears in Resolve menus
+                            if os.path.isfile(lua_file):
+                                try:
+                                    os.remove(lua_file)
+                                    log_info(f"[Resolve Sync] Removed duplicate BadWords Bridge.lua from secondary dir: {lua_file}")
+                                except Exception: pass
+        except Exception as e:
+            log_warn(f"sync_resolve_scripts error: {e}")
+
     def _test_executable(self, cmd_path):
         try:
             # -version exits cleanly if the binary is valid
-            subprocess.run([cmd_path, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            subprocess.run([cmd_path, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, **self.get_subprocess_kwargs())
             return True
         except Exception:
             return False
@@ -541,6 +1289,9 @@ class OSDoctor:
                 try: os.chmod(portable_ffmpeg, 0o755)
                 except Exception as e:
                     log_error(f"get_ffmpeg_cmd: chmod failed on {portable_ffmpeg}: {e}")
+            if self.is_win:
+                log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")
+                return portable_ffmpeg
             if self._test_executable(portable_ffmpeg):
                 log_info(f"[FFMPEG] Using Portable Binary: {portable_ffmpeg}")
                 return portable_ffmpeg
@@ -566,12 +1317,13 @@ class OSDoctor:
     def get_subprocess_kwargs(self) -> dict:
         """
         Returns cross-platform subprocess kwargs, abstracting Windows startupinfo.
+        Strictly suppresses console window creation on Windows (CREATE_NO_WINDOW + SW_HIDE).
         """
-        if self.is_win:
+        if self.is_win or os.name == 'nt':
             si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = subprocess.SW_HIDE
-            cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 0x00000001)
+            si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+            cf = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
             return {"startupinfo": si, "creationflags": cf}
         return {}
 
@@ -589,18 +1341,149 @@ class OSDoctor:
         except Exception:
             pass
 
-    def set_always_on_top(self, window_id: int, top: bool):
-        """Sets the window to always on top using native API if possible, avoiding Qt window reconstruction bugs."""
-        if not self.is_win:
-            return False
-        try:
-            # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
-            # SWP_NOMOVE = 0x0002, SWP_NOSIZE = 0x0001
-            hwnd_insert_after = -1 if top else -2
-            ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, 0x0003)
-            return True
-        except Exception:
-            return False
+    def set_always_on_top(self, window_id: int, top: bool) -> bool:
+        """
+        Sets the window to always on top using native OS API without recreating the Qt window.
+        - Windows: SetWindowPos with HWND_TOPMOST / HWND_NOTOPMOST
+        - macOS: NSWindow setLevel: NSFloatingWindowLevel (3) & collection behavior
+        - Linux (X11): _NET_WM_STATE_ABOVE via XClientMessageEvent
+        """
+        if self.is_win:
+            try:
+                import ctypes
+                # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
+                # SWP_NOSIZE(1) | SWP_NOMOVE(2) | SWP_NOACTIVATE(0x10) | SWP_FRAMECHANGED(0x20) = 0x0033
+                hwnd_insert_after = -1 if top else -2
+                flags = 0x0001 | 0x0002 | 0x0010 | 0x0020
+                ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, flags)
+                return True
+            except Exception:
+                return False
+
+        elif self.is_mac:
+            try:
+                import ctypes, ctypes.util
+                objc_path = ctypes.util.find_library('objc')
+                if not objc_path:
+                    return False
+                objc = ctypes.cdll.LoadLibrary(objc_path)
+                objc.objc_getClass.restype = ctypes.c_void_p
+                objc.objc_getClass.argtypes = [ctypes.c_char_p]
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+                # In Qt on macOS, window_id is an NSView pointer.
+                view = ctypes.c_void_p(window_id)
+                sel_window = objc.sel_registerName(b"window")
+                msgSend_window = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+                nswindow = msgSend_window(view, sel_window)
+                if not nswindow:
+                    nswindow = view
+
+                # NSNormalWindowLevel = 0, NSFloatingWindowLevel = 3
+                sel_setLevel = objc.sel_registerName(b"setLevel:")
+                msgSend_setLevel = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long))
+                level = ctypes.c_long(3 if top else 0)
+                msgSend_setLevel(nswindow, sel_setLevel, level)
+
+                # Ensure collection behavior allows floating across desktop spaces
+                sel_setBehavior = objc.sel_registerName(b"setCollectionBehavior:")
+                msgSend_setBehavior = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong))
+                # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0, NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
+                behavior = ctypes.c_ulong((1 << 0) | (1 << 8) if top else 0)
+                msgSend_setBehavior(nswindow, sel_setBehavior, behavior)
+                return True
+            except Exception:
+                return False
+
+        elif self.is_linux:
+            # 1. Try wmctrl if available (works 100% reliably in Mutter/Cinnamon/KWin/XFCE)
+            try:
+                import subprocess, shutil
+                if shutil.which('wmctrl'):
+                    action = "add" if top else "remove"
+                    res = subprocess.run(
+                        ['wmctrl', '-i', '-r', hex(window_id), '-b', f'{action},above'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    if res.returncode == 0:
+                        return True
+            except Exception:
+                pass
+
+            # 2. Direct X11 ClientMessage fallback via XSendEvent
+            try:
+                from PySide6.QtGui import QGuiApplication
+                if QGuiApplication.platformName() == 'wayland':
+                    return False
+
+                import ctypes, ctypes.util
+                x11_path = ctypes.util.find_library('X11')
+                if not x11_path:
+                    return False
+                x11 = ctypes.cdll.LoadLibrary(x11_path)
+                x11.XOpenDisplay.restype = ctypes.c_void_p
+                x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+                display = x11.XOpenDisplay(None)
+                if not display:
+                    return False
+
+                x11.XDefaultRootWindow.restype = ctypes.c_ulong
+                x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+                x11.XInternAtom.restype = ctypes.c_ulong
+                x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+                x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+                x11.XFlush.argtypes = [ctypes.c_void_p]
+                x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
+
+                atom_state = x11.XInternAtom(display, b'_NET_WM_STATE', False)
+                atom_above = x11.XInternAtom(display, b'_NET_WM_STATE_ABOVE', False)
+                root = x11.XDefaultRootWindow(display)
+
+                class XClientMessageEvent(ctypes.Structure):
+                    _fields_ = [
+                        ('type', ctypes.c_int),
+                        ('serial', ctypes.c_ulong),
+                        ('send_event', ctypes.c_int),
+                        ('display', ctypes.c_void_p),
+                        ('window', ctypes.c_ulong),
+                        ('message_type', ctypes.c_ulong),
+                        ('format', ctypes.c_int),
+                        ('data', ctypes.c_long * 5)
+                    ]
+
+                class XEvent(ctypes.Union):
+                    _fields_ = [
+                        ('type', ctypes.c_int),
+                        ('xclient', XClientMessageEvent),
+                        ('pad', ctypes.c_long * 24)
+                    ]
+
+                event = XEvent()
+                event.type = 33  # ClientMessage
+                event.xclient.type = 33
+                event.xclient.serial = 0
+                event.xclient.send_event = 1
+                event.xclient.display = display
+                event.xclient.window = window_id
+                event.xclient.message_type = atom_state
+                event.xclient.format = 32
+                event.xclient.data[0] = 1 if top else 0  # 1 = _NET_WM_STATE_ADD, 0 = _NET_WM_STATE_REMOVE
+                event.xclient.data[1] = atom_above
+                event.xclient.data[2] = 0
+                event.xclient.data[3] = 1
+                event.xclient.data[4] = 0
+
+                mask = 0x00180000  # SubstructureRedirectMask | SubstructureNotifyMask
+                x11.XSendEvent(display, root, False, mask, ctypes.byref(event))
+                x11.XFlush(display)
+                x11.XCloseDisplay(display)
+                return True
+            except Exception:
+                return False
+
+        return False
 
     # ==========================
     # FILE MANAGEMENT
@@ -632,11 +1515,30 @@ class OSDoctor:
             return icon_path
         return None
 
-    def cleanup_temp(self):
+    def cleanup_temp(self, max_age_seconds: int = 3600):
+        """
+        Safely clears stale temporary files older than max_age_seconds (default 1 hour).
+        Preserves active temp files being read/rendered by parallel instances or threads.
+        """
         try:
-            if os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
+            if not os.path.exists(self.temp_dir):
                 os.makedirs(self.temp_dir, exist_ok=True)
+                return
+            now = time.time()
+            for root, dirs, files in os.walk(self.temp_dir, topdown=False):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    try:
+                        if now - os.path.getmtime(fp) > max_age_seconds:
+                            os.remove(fp)
+                    except Exception:
+                        pass
+                for d in dirs:
+                    dp = os.path.join(root, d)
+                    try:
+                        os.rmdir(dp)
+                    except Exception:
+                        pass
         except Exception as e:
             log_error(f"cleanup_temp: failed to clear temp directory {self.temp_dir}: {e}")
 
@@ -644,27 +1546,76 @@ class OSDoctor:
     # VENV & DEPENDENCY CHECKING
     # ==========================
 
-    def get_venv_python_path(self):
+    def get_venv_python_path(self, prefer_windowless: bool = True):
         """
         Returns the path to the Isolated VENV Python executable.
+        On Windows, prefers pythonw.exe (windowless GUI subsystem) when prefer_windowless is True
+        to guarantee zero console windows or flashes.
         """
+        cand_roots = [
+            self.install_dir,
+            os.path.dirname(self.install_dir),
+            "/mnt/dump/BadWords FILES",
+            r"C:\Program Files\BadWords",
+            r"C:\BadWords",
+        ]
+
         # --- WINDOWS VENV FIX ---
         if self.is_win:
-            # Check for standard venv structure on Windows: venv\Scripts\python.exe
-            venv_python = os.path.join(self.install_dir, "venv", "Scripts", "python.exe")
+            for root in cand_roots:
+                if not root or not os.path.isdir(root):
+                    continue
+                venv_scripts = os.path.join(root, "venv", "Scripts")
+                venv_bw = os.path.join(venv_scripts, "BadWords.exe")
+                venv_pythonw = os.path.join(venv_scripts, "pythonw.exe")
+                venv_python = os.path.join(venv_scripts, "python.exe")
+
+                if os.path.exists(venv_bw):
+                    return venv_bw
+
+                base_src = venv_pythonw if os.path.exists(venv_pythonw) else (venv_python if os.path.exists(venv_python) else None)
+                if base_src:
+                    try:
+                        shutil.copy2(base_src, venv_bw)
+                        ico_path = os.path.join(root, "assets", "icons", "icon_default.ico")
+                        if not os.path.isfile(ico_path):
+                            ico_path = os.path.join(root, "icons", "icon_default.ico")
+                        if os.path.isfile(ico_path):
+                            try:
+                                from setupfiles.pe_patcher import patch_exe_icon
+                                patch_exe_icon(venv_bw, ico_path)
+                            except Exception:
+                                pass
+                        if os.path.exists(venv_bw):
+                            return venv_bw
+                    except Exception:
+                        pass
+
+                if prefer_windowless and os.path.exists(venv_pythonw):
+                    return venv_pythonw
+                if os.path.exists(venv_python):
+                    return venv_python
+                if os.path.exists(venv_pythonw):
+                    return venv_pythonw
+
+            if prefer_windowless and shutil.which("pythonw"):
+                return "pythonw"
+            return "python"
+
+        # --- LINUX / MACOS VENV FIX ---
+        for root in cand_roots:
+            if not root or not os.path.isdir(root):
+                continue
+            venv_python = os.path.join(root, "venv", "bin", "python3")
             if os.path.exists(venv_python):
                 return venv_python
-            
-            # Fallback (Should typically not be reached if installed correctly)
-            return "python"
-        
-        # --- LINUX VENV FIX ---
-        # In Self-Contained mode, VENV is inside install_dir
-        venv_python = os.path.join(self.install_dir, "venv", "bin", "python3")
-        
-        if os.path.exists(venv_python): return venv_python
-        
-        # Fallback to system python
+
+        if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+            cand = os.path.join(sys.prefix, "bin", "python3")
+            if os.path.exists(cand):
+                return cand
+
+        # Fallback to current running Python executable
         return sys.executable
 
     def check_dependencies(self):
@@ -681,9 +1632,11 @@ class OSDoctor:
         fw_found = False
         
         if self.is_win:
-            try: import faster_whisper; fw_found = True # type: ignore
+            try:
+                import importlib.util
+                fw_found = importlib.util.find_spec("faster_whisper") is not None
             except Exception as e:
-                log_error(f"check_dependencies: błąd importu faster_whisper: {e}")
+                log_error(f"check_dependencies: błąd sprawdzania faster_whisper: {e}")
         else:
             # Check VENV content
             venv_lib = os.path.join(self.install_dir, "venv", "lib")
@@ -731,8 +1684,141 @@ class OSDoctor:
         # 2. Weryfikacja bibliotek (Linux)
         libs_path = os.path.join(self.install_dir, "libs")
         cublas_path = os.path.join(libs_path, "nvidia", "cublas")
+        if os.path.exists(cublas_path):
+            return True
+
+        try:
+            import importlib.util
+            if importlib.util.find_spec("nvidia.cublas") is not None:
+                return True
+        except Exception:
+            pass
+
+        return os.path.exists("/usr/local/cuda") or shutil.which("nvcc") is not None
+
+    def setup_cuda_dll_paths(self) -> list:
+        """
+        Discovers all NVIDIA CUDA / cuBLAS / cuDNN / NVRTC DLL directories,
+        registers them with os.add_dll_directory, prepends them to os.environ["PATH"],
+        and preloads critical DLLs via ctypes.CDLL to guarantee CTranslate2 succeeds on Windows.
+        Returns the list of discovered DLL directories.
+        """
+        if not self.is_win:
+            return []
         
-        return os.path.exists(cublas_path)
+        discovered_bins = []
+        candidates = [
+            os.path.join(self.install_dir, "venv", "Lib", "site-packages"),
+            os.path.join(self.install_dir, "libs"),
+            os.path.join(sys.prefix, "Lib", "site-packages"),
+            os.path.join(sys.prefix, "lib", "site-packages"),
+        ]
+        for p in sys.path:
+            if "site-packages" in p and os.path.isdir(p) and p not in candidates:
+                candidates.append(p)
+                
+        for sp in candidates:
+            nv_base = os.path.join(sp, "nvidia")
+            if os.path.isdir(nv_base):
+                for sub in ["cublas", "cudnn", "cuda_nvrtc", "cuda_runtime"]:
+                    bin_dir = os.path.join(nv_base, sub, "bin")
+                    if os.path.isdir(bin_dir) and bin_dir not in discovered_bins:
+                        discovered_bins.append(os.path.abspath(bin_dir))
+                        
+        if discovered_bins:
+            # 1. Prepend to os.environ["PATH"]
+            current_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = os.pathsep.join(discovered_bins) + os.pathsep + current_path
+            
+            # 2. Add with os.add_dll_directory
+            if hasattr(os, "add_dll_directory"):
+                for bd in discovered_bins:
+                    try:
+                        os.add_dll_directory(bd)
+                    except Exception:
+                        pass
+                        
+            # 3. Preload all DLLs via ctypes so CTranslate2 LoadLibrary calls resolve immediately
+            import ctypes
+            for bd in discovered_bins:
+                try:
+                    for f in os.listdir(bd):
+                        if f.endswith(".dll"):
+                            try:
+                                ctypes.CDLL(os.path.join(bd, f))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            log_info(f"[CUDA] Successfully registered {len(discovered_bins)} NVIDIA DLL directories.")
+        return discovered_bins
+
+    def is_process_running(self, proc_names: list) -> bool:
+        """Fast cross-platform check whether any process matching the given names is running."""
+        try:
+            import psutil
+            names_lower = {n.lower() for n in proc_names}
+            for p in psutil.process_iter(['name']):
+                try:
+                    pname = (p.info['name'] or '').lower()
+                    pbase = pname[:-4] if pname.endswith('.exe') else pname
+                    if pname in names_lower or pbase in names_lower or any(pbase == n for n in names_lower):
+                        return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            return False
+        except Exception:
+            pass
+
+        # Windows: Use native Toolhelp32 snapshot via ctypes (zero subprocesses, zero window flashes, 0.1ms)
+        if self.is_win:
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class PROCESSENTRY32W(ctypes.Structure):
+                    _fields_ = [
+                        ('dwSize', wintypes.DWORD),
+                        ('cntUsage', wintypes.DWORD),
+                        ('th32ProcessID', wintypes.DWORD),
+                        ('th32DefaultHeapID', ctypes.POINTER(ctypes.c_ulong)),
+                        ('th32ModuleID', wintypes.DWORD),
+                        ('cntThreads', wintypes.DWORD),
+                        ('th32ParentProcessID', wintypes.DWORD),
+                        ('pcPriClassBase', ctypes.c_long),
+                        ('dwFlags', wintypes.DWORD),
+                        ('szExeFile', ctypes.c_wchar * 260)
+                    ]
+
+                k32 = ctypes.windll.kernel32
+                h = k32.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS = 2
+                if h != -1:
+                    try:
+                        pe = PROCESSENTRY32W()
+                        pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+                        if k32.Process32FirstW(h, ctypes.byref(pe)):
+                            names_lower = {n.lower() for n in proc_names}
+                            while True:
+                                exe = pe.szExeFile.lower()
+                                if any(exe == n or exe == f'{n}.exe' for n in names_lower):
+                                    return True
+                                if not k32.Process32NextW(h, ctypes.byref(pe)):
+                                    break
+                    finally:
+                        k32.CloseHandle(h)
+                return False
+            except Exception:
+                return False
+        else:
+            try:
+                import subprocess
+                out = subprocess.check_output(
+                    ["ps", "-A", "-o", "comm="],
+                    stderr=subprocess.DEVNULL, text=True, errors="replace"
+                ).lower()
+                return any(n.lower() in out for n in proc_names)
+            except Exception:
+                return False
 
     def needs_manual_model_install(self):
         """
@@ -740,3 +1826,173 @@ class OSDoctor:
         HuggingFace hub will quickly skip the download if the model is already cached.
         """
         return True
+
+    def get_cpu_topology(self) -> dict:
+        """
+        Detects CPU topology, specifically handling Apple Silicon asymmetric cores
+        (Performance P-cores vs Efficiency E-cores across M1, M2, M3, M4, M5, Pro/Max/Ultra),
+        legacy Intel Macs (x86_64), Linux, and Windows.
+        """
+        import multiprocessing
+        logical = multiprocessing.cpu_count() or 1
+        topo = {
+            "logical_cores": logical,
+            "physical_cores": logical,
+            "p_cores": logical,
+            "e_cores": 0,
+            "is_apple_silicon": False,
+            "is_rosetta": False,
+            "chip_name": platform.processor() or platform.machine(),
+        }
+
+        if self.is_mac:
+            import subprocess
+            def _sysctl_int(param):
+                try:
+                    out = subprocess.check_output(["sysctl", "-n", param], stderr=subprocess.DEVNULL, text=True).strip()
+                    return int(out) if out.isdigit() else 0
+                except Exception:
+                    return 0
+
+            # Rosetta 2 check
+            topo["is_rosetta"] = (_sysctl_int("sysctl.proc_translated") == 1)
+
+            # Query Apple Silicon Performance vs Efficiency cores
+            # hw.perflevel0 = High Performance cores (P-cores)
+            # hw.perflevel1 = Power Efficiency cores (E-cores)
+            p_cores = _sysctl_int("hw.perflevel0.physicalcpu")
+            if p_cores == 0:
+                p_cores = _sysctl_int("hw.perflevel0.logicalcpu")
+            e_cores = _sysctl_int("hw.perflevel1.physicalcpu")
+            if e_cores == 0:
+                e_cores = _sysctl_int("hw.perflevel1.logicalcpu")
+
+            phys = _sysctl_int("hw.physicalcpu")
+
+            # Brand string (e.g. "Apple M4", "Apple M3 Pro", "Intel(R) Core(TM) i9...")
+            try:
+                brand = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], stderr=subprocess.DEVNULL, text=True).strip()
+                if brand:
+                    topo["chip_name"] = brand
+            except Exception:
+                pass
+
+            if p_cores > 0:
+                topo["is_apple_silicon"] = True
+                topo["p_cores"] = p_cores
+                topo["e_cores"] = e_cores
+                topo["physical_cores"] = phys if phys > 0 else (p_cores + e_cores)
+            elif platform.machine() == "arm64" or topo["is_rosetta"]:
+                topo["is_apple_silicon"] = True
+                topo["physical_cores"] = phys if phys > 0 else logical
+                # Fallback: base Apple Silicon chips typically feature 3-4 P-cores
+                topo["p_cores"] = max(2, min(4, logical // 2))
+                topo["e_cores"] = max(0, logical - topo["p_cores"])
+            else:
+                # Intel Mac (x86_64)
+                topo["is_apple_silicon"] = False
+                topo["physical_cores"] = phys if phys > 0 else max(1, logical // 2)
+                topo["p_cores"] = topo["physical_cores"]
+                topo["e_cores"] = 0
+        else:
+            # Linux / Windows
+            try:
+                import psutil
+                phys = psutil.cpu_count(logical=False)
+                if phys and phys > 0:
+                    topo["physical_cores"] = phys
+                    topo["p_cores"] = phys
+            except Exception:
+                topo["physical_cores"] = max(1, logical // 2 if logical > 2 else logical)
+                topo["p_cores"] = topo["physical_cores"]
+
+        return topo
+
+    def get_optimal_whisper_threading(self, device: str = "cpu") -> dict:
+        """
+        Computes optimal thread count and worker count for Faster-Whisper / CTranslate2.
+        Prevents thread thrashing, barrier stalls on asymmetric Apple Silicon cores (M1-M5),
+        and leaves enough headroom for the OS, DaVinci Resolve, and BadWords GUI.
+        """
+        topo = self.get_cpu_topology()
+
+        # 1. GPU (CUDA on Linux / Windows)
+        if "cuda" in device.lower() or "gpu" in device.lower():
+            return {
+                "cpu_threads": 2,
+                "workers": 2,
+                "env_threads": "2",
+                "reason": "GPU mode (CUDA saturated; 2 CPU helper threads optimal)"
+            }
+
+        # 2. Apple Silicon macOS (M1, M2, M3, M4, M5, Pro, Max, Ultra)
+        if topo.get("is_apple_silicon"):
+            p_cores = max(1, topo.get("p_cores", 4))
+            e_cores = topo.get("e_cores", 4)
+            # CRITICAL ARCHITECTURAL RULE FOR APPLE SILICON (M1-M5):
+            # In matrix multiplication (CTranslate2/OpenMP), if thread count exceeds P-cores,
+            # threads spill onto E-cores. Fast P-cores finish in 1.5ms and wait on slow E-cores (barrier stall).
+            # Restricting threads exclusively to P-cores yields up to 2-3x faster transcription!
+            # All E-cores stay 100% free for macOS WindowServer, DaVinci Resolve & BadWords GUI.
+            #
+            # DYNAMIC SCALING ACROSS ALL APPLE SILICON TIERS:
+            # - Base chips (M1/M2/M3/M4 with 3-4 P-cores, e.g. MacBook Air):
+            #     workers = 2, threads = min(4, p_cores)  (proven 49s benchmark on M2 Air)
+            # - Pro chips (M1-M4 Pro with 6-8 P-cores):
+            #     workers = 2, threads = max(3, p_cores // 2) (e.g. 8 P-cores -> 2 workers * 4 threads = 8 P-cores fully saturated)
+            # - Max & Ultra chips (M1-M4 Max / Ultra with 10-24 P-cores):
+            #     workers = min(4, max(2, p_cores // 4)), threads = max(3, p_cores // workers)
+            #     (e.g. 12 P-cores -> 3 workers * 4 threads = 12 P-cores; 16 P-cores -> 4 workers * 4 threads = 16 P-cores)
+            if p_cores <= 4:
+                workers = 2
+                threads = min(4, p_cores)
+            elif p_cores <= 8:
+                workers = 2
+                threads = max(3, p_cores // 2)
+            else:
+                workers = min(4, max(2, p_cores // 4))
+                threads = max(3, p_cores // workers)
+
+            return {
+                "cpu_threads": threads,
+                "workers": workers,
+                "env_threads": str(threads),
+                "reason": f"Apple Silicon ({topo.get('chip_name', 'ARM64')}): {workers} parallel chunk workers with {threads} threads each (total {workers*threads} P-threads saturating {p_cores} P-cores; {e_cores} E-cores reserved for OS/UI)"
+            }
+
+        # 3. Intel Mac (x86_64)
+        if self.is_mac:
+            phys = max(1, topo.get("physical_cores", 4))
+            threads = max(1, phys - 1)
+            workers = 1 if phys <= 4 else 2
+            return {
+                "cpu_threads": threads,
+                "workers": workers,
+                "env_threads": str(threads),
+                "reason": f"Intel Mac: {threads} physical cores, leaving 1 core for OS/UI"
+            }
+
+        # 4. Linux / Windows on CPU
+        # Avoid thread oversubscription! CTranslate2 already parallelizes matrix multiplication with OpenMP.
+        # Spawning too many workers duplicates model memory and causes severe cache thrashing on CPU.
+        logical = topo.get("logical_cores", 4)
+        phys = max(1, topo.get("physical_cores", logical))
+        if phys <= 4:
+            workers = 1
+            threads = max(1, phys - 1)
+        elif phys <= 8:
+            # e.g. 6 cores (Ryzen 5 5500): 2 workers * 3 threads = 6 threads (saturating 100% of cores cleanly)
+            workers = 2
+            threads = max(2, phys // 2)
+        else:
+            # 10+ cores: 2-3 workers with 3-4 threads each
+            workers = min(3, max(2, phys // 4))
+            threads = max(3, phys // workers)
+
+        return {
+            "cpu_threads": threads,
+            "workers": workers,
+            "env_threads": str(threads),
+            "reason": f"CPU Mode: {workers} workers with {threads} threads each (total {workers*threads} threads on {phys} physical cores; zero thrashing)"
+        }
+

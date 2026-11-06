@@ -1,9 +1,15 @@
 # BadWords - Complete User Guide & Manual
 
-> **Documentation for BadWords release: 3.2.4**
+> [!WARNING]
+> ### Outdated Manual Notice (Written for Version 3.2.4)
+> **Please note:** This comprehensive user guide and manual was written for **BadWords 3.2.4**, which is an older release.
+> 
+> BadWords has since transitioned to **v4.0**, introducing major new workflows and structural overhauls (such as standalone media import with multi-format timeline export, marquee box selection, interactive timeline waveform preview with real-time cut skipping, live in-RAM silence tuning, and FCP7 XML timeline assembly).
+> 
+> An updated manual dedicated to the latest version will be created and published as soon as I can manage it. In the meantime, this guide still provides useful explanations of core concepts and general workflows, but please keep in mind that many UI elements, shortcuts, and settings differ in the newer version!
 
-> [!WARNING]  
-> **Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub - Pull Requests are also welcome!
+> [!NOTE]  
+> **Documentation Disclaimer:** I've never written full documentation before, and I used AI to help put this entire guide together. Because of that, some mistakes, weird phrasing, or inaccuracies might still be present. If you stumble upon anything confusing or hard to understand, feel free to contact me directly or open an Issue on GitHub - Pull Requests are also welcome!
 
 ## Table of Contents
 
@@ -612,13 +618,12 @@ The **Interface** tab lets you customize how your transcript looks and behaves, 
 
 **Chunk Segmentation Parameters (for Segmented Mode):** <br>
 *(In Segmented Blocks mode, a "chunk" represents a single displayed line/block of dialogue with its own timestamp header).*
-- **Max Chunk Words (default `30`):** Target maximum number of words per block before attempting a line break.
-- **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `33` instead of `30`).
+- **Max Chunk Words (default `15`):** Target maximum number of words per block before attempting a line break.
+- **Chunk Lookahead (default `3`):** Number of additional words the engine searches past `Max Chunk Words` to find a natural punctuation mark (`.`, `?`, `!`, `,`). If punctuation is found within this window, the chunk is extended up to that punctuation mark (making the effective maximum word count `18` instead of `15`).
 - **Min Chunk Characters (default `7`):** Minimum character count threshold before a new chunk is permitted.
 
 > [!NOTE]  
-> **Known Behavior & Re-analysis Requirement:**  
-> - **Initial Default Value:** In current releases, the backend initializes with an internal default of `15` words per chunk under the hood, even though the UI input box displays `30`. Explicitly changing the value in Settings will properly overwrite and save your custom choice.
+> **Re-analysis Requirement:**  
 > - **Re-analysis Required:** Dialogue segmentation into blocks is computed exclusively during transcription. If you adjust any Chunk Segmentation parameters in Settings, you must **re-run transcription (`Analyze`)** on your audio to see the updated chunk lengths reflected in the transcript canvas.
 
 **Transcript Typography:**

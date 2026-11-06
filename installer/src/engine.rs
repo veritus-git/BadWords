@@ -1,0 +1,2251 @@
+// Copyright (c) 2026 Szymon Wolarz
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+//! Core installation, repair, move, and uninstallation engine
+//! Matches setupfiles/setup.py feature-for-feature: System Python detection & auto-installation,
+//! GPU detection, venv, pip packages, ffmpeg, libs link, DaVinci Resolve wrappers, and OS standalone integration.
+
+use crate::os::{self, resolve_script_dirs};
+use crate::state::{emit_complete, emit_log, emit_progress, emit_progress_sub, EventSender};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Recursively collects all files in a directory tree with relative paths and byte sizes
+fn collect_all_files(dir: &Path, base: &Path) -> Vec<(PathBuf, PathBuf, u64)> {
+    let mut result = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let rel = p.strip_prefix(base).unwrap_or(&p).to_path_buf();
+            if p.is_dir() {
+                result.extend(collect_all_files(&p, base));
+            } else if p.is_file() || p.is_symlink() {
+                let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+                result.push((p, rel, size));
+            }
+        }
+    }
+    result
+}
+
+/// Recursively copies a directory tree with continuous live progress
+fn copy_dir_with_progress(
+    src: &Path,
+    dst: &Path,
+    start_pct: i32,
+    end_pct: i32,
+    title: &str,
+    sender: &EventSender,
+) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    let files = collect_all_files(src, src);
+    let total_bytes: u64 = files.iter().map(|(_, _, s)| *s).sum();
+    let total_files = files.len();
+    let mut copied_bytes: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+
+    for (idx, (src_file, rel_path, file_size)) in files.into_iter().enumerate() {
+        let target_file = dst.join(&rel_path);
+        if let Some(parent) = target_file.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::copy(&src_file, &target_file);
+        copied_bytes += file_size;
+
+        if last_emit.elapsed() > std::time::Duration::from_millis(40) || idx + 1 == total_files {
+            let frac = if total_bytes > 0 {
+                (copied_bytes as f32 / total_bytes as f32).clamp(0.0, 1.0)
+            } else {
+                ((idx + 1) as f32 / total_files.max(1) as f32).clamp(0.0, 1.0)
+            };
+            let main_pct = start_pct + ((end_pct - start_pct) as f32 * frac) as i32;
+            let sub_pct = (frac * 100.0) as i32;
+            let copied_mb = (copied_bytes as f64) / 1_048_576.0;
+            let total_mb = (total_bytes as f64) / 1_048_576.0;
+            let details = if total_mb > 0.1 {
+                format!("Copying: {} ({:.1}/{:.1} MB)", rel_path.display(), copied_mb, total_mb)
+            } else {
+                format!("Copying: {} ({}/{})", rel_path.display(), idx + 1, total_files)
+            };
+            emit_progress_sub(sender, main_pct as u32, sub_pct as u32, title, &details);
+            last_emit = std::time::Instant::now();
+        }
+    }
+    Ok(())
+}
+
+/// Recursively deletes a directory with continuous live progress
+fn delete_dir_with_progress(
+    dir: &Path,
+    start_pct: i32,
+    end_pct: i32,
+    title: &str,
+    sender: &EventSender,
+) {
+    if !dir.exists() {
+        return;
+    }
+    let files = collect_all_files(dir, dir);
+    let total_items = files.len();
+    let mut last_emit = std::time::Instant::now();
+
+    for (idx, (file_path, rel_path, _)) in files.into_iter().enumerate() {
+        let _ = fs::remove_file(&file_path);
+
+        if last_emit.elapsed() > std::time::Duration::from_millis(30) || idx + 1 == total_items {
+            let frac = ((idx + 1) as f32 / total_items.max(1) as f32).clamp(0.0, 1.0);
+            let main_pct = start_pct + ((end_pct - start_pct) as f32 * frac) as i32;
+            let sub_pct = (frac * 100.0) as i32;
+            let details = format!("Removing: {} ({}/{})", rel_path.display(), idx + 1, total_items);
+            emit_progress_sub(sender, main_pct as u32, sub_pct as u32, title, &details);
+            last_emit = std::time::Instant::now();
+        }
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Recursively copies a directory tree
+fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let dest_path = dst.as_ref().join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(entry.path(), dest_path)?;
+        } else {
+            let _ = fs::copy(entry.path(), dest_path);
+        }
+    }
+    Ok(())
+}
+
+/// Marks v4 migration complete so the one-time milestone notice is not shown for setups performed by the official installer
+fn mark_v4_complete(target_dir: &Path) {
+    let _ = fs::write(target_dir.join(".v4_migration_notified"), "1\n");
+    let _ = fs::write(target_dir.join("src").join(".v4_migration_notified"), "1\n");
+    for settings_path in [target_dir.join("settings.json"), target_dir.join("src").join("settings.json")] {
+        if settings_path.is_file() {
+            if let Ok(content) = fs::read_to_string(&settings_path) {
+                if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(obj) = json_val.as_object_mut() {
+                        obj.insert("v4_migration_notified".to_string(), serde_json::Value::Bool(true));
+                        if let Ok(serialized) = serde_json::to_string_pretty(&json_val) {
+                            let _ = fs::write(&settings_path, serialized);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Downloads a file over HTTP(S) to the specified destination with live byte progress
+fn download_file_with_progress(
+    url: &str,
+    dest: &Path,
+    main_pct: u32,
+    status_label: &str,
+    details_prefix: &str,
+    sender: &EventSender,
+) -> Result<(), String> {
+    let resp = ureq::get(url)
+        .timeout(std::time::Duration::from_secs(180))
+        .call()
+        .map_err(|e| format!("Download error from {}: {}", url, e))?;
+
+    let total_bytes = resp.header("content-length").and_then(|l| l.parse::<u64>().ok());
+    let mut reader = resp.into_reader();
+    let mut out = fs::File::create(dest)
+        .map_err(|e| format!("Failed to create destination file {}: {}", dest.display(), e))?;
+
+    let mut buffer = [0u8; 64 * 1024];
+    let mut downloaded: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+
+    loop {
+        use std::io::Read;
+        let bytes_read = reader.read(&mut buffer).map_err(|e| format!("Read error: {}", e))?;
+        if bytes_read == 0 {
+            break;
+        }
+        use std::io::Write;
+        out.write_all(&buffer[..bytes_read]).map_err(|e| format!("Write error: {}", e))?;
+        downloaded += bytes_read as u64;
+
+        if last_emit.elapsed().as_millis() >= 120 {
+            last_emit = std::time::Instant::now();
+            let mb_down = downloaded as f64 / 1_048_576.0;
+            if let Some(total) = total_bytes {
+                let mb_total = total as f64 / 1_048_576.0;
+                let sub_pct = ((downloaded as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32;
+                let det = format!("{} ({:.1}/{:.1} MB)", details_prefix, mb_down, mb_total);
+                emit_progress_sub(sender, main_pct, sub_pct, status_label, &det);
+            } else {
+                let det = format!("{} ({:.1} MB downloaded)", details_prefix, mb_down);
+                emit_progress_sub(sender, main_pct, 50, status_label, &det);
+            }
+        }
+    }
+
+    emit_progress_sub(sender, main_pct, 100, status_label, &format!("{} (Done)", details_prefix));
+    Ok(())
+}
+
+/// Converts raw wheel / package filenames into clean, user-friendly names
+fn friendly_pkg_name(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    if lower.contains("pyside6_essentials") {
+        "PySide6 Essentials".to_string()
+    } else if lower.contains("pyside6_addons") {
+        "PySide6 Addons".to_string()
+    } else if lower.contains("pyside6") {
+        "PySide6 Framework".to_string()
+    } else if lower.contains("cudnn") {
+        "NVIDIA cuDNN CUDA 12".to_string()
+    } else if lower.contains("cublas") {
+        "NVIDIA cuBLAS CUDA 12".to_string()
+    } else if lower.contains("faster_whisper") || lower.contains("faster-whisper") {
+        "Faster-Whisper AI Engine".to_string()
+    } else if lower.contains("ctranslate2") {
+        "CTranslate2 Runtime".to_string()
+    } else if lower.contains("pypdf") {
+        "PyPDF Library".to_string()
+    } else if lower.contains("shiboken6") {
+        "Shiboken6 Core".to_string()
+    } else {
+        let name = raw.split('-').next().unwrap_or(raw);
+        name.trim_end_matches(".whl").trim_end_matches(".tar.gz").to_string()
+    }
+}
+
+/// Executes pip install with live streaming progress updates
+fn run_pip_install_streaming(
+    py_bin: &Path,
+    args: &[&str],
+    main_pct_start: u32,
+    main_pct_end: u32,
+    status_label: &str,
+    default_detail: &str,
+    sender: &EventSender,
+) -> bool {
+    let mut cmd = os::create_hidden_command(py_bin);
+    cmd.args(["-m", "pip", "install", "--no-cache-dir"]);
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            emit_log(sender, "ERROR", &format!("Failed to start pip: {}", e));
+            return false;
+        }
+    };
+
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    emit_progress_sub(sender, main_pct_start, 0, status_label, default_detail);
+    let sender_clone = sender.clone();
+    let status_str = status_label.to_string();
+
+    let reader_thread = std::thread::spawn(move || {
+        if let Some(ref mut out) = stdout {
+            use std::io::Read;
+            let mut byte_buf = [0u8; 1024];
+            let mut line_buf = String::new();
+
+            while let Ok(n) = out.read(&mut byte_buf) {
+                if n == 0 {
+                    break;
+                }
+                for &b in &byte_buf[..n] {
+                    if b == b'\n' || b == b'\r' {
+                        let line = line_buf.trim();
+                        if !line.is_empty() {
+                            if line.contains("Downloading") {
+                                if let Some(pkg_name) = line.split("Downloading").nth(1) {
+                                    let clean_name = pkg_name.split_whitespace().next().unwrap_or("package");
+                                    let friendly = friendly_pkg_name(clean_name);
+                                    let size_str = pkg_name.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("");
+                                    let current_detail = if !size_str.is_empty() {
+                                        format!("Downloading {} ({})", friendly, size_str)
+                                    } else {
+                                        format!("Downloading {}", friendly)
+                                    };
+                                    emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
+                                }
+                            } else if line.contains("Collecting") {
+                                if let Some(pkg_name) = line.split("Collecting").nth(1) {
+                                    let clean_name = pkg_name.split_whitespace().next().unwrap_or("package");
+                                    let friendly = friendly_pkg_name(clean_name);
+                                    let current_detail = format!("Collecting {}", friendly);
+                                    emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
+                                }
+                            } else if line.contains("Using cached") {
+                                if let Some(pkg_name) = line.split("Using cached").nth(1) {
+                                    let clean_name = pkg_name.split_whitespace().next().unwrap_or("package");
+                                    let friendly = friendly_pkg_name(clean_name);
+                                    let current_detail = format!("Using cached {}", friendly);
+                                    emit_progress_sub(&sender_clone, main_pct_start, 0, &status_str, &current_detail);
+                                }
+                            } else if line.contains("Installing collected packages") {
+                                let current_detail = "Unpacking & configuring Python packages...".to_string();
+                                emit_progress_sub(&sender_clone, main_pct_end - 1, 0, &status_str, &current_detail);
+                            }
+                        }
+                        line_buf.clear();
+                    } else {
+                        line_buf.push(b as char);
+                    }
+                }
+            }
+        }
+    });
+
+    let mut err_output = String::new();
+    if let Some(ref mut err) = stderr {
+        use std::io::Read;
+        let _ = err.read_to_string(&mut err_output);
+    }
+
+    let status = child.wait();
+    let _ = reader_thread.join();
+
+    match status {
+        Ok(st) => {
+            if !st.success() && !err_output.trim().is_empty() {
+                emit_log(sender, "WARN", &format!("pip output: {}", err_output.trim()));
+            }
+            st.success()
+        }
+        Err(e) => {
+            emit_log(sender, "ERROR", &format!("pip process error: {}", e));
+            false
+        }
+    }
+}
+
+/// Extracts a ZIP archive to a destination directory using the zip crate
+fn extract_zip(archive_path: &Path, destination: &Path) -> std::io::Result<()> {
+    let file = fs::File::open(archive_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let outpath = match file.enclosed_name() {
+            Some(path) => destination.join(path),
+            None => continue,
+        };
+
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    fs::create_dir_all(p)?;
+                }
+            }
+            let mut outfile = fs::File::create(&outpath)?;
+            std::io::copy(&mut file, &mut outfile)?;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Some(mode) = file.unix_mode() {
+                let _ = fs::set_permissions(&outpath, fs::Permissions::from_mode(mode));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Finds the system Python executable (Python 3.10 - 3.12 compatible with DaVinci Resolve)
+fn find_python() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(p) = os::windows::find_compatible_system_python() {
+            return Some(p.to_string_lossy().to_string());
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let candidates = [
+            "python3.12",
+            "python3.11",
+            "python3.10",
+            "python3",
+            "python",
+        ];
+
+        for cmd in candidates {
+            if let Ok(output) = os::create_hidden_command(cmd)
+                .arg("-c")
+                .arg("import sys; exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)")
+                .output()
+            {
+                if output.status.success() {
+                    return Some(cmd.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Detects NVIDIA GPU hardware for CUDA 12 acceleration
+fn detect_nvidia_gpu() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        if Path::new(r"C:\Windows\System32\nvcuda.dll").exists() || Path::new(r"C:\Windows\System32\nvapi64.dll").exists() {
+            return true;
+        }
+        let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+        if let Ok(class_key) = hklm.open_subkey(r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}") {
+            for subkey in class_key.enum_keys().filter_map(|k| k.ok()) {
+                if let Ok(dev) = class_key.open_subkey(&subkey) {
+                    if let Ok(desc) = dev.get_value::<String, _>("DriverDesc") {
+                        if desc.to_lowercase().contains("nvidia") {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(output) = os::create_hidden_command("lspci").output() {
+            if String::from_utf8_lossy(&output.stdout).to_lowercase().contains("nvidia") {
+                return true;
+            }
+        }
+        if let Ok(output) = os::create_hidden_command("lshw").args(["-C", "display"]).output() {
+            if String::from_utf8_lossy(&output.stdout).to_lowercase().contains("nvidia") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Locates local source repository if available
+pub fn find_local_repo() -> Option<PathBuf> {
+    let mut candidates = vec![
+        PathBuf::from("."),
+        PathBuf::from(".."),
+        PathBuf::from("../.."),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.to_path_buf());
+            if let Some(p2) = parent.parent() {
+                candidates.push(p2.to_path_buf());
+            }
+        }
+    }
+
+    for candidate in candidates {
+        if candidate.join("src").join("main.py").is_file() || (candidate.join("main.py").is_file() && candidate.join("setupfiles").is_dir()) {
+            if let Ok(canon) = candidate.canonicalize() {
+                return Some(canon);
+            }
+        }
+    }
+    None
+}
+
+/// Reads the version string from app_constants.py in a directory or fallback
+pub fn read_app_version_from_dir(dir: &Path) -> Option<String> {
+    let candidates = [
+        dir.join("src").join("config").join("app_constants.py"),
+        dir.join("config").join("app_constants.py"),
+        dir.join("src").join("config.py"),
+        dir.join("config.py"),
+    ];
+    for config_path in candidates {
+        if let Ok(content) = fs::read_to_string(&config_path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("VERSION") || trimmed.starts_with("APP_VERSION") {
+                    if let Some((_, val)) = trimmed.split_once('=') {
+                        let clean = val.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+                        if !clean.is_empty() {
+                            return Some(clean.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Detects version from local files if running from repo/source directory
+pub fn detect_local_version() -> Option<String> {
+    if let Some(repo_dir) = find_local_repo() {
+        if let Some(v) = read_app_version_from_dir(&repo_dir) {
+            return Some(v);
+        }
+        return Some(APP_VERSION.to_string());
+    }
+    None
+}
+
+/// Cleanly wipes obsolete code, scripts, assets and temporary files from target_dir,
+/// while strictly preserving personal user settings, models, saves, venv and binaries (whitelist).
+fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
+    if !target_dir.is_dir() {
+        return;
+    }
+
+    emit_log(sender, "INFO", "Performing clean application reset (preserving user settings, models, saves & venv)...");
+
+    let protected_names = [
+        "settings.json",
+        "user.json",
+        "pref.json",
+        "dev.json",
+        ".python_auto_installed",
+        ".no_self_upgrade",
+        "models",
+        "saves",
+        "venv",
+        "bin",
+        "libs",
+    ];
+
+    if let Ok(entries) = fs::read_dir(target_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+
+            if protected_names.iter().any(|&prot| prot.eq_ignore_ascii_case(&file_name)) {
+                continue;
+            }
+
+            // Do not delete current running installer exe if it's placed in target_dir
+            if let Ok(cur_exe) = std::env::current_exe() {
+                if cur_exe == p {
+                    continue;
+                }
+            }
+
+            if p.is_dir() {
+                let _ = fs::remove_dir_all(&p);
+            } else if p.is_file() || p.is_symlink() {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
+    emit_log(sender, "OK", "Target directory reset to clean state.");
+}
+
+/// Deploys BadWords application files (from local repo or online GitHub/GitLab zip)
+fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
+    if let Some(repo_dir) = find_local_repo() {
+        emit_log(sender, "INFO", &format!("Using local repository: {}", repo_dir.display()));
+
+        let src_dir = repo_dir.join("src");
+        if src_dir.is_dir() {
+            let _ = copy_dir_all(&src_dir, target_dir);
+        }
+
+        let src_assets = repo_dir.join("assets");
+        if src_assets.is_dir() {
+            let _ = copy_dir_all(&src_assets, target_dir.join("assets"));
+        }
+
+        let setupfiles_dir = repo_dir.join("setupfiles");
+        if setupfiles_dir.is_dir() {
+            let _ = copy_dir_all(&setupfiles_dir, target_dir.join("setupfiles"));
+        }
+
+        let updater_src = repo_dir.join("setupfiles").join("updater.py");
+        if updater_src.is_file() {
+            let _ = fs::copy(updater_src, target_dir.join("updater.py"));
+        }
+
+        for doc in ["CHANGELOG.md", "LICENSE", "README.md"] {
+            let doc_path = repo_dir.join(doc);
+            if doc_path.is_file() {
+                let _ = fs::copy(doc_path, target_dir.join(doc));
+            }
+        }
+
+        let bw_cand = repo_dir.join("BadWords.exe");
+        if bw_cand.is_file() {
+            let dest_bw = target_dir.join("BadWords.exe");
+            let _ = fs::copy(&bw_cand, &dest_bw);
+            os::unblock_file(&dest_bw);
+        }
+        let bw_linux_cand = repo_dir.join("BadWords");
+        if bw_linux_cand.is_file() {
+            let dest_bw = target_dir.join("BadWords");
+            let _ = fs::copy(&bw_linux_cand, &dest_bw);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&dest_bw, fs::Permissions::from_mode(0o755));
+            }
+        }
+
+        let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+        if let Ok(cur_exe) = std::env::current_exe() {
+            let dest_bin = target_dir.join(installer_dest_name);
+            if cur_exe != dest_bin {
+                let _ = fs::copy(&cur_exe, &dest_bin);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                }
+            }
+        }
+
+        emit_log(sender, "OK", "Local application files deployed successfully.");
+        return true;
+    }
+
+    // Remote download
+    deploy_remote_files(target_dir, sender)
+}
+
+/// Queries GitHub API for the latest published release tag and zipball URL
+pub fn fetch_latest_github_release() -> Option<(String, String)> {
+    let resp = ureq::get("https://api.github.com/repos/veritus-git/BadWords/releases/latest")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(5))
+        .call()
+        .ok()?;
+
+    let json: serde_json::Value = resp.into_json().ok()?;
+    let tag = json.get("tag_name").and_then(|v| v.as_str())?.to_string();
+    let zip_url = json.get("zipball_url").and_then(|v| v.as_str())?.to_string();
+    Some((tag, zip_url))
+}
+
+/// Queries GitLab API for releases if GitHub API fails
+pub fn fetch_latest_gitlab_release() -> Option<(String, String)> {
+    let resp = ureq::get("https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(5))
+        .call()
+        .ok()?;
+
+    let json: serde_json::Value = resp.into_json().ok()?;
+    let first = json.as_array()?.first()?;
+    let tag = first.get("tag_name").and_then(|v| v.as_str())?.to_string();
+    let zip_url = format!("https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip");
+    Some((tag, zip_url))
+}
+
+/// Downloads and deploys BadWords from latest GitHub Release or repository
+fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
+    let temp_dir = std::env::temp_dir();
+    let zip_dest = temp_dir.join("badwords_release.zip");
+    let extract_dest = temp_dir.join("badwords_release_extracted");
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    let _ = fs::create_dir_all(&extract_dest);
+
+    let mut downloaded = false;
+    let mut candidate_urls = Vec::new();
+
+    if let Some((tag, zip_url)) = fetch_latest_github_release() {
+        emit_log(sender, "INFO", &format!("Detected latest GitHub release: {}", tag));
+        candidate_urls.push(zip_url);
+        candidate_urls.push(format!("https://github.com/veritus-git/BadWords/archive/refs/tags/{}.zip", tag));
+    } else if let Some((tag, zip_url)) = fetch_latest_gitlab_release() {
+        emit_log(sender, "INFO", &format!("Detected latest GitLab release: {}", tag));
+        candidate_urls.push(zip_url);
+    }
+
+    // Git branch archives as reliable dynamic fallbacks
+    candidate_urls.push("https://github.com/veritus-git/BadWords/archive/refs/heads/main.zip".to_string());
+    candidate_urls.push("https://github.com/veritus-git/BadWords/archive/refs/heads/dev-v4.zip".to_string());
+    candidate_urls.push("https://gitlab.com/badwords/BadWords/-/archive/main/BadWords-main.zip".to_string());
+
+    for url in candidate_urls {
+        emit_log(sender, "INFO", &format!("Fetching release source from: {}", url));
+        if download_file_with_progress(&url, &zip_dest, 30, "Deploying application files...", "Downloading release archive", sender).is_ok() {
+            downloaded = true;
+            break;
+        }
+    }
+
+    if !downloaded {
+        emit_log(sender, "ERROR", "Failed to download BadWords source package. Check internet connection.");
+        return false;
+    }
+
+    emit_log(sender, "INFO", "Extracting BadWords application files...");
+    if extract_zip(&zip_dest, &extract_dest).is_err() {
+        emit_log(sender, "ERROR", "Failed to extract downloaded archive.");
+        return false;
+    }
+
+    // Find the extracted root directory (e.g. BadWords-dev-v4 or BadWords-main)
+    if let Ok(entries) = fs::read_dir(&extract_dest) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file()) {
+                let src_sub = if p.join("src").is_dir() { p.join("src") } else { p.clone() };
+                let _ = copy_dir_all(&src_sub, target_dir);
+
+                let assets_sub = p.join("assets");
+                if assets_sub.is_dir() {
+                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
+                }
+
+                let setupfiles_sub = p.join("setupfiles");
+                if setupfiles_sub.is_dir() {
+                    let _ = copy_dir_all(&setupfiles_sub, target_dir.join("setupfiles"));
+                }
+
+                let updater_sub = p.join("setupfiles").join("updater.py");
+                if updater_sub.is_file() {
+                    let _ = fs::copy(updater_sub, target_dir.join("updater.py"));
+                }
+
+                let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+                if let Ok(cur_exe) = std::env::current_exe() {
+                    let dest_bin = target_dir.join(installer_dest_name);
+                    if cur_exe != dest_bin {
+                        let _ = fs::copy(&cur_exe, &dest_bin);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                        }
+                    }
+                }
+
+                emit_log(sender, "OK", "Remote application files deployed successfully.");
+                let _ = fs::remove_file(&zip_dest);
+                let _ = fs::remove_dir_all(&extract_dest);
+                return true;
+            }
+        }
+    }
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    false
+}
+
+/// Downloads and deploys BadWords from a specific git branch
+fn deploy_branch_files(target_dir: &Path, branch: &str, sender: &EventSender) -> bool {
+    let temp_dir = std::env::temp_dir();
+    let zip_dest = temp_dir.join(format!("badwords_branch_{}.zip", branch));
+    let extract_dest = temp_dir.join(format!("badwords_branch_{}_extracted", branch));
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    let _ = fs::create_dir_all(&extract_dest);
+
+    let mut downloaded = false;
+    let candidate_urls = vec![
+        format!("https://github.com/veritus-git/BadWords/archive/refs/heads/{}.zip", branch),
+        format!("https://gitlab.com/badwords/BadWords/-/archive/{}/BadWords-{}.zip", branch, branch),
+    ];
+
+    for url in candidate_urls {
+        emit_log(sender, "INFO", &format!("Fetching branch source from: {}", url));
+        if download_file_with_progress(&url, &zip_dest, 30, "Deploying branch files...", &format!("Downloading branch '{}'", branch), sender).is_ok() {
+            downloaded = true;
+            break;
+        }
+    }
+
+    if !downloaded {
+        emit_log(sender, "ERROR", &format!("Failed to download branch '{}'. Check internet connection.", branch));
+        return false;
+    }
+
+    emit_log(sender, "INFO", "Extracting BadWords branch files...");
+    if extract_zip(&zip_dest, &extract_dest).is_err() {
+        emit_log(sender, "ERROR", "Failed to extract downloaded branch archive.");
+        return false;
+    }
+
+    if let Ok(entries) = fs::read_dir(&extract_dest) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file()) {
+                let src_sub = if p.join("src").is_dir() { p.join("src") } else { p.clone() };
+                let _ = copy_dir_all(&src_sub, target_dir);
+
+                let assets_sub = p.join("assets");
+                if assets_sub.is_dir() {
+                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
+                }
+
+                let setup_sub = p.join("setupfiles");
+                if setup_sub.is_dir() {
+                    let _ = copy_dir_all(&setup_sub, target_dir.join("setupfiles"));
+                    let up_py = setup_sub.join("updater.py");
+                    if up_py.is_file() {
+                        let _ = fs::copy(up_py, target_dir.join("updater.py"));
+                    }
+                }
+
+                let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+                if let Ok(cur_exe) = std::env::current_exe() {
+                    let dest_bin = target_dir.join(installer_dest_name);
+                    if cur_exe != dest_bin {
+                        let _ = fs::copy(&cur_exe, &dest_bin);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                        }
+                    }
+                }
+
+                emit_log(sender, "OK", &format!("Branch '{}' deployed successfully.", branch));
+                let _ = fs::remove_file(&zip_dest);
+                let _ = fs::remove_dir_all(&extract_dest);
+                return true;
+            }
+        }
+    }
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    false
+}
+
+/// Fetches the list of git branch names from GitHub or GitLab API
+pub fn fetch_git_branches() -> Vec<String> {
+    if let Ok(resp) = ureq::get("https://api.github.com/repos/veritus-git/BadWords/branches")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(6))
+        .call()
+    {
+        if let Ok(json) = resp.into_json::<serde_json::Value>() {
+            if let Some(arr) = json.as_array() {
+                let branches: Vec<String> = arr
+                    .iter()
+                    .filter_map(|b| b.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                if !branches.is_empty() {
+                    return branches;
+                }
+            }
+        }
+    }
+
+    // GitLab fallback
+    if let Ok(resp) = ureq::get("https://gitlab.com/api/v4/projects/badwords%2FBadWords/repository/branches")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(6))
+        .call()
+    {
+        if let Ok(json) = resp.into_json::<serde_json::Value>() {
+            if let Some(arr) = json.as_array() {
+                let branches: Vec<String> = arr
+                    .iter()
+                    .filter_map(|b| b.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                if !branches.is_empty() {
+                    return branches;
+                }
+            }
+        }
+    }
+
+    vec!["main".to_string(), "dev-v4".to_string()]
+}
+
+/// Configures developer mode marker and settings.json flag
+pub fn configure_no_self_upgrade(target_dir: &Path, sender: &EventSender) {
+    let marker = target_dir.join(".no_self_upgrade");
+    let _ = fs::write(marker, "1");
+
+    let settings_file = target_dir.join("settings.json");
+    let mut json_obj: serde_json::Value = if settings_file.is_file() {
+        fs::read_to_string(&settings_file)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if let Some(map) = json_obj.as_object_mut() {
+        map.insert("no_self_upgrade".to_string(), serde_json::Value::Bool(true));
+        if let Ok(formatted) = serde_json::to_string_pretty(&json_obj) {
+            let _ = fs::write(&settings_file, formatted);
+        }
+    }
+    emit_log(sender, "OK", "Developer mode configured: Updater self-upgrade disabled.");
+}
+
+/// Ensures portable FFmpeg is present in bin/
+fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
+    let ffmpeg_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
+    let ffmpeg_bin = bin_dir.join(ffmpeg_name);
+
+    if ffmpeg_bin.exists() {
+        emit_log(sender, "OK", "Portable FFmpeg binary is present.");
+        return;
+    }
+
+    // 1. Check if local repo already has bin/ffmpeg
+    if let Some(repo) = find_local_repo() {
+        let repo_ffmpeg = repo.join("bin").join(ffmpeg_name);
+        if repo_ffmpeg.is_file() && fs::copy(&repo_ffmpeg, &ffmpeg_bin).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+            }
+            emit_log(sender, "OK", "Copied local portable FFmpeg binary.");
+            return;
+        }
+    }
+
+    // 2. Check if system ffmpeg exists on the machine
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(output) = os::create_hidden_command(which_cmd).arg(ffmpeg_name).output() {
+        if output.status.success() {
+            let sys_ff = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").trim().to_string();
+            if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() && fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("Copied system FFmpeg ({}) as local runtime binary.", sys_ff));
+                return;
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+            let p = Path::new(path);
+            if p.is_file() && fs::copy(p, &ffmpeg_bin).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", &format!("Copied Homebrew FFmpeg ({}) as local runtime binary.", path));
+                return;
+            }
+        }
+    }
+
+    emit_log(sender, "INFO", "Downloading portable FFmpeg...");
+
+    #[cfg(target_os = "windows")]
+    {
+        let urls = [
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        ];
+        let temp_dir = std::env::temp_dir();
+        let archive = temp_dir.join("ffmpeg_win.zip");
+        let extract_dir = temp_dir.join("ffmpeg_extracted");
+
+        for url in urls {
+            let _ = fs::remove_dir_all(&extract_dir);
+            let _ = fs::create_dir_all(&extract_dir);
+
+            if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Windows)", sender).is_ok() {
+                if extract_zip(&archive, &extract_dir).is_ok() {
+                    if let Ok(entries) = fs::read_dir(&extract_dir) {
+                        for entry in entries.flatten() {
+                            let candidate = entry.path().join("bin").join("ffmpeg.exe");
+                            if candidate.is_file() {
+                                let _ = fs::copy(&candidate, &ffmpeg_bin);
+                                os::unblock_file(&ffmpeg_bin);
+                                emit_log(sender, "OK", "Portable FFmpeg for Windows installed successfully.");
+                                let _ = fs::remove_file(&archive);
+                                let _ = fs::remove_dir_all(&extract_dir);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let urls = [
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+        ];
+        let parent = bin_dir.parent().unwrap_or(bin_dir);
+        let archive = parent.join("ffmpeg_static.tar.xz");
+
+        for url in urls {
+            if download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (Linux)", sender).is_ok() {
+                let _ = os::create_hidden_command("tar").args(["-xf", &archive.to_string_lossy(), "-C", &parent.to_string_lossy()]).status();
+
+                if let Ok(entries) = fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("ffmpeg-")) {
+                            let src_ff = if p.join("bin").join("ffmpeg").is_file() {
+                                p.join("bin").join("ffmpeg")
+                            } else {
+                                p.join("ffmpeg")
+                            };
+                            if src_ff.is_file() {
+                                let _ = fs::copy(&src_ff, &ffmpeg_bin);
+                                #[cfg(unix)]
+                                {
+                                    use std::os::unix::fs::PermissionsExt;
+                                    let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                                }
+                            }
+                            let _ = fs::remove_dir_all(p);
+                            break;
+                        }
+                    }
+                }
+                let _ = fs::remove_file(&archive);
+                if ffmpeg_bin.is_file() {
+                    emit_log(sender, "OK", "Portable FFmpeg for Linux installed successfully.");
+                    return;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let url = "https://evermeet.cx/ffmpeg/getrelease/zip";
+        let temp_dir = std::env::temp_dir();
+        let archive = temp_dir.join("ffmpeg_mac.zip");
+
+        let dl_ok = download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (macOS)", sender).is_ok()
+            || os::create_hidden_command("curl")
+                .args(["-L", "-f", "-s", "--max-time", "120", url, "-o", &archive.to_string_lossy()])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+        if dl_ok {
+            if extract_zip(&archive, bin_dir).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", "Portable FFmpeg for macOS installed successfully.");
+                let _ = fs::remove_file(&archive);
+                return;
+            }
+        }
+    }
+
+    // Secondary fallback: check system ffmpeg on any platform
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(output) = os::create_hidden_command(which_cmd).arg(ffmpeg_name).output() {
+        if output.status.success() {
+            let sys_ff = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").trim().to_string();
+            if !sys_ff.is_empty() && Path::new(&sys_ff).is_file() && fs::copy(&sys_ff, &ffmpeg_bin).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("Copied system FFmpeg ({}) as local runtime binary.", sys_ff));
+                return;
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+            let p = Path::new(path);
+            if p.is_file() && fs::copy(p, &ffmpeg_bin).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", &format!("Copied Homebrew FFmpeg ({}) as local runtime binary.", path));
+                return;
+            }
+        }
+    }
+
+    emit_log(sender, "WARN", "Could not download portable FFmpeg. System FFmpeg will be used if present.");
+}
+
+/// Verifies presence and importability of critical BadWords packages in venv.
+/// Returns list of package names that failed to import.
+fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
+    let mut missing = Vec::new();
+
+    // 1. PySide6
+    // Headless-safe verification: check package presence via importlib.util to avoid false failures
+    // on Linux CI / headless systems lacking libGL / X11 display libraries
+    let pyside_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !pyside_ok {
+        missing.push("PySide6".to_string());
+    }
+
+    // 2. faster-whisper
+    let whisper_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('faster_whisper') is not None else 1)"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !whisper_ok {
+        missing.push("faster-whisper".to_string());
+    }
+
+    // 3. pypdf
+    let pypdf_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('pypdf') is not None else 1)"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !pypdf_ok {
+        missing.push("pypdf".to_string());
+    }
+
+    // 4. NVIDIA CUDA acceleration modules (if applicable)
+    if check_nvidia {
+        let ct2_ok = os::create_hidden_command(v_py)
+            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('ctranslate2') is not None else 1)"])
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !ct2_ok {
+            if !missing.contains(&"nvidia-cublas-cu12".to_string()) {
+                missing.push("nvidia-cublas-cu12".to_string());
+            }
+            if !missing.contains(&"nvidia-cudnn-cu12".to_string()) {
+                missing.push("nvidia-cudnn-cu12".to_string());
+            }
+        }
+    }
+
+    missing
+}
+
+/// Configures the Python virtual environment, upgrades pip tools, and installs all dependencies
+fn setup_python_environment(target_dir: &Path, python_cmd: Option<&str>, has_nvidia: bool, sender: &EventSender) -> bool {
+    emit_progress(sender, 55, 2, "Configuring Python environment...", "Setting up isolated virtual environment");
+    let venv_dir = target_dir.join("venv");
+
+    // Determine venv python & pip binaries
+    #[cfg(target_os = "windows")]
+    let v_py = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let v_py = venv_dir.join("bin").join("python");
+
+    let venv_valid = v_py.is_file() && os::create_hidden_command(&v_py).arg("-c").arg("import sys").output().is_ok_and(|o| o.status.success());
+    if !venv_valid {
+        if venv_dir.exists() {
+            emit_log(sender, "WARN", "Existing venv is invalid or broken; recreating clean environment...");
+            let _ = fs::remove_dir_all(&venv_dir);
+        }
+
+        let resolved_py = python_cmd.map(|s| s.to_string()).or_else(find_python);
+        let py_exec = match resolved_py {
+            Some(p) => p,
+            None => {
+                emit_log(sender, "INFO", "Compatible Python runtime (3.10 - 3.12) not detected; downloading Python 3.12...");
+                if os::install_system_python(sender) {
+                    find_python().unwrap_or_else(|| "python".to_string())
+                } else {
+                    emit_log(sender, "ERROR", "Could not obtain a compatible Python 3.10-3.12 runtime.");
+                    return false;
+                }
+            }
+        };
+
+        emit_log(sender, "INFO", &format!("Creating Python virtual environment in venv/ using {}...", py_exec));
+        let status = os::create_hidden_command(&py_exec)
+            .args(["-m", "venv", &venv_dir.to_string_lossy()])
+            .status();
+
+        if let Ok(st) = status {
+            if st.success() {
+                emit_log(sender, "OK", "Virtual environment initialized successfully.");
+            } else {
+                emit_log(sender, "WARN", "Standard venv creation failed; attempting virtualenv fallback.");
+                let _ = os::create_hidden_command(&py_exec).args(["-m", "pip", "install", "virtualenv", "--quiet"]).status();
+                let _ = os::create_hidden_command(&py_exec).args(["-m", "virtualenv", &venv_dir.to_string_lossy()]).status();
+            }
+        }
+    } else {
+        emit_log(sender, "OK", "Virtual environment verified and ready.");
+    }
+
+    if v_py.exists() {
+        // Sub-step: pip, setuptools & wheel
+        emit_log(sender, "INFO", "Upgrading pip, setuptools & wheel...");
+        run_pip_install_streaming(
+            &v_py,
+            &["--upgrade", "pip", "setuptools", "wheel"],
+            60,
+            68,
+            "Configuring Python packages...",
+            "Upgrading pip, setuptools & wheel",
+            sender,
+        );
+        emit_log(sender, "OK", "Package manager tools updated.");
+
+        // Sub-step: PySide6
+        let pyside_check = os::create_hidden_command(&v_py)
+            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"])
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !pyside_check {
+            emit_log(sender, "INFO", "Installing PySide6 framework...");
+            run_pip_install_streaming(
+                &v_py,
+                &["PySide6"],
+                68,
+                78,
+                "Installing GUI framework...",
+                "Downloading and installing PySide6 Qt framework",
+                sender,
+            );
+            emit_log(sender, "OK", "PySide6 installed.");
+        } else {
+            emit_progress_sub(sender, 78, 100, "Installing GUI framework...", "PySide6 framework verified");
+            emit_log(sender, "OK", "PySide6 is ready.");
+        }
+
+        // Sub-step: faster-whisper, pypdf
+        emit_log(sender, "INFO", "Installing faster-whisper and pypdf...");
+        run_pip_install_streaming(
+            &v_py,
+            // av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
+            &["faster-whisper", "av<19", "pypdf"],
+            78,
+            85,
+            "Installing AI speech engine...",
+            "Downloading Faster-Whisper AI engine & PyPDF",
+            sender,
+        );
+        emit_log(sender, "OK", "Faster-Whisper and PyPDF installed.");
+
+        // Sub-step: Hardware Acceleration (CUDA 12 or CPU runtime)
+        if has_nvidia {
+            emit_log(sender, "INFO", "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...");
+            run_pip_install_streaming(
+                &v_py,
+                &["nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
+                85,
+                90,
+                "Installing GPU acceleration...",
+                "Downloading NVIDIA CUDA 12 libraries (cuBLAS, cuDNN)",
+                sender,
+            );
+            emit_log(sender, "OK", "NVIDIA CUDA 12 hardware acceleration packages installed.");
+        } else {
+            emit_progress_sub(sender, 90, 100, "Configuring AI engine...", "CPU AI computation verified");
+            emit_log(sender, "OK", "CPU AI acceleration configured.");
+        }
+
+        // Apple Silicon: GPU transcription engine (mlx-whisper), without PyTorch (only its model
+        // converter needs torch). Optional: on failure BadWords keeps using the CPU engine.
+        if cfg!(target_os = "macos") && std::env::consts::ARCH == "aarch64" {
+            emit_log(sender, "INFO", "Installing Apple GPU engine (MLX)...");
+            let mlx_ok = run_pip_install_streaming(
+                &v_py,
+                &["--upgrade", "--no-deps", "mlx-whisper"],
+                90,
+                90,
+                "Installing Apple GPU engine...",
+                "Downloading MLX Whisper",
+                sender,
+            ) && run_pip_install_streaming(
+                &v_py,
+                &["--upgrade", "mlx", "numba", "scipy", "tiktoken", "more-itertools", "tqdm", "huggingface_hub"],
+                90,
+                90,
+                "Installing Apple GPU engine...",
+                "Downloading MLX runtime",
+                sender,
+            );
+            if mlx_ok {
+                emit_log(sender, "OK", "Apple GPU engine (MLX) installed.");
+            } else {
+                emit_log(sender, "WARN", "Apple GPU engine (MLX) could not be installed. Transcription will use the CPU.");
+            }
+        }
+
+        // ── Comprehensive Package Verification & Auto-Recovery ──
+        emit_progress_sub(sender, 90, 0, "Verifying packages...", "Checking installed AI and GUI modules");
+        emit_log(sender, "INFO", "Verifying installed dependencies (PySide6, faster-whisper, pypdf)...");
+
+        let mut missing = check_missing_dependencies(&v_py, has_nvidia);
+        let mut retry_count = 0;
+        const MAX_RETRIES: usize = 2;
+
+        while !missing.is_empty() && retry_count < MAX_RETRIES {
+            retry_count += 1;
+            emit_log(
+                sender,
+                "WARN",
+                &format!(
+                    "Missing or incomplete dependencies detected: {}. Network or download issue suspected. Retrying download (attempt {}/{})...",
+                    missing.join(", "), retry_count, MAX_RETRIES
+                ),
+            );
+            emit_progress_sub(
+                sender,
+                90,
+                0,
+                "Retrying missing packages...",
+                &format!("Re-downloading {} (attempt {}/{})", missing.join(", "), retry_count, MAX_RETRIES),
+            );
+
+            let missing_refs: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
+            run_pip_install_streaming(
+                &v_py,
+                &missing_refs,
+                90,
+                92,
+                "Downloading missing libraries...",
+                "Recovering failed package downloads",
+                sender,
+            );
+
+            missing = check_missing_dependencies(&v_py, has_nvidia);
+        }
+
+        if !missing.is_empty() {
+            emit_log(
+                sender,
+                "ERROR",
+                &format!(
+                    "Network error: Failed to download and verify required packages: {}. Please check your internet connection.",
+                    missing.join(", ")
+                ),
+            );
+            emit_progress_sub(
+                sender,
+                90,
+                0,
+                "Package verification failed",
+                "Network error: missing required libraries",
+            );
+            return false;
+        }
+
+        emit_log(sender, "OK", "All required packages (PySide6, faster-whisper, pypdf) successfully verified.");
+
+        // Final linking
+        emit_progress_sub(sender, 91, 100, "Creating library links...", "Linking site-packages for DaVinci Resolve integration");
+        link_site_packages_for_resolve(target_dir, sender);
+        return true;
+    }
+    false
+}
+
+/// Links site-packages to target_dir/libs for DaVinci Resolve script execution
+fn link_site_packages_for_resolve(target_dir: &Path, sender: &EventSender) {
+    let libs_dir = target_dir.join("libs");
+    let venv_dir = target_dir.join("venv");
+
+    if libs_dir.is_symlink() || libs_dir.exists() {
+        let _ = fs::remove_file(&libs_dir);
+        let _ = fs::remove_dir_all(&libs_dir);
+    }
+
+    #[cfg(unix)]
+    {
+        let site_packages_parent = venv_dir.join("lib");
+        if let Ok(entries) = fs::read_dir(&site_packages_parent) {
+            for entry in entries.flatten() {
+                let sp = entry.path().join("site-packages");
+                if sp.is_dir() {
+                    let _ = std::os::unix::fs::symlink(&sp, &libs_dir);
+                    emit_log(sender, "OK", "Libs symlink created.");
+                    return;
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let sp = venv_dir.join("Lib").join("site-packages");
+        if sp.is_dir() {
+            let _ = std::os::windows::fs::symlink_dir(&sp, &libs_dir);
+            emit_log(sender, "OK", "Libs junction created.");
+        }
+    }
+}
+
+/// Fast reconfiguration of relocated Python virtual environment preserving all copied packages without re-downloading
+fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender) -> bool {
+    emit_log(sender, "INFO", "Reconfiguring relocated Python virtual environment...");
+    let venv_dir = to_dir.join("venv");
+    if !venv_dir.is_dir() {
+        return false;
+    }
+
+    link_site_packages_for_resolve(to_dir, sender);
+
+    #[cfg(target_os = "windows")]
+    let v_py = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let v_py = venv_dir.join("bin").join("python");
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if !v_py.exists() {
+            if let Some(sys_py) = find_python() {
+                let bin_dir = venv_dir.join("bin");
+                let _ = fs::create_dir_all(&bin_dir);
+                let _ = fs::remove_file(&v_py);
+                let _ = std::os::unix::fs::symlink(&sys_py, &v_py);
+                let py3 = bin_dir.join("python3");
+                let _ = fs::remove_file(&py3);
+                let _ = std::os::unix::fs::symlink(&sys_py, &py3);
+            }
+        }
+    }
+
+    if v_py.is_file() {
+        let test_ok = os::create_hidden_command(&v_py)
+            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None and importlib.util.find_spec('faster_whisper') is not None else 1)"])
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if test_ok {
+            emit_log(sender, "OK", "Preserved all existing packages and GPU acceleration libraries from previous location.");
+            return true;
+        }
+    }
+
+    emit_log(sender, "WARN", "Relocated venv needed refresh; rebuilding environment...");
+    let has_nvidia = detect_nvidia_gpu();
+    setup_python_environment(to_dir, None, has_nvidia, sender)
+}
+
+/// Internal core installation engine supporting standard and developer installs
+fn run_install_core(
+    target_dir: PathBuf,
+    create_desktop: bool,
+    #[allow(unused_variables)] create_menu: bool,
+    is_dev: bool,
+    branch: Option<String>,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        emit_log(&sender, "INFO", &format!("Starting BadWords {} installation...", APP_VERSION));
+        emit_progress(&sender, 5, 0, "Checking environment...", "Detecting Python runtime & GPU hardware");
+
+        // 1. Hardware detection
+        let has_nvidia = detect_nvidia_gpu();
+        let gpu_label = if has_nvidia { "NVIDIA CUDA 12 (Accelerated)" } else { "CPU / AMD / Intel (Standard)" };
+        emit_log(&sender, "INFO", &format!("AI Acceleration Mode: {}", gpu_label));
+
+        // 2. System Python Check & Auto-Installation (Required for DaVinci Resolve scripts menu!)
+        let has_sys_py = os::has_system_python();
+        if !has_sys_py {
+            emit_log(&sender, "WARN", "Compatible System Python (3.10 - 3.12) not detected. Installing official Python 3.12...");
+            emit_progress(&sender, 10, 0, "Installing System Python...", "Downloading and setting up official Python 3.12");
+            
+            if os::install_system_python(&sender) {
+                // Leave marker file so uninstaller knows Python was auto-installed
+                let _ = fs::create_dir_all(&target_dir);
+                let _ = fs::write(target_dir.join(".python_auto_installed"), "1");
+            } else {
+                emit_log(&sender, "ERROR", "Could not automatically install system Python. DaVinci Resolve script integration may not be visible.");
+            }
+        } else {
+            emit_log(&sender, "OK", "Compatible System Python (3.10 - 3.12) detected.");
+        }
+
+        let python_cmd = find_python();
+        if let Some(ref py) = python_cmd {
+            emit_log(&sender, "OK", &format!("Using Python executable for venv: {}", py));
+        } else {
+            emit_log(&sender, "WARN", "Python 3.10-3.12 binary not found in PATH; attempting fallback...");
+        }
+
+        // 3. Prepare target directories
+        emit_progress(&sender, 18, 1, "Creating directories...", "Setting up application folders");
+        let bin_dir = target_dir.join("bin");
+        let models_dir = target_dir.join("models");
+        let assets_dir = target_dir.join("assets").join("icons");
+
+        if let Err(e) = fs::create_dir_all(&target_dir) {
+            emit_log(&sender, "ERROR", &format!("Failed to create destination directory: {}", e));
+            emit_complete(&sender, "install", false, "Failed to create installation directory.");
+            return;
+        }
+        let _ = fs::create_dir_all(&bin_dir);
+        let _ = fs::create_dir_all(&models_dir);
+        let _ = fs::create_dir_all(&assets_dir);
+        emit_log(&sender, "OK", &format!("Destination folder ready: {}", target_dir.display()));
+
+        // 4. Clean Wipe & Replace (Option 4 style, preserving user personal info and heavy assets)
+        clean_wipe_target_dir(&target_dir, &sender);
+
+        // 5. Sync / Download source files
+        if is_dev {
+            if let Some(ref br) = branch {
+                emit_progress(&sender, 30, 1, &format!("Deploying branch '{}'...", br), "Downloading branch archive");
+                if !deploy_branch_files(&target_dir, br, &sender) {
+                    emit_complete(&sender, "install", false, "Failed to deploy BadWords branch package.");
+                    return;
+                }
+            } else {
+                emit_progress(&sender, 30, 1, "Deploying local files...", "Copying local repository");
+                if !deploy_application_files(&target_dir, &sender) {
+                    emit_complete(&sender, "install", false, "Failed to deploy BadWords application files.");
+                    return;
+                }
+            }
+            configure_no_self_upgrade(&target_dir, &sender);
+        } else {
+            emit_progress(&sender, 30, 1, "Deploying application files...", "Copying BadWords source and assets");
+            if !deploy_application_files(&target_dir, &sender) {
+                emit_complete(&sender, "install", false, "Failed to deploy BadWords application files.");
+                return;
+            }
+        }
+
+        // 5. Ensure portable FFmpeg
+        emit_progress(&sender, 45, 1, "Checking FFmpeg...", "Configuring portable media engine");
+        ensure_ffmpeg(&bin_dir, &sender);
+
+        // 6. Virtual Environment & Python Packages (1:1 with setup.py)
+        if !setup_python_environment(&target_dir, python_cmd.as_deref(), has_nvidia, &sender) {
+            emit_log(&sender, "ERROR", "Failed to initialize Python virtual environment.");
+            emit_complete(&sender, "install", false, "Failed to initialize Python virtual environment.");
+            return;
+        }
+
+        // 7. DaVinci Resolve Wrapper (1:1 with setup.py)
+        emit_progress(&sender, 92, 3, "Configuring DaVinci Resolve...", "Writing Fusion utility script wrappers");
+        deploy_davinci_wrapper(&target_dir, &sender);
+
+        // 8. Copy installer binary as uninstaller / setup inside target_dir
+        if let Ok(current_exe) = std::env::current_exe() {
+            let uninstaller_dest = if cfg!(target_os = "windows") {
+                target_dir.join("uninstall.exe")
+            } else {
+                target_dir.join("badwords-installer")
+            };
+            let _ = fs::copy(&current_exe, &uninstaller_dest);
+            os::unblock_file(&uninstaller_dest);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&uninstaller_dest, fs::Permissions::from_mode(0o755));
+            }
+        }
+
+        #[allow(unused_variables)]
+        let dynamic_version = read_app_version_from_dir(&target_dir)
+            .or_else(detect_local_version)
+            .unwrap_or_else(|| APP_VERSION.to_string());
+
+        // 9. System Shortcuts & Registry (Full Standalone Integration)
+        emit_progress(&sender, 96, 3, "Creating shortcuts...", "Registering application in OS");
+        #[cfg(target_os = "windows")]
+        {
+            os::unblock_file(&target_dir.join("BadWords.exe"));
+            let _ = os::windows::register_uninstall_entry(&target_dir, &dynamic_version);
+            let _ = os::windows::create_windows_shortcuts(&target_dir, create_desktop, create_menu, Some(&dynamic_version));
+            os::unblock_file(&target_dir.join("BadWords.exe"));
+            os::unblock_dir(&target_dir);
+            emit_log(&sender, "OK", "Windows shortcuts & uninstaller registered.");
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = os::macos::create_macos_app_bundle(&target_dir, &dynamic_version, create_desktop);
+            emit_log(&sender, "OK", "macOS application bundle (.app) registered.");
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = os::linux::create_linux_desktop_entry(&target_dir, create_desktop, create_menu);
+            emit_log(&sender, "OK", "Linux desktop launcher (.desktop) created.");
+        }
+
+        mark_v4_complete(&target_dir);
+
+        emit_progress(&sender, 100, 3, "Installation complete!", "BadWords is ready to use");
+        emit_log(&sender, "OK", "BadWords installation completed successfully.");
+        emit_complete(&sender, "install", true, "BadWords has been successfully installed and configured!");
+    });
+}
+
+/// Executes standard installation or update
+pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, sender: EventSender) {
+    run_install_core(target_dir, create_desktop, create_menu, false, None, sender);
+}
+
+/// Executes developer installation (local repo or branch archive, disabling updater self-upgrade)
+pub fn run_dev_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, branch: Option<String>, sender: EventSender) {
+    let clean_branch = match branch {
+        Some(ref b) if b.contains("local") => None,
+        other => other,
+    };
+    run_install_core(target_dir, create_desktop, create_menu, true, clean_branch, sender);
+}
+
+/// Executes file verification and repair
+pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
+    std::thread::spawn(move || {
+        emit_log(&sender, "INFO", "Starting verification and repair...");
+        emit_progress(&sender, 10, 0, "Scanning files...", "Verifying directory structure");
+
+        if !target_dir.exists() {
+            if let Some(detected) = os::detect_existing_install() {
+                emit_log(&sender, "INFO", &format!("Recovered target path from DaVinci wrapper: {}", detected.display()));
+                target_dir = detected;
+            } else {
+                emit_log(&sender, "ERROR", &format!("Installation directory does not exist: {}", target_dir.display()));
+                emit_complete(&sender, "repair", false, "Installation directory not found.");
+                return;
+            }
+        }
+
+        // Re-deploy application core files
+        emit_progress(&sender, 30, 1, "Repairing core files...", "Re-syncing files from repository");
+        let _ = deploy_application_files(&target_dir, &sender);
+
+        // Verify FFmpeg
+        emit_progress(&sender, 45, 1, "Checking media engine...", "Verifying FFmpeg binary");
+        let bin_dir = target_dir.join("bin");
+        let _ = fs::create_dir_all(&bin_dir);
+        ensure_ffmpeg(&bin_dir, &sender);
+
+        // Verify virtual environment and packages
+        emit_progress(&sender, 60, 2, "Checking dependencies...", "Verifying Python virtual environment");
+        let venv_dir = target_dir.join("venv");
+        #[cfg(target_os = "windows")]
+        let v_py = venv_dir.join("Scripts").join("python.exe");
+        #[cfg(not(target_os = "windows"))]
+        let v_py = venv_dir.join("bin").join("python");
+
+        let has_nvidia = detect_nvidia_gpu();
+        let v_py_ok = v_py.is_file() && os::create_hidden_command(&v_py).arg("-c").arg("import sys").output().is_ok_and(|o| o.status.success());
+        if !v_py_ok {
+            emit_log(&sender, "WARN", "Virtual environment missing or damaged; rebuilding fresh environment...");
+            if !setup_python_environment(&target_dir, None, has_nvidia, &sender) {
+                emit_log(&sender, "ERROR", "Failed to repair virtual environment.");
+                emit_complete(&sender, "repair", false, "Failed to repair Python virtual environment.");
+                return;
+            }
+        } else {
+            let mut missing = check_missing_dependencies(&v_py, has_nvidia);
+            if !missing.is_empty() {
+                emit_log(&sender, "WARN", &format!("Missing or corrupted packages detected during repair: {}. Retrying installation...", missing.join(", ")));
+                let missing_refs: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
+                let mut pip_cmd = os::create_hidden_command(&v_py);
+                pip_cmd.args(["-m", "pip", "install", "--no-cache-dir"]);
+                pip_cmd.args(&missing_refs);
+                let _ = pip_cmd.status();
+                missing = check_missing_dependencies(&v_py, has_nvidia);
+            }
+
+            if !missing.is_empty() {
+                emit_log(&sender, "ERROR", &format!("Repair failed: Required packages missing or damaged: {}. Please check your internet connection.", missing.join(", ")));
+                emit_complete(&sender, "repair", false, "Failed to restore required packages due to network or installation error. Please check your internet connection.");
+                return;
+            }
+            emit_log(&sender, "OK", "All virtual environment dependencies verified.");
+        }
+
+        // Re-create DaVinci wrapper & shortcuts
+        emit_progress(&sender, 90, 2, "Updating integrations...", "Rebuilding DaVinci wrapper and shortcuts");
+        deploy_davinci_wrapper(&target_dir, &sender);
+
+        #[allow(unused_variables)]
+        let dynamic_version = read_app_version_from_dir(&target_dir)
+            .or_else(detect_local_version)
+            .unwrap_or_else(|| APP_VERSION.to_string());
+
+        #[cfg(target_os = "windows")]
+        {
+            let _ = os::windows::register_uninstall_entry(&target_dir, &dynamic_version);
+            let _ = os::windows::create_windows_shortcuts(&target_dir, true, true, Some(&dynamic_version));
+            os::unblock_dir(&target_dir);
+        }
+        #[cfg(target_os = "macos")]
+        let _ = os::macos::create_macos_app_bundle(&target_dir, &dynamic_version, true);
+        #[cfg(target_os = "linux")]
+        let _ = os::linux::create_linux_desktop_entry(&target_dir, true, true);
+
+        mark_v4_complete(&target_dir);
+
+        emit_progress(&sender, 100, 3, "Repair complete!", "All files and integrations restored");
+        emit_complete(&sender, "repair", true, "BadWords has been successfully verified and repaired!");
+    });
+}
+
+/// Executes moving the installation to a new directory
+pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
+    std::thread::spawn(move || {
+        emit_log(&sender, "INFO", &format!("Relocating BadWords from {} to {}", from_dir.display(), to_dir.display()));
+
+        if !from_dir.exists() {
+            emit_log(&sender, "ERROR", "Source installation directory not found!");
+            emit_complete(&sender, "move", false, "Source installation directory not found.");
+            return;
+        }
+
+        // Step 1: Copy files progressively with live MB and file count updates (5% -> 70%)
+        emit_progress(&sender, 5, 0, "Transferring files...", "Scanning source files");
+        if let Err(e) = copy_dir_with_progress(&from_dir, &to_dir, 5, 70, "Transferring files...", &sender) {
+            emit_log(&sender, "ERROR", &format!("Failed to copy files: {}", e));
+            emit_complete(&sender, "move", false, "Failed to copy files to new location.");
+            return;
+        }
+
+        // Step 2: Reconfigure Python environment preserving all 10 GB of existing packages (70% -> 80%)
+        emit_progress(&sender, 70, 1, "Reconfiguring Python environment...", "Updating virtual environment paths");
+        reconfigure_relocated_python_environment(&to_dir, &sender);
+
+        // Step 3: Update DaVinci Resolve wrappers (80% -> 85%)
+        emit_progress(&sender, 80, 2, "Updating wrappers...", "Updating DaVinci Resolve script paths");
+        deploy_davinci_wrapper(&to_dir, &sender);
+
+        // Step 4: Clean old directory progressively (85% -> 98%)
+        emit_progress(&sender, 85, 2, "Cleaning old directory...", "Removing old installation files");
+        delete_dir_with_progress(&from_dir, 85, 98, "Cleaning old directory...", &sender);
+
+        #[allow(unused_variables)]
+        let dynamic_version = read_app_version_from_dir(&to_dir)
+            .or_else(detect_local_version)
+            .unwrap_or_else(|| APP_VERSION.to_string());
+
+        #[cfg(target_os = "windows")]
+        {
+            let _ = os::windows::register_uninstall_entry(&to_dir, &dynamic_version);
+            let _ = os::windows::create_windows_shortcuts(&to_dir, true, true, Some(&dynamic_version));
+            os::unblock_dir(&to_dir);
+        }
+        #[cfg(target_os = "macos")]
+        let _ = os::macos::create_macos_app_bundle(&to_dir, &dynamic_version, true);
+        #[cfg(target_os = "linux")]
+        let _ = os::linux::create_linux_desktop_entry(&to_dir, true, true);
+
+        mark_v4_complete(&to_dir);
+
+        emit_progress(&sender, 100, 3, "Move complete!", "Relocation finished successfully");
+        emit_complete(&sender, "move", true, "BadWords has been successfully relocated!");
+    });
+}
+
+/// Executes complete reset and clean reinstall
+pub fn run_reset(target_dir: PathBuf, sender: EventSender) {
+    std::thread::spawn(move || {
+        emit_log(&sender, "INFO", &format!("Resetting BadWords in: {}", target_dir.display()));
+
+        if target_dir.exists() {
+            emit_progress(&sender, 5, 0, "Removing old files...", "Deleting existing installation files");
+            delete_dir_with_progress(&target_dir, 5, 30, "Removing old files...", &sender);
+            emit_log(&sender, "OK", "Previous installation removed.");
+        }
+
+        emit_progress(&sender, 35, 1, "Reinstalling fresh copy...", "Beginning clean installation");
+        run_install(target_dir, true, true, sender);
+    });
+}
+
+/// Executes complete uninstallation with live file-by-file progress
+pub fn run_uninstall(target_dir: PathBuf, uninstall_system_python: bool, sender: EventSender) {
+    std::thread::spawn(move || {
+        emit_log(&sender, "INFO", &format!("Uninstalling BadWords from: {}", target_dir.display()));
+
+        let auto_py_marker = target_dir.join(".python_auto_installed");
+        let had_auto_python = auto_py_marker.exists();
+
+        if target_dir.exists() {
+            emit_progress(&sender, 5, 0, "Removing files...", "Deleting installation folder");
+            delete_dir_with_progress(&target_dir, 5, 70, "Removing files...", &sender);
+            emit_log(&sender, "OK", "Installation files deleted.");
+        }
+
+        emit_progress(&sender, 75, 1, "Removing integrations...", "Deleting DaVinci Resolve wrappers");
+        remove_davinci_wrappers(&sender);
+
+        emit_progress(&sender, 90, 2, "Cleaning system entries...", "Removing desktop launchers and shortcuts");
+        #[cfg(target_os = "windows")]
+        {
+            let _ = os::windows::remove_windows_shortcuts();
+            let _ = os::windows::unregister_uninstall_entry();
+        }
+        #[cfg(target_os = "macos")]
+        let _ = os::macos::remove_macos_app_bundle();
+        #[cfg(target_os = "linux")]
+        let _ = os::linux::remove_linux_desktop_entry();
+
+        if had_auto_python && uninstall_system_python {
+            emit_progress(&sender, 95, 2, "Cleaning system entries...", "Uninstalling auto-installed System Python");
+            os::uninstall_system_python(&sender);
+        } else if had_auto_python {
+            emit_log(&sender, "INFO", "Note: Official Python installed during setup was kept intact as requested.");
+        }
+
+        emit_progress(&sender, 100, 3, "Uninstallation complete!", "BadWords removed");
+        emit_complete(&sender, "uninstall", true, "BadWords has been completely uninstalled from your system.");
+    });
+}
+
+/// Generates the Python wrapper script for DaVinci Resolve (1:1 with setupfiles/setup.py)
+fn generate_davinci_wrapper(install_dir: &Path) -> String {
+    let install_str = install_dir.to_string_lossy().replace('\\', "/");
+    let libs_str = install_dir.join("libs").to_string_lossy().replace('\\', "/");
+    let main_script_str = install_dir.join("main.py").to_string_lossy().replace('\\', "/");
+
+    format!(
+r#"import sys, os, traceback
+
+INSTALL_DIR = r"{install_str}"
+MAIN_SCRIPT = r"{main_script_str}"
+
+# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
+_candidates = [
+    r"{libs_str}",
+    os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+]
+
+_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
+if os.path.isdir(_v_lib):
+    try:
+        for _entry in os.listdir(_v_lib):
+            _sp = os.path.join(_v_lib, _entry, "site-packages")
+            if os.path.isdir(_sp) and _sp not in _candidates:
+                _candidates.append(_sp)
+    except Exception:
+        pass
+
+for _sp_dir in _candidates:
+    if os.path.isdir(_sp_dir):
+        if _sp_dir in sys.path:
+            sys.path.remove(_sp_dir)
+        sys.path.insert(0, _sp_dir)
+
+if INSTALL_DIR not in sys.path:
+    sys.path.append(INSTALL_DIR)
+
+# 2. Windows: register DLL search paths for PySide6 and shiboken6
+if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            for _pkg in ['PySide6', 'shiboken6']:
+                _p = os.path.join(_sp_dir, _pkg)
+                if os.path.isdir(_p):
+                    try: os.add_dll_directory(_p)
+                    except Exception: pass
+
+# 3. Linux: Preload Qt6 shared libraries if needed
+if sys.platform.startswith('linux'):
+    import ctypes
+    for _sp_dir in _candidates:
+        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+        if os.path.isdir(_qt_lib_dir):
+            _qt_preload = [
+                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+            ]
+            for _lib in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib)
+                if os.path.exists(_p):
+                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except OSError: pass
+            break
+
+# 4. Launch main script in-process (preserves DaVinci Resolve Free API connection)
+if os.path.exists(MAIN_SCRIPT):
+    try:
+        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+        gv = globals().copy()
+        gv['__file__'] = MAIN_SCRIPT
+        exec(code, gv)
+    except Exception as e:
+        print("Error:", e); traceback.print_exc()
+else:
+    print("CRITICAL: script not found at", MAIN_SCRIPT)
+"#
+    )
+}
+
+const LEGACY_WRAPPER_NAMES: &[&str] = &[
+    "BadWords.py",
+    "Badwords.py",
+    "BadWords (Linux).py",
+    "BadWords (Mac).py",
+    "BadWords (macOS).py",
+    "BadWords (Windows).py",
+    "BadWords_Launcher.py",
+    "BadWords.lua",
+];
+
+const BRIDGE_LUA_CODE: &str = include_str!("../../setupfiles/BadWords Bridge.lua");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolveEdition {
+    Studio,
+    Free,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolveInfo {
+    pub installed: bool,
+    pub edition: ResolveEdition,
+    pub is_21_1_or_newer: bool,
+}
+
+fn is_version_at_least_21_1(ver: &str) -> bool {
+    let nums: Vec<u32> = ver
+        .split(|c: char| !c.is_ascii_digit())
+        .filter_map(|s| s.parse::<u32>().ok())
+        .collect();
+    if nums.is_empty() {
+        return false;
+    }
+    let major = nums[0];
+    let minor = if nums.len() > 1 { nums[1] } else { 0 };
+    (major > 21) || (major == 21 && minor >= 1)
+}
+
+#[cfg(target_os = "macos")]
+fn detect_resolve_info() -> ResolveInfo {
+    let mut info = ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    };
+
+    let candidates = [
+        ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", ResolveEdition::Studio),
+        ("/Applications/DaVinci Resolve Studio.app", ResolveEdition::Studio),
+        // Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
+        // Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
+        // edition apart. Keep it Unknown so deployment doesn't remove BadWords.py.
+        ("/Applications/DaVinci Resolve/DaVinci Resolve.app", ResolveEdition::Unknown),
+        ("/Applications/DaVinci Resolve.app", ResolveEdition::Unknown),
+    ];
+
+    let mut found_plist: Option<std::path::PathBuf> = None;
+    for (app_path, ed) in candidates {
+        let p = std::path::Path::new(app_path);
+        if p.is_dir() {
+            info.installed = true;
+            info.edition = ed;
+            let plist = p.join("Contents").join("Info.plist");
+            if plist.is_file() {
+                found_plist = Some(plist);
+                break;
+            }
+        }
+    }
+
+    if let Some(plist) = found_plist {
+        let plist_str = plist.to_string_lossy();
+        if let Ok(out) = std::process::Command::new("defaults")
+            .args(["read", &plist_str, "CFBundleIdentifier"])
+            .output()
+        {
+            let id = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            if id.contains("studio") {
+                info.edition = ResolveEdition::Studio;
+            }
+        }
+
+        let mut ver_str = String::new();
+        if let Ok(out) = std::process::Command::new("defaults")
+            .args(["read", &plist_str, "CFBundleShortVersionString"])
+            .output()
+        {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                ver_str = s;
+            }
+        }
+        if ver_str.is_empty() {
+            if let Ok(out) = std::process::Command::new("defaults")
+                .args(["read", &plist_str, "CFBundleVersion"])
+                .output()
+            {
+                ver_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            }
+        }
+
+        if !ver_str.is_empty() {
+            info.is_21_1_or_newer = is_version_at_least_21_1(&ver_str);
+        }
+    }
+
+    // No Unknown -> Free fallback on macOS: Studio and Free share the same bundle (see above)
+
+    info
+}
+
+#[cfg(target_os = "linux")]
+fn detect_resolve_info() -> ResolveInfo {
+    let mut info = ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    };
+
+    let bin = std::path::Path::new("/opt/resolve/bin/resolve");
+    if bin.is_file() {
+        info.installed = true;
+
+        for doc in &["ReadMe.html", "Welcome.txt", "License.html"] {
+            let doc_path = std::path::Path::new("/opt/resolve/docs").join(doc);
+            if let Ok(content) = std::fs::read_to_string(&doc_path) {
+                let lower = content.to_lowercase();
+                if lower.contains("davinci resolve studio") {
+                    info.edition = ResolveEdition::Studio;
+                    break;
+                } else if info.edition == ResolveEdition::Unknown && lower.contains("davinci resolve") {
+                    info.edition = ResolveEdition::Free;
+                }
+            }
+        }
+
+        if info.edition != ResolveEdition::Studio {
+            let lic_dir = std::path::Path::new("/opt/resolve/.license");
+            if lic_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(lic_dir) {
+                    if entries.flatten().any(|e| !e.file_name().to_string_lossy().starts_with('.')) {
+                        info.edition = ResolveEdition::Studio;
+                    }
+                }
+            }
+        }
+
+        if let Ok(out) = std::process::Command::new("/opt/resolve/bin/resolve").arg("-v").output() {
+            let text = String::from_utf8_lossy(&out.stdout).to_string() + " " + &String::from_utf8_lossy(&out.stderr);
+            let lower = text.to_lowercase();
+            if lower.contains("studio") {
+                info.edition = ResolveEdition::Studio;
+            } else if info.edition == ResolveEdition::Unknown && lower.contains("davinci resolve") {
+                info.edition = ResolveEdition::Free;
+            }
+
+            for token in text.split_whitespace() {
+                let cleaned = token.trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                if !cleaned.is_empty() && cleaned.contains('.') {
+                    let nums: Vec<&str> = cleaned.split('.').collect();
+                    if nums.len() >= 2 && nums[0].chars().all(|c| c.is_ascii_digit()) {
+                        info.is_21_1_or_newer = is_version_at_least_21_1(cleaned);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if info.installed && info.edition == ResolveEdition::Unknown {
+        info.edition = ResolveEdition::Free;
+    }
+
+    info
+}
+
+#[cfg(target_os = "windows")]
+fn detect_resolve_info() -> ResolveInfo {
+    let mut info = ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    };
+
+    let exe = std::path::Path::new(r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe");
+    if exe.is_file() {
+        info.installed = true;
+
+        let cmd = format!(
+            "(Get-Item -LiteralPath '{}').VersionInfo | Select-Object -Property ProductName,ProductVersion | ConvertTo-Json",
+            exe.display()
+        );
+        let mut process = os::create_hidden_command("powershell");
+        process.args(["-NoProfile", "-NonInteractive", "-Command", &cmd]);
+        if let Ok(out) = process.output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let lower = text.to_lowercase();
+            if lower.contains("studio") {
+                info.edition = ResolveEdition::Studio;
+            } else if lower.contains("davinci resolve") {
+                info.edition = ResolveEdition::Free;
+            }
+
+            for line in text.lines() {
+                if line.contains("ProductVersion") {
+                    if let Some((_, v)) = line.split_once(':') {
+                        let clean = v.trim().trim_matches(|c| c == '"' || c == ',' || c == '\'');
+                        info.is_21_1_or_newer = is_version_at_least_21_1(clean);
+                    }
+                }
+            }
+        }
+    }
+
+    if info.installed && info.edition == ResolveEdition::Unknown {
+        info.edition = ResolveEdition::Free;
+    }
+
+    info
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn detect_resolve_info() -> ResolveInfo {
+    ResolveInfo {
+        installed: false,
+        edition: ResolveEdition::Unknown,
+        is_21_1_or_newer: false,
+    }
+}
+
+/// Generates the BadWords Bridge Lua script with target_dir templated
+pub fn generate_davinci_bridge(target_dir: &Path) -> String {
+    let clean_target = target_dir.to_string_lossy().replace('\\', "/");
+    BRIDGE_LUA_CODE.replace("__BADWORDS_INSTALL_DIR__", &clean_target)
+}
+
+/// Deploys DaVinci Resolve scripts:
+/// - Studio: installs BadWords.py; removes BadWords Bridge.lua (native external scripting used)
+/// - Free >= 21.1: installs BadWords Bridge.lua; removes BadWords.py (API blocked)
+/// - Free < 21.1: installs BadWords Bridge.lua and BadWords.py
+pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
+    let resolve_dirs = resolve_script_dirs();
+    let res_info = detect_resolve_info();
+
+    let is_studio = res_info.edition == ResolveEdition::Studio;
+    // Only a confirmed Free 21.1+ drops BadWords.py; Unknown deploys both BadWords.py and the Bridge
+    let is_free_21_1 = res_info.edition == ResolveEdition::Free && res_info.is_21_1_or_newer;
+
+    emit_log(
+        sender,
+        "INFO",
+        &format!(
+            "DaVinci Resolve: installed={}, edition={:?}, is_21_1+={}",
+            res_info.installed, res_info.edition, res_info.is_21_1_or_newer
+        ),
+    );
+
+    // Ensure dedicated bridge mailbox directory inside target_dir exists
+    let _ = fs::create_dir_all(target_dir.join("bridge"));
+
+    // 1. Clean up legacy wrappers across all candidate paths first
+    for r_dir in &resolve_dirs {
+        for leg in LEGACY_WRAPPER_NAMES {
+            let leg_path = r_dir.join(leg);
+            if leg_path.exists() {
+                let _ = fs::remove_file(&leg_path);
+            }
+        }
+    }
+
+    let wrapper_code = generate_davinci_wrapper(target_dir);
+    let mut any_deployed = false;
+
+    if is_studio {
+        // ── STUDIO EDITION ─────────────────────────────────────────────────────────────
+        // 1. BadWords Bridge.lua MUST NOT be installed. If present, delete it.
+        // 2. BadWords.py MUST be installed for native scripting.
+        for r_dir in &resolve_dirs {
+            let bridge_path = r_dir.join("BadWords Bridge.lua");
+            if bridge_path.exists() {
+                let _ = fs::remove_file(&bridge_path);
+                emit_log(sender, "OK", &format!("Removed BadWords Bridge.lua (Studio edition uses native scripting): {}", bridge_path.display()));
+            }
+        }
+
+        for r_dir in &resolve_dirs {
+            let _ = fs::create_dir_all(r_dir);
+            let wrapper_path = r_dir.join("BadWords.py");
+            if fs::write(&wrapper_path, &wrapper_code).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
+                any_deployed = true;
+                break; // Primary dir deployed
+            }
+        }
+    } else {
+        // ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
+        // 1. BadWords Bridge.lua MUST ALWAYS be installed!
+        // 2. BadWords.py:
+        //    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
+        //    - If Free < 21.1: Deploy BadWords.py.
+        if is_free_21_1 {
+            for r_dir in &resolve_dirs {
+                let wrapper_path = r_dir.join("BadWords.py");
+                if wrapper_path.exists() {
+                    let _ = fs::remove_file(&wrapper_path);
+                    emit_log(sender, "OK", &format!("Removed BadWords.py (blocked in Resolve Free 21.1+): {}", wrapper_path.display()));
+                }
+            }
+        } else {
+            for r_dir in &resolve_dirs {
+                let _ = fs::create_dir_all(r_dir);
+                let wrapper_path = r_dir.join("BadWords.py");
+                if fs::write(&wrapper_path, &wrapper_code).is_ok() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
+                    }
+                    emit_log(sender, "OK", &format!("DaVinci wrapper created at: {}", wrapper_path.display()));
+                    break;
+                }
+            }
+        }
+
+        // Deploy BadWords Bridge.lua (ALWAYS for Free)
+        let bridge_code = generate_davinci_bridge(target_dir);
+        for r_dir in &resolve_dirs {
+            let _ = fs::create_dir_all(r_dir);
+            let bridge_path = r_dir.join("BadWords Bridge.lua");
+            if fs::write(&bridge_path, &bridge_code).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&bridge_path, fs::Permissions::from_mode(0o755));
+                }
+                emit_log(sender, "OK", &format!("DaVinci bridge created at: {}", bridge_path.display()));
+                any_deployed = true;
+                break; // Primary dir deployed
+            }
+        }
+    }
+
+    if any_deployed {
+        return true;
+    }
+
+    emit_log(sender, "WARN", "DaVinci Resolve directory not found; please launch DaVinci once to create scripts folder.");
+    false
+}
+
+/// Removes all BadWords wrappers and legacy variations from all DaVinci Resolve script directories
+pub fn remove_davinci_wrappers(sender: &EventSender) {
+    let resolve_dirs = resolve_script_dirs();
+    for r_dir in &resolve_dirs {
+        for leg in LEGACY_WRAPPER_NAMES {
+            let p = r_dir.join(leg);
+            if p.exists() {
+                let _ = fs::remove_file(&p);
+                emit_log(sender, "OK", &format!("Removed DaVinci wrapper: {}", p.display()));
+            }
+        }
+        let b = r_dir.join("BadWords Bridge.lua");
+        if b.exists() {
+            let _ = fs::remove_file(&b);
+            emit_log(sender, "OK", &format!("Removed DaVinci bridge: {}", b.display()));
+        }
+    }
+}

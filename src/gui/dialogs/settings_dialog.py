@@ -1,0 +1,3237 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+"""
+MODULE: settings_dialog.py
+ROLE: GUI Dialog
+DESCRIPTION:
+Settings dialog with multi-tab layout and real-time preferences management.
+"""
+
+import sys
+
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QVariantAnimation, QEasingCurve
+from PySide6.QtGui import (
+    QFont
+)
+from PySide6.QtWidgets import (
+    QApplication, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QSizePolicy, QFrame, QScrollArea,
+    QStackedWidget, QFormLayout, QLineEdit, QButtonGroup, QGraphicsOpacityEffect
+)
+
+import config
+from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
+from gui.components.titlebar import CustomTitleBar
+from gui.widgets.buttons import (
+    QPushButton, ToggleSwitch, ShortcutCaptureButton,
+    MouseShortcutCaptureButton, CustomDropdown, SearchableDropdown,
+    ReloadButton, CloseIconButton, SquareIconButton, CustomNumberInput
+)
+from gui.widgets.labels import QLabel
+from gui.widgets.text_edits import WrappingPlaceholderTextEdit
+from gui.widgets.delegates import MarqueeItemDelegate
+from gui.utils import _txt
+
+from gui.dialogs.msgbox import CustomMsgBox
+from gui.dialogs.update_dialog import UpdateCheckThread
+from gui.dialogs.marker_dialog import MarkerDialog
+from gui.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from gui.dialogs.overlay import MarkerDragZone, MarkerRowWidget
+
+_CACHED_FONT_FAMILIES = None
+
+def _get_system_font_families():
+    global _CACHED_FONT_FAMILIES
+    if _CACHED_FONT_FAMILIES is None:
+        try:
+            from PySide6.QtGui import QFontDatabase
+            _CACHED_FONT_FAMILIES = sorted(list(set(QFontDatabase.families())))
+        except Exception:
+            _CACHED_FONT_FAMILIES = [config.UI_FONT_NAME, "Ubuntu", "Arial", "Helvetica", "sans-serif"]
+    return _CACHED_FONT_FAMILIES
+
+
+def _is_segmented_text(text: str) -> bool:
+    if not text:
+        return False
+    seg_texts = {
+        trans.get('opt_segmented_blocks')
+        for trans in getattr(config, 'TRANS', {}).values()
+        if 'opt_segmented_blocks' in trans
+    } | {
+        'Segmented blocks', 'Segmentowane bloki', 'Segmentierte Blöcke',
+        'Bloques segmentados', 'Blocs segmentés', 'Blocchi segmentati',
+        'Blocos segmentados', 'Сегментированные блоки', 'Сегментовані блоки',
+        'Gesegmenteerde blokken', '分段块'
+    }
+    return text in seg_texts
+
+
+def _is_continuous_text(text: str) -> bool:
+    if not text:
+        return False
+    cont_texts = {
+        trans.get('opt_continuous_flow')
+        for trans in getattr(config, 'TRANS', {}).values()
+        if 'opt_continuous_flow' in trans
+    } | {
+        'Continuous flow', 'Continuous Flow', 'Ciągły przepływ',
+        'Kontinuierlicher Fluss', 'Fluxo Contínuo', 'Flusso Continuo',
+        'Непрерывный поток', 'Continue Stroom', 'Flujo Continuo',
+        'Безперервний потік', 'Flux continu', '连续流式', '连续流'
+    }
+    return text in cont_texts
+
+
+def _get_mouse_mode_from_text(text: str, default: str = 'box') -> str:
+    if not text:
+        return default
+    box_texts = {trans.get('opt_mouse_box') for trans in getattr(config, 'TRANS', {}).values() if 'opt_mouse_box' in trans} | {'Box selection', 'Zaznaczanie obszarem'}
+    brush_texts = {trans.get('opt_mouse_brush') for trans in getattr(config, 'TRANS', {}).values() if 'opt_mouse_brush' in trans} | {'Brush selection', 'Pędzel / malowanie'}
+    none_texts = {trans.get('opt_mouse_none') for trans in getattr(config, 'TRANS', {}).values() if 'opt_mouse_none' in trans} | {'None', 'Brak'}
+    if text in box_texts:
+        return 'box'
+    if text in brush_texts:
+        return 'brush'
+    if text in none_texts:
+        return 'none'
+    return default
+
+
+class SettingsDialog(FramelessWindowMixin, _BaseDialog):
+    """Settings Dialog — left category menu + right stacked pages.
+    All I/O goes through engine.load_preferences / engine.save_preferences
+    which delegate to osdoc's smart router.
+    """
+
+    # Fallback defaults (for revert buttons)
+    DEFAULTS = {
+        'view_mode':          'segmented',
+        'offset':             0.133,
+        'pad':                0.0,
+        'snap_max':           0.25,
+        'editor_font_family': config.UI_FONT_NAME,
+        'editor_font_size':   12,
+        'editor_line_height': 7,
+        'theme':              'dark',
+        'always_on_top':      False,
+        'hidden_panels':      [],
+    }
+
+    def txt(self, key: str, **kwargs) -> str:
+        prefs = self.engine.load_preferences() or {}
+        lang = prefs.get("gui_lang", "en")
+        text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
+        if kwargs: return text.format(**kwargs)
+        return text
+
+    def __init__(self, engine, parent=None):
+        super().__init__(parent)
+        self.engine = engine
+        self.setWindowTitle(self.txt("tool_settings"))
+        self.frameless_init(is_popup=True)
+        self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
+        self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
+
+        # Center over active main window or active screen
+        if parent:
+            geo = parent.geometry()
+            x = geo.x() + (geo.width() - config.SETTINGS_WINDOW_W) // 2
+            y = geo.y() + (geo.height() - config.SETTINGS_WINDOW_H) // 2
+            self.move(max(0, x), max(0, y))
+        else:
+            from PySide6.QtGui import QGuiApplication
+            screen = QGuiApplication.primaryScreen()
+            if screen:
+                sg = screen.availableGeometry()
+                self.move(sg.x() + (sg.width() - config.SETTINGS_WINDOW_W) // 2,
+                          sg.y() + (sg.height() - config.SETTINGS_WINDOW_H) // 2)
+
+        # Inherit always on top from parent if active
+        if parent and (getattr(parent, '_always_on_top_active', False) or bool(parent.windowFlags() & Qt.WindowStaysOnTopHint)):
+            self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+
+        prefs = self.engine.load_preferences() or {}
+
+        # ── Global stylesheet ─────────────────────────────────────────────
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {config.BG_COLOR}; }}
+            #MainInnerFrame {{
+                background-color: {config.BG_COLOR};
+                border: 1px solid #1a1a1a;
+            }}
+            QPushButton {{
+                padding: {config.S(6)}px {config.S(16)}px;
+                outline: none;
+            }}
+            QLabel {{
+                color: {config.FG_COLOR};
+                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
+                font-size: {config.FS(10)}pt;
+                background: transparent;
+            }}
+            QListWidget {{
+                background-color: {config.SIDEBAR_BG};
+                border: none;
+                border-right: 1px solid {config.SEPARATOR_COL};
+                outline: none;
+                padding: {config.S(6)}px 0;
+            }}
+            QListWidget::item {{
+                color: {config.NOTE_COL};
+                font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
+                font-size: {config.FS(10)}pt;
+                padding: {config.S(10)}px {config.S(16)}px;
+                border-radius: 0px;
+            }}
+            QListWidget::item:selected,
+            QListWidget::item:selected:active,
+            QListWidget::item:selected:!active {{
+                background-color: #2a2d2e;
+                color: #ffffff;
+                border-left: 2px solid {config.BTN_BG};
+            }}
+            QListWidget::item:focus {{ border: none; outline: none; }}
+            QListWidget::item:hover:!selected {{
+                background-color: #222222;
+                color: {config.FG_COLOR};
+            }}
+            QStackedWidget {{
+                background-color: {config.BG_COLOR};
+            }}
+            QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
+                background-color: {config.INPUT_BG};
+                color: {config.INPUT_FG};
+                border: 1px solid #3a3a3a;
+                padding: 4px 8px;
+                border-radius: 3px;
+                outline: none;
+            }}
+            QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{
+                border: 1px solid {config.BTN_BG};
+                outline: none;
+            }}
+            QCheckBox {{
+                color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                background: #1e1e1e;
+                border: 1px solid #555;
+                border-radius: 3px;
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {config.BTN_BG};
+                border-color: {config.BTN_BG};
+            }}
+            QPushButton#btn_apply {{
+                background-color: {config.BTN_BG};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                padding: 0 18px;
+            }}
+            QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
+            QPushButton#btn_apply:pressed {{ background-color: #125c2f; }}
+            QPushButton#btn_secondary {{
+                background-color: transparent;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                padding: 0 12px;
+            }}
+            QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
+            QPushButton#btn_ghost_sm {{
+                background-color: transparent;
+                color: #888;
+                border: 1px solid #444;
+                border-radius: {config.S(3)}px;
+                font-family: "{config.UI_FONT_NAME}", sans-serif;
+                font-size: {config.FS(9.5)}pt;
+                padding: {config.S(4)}px {config.S(12)}px;
+                text-align: center;
+            }}
+            QPushButton#btn_ghost_sm:hover {{ background-color: #2a2d2e; color: #fff; border-color: #666; }}
+            QPushButton#btn_ghost_sm:pressed {{ background-color: #1a1a1a; color: #aaa; border-color: #444; }}
+            QPushButton[class="revert-btn"] {{
+                padding: 0px;
+                text-align: center;
+                background: transparent;
+                border: 1px solid #444;
+                border-radius: 3px;
+                color: #888;
+                font-size: 12pt;
+                font-weight: bold;
+            }}
+            {config.scrollbar_qss(8)}
+        """)
+
+        # ─────────────────────────────────────────────────────────────────
+        # Root layout: [LEFT menu | RIGHT content]
+        # ─────────────────────────────────────────────────────────────────
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        class SolidFrame(QFrame):
+            def paintEvent(self, e):
+                from PySide6.QtGui import QPainter, QColor
+                p = QPainter(self)
+                p.fillRect(self.rect(), QColor(config.BG_COLOR))
+                super().paintEvent(e)
+                
+        self.inner_frame = SolidFrame(self)
+        self.inner_frame.setObjectName("MainInnerFrame")
+        
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
+        
+        main_layout.addWidget(self.inner_frame)
+        
+        outer_layout = QVBoxLayout(self.inner_frame)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+        
+        self._tb = CustomTitleBar(self, prefs.get("gui_lang", "en"), parent=self.inner_frame)
+        if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
+            self.setTitleBar(self._tb)
+        # Manually force the title into toolbars that normally get theirs from windowTitle()
+        if hasattr(self._tb, "_lbl_title"):
+            self._tb._lbl_title.setText(self.txt("tool_settings"))
+        self._tb.btn_min.hide()
+        self._tb.btn_max.hide()
+        outer_layout.addWidget(self._tb)
+        
+        root = QHBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        outer_layout.addLayout(root)
+
+        # ── LEFT: Category list ───────────────────────────────────────────
+        self.category_list = QListWidget()
+        self.category_list.setFixedWidth(config.S(155))
+        self.category_list.setFocusPolicy(Qt.NoFocus)
+        self.category_list.setFont(QFont(config.UI_FONT_NAME, config.FS(10)))
+        # Disable horizontal scrollbar — marquee handles overflow instead
+        self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
+        self.category_list.setItemDelegate(self._marquee_delegate)
+        root.addWidget(self.category_list)
+
+        # ── RIGHT: stacked pages + bottom bar ────────────────────────────
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        root.addLayout(right_layout)
+
+
+        self.stack = QStackedWidget()
+        right_layout.addWidget(self.stack)
+
+        self.w_footer = QWidget()
+        l_footer = QVBoxLayout(self.w_footer)
+        l_footer.setContentsMargins(0, 0, 0, 0)
+        l_footer.setSpacing(0)
+        
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"background: {config.SEPARATOR_COL}; max-height: 1px; border: none;")
+        l_footer.addWidget(sep)
+
+        btn_bar = QHBoxLayout()
+        btn_bar.setContentsMargins(config.S(16), config.S(10), config.S(16), config.S(12))
+        btn_bar.setSpacing(config.S(8))
+
+        btn_bar.addStretch()
+
+        # Right: Restore / Close / Apply
+        self.btn_restore = QPushButton(self.txt("btn_restore_defaults"))
+        self.btn_restore.setObjectName("btn_secondary")
+        self.btn_restore.setMinimumWidth(config.S(100))
+        self.btn_restore.setFixedHeight(config.S(30))
+        self.btn_restore.setCursor(Qt.PointingHandCursor)
+        self.btn_restore.clicked.connect(self._restore_all_defaults)
+        btn_bar.addWidget(self.btn_restore)
+
+        self.btn_close = QPushButton(self.txt("btn_close"))
+        self.btn_close.setObjectName("btn_secondary")
+        self.btn_close.setMinimumWidth(config.S(100))
+        self.btn_close.setFixedHeight(config.S(30))
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.clicked.connect(self.reject)
+        btn_bar.addWidget(self.btn_close)
+
+        self.btn_apply = QPushButton(self.txt("btn_apply"))
+        self.btn_apply.setObjectName("btn_apply")
+        self.btn_apply.setMinimumWidth(config.S(100))
+        self.btn_apply.setFixedHeight(config.S(30))
+        self.btn_apply.setCursor(Qt.PointingHandCursor)
+        self.btn_apply.clicked.connect(self._apply_settings)
+        btn_bar.addWidget(self.btn_apply)
+
+        l_footer.addLayout(btn_bar)
+        right_layout.addWidget(self.w_footer)
+
+        self._build_ui()
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _get_info_icon(self, info_key):
+        parent = self.parent()
+        if parent and hasattr(parent, '_create_info_icon'):
+            return parent._create_info_icon(info_key)
+        lbl_info = QLabel("ⓘ")
+        lbl_info.setToolTip(self.txt(info_key) if hasattr(self, 'txt') else info_key)
+        lbl_info.setStyleSheet("color: #888; font-size: 11pt;")
+        return lbl_info
+
+
+    def _set_view_mode(self, mode):
+        self.setUpdatesEnabled(False)
+        try:
+            self.engine.save_preferences({'settings_view_mode': mode})
+            if hasattr(self, '_initial_state'):
+                self._initial_state['settings_view_mode'] = mode
+                for k, def_v in config.DEFAULT_SETTINGS.items():
+                    if k not in self._initial_state:
+                        self._initial_state[k] = def_v
+                
+            self._is_basic_mode = (mode == 'basic')
+            
+            if hasattr(self, 'category_list') and self.category_list.count() > 4:
+                item = self.category_list.item(4) # AI Engine
+                if item:
+                    item.setHidden(self._is_basic_mode)
+                    
+                if self._is_basic_mode and self.category_list.currentRow() == 4:
+                    self.category_list.setCurrentRow(0)
+                    
+            if hasattr(self, 'btn_view_basic') and hasattr(self, 'btn_view_advanced'):
+                if self._is_basic_mode:
+                    self.btn_view_basic.setStyleSheet(self.active_btn_style)
+                    self.btn_view_advanced.setStyleSheet(self.inactive_btn_style)
+                else:
+                    self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
+                    self.btn_view_advanced.setStyleSheet(self.active_btn_style)
+
+            # Instant visibility toggle for advanced elements across built pages
+            if hasattr(self, '_advanced_widgets'):
+                for w in self._advanced_widgets:
+                    if w:
+                        w.setVisible(not self._is_basic_mode)
+        finally:
+            self.setUpdatesEnabled(True)
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Ensure all pages are built so all controls exist in RAM
+        if hasattr(self, '_ensure_page_built') and hasattr(self, 'category_list'):
+            for i in range(self.category_list.count()):
+                self._ensure_page_built(i)
+        # Reset title bar buttons to clear any stuck hover/pressed state
+        tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
+        if tb:
+            for btn_name in ('btn_close', 'btn_max', 'btn_min'):
+                btn = getattr(tb, btn_name, None)
+                if btn and hasattr(btn, 'reset_state'):
+                    btn.reset_state()
+
+        # Snapshot the exact state of all widgets as they appear to the user
+        self._initial_state = self._get_current_state_dict()
+
+        # WORKAROUND: Force OS to refresh the main application icon
+        from PySide6.QtWidgets import QApplication
+        try:
+            from gui.utils import _app_icon
+            QApplication.setWindowIcon(_app_icon())
+            parent_window = self.parentWidget()
+            if parent_window:
+                parent_window.setWindowIcon(_app_icon())
+        except Exception:
+            pass
+
+        self.raise_()
+        self.activateWindow()
+
+    def _build_ui(self):
+        self.setUpdatesEnabled(False)
+        try:
+            self._advanced_widgets = []
+            self.category_list.clear()
+            while self.stack.count() > 0:
+                w = self.stack.widget(0)
+                self.stack.removeWidget(w)
+                w.deleteLater()
+
+            prefs = self.engine.load_preferences() or {}
+            view_mode = prefs.get('settings_view_mode', 'basic')
+            self._is_basic_mode = (view_mode == 'basic')
+
+            self.category_list.addItem(self.txt("tab_general"))
+            self.category_list.addItem(self.txt("tab_transcript"))
+            self.category_list.addItem(self.txt("tab_shortcuts"))
+            self.category_list.addItem(self.txt("tab_custom_markers"))
+            self.category_list.addItem(self.txt("tab_ai_engine"))
+            self.category_list.addItem(self.txt("tab_telemetry"))
+            self.category_list.addItem(self.txt("tab_support"))
+
+            if self._is_basic_mode:
+                item = self.category_list.item(4)
+                if item:
+                    item.setHidden(True)
+
+            self.revert_funcs = []
+            
+            for _ in range(self.category_list.count()):
+                scroll = QScrollArea()
+                scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                scroll.setWidgetResizable(True)
+                scroll.setFrameShape(QFrame.NoFrame)
+                scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+                self.stack.addWidget(scroll)
+
+            self._built_pages = set()
+
+            def _ensure_page_built(idx):
+                if idx not in self._built_pages and 0 <= idx < self.category_list.count():
+                    self._build_page(idx)
+                    self._built_pages.add(idx)
+
+            self._ensure_page_built = _ensure_page_built
+
+            # Lazy-load: build page 0 immediately so dialog opens in < 3ms
+            self._ensure_page_built(0)
+
+            # Build remaining pages asynchronously on the event loop
+            def _build_remaining():
+                for i in range(1, self.category_list.count()):
+                    self._ensure_page_built(i)
+            QTimer.singleShot(10, _build_remaining)
+
+            if hasattr(self, '_advanced_widgets'):
+                for w in self._advanced_widgets:
+                    if w:
+                        w.setVisible(not self._is_basic_mode)
+
+            def _on_tab_changed(idx):
+                self._ensure_page_built(idx)
+                self.stack.setCurrentIndex(idx)
+                item = self.category_list.item(idx)
+                if item and item.text() == self.txt("tab_support"):
+                    self.w_footer.hide()
+                else:
+                    self.w_footer.show()
+                    
+            self.category_list.currentRowChanged.connect(_on_tab_changed)
+
+            self.category_list.setCurrentRow(0)
+            self._initial_state = self._get_current_state_dict()
+        finally:
+            self.setUpdatesEnabled(True)
+
+    def _add_row(self, form, label_text, widget, default_val, setter_func, info_key=None):
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        has_toggle = (isinstance(widget, ToggleSwitch) or widget.findChild(ToggleSwitch) is not None)
+        row.setSpacing(config.S(10) if has_toggle else config.S(4))
+        row.setAlignment(Qt.AlignVCenter)
+        if not has_toggle:
+            row.addStretch()
+            widget.setFixedWidth(config.S(240))
+        else:
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row.addWidget(widget)
+        btn_rev = ReloadButton(size=30)
+        btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+        def create_reset_handler(s_func, d_val):
+            return lambda checked=False: s_func(d_val)
+        btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+        row.addWidget(btn_rev)
+        lbl = QLabel(label_text)
+        lbl.setMinimumWidth(config.S(160))
+        lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
+
+        if info_key:
+            lbl_container = QWidget()
+            lbl_layout = QHBoxLayout(lbl_container)
+            lbl_layout.setContentsMargins(0, 0, 0, 0)
+            lbl_layout.setSpacing(6)
+            lbl_layout.addWidget(lbl)
+            lbl_layout.addWidget(self._get_info_icon(info_key))
+            lbl_layout.addStretch()
+            form.addRow(lbl_container, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl_container, container
+        else:
+            form.addRow(lbl, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl, container
+
+    def _build_page(self, idx):
+        if idx < 0 or idx >= self.stack.count():
+            return
+        scroll = self.stack.widget(idx)
+        prefs = self.engine.load_preferences() or {}
+        
+        mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'ai_engine', 5: 'telemetry', 6: 'support'}
+            
+        page_name = mapping.get(idx)
+        if not page_name:
+            return
+            
+        method = getattr(self, f"_build_page_{page_name}", None)
+        if method:
+            page_widget = method(prefs)
+            if page_widget:
+                scroll.setWidget(page_widget)
+
+    def _build_page_general(self, prefs):
+        # PAGE 0 — GENERAL
+        # ─────────────────────────────────────────────────────────────────
+        page_gen = QWidget()
+        page_gen.setStyleSheet("background: transparent;")
+        l_gen = QVBoxLayout(page_gen)
+        l_gen.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+
+        # Basic/Advanced view switch
+
+        view_btn_row = QHBoxLayout()
+        view_btn_row.setContentsMargins(0, 0, 0, config.S(16))
+        view_btn_row.setSpacing(config.S(10))
+        
+        self.btn_view_basic = QPushButton(self.txt("btn_view_basic"))
+        self.btn_view_basic.setFixedHeight(config.S(30))
+        self.btn_view_basic.setCursor(Qt.PointingHandCursor)
+        self.active_btn_style = f"background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold; font-size: {config.FS(10)}pt;"
+        self.inactive_btn_style = f"background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal; font-size: {config.FS(10)}pt;"
+        
+        if self._is_basic_mode:
+            self.btn_view_basic.setStyleSheet(self.active_btn_style)
+        else:
+            self.btn_view_basic.setStyleSheet(self.inactive_btn_style)
+        self.btn_view_basic.clicked.connect(lambda: self._set_view_mode('basic'))
+        
+        self.btn_view_advanced = QPushButton(self.txt("btn_view_advanced"))
+        self.btn_view_advanced.setFixedHeight(config.S(30))
+        self.btn_view_advanced.setCursor(Qt.PointingHandCursor)
+        
+        if not self._is_basic_mode:
+            self.btn_view_advanced.setStyleSheet(self.active_btn_style)
+        else:
+            self.btn_view_advanced.setStyleSheet(self.inactive_btn_style)
+            
+        self.btn_view_advanced.clicked.connect(lambda: self._set_view_mode('advanced'))
+
+        view_btn_row.addWidget(self.btn_view_basic)
+        view_btn_row.addWidget(self.btn_view_advanced)
+        l_gen.addLayout(view_btn_row)
+
+        # ── Version / Update card (at the top) ────────────────────────────
+        ver_card = QFrame()
+        ver_card.setStyleSheet(
+            "QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }"
+        )
+        ver_card_lay = QVBoxLayout(ver_card)
+        ver_card_lay.setContentsMargins(config.S(16), config.S(12), config.S(16), config.S(12))
+        ver_card_lay.setSpacing(config.S(10))
+
+        # Row 1: version + status + Update Now
+        ver_row = QHBoxLayout()
+        ver_row.setSpacing(config.S(6))
+        lbl_ver_key = QLabel(self.txt("lbl_ver_installed") + ":")
+        lbl_ver_key.setStyleSheet(f"color: #666; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        lbl_ver_val = QLabel(config.VERSION)
+        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent; border: none;")
+        self._lbl_ver_status = QLabel("…")
+        self._lbl_ver_status.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"))
+        self._btn_ver_update.setObjectName("btn_ghost_sm")
+        self._btn_ver_update.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS(9)}pt;")
+        self._btn_ver_update.setCursor(Qt.PointingHandCursor)
+        self._btn_ver_update.hide()
+        ver_row.addWidget(lbl_ver_key)
+        ver_row.addWidget(lbl_ver_val)
+        ver_row.addSpacing(config.S(12))
+        ver_row.addWidget(self._lbl_ver_status)
+        ver_row.addStretch()
+        ver_row.addWidget(self._btn_ver_update)
+        ver_card_lay.addLayout(ver_row)
+
+        # Thin divider inside card
+        card_sep = QFrame()
+        card_sep.setFrameShape(QFrame.Shape.HLine)
+        card_sep.setStyleSheet("background-color: #222; max-height: 1px; border: none;")
+        ver_card_lay.addWidget(card_sep)
+
+        # Row 2: Notify toggle
+        tgl_notify_row = QHBoxLayout()
+        tgl_notify_row.setSpacing(10)
+        self.tgl_auto_check_updates = ToggleSwitch()
+        self.tgl_auto_check_updates.setChecked(
+            bool(prefs.get('auto_check_updates', True)), animated=False
+        )
+        self.tgl_auto_check_updates.setToolTip(self.txt("tt_auto_check_updates"))
+        lbl_notify = QLabel(self.txt("lbl_auto_check_updates"))
+        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_notify.setToolTip(self.txt("tt_auto_check_updates"))
+        tgl_notify_row.addWidget(self.tgl_auto_check_updates)
+        tgl_notify_row.addWidget(lbl_notify)
+        tgl_notify_row.addStretch()
+        ver_card_lay.addLayout(tgl_notify_row)
+
+        # Row 3: Auto-update toggle
+        tgl_autoupd_row = QHBoxLayout()
+        tgl_autoupd_row.setSpacing(10)
+        self.tgl_auto_update_on_start = ToggleSwitch()
+        self.tgl_auto_update_on_start.setChecked(
+            bool(prefs.get('auto_update_on_start', False)), animated=False
+        )
+        self.tgl_auto_update_on_start.setToolTip(self.txt("tt_auto_update_on_start"))
+        lbl_autoupd = QLabel(self.txt("lbl_auto_update_on_start"))
+        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_autoupd.setToolTip(self.txt("tt_auto_update_on_start"))
+        tgl_autoupd_row.addWidget(self.tgl_auto_update_on_start)
+        tgl_autoupd_row.addWidget(lbl_autoupd)
+        tgl_autoupd_row.addStretch()
+        ver_card_lay.addLayout(tgl_autoupd_row)
+
+        l_gen.addWidget(ver_card)
+        l_gen.addSpacing(12)
+
+        # ── Async: populate version status + wire Update Now button ───────
+        # Use engine reference captured now; derive lang at call time from prefs
+        _card_engine = self.engine
+
+        def _card_lang():
+            p = _card_engine.load_preferences() or {}
+            return p.get('gui_lang', 'en')
+
+        def _on_update_known_for_card(latest_ver, gh_url, gl_url):
+            # If auto-update already ran silently this session, just show restart notice
+            main_win = self.parent()
+            pending = getattr(main_win, '_pending_update_ver', None)
+            if pending and pending == latest_ver:
+                self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
+                self._lbl_ver_status.setStyleSheet(
+                    "color: #f4a641; font-size: 9pt; font-weight: bold; background: transparent; border: none;"
+                )
+                self._btn_ver_update.hide()
+                return
+
+            # Normal: update available, show Update Now button
+            self._lbl_ver_status.setText(
+                f"{self.txt('lbl_ver_update_avail')} {latest_ver}"
+            )
+            self._lbl_ver_status.setStyleSheet(
+                "color: #f4a641; font-size: 9pt; background: transparent; border: none;"
+            )
+            self._btn_ver_update.show()
+
+            def _do_inline_update():
+                import threading, subprocess, tempfile, urllib.request, ssl
+                from osdoc import log_info, log_error
+
+                is_win  = _card_engine.os_doc.is_win
+                from gui import UpdateNotifyDialog as _UND
+                urls = [_UND._UPDATE_SCRIPT, _UND._UPDATE_SCRIPT_GL]
+
+                # Disable button + show "Updating…"
+                self._btn_ver_update.setEnabled(False)
+                self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_updating'))
+                self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_wait'))
+                self._lbl_ver_status.setStyleSheet(
+                    "color: #888; font-size: 9pt; font-style: italic; background: transparent; border: none;"
+                )
+
+                # Signal bridge: safe cross-thread UI update
+                class _Bridge(QObject):
+                    done = Signal(bool, str)
+                _bridge = _Bridge(self)
+
+                def _on_done(success, err):
+                    if success:
+                        log_info("[Updater] Card update succeeded.")
+                        self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_success'))
+                        self._lbl_ver_status.setStyleSheet(
+                            "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
+                        )
+                        self._btn_ver_update.hide()
+                    else:
+                        log_error(f"[Updater] Card update failed: {err}")
+                        self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_failed'))
+                        self._lbl_ver_status.setStyleSheet(
+                            "color: #ed4245; font-size: 9pt; background: transparent; border: none;"
+                        )
+                        self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_win_btn'))
+                        self._btn_ver_update.setEnabled(True)
+                        try:
+                            self._btn_ver_update.clicked.disconnect()
+                        except Exception:
+                            pass
+                        from gui import UpdateNotifyDialog as _UND2
+                        self._btn_ver_update.clicked.connect(
+                            lambda: _UND2._open_url(gh_url)
+                        )
+                        self._btn_ver_update.show()
+
+                _bridge.done.connect(_on_done)
+
+                def _worker():
+                    tmp = None
+                    try:
+                        import sys, os
+                        import certifi
+                        ctx = ssl.create_default_context(cafile=certifi.where())
+                        content = None
+                        for url in urls:
+                            try:
+                                with urllib.request.urlopen(url, timeout=20, context=ctx) as r:
+                                    content = r.read()
+                                break
+                            except Exception:
+                                continue
+                        if not content:
+                            _bridge.done.emit(False, "Could not download update script.")
+                            return
+                        import sys
+                        fd, tmp = tempfile.mkstemp(suffix='.py', prefix='bw_upd_')
+                        with os.fdopen(fd, 'wb') as fh:
+                            fh.write(content)
+                        install_dir = getattr(_card_engine.os_doc, 'install_dir', '')
+                        
+                        if hasattr(_card_engine.os_doc, 'get_venv_python_path'):
+                            venv_py = _card_engine.os_doc.get_venv_python_path()
+                        elif is_win:
+                            venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'pythonw.exe')
+                            if not os.path.isfile(venv_py):
+                                venv_py = os.path.join(install_dir, 'venv', 'Scripts', 'python.exe')
+                        else:
+                            venv_py = os.path.join(install_dir, 'venv', 'bin', 'python3')
+                        
+                        if not os.path.isfile(venv_py):
+                            venv_py = sys.executable
+
+                        cmd = [venv_py, tmp]
+                        if install_dir:
+                            cmd.extend(['--install-dir', install_dir])
+
+                        sp_kwargs = _card_engine.os_doc.get_subprocess_kwargs() if hasattr(_card_engine, 'os_doc') else {}
+                        if not sp_kwargs and is_win:
+                            sp_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+                            si = subprocess.STARTUPINFO()
+                            si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+                            si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+                            sp_kwargs['startupinfo'] = si
+
+                        result = subprocess.run(
+                            cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            encoding='utf-8', errors='replace', timeout=600, **sp_kwargs
+                        )
+                        for line in (result.stdout or '').splitlines():
+                            log_info(f'[Updater] {line}')
+                        if result.returncode == 0:
+                            _bridge.done.emit(True, "")
+                        else:
+                            _bridge.done.emit(False, f"Exit code {result.returncode}")
+                    except subprocess.TimeoutExpired:
+                        _bridge.done.emit(False, "Timeout (>10 min)")
+                    except Exception as e:
+                        _bridge.done.emit(False, str(e))
+                    finally:
+                        if tmp:
+                            try: os.remove(tmp)
+                            except Exception: pass
+
+                threading.Thread(target=_worker, daemon=True).start()
+
+            # Disconnect any previous connections, then wire up.
+            # PySide6 emits RuntimeWarning (not RuntimeError) when no connections
+            # exist — catch_warnings suppresses it cleanly without hiding real bugs.
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    self._btn_ver_update.clicked.disconnect()
+                except Exception:
+                    pass
+            self._btn_ver_update.clicked.connect(_do_inline_update)
+
+        def _on_check_done_for_card():
+            if self._lbl_ver_status.text() == "…":
+                self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
+                self._lbl_ver_status.setStyleSheet(
+                    "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
+                )
+
+        _thr = UpdateCheckThread(config.VERSION, parent=self)
+        _thr.update_available.connect(_on_update_known_for_card)
+        _thr.finished.connect(_on_check_done_for_card)
+        _thr.start()
+        self._settings_ver_thread = _thr
+
+        # ── Language + App Icon ────────────────────────────────────────────
+        form_gen = QFormLayout()
+        form_gen.setSpacing(14)
+        form_gen.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Language dropdown
+        self.dropdown_lang = CustomDropdown(list(config.SUPPORTED_LANGS.values()))
+        current_lang_code = prefs.get('gui_lang', 'en')
+        self.dropdown_lang.setText(config.SUPPORTED_LANGS.get(current_lang_code, 'English'))
+
+        def _on_lang_changed(val):
+            code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), 'en')
+            prefs = self.engine.load_preferences() or {}
+            if code == prefs.get('gui_lang'):
+                return
+
+            prefs['gui_lang'] = code
+            self.engine.save_preferences(prefs)
+
+            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
+                self._initial_state['gui_lang'] = code
+
+            target = config.TRANS.get(code, config.TRANS['en'])
+
+            # Update combo_view options and text to new language without altering the current mode
+            if hasattr(self, 'combo_view') and self.combo_view is not None:
+                cur_mode = self.combo_view.property("view_mode_key")
+                if not cur_mode or cur_mode not in ('segmented', 'continuous'):
+                    cur_txt = self.combo_view.currentText()
+                    cur_mode = 'segmented' if _is_segmented_text(cur_txt) else ('continuous' if _is_continuous_text(cur_txt) else prefs.get('view_mode', 'segmented'))
+                self.combo_view.setProperty("view_mode_key", cur_mode)
+                self.combo_view.options_list = [target.get("opt_continuous_flow", "Continuous flow"), target.get("opt_segmented_blocks", "Segmented blocks")]
+                self.combo_view.blockSignals(True)
+                self.combo_view.setText(target.get("opt_segmented_blocks" if cur_mode == "segmented" else "opt_continuous_flow"))
+                self.combo_view.blockSignals(False)
+
+            # Update mouse LMB/RMB options and text to new language without altering their selected modes
+            if hasattr(self, 'combo_mouse_lmb') and self.combo_mouse_lmb is not None:
+                cur_lmb = self.combo_mouse_lmb.property("mouse_mode_key") or _get_mouse_mode_from_text(self.combo_mouse_lmb.currentText(), prefs.get('mouse_lmb_mode', 'box'))
+                self.combo_mouse_lmb.setProperty("mouse_mode_key", cur_lmb)
+                self.combo_mouse_lmb.options_list = [target.get("opt_mouse_box", "Box selection"), target.get("opt_mouse_brush", "Brush selection"), target.get("opt_mouse_none", "None")]
+                lmb_map = {'box': target.get("opt_mouse_box", "Box selection"), 'brush': target.get("opt_mouse_brush", "Brush selection"), 'none': target.get("opt_mouse_none", "None")}
+                self.combo_mouse_lmb.blockSignals(True)
+                self.combo_mouse_lmb.setText(lmb_map.get(cur_lmb, target.get("opt_mouse_box", "Box selection")))
+                self.combo_mouse_lmb.blockSignals(False)
+
+            if hasattr(self, 'combo_mouse_rmb') and self.combo_mouse_rmb is not None:
+                cur_rmb = self.combo_mouse_rmb.property("mouse_mode_key") or _get_mouse_mode_from_text(self.combo_mouse_rmb.currentText(), prefs.get('mouse_rmb_mode', 'brush'))
+                self.combo_mouse_rmb.setProperty("mouse_mode_key", cur_rmb)
+                self.combo_mouse_rmb.options_list = [target.get("opt_mouse_brush", "Brush selection"), target.get("opt_mouse_box", "Box selection"), target.get("opt_mouse_none", "None")]
+                rmb_map = {'box': target.get("opt_mouse_box", "Box selection"), 'brush': target.get("opt_mouse_brush", "Brush selection"), 'none': target.get("opt_mouse_none", "None")}
+                self.combo_mouse_rmb.blockSignals(True)
+                self.combo_mouse_rmb.setText(rmb_map.get(cur_rmb, target.get("opt_mouse_brush", "Brush selection")))
+                self.combo_mouse_rmb.blockSignals(False)
+
+            title   = target.get('msg_title_language_changed', 'Language Changed')
+            message = target.get('msg_restart_lang_pending', target.get('msg_restart_lang', 'Language changed. Full changes will apply on restart.'))
+            if hasattr(self, 'textedit_prompt') and self.textedit_prompt:
+                new_auto = config.get_whisper_prompt_for_lang(prefs.get('lang', 'Auto'), gui_lang=code)
+                self.textedit_prompt.setPlaceholderText(new_auto)
+                cur_text = self.textedit_prompt.toPlainText().strip()
+                if not cur_text or config.is_default_whisper_prompt(cur_text):
+                    self.textedit_prompt.setPlainText("")
+
+            ok_text = target.get('btn_ok', 'OK')
+            CustomMsgBox(self, title, message, ok_text).exec()
+
+        self.dropdown_lang.valueChanged.connect(_on_lang_changed)
+        def _reset_lang(val):
+            self.dropdown_lang.setText(val)
+            _on_lang_changed(val)
+        self._add_row(form_gen, self.txt("lbl_language"), self.dropdown_lang, 'English', _reset_lang)
+
+        # App Icon (Visual Selector) - Spans full width matching Language dropdown
+        icon_row = QHBoxLayout()
+        icon_row.setSpacing(config.S(6))
+        icon_row.setContentsMargins(0, 0, 0, 0)
+        self.icon_group = QButtonGroup(self)
+        self.icon_group.setExclusive(True)
+        
+        icon_names = ["default", "monochrome", "whiteb", "white"]
+        saved_icon = prefs.get('app_icon', 'default')
+        
+        
+        for i, name in enumerate(icon_names):
+            btn = SquareIconButton(name)
+            if name == saved_icon:
+                btn.setChecked(True)
+            self.icon_group.addButton(btn, i)
+            icon_row.addWidget(btn, 1)
+            
+        icon_container = QWidget()
+        icon_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        icon_container.setLayout(icon_row)
+        
+        lbl_icon, container_icon = self._add_row(form_gen, self.txt("lbl_app_icon"), icon_container, 'default', lambda: None)
+        btn_rev_icon = container_icon.findChild(ReloadButton)
+        if btn_rev_icon:
+            btn_rev_icon.clicked.disconnect()
+            def set_icon_default(val="default"):
+                for btn in self.icon_group.buttons():
+                    if btn.property("icon_name") == val:
+                        btn.setChecked(True)
+                        break
+            btn_rev_icon.clicked.connect(lambda *args: set_icon_default("default"))
+
+        l_gen.addLayout(form_gen)
+        l_gen.addSpacing(8)
+        l_gen.addStretch()
+
+
+        # ── Import / Export settings (bottom) ─────────────────────────────
+        io_row = QHBoxLayout()
+        io_row.setContentsMargins(0, 0, 0, 8)
+        io_row.setSpacing(8)
+
+        btn_import_s = QPushButton(self.txt("btn_import_settings"))
+        btn_import_s.setObjectName("btn_ghost_sm")
+        btn_import_s.setFixedHeight(config.S(28))
+        btn_import_s.setCursor(Qt.PointingHandCursor)
+        btn_import_s.clicked.connect(self._on_import_settings)
+        io_row.addWidget(btn_import_s)
+
+        btn_export_s = QPushButton(self.txt("btn_export_settings"))
+        btn_export_s.setObjectName("btn_ghost_sm")
+        btn_export_s.setFixedHeight(config.S(28))
+        btn_export_s.setCursor(Qt.PointingHandCursor)
+        btn_export_s.clicked.connect(self._on_export_settings)
+        io_row.addWidget(btn_export_s)
+        io_row.addStretch()
+        l_gen.addLayout(io_row)
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_gen
+
+    def _build_page_shortcuts(self, prefs):
+        # PAGE 1 — SHORTCUTS
+
+
+        # ─────────────────────────────────────────────────────────────────
+        page_shorts = QWidget()
+        page_shorts.setStyleSheet("background: transparent;")
+        l_shorts = QVBoxLayout(page_shorts)
+        l_shorts.setContentsMargins(24, 20, 24, 16)
+        l_shorts.setSpacing(0)
+
+
+        default_shortcuts = getattr(config, 'DEFAULT_SETTINGS', {}).get('shortcuts', {})
+        # Merge defaults with saved prefs, keeping only keys present in DEFAULT_SETTINGS
+        saved_shortcuts = prefs.get('shortcuts', {})
+        current_shortcuts = {k: saved_shortcuts.get(k, v) for k, v in default_shortcuts.items()}
+
+        self.shortcut_inputs = {}
+
+        def _check_shortcut_conflicts():
+            """Scan all capturable inputs; set red border on any with a duplicate sequence."""
+            # Gather sequences from capturable inputs only (built-in + custom marker)
+            all_inputs = dict(self.shortcut_inputs)
+            all_inputs.update(getattr(self, 'custom_marker_shortcut_inputs', {}))
+            seq_to_keys = {}
+            for k, w in all_inputs.items():
+                if w.display_only:
+                    continue
+                seq = w.get_sequence()
+                if seq:
+                    seq_to_keys.setdefault(seq, []).append(k)
+            # Apply conflict styling
+            for k, w in all_inputs.items():
+                if w.display_only:
+                    continue
+                seq = w.get_sequence()
+                is_conflict = seq and len(seq_to_keys.get(seq, [])) > 1
+                w.set_conflict(bool(is_conflict))
+
+
+        # Builds label + field container for one shortcut row (used for addRow and insertRow)
+        def _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display=False, info_key=None):
+            container = QWidget()
+            container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            row = QHBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(config.S(4))
+            row.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+            
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            widget.setMaximumWidth(config.S(220))
+            widget.setMinimumWidth(config.S(60))
+            widget.setFixedHeight(config.INPUT_HEIGHT)
+            row.addWidget(widget)
+
+            if not is_display:
+                btn_clear = CloseIconButton(size=30)
+                btn_clear.setToolTip(self.txt("tt_clear_shortcut"))
+                btn_clear.clicked.connect(lambda: setter_func(""))
+                row.addWidget(btn_clear)
+
+            btn_rev = ReloadButton(size=30)
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addWidget(btn_rev)
+
+            lbl = QLabel(label_text)
+            
+            if info_key:
+                lbl_container = QWidget()
+                lbl_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+                lbl_layout = QHBoxLayout(lbl_container)
+                lbl_layout.setContentsMargins(0, 0, 0, 0)
+                lbl_layout.setSpacing(6)
+                info_icon = self._get_info_icon(info_key)
+                lbl_layout.addWidget(lbl)
+                lbl_layout.addWidget(info_icon)
+                lbl_layout.addStretch()
+                return lbl_container, container
+
+            return lbl, container
+
+        def _add_shortcut_row(form, label_text, widget, default_val, setter_func, is_display=False):
+            lbl, container = _make_shortcut_widgets(label_text, widget, default_val, setter_func, is_display)
+            form.addRow(lbl, container)
+
+        # Keys and their ordering in the final form
+        MARKER_KEYS  = {'mark_red', 'mark_blue', 'mark_green', 'mark_eraser'}
+        NAV_KEYS     = {'search', 'open_settings', 'jump_to_word', 'play_stop', 'skip_backward', 'skip_forward'}
+        DISPLAY_ONLY = set()
+        KEY_ORDER    = ['mark_red', 'mark_blue', 'mark_green', 'mark_eraser',
+                        'search', 'open_settings', 'jump_to_word', 'play_stop', 'skip_backward', 'skip_forward']
+
+        def make_setter(w, check_fn):
+            def _setter(v):
+                w.set_sequence(str(v))
+                check_fn()
+            return _setter
+
+        # ── ONE unified QFormLayout ───────────────────────────────────────────
+        # Custom markers inserted via insertRow() at _custom_sc_insert_pos so
+        # spacing is always identical (14px) between EVERY row.
+        form = QFormLayout()
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        # Marker shortcuts (red … eraser)
+        for key in KEY_ORDER:
+            if key not in MARKER_KEYS or key not in current_shortcuts:
+                continue
+            is_disp = key in DISPLAY_ONLY
+            value      = current_shortcuts[key]
+            i18n_key   = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            
+            if key == 'jump_to_word':
+                opts_keys = ['opt_ctrl_lmb', 'opt_ctrl_rmb', 'opt_alt_lmb', 'opt_alt_rmb', 'opt_shift_lmb', 'opt_shift_rmb']
+                key_map = {k: self.txt(k) for k in opts_keys}
+                widget = MouseShortcutCaptureButton(str(value), key_map, display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, 'opt_ctrl_lmb'),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp, info_key='tt_jump_to_word_info')
+            else:
+                widget = ShortcutCaptureButton(str(value), display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, ''),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp)
+            form.addRow(lbl, container)
+            self.shortcut_inputs[key] = widget
+            if is_disp:
+                self._advanced_widgets.extend([lbl, container])
+
+        # Position where custom marker rows will be inserted (after last marker row)
+        self._custom_sc_insert_pos       = form.rowCount()
+        self._custom_sc_unified          = form
+        self._make_shortcut_widgets_fn   = _make_shortcut_widgets
+        self._check_shortcut_conflicts_fn = _check_shortcut_conflicts
+        self.custom_marker_shortcut_inputs = {}
+
+        # Nav shortcuts (search, open_settings, jump_to_word)
+        for key in KEY_ORDER:
+            if key not in NAV_KEYS or key not in current_shortcuts:
+                continue
+            is_disp = key in DISPLAY_ONLY
+            value      = current_shortcuts[key]
+            i18n_key   = f'shortcut_{key}'
+            label_text = self.txt(i18n_key) if self.txt(i18n_key) != i18n_key else key.replace('_', ' ').title()
+            
+            if key == 'jump_to_word':
+                opts_keys = ['opt_ctrl_lmb', 'opt_ctrl_rmb', 'opt_alt_lmb', 'opt_alt_rmb', 'opt_shift_lmb', 'opt_shift_rmb']
+                key_map = {k: self.txt(k) for k in opts_keys}
+                widget = MouseShortcutCaptureButton(str(value), key_map, display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, 'opt_ctrl_lmb'),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp, info_key='tt_jump_to_word_info')
+            else:
+                widget = ShortcutCaptureButton(str(value), display_only=is_disp)
+                widget.sequence_changed.connect(lambda _seq, _w=widget: _check_shortcut_conflicts())
+                lbl, container = _make_shortcut_widgets(label_text, widget, default_shortcuts.get(key, ''),
+                                                         make_setter(widget, _check_shortcut_conflicts),
+                                                         is_display=is_disp)
+            form.addRow(lbl, container)
+            self.shortcut_inputs[key] = widget
+            if is_disp:
+                self._advanced_widgets.extend([lbl, container])
+
+        l_shorts.addLayout(form)
+        l_shorts.addStretch()
+
+        _check_shortcut_conflicts()
+
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_shorts
+
+    def _build_page_custom_markers(self, prefs):
+        # PAGE 2 — CUSTOM MARKERS
+        # ─────────────────────────────────────────────────────────────────
+        page_markers = QWidget()
+        page_markers.setStyleSheet("background: transparent;")
+        l_markers = QVBoxLayout(page_markers)
+        l_markers.setContentsMargins(24, 20, 24, 16)
+        l_markers.setSpacing(10)
+
+        self.current_custom_markers = list(prefs.get('custom_markers', []))
+
+        # Scroll area to hold the dynamic marker rows
+        markers_scroll = QScrollArea()
+        markers_scroll.setWidgetResizable(True)
+        markers_scroll.setFrameShape(QFrame.NoFrame)
+        markers_scroll.setMinimumHeight(120)
+        markers_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+            }}
+            QWidget#markers_inner {{
+                background-color: #1e1e1e;
+            }}
+        """)
+        self._markers_inner = MarkerDragZone()
+        self._markers_inner.setObjectName("markers_inner")
+        self._markers_layout = self._markers_inner.layout()
+        self._markers_layout.setContentsMargins(4, 4, 4, 4)
+        self._markers_layout.setSpacing(2)
+        markers_scroll.setWidget(self._markers_inner)
+        self._refresh_markers_list()
+        # Also refresh Shortcuts tab now that current_custom_markers is populated
+        self._refresh_custom_marker_shortcuts()
+        l_markers.addWidget(markers_scroll)
+
+
+        marker_btn_row = QHBoxLayout()
+        marker_btn_row.setSpacing(config.S(8))
+        btn_add_m = QPushButton(self.txt("btn_add_marker"))
+        btn_add_m.setObjectName("btn_secondary")
+        btn_add_m.setFixedHeight(config.S(30))
+        btn_add_m.setCursor(Qt.PointingHandCursor)
+        btn_add_m.clicked.connect(self._on_add_marker)
+        marker_btn_row.addWidget(btn_add_m)
+
+        btn_export_m = QPushButton(self.txt("btn_export_markers"))
+        btn_export_m.setObjectName("btn_ghost_sm")
+        btn_export_m.setFixedHeight(config.S(28))
+        btn_export_m.setCursor(Qt.PointingHandCursor)
+        btn_export_m.clicked.connect(self._on_export_markers)
+        marker_btn_row.addWidget(btn_export_m)
+
+        btn_import_m = QPushButton(self.txt("btn_import_markers"))
+        btn_import_m.setObjectName("btn_ghost_sm")
+        btn_import_m.setFixedHeight(config.S(28))
+        btn_import_m.setCursor(Qt.PointingHandCursor)
+        btn_import_m.clicked.connect(self._on_import_markers)
+        marker_btn_row.addWidget(btn_import_m)
+
+        marker_btn_row.addStretch()
+        l_markers.addLayout(marker_btn_row)
+
+
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_markers
+
+    def _build_page_transcript(self, prefs):
+        # PAGE 3 — TRANSCRIPT
+        # ─────────────────────────────────────────────────────────────────
+        page_transcript = QWidget()
+        page_transcript.setStyleSheet("background: transparent;")
+        l_transcript = QVBoxLayout(page_transcript)
+        l_transcript.setContentsMargins(24, 20, 24, 16)
+        l_transcript.setSpacing(0)
+
+        # Always-on-top container (collapses cleanly with 0px gap in basic mode)
+        w_ontop_box = QWidget()
+        w_ontop_box.setStyleSheet("background: transparent;")
+        l_ontop_box = QVBoxLayout(w_ontop_box)
+        l_ontop_box.setContentsMargins(0, 0, 0, 0)
+        l_ontop_box.setSpacing(0)
+
+        form_ontop = QFormLayout()
+        form_ontop.setSpacing(14)
+        form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form_ontop.setContentsMargins(0, 0, 0, 0)
+        
+        self.chk_ontop = ToggleSwitch()
+        self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
+        w_ontop = QWidget()
+        l_ontop = QHBoxLayout(w_ontop)
+        l_ontop.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_ontop.addStretch()
+        l_ontop.addWidget(self._get_info_icon("tt_always_on_top"))
+        l_ontop.addSpacing(config.S(8))
+        l_ontop.addWidget(self.chk_ontop)
+        
+        self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
+                 False, lambda v: self.chk_ontop.setChecked(v, animated=True))
+        l_ontop_box.addLayout(form_ontop)
+        l_ontop_box.addSpacing(14)
+        
+        self._advanced_widgets.append(w_ontop_box)
+        l_transcript.addWidget(w_ontop_box)
+
+        form_transcript = QFormLayout()
+        form_transcript.setSpacing(14)
+        form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Display Mode (moved from General)
+        view_items = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+        self.combo_view = CustomDropdown(
+            view_items,
+            options_getter=lambda: [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+        )
+        is_seg = prefs.get('view_mode', 'segmented') == 'segmented'
+        self.combo_view.setProperty("view_mode_key", "segmented" if is_seg else "continuous")
+        self.combo_view.setText(self.txt("opt_segmented_blocks") if is_seg else self.txt("opt_continuous_flow"))
+        self.combo_view.valueChanged.connect(
+            lambda v: self.combo_view.setProperty(
+                "view_mode_key",
+                "segmented" if _is_segmented_text(v) else ("continuous" if _is_continuous_text(v) else self.combo_view.property("view_mode_key"))
+            )
+        )
+        self._add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
+                 self.txt("opt_segmented_blocks"), lambda v: self.combo_view.setValue(self.txt("opt_segmented_blocks")))
+
+        # Mouse selection mode — Left Mouse Button (LMB)
+        mouse_lmb_items = [
+            self.txt("opt_mouse_box"),
+            self.txt("opt_mouse_brush"),
+            self.txt("opt_mouse_none")
+        ]
+        self.combo_mouse_lmb = CustomDropdown(
+            mouse_lmb_items,
+            options_getter=lambda: [
+                self.txt("opt_mouse_box"),
+                self.txt("opt_mouse_brush"),
+                self.txt("opt_mouse_none")
+            ]
+        )
+        curr_lmb = prefs.get('mouse_lmb_mode', 'box')
+        self.combo_mouse_lmb.setProperty("mouse_mode_key", curr_lmb)
+        lmb_text_map = {
+            'box': self.txt("opt_mouse_box"),
+            'brush': self.txt("opt_mouse_brush"),
+            'none': self.txt("opt_mouse_none")
+        }
+        self.combo_mouse_lmb.setText(lmb_text_map.get(curr_lmb, self.txt("opt_mouse_box")))
+        self.combo_mouse_lmb.valueChanged.connect(
+            lambda v: self.combo_mouse_lmb.setProperty(
+                "mouse_mode_key",
+                _get_mouse_mode_from_text(v, self.combo_mouse_lmb.property("mouse_mode_key") or "box")
+            )
+        )
+        self._add_row(form_transcript, self.txt("lbl_mouse_lmb_mode"), self.combo_mouse_lmb,
+                 self.txt("opt_mouse_box"), lambda v: self.combo_mouse_lmb.setValue(self.txt("opt_mouse_box")), info_key="tt_mouse_lmb_mode")
+
+        # Mouse selection mode — Right Mouse Button (RMB)
+        mouse_rmb_items = [
+            self.txt("opt_mouse_brush"),
+            self.txt("opt_mouse_box"),
+            self.txt("opt_mouse_none")
+        ]
+        self.combo_mouse_rmb = CustomDropdown(
+            mouse_rmb_items,
+            options_getter=lambda: [
+                self.txt("opt_mouse_brush"),
+                self.txt("opt_mouse_box"),
+                self.txt("opt_mouse_none")
+            ]
+        )
+        curr_rmb = prefs.get('mouse_rmb_mode', 'brush')
+        self.combo_mouse_rmb.setProperty("mouse_mode_key", curr_rmb)
+        rmb_text_map = {
+            'brush': self.txt("opt_mouse_brush"),
+            'box': self.txt("opt_mouse_box"),
+            'none': self.txt("opt_mouse_none")
+        }
+        self.combo_mouse_rmb.setText(rmb_text_map.get(curr_rmb, self.txt("opt_mouse_brush")))
+        self.combo_mouse_rmb.valueChanged.connect(
+            lambda v: self.combo_mouse_rmb.setProperty(
+                "mouse_mode_key",
+                _get_mouse_mode_from_text(v, self.combo_mouse_rmb.property("mouse_mode_key") or "brush")
+            )
+        )
+        self._add_row(form_transcript, self.txt("lbl_mouse_rmb_mode"), self.combo_mouse_rmb,
+                 self.txt("opt_mouse_brush"), lambda v: self.combo_mouse_rmb.setValue(self.txt("opt_mouse_brush")), info_key="tt_mouse_rmb_mode")
+
+        self._chunk_widgets = []
+        def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
+            container = QWidget()
+            row = QHBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(config.S(4))
+            row.setAlignment(Qt.AlignVCenter)
+            row.addStretch()
+            widget.setFixedWidth(config.S(240))
+            row.addWidget(widget)
+            
+            btn_rev = ReloadButton(size=30)
+            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
+            def create_reset_handler(s_func, d_val):
+                return lambda checked=False: s_func(d_val)
+            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
+            row.addWidget(btn_rev)
+            
+            lbl_container = QWidget()
+            lbl_container.setMinimumWidth(config.S(160))
+            lbl_layout = QHBoxLayout(lbl_container)
+            lbl_layout.setContentsMargins(0, 0, 0, 0)
+            lbl_layout.setSpacing(6)
+            lbl = QLabel(label_text)
+            lbl_layout.addWidget(lbl)
+            lbl_layout.addWidget(self._get_info_icon(info_key))
+            lbl_layout.addStretch()
+            
+            form.addRow(lbl_container, container)
+            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
+            return lbl_container, container
+
+        self.spin_chunk_max = CustomNumberInput(int(prefs.get('chunk_max_words', 15)), 5, 200)
+        lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 15, self.spin_chunk_max.setValue, "tt_chunk_max_words")
+        self._chunk_widgets.extend([lbl_max, cnt_max])
+        self._advanced_widgets.extend([lbl_max, cnt_max])
+
+        self.spin_chunk_look = CustomNumberInput(int(prefs.get('chunk_lookahead', 3)), 0, 20)
+        lbl_look, cnt_look = _add_chunk_row(form_transcript, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, "tt_chunk_lookahead")
+        self._chunk_widgets.extend([lbl_look, cnt_look])
+        self._advanced_widgets.extend([lbl_look, cnt_look])
+
+        self.spin_chunk_min = CustomNumberInput(int(prefs.get('chunk_min_chars', 7)), 1, 50)
+        lbl_min, cnt_min = _add_chunk_row(form_transcript, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, "tt_chunk_min_chars")
+        self._chunk_widgets.extend([lbl_min, cnt_min])
+        self._advanced_widgets.extend([lbl_min, cnt_min])
+
+        def _update_chunk_state(idx):
+            is_seg = (idx == 1)
+            for w in self._chunk_widgets:
+                w.setVisible(is_seg and not self._is_basic_mode)
+        
+        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if _is_segmented_text(v) else 0))
+        _update_chunk_state(1 if is_seg else 0)
+
+        # Font family, size, line height
+        self.combo_font = SearchableDropdown(_get_system_font_families)
+        self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
+
+        self.spin_fsize = CustomNumberInput(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])), 8, 48)
+        self.spin_lheight = CustomNumberInput(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])), 0, 40)
+
+        self._add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
+                 self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
+        self._add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
+                 self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
+        self._add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
+                 self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
+        l_transcript.addLayout(form_transcript)
+
+        # Font preview
+        from PySide6.QtWidgets import QTextEdit
+        self.lbl_preview = QTextEdit()
+        self.lbl_preview.setReadOnly(True)
+        self.lbl_preview.setFocusPolicy(Qt.NoFocus)
+        self.lbl_preview.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lbl_preview.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lbl_preview.setFrameShape(QFrame.NoFrame)
+        self.lbl_preview.document().setDocumentMargin(0)
+        self.lbl_preview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        def _update_preview_height(_=None):
+            try:
+                lh = self.spin_lheight.value()
+                # Document size includes lh added to the bottom of the last line.
+                # We subtract lh to get the actual visual height, then add 24px padding.
+                new_h = int(self.lbl_preview.document().size().height()) - lh + 24
+                # Ensure height doesn't become too small due to calculation artifacts
+                new_h = max(30, new_h)
+                if self.lbl_preview.height() != new_h:
+                    self.lbl_preview.setFixedHeight(new_h)
+            except: pass
+            
+        self.lbl_preview.document().documentLayout().documentSizeChanged.connect(_update_preview_height)
+        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
+        l_transcript.addSpacing(10)
+        l_transcript.addWidget(self.lbl_preview)
+
+
+        # Removed sep_chunk
+        # ── Sync DaVinci timeline on chapter switch ─ BOTTOM of Transcript tab
+        # (below font preview and chunking settings, applies to both basic/advanced)
+        l_transcript.addSpacing(14)
+
+        form_bottom = QFormLayout()
+        form_bottom.setSpacing(14)
+        form_bottom.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.chk_sync_davinci = ToggleSwitch()
+        self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
+        w_sync = QWidget()
+        l_sync = QHBoxLayout(w_sync)
+        l_sync.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_sync.addStretch()
+        l_sync.addWidget(self._get_info_icon("tt_sync_davinci_chapter"))
+        l_sync.addSpacing(config.S(8))
+        l_sync.addWidget(self.chk_sync_davinci)
+        self._add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
+                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=True))
+
+        # Track order toggle — directly below sync davinci
+        import config as _cfg_bot
+        _bot_prefs = self.engine.load_preferences() or {}
+        self.tgl_xml_preserve_track_order = ToggleSwitch()
+        self.tgl_xml_preserve_track_order.setChecked(
+            bool(_bot_prefs.get("xml_preserve_track_order",
+                                _cfg_bot.DEFAULT_SETTINGS["xml_preserve_track_order"])),
+            animated=False
+        )
+        self.tgl_xml_preserve_track_order.toggled.connect(
+            lambda checked: self.engine.save_preferences({"xml_preserve_track_order": checked})
+        )
+        w_xml_track = QWidget()
+        l_xml_track = QHBoxLayout(w_xml_track)
+        l_xml_track.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_xml_track.addStretch()
+        l_xml_track.addWidget(self._get_info_icon("tt_xml_preserve_track_order"))
+        l_xml_track.addSpacing(config.S(8))
+        l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
+        self._add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
+                 False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=True))
+
+        # Force XML assembly toggle — directly below preserve track order
+        self.tgl_force_xml_assembly = ToggleSwitch()
+        self.tgl_force_xml_assembly.setChecked(
+            bool(_bot_prefs.get("force_xml_assembly",
+                                _cfg_bot.DEFAULT_SETTINGS["force_xml_assembly"])),
+            animated=False
+        )
+        self.tgl_force_xml_assembly.toggled.connect(
+            lambda checked: (
+                self.engine.save_preferences({"force_xml_assembly": checked}),
+                _update_linking_availability(checked, animated=True)
+            )
+        )
+        w_force_xml = QWidget()
+        l_force_xml = QHBoxLayout(w_force_xml)
+        l_force_xml.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_force_xml.addStretch()
+        l_force_xml.addWidget(self._get_info_icon("tt_force_xml_assembly"))
+        l_force_xml.addSpacing(config.S(8))
+        l_force_xml.addWidget(self.tgl_force_xml_assembly)
+        self._add_row(form_bottom, self.txt("lbl_force_xml_assembly"), w_force_xml,
+                 False, lambda v: self.tgl_force_xml_assembly.setChecked(v, animated=True))
+
+        # Link matching A/V toggle
+        self.tgl_link_av_clips = ToggleSwitch()
+        self.tgl_link_av_clips.setChecked(
+            bool(_bot_prefs.get("link_av_clips",
+                                _cfg_bot.DEFAULT_SETTINGS["link_av_clips"])),
+            animated=False
+        )
+        self.tgl_link_av_clips.toggled.connect(
+            lambda checked: self.engine.save_preferences({"link_av_clips": checked})
+        )
+        w_link_av = QWidget()
+        l_link_av = QHBoxLayout(w_link_av)
+        l_link_av.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_link_av.addStretch()
+        l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
+        l_link_av.addSpacing(config.S(8))
+        l_link_av.addWidget(self.tgl_link_av_clips)
+        lbl_link_av, row_link_av = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
+                 False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
+
+        # Link all cut tracks toggle
+        self.tgl_link_all_cut_tracks = ToggleSwitch()
+        self.tgl_link_all_cut_tracks.setChecked(
+            bool(_bot_prefs.get("link_all_cut_tracks",
+                                _cfg_bot.DEFAULT_SETTINGS["link_all_cut_tracks"])),
+            animated=False
+        )
+        self.tgl_link_all_cut_tracks.toggled.connect(
+            lambda checked: self.engine.save_preferences({"link_all_cut_tracks": checked})
+        )
+        w_link_all = QWidget()
+        l_link_all = QHBoxLayout(w_link_all)
+        l_link_all.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_link_all.addStretch()
+        l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
+        l_link_all.addSpacing(config.S(8))
+        l_link_all.addWidget(self.tgl_link_all_cut_tracks)
+        lbl_link_all, row_link_all = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
+                 False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
+
+        self._linking_anim = QVariantAnimation(self)
+        self._linking_anim.setDuration(200)
+        self._linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
+
+        def _apply_linking_opacity(val: float):
+            lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.tgl_link_av_clips.set_opacity(val)
+            self.tgl_link_all_cut_tracks.set_opacity(val)
+
+        self._linking_anim.valueChanged.connect(_apply_linking_opacity)
+        self._curr_linking_op = 1.0
+
+        def _update_linking_availability(force_xml_on: bool, animated: bool = False):
+            parent_main = self.parent() or getattr(self, 'main_window', None)
+            is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
+            enabled = is_file or force_xml_on
+            self.tgl_link_av_clips.set_blocked(not enabled)
+            self.tgl_link_all_cut_tracks.set_blocked(not enabled)
+            row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
+            row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
+            tt = "" if enabled else self.txt("tt_linking_requires_xml")
+            w_link_av.setToolTip(tt)
+            w_link_all.setToolTip(tt)
+            lbl_link_av.setToolTip(tt)
+            lbl_link_all.setToolTip(tt)
+
+            target_op = 1.0 if enabled else 0.35
+            if animated:
+                self._linking_anim.stop()
+                self._linking_anim.setStartValue(self._curr_linking_op)
+                self._linking_anim.setEndValue(target_op)
+                self._curr_linking_op = target_op
+                self._linking_anim.start()
+            else:
+                self._linking_anim.stop()
+                self._curr_linking_op = target_op
+                _apply_linking_opacity(target_op)
+
+            if parent_main and hasattr(parent_main, 'w_track_options'):
+                try:
+                    parent_main.w_track_options.load_config()
+                except Exception:
+                    pass
+
+        _update_linking_availability(self.tgl_force_xml_assembly.isChecked(), animated=False)
+
+        # DaVinci timeline video proxy render toggle
+        self.tgl_resolve_render_timeline_proxy = ToggleSwitch()
+        self.tgl_resolve_render_timeline_proxy.setChecked(
+            bool(_bot_prefs.get("resolve_render_timeline_proxy",
+                                _cfg_bot.DEFAULT_SETTINGS["resolve_render_timeline_proxy"])),
+            animated=False
+        )
+        self.tgl_resolve_render_timeline_proxy.toggled.connect(
+            lambda checked: self.engine.save_preferences({"resolve_render_timeline_proxy": checked})
+        )
+        w_res_proxy = QWidget()
+        l_res_proxy = QHBoxLayout(w_res_proxy)
+        l_res_proxy.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_res_proxy.addStretch()
+        l_res_proxy.addWidget(self._get_info_icon("tt_resolve_render_timeline_proxy"))
+        l_res_proxy.addSpacing(config.S(8))
+        l_res_proxy.addWidget(self.tgl_resolve_render_timeline_proxy)
+        self._add_row(form_bottom, self.txt("lbl_resolve_render_timeline_proxy"), w_res_proxy,
+                 False, lambda v: self.tgl_resolve_render_timeline_proxy.setChecked(v, animated=True))
+
+        # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
+        self.tgl_timestamp_precise = ToggleSwitch()
+        self.tgl_timestamp_precise.setChecked(
+            bool(prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])),
+            animated=False
+        )
+        def _on_timestamp_precise_changed(checked):
+            self.engine.save_preferences({"timestamp_precise": checked})
+            main_w = self.parent()
+            if main_w and hasattr(main_w, 'text_canvas'):
+                main_w.text_canvas.invalidate_font_cache()
+                main_w.text_canvas._calculate_layout()
+                main_w.text_canvas.update()
+
+        self.tgl_timestamp_precise.toggled.connect(_on_timestamp_precise_changed)
+        w_ts_precise = QWidget()
+        l_ts_precise = QHBoxLayout(w_ts_precise)
+        l_ts_precise.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_ts_precise.addStretch()
+        l_ts_precise.addWidget(self._get_info_icon("tt_timestamp_precise"))
+        l_ts_precise.addSpacing(config.S(8))
+        l_ts_precise.addWidget(self.tgl_timestamp_precise)
+        self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
+                 False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=True))
+
+        # ── Show panel headers toggle (basic + advanced) ──
+        self.tgl_show_panel_headers = ToggleSwitch()
+        self.tgl_show_panel_headers.setChecked(
+            bool(prefs.get('show_panel_headers', True)),
+            animated=False
+        )
+        w_panel_hdr = QWidget()
+        l_panel_hdr = QHBoxLayout(w_panel_hdr)
+        l_panel_hdr.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_panel_hdr.addStretch()
+        l_panel_hdr.addWidget(self._get_info_icon("tt_show_panel_headers"))
+        l_panel_hdr.addSpacing(config.S(8))
+        l_panel_hdr.addWidget(self.tgl_show_panel_headers)
+        self._add_row(form_bottom, self.txt("lbl_show_panel_headers"), w_panel_hdr,
+                 True, lambda v: self.tgl_show_panel_headers.setChecked(v, animated=True))
+
+        l_transcript.addLayout(form_bottom)
+        l_transcript.addSpacing(14)
+
+        self.combo_font.valueChanged.connect(self._update_preview)
+        self.spin_fsize.valueChanged.connect(self._update_preview)
+        self.spin_lheight.valueChanged.connect(self._update_preview)
+        self._update_preview()
+        l_transcript.addStretch()
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_transcript
+
+    def _build_page_ai_engine(self, prefs):
+        # PAGE 5 — AI ENGINE
+        # ─────────────────────────────────────────────────────────────────
+        page_ai = QWidget()
+        page_ai.setStyleSheet("background: transparent;")
+        l_ai = QVBoxLayout(page_ai)
+        l_ai.setContentsMargins(24, 20, 24, 16)
+        l_ai.setSpacing(0)
+        form_ai = QFormLayout()
+        form_ai.setSpacing(14)
+        form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        l_ai.addLayout(form_ai)
+
+        # Device
+        _device_items = ["Auto", "CPU", "GPU"]
+        self.dropdown_device = CustomDropdown(_device_items, parent=page_ai)
+        self.dropdown_device.setFixedHeight(config.S(30))
+        saved_device = prefs.get('device', 'auto').upper()
+        if saved_device == 'AUTO': saved_device = 'Auto'
+        self.dropdown_device.setText(saved_device if saved_device in _device_items else 'Auto')
+        self._add_row(form_ai, self.txt("lbl_device"), self.dropdown_device, 'Auto', self.dropdown_device.setValue)
+
+        # Compute type
+        _compute_items = ["Auto", "float16", "int8", "float32", "int8_float16", "int8_float32"]
+        self.dropdown_compute = CustomDropdown(_compute_items, parent=page_ai)
+        self.dropdown_compute.setFixedHeight(config.S(30))
+        saved_compute = prefs.get('ai_compute_type', 'Auto')
+        self.dropdown_compute.setText(saved_compute if saved_compute in _compute_items else 'Auto')
+        self._add_row(form_ai, self.txt("lbl_compute_type"), self.dropdown_compute, 'Auto', self.dropdown_compute.setValue)
+
+        # ── Audio Pre-Processing & Silence VAD (FFmpeg) ─────────
+        w_audio_hdr_box = QWidget()
+        w_audio_hdr_box.setStyleSheet("background: transparent;")
+        l_audio_hdr = QVBoxLayout(w_audio_hdr_box)
+        l_audio_hdr.setContentsMargins(0, 0, 0, 0)
+        l_audio_hdr.setSpacing(0)
+        l_audio_hdr.addSpacing(config.S(24))
+        lbl_hdr_audio = QLabel(self.txt("hdr_audio_preprocessing"))
+        lbl_hdr_audio.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        l_audio_hdr.addWidget(lbl_hdr_audio)
+        l_audio_hdr.addSpacing(config.S(8))
+        sep_audio = QFrame()
+        sep_audio.setFrameShape(QFrame.Shape.HLine)
+        sep_audio.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_audio_hdr.addWidget(sep_audio)
+        l_audio_hdr.addSpacing(config.S(14))
+        l_ai.addWidget(w_audio_hdr_box)
+        self._advanced_widgets.append(w_audio_hdr_box)
+
+        form_audio = QFormLayout()
+        form_audio.setSpacing(14)
+        form_audio.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        l_ai.addLayout(form_audio)
+
+        def_thresh = config.DEFAULT_SETTINGS.get('silence_threshold_db', -42.0)
+        self.spin_silence_thresh = CustomNumberInput(float(prefs.get('silence_threshold_db', def_thresh)), -80.0, -10.0, step=1.0, decimals=1, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_audio, self.txt("lbl_silence_threshold_db"), self.spin_silence_thresh, def_thresh, self.spin_silence_thresh.setValue))
+
+        def_pad = config.DEFAULT_SETTINGS.get('ui_spin_pad', 0.1)
+        self.spin_silence_pad = CustomNumberInput(float(prefs.get('ui_spin_pad', def_pad)), 0.0, 2.0, step=0.05, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_audio, self.txt("lbl_padding_s"), self.spin_silence_pad, def_pad, self.spin_silence_pad.setValue))
+
+        def_min_dur = config.DEFAULT_SETTINGS.get('silence_min_dur', 0.2)
+        self.spin_silence_min_dur = CustomNumberInput(float(prefs.get('silence_min_dur', def_min_dur)), 0.05, 5.0, step=0.05, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_audio, self.txt("lbl_min_silence_dur"), self.spin_silence_min_dur, def_min_dur, self.spin_silence_min_dur.setValue))
+
+        # ── Advanced Whisper Parameters ─────────────────────────
+        w_whisper_hdr_box = QWidget()
+        w_whisper_hdr_box.setStyleSheet("background: transparent;")
+        l_whisper_hdr = QVBoxLayout(w_whisper_hdr_box)
+        l_whisper_hdr.setContentsMargins(0, 0, 0, 0)
+        l_whisper_hdr.setSpacing(0)
+
+        l_whisper_hdr.addSpacing(config.S(24))
+        lbl_hdr_whisper = QLabel(self.txt("hdr_whisper_parameters"))
+        lbl_hdr_whisper.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        l_whisper_hdr.addWidget(lbl_hdr_whisper)
+        l_whisper_hdr.addSpacing(config.S(8))
+
+        sep_whisper = QFrame()
+        sep_whisper.setFrameShape(QFrame.Shape.HLine)
+        sep_whisper.setStyleSheet("background-color: #3a3a3a; max-height: 1px; border: none;")
+        l_whisper_hdr.addWidget(sep_whisper)
+        l_whisper_hdr.addSpacing(config.S(14))
+
+        l_ai.addWidget(w_whisper_hdr_box)
+        self._advanced_widgets.append(w_whisper_hdr_box)
+
+        # Initial prompt label + QTextEdit (under Whisper Parameters)
+        lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
+        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+        l_ai.addWidget(lbl_prompt)
+        l_ai.addSpacing(4)
+
+        self.textedit_prompt = WrappingPlaceholderTextEdit()
+        self.textedit_prompt.setMaximumHeight(80)
+        saved_prompt = prefs.get('ai_initial_prompt', '').strip()
+        
+        current_lang = prefs.get('lang', 'Auto')
+        gui_lang = prefs.get('gui_lang', 'en')
+        auto_prompt = config.get_whisper_prompt_for_lang(current_lang, gui_lang=gui_lang)
+        self.textedit_prompt.setPlaceholderText(auto_prompt)
+        
+        if saved_prompt and not config.is_default_whisper_prompt(saved_prompt):
+            self.textedit_prompt.setPlainText(saved_prompt)
+        else:
+            self.textedit_prompt.setPlainText("")
+        self.textedit_prompt.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 6px 8px;
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+            }}
+        """)
+        l_ai.addWidget(self.textedit_prompt)
+        self._advanced_widgets.extend([lbl_prompt, self.textedit_prompt])
+
+        l_ai.addSpacing(14)
+
+        form_whisper = QFormLayout()
+        form_whisper.setSpacing(14)
+        form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        l_ai.addLayout(form_whisper)
+
+        self.chk_vad_filter = ToggleSwitch(parent=page_ai)
+        self.chk_vad_filter.setChecked(bool(prefs.get('ai_vad_filter', False)), animated=False)
+        w_vad = QWidget(page_ai); l_vad = QHBoxLayout(w_vad); l_vad.setContentsMargins(0, 0, 0, 0); l_vad.addStretch(); l_vad.addWidget(self.chk_vad_filter)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_vad_filter"), w_vad, False, lambda v: self.chk_vad_filter.setChecked(v, animated=True)))
+
+        self.chk_condition_prev = ToggleSwitch(parent=page_ai)
+        self.chk_condition_prev.setChecked(bool(prefs.get('ai_condition_on_prev', False)), animated=False)
+        w_cond = QWidget(page_ai); l_cond = QHBoxLayout(w_cond); l_cond.setContentsMargins(0, 0, 0, 0); l_cond.addStretch(); l_cond.addWidget(self.chk_condition_prev)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_condition_prev"), w_cond, False, lambda v: self.chk_condition_prev.setChecked(v, animated=True)))
+
+        def_beam = config.DEFAULT_SETTINGS.get('ai_beam_size', 1)
+        self.spin_beam_size = CustomNumberInput(int(prefs.get('ai_beam_size', def_beam)), 1, 10, step=1, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_beam_size"), self.spin_beam_size, def_beam, self.spin_beam_size.setValue))
+
+        def_temp = config.DEFAULT_SETTINGS.get('ai_temperature', 0.0)
+        self.spin_temperature = CustomNumberInput(float(prefs.get('ai_temperature', def_temp)), 0.0, 1.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_temperature"), self.spin_temperature, def_temp, self.spin_temperature.setValue))
+
+        def_logprob = config.DEFAULT_SETTINGS.get('ai_logprob_threshold', -0.8)
+        self.spin_logprob = CustomNumberInput(float(prefs.get('ai_logprob_threshold', def_logprob)), -3.0, 0.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_logprob"), self.spin_logprob, def_logprob, self.spin_logprob.setValue))
+
+        def_nospeech = config.DEFAULT_SETTINGS.get('ai_no_speech_threshold', 0.7)
+        self.spin_no_speech = CustomNumberInput(float(prefs.get('ai_no_speech_threshold', def_nospeech)), 0.0, 1.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_no_speech"), self.spin_no_speech, def_nospeech, self.spin_no_speech.setValue))
+
+        def_patience = config.DEFAULT_SETTINGS.get('ai_patience', 1.0)
+        self.spin_patience = CustomNumberInput(float(prefs.get('ai_patience', def_patience)), 0.0, 10.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_patience"), self.spin_patience, def_patience, self.spin_patience.setValue))
+
+        def_comp = config.DEFAULT_SETTINGS.get('ai_compression_ratio_threshold', 2.4)
+        self.spin_compression = CustomNumberInput(float(prefs.get('ai_compression_ratio_threshold', def_comp)), 0.0, 100.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_compression_ratio"), self.spin_compression, def_comp, self.spin_compression.setValue))
+
+        def_no_rep = config.DEFAULT_SETTINGS.get('ai_no_repeat_ngram_size', 0)
+        self.spin_no_repeat = CustomNumberInput(int(prefs.get('ai_no_repeat_ngram_size', def_no_rep)), 0, 100, step=1, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_no_repeat_ngram"), self.spin_no_repeat, def_no_rep, self.spin_no_repeat.setValue))
+
+        self.spin_length_penalty = CustomNumberInput(float(prefs.get('ai_length_penalty', 1.0)), 0.0, 10.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_length_penalty"), self.spin_length_penalty, 1.0, self.spin_length_penalty.setValue))
+
+        self.spin_repetition_penalty = CustomNumberInput(float(prefs.get('ai_repetition_penalty', 1.0)), 1.0, 10.0, step=0.1, decimals=2, parent=page_ai)
+        self._advanced_widgets.extend(self._add_row(form_whisper, self.txt("lbl_repetition_penalty"), self.spin_repetition_penalty, 1.0, self.spin_repetition_penalty.setValue))
+        
+        l_ai.addStretch()
+
+
+
+
+        # ─────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_ai
+
+    def _build_page_telemetry(self, prefs):
+        # PAGE 8 — TELEMETRY
+        # ─────────────────────────────────────────────────────────────────
+        page_telem = QWidget()
+        page_telem.setStyleSheet("background: transparent;")
+        l_telem = QVBoxLayout(page_telem)
+        l_telem.setContentsMargins(24, 20, 24, 16)
+        l_telem.setSpacing(12)
+
+        # Info label
+        lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
+        lbl_telem_info.setWordWrap(True)
+        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        l_telem.addWidget(lbl_telem_info)
+
+        form_telem = QFormLayout()
+        form_telem.setSpacing(14)
+        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        user_data = getattr(self.engine.os_doc, 'user_data', {})
+
+        self.chk_telemetry_opt_in = ToggleSwitch()
+        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+        w1 = QWidget()
+        l1 = QHBoxLayout(w1)
+        l1.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l1.addStretch()
+        l1.addWidget(self.chk_telemetry_opt_in)
+        self._add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
+                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=True))
+
+        self.chk_telemetry_geo = ToggleSwitch()
+        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
+        w2 = QWidget()
+        l2 = QHBoxLayout(w2)
+        l2.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l2.addStretch()
+        l2.addWidget(self.chk_telemetry_geo)
+        self._add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
+                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=True))
+
+        l_telem.addLayout(form_telem)
+        l_telem.addStretch()
+
+        # ── Project links — pinned at the bottom ───────────────────────────
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        _BTN_LINK_SS = """
+            QPushButton {
+                color: #1a7a45;
+                background: transparent;
+                border: none;
+                text-align: left;
+                padding: 0px;
+                font-size: 9pt;
+                text-decoration: underline;
+            }
+            QPushButton:hover {
+                color: #2dcc70;
+            }
+        """
+
+        # Buy Me a Coffee link — description above, URL as button
+        lbl_coffee_desc = QLabel(self.txt("link_coffee_desc"))
+        lbl_coffee_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
+        l_telem.addWidget(lbl_coffee_desc)
+
+        btn_coffee = QPushButton("buymeacoffee.com/badwords")
+        btn_coffee.setFlat(True)
+        btn_coffee.setCursor(Qt.PointingHandCursor)
+        btn_coffee.setStyleSheet(_BTN_LINK_SS)
+        btn_coffee.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/badwords")))
+        l_telem.addWidget(btn_coffee)
+
+        l_telem.addSpacing(10)
+
+        # GitHub repo link — description above, URL as button
+        lbl_repo_desc = QLabel(self.txt("link_repo_desc"))
+        lbl_repo_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
+        l_telem.addWidget(lbl_repo_desc)
+
+        btn_repo = QPushButton("github.com/veritus-git/BadWords")
+        btn_repo.setFlat(True)
+        btn_repo.setCursor(Qt.PointingHandCursor)
+        btn_repo.setStyleSheet(_BTN_LINK_SS)
+        btn_repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/veritus-git/BadWords")))
+        l_telem.addWidget(btn_repo)
+
+        l_telem.addSpacing(12)
+
+
+
+        # ─────────────────────────────────────────────────────────────────
+
+        return page_telem
+
+    def _build_page_support(self, prefs):
+        # PAGE 9 — SUPPORT
+        # ─────────────────────────────────────────────────────────────────
+        page_support = QWidget()
+        page_support.setStyleSheet("background: transparent;")
+        l_support = QVBoxLayout(page_support)
+        l_support.setContentsMargins(24, 20, 24, 16)
+        l_support.setSpacing(12)
+
+        lbl_support_info = QLabel(self.txt("msg_support_info"))
+        lbl_support_info.setWordWrap(True)
+        lbl_support_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        l_support.addWidget(lbl_support_info)
+
+        # Logs location
+        import os
+        log_file_path = getattr(self.engine.os_doc, 'log_file', '')
+        if not log_file_path:
+            log_file_path = os.path.join(getattr(self.engine.os_doc, 'install_dir', ''), 'badwords_debug.log')
+        log_dir = os.path.dirname(log_file_path) if log_file_path else ''
+            
+        w_logs = QWidget()
+        l_logs = QHBoxLayout(w_logs)
+        l_logs.setContentsMargins(0, 0, 0, 0)
+        l_logs.setSpacing(8)
+        lbl_logs = QLabel(self.txt("lbl_logs_path"))
+        lbl_logs.setStyleSheet("color: #CCCCCC; font-size: 10pt;")
+        
+        w_path = QWidget()
+        w_path.setStyleSheet("background-color: #1e1e1e; border: 1px solid #333; border-radius: 3px;")
+        l_path = QHBoxLayout(w_path)
+        l_path.setContentsMargins(4, 0, 0, 0)
+        l_path.setSpacing(2)
+        
+        val_logs = QLineEdit(str(log_file_path))
+        val_logs.setReadOnly(True)
+        val_logs.setStyleSheet("color: #AAAAAA; font-family: monospace; background: transparent; border: none;")
+        val_logs.setCursorPosition(0)
+        
+        btn_copy_logs = QPushButton("")
+        import PySide6.QtGui as qg
+        from gui.utils import get_layout_icon_path
+        btn_copy_logs.setIcon(qg.QIcon(get_layout_icon_path("copy.png")))
+        btn_copy_logs.setToolTip(self.txt("btn_copy_path"))
+        btn_copy_logs.setStyleSheet("background: transparent; border: none; padding: 4px;")
+        btn_copy_logs.setCursor(Qt.PointingHandCursor)
+        def _copy_path():
+            import PySide6.QtGui as qg
+            qg.QGuiApplication.clipboard().setText(str(log_file_path))
+        btn_copy_logs.clicked.connect(_copy_path)
+        
+        l_path.addWidget(val_logs, stretch=1)
+        l_path.addWidget(btn_copy_logs)
+        
+        btn_logs = QPushButton(self.txt("btn_open_logs_dir"))
+        btn_logs.setObjectName("btn_ghost_sm")
+        btn_logs.setFixedHeight(config.S(28))
+        btn_logs.setCursor(Qt.PointingHandCursor)
+        def _open_logs():
+            import os
+            try:
+                if self.engine.os_doc.is_win:
+                    os.startfile(log_dir)
+                elif getattr(self.engine.os_doc, 'is_mac', False):
+                    import subprocess
+                    subprocess.Popen(['open', log_dir])
+                else:
+                    import subprocess
+                    subprocess.Popen(['xdg-open', log_dir])
+            except: pass
+        btn_logs.clicked.connect(_open_logs)
+        l_logs.addWidget(lbl_logs)
+        l_logs.addWidget(w_path, stretch=1)
+        l_logs.addWidget(btn_logs)
+        l_support.addWidget(w_logs)
+
+        # Separator
+        sep_supp = QFrame()
+        sep_supp.setFrameShape(QFrame.HLine)
+        sep_supp.setStyleSheet("background-color: #222; max-height: 1px; border: none;")
+        l_support.addWidget(sep_supp)
+        l_support.addSpacing(6)
+
+        l_inputs = QVBoxLayout()
+        l_inputs.setSpacing(14)
+        
+        self.input_support_email = QLineEdit()
+        self.input_support_email.setPlaceholderText(self.txt("ph_support_email"))
+        l_inputs.addWidget(self.input_support_email)
+        
+        self.input_support_title = QLineEdit()
+        self.input_support_title.setPlaceholderText(self.txt("lbl_support_title"))
+        l_inputs.addWidget(self.input_support_title)
+
+        from PySide6.QtWidgets import QTextEdit
+        self.input_support_body = QTextEdit()
+        self.input_support_body.setPlaceholderText(self.txt("lbl_support_body"))
+        self.input_support_body.setMinimumHeight(150)
+        l_inputs.addWidget(self.input_support_body)
+
+        # Attachments list (above the bottom buttons)
+        self.w_attachments_list = QWidget()
+        self.l_attachments_list = QVBoxLayout(self.w_attachments_list)
+        self.l_attachments_list.setContentsMargins(0, 0, 0, 0)
+        self.l_attachments_list.setSpacing(4)
+        l_inputs.addWidget(self.w_attachments_list)
+
+        self.w_attachments_list.hide()
+
+        self.support_attachments = []
+        def _render_attachments():
+            while self.l_attachments_list.count():
+                child = self.l_attachments_list.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+                    
+            if not self.support_attachments:
+                self.w_attachments_list.hide()
+            else:
+                self.w_attachments_list.show()
+                for p in self.support_attachments:
+                    w_row = QWidget()
+                    w_row.setStyleSheet("background: #1a1a1a; border: 1px solid #333; border-radius: 3px;")
+                    l_row = QHBoxLayout(w_row)
+                    l_row.setContentsMargins(6, 2, 2, 2)
+                    
+                    lbl_name = QLabel(p)
+                    lbl_name.setStyleSheet("color: #aaa; border: none; font-size: 9pt;")
+                    
+                    btn_del = CloseIconButton(size=20)
+                    def _del(checked=False, path=p):
+                        if path in self.support_attachments:
+                            self.support_attachments.remove(path)
+                            _render_attachments()
+                    btn_del.clicked.connect(_del)
+                    
+                    l_row.addWidget(lbl_name, stretch=1)
+                    l_row.addWidget(btn_del)
+                    self.l_attachments_list.addWidget(w_row)
+
+        l_support.addLayout(l_inputs)
+
+        # Bottom row: Attach | Stretch | Send
+        w_send = QWidget()
+        l_send = QHBoxLayout(w_send)
+        l_send.setContentsMargins(0, 0, 0, 0)
+        
+        btn_attach = QPushButton(self.txt("btn_attach_screenshots"))
+        btn_attach.setCursor(Qt.PointingHandCursor)
+        btn_attach.setStyleSheet(f"background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;")
+        
+        def _attach():
+            from PySide6.QtWidgets import QFileDialog
+            files, _ = QFileDialog.getOpenFileNames(self, self.txt("btn_attach_screenshots"), "", "Images (*.png *.jpg *.jpeg)")
+            if files:
+                btn_attach.setText("Attached!")
+                btn_attach.setStyleSheet("background-color: #3b3b3b; color: #fff; padding: 6px 14px; border: 1px solid #555; border-radius: 4px;")
+                import PySide6.QtCore as qc
+                qc.QTimer.singleShot(1500, lambda: btn_attach.setText(self.txt("btn_attach_screenshots")))
+                qc.QTimer.singleShot(1500, lambda: btn_attach.setStyleSheet("background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;"))
+                
+                for f in files:
+                    if f not in self.support_attachments:
+                        self.support_attachments.append(f)
+                _render_attachments()
+        btn_attach.clicked.connect(_attach)
+        l_send.addWidget(btn_attach)
+        
+        l_send.addStretch()
+        
+        btn_send = QPushButton(self.txt("btn_send_report"))
+        btn_send.setCursor(Qt.PointingHandCursor)
+        btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
+        
+        def _send_report():
+            title = self.input_support_title.text().strip()
+            body = self.input_support_body.toPlainText().strip()
+            email = self.input_support_email.text().strip()
+            if not title or not body:
+                return
+
+            btn_send.setEnabled(False)
+            btn_send.setText("...")
+
+            attachments = list(self.support_attachments)
+
+            class SendSignals(QObject):
+                finished = Signal(bool, str)
+            signals = SendSignals(self)
+
+            def _worker():
+                import os, zipfile, tempfile, requests
+                from osdoc import log_info, log_error
+                tmp_logs = ""
+                opened_files = []
+                try:
+                    fd, tmp_logs = tempfile.mkstemp(suffix='.zip', prefix='bw_logs_')
+                    os.close(fd)
+                    with zipfile.ZipFile(tmp_logs, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        l_file = getattr(self.engine.os_doc, 'log_file', '')
+                        if l_file and os.path.exists(l_file):
+                            zf.write(l_file, os.path.basename(l_file))
+                        inst_dir = getattr(self.engine.os_doc, 'install_dir', '')
+                        if inst_dir:
+                            for cfile in ['user.json', 'settings.json', 'pref.json']:
+                                p = os.path.join(inst_dir, cfile)
+                                if os.path.exists(p):
+                                    zf.write(p, cfile)
+                        from PySide6.QtGui import QImage
+                        for i, p in enumerate(attachments):
+                            if os.path.exists(p):
+                                img = QImage(p)
+                                if not img.isNull():
+                                    if img.width() > 1920 or img.height() > 1080:
+                                        img = img.scaled(1920, 1080, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                    fd_img, tmp_img = tempfile.mkstemp(suffix='.jpg')
+                                    os.close(fd_img)
+                                    img.save(tmp_img, "JPG", 70)
+                                    zf.write(tmp_img, f"screenshot_{i+1}.jpg")
+                                    try:
+                                        os.remove(tmp_img)
+                                    except:
+                                        pass
+                                else:
+                                    zf.write(p, f"screenshot_{i+1}{os.path.splitext(p)[1]}")
+                    
+                    files_payload = []
+                    import builtins
+                    f_logs = builtins.open(tmp_logs, 'rb')
+                    opened_files.append(f_logs)
+                    files_payload.append(('file', ('logs.zip', f_logs, 'application/zip')))
+
+                    data_payload = {
+                        'title': title,
+                        'body': body,
+                        'email': email,
+                        'version': getattr(config, 'VERSION', 'Unknown'),
+                        'content': f"@here\n>>> **Wersja:** {getattr(config, 'VERSION', 'Unknown')}\n**Email:** {email if email else 'Brak'}\n**Tytuł:** {title}\n\n**Treść:**\n{body}"
+                    }
+
+                    webhook_url = getattr(config, 'SUPPORT_WEBHOOK_URL', '')
+                    if not webhook_url:
+                        import time
+                        time.sleep(1)
+                        log_info("Webhook URL not defined in config.py, skipping actual HTTP POST.")
+                        return True, ""
+
+                    resp = requests.post(webhook_url, data=data_payload, files=files_payload, timeout=30)
+                    success = resp.status_code in (200, 201, 202, 204)
+                    if not success:
+                        log_error(f"Support report send failed: {resp.status_code} {resp.text}")
+                    return success, resp.text
+                except Exception as e:
+                    from osdoc import log_error
+                    log_error(f"Support report exception: {e}")
+                    return False, str(e)
+                finally:
+                    for f in opened_files:
+                        try: f.close()
+                        except: pass
+                    if tmp_logs and os.path.exists(tmp_logs):
+                        try: os.remove(tmp_logs)
+                        except: pass
+
+            def _thread_target():
+                success, msg = _worker()
+                signals.finished.emit(success, msg)
+
+            def _on_finished(success, msg):
+                btn_send.setEnabled(True)
+                if success:
+                    btn_send.setText(self.txt("msg_success"))
+                    btn_send.setStyleSheet(f"background-color: #1a7a3e; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
+                    import PySide6.QtCore as qc
+                    qc.QTimer.singleShot(2000, lambda: btn_send.setText(self.txt("btn_send_report")))
+                    qc.QTimer.singleShot(2000, lambda: btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;"))
+                    
+                    self.input_support_title.clear()
+                    self.input_support_body.clear()
+                    self.input_support_email.clear()
+                    self.support_attachments.clear()
+                    _render_attachments()
+                else:
+                    btn_send.setText(self.txt("btn_send_report"))
+                    CustomMsgBox(self, self.txt("tab_support"), f"Error sending report: {msg[:100]}", self.txt("btn_ok")).exec()
+
+            signals.finished.connect(_on_finished)
+            import threading
+            threading.Thread(target=_thread_target, daemon=True).start()
+
+        btn_send.clicked.connect(_send_report)
+        l_send.addWidget(btn_send)
+        l_support.addWidget(w_send)
+
+        l_support.addStretch()
+
+        # FIX: Capture the exact UI state right after full construction
+        # This prevents false-positive unsaved changes warnings when disk JSON
+        # lacks keys that are correctly populated with defaults by the UI.
+        self._initial_state = self._get_current_state_dict()
+
+
+        return page_support
+
+    def _restore_all_defaults(self):
+        msg_box = CustomMsgBox(
+            self, 
+            self.txt('msg_restore_title'), 
+            self.txt('msg_restore_desc'), 
+            self.txt('btn_yes'), 
+            self.txt('btn_no'),
+            checkbox_text=self.txt('chk_delete_custom_markers'),
+            checkbox_checked=False
+        )
+        if msg_box.exec() == QDialog.Accepted:
+            import config
+            old_prefs = self.engine.load_preferences() or {}
+            delete_markers = msg_box.is_checkbox_checked()
+            # Build a full default state — start with DEFAULT_SETTINGS then keep
+            # lang and settings_view_mode so the UI doesn't switch language/mode.
+            default_state = config.DEFAULT_SETTINGS.copy()
+            default_state['gui_lang'] = old_prefs.get('gui_lang', 'en')
+            default_state['settings_view_mode'] = old_prefs.get('settings_view_mode', 'basic')
+            
+            # Custom markers preserved unless user explicitly checked the box
+            if not delete_markers:
+                default_state['custom_markers'] = old_prefs.get('custom_markers', [])
+            else:
+                default_state['custom_markers'] = []
+                self.current_custom_markers = []
+
+            # Save to disk first so subsequent load_preferences() returns defaults
+            self.engine.save_preferences(default_state)
+            self.initial_prefs = self.engine.load_preferences() or {}
+            # Reset all visible widgets to their default values
+            self._restore_state_dict(default_state)
+            CustomMsgBox(self, self.txt('msg_title_settings'), self.txt('msg_restart_required'), self.txt('btn_ok')).exec()
+            try:
+                self._refresh_markers_list()
+            except Exception:
+                pass
+
+    # ── Custom Markers helpers ─────────────────────────────────────────────
+
+    def _refresh_markers_list(self):
+        """Rebuild the custom marker list widget with inline Edit/Delete buttons."""
+        if not hasattr(self, '_markers_layout') or self._markers_layout is None:
+            return
+        # Clear existing rows completely
+        layout = self._markers_layout
+        while layout.count() > 0:
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+
+        if hasattr(self, '_markers_inner') and self._markers_inner:
+            for child in self._markers_inner.findChildren(MarkerRowWidget):
+                child.hide()
+                child.setParent(None)
+                child.deleteLater()
+
+        row_ss = f"""
+            QWidget#marker_row {{
+                background-color: #1e1e1e;
+                border-bottom: 1px solid #2a2a2a;
+            }}
+            QWidget#marker_row:hover {{
+                background-color: #252525;
+            }}
+            QLabel {{
+                color: {config.FG_COLOR};
+                font-family: {config.UI_FONT_NAME};
+                font-size: 10pt;
+                background: transparent;
+            }}
+            QPushButton {{
+                background-color: #2d2d2d;
+                color: #aaaaaa;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 2px 8px;
+                font-size: 9pt;
+                min-height: 22px;
+            }}
+            QPushButton:hover {{
+                background-color: #383838;
+                color: #ffffff;
+            }}
+            QPushButton#btn_del:hover {{
+                background-color: #7a2020;
+                border-color: #ed4245;
+                color: #ed4245;
+            }}
+        """
+
+        for idx, m in enumerate(self.current_custom_markers):
+            name  = m.get('name', '?')
+            color = m.get('color', '')
+            hex_col = config.RESOLVE_COLORS_HEX.get(color, '#FFFFFF')
+
+            row_widget = MarkerRowWidget(m, idx)
+            row_widget.setObjectName("marker_row")
+            row_widget.setFixedHeight(config.S(34))
+            row_widget.setStyleSheet(row_ss)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(8, 4, 8, 4)
+            row_layout.setSpacing(8)
+
+            # Color dot indicator
+            dot = QLabel("●")
+            dot.setStyleSheet(f"color: {hex_col}; font-size: {config.FS(14)}pt; background: transparent;")
+            dot.setFixedWidth(config.S(20))
+            row_layout.addWidget(dot)
+
+            # Name + color label
+            lbl_name = QLabel(f"{name}")
+            lbl_name.setStyleSheet(f"color: {hex_col}; font-weight: bold; background: transparent;")
+            row_layout.addWidget(lbl_name, 1)
+
+            lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
+            lbl_color.setStyleSheet(f"color: #666666; font-size: {config.FS(9)}pt; background: transparent;")
+            row_layout.addWidget(lbl_color)
+
+            # Edit button
+            def make_edit(i):
+                return lambda checked=False: self._on_edit_marker(i)
+            btn_edit = QPushButton(self.txt("btn_edit_marker"))
+            btn_edit.setObjectName("btn_edit")
+            btn_edit.setCursor(Qt.PointingHandCursor)
+            btn_edit.setFixedHeight(config.S(26))
+            btn_edit.setStyleSheet(f"""
+                QPushButton#btn_edit {{
+                    background-color: #2d2d2d;
+                    color: #aaaaaa;
+                    border: 1px solid #3a3a3a;
+                    border-radius: {config.S(3)}px;
+                    padding: 0px {config.S(8)}px;
+                    font-size: {config.FS(9)}pt;
+                    min-height: {config.S(24)}px;
+                    max-height: {config.S(24)}px;
+                }}
+                QPushButton#btn_edit:hover {{
+                    background-color: #383838;
+                    color: #ffffff;
+                }}
+            """)
+            btn_edit.clicked.connect(make_edit(idx))
+            if color.lower() in ["green", "blue"]:
+                btn_edit.setEnabled(False)
+                btn_edit.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
+                lbl_name.setStyleSheet("color: #666666; font-weight: bold; background: transparent;")
+                dot.setStyleSheet(f"color: #666666; font-size: {config.FS(14)}pt; background: transparent;")
+            row_layout.addWidget(btn_edit)
+
+            def make_del(i):
+                return lambda checked=False: self._on_remove_marker_inline(i)
+            btn_del = CloseIconButton(size=26)
+            btn_del.setFixedSize(config.S(26), config.S(26))
+            btn_del.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #2b2b2b;
+                    border: 1px solid #3a3a3a;
+                    border-radius: {config.S(3)}px;
+                    padding: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: #7a2020;
+                    border-color: #ed4245;
+                }}
+                QPushButton:pressed {{
+                    background-color: #5a1515;
+                    border-color: #ed4245;
+                }}
+            """)
+            btn_del.clicked.connect(make_del(idx))
+            row_layout.addWidget(btn_del)
+
+            layout.addWidget(row_widget)
+
+        # Stretch at the end so all rows remain tightly pinned to the top
+        layout.addStretch()
+
+        if hasattr(self, '_refresh_custom_marker_shortcuts'):
+            self._refresh_custom_marker_shortcuts()
+
+    def _on_markers_reordered(self, source_idx, target_idx):
+        if not self.current_custom_markers:
+            return
+        target_idx = max(0, min(target_idx, len(self.current_custom_markers) - 1))
+        if source_idx == target_idx:
+            return
+        m = self.current_custom_markers.pop(source_idx)
+        self.current_custom_markers.insert(target_idx, m)
+        self._refresh_markers_list()
+        self._save_markers_and_refresh_main()
+
+    def _save_markers_and_refresh_main(self):
+        """
+        Persist custom_markers immediately (bypassing the Apply button),
+        then rebuild the main window's marker sidebar and dynamic shortcuts.
+        Markers work like a live database, not a pending settings value.
+        """
+        prefs = self.engine.load_preferences() or {}
+        prefs['custom_markers'] = list(self.current_custom_markers)
+        self.engine.save_preferences(prefs)
+
+        # Walk the widget parent hierarchy to find BadWordsGUI
+        # (self.parent() alone is not reliable when SettingsDialog is modal)
+        w = self
+        main_win = None
+        while w is not None:
+            try:
+                if hasattr(w, '_build_marker_radio_buttons') \
+                        and hasattr(w, '_apply_dynamic_shortcuts'):
+                    main_win = w
+                    break
+                w = w.parent()
+            except RuntimeError:
+                break
+
+        if main_win is not None:
+            try:
+                main_win._build_marker_radio_buttons()
+            except Exception:
+                pass
+            try:
+                main_win._apply_dynamic_shortcuts()
+            except Exception:
+                pass
+
+
+    def _on_add_marker(self):
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        dlg = MarkerDialog(self, lang, "btn_add_marker")
+        if dlg.exec() == QDialog.Accepted and dlg.result_name:
+            self.current_custom_markers.append({
+                "name":  dlg.result_name,
+                "color": dlg.result_color,
+            })
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
+
+    def _on_edit_marker(self, idx: int):
+        if not (0 <= idx < len(self.current_custom_markers)):
+            return
+        m = self.current_custom_markers[idx]
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        dlg = MarkerDialog(self, lang, "btn_edit_marker",
+                           prefill_name=m.get('name', ''),
+                           prefill_color=m.get('color', ''))
+        if dlg.exec() == QDialog.Accepted and dlg.result_name:
+            self.current_custom_markers[idx] = {
+                "name":  dlg.result_name,
+                "color": dlg.result_color,
+            }
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
+
+    def _on_remove_marker_inline(self, idx: int):
+        if 0 <= idx < len(self.current_custom_markers):
+            self.current_custom_markers.pop(idx)
+            self._refresh_markers_list()
+            self._refresh_custom_marker_shortcuts()
+            self._save_markers_and_refresh_main()
+
+
+    def _on_remove_marker(self):
+        """Legacy method — kept for safety but no longer wired to any button."""
+        pass
+
+    def _on_export_markers(self):
+        """Export custom markers to a JSON file."""
+        from PySide6.QtWidgets import QFileDialog
+        import json, os
+
+        if not self.current_custom_markers:
+            lang = self.engine.load_preferences().get('gui_lang', 'en')
+            CustomMsgBox(
+                self,
+                _txt(lang, 'btn_export_markers'),
+                _txt(lang, 'msg_no_markers_to_export'),
+                _txt(lang, 'btn_ok'),
+            ).exec()
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.txt('btn_export_markers'),
+            os.path.expanduser('~/badwords_markers.json'),
+            'JSON Files (*.json)',
+        )
+        if not path:
+            return
+
+        data = {
+            'version': 1,
+            'app': 'BadWords',
+            'custom_markers': list(self.current_custom_markers),
+        }
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                import json
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            lang = self.engine.load_preferences().get('gui_lang', 'en')
+            CustomMsgBox(self, 'Error', str(e), _txt(lang, 'btn_ok')).exec()
+
+    def _on_import_markers(self):
+        """Import custom markers from a JSON file (replaces current list)."""
+        from PySide6.QtWidgets import QFileDialog
+        import json
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.txt('btn_import_markers'),
+            '',
+            'JSON Files (*.json)',
+        )
+        if not path:
+            return
+
+        lang = self.engine.load_preferences().get('gui_lang', 'en')
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            CustomMsgBox(self, 'Error', str(e), _txt(lang, 'btn_ok')).exec()
+            return
+
+        # Accept both {"custom_markers": [...]} and plain lists
+        if isinstance(data, list):
+            imported = data
+        elif isinstance(data, dict):
+            imported = data.get('custom_markers', [])
+        else:
+            CustomMsgBox(
+                self, 'Error', _txt(lang, 'msg_import_invalid_format'), _txt(lang, 'btn_ok')
+            ).exec()
+            return
+
+        # Validate: each entry must have at least a non-empty 'name' and non-reserved color
+        blocked_colors = {c.lower() for c in getattr(config, 'RESOLVE_COLORS_BLOCKED', {"Olive", "Violet", "Chocolate", "Navy", "Tan", "Green", "Blue"})}
+        valid = []
+        for entry in imported:
+            if isinstance(entry, dict) and entry.get('name', '').strip():
+                c_name = entry.get('color', 'Orange').strip()
+                if c_name.lower() in blocked_colors:
+                    continue
+                valid.append({
+                    'name':  entry['name'].strip(),
+                    'color': c_name,
+                })
+
+        if not valid:
+            CustomMsgBox(
+                self, 'Error', _txt(lang, 'msg_import_no_valid_markers'), _txt(lang, 'btn_ok')
+            ).exec()
+            return
+
+        self.current_custom_markers = valid
+        self._refresh_markers_list()
+        self._refresh_custom_marker_shortcuts()
+        self._save_markers_and_refresh_main()
+
+
+    def _refresh_custom_marker_shortcuts(self):
+        """
+        Rebuilds the custom-marker shortcut rows in the unified Shortcuts form.
+        Uses insertRow(pos) / removeRow(pos) on the single QFormLayout so all
+        rows always have identical 14px spacing — no separate widget needed.
+        """
+        form       = getattr(self, '_custom_sc_unified', None)
+        make_fn    = getattr(self, '_make_shortcut_widgets_fn', None)
+        check_fn   = getattr(self, '_check_shortcut_conflicts_fn', None)
+        insert_pos = getattr(self, '_custom_sc_insert_pos', None)
+
+        if form is None or make_fn is None or check_fn is None or insert_pos is None:
+            return
+
+        # ── Remove previous custom rows ─────────────────────────────────────
+        old_count = len(getattr(self, 'custom_marker_shortcut_inputs', {}))
+        for _ in range(old_count):
+            # Always remove at the same index; rows shift up after each removal
+            try:
+                form.removeRow(insert_pos)
+            except Exception:
+                break
+
+        self.custom_marker_shortcut_inputs = {}
+
+        # ── Insert new custom rows at insert_pos ────────────────────────────
+        prefs = self.engine.load_preferences() or {}
+        saved_shortcuts = prefs.get('shortcuts', {})
+        markers = getattr(self, 'current_custom_markers', [])
+
+        for i, m in enumerate(markers):
+            name = m.get('name', '')
+            if not name:
+                continue
+            s_key = f'custom_marker_{name}'
+
+            fmt = self.txt('shortcut_custom_marker_fmt')
+            label_text = fmt.format(name=name) if fmt != 'shortcut_custom_marker_fmt' \
+                         else f'Switch to "{name}" Marker'
+
+            current_seq = saved_shortcuts.get(s_key, '')
+            widget = ShortcutCaptureButton(str(current_seq), display_only=False)
+            widget.sequence_changed.connect(lambda _seq, _w=widget: check_fn())
+
+            def make_setter(w, check):
+                def _setter(v):
+                    w.set_sequence(str(v))
+                    check()
+                return _setter
+
+            lbl, container = make_fn(label_text, widget, '',
+                                     make_setter(widget, check_fn),
+                                     is_display=False)
+            form.insertRow(insert_pos + i, lbl, container)
+            self.custom_marker_shortcut_inputs[s_key] = widget
+
+        check_fn()
+
+
+    def _update_preview(self):
+
+        ff = self.combo_font.currentText()
+        fs = self.spin_fsize.value()
+        lh = self.spin_lheight.value()
+        self.lbl_preview.setStyleSheet(f"""
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: {config.FG_COLOR};
+            font-family: "{ff}";
+            font-size: {fs}pt;
+            padding: 12px 14px;
+        """)
+        preview_text = self.txt("lbl_font_preview")
+        self.lbl_preview.setPlainText(preview_text)
+        from PySide6.QtGui import QTextCursor, QTextBlockFormat
+        cursor = self.lbl_preview.textCursor()
+        cursor.select(QTextCursor.Document)
+        fmt = QTextBlockFormat()
+        fmt.setLineHeight(float(lh), 4)
+        cursor.setBlockFormat(fmt)
+        cursor.setPosition(0)
+        self.lbl_preview.setTextCursor(cursor)
+        self.lbl_preview.verticalScrollBar().setValue(0)
+
+    # ── Export / Import ───────────────────────────────────────────────────
+
+    def _on_export_settings(self):
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        dest, _ = QFileDialog.getSaveFileName(
+            self, self.txt("btn_export_settings"), "badwords_settings.json",
+            "JSON files (*.json)"
+        )
+        if dest:
+            try:
+                shutil.copy2(self.engine.os_doc.settings_file, dest)
+            except Exception as e:
+                from osdoc import log_error
+                log_error(f"Export settings failed: {e}")
+
+    def _on_import_settings(self):
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        src, _ = QFileDialog.getOpenFileName(
+            self, self.txt("btn_import_settings"), "",
+            "JSON files (*.json)"
+        )
+        if not src:
+            return
+        try:
+            shutil.copy2(src, self.engine.os_doc.settings_file)
+            self.engine.os_doc.settings = self.engine.os_doc.load_settings()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"Import settings failed: {e}")
+            return
+
+        target = config.TRANS.get('en', config.TRANS['en'])
+        CustomMsgBox(
+            self,
+            target.get('msg_title_language_changed', 'Restart Required'),
+            target.get('msg_restart_lang', 'Settings imported. Please restart BadWords to apply all changes.'),
+            target.get('btn_ok', 'OK')
+        ).exec()
+        self.reject()
+
+
+    # ── Smart Apply ───────────────────────────────────────────────────────
+
+    def _safe_get(self, attr_name, default_val, method_name="value"):
+        """Safely extracts a value from a widget, avoiding PySide6 dead C++ object errors."""
+        try:
+            widget = getattr(self, attr_name)
+            return getattr(widget, method_name)()
+        except (RuntimeError, AttributeError):
+            return default_val
+
+    def _get_current_state_dict(self):
+        old_prefs = self.engine.load_preferences() or {}
+        is_basic = getattr(self, '_is_basic_mode', old_prefs.get('settings_view_mode', 'basic') == 'basic')
+        
+        try:
+            checked_btn = self.icon_group.checkedButton()
+            icon_val = checked_btn.property("icon_name") if checked_btn else "default"
+        except (RuntimeError, AttributeError):
+            icon_val = old_prefs.get('app_icon', 'default')
+
+        try:
+            val = self.dropdown_lang.text()
+            lang_code = next((k for k, v in config.SUPPORTED_LANGS.items() if v == val), old_prefs.get('gui_lang', 'en'))
+        except (RuntimeError, AttributeError):
+            lang_code = old_prefs.get('gui_lang', 'en')
+            
+        view_mode_val = self._safe_get('combo_view', '', 'currentText')
+        prop_mode = self.combo_view.property("view_mode_key") if hasattr(self, 'combo_view') and self.combo_view else None
+        if prop_mode in ('segmented', 'continuous'):
+            view_mode = prop_mode
+        elif _is_segmented_text(view_mode_val):
+            view_mode = 'segmented'
+        elif _is_continuous_text(view_mode_val):
+            view_mode = 'continuous'
+        else:
+            view_mode = old_prefs.get('view_mode', 'segmented')
+
+        lmb_text = self._safe_get('combo_mouse_lmb', '', 'currentText')
+        prop_lmb = self.combo_mouse_lmb.property("mouse_mode_key") if hasattr(self, 'combo_mouse_lmb') and self.combo_mouse_lmb else None
+        if prop_lmb in ('box', 'brush', 'none'):
+            lmb_mode = prop_lmb
+        else:
+            lmb_mode = _get_mouse_mode_from_text(lmb_text, old_prefs.get('mouse_lmb_mode', 'box'))
+
+        rmb_text = self._safe_get('combo_mouse_rmb', '', 'currentText')
+        prop_rmb = self.combo_mouse_rmb.property("mouse_mode_key") if hasattr(self, 'combo_mouse_rmb') and self.combo_mouse_rmb else None
+        if prop_rmb in ('brush', 'box', 'none'):
+            rmb_mode = prop_rmb
+        else:
+            rmb_mode = _get_mouse_mode_from_text(rmb_text, old_prefs.get('mouse_rmb_mode', 'brush'))
+
+        try:
+            shortcuts_dict = {k: v.get_sequence() for k, v in self.shortcut_inputs.items()}
+            # Merge in custom marker shortcuts
+            for k, v in getattr(self, 'custom_marker_shortcut_inputs', {}).items():
+                shortcuts_dict[k] = v.get_sequence()
+        except (RuntimeError, AttributeError):
+            shortcuts_dict = old_prefs.get('shortcuts', {})
+
+        state = {
+            'gui_lang':           lang_code,
+            'settings_view_mode': 'basic' if is_basic else 'advanced',
+            'app_icon':           icon_val,
+            'shortcuts':          shortcuts_dict,
+            'custom_markers':     getattr(self, 'current_custom_markers', old_prefs.get('custom_markers', [])),
+            'telemetry_opt_in':   self._safe_get('chk_telemetry_opt_in', bool(old_prefs.get('telemetry_opt_in', False)), 'isChecked'),
+            'telemetry_geo':      self._safe_get('chk_telemetry_geo', bool(old_prefs.get('telemetry_geo', False)), 'isChecked'),
+            'view_mode':          view_mode,
+            'mouse_lmb_mode':     lmb_mode,
+            'mouse_rmb_mode':     rmb_mode,
+            'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', config.UI_FONT_NAME), 'currentText'),
+            'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
+            'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
+            'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
+            'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
+            'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
+            'link_av_clips':        self._safe_get('tgl_link_av_clips', old_prefs.get('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'isChecked'),
+            'link_all_cut_tracks':  self._safe_get('tgl_link_all_cut_tracks', old_prefs.get('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'isChecked'),
+            'resolve_render_timeline_proxy': self._safe_get('tgl_resolve_render_timeline_proxy', old_prefs.get('resolve_render_timeline_proxy', config.DEFAULT_SETTINGS['resolve_render_timeline_proxy']), 'isChecked'),
+            'timestamp_precise':    self._safe_get('tgl_timestamp_precise', old_prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'isChecked'),
+            'show_panel_headers':   self._safe_get('tgl_show_panel_headers', old_prefs.get('show_panel_headers', True), 'isChecked'),
+            'auto_check_updates':      self._safe_get('tgl_auto_check_updates', old_prefs.get('auto_check_updates', True), 'isChecked'),
+            'auto_update_on_start':   self._safe_get('tgl_auto_update_on_start', old_prefs.get('auto_update_on_start', False), 'isChecked'),
+            'always_on_top':          self._safe_get('chk_ontop', old_prefs.get('always_on_top', False), 'isChecked'),
+        }
+        
+        if not is_basic:
+            state.update({
+                'device':             self._safe_get('dropdown_device', old_prefs.get('device', 'auto'), 'currentText').lower(),
+                'ai_compute_type':    self._safe_get('dropdown_compute', old_prefs.get('ai_compute_type', 'Auto'), 'currentText'),
+                'ai_initial_prompt':  self._safe_get('textedit_prompt', old_prefs.get('ai_initial_prompt', ''), 'toPlainText'),
+                'chunk_max_words':    self._safe_get('spin_chunk_max', old_prefs.get('chunk_max_words', 15), 'value'),
+                'chunk_lookahead':    self._safe_get('spin_chunk_look', old_prefs.get('chunk_lookahead', 3), 'value'),
+                'chunk_min_chars':    self._safe_get('spin_chunk_min', old_prefs.get('chunk_min_chars', 7), 'value'),
+                'algo_fuzzy_threshold':  self._safe_get('spin_fuzzy', old_prefs.get('algo_fuzzy_threshold', 80), 'value'),
+                'algo_retake_lookahead': self._safe_get('spin_lookahead', old_prefs.get('algo_retake_lookahead', 80), 'value'),
+                'algo_distance_penalty': self._safe_get('spin_penalty', old_prefs.get('algo_distance_penalty', 2.0), 'value'),
+                'algo_anchor_depth':     self._safe_get('spin_anchor', old_prefs.get('algo_anchor_depth', 3), 'value'),
+                'ai_vad_filter':            self._safe_get('chk_vad_filter', old_prefs.get('ai_vad_filter', False), 'isChecked'),
+                'ai_beam_size':             self._safe_get('spin_beam_size', old_prefs.get('ai_beam_size', 1), 'value'),
+                'ai_temperature':           self._safe_get('spin_temperature', old_prefs.get('ai_temperature', 0.0), 'value'),
+                'ai_condition_on_prev':     self._safe_get('chk_condition_prev', old_prefs.get('ai_condition_on_prev', False), 'isChecked'),
+                'ai_logprob_threshold':     self._safe_get('spin_logprob', old_prefs.get('ai_logprob_threshold', -1.0), 'value'),
+                'ai_no_speech_threshold':   self._safe_get('spin_no_speech', old_prefs.get('ai_no_speech_threshold', 0.6), 'value'),
+                'ai_patience':              self._safe_get('spin_patience', old_prefs.get('ai_patience', 1.0), 'value'),
+                'ai_compression_ratio_threshold': self._safe_get('spin_compression', old_prefs.get('ai_compression_ratio_threshold', 2.4), 'value'),
+                'ai_no_repeat_ngram_size':  self._safe_get('spin_no_repeat', old_prefs.get('ai_no_repeat_ngram_size', 0), 'value'),
+                'ai_length_penalty':        self._safe_get('spin_length_penalty', old_prefs.get('ai_length_penalty', config.DEFAULT_SETTINGS.get('ai_length_penalty', 1.0)), 'value'),
+                'ai_repetition_penalty':    self._safe_get('spin_repetition_penalty', old_prefs.get('ai_repetition_penalty', config.DEFAULT_SETTINGS.get('ai_repetition_penalty', 1.0)), 'value'),
+                'silence_threshold_db':     self._safe_get('spin_silence_thresh', old_prefs.get('silence_threshold_db', -42.0), 'value'),
+                'ui_spin_pad':              self._safe_get('spin_silence_pad', old_prefs.get('ui_spin_pad', 0.1), 'value'),
+                'silence_min_dur':          self._safe_get('spin_silence_min_dur', old_prefs.get('silence_min_dur', 0.2), 'value'),
+            })
+        else:
+            advanced_keys = ["device", "ai_compute_type", "ai_initial_prompt", "chunk_max_words", "chunk_lookahead", "chunk_min_chars", "algo_fuzzy_threshold", "algo_retake_lookahead", "algo_distance_penalty", "algo_anchor_depth", "ai_vad_filter", "ai_beam_size", "ai_temperature", "ai_condition_on_prev", "ai_logprob_threshold", "ai_no_speech_threshold", "ai_patience", "ai_compression_ratio_threshold", "ai_no_repeat_ngram_size", "ai_length_penalty", "ai_repetition_penalty", "silence_threshold_db", "ui_spin_pad", "silence_min_dur"]
+            for key in advanced_keys:
+                state[key] = old_prefs.get(key, config.DEFAULT_SETTINGS.get(key))
+        return state
+
+    def _safe_set(self, attr_name, value, method_name="setValue"):
+        """Safely sets a value on a widget, avoiding dead objects or missing attributes."""
+        try:
+            if hasattr(self, attr_name):
+                widget = getattr(self, attr_name)
+                getattr(widget, method_name)(value)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _reload_preferences(self):
+        try:
+            prefs = self.engine.load_preferences() or {}
+            self._restore_state_dict(prefs)
+            self._initial_state = self._get_current_state_dict()
+        except Exception:
+            pass
+
+    def _restore_state_dict(self, state):
+        def _g(k, d): v = state.get(k); return v if v is not None else d
+        is_basic = _g('settings_view_mode', 'basic') == 'basic'
+        self._safe_set('chk_telemetry_opt_in', bool(_g('telemetry_opt_in', False)), 'setChecked')
+        self._safe_set('chk_telemetry_geo', bool(_g('telemetry_geo', False)), 'setChecked')
+        
+        try:
+            if hasattr(self, 'icon_group'):
+                icon_name = _g('app_icon', 'default')
+                for btn in self.icon_group.buttons():
+                    if btn.property("icon_name") == icon_name:
+                        btn.setChecked(True)
+                        break
+        except RuntimeError:
+            pass
+                
+        try:
+            lang_code = _g('gui_lang', 'en')
+            self._safe_set('dropdown_lang', config.SUPPORTED_LANGS.get(lang_code, 'English'), 'setText')
+        except Exception:
+            pass
+        
+        view_mode = _g('view_mode', 'segmented')
+        if hasattr(self, 'combo_view') and self.combo_view is not None:
+            self.combo_view.options_list = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
+            self.combo_view.setProperty("view_mode_key", view_mode)
+        self._safe_set('combo_view', self.txt("opt_segmented_blocks") if view_mode == 'segmented' else self.txt("opt_continuous_flow"), 'setText')
+
+        lmb_mode = _g('mouse_lmb_mode', 'box')
+        if hasattr(self, 'combo_mouse_lmb') and self.combo_mouse_lmb is not None:
+            self.combo_mouse_lmb.setProperty("mouse_mode_key", lmb_mode)
+            lmb_map = {'box': self.txt("opt_mouse_box"), 'brush': self.txt("opt_mouse_brush"), 'none': self.txt("opt_mouse_none")}
+            self._safe_set('combo_mouse_lmb', lmb_map.get(lmb_mode, self.txt("opt_mouse_box")), 'setText')
+
+        rmb_mode = _g('mouse_rmb_mode', 'brush')
+        if hasattr(self, 'combo_mouse_rmb') and self.combo_mouse_rmb is not None:
+            self.combo_mouse_rmb.setProperty("mouse_mode_key", rmb_mode)
+            rmb_map = {'brush': self.txt("opt_mouse_brush"), 'box': self.txt("opt_mouse_box"), 'none': self.txt("opt_mouse_none")}
+            self._safe_set('combo_mouse_rmb', rmb_map.get(rmb_mode, self.txt("opt_mouse_brush")), 'setText')
+        self._safe_set('combo_font', _g('editor_font_family', config.UI_FONT_NAME), 'setText')
+        self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
+        self._safe_set('spin_lheight', _g('editor_line_height', 7), 'setValue')
+        
+        self.current_custom_markers = _g('custom_markers', [])
+        try:
+            if hasattr(self, '_markers_layout') and self._markers_layout is not None:
+                self._refresh_markers_list()
+        except Exception:
+            pass
+        
+        try:
+            if hasattr(self, 'shortcut_inputs'):
+                for k, v in _g('shortcuts', {}).items():
+                    if k in self.shortcut_inputs:
+                        self.shortcut_inputs[k].set_sequence(v)
+        except RuntimeError:
+            pass
+                
+        self._safe_set('chk_sync_davinci', _g('sync_davinci_chapter', True), 'setChecked')
+        self._safe_set('tgl_xml_preserve_track_order', _g('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'setChecked')
+        self._safe_set('tgl_force_xml_assembly', _g('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'setChecked')
+        self._safe_set('tgl_link_av_clips', _g('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'setChecked')
+        self._safe_set('tgl_link_all_cut_tracks', _g('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'setChecked')
+        self._safe_set('tgl_resolve_render_timeline_proxy', _g('resolve_render_timeline_proxy', config.DEFAULT_SETTINGS['resolve_render_timeline_proxy']), 'setChecked')
+        self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
+        self._safe_set('tgl_show_panel_headers', _g('show_panel_headers', True), 'setChecked')
+        self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')
+        self._safe_set('tgl_auto_update_on_start', _g('auto_update_on_start', False), 'setChecked')
+        
+        if not is_basic:
+            self._safe_set('chk_ontop', _g('always_on_top', False), 'setChecked')
+            
+            dev_val = _g('device', 'Auto').upper()
+            if dev_val == 'AUTO': dev_val = 'Auto'
+            self._safe_set('dropdown_device', dev_val, 'setText')
+            self._safe_set('dropdown_compute', _g('ai_compute_type', 'Auto'), 'setText')
+            self._safe_set('textedit_prompt', _g('ai_initial_prompt', ''), 'setPlainText')
+            self._safe_set('spin_chunk_max', _g('chunk_max_words', 15), 'setValue')
+            self._safe_set('spin_chunk_look', _g('chunk_lookahead', 3), 'setValue')
+            self._safe_set('spin_chunk_min', _g('chunk_min_chars', 7), 'setValue')
+            self._safe_set('chk_vad_filter', _g('ai_vad_filter', False), 'setChecked')
+            self._safe_set('spin_beam_size', _g('ai_beam_size', 1), 'setValue')
+            self._safe_set('spin_temperature', _g('ai_temperature', 0.0), 'setValue')
+            self._safe_set('chk_condition_prev', _g('ai_condition_on_prev', False), 'setChecked')
+            self._safe_set('spin_logprob', _g('ai_logprob_threshold', -1.0), 'setValue')
+            self._safe_set('spin_no_speech', _g('ai_no_speech_threshold', 0.6), 'setValue')
+            self._safe_set('spin_patience', _g('ai_patience', 1.0), 'setValue')
+            self._safe_set('spin_compression', _g('ai_compression_ratio_threshold', 2.4), 'setValue')
+            self._safe_set('spin_no_repeat', _g('ai_no_repeat_ngram_size', 0), 'setValue')
+
+            self._safe_set('spin_length_penalty', _g('ai_length_penalty', 1.0), 'setValue')
+            self._safe_set('spin_repetition_penalty', _g('ai_repetition_penalty', 1.0), 'setValue')
+            self._safe_set('spin_fuzzy', _g('algo_fuzzy_threshold', 80), 'setValue')
+            self._safe_set('spin_lookahead', _g('algo_retake_lookahead', 80), 'setValue')
+            self._safe_set('spin_penalty', _g('algo_distance_penalty', 2.0), 'setValue')
+            self._safe_set('spin_anchor', _g('algo_anchor_depth', 3), 'setValue')
+            self._safe_set('spin_silence_thresh', _g('silence_threshold_db', -42.0), 'setValue')
+            self._safe_set('spin_silence_pad', _g('ui_spin_pad', 0.1), 'setValue')
+            self._safe_set('spin_silence_min_dur', _g('silence_min_dur', 0.2), 'setValue')
+
+    def _apply_settings(self):
+        old_prefs = self.engine.load_preferences() or {}
+        new_prefs = self._get_current_state_dict()
+        
+        selected_device  = new_prefs.get('device', 'auto')
+        selected_compute = new_prefs.get('ai_compute_type', 'Auto')
+        old_compute      = old_prefs.get('ai_compute_type', 'Auto')
+        old_device       = old_prefs.get('device', 'auto')
+
+        compute_changed = (selected_compute != old_compute) or (selected_device != old_device)
+        if selected_compute.lower() != 'auto' and compute_changed:
+            from PySide6.QtWidgets import QApplication
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                is_supported = self.engine.verify_hardware_compute(selected_device, selected_compute)
+            finally:
+                QApplication.restoreOverrideCursor()
+
+            if not is_supported:
+                CustomMsgBox(self, self.txt('msg_compute_fail_title'), self.txt('msg_compute_fail_desc'), self.txt('btn_close')).exec()
+                return
+
+        restart_needed = any(
+            new_prefs.get(k) != old_prefs.get(k)
+            for k in config.RESTART_REQUIRED_KEYS
+            if k in new_prefs
+        )
+        if sys.platform.startswith("win") and (new_prefs.get("always_on_top") != old_prefs.get("always_on_top")):
+            restart_needed = True
+
+        self.engine.save_preferences(new_prefs)
+        self.initial_prefs = self.engine.load_preferences() or {}
+        self._initial_state = self._get_current_state_dict()
+        self.btn_apply.setText(self.txt("txt_saved"))
+        self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
+        from PySide6.QtCore import QTimer
+        def restore_btn():
+            self.btn_apply.setText(self.txt("btn_apply"))
+            self.btn_apply.setStyleSheet("") # Przywraca domyślny arkusz CSS
+        QTimer.singleShot(1500, restore_btn)
+
+        main_win = self.parent()
+        icon_changed = new_prefs.get('app_icon') != old_prefs.get('app_icon')
+        if icon_changed and main_win:
+            new_icon_name = new_prefs.get('app_icon', 'default')
+            if hasattr(main_win, 'titlebar') and hasattr(main_win.titlebar, 'update_titlebar_icon'):
+                main_win.titlebar.update_titlebar_icon(new_icon_name)
+            from gui.utils import update_macos_bundle_icon
+            update_macos_bundle_icon(new_icon_name)
+
+        if hasattr(main_win, 'text_canvas'):
+            main_win.text_canvas.invalidate_font_cache()
+            main_win.text_canvas._calculate_layout()
+            main_win.text_canvas.update()
+
+        if hasattr(main_win, 'update_silence_panel_ranges'):
+            main_win.update_silence_panel_ranges()
+
+        if hasattr(main_win, 'set_panel_headers_visible'):
+            main_win.set_panel_headers_visible(new_prefs.get('show_panel_headers', True))
+
+        aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
+        if aot_changed and main_win:
+            is_top = bool(new_prefs.get('always_on_top'))
+            if hasattr(main_win, '_apply_always_on_top'):
+                main_win._apply_always_on_top(is_top)
+            else:
+                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
+                main_win.show()
+            try:
+                if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                    self.engine.os_doc.set_always_on_top(int(self.winId()), is_top)
+            except Exception:
+                pass
+
+
+        if restart_needed:
+            lang = old_prefs.get('gui_lang', 'en')
+            target = config.TRANS.get(lang, config.TRANS['en'])
+            CustomMsgBox(
+                self,
+                target.get('tool_settings', 'Settings'),
+                target.get('msg_restart_required', 'Changes applied. Full effect will be visible on next launch.'),
+                target.get('btn_ok', 'OK')
+            ).exec()
+
+    def reject(self):
+        # FIX: Validate against the exact snapshot of how the UI was built
+        # rather than the raw preferences file which may be missing keys.
+        old_prefs = getattr(self, '_initial_state', self.engine.load_preferences() or {})
+        new_prefs = self._get_current_state_dict()
+        diff = {}
+        for k, new_val in new_prefs.items():
+            old_val = old_prefs.get(k)
+            if old_val is None:
+                old_val = config.DEFAULT_SETTINGS.get(k)
+                if old_val is None:
+                    if k == 'app_icon': old_val = 'default'
+                    elif k == 'gui_lang': old_val = 'en'
+                    elif k == 'hidden_panels': old_val = []
+                    elif k == 'custom_markers': old_val = []
+            
+            if k == 'shortcuts':
+                old_dict = old_val if isinstance(old_val, dict) else {}
+                for sub_k, sub_new in new_val.items():
+                    sub_old = old_dict.get(sub_k, '')
+                    if sub_old != sub_new:
+                        diff[f"shortcuts.{sub_k}"] = (sub_old, sub_new)
+            else:
+                is_different = False
+                if isinstance(old_val, (int, float)) and isinstance(new_val, (int, float)):
+                    if abs(float(old_val) - float(new_val)) > 1e-5:
+                        is_different = True
+                elif str(new_val) != str(old_val) and new_val != old_val:
+                    try:
+                        if abs(float(old_val) - float(new_val)) < 1e-5:
+                            is_different = False
+                        else:
+                            is_different = True
+                    except (ValueError, TypeError):
+                        is_different = True
+                if is_different:
+                    diff[k] = (old_val, new_val)
+                
+        if diff:
+            key_name_map = {
+                'shortcuts': f"{self.txt('tab_shortcuts')}",
+                'gui_lang': f"{self.txt('tab_general')}: {self.txt('lbl_language')}",
+                'app_icon': f"{self.txt('tab_general')}: {self.txt('lbl_app_icon')}",
+                'view_mode': f"{self.txt('tab_transcript')}: {self.txt('lbl_display_mode')}",
+                'editor_font_family': f"{self.txt('tab_transcript')}: {self.txt('lbl_transcript_font')}",
+                'editor_font_size': f"{self.txt('tab_transcript')}: {self.txt('lbl_font_size_pt')}",
+                'editor_line_height': f"{self.txt('tab_transcript')}: {self.txt('lbl_line_spacing_px')}",
+                'chunk_max_words': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_max_words')}",
+                'chunk_lookahead': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_lookahead')}",
+                'chunk_min_chars': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_min_chars')}",
+                'always_on_top': f"{self.txt('tab_transcript')}: {self.txt('lbl_always_on_top')}",
+                'sync_davinci_chapter': f"{self.txt('tab_transcript')}: {self.txt('chk_sync_davinci')}",
+                'timestamp_precise':    f"{self.txt('tab_transcript')}: {self.txt('lbl_timestamp_precise')}",
+                'show_panel_headers':   f"{self.txt('tab_transcript')}: {self.txt('lbl_show_panel_headers')}",
+                'device': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_device')}",
+                'ai_compute_type': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_compute_type')}",
+                'ai_initial_prompt': f"{self.txt('tab_ai_engine')}: {self.txt('lbl_initial_prompt')}",
+                'ai_length_penalty': f"{self.txt('tab_ai_engine')}: Length Penalty",
+                'ai_repetition_penalty': f"{self.txt('tab_ai_engine')}: Repetition Penalty",
+
+                'telemetry_opt_in': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_opt_in')}",
+                'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}",
+                'auto_check_updates': f"{self.txt('tab_general')}: {self.txt('lbl_auto_check_updates')}",
+                'custom_markers': self.txt('tab_custom_markers')
+            }
+            
+            # Map dynamic shortcut composite keys
+            for diff_k in diff.keys():
+                if diff_k.startswith('shortcuts.'):
+                    sub_k = diff_k.split('.', 1)[1]
+                    sub_name = self.txt(f"shortcut_{sub_k}")
+                    if sub_name == f"shortcut_{sub_k}": # Fallback if not translated
+                        sub_name = sub_k.replace('_', ' ').title()
+                    key_name_map[diff_k] = f"{self.txt('tab_shortcuts')}: {sub_name}"
+            
+            dlg = UnsavedChangesDialog(self, diff, key_name_map)
+            if dlg.exec() == QDialog.Accepted:
+                save_needed = False
+                for k, action in dlg.decisions.items():
+                    if action == 'discard':
+                        if k.startswith('shortcuts.'):
+                            sub_k = k.split('.', 1)[1]
+                            new_prefs['shortcuts'][sub_k] = diff[k][0]
+                        else:
+                            new_prefs[k] = diff[k][0] 
+                    else:
+                        save_needed = True
+                
+                self._restore_state_dict(new_prefs)
+                
+                if save_needed:
+                    self._apply_settings()
+                super().reject()
+            else:
+                return 
+        else:
+            super().reject()
+
+    def closeEvent(self, event):
+        self.reject()
+        if self.isVisible():
+            event.ignore()
+        else:
+            event.accept()
+
+    def mousePressEvent(self, event):
+        focused = QApplication.focusWidget()
+        if focused and focused is not self:
+            focused.clearFocus()
+        super().mousePressEvent(event)

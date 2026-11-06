@@ -1,0 +1,105 @@
+name: Build Installer Binaries
+
+on:
+  push:
+    branches:
+      - 'dev-v4'
+      - 'main'
+    tags:
+      - 'v*'
+      - '*.*.*'
+    paths:
+      - 'installer/**'
+      - 'setupfiles/**'
+      - 'src/config/app_constants.py'
+      - '.github/workflows/build-installer.yml'
+  release:
+    types: [published, created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os_name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os_name: Windows x64
+            target: x86_64-pc-windows-msvc
+            binary_name: badwords-installer.exe
+            output_name: badwords-setup-windows.exe
+          - os: macos-latest
+            os_name: macOS Universal
+            target: aarch64-apple-darwin
+            binary_name: badwords-installer
+            output_name: badwords-setup-macos
+          - os: ubuntu-latest
+            os_name: Linux x64
+            target: x86_64-unknown-linux-gnu
+            binary_name: badwords-installer
+            output_name: badwords-setup-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libx11-dev libasound2-dev libudev-dev libfontconfig1-dev libdbus-1-dev desktop-file-utils
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Installer Binary
+        run: cargo build --release --manifest-path installer/Cargo.toml
+
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build Windows Standalone Launcher (BadWords.exe)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          python setupfiles\windows\generate_version_header.py
+          cd setupfiles\windows
+          rc /fo launcher.res launcher.rc
+          cl /O2 /Fe:BadWords.exe launcher.c launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
+          cd ..\..
+
+      - name: Prepare Artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp installer/target/release/${{ matrix.binary_name }} dist/${{ matrix.output_name }}
+            if [ -f "setupfiles/windows/BadWords.exe" ]; then
+              cp setupfiles/windows/BadWords.exe dist/BadWords.exe
+            fi
+          else
+            cp installer/target/release/${{ matrix.binary_name }} dist/${{ matrix.output_name }}
+            chmod +x dist/${{ matrix.output_name }}
+          fi
+
+      - name: Upload Private Action Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output_name }}
+          path: dist/*
+          retention-days: 90
+
+      - name: Publish Public Release Asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

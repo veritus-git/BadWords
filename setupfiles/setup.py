@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 # ============================================================
 #  BadWords Installer  —  Cross-Platform GUI (Rich Terminal)
-#  Copyright (c) 2026 Szymon Wolarz
 # ============================================================
 import argparse, hashlib, os, shutil, subprocess, sys, tempfile, threading, time
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # ── Bootstrap rich if missing ────────────────────────────────
 try:
@@ -26,14 +35,58 @@ parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument("--platform", default=sys.platform)
 parser.add_argument("--bootstrap-python", default=sys.executable)
 parser.add_argument("--local-repo", default="")
+parser.add_argument("--install", default=None, help="Install to target path")
+parser.add_argument("--repair", action="store_true", help="Run repair")
+parser.add_argument("--move", default=None, help="Move installation")
+parser.add_argument("--reset", action="store_true", help="Run complete reset")
+parser.add_argument("--uninstall", action="store_true", help="Run complete uninstall")
+parser.add_argument("--non-interactive", action="store_true", help="Run without prompts")
+parser.add_argument("--no-launch", action="store_true", help="Do not launch app at end")
 ARGS, _ = parser.parse_known_args()
 PLAT = ARGS.platform.lower()
 
 # Detect Windows Terminal (ConPTY) — Win32 console API calls break its pipe
 _IS_WINDOWS_TERMINAL = bool(os.environ.get("WT_SESSION", ""))
 
+def _sp_hidden_kwargs():
+    """Returns kwargs to ensure child processes never flash console windows on Windows."""
+    kwargs = {}
+    if os.name == 'nt':
+        kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+        si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+        kwargs['startupinfo'] = si
+    return kwargs
+
 # ── Platform helpers ─────────────────────────────────────────
 APP_NAME = "BadWords"
+
+def _get_app_version():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "config", "app_constants.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "config", "app_constants.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "app_constants.py"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "app_constants.py"),
+        os.path.join(os.getcwd(), "src", "config", "app_constants.py"),
+        os.path.join(os.getcwd(), "config", "app_constants.py"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            try:
+                with open(c, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("VERSION"):
+                            parts = line.split("=")
+                            if len(parts) >= 2:
+                                ver = parts[1].strip().strip('"').strip("'")
+                                if ver:
+                                    return ver
+            except Exception:
+                pass
+    return "4.0.0"
+
+APP_VERSION = _get_app_version()
 
 def _default_install_dir():
     if PLAT.startswith("win"):
@@ -77,8 +130,8 @@ def _resolve_script_dirs():
 
     elif "mac" in PLAT or "darwin" in PLAT:
         bases = [
-            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
-            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
+            os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve"),
+            os.path.join("/", "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve")
         ]
         subs = ["Utility"]
         for b in bases:
@@ -90,15 +143,15 @@ def _resolve_script_dirs():
         # Linux
         bases = [
             os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve"),
-            os.path.join("/", "opt", "resolve", "libs")
+            os.path.join(os.path.expanduser("~"), ".var", "app", "com.blackmagicdesign.resolve", "data", "DaVinciResolve"),
+            os.path.join("/", "opt", "resolve", "libs"),
+            os.path.join("/", "opt", "resolve")
         ]
         subs = ["Utility"]
         for b in bases:
             for s in subs:
-                p_upper = os.path.join(b, "Fusion", "Scripts", s)
-                p_lower = os.path.join(b, "Fusion", "Scripts", s)
-                results.append(p_upper)  # always try uppercase Fusion first
-                results.append(p_lower)
+                p = os.path.join(b, "Fusion", "Scripts", s)
+                results.append(p)
 
     # Remove duplicates while preserving order
     seen, unique = set(), []
@@ -121,6 +174,213 @@ def debug_log(msg):
             with open(_DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(entry + "\n")
         except: pass
+
+def _broadcast_setting_change():
+    """Broadcast WM_SETTINGCHANGE so Explorer, cmd, and other apps pick up PATH changes."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        HWND_BROADCAST = 0xFFFF
+        WM_SETTINGCHANGE = 0x001A
+        SMTO_ABORTIFHUNG = 0x0002
+        result = wintypes.DWORD()
+        ctypes.windll.user32.SendMessageTimeoutW(
+            HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment",
+            SMTO_ABORTIFHUNG, 5000, ctypes.byref(result)
+        )
+    except Exception as e:
+        debug_log(f"Failed to broadcast WM_SETTINGCHANGE: {e}")
+
+def _add_to_windows_user_path(new_dir):
+    """Add directory to HKCU\\Environment\\Path without requiring administrator privileges."""
+    if os.name != "nt" or not new_dir:
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            try:
+                cur_path, val_type = winreg.QueryValueEx(key, "Path")
+            except FileNotFoundError:
+                cur_path, val_type = "", winreg.REG_EXPAND_SZ
+            parts = [p.strip() for p in cur_path.split(";") if p.strip()]
+            norm_new = os.path.normcase(os.path.abspath(new_dir))
+            if not any(os.path.normcase(os.path.abspath(p)) == norm_new for p in parts):
+                parts.insert(0, new_dir)
+                new_path = ";".join(parts)
+                winreg.SetValueEx(key, "Path", 0, val_type, new_path)
+                debug_log(f"Added {new_dir} to HKCU\\Environment\\Path")
+                _broadcast_setting_change()
+    except Exception as e:
+        debug_log(f"Failed to add {new_dir} to user PATH: {e}")
+
+def _remove_from_windows_user_path(old_dir):
+    """Remove directory from HKCU\\Environment\\Path without requiring administrator privileges."""
+    if os.name != "nt" or not old_dir:
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            try:
+                cur_path, val_type = winreg.QueryValueEx(key, "Path")
+            except FileNotFoundError:
+                return
+            parts = [p.strip() for p in cur_path.split(";") if p.strip()]
+            norm_old = os.path.normcase(os.path.abspath(old_dir))
+            filtered = [p for p in parts if os.path.normcase(os.path.abspath(p)) != norm_old]
+            if len(filtered) != len(parts):
+                new_path = ";".join(filtered)
+                winreg.SetValueEx(key, "Path", 0, val_type, new_path)
+                debug_log(f"Removed {old_dir} from HKCU\\Environment\\Path")
+                _broadcast_setting_change()
+    except Exception as e:
+        debug_log(f"Failed to remove {old_dir} from user PATH: {e}")
+
+def _is_py_compatible(exe):
+    """Check if Python binary is valid, in version range 3.10 <= v < 3.13, and has the venv module."""
+    if not exe:
+        return False
+    try:
+        r = subprocess.run(
+            [exe, "-c", "import sys, importlib; importlib.import_module('venv'); exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)"],
+            capture_output=True, timeout=4
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+def _find_compatible_system_python():
+    """Find a Python executable compatible with DaVinci Resolve (3.10 <= v < 3.13).
+    Ignores Windows Store dummy stubs and verifies venv module availability."""
+    if os.name == "nt":
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            for vf in ["Python312", "Python311", "Python310"]:
+                cand = os.path.join(localappdata, "Programs", "Python", vf, "python.exe")
+                if os.path.isfile(cand) and _is_py_compatible(cand):
+                    return cand
+
+        # Check registry
+        try:
+            import winreg
+            for hkey in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(hkey, r"SOFTWARE\Python\PythonCore") as key:
+                        num_subkeys = winreg.QueryInfoKey(key)[0]
+                        for i in range(num_subkeys):
+                            subkey_name = winreg.EnumKey(key, i)
+                            if subkey_name in ("3.12", "3.11", "3.10") or subkey_name.startswith(("3.12-", "3.11-", "3.10-")):
+                                try:
+                                    with winreg.OpenKey(key, rf"{subkey_name}\InstallPath") as ip_key:
+                                        val, _ = winreg.QueryValueEx(ip_key, "ExecutablePath")
+                                        if val and os.path.isfile(val) and _is_py_compatible(val):
+                                            return val
+                                except OSError:
+                                    pass
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
+        # Check PATH excluding WindowsApps stubs
+        path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+        for d in path_dirs:
+            if not d.strip() or "windowsapps" in d.lower():
+                continue
+            cand = os.path.join(d, "python.exe")
+            if os.path.isfile(cand) and _is_py_compatible(cand):
+                return cand
+
+        # Try py launcher
+        py_launcher = shutil.which("py")
+        if py_launcher:
+            for ver_flag in ["-3.12", "-3.11", "-3.10"]:
+                try:
+                    r = subprocess.run([py_launcher, ver_flag, "-c", "import sys; print(sys.executable)"],
+                                       capture_output=True, text=True, timeout=3)
+                    if r.returncode == 0:
+                        cand = r.stdout.strip()
+                        if cand and os.path.isfile(cand) and _is_py_compatible(cand):
+                            return cand
+                except Exception:
+                    pass
+
+    elif "mac" in PLAT or "darwin" in PLAT:
+        framework_base = "/Library/Frameworks/Python.framework/Versions"
+        for ver in ["3.12", "3.11", "3.10"]:
+            cand = os.path.join(framework_base, ver, "bin", "python3")
+            if os.path.isfile(cand) and _is_py_compatible(cand):
+                return cand
+
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3"]:
+            cand = shutil.which(cmd)
+            if cand and _is_py_compatible(cand):
+                return cand
+
+    else:
+        # Linux
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3"]:
+            cand = shutil.which(cmd)
+            if cand and _is_py_compatible(cand):
+                return cand
+
+    return None
+
+def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
+    """Check if critical BadWords dependencies can be imported cleanly in the venv.
+    Uses importlib.util.find_spec to be 100% robust against headless Linux / CI environments
+    where GUI display libraries (e.g. libGL) may not be present for QtWidgets."""
+    missing = []
+
+    # 1. PySide6
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"],
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
+        )
+        if r.returncode != 0:
+            missing.append("PySide6")
+    except Exception:
+        missing.append("PySide6")
+
+    # 2. faster-whisper
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('faster_whisper') is not None else 1)"],
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
+        )
+        if r.returncode != 0:
+            missing.append("faster-whisper")
+    except Exception:
+        missing.append("faster-whisper")
+
+    # 3. pypdf
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('pypdf') is not None else 1)"],
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
+        )
+        if r.returncode != 0:
+            missing.append("pypdf")
+    except Exception:
+        missing.append("pypdf")
+
+    # 4. Optional GPU acceleration packages
+    if check_nvidia and nvidia_pkgs:
+        try:
+            r = subprocess.run(
+                [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('ctranslate2') is not None else 1)"],
+                capture_output=True, timeout=12, **_sp_hidden_kwargs()
+            )
+            if r.returncode != 0:
+                for npkg in nvidia_pkgs.split():
+                    if npkg not in missing:
+                        missing.append(npkg)
+        except Exception:
+            pass
+
+    return missing
 
 # ── Cancellation ─────────────────────────────────────────────
 class UserCancelled(Exception):
@@ -771,11 +1031,121 @@ def get_latest_tag(force_main=False):
 
     return "main", "", ""
 
+def fetch_git_branches():
+    """Fetches list of git branch names from GitHub / GitLab."""
+    UA = "BadWords-Installer/2.0 (https://github.com/veritus-git/BadWords)"
+    GH_BRANCHES = "https://api.github.com/repos/veritus-git/BadWords/branches"
+    import json, urllib.request
+
+    try:
+        req = urllib.request.Request(GH_BRANCHES, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+            if isinstance(data, list):
+                branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                if branches:
+                    return branches
+    except Exception:
+        pass
+
+    if shutil.which("curl"):
+        try:
+            r = subprocess.run(["curl", "-fsSL", "--max-time", "10", "-H", f"User-Agent: {UA}", GH_BRANCHES],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout:
+                data = json.loads(r.stdout)
+                if isinstance(data, list):
+                    branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                    if branches:
+                        return branches
+        except Exception:
+            pass
+
+    # GitLab fallback
+    try:
+        GL_BRANCHES = "https://gitlab.com/api/v4/projects/badwords%2FBadWords/repository/branches"
+        req = urllib.request.Request(GL_BRANCHES, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+            if isinstance(data, list):
+                branches = [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+                if branches:
+                    return branches
+    except Exception:
+        pass
+
+    return ["main", "dev-v4"]
+
 def detect_existing_install(default_dir, resolve_script_dirs):
-    """Search all known Resolve script dirs for a BadWords wrapper with a valid INSTALL_DIR."""
+    """Detect existing installation via system registration (Registry/.desktop), Resolve wrappers, or default dir."""
+    # 1. Windows Registry check
+    if PLAT.startswith("win"):
+        try:
+            import winreg
+            for root_key in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(root_key, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords") as key:
+                        val, _ = winreg.QueryValueEx(key, "InstallLocation")
+                        if val and os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
+                            return os.path.abspath(val)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # 2. Linux .desktop check
+    if PLAT.startswith("linux"):
+        home = os.path.expanduser("~")
+        for df in [os.path.join(home, ".local", "share", "applications", "badwords.desktop"),
+                   os.path.join(home, ".local", "share", "applications", "BadWords.desktop"),
+                   "/usr/share/applications/badwords.desktop"]:
+            if os.path.isfile(df):
+                try:
+                    with open(df, encoding="utf-8") as f:
+                        for line in f:
+                            if line.startswith("Path="):
+                                p = line.split("=", 1)[1].strip()
+                                if os.path.isdir(p) and os.path.isfile(os.path.join(p, "main.py")):
+                                    return os.path.abspath(p)
+                except Exception:
+                    pass
+
+    # 3. macOS App Bundle check
+    if "darwin" in PLAT or "mac" in PLAT:
+        home = os.path.expanduser("~")
+        for app_dir in [os.path.join(home, "Applications", "BadWords.app"), "/Applications/BadWords.app"]:
+            cfg = os.path.join(app_dir, "Contents", "Resources", "BadWords.cfg")
+            if os.path.isfile(cfg):
+                try:
+                    with open(cfg, encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("INSTALL_DIR="):
+                                p = line.split("=", 1)[1].strip()
+                                if os.path.isdir(p) and (os.path.isfile(os.path.join(p, "main.py")) or os.path.isfile(os.path.join(p, "src", "main.py"))):
+                                    return os.path.abspath(p)
+                except Exception:
+                    pass
+            launcher = os.path.join(app_dir, "Contents", "MacOS", "BadWords")
+            if os.path.isfile(launcher):
+                try:
+                    with open(launcher, encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("cd \"") and line.endswith("\""):
+                                p = line[4:-1]
+                                if os.path.isdir(p) and os.path.isfile(os.path.join(p, "main.py")):
+                                    return os.path.abspath(p)
+                except Exception:
+                    pass
+
+    # 4. Resolve wrappers check
     for resolve_dir in resolve_script_dirs:
         for wf in [os.path.join(resolve_dir, "BadWords.py"),
-                   os.path.join(resolve_dir, "BadWords (Linux).py")]:
+                   os.path.join(resolve_dir, "Badwords.py"),
+                   os.path.join(resolve_dir, "BadWords (Linux).py"),
+                   os.path.join(resolve_dir, "BadWords (Mac).py"),
+                   os.path.join(resolve_dir, "BadWords (Windows).py")]:
             if not os.path.isfile(wf):
                 continue
             try:
@@ -785,9 +1155,14 @@ def detect_existing_install(default_dir, resolve_script_dirs):
                         if line.startswith("INSTALL_DIR"):
                             val = line.split("=", 1)[1].strip().strip("r\"'")
                             if os.path.isdir(val) and os.path.isfile(os.path.join(val, "main.py")):
-                                return val
+                                return os.path.abspath(val)
             except Exception:
                 pass
+
+    # 5. Default directory check
+    if os.path.isdir(default_dir) and os.path.isfile(os.path.join(default_dir, "main.py")):
+        return os.path.abspath(default_dir)
+
     return None
 
 def two_way_sync(src_paths, dst, protected_files, protected_dirs):
@@ -861,95 +1236,957 @@ def _clean_legacy_inno_setup(install_dir):
             for sk_path in to_delete:
                 delete_reg_key(hive_str, sk_path)
 
+def _detect_resolve_edition_info():
+    """Detects Resolve edition ('Studio' vs 'Free') and version tuple."""
+    info = {"installed": False, "edition": "Unknown", "version": "", "version_tuple": (0, 0, 0), "is_21_1_or_newer": False}
+    try:
+        if PLAT.startswith("win"):
+            import winreg
+            for hkey in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                for subkey in (
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                    r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                ):
+                    try:
+                        key = winreg.OpenKey(hkey, subkey)
+                    except OSError:
+                        continue
+                    try:
+                        for i in range(winreg.QueryInfoKey(key)[0]):
+                            try:
+                                sub_name = winreg.EnumKey(key, i)
+                                sub_key = winreg.OpenKey(key, sub_name)
+                                disp_name, _ = winreg.QueryValueEx(sub_key, "DisplayName")
+                                if "DaVinci Resolve" in disp_name:
+                                    info["installed"] = True
+                                    info["edition"] = "Studio" if "Studio" in disp_name else "Free"
+                                    try:
+                                        ver, _ = winreg.QueryValueEx(sub_key, "DisplayVersion")
+                                        info["version"] = ver
+                                    except OSError:
+                                        pass
+                                    winreg.CloseKey(sub_key)
+                                    break
+                                winreg.CloseKey(sub_key)
+                            except (OSError, ValueError):
+                                continue
+                    finally:
+                        winreg.CloseKey(key)
+                    if info["installed"]:
+                        break
+                if info["installed"]:
+                    break
+
+            exe_path = r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe"
+            if os.path.isfile(exe_path):
+                info["installed"] = True
+                if not info["version"]:
+                    try:
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductVersion"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **_sp_hidden_kwargs())
+                        if res.returncode == 0 and res.stdout.strip():
+                            info["version"] = res.stdout.strip()
+                    except Exception:
+                        pass
+                if info["edition"] == "Unknown":
+                    try:
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                               f"(Get-Item -LiteralPath '{exe_path}').VersionInfo.ProductName"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **_sp_hidden_kwargs())
+                        if res.returncode == 0 and res.stdout.strip():
+                            prod_name = res.stdout.strip()
+                            info["edition"] = "Studio" if "Studio" in prod_name else "Free"
+                    except Exception:
+                        pass
+
+        elif "mac" in PLAT or "darwin" in PLAT:
+            # Studio 21.x also installs as "DaVinci Resolve/DaVinci Resolve.app" with an identical
+            # Info.plist (no "Studio" in name or bundle id), so that path alone can't tell the
+            # edition apart. Keep it "Unknown" so deployment doesn't remove BadWords.py.
+            candidate_apps = [
+                ("/Applications/DaVinci Resolve Studio/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve Studio.app", "Studio"),
+                ("/Applications/DaVinci Resolve/DaVinci Resolve.app", "Unknown"),
+                ("/Applications/DaVinci Resolve.app", "Unknown"),
+            ]
+            chosen_app = None
+            for app_path, ed in candidate_apps:
+                if os.path.isdir(app_path):
+                    info["installed"] = True
+                    info["edition"] = ed
+                    chosen_app = app_path
+                    break
+
+            if chosen_app:
+                plist_path = os.path.join(chosen_app, "Contents", "Info.plist")
+                if os.path.isfile(plist_path):
+                    try:
+                        import plistlib
+                        with open(plist_path, "rb") as f:
+                            pl = plistlib.load(f)
+                            info["version"] = str(pl.get("CFBundleShortVersionString") or pl.get("CFBundleVersion") or "")
+                            bid = str(pl.get("CFBundleIdentifier") or "").lower()
+                            dname = str(pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or "").lower()
+                            if "studio" in bid or "studio" in dname:
+                                info["edition"] = "Studio"
+                    except Exception:
+                        pass
+
+        else:
+            # Linux
+            resolve_bin = "/opt/resolve/bin/resolve"
+            if os.path.isfile(resolve_bin):
+                info["installed"] = True
+                # Check documentation files in /opt/resolve/docs/
+                for doc_name in ("ReadMe.html", "Welcome.txt", "License.html"):
+                    doc_path = os.path.join("/opt/resolve/docs", doc_name)
+                    if os.path.isfile(doc_path):
+                        try:
+                            with open(doc_path, "r", encoding="utf-8", errors="ignore") as f:
+                                doc_content = f.read(65536)
+                            import re
+                            if re.search(r"DaVinci\s+Resolve\s+Studio", doc_content, re.IGNORECASE):
+                                info["edition"] = "Studio"
+                                break
+                            elif info["edition"] == "Unknown" and re.search(r"DaVinci\s+Resolve", doc_content, re.IGNORECASE):
+                                info["edition"] = "Free"
+                        except Exception:
+                            pass
+
+                # Check resolve -v output
+                if info["edition"] != "Studio" or not info["version"]:
+                    try:
+                        res = subprocess.run([resolve_bin, "-v"], capture_output=True, text=True, timeout=2)
+                        out = (res.stdout or "") + " " + (res.stderr or "")
+                        if "studio" in out.lower():
+                            info["edition"] = "Studio"
+                        elif info["edition"] == "Unknown" and "davinci resolve" in out.lower():
+                            info["edition"] = "Free"
+                        if not info["version"]:
+                            import re
+                            m = re.search(r"(\d+\.\d+(?:\.\d+)?)", out)
+                            if m:
+                                info["version"] = m.group(1)
+                    except Exception:
+                        pass
+
+        if info["version"]:
+            import re
+            nums = re.findall(r"\d+", info["version"])
+            if nums:
+                t = tuple(int(x) for x in nums[:3])
+                while len(t) < 3:
+                    t = t + (0,)
+                info["version_tuple"] = t
+                info["is_21_1_or_newer"] = t >= (21, 1, 0)
+    except Exception as e:
+        debug_log(f"_detect_resolve_edition_info error: {e}")
+
+    return info
+
 def _create_davinci_wrappers(install_dir, resolve_dirs):
-    """Generates and writes the DaVinci Resolve Python wrapper for the given install_dir."""
-    qt_lib_dir   = os.path.join(install_dir, "libs", "PySide6", "Qt", "lib")
-    libs_dir_abs = os.path.join(install_dir, "libs")
-    main_script  = os.path.join(install_dir, "main.py")
+    """Generates and writes DaVinci Resolve scripts (BadWords.py and/or BadWords Bridge.lua)."""
+    install_str = install_dir.replace('\\', "/")
+    libs_str    = os.path.join(install_dir, "libs").replace('\\', "/")
+    main_script = os.path.join(install_dir, "main.py").replace('\\', "/")
 
     wrapper_content = f'''\
-import sys, os, traceback
+import sys, os, traceback, builtins
 
-if sys.platform.startswith('linux'):
-    import ctypes
-    _qt_lib_dir = r'{qt_lib_dir}'
-    _qt_preload = [
-        'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-        'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-    ]
-    if os.path.isdir(_qt_lib_dir):
-        for _lib in _qt_preload:
-            _p = os.path.join(_qt_lib_dir, _lib)
-            if os.path.exists(_p):
-                try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                except OSError: pass
+for _k in ("resolve", "bmd", "fusion", "fu"):
+    if _k in globals() and globals()[_k] is not None:
+        setattr(builtins, _k, globals()[_k])
+    elif _k in locals() and locals()[_k] is not None:
+        setattr(builtins, _k, locals()[_k])
 
-INSTALL_DIR = r'{install_dir}'
-LIBS_DIR    = r'{libs_dir_abs}'
+INSTALL_DIR = r'{install_str}'
 MAIN_SCRIPT = r'{main_script}'
 
-if os.path.exists(LIBS_DIR):
-    if LIBS_DIR in sys.path: sys.path.remove(LIBS_DIR)
-    sys.path.insert(0, LIBS_DIR)
-if INSTALL_DIR not in sys.path:
-    sys.path.append(INSTALL_DIR)
+if not os.path.exists(MAIN_SCRIPT):
+    for _alt_cand in [
+        os.path.join(os.path.dirname(INSTALL_DIR), "main.py"),
+        os.path.join(os.path.dirname(INSTALL_DIR), "src", "main.py"),
+        os.path.join(INSTALL_DIR, "src", "main.py"),
+    ]:
+        if os.path.isfile(_alt_cand):
+            MAIN_SCRIPT = _alt_cand
+            break
+
+# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
+_candidates = [
+    r'{libs_str}',
+    os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "libs"),
+    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "venv", "Lib", "site-packages"),
+]
+
+for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    for _lib_sub in ("lib", "lib64"):
+        _v_lib = os.path.join(_base, "venv", _lib_sub)
+        if os.path.isdir(_v_lib):
+            try:
+                for _entry in os.listdir(_v_lib):
+                    _sp = os.path.join(_v_lib, _entry, "site-packages")
+                    if os.path.isdir(_sp) and _sp not in _candidates:
+                        _candidates.append(_sp)
+            except Exception:
+                pass
+
+for _sp_dir in _candidates:
+    if os.path.isdir(_sp_dir):
+        if _sp_dir in sys.path:
+            sys.path.remove(_sp_dir)
+        sys.path.insert(0, _sp_dir)
+
+for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.append(_p)
+
+# 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
+if sys.platform.startswith('win'):
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+    except Exception:
+        pass
+    if hasattr(os, 'add_dll_directory'):
+        for _sp_dir in _candidates:
+            if os.path.isdir(_sp_dir):
+                for _pkg in ['PySide6', 'shiboken6']:
+                    _p = os.path.join(_sp_dir, _pkg)
+                    if os.path.isdir(_p):
+                        try: os.add_dll_directory(_p)
+                        except Exception: pass
+                _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                if os.path.isdir(_nv_dir):
+                    import ctypes
+                    for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                        _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                        if os.path.isdir(_bin_p):
+                            try:
+                                os.add_dll_directory(_bin_p)
+                                os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                for _f in os.listdir(_bin_p):
+                                    if _f.endswith('.dll'):
+                                        try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                        except Exception: pass
+                            except Exception: pass
+
+# 3. Linux: Preload Qt6 shared libraries if needed
+if sys.platform.startswith('linux'):
+    import ctypes
+    for _sp_dir in _candidates:
+        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+        if os.path.isdir(_qt_lib_dir):
+            _qt_preload = [
+                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+            ]
+            for _lib in _qt_preload:
+                _p = os.path.join(_qt_lib_dir, _lib)
+                if os.path.exists(_p):
+                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                    except OSError: pass
+            break
+
+# 4. Launch main script
+def _launch_external():
+    import subprocess, shutil
+    clean_env = os.environ.copy()
+    clean_env["BADWORDS_EMBEDDED"] = "1"
+    if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
+        clean_paths = [p for p in clean_env['LD_LIBRARY_PATH'].split(os.pathsep) if 'resolve' not in p.lower()]
+        clean_env['LD_LIBRARY_PATH'] = os.pathsep.join(clean_paths)
+    for cand in [
+        os.path.join(INSTALL_DIR, 'BadWords'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords'),
+        os.path.join(INSTALL_DIR, 'BadWords.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords.exe'),
+    ]:
+        if os.path.isfile(cand) and (sys.platform.startswith('win') or os.access(cand, os.X_OK)):
+            try:
+                subprocess.Popen([cand, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+                print("[BadWords] Launched standalone binary:", cand)
+                return True
+            except Exception:
+                pass
+
+    py_cands = [
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'python.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'python.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python3'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python'),
+    ]
+    py_bin = next((p for p in py_cands if os.path.isfile(p)), None)
+    if not py_bin:
+        curr_exe = sys.executable or ""
+        if "resolve" not in curr_exe.lower() and os.path.isfile(curr_exe):
+            py_bin = curr_exe
+        elif sys.platform.startswith('win'):
+            py_bin = shutil.which('pythonw') or shutil.which('python') or 'python'
+        else:
+            py_bin = shutil.which('python3') or shutil.which('python') or 'python3'
+
+    subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+    print("[BadWords] Launched external process:", MAIN_SCRIPT)
+    return True
 
 if os.path.exists(MAIN_SCRIPT):
+    os.environ["BADWORDS_EMBEDDED"] = "1"
+    if "--embedded" not in sys.argv:
+        sys.argv.append("--embedded")
     try:
         with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy(); gv['__file__'] = MAIN_SCRIPT
+        gv = globals().copy()
+        gv['__file__'] = MAIN_SCRIPT
         exec(code, gv)
     except Exception as e:
-        print(f'Error: {{e}}'); traceback.print_exc()
+        print("[BadWords] In-process execution failed:", e)
+        print("[BadWords] Falling back to external process launch...")
+        _launch_external()
 else:
-    print(f'CRITICAL: {{MAIN_SCRIPT}} not found')
+    print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
-    def _resolve_base_exists(d):
-        p = d
-        for _ in range(7):
-            p = os.path.dirname(p)
-            bn = os.path.basename(p)
-            if bn in ("DaVinci Resolve", "DaVinciResolve", "resolve"):
-                return os.path.isdir(p)
-        return False
+    legacy_names = [
+        "Badwords.py", "BadWords (Linux).py",
+        "BadWords (Mac).py", "BadWords (macOS).py", "BadWords (Windows).py",
+        "BadWords_Launcher.py", "BadWords.lua"
+    ]
 
-    existing_resolve_dirs = [d for d in resolve_dirs if _resolve_base_exists(d)]
-    targets = existing_resolve_dirs if existing_resolve_dirs else [resolve_dirs[0]]
+    # Clean old wrappers from ALL candidate script locations
+    for rd in resolve_dirs:
+        for leg in legacy_names:
+            p = os.path.join(rd, leg)
+            if os.path.exists(p):
+                try: os.remove(p)
+                except: pass
 
-    # Clean old wrappers from ALL script locations
-    for rd in targets:
-        scripts_dir = os.path.dirname(rd)
-        if os.path.exists(scripts_dir):
-            for root, _, files in os.walk(scripts_dir):
-                for f in files:
-                    if f.startswith("BadWords") and f.endswith(".py"):
-                        p = os.path.join(root, f)
-                        try: os.remove(p)
-                        except: pass
+    res_info = _detect_resolve_edition_info()
+    is_studio = (res_info.get("edition") == "Studio")
+    # Only a confirmed Free 21.1+ drops BadWords.py; "Unknown" deploys both BadWords.py and the Bridge
+    is_free_21_1 = (res_info.get("edition") == "Free" and res_info.get("is_21_1_or_newer", False))
+    debug_log(f"DaVinci Resolve deployment: is_studio={is_studio}, is_free_21_1={is_free_21_1}")
 
-    # Write wrapper to ALL valid targets (not just the first one)
-    wrapper_count = 0
-    for rd in targets:
+    # Locate BadWords Bridge.lua source
+    bridge_lua_src = None
+    for cand in [
+        os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua"),
+        os.path.join(install_dir, "BadWords Bridge.lua"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "BadWords Bridge.lua"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setupfiles", "BadWords Bridge.lua"),
+        os.path.join(os.path.dirname(install_dir), "setupfiles", "BadWords Bridge.lua"),
+    ]:
+        if os.path.isfile(cand):
+            bridge_lua_src = cand
+            break
+
+    if not bridge_lua_src or not os.path.isfile(bridge_lua_src):
+        try:
+            target_tmp = os.path.join(install_dir, "setupfiles", "BadWords Bridge.lua")
+            os.makedirs(os.path.dirname(target_tmp), exist_ok=True)
+            url = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/BadWords%20Bridge.lua"
+            import urllib.request
+            urllib.request.urlretrieve(url, target_tmp)
+            if os.path.isfile(target_tmp):
+                bridge_lua_src = target_tmp
+        except Exception:
+            pass
+
+    written = False
+    for rd in resolve_dirs:
         try:
             os.makedirs(rd, exist_ok=True)
             wp = os.path.join(rd, "BadWords.py")
-            with open(wp, "w", encoding="utf-8") as f:
-                f.write(wrapper_content)
-            os.chmod(wp, 0o755)
-            debug_log(f"Wrapper written to: {wp}")
-            wrapper_count += 1
-            break
+            target_lua = os.path.join(rd, "BadWords Bridge.lua")
 
+            if is_studio:
+                # ── 1. STUDIO EDITION ──────────────────────────────────────────────────────────
+                # BadWords.py: deployed for Workspace -> Scripts
+                # BadWords Bridge.lua: NEVER installed (removed if present)
+                with open(wp, "w", encoding="utf-8") as f:
+                    f.write(wrapper_content)
+                os.chmod(wp, 0o755)
+                debug_log(f"BadWords.py written to: {wp}")
+                written = True
+
+                if os.path.exists(target_lua):
+                    try:
+                        os.remove(target_lua)
+                        debug_log(f"Removed BadWords Bridge.lua (Studio uses native scripting): {target_lua}")
+                    except Exception:
+                        pass
+
+            elif is_free_21_1:
+                # ── 2. FREE EDITION >= 21.1 ────────────────────────────────────────────────────
+                # BadWords.py: NEVER installed (Python scripting blocked in Free 21.1+, removed if present)
+                # BadWords Bridge.lua: deployed (only supported connection mode)
+                if os.path.exists(wp):
+                    try:
+                        os.remove(wp)
+                        debug_log(f"Removed BadWords.py (Python scripting blocked in Resolve Free 21.1+): {wp}")
+                    except Exception:
+                        pass
+
+                if bridge_lua_src and os.path.isfile(bridge_lua_src):
+                    with open(bridge_lua_src, "r", encoding="utf-8") as bf:
+                        b_code = bf.read()
+                    clean_inst = install_dir.replace('\\', '/')
+                    b_code = b_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+
+                    bridge_dir = os.path.join(install_dir, "bridge")
+                    try: os.makedirs(bridge_dir, exist_ok=True)
+                    except Exception: pass
+
+                    with open(target_lua, "w", encoding="utf-8") as bf:
+                        bf.write(b_code)
+                    os.chmod(target_lua, 0o755)
+                    debug_log(f"BadWords Bridge.lua written to: {target_lua}")
+                    written = True
+
+            else:
+                # ── 3. FREE EDITION < 21.1 ─────────────────────────────────────────────────────
+                # BOTH BadWords.py (internal scripting) and BadWords Bridge.lua (external fallback) deployed
+                with open(wp, "w", encoding="utf-8") as f:
+                    f.write(wrapper_content)
+                os.chmod(wp, 0o755)
+                debug_log(f"BadWords.py written to: {wp}")
+                written = True
+
+                if bridge_lua_src and os.path.isfile(bridge_lua_src):
+                    with open(bridge_lua_src, "r", encoding="utf-8") as bf:
+                        b_code = bf.read()
+                    clean_inst = install_dir.replace('\\', '/')
+                    b_code = b_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+
+                    bridge_dir = os.path.join(install_dir, "bridge")
+                    try: os.makedirs(bridge_dir, exist_ok=True)
+                    except Exception: pass
+
+                    with open(target_lua, "w", encoding="utf-8") as bf:
+                        bf.write(b_code)
+                    os.chmod(target_lua, 0o755)
+                    debug_log(f"BadWords Bridge.lua written to: {target_lua}")
+                    written = True
         except Exception as exc:
-            debug_log(f"Could not write wrapper to {rd}: {exc}")
+            debug_log(f"Could not write scripts to {rd}: {exc}")
 
-    return wrapper_count > 0
+    return written
+
+
+def _unblock_file_windows(path):
+    if os.name != 'nt' or not path or not os.path.exists(path):
+        return
+    try:
+        ads = f"{path}:Zone.Identifier"
+        if os.path.exists(ads):
+            os.remove(ads)
+    except Exception:
+        pass
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+             f"Unblock-File -LiteralPath '{path}' -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '{path}:Zone.Identifier' -Force -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            **_sp_hidden_kwargs()
+        )
+    except Exception:
+        pass
+
+
+def _unblock_tree_windows(dir_path):
+    if os.name != 'nt' or not dir_path or not os.path.exists(dir_path):
+        return
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+             f"Get-ChildItem -LiteralPath '{dir_path}' -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue; Remove-Item -LiteralPath \"$($_.FullName):Zone.Identifier\" -Force -ErrorAction SilentlyContinue }}"],
+            capture_output=True,
+            **_sp_hidden_kwargs()
+        )
+    except Exception:
+        pass
+
+
+def _create_os_shortcuts(install_dir, create_desktop=True, create_menu=True):
+    install_dir = os.path.abspath(install_dir)
+    main_py = os.path.join(install_dir, "main.py")
+    icon_ico = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
+    if not os.path.isfile(icon_ico):
+        icon_ico = os.path.join(install_dir, "icons", "icon_default.ico")
+    icon_png = os.path.join(install_dir, "assets", "icons", "icon_default.png")
+    if not os.path.isfile(icon_png):
+        icon_png = os.path.join(install_dir, "icons", "icon_default.png")
+
+    if os.name == "nt":
+        badwords_exe = os.path.join(install_dir, "BadWords.exe")
+        if not os.path.isfile(badwords_exe):
+            setup_cand = os.path.join(install_dir, "setupfiles", "windows", "BadWords.exe")
+            bootstrap_cand = os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe")
+            repo_cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "BadWords.exe")
+            if os.path.isfile(setup_cand):
+                _unblock_file_windows(setup_cand)
+                try: shutil.copy2(setup_cand, badwords_exe)
+                except Exception: pass
+            elif os.path.isfile(repo_cand):
+                _unblock_file_windows(repo_cand)
+                try: shutil.copy2(repo_cand, badwords_exe)
+                except Exception: pass
+            elif os.path.isfile(bootstrap_cand):
+                _unblock_file_windows(bootstrap_cand)
+                try: shutil.copy2(bootstrap_cand, badwords_exe)
+                except Exception: pass
+            else:
+                try:
+                    import urllib.request
+                    app_ver = _get_app_version(install_dir)
+                    urls = [
+                        "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
+                        f"https://github.com/veritus-git/BadWords/releases/download/v{app_ver}/BadWords.exe",
+                        f"https://github.com/veritus-git/BadWords/releases/download/{app_ver}/BadWords.exe",
+                    ]
+                    for url in urls:
+                        try:
+                            urllib.request.urlretrieve(url, badwords_exe)
+                            if os.path.isfile(badwords_exe) and os.path.getsize(badwords_exe) > 10000:
+                                break
+                            else:
+                                if os.path.isfile(badwords_exe): os.remove(badwords_exe)
+                        except Exception:
+                            if os.path.isfile(badwords_exe): os.remove(badwords_exe)
+                except Exception:
+                    pass
+
+        if os.path.isfile(badwords_exe):
+            _unblock_file_windows(badwords_exe)
+            target_path = badwords_exe
+            args_str = ""
+            shortcut_icon = f"{badwords_exe},0"
+        else:
+            try:
+                from setupfiles.pe_patcher import ensure_badwords_exe
+                pyw_path = ensure_badwords_exe(install_dir)
+            except Exception:
+                pyw_path = ""
+            if not pyw_path:
+                pyw_path = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+            target_path = pyw_path
+            args_str = f'"{main_py}"'
+            shortcut_icon = f"{icon_ico},0"
+
+        ps_commands = ["$ws = New-Object -ComObject WScript.Shell;"]
+        if create_desktop:
+            ps_commands.append(f"$s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\\BadWords.lnk'); $s1.TargetPath = '{target_path}'; $s1.Arguments = '{args_str}'; $s1.WorkingDirectory = '{install_dir}'; $s1.IconLocation = '{shortcut_icon}'; $s1.Description = 'BadWords'; $s1.Save();")
+        if create_menu:
+            ps_commands.append(f"$s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Programs') + '\\BadWords.lnk'); $s2.TargetPath = '{target_path}'; $s2.Arguments = '{args_str}'; $s2.WorkingDirectory = '{install_dir}'; $s2.IconLocation = '{shortcut_icon}'; $s2.Description = 'BadWords'; $s2.Save();")
+        
+        full_script = " ".join(ps_commands)
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", full_script], capture_output=True, **_sp_hidden_kwargs())
+        _unblock_tree_windows(install_dir)
+
+        # Register in Windows Add/Remove Programs (HKCU)
+        try:
+            import winreg
+            hkcu = winreg.HKEY_CURRENT_USER
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BadWords"
+            key = winreg.CreateKey(hkcu, key_path)
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "BadWords")
+            winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, APP_VERSION)
+            winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Szymon Wolarz")
+            winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, str(install_dir))
+            winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, str(icon_ico))
+            setup_script = os.path.join(install_dir, "setupfiles", "setup.py")
+            py_bin = os.path.join(install_dir, "venv", "Scripts", "python.exe")
+            winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, f'"{py_bin}" "{setup_script}" --uninstall')
+            winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, "https://github.com/veritus-git/BadWords")
+            winreg.CloseKey(key)
+        except Exception as e:
+            debug_log(f"Registry registration error: {e}")
+
+    elif sys.platform.startswith("linux"):
+        launcher_bin = os.path.join(install_dir, "BadWords")
+        launcher_c = os.path.join(install_dir, "setupfiles", "linux", "launcher.c")
+        if not os.path.isfile(launcher_c) and 'repo_root' in locals() and repo_root:
+            launcher_c = os.path.join(repo_root, "setupfiles", "linux", "launcher.c")
+
+        compiled = False
+        cc = shutil.which("gcc") or shutil.which("cc") or shutil.which("clang")
+        if cc and os.path.isfile(launcher_c):
+            try:
+                res = subprocess.run([cc, "-O2", launcher_c, "-ldl", "-o", launcher_bin], capture_output=True)
+                if res.returncode == 0 and os.path.isfile(launcher_bin):
+                    compiled = True
+                    os.chmod(launcher_bin, 0o755)
+            except Exception:
+                compiled = False
+
+        home = os.path.expanduser("~")
+        if compiled:
+            exec_line = f'Exec="{launcher_bin}" %U'
+            local_bin = os.path.join(home, ".local", "bin")
+            if os.path.isdir(local_bin):
+                bin_link = os.path.join(local_bin, "badwords")
+                try:
+                    if os.path.islink(bin_link) or os.path.exists(bin_link):
+                        os.unlink(bin_link)
+                    os.symlink(launcher_bin, bin_link)
+                except Exception:
+                    pass
+        else:
+            py_bin = os.path.join(install_dir, "venv", "bin", "python")
+            if not os.path.isfile(py_bin):
+                py_bin = os.path.join(install_dir, "venv", "bin", "python3")
+            exec_line = f'Exec="{py_bin}" "{main_py}" %U'
+
+        desktop_content = f"""[Desktop Entry]
+Type=Application
+Name=BadWords
+Comment=AI Automated Profanity & Silence Detection for DaVinci Resolve
+{exec_line}
+Path={install_dir}
+Icon={icon_png}
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;
+StartupWMClass=BadWords
+Keywords=davinci;resolve;subtitles;ai;whisper;
+"""
+        apps_dir = os.path.join(home, ".local", "share", "applications")
+        os.makedirs(apps_dir, exist_ok=True)
+        try:
+            with open(os.path.join(apps_dir, "badwords.desktop"), "w", encoding="utf-8") as f:
+                f.write(desktop_content)
+        except Exception:
+            pass
+
+        if create_desktop:
+            dt_dir = os.path.join(home, "Desktop")
+            if os.path.exists(dt_dir):
+                dt_file = os.path.join(dt_dir, "badwords.desktop")
+                try:
+                    with open(dt_file, "w", encoding="utf-8") as f:
+                        f.write(desktop_content)
+                    os.chmod(dt_file, 0o755)
+                    subprocess.run(["gio", "set", dt_file, "metadata::trusted", "true"], capture_output=True)
+                except Exception:
+                    pass
+
+        subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
+
+    elif sys.platform == "darwin":
+        home = os.path.expanduser("~")
+        app_dir = os.path.join(home, "Applications", "BadWords.app")
+        contents = os.path.join(app_dir, "Contents")
+        macos = os.path.join(contents, "MacOS")
+        resources = os.path.join(contents, "Resources")
+        os.makedirs(macos, exist_ok=True)
+        os.makedirs(resources, exist_ok=True)
+
+        icon_icns = os.path.join(install_dir, "assets", "icons", "icon_default.icns")
+        if not os.path.isfile(icon_icns):
+            icon_icns = os.path.join(install_dir, "icons", "icon_default.icns")
+        if os.path.isfile(icon_icns):
+            try: shutil.copy2(icon_icns, os.path.join(resources, "icon.icns"))
+            except Exception: pass
+
+        plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>BadWords</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.veritus.badwords</string>
+    <key>CFBundleName</key>
+    <string>BadWords</string>
+    <key>CFBundleDisplayName</key>
+    <string>BadWords</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{APP_VERSION}</string>
+    <key>CFBundleVersion</key>
+    <string>{APP_VERSION}</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>"""
+        try:
+            with open(os.path.join(contents, "Info.plist"), "w", encoding="utf-8") as f:
+                f.write(plist_content)
+        except Exception: pass
+
+        # Write BadWords.cfg in Resources
+        python_bin = os.path.join(install_dir, "venv", "bin", "python3")
+        if not os.path.isfile(python_bin):
+            python_bin = os.path.join(install_dir, "venv", "bin", "python")
+        python_lib = ""
+        try:
+            p_fw = os.path.join(sys.base_prefix, "Python")
+            if os.path.isfile(p_fw):
+                python_lib = p_fw
+            else:
+                import sysconfig
+                libdir = sysconfig.get_config_var('LIBDIR') or ""
+                ldlibrary = sysconfig.get_config_var('LDLIBRARY') or ""
+                if libdir and ldlibrary and os.path.isfile(os.path.join(libdir, ldlibrary)):
+                    python_lib = os.path.join(libdir, ldlibrary)
+        except Exception:
+            pass
+
+        cfg_path = os.path.join(resources, "BadWords.cfg")
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(f"INSTALL_DIR={install_dir}\n")
+                f.write(f"PYTHON_BIN={python_bin}\n")
+                if python_lib:
+                    f.write(f"PYTHON_LIB={python_lib}\n")
+                f.write(f"MAIN_PY={os.path.join(install_dir, 'src', 'main.py')}\n")
+        except Exception:
+            pass
+
+        # Build / Compile native Mach-O launcher
+        launcher_path = os.path.join(macos, "BadWords")
+        launcher_c = os.path.join(install_dir, "setupfiles", "macos", "launcher.c")
+        if not os.path.isfile(launcher_c) and 'repo_root' in locals() and repo_root:
+            launcher_c = os.path.join(repo_root, "setupfiles", "macos", "launcher.c")
+
+        compiled = False
+        cc = shutil.which("clang") or shutil.which("cc") or shutil.which("gcc")
+        if cc and os.path.isfile(launcher_c):
+            try:
+                cmd = [cc, "-O2", "-fobjc-arc", "-framework", "Foundation", "-framework", "AppKit",
+                       "-o", launcher_path, launcher_c]
+                res = subprocess.run(cmd, capture_output=True)
+                if res.returncode == 0 and os.path.isfile(launcher_path):
+                    compiled = True
+                    os.chmod(launcher_path, 0o755)
+            except Exception:
+                compiled = False
+
+        if not compiled:
+            # Fallback shell script launcher if compilation unavailable
+            launcher_script = f"""#!/bin/bash
+DIR="{install_dir}"
+if [ -f "$DIR/src/main.py" ]; then
+    MAIN_PY="$DIR/src/main.py"
+    CWD="$DIR/src"
+else
+    MAIN_PY="$DIR/main.py"
+    CWD="$DIR"
+fi
+
+if [ -x "$DIR/venv/bin/python3" ]; then
+    PY="$DIR/venv/bin/python3"
+elif [ -x "$DIR/venv/bin/python" ]; then
+    PY="$DIR/venv/bin/python"
+else
+    PY="python3"
+fi
+
+cd "$CWD"
+exec "$PY" "$MAIN_PY" "$@"
+"""
+            try:
+                with open(launcher_path, "w", encoding="utf-8") as f:
+                    f.write(launcher_script)
+                os.chmod(launcher_path, 0o755)
+            except Exception:
+                pass
+
+        if create_desktop:
+            dt_dir = os.path.join(home, "Desktop")
+            if os.path.isdir(dt_dir):
+                dt_link = os.path.join(dt_dir, "BadWords.app")
+                try:
+                    if os.path.islink(dt_link): os.unlink(dt_link)
+                    elif os.path.exists(dt_link):
+                        shutil.rmtree(dt_link)
+                    os.symlink(app_dir, dt_link)
+                except Exception: pass
+
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_dir], capture_output=True)
+        subprocess.run(["touch", app_dir], capture_output=True)
+
+def _remove_os_shortcuts(install_dir=None):
+    if os.name == "nt":
+        try:
+            home = os.path.expanduser("~")
+            dt_lnk = os.path.join(home, "Desktop", "BadWords.lnk")
+            if os.path.exists(dt_lnk):
+                try: os.remove(dt_lnk)
+                except: pass
+            appdata = os.environ.get("APPDATA")
+            if appdata:
+                prog_lnk = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "BadWords.lnk")
+                if os.path.exists(prog_lnk):
+                    try: os.remove(prog_lnk)
+                    except: pass
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+                winreg.DeleteKey(key, "BadWords")
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    elif sys.platform.startswith("linux"):
+        home = os.path.expanduser("~")
+        for p in [os.path.join(home, ".local", "share", "applications", "badwords.desktop"),
+                  os.path.join(home, "Desktop", "badwords.desktop")]:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except Exception: pass
+
+def _launch_badwords(install_dir):
+    try:
+        if os.name == "nt":
+            badwords_exe = os.path.join(install_dir, "BadWords.exe")
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
+            if os.path.isfile(badwords_exe):
+                subprocess.Popen(
+                    [badwords_exe],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+                    close_fds=True
+                )
+                return True
+            pyw = os.path.join(install_dir, "venv", "Scripts", "pythonw.exe")
+            main_py = os.path.join(install_dir, "main.py")
+            if not os.path.isfile(main_py):
+                main_py = os.path.join(install_dir, "src", "main.py")
+            if os.path.isfile(pyw) and os.path.isfile(main_py):
+                subprocess.Popen(
+                    [pyw, main_py],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+                    close_fds=True
+                )
+                return True
+        elif "darwin" in PLAT or "mac" in PLAT:
+            app_path = os.path.expanduser("~/Applications/BadWords.app")
+            if os.path.isdir(app_path):
+                subprocess.Popen(["open", app_path], close_fds=True)
+                return True
+            mach_launcher = os.path.join(install_dir, "BadWords")
+            if os.path.isfile(mach_launcher) and os.access(mach_launcher, os.X_OK):
+                subprocess.Popen([mach_launcher], cwd=install_dir, start_new_session=True, close_fds=True)
+                return True
+            py = os.path.join(install_dir, "venv", "bin", "python3")
+            if not os.path.isfile(py):
+                py = os.path.join(install_dir, "venv", "bin", "python")
+            main_py = os.path.join(install_dir, "main.py")
+            if not os.path.isfile(main_py):
+                main_py = os.path.join(install_dir, "src", "main.py")
+            if os.path.isfile(py) and os.path.isfile(main_py):
+                subprocess.Popen(
+                    [py, main_py],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+        else:
+            elf_launcher = os.path.join(install_dir, "BadWords")
+            if os.path.isfile(elf_launcher) and os.access(elf_launcher, os.X_OK):
+                subprocess.Popen(
+                    [elf_launcher],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+            local_bin = os.path.expanduser("~/.local/bin/badwords")
+            if os.path.isfile(local_bin) and os.access(local_bin, os.X_OK):
+                subprocess.Popen(
+                    [local_bin],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+            py = os.path.join(install_dir, "venv", "bin", "python3")
+            if not os.path.isfile(py):
+                py = os.path.join(install_dir, "venv", "bin", "python")
+            main_py = os.path.join(install_dir, "main.py")
+            if not os.path.isfile(main_py):
+                main_py = os.path.join(install_dir, "src", "main.py")
+            if os.path.isfile(py) and os.path.isfile(main_py):
+                subprocess.Popen(
+                    [py, main_py],
+                    cwd=install_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    close_fds=True
+                )
+                return True
+    except Exception as e:
+        debug_log(f"Failed to launch BadWords: {e}")
+    return False
+
+
+def _configure_no_self_upgrade(install_dir):
+    """Configures developer mode flag and setting to disable updater self-upgrade."""
+    import json
+    try:
+        marker = os.path.join(install_dir, ".no_self_upgrade")
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write("1")
+    except Exception as e:
+        debug_log(f"Warning writing .no_self_upgrade: {e}")
+
+    settings_path = os.path.join(install_dir, "settings.json")
+    try:
+        data = {}
+        if os.path.isfile(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        data["no_self_upgrade"] = True
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        debug_log(f"Warning updating settings.json for no_self_upgrade: {e}")
+    log_ok("Developer mode configured: Updater self-upgrade disabled.")
 
 
 # ── Option 1 — Standard Install / Update ─────────────────────
-def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green"):
+def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green", is_dev=False, branch_url=None, branch_name=None):
     header()
-    if force_main:
+    if is_dev:
+        lbl = f"── Developer Installation ({branch_name or 'local repository'}) ──"
+        console.print(Text(f"{PAD}{lbl}", style="bold magenta"), no_wrap=True)
+    elif force_main:
         console.print(Text(f"{PAD}── Dev Install (main) ──", style="bold magenta"), no_wrap=True)
     else:
         console.print(Text(f"{PAD}{title}", style=f"bold {title_color}"), no_wrap=True)
@@ -958,10 +2195,8 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
     py_auto_installed = False
-
-    if preset_path:
-        # Path was chosen upstream (e.g. by option_reset) — skip detect & prompt
-        install_dir = preset_path
+    if preset_path or (ARGS.non_interactive and ARGS.install):
+        install_dir = preset_path or ARGS.install
         log_info(f"Using preset install path: {install_dir}")
     else:
         detected = detect_existing_install(default_dir, resolve_dirs)
@@ -984,6 +2219,27 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
             install_dir = custom
             log_info(f"Using custom path: {install_dir}")
+
+    # Shortcuts options
+    if ARGS.non_interactive:
+        create_desktop = True
+        create_menu = True
+    else:
+        console.print(Text(f"{PAD}Create Desktop shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            ans_dt = readline_with_esc()
+            create_desktop = ans_dt.strip().lower() != "n"
+        except UserCancelled:
+            create_desktop = True
+
+        console.print(Text(f"{PAD}Create Start Menu shortcut? [Y/n]: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            ans_menu = readline_with_esc()
+            create_menu = ans_menu.strip().lower() != "n"
+        except UserCancelled:
+            create_menu = True
 
     # Aggressively clean up old Inno Setup (Add/Remove Programs) leftovers
     _clean_legacy_inno_setup(install_dir)
@@ -1030,12 +2286,17 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
     source_path = assets_path = None
     tmp_dl = None
 
-    if os.path.isfile(local_main):
+    if is_dev and branch_url:
+        tag = branch_name or "dev"
+        zip_url = branch_url
+        source_repo = f"GitHub (branch: {tag})"
+        tmp_dl = tempfile.mkdtemp()
+    elif os.path.isfile(local_main):
         log_ok("Local source repository detected. Using local files.")
         source_path = local_src
         assets_path = local_assets if os.path.isdir(local_assets) else None
 
-    if not source_path:
+    if not source_path and not tmp_dl:
         tag, zip_url, source_repo = get_latest_tag(force_main)
         tmp_dl = tempfile.mkdtemp()
 
@@ -1126,10 +2387,35 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         os.makedirs(models_dir, exist_ok=True)
         os.makedirs(bin_dir, exist_ok=True)
 
-        log_step("Syncing application files...")
-        protected_files = {"pref.json", "user.json", "settings.json", "badwords_debug.log", ".python_auto_installed"}
-        protected_dirs  = {"models", "saves", "venv", "bin", "libs"}
-        src_list = [s for s in [source_path, assets_path] if s and os.path.isdir(s)]
+        log_step("Performing clean application reset (preserving user settings, models, saves & venv)...")
+        protected_names = {
+            "settings.json", "user.json", "pref.json", "dev.json", ".python_auto_installed",
+            ".no_self_upgrade", "models", "saves", "venv", "bin", "libs"
+        }
+        cur_script = os.path.abspath(__file__)
+        if os.path.isdir(install_dir):
+            for item in os.listdir(install_dir):
+                if item.lower() in {p.lower() for p in protected_names}:
+                    continue
+                full_path = os.path.join(install_dir, item)
+                if os.path.abspath(full_path) == cur_script:
+                    continue
+                try:
+                    if os.path.isdir(full_path) and not os.path.islink(full_path):
+                        shutil.rmtree(full_path, ignore_errors=True)
+                    else:
+                        os.remove(full_path)
+                except Exception as e:
+                    debug_log(f"clean_wipe error on {full_path}: {e}")
+        log_ok("Target directory reset to clean state.")
+
+        # Clean previous user logs on install/update so logs start fresh
+        for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
+            _lf = os.path.join(install_dir, _log_name)
+            if os.path.isfile(_lf):
+                try: os.remove(_lf)
+                except Exception: pass
+
         is_update = os.path.isdir(venv_dir)
         
         if is_update:
@@ -1147,13 +2433,23 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 shutil.rmtree(venv_dir, ignore_errors=True)
                 is_update = False
 
-        if is_update:
-            two_way_sync(src_list, install_dir, protected_files, protected_dirs)
-        else:
-            for sp in src_list:
-                if os.path.isdir(sp):
-                    shutil.copytree(sp, install_dir, dirs_exist_ok=True)
-        log_ok("Files synced.")
+        setup_root_src = repo_root if ('repo_root' in locals() and repo_root) else (extracted if 'extracted' in locals() and extracted else None)
+        setupfiles_src = os.path.join(setup_root_src, "setupfiles") if setup_root_src else None
+
+        # Fresh deployment of code and assets
+        log_step("Deploying fresh application files...")
+        if source_path and os.path.isdir(source_path):
+            shutil.copytree(source_path, install_dir, dirs_exist_ok=True)
+        if assets_path and os.path.isdir(assets_path):
+            dest_assets = os.path.join(install_dir, "assets")
+            shutil.copytree(assets_path, dest_assets, dirs_exist_ok=True)
+        if setupfiles_src and os.path.isdir(setupfiles_src):
+            dst_setupfiles = os.path.join(install_dir, "setupfiles")
+            shutil.copytree(setupfiles_src, dst_setupfiles, dirs_exist_ok=True)
+            up_py = os.path.join(setupfiles_src, "updater.py")
+            if os.path.isfile(up_py):
+                shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
+        log_ok("Application files cleanly deployed.")
 
         # ── FFmpeg ────────────────────────────────────────────
         console.print()
@@ -1162,151 +2458,171 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         if is_update and os.path.isfile(ffmpeg_bin):
             log_ok("Portable FFmpeg already present. Skipping download.")
         else:
-            log_step("Downloading portable FFmpeg...")
-            if os.name == "nt":
-                # Windows: use Gyan.dev essentials build (ZIP, native .exe)
-                ffmpeg_url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
-                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_win.zip")
-                sp_ff = Spinner("Downloading FFmpeg (Windows native)").start()
-                dl_ok = download(ffmpeg_url, ffmpeg_arc)
-                sp_ff.done(ok=dl_ok)
-                if dl_ok:
-                    import zipfile
-                    sp_ex2 = Spinner("Extracting FFmpeg").start()
-                    try:
-                        with zipfile.ZipFile(ffmpeg_arc) as zf:
-                            for member in zf.namelist():
-                                fname = os.path.basename(member)
-                                if fname in ("ffmpeg.exe", "ffprobe.exe"):
-                                    data = zf.read(member)
-                                    dest = os.path.join(bin_dir, fname)
-                                    with open(dest, "wb") as out:
-                                        out.write(data)
-                        sp_ex2.done(ok=True)
-                    except Exception as e:
-                        sp_ex2.done(ok=False)
-                        log_warn(f"FFmpeg extraction failed: {e}")
-                    finally:
-                        try: os.remove(ffmpeg_arc)
-                        except Exception: pass
-                else:
-                    log_warn("FFmpeg download failed. App may not work without it.")
-            elif "mac" in PLAT or "darwin" in PLAT:
-                # macOS: use Homebrew and symlink (Legacy behavior)
-                sp_ff = Spinner("Installing FFmpeg via Homebrew").start()
-                if not shutil.which("brew"):
-                    sp_ff.done(ok=False)
-                    log_err("Homebrew is required for macOS installation. Please install brew first.")
-                    raise UserCancelled()
-                
-                # Install ffmpeg using brew (blocks until done)
-                r = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True)
-                sp_ff.done(ok=(r.returncode == 0))
-                
-                if r.returncode == 0 or b"already installed" in r.stdout or b"already installed" in r.stderr:
-                    try:
-                        brew_prefix = subprocess.run(["brew", "--prefix", "ffmpeg"], capture_output=True, text=True).stdout.strip()
-                        brew_ffmpeg = os.path.join(brew_prefix, "bin", "ffmpeg")
-                        brew_ffprobe = os.path.join(brew_prefix, "bin", "ffprobe")
-                        
-                        if os.path.isfile(brew_ffmpeg):
-                            sym_ffmpeg = os.path.join(bin_dir, "ffmpeg")
-                            if os.path.lexists(sym_ffmpeg): os.remove(sym_ffmpeg)
-                            os.symlink(brew_ffmpeg, sym_ffmpeg)
-                            
-                        if os.path.isfile(brew_ffprobe):
-                            sym_ffprobe = os.path.join(bin_dir, "ffprobe")
-                            if os.path.lexists(sym_ffprobe): os.remove(sym_ffprobe)
-                            os.symlink(brew_ffprobe, sym_ffprobe)
-                            
-                        log_ok(f"Symlinked Homebrew FFmpeg into bin/ directory.")
-                    except Exception as e:
-                        log_err(f"Symlink failed: {e}")
-                else:
-                    log_warn("Homebrew FFmpeg installation failed.")
-            else:
-                # Linux: use johnvansickle static build
-                ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-                ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
-                sp_ff = Spinner("Downloading FFmpeg (Linux static)").start()
-                dl_ok = download(ffmpeg_url, ffmpeg_arc)
-                sp_ff.done(ok=dl_ok)
-                if dl_ok:
-                    sp_ex2 = Spinner("Extracting FFmpeg").start()
-                    try:
-                        subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
-                        for name in ["ffmpeg", "ffprobe"]:
-                            for root, _, files in os.walk(install_dir):
-                                if name in files and "ffmpeg-" in root:
-                                    dest = os.path.join(bin_dir, name)
-                                    shutil.move(os.path.join(root, name), dest)
-                                    os.chmod(dest, 0o755)
+            # First, check if system FFmpeg is present and copy it if available
+            sys_ffmpeg = shutil.which("ffmpeg")
+            copied_sys = False
+            if sys_ffmpeg and os.path.isfile(sys_ffmpeg):
+                try:
+                    shutil.copy2(sys_ffmpeg, ffmpeg_bin)
+                    if os.name != "nt":
+                        os.chmod(ffmpeg_bin, 0o755)
+                    sys_ffprobe = shutil.which("ffprobe")
+                    if sys_ffprobe and os.path.isfile(sys_ffprobe):
+                        shutil.copy2(sys_ffprobe, os.path.join(bin_dir, "ffprobe.exe" if os.name == "nt" else "ffprobe"))
+                    log_ok(f"Copied system FFmpeg ({sys_ffmpeg}) into bin/ directory.")
+                    copied_sys = True
+                except Exception as e:
+                    log_warn(f"Could not copy system FFmpeg: {e}")
+
+            if not copied_sys and not os.path.isfile(ffmpeg_bin):
+                log_step("Downloading portable FFmpeg...")
+                if os.name == "nt":
+                    # Windows: use Gyan.dev essentials build, fallback to BtbN
+                    win_urls = [
+                        "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+                        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+                    ]
+                    ffmpeg_arc = os.path.join(install_dir, "ffmpeg_win.zip")
+                    dl_ok = False
+                    for w_url in win_urls:
+                        sp_ff = Spinner("Downloading FFmpeg (Windows native)").start()
+                        dl_ok = download(w_url, ffmpeg_arc)
+                        sp_ff.done(ok=dl_ok)
+                        if dl_ok:
+                            break
+                    if dl_ok:
+                        import zipfile
+                        sp_ex2 = Spinner("Extracting FFmpeg").start()
+                        try:
+                            with zipfile.ZipFile(ffmpeg_arc) as zf:
+                                for member in zf.namelist():
+                                    fname = os.path.basename(member)
+                                    if fname in ("ffmpeg.exe", "ffprobe.exe"):
+                                        data = zf.read(member)
+                                        dest = os.path.join(bin_dir, fname)
+                                        with open(dest, "wb") as out:
+                                            out.write(data)
+                            sp_ex2.done(ok=True)
+                        except Exception as e:
+                            sp_ex2.done(ok=False)
+                            log_warn(f"FFmpeg extraction failed: {e}")
+                        finally:
+                            try: os.remove(ffmpeg_arc)
+                            except Exception: pass
+                    else:
+                        log_warn("FFmpeg download failed. App may not work without it.")
+                elif "mac" in PLAT or "darwin" in PLAT:
+                    brew_paths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
+                    found_brew = False
+                    for bp in brew_paths:
+                        if os.path.isfile(bp):
+                            try:
+                                shutil.copy2(bp, ffmpeg_bin)
+                                os.chmod(ffmpeg_bin, 0o755)
+                                log_ok(f"Copied Homebrew FFmpeg ({bp}) into bin/ directory.")
+                                found_brew = True
+                                break
+                            except Exception:
+                                pass
+                    if not found_brew:
+                        sp_ff = Spinner("Installing FFmpeg via Homebrew").start()
+                        if shutil.which("brew"):
+                            r = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True)
+                            sp_ff.done(ok=(r.returncode == 0))
+                            for bp in brew_paths:
+                                if os.path.isfile(bp):
+                                    shutil.copy2(bp, ffmpeg_bin)
+                                    os.chmod(ffmpeg_bin, 0o755)
+                                    log_ok("Copied Homebrew FFmpeg into bin/ directory.")
                                     break
-                        for item in os.listdir(install_dir):
-                            if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
-                                shutil.rmtree(os.path.join(install_dir, item))
-                        sp_ex2.done(ok=True)
-                    except Exception as e:
-                        sp_ex2.done(ok=False)
-                        log_warn(f"FFmpeg install error: {e}")
-                    finally:
-                        try: os.remove(ffmpeg_arc)
-                        except Exception: pass
+                        else:
+                            sp_ff.done(ok=False)
+                            log_warn("Homebrew not found. System FFmpeg will be used if present.")
                 else:
-                    log_warn("FFmpeg download failed. App may not work without it.")
+                    # Linux: try BtbN GitHub release first, fallback to johnvansickle
+                    linux_urls = [
+                        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+                        "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+                    ]
+                    ffmpeg_arc = os.path.join(install_dir, "ffmpeg_static.tar.xz")
+                    dl_ok = False
+                    for f_url in linux_urls:
+                        sp_ff = Spinner("Downloading FFmpeg (Linux static)").start()
+                        dl_ok = download(f_url, ffmpeg_arc)
+                        sp_ff.done(ok=dl_ok)
+                        if dl_ok:
+                            break
+                    if dl_ok:
+                        sp_ex2 = Spinner("Extracting FFmpeg").start()
+                        try:
+                            subprocess.run(["tar", "-xf", ffmpeg_arc, "-C", install_dir], check=True)
+                            for name in ["ffmpeg", "ffprobe"]:
+                                for root, _, files in os.walk(install_dir):
+                                    if name in files and "ffmpeg-" in root:
+                                        dest = os.path.join(bin_dir, name)
+                                        shutil.move(os.path.join(root, name), dest)
+                                        os.chmod(dest, 0o755)
+                                        break
+                            for item in os.listdir(install_dir):
+                                if item.startswith("ffmpeg-") and os.path.isdir(os.path.join(install_dir, item)):
+                                    shutil.rmtree(os.path.join(install_dir, item))
+                            sp_ex2.done(ok=True)
+                        except Exception as e:
+                            sp_ex2.done(ok=False)
+                            log_warn(f"FFmpeg install error: {e}")
+                        finally:
+                            try: os.remove(ffmpeg_arc)
+                            except Exception: pass
+                    else:
+                        log_warn("FFmpeg download failed. App may not work without it.")
+
+            # Final check: if still missing, attempt system copy again
+            if not os.path.isfile(ffmpeg_bin):
+                fallback_sys = shutil.which("ffmpeg")
+                if fallback_sys and os.path.isfile(fallback_sys):
+                    try:
+                        shutil.copy2(fallback_sys, ffmpeg_bin)
+                        if os.name != "nt":
+                            os.chmod(ffmpeg_bin, 0o755)
+                        log_ok(f"Restored FFmpeg binary from system: {fallback_sys}")
+                    except Exception:
+                        pass
 
         # ── System Python Check ───────────────────────────────
-        if os.name == "nt":
-            def _has_system_python():
-                import winreg
-                found_in_reg = False
-                try:
-                    for hkey in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-                        try:
-                            with winreg.OpenKey(hkey, r"SOFTWARE\Python\PythonCore") as key:
-                                num_subkeys = winreg.QueryInfoKey(key)[0]
-                                for i in range(num_subkeys):
-                                    subkey_name = winreg.EnumKey(key, i)
-                                    if subkey_name.startswith("3."):
-                                        found_in_reg = True
-                                        break
-                        except OSError: pass
-                except Exception: pass
-                
-                if found_in_reg:
-                    return True
-                    
-                try:
-                    import shutil, sys, subprocess
-                    sys_py = shutil.which("python") or shutil.which("python3")
-                    if sys_py:
-                        res = subprocess.run([sys_py, "-V"], capture_output=True, text=True, timeout=2)
-                        if "Python 3." in res.stdout or "Python 3." in res.stderr: 
-                            return True
-                except Exception: pass
-                return False
-
-            if not _has_system_python():
+        comp_py = _find_compatible_system_python()
+        if not comp_py:
+            if os.name == "nt":
                 console.print()
-                log_warn("System Python not detected. DaVinci Resolve requires it.")
-                sp_py = Spinner("Downloading & installing System Python 3.10...").start()
+                log_warn("Compatible System Python (3.10 - 3.12) not detected. DaVinci Resolve requires it.")
+                sp_py = Spinner("Downloading & installing System Python 3.12...").start()
                 try:
-                    py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe"
+                    py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
                     py_exe = os.path.join(tempfile.gettempdir(), "python_installer.exe")
                     if download(py_url, py_exe):
-                        res = subprocess.run([py_exe, "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0", "Include_launcher=0"])
-                        if res.returncode in (0, 1641, 3010):
+                        localappdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+                        target_py_dir = os.path.join(localappdata, "Programs", "Python", "Python312")
+                        res = subprocess.run([
+                            py_exe, "/quiet",
+                            "InstallAllUsers=0",
+                            "PrependPath=1",
+                            "Include_test=0",
+                            "Include_launcher=1",
+                            f"TargetDir={target_py_dir}"
+                        ])
+                        installed_py = os.path.join(target_py_dir, "python.exe")
+                        if res.returncode in (0, 1641, 3010) and os.path.isfile(installed_py) and _is_py_compatible(installed_py):
                             sp_py.done(ok=True)
-                            log_ok("System Python 3.10 installed successfully.")
+                            log_ok("System Python 3.12 installed successfully.")
                             py_auto_installed = True
-                            
-                            # Add to current process PATH so venv creation can find it
-                            new_py_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python310")
-                            os.environ["PATH"] = new_py_dir + os.pathsep + os.path.join(new_py_dir, "Scripts") + os.pathsep + os.environ.get("PATH", "")
-                            
+
+                            # Register in user PATH and update current process environment
+                            _add_to_windows_user_path(target_py_dir)
+                            _add_to_windows_user_path(os.path.join(target_py_dir, "Scripts"))
+                            os.environ["PATH"] = target_py_dir + os.pathsep + os.path.join(target_py_dir, "Scripts") + os.pathsep + os.environ.get("PATH", "")
+
                             try:
-                                with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
-                                    f.write("1")
+                                with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
+                                    f.write("3.12.9")
                             except Exception: pass
                         else:
                             sp_py.done(ok=False)
@@ -1318,41 +2634,29 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     sp_py.done(ok=False)
                     log_warn(f"Failed to auto-install Python: {e}")
 
-        elif "mac" in PLAT or "darwin" in PLAT:
-            # DaVinci Resolve on macOS requires a Python framework from python.org.
-            # Homebrew or Xcode command-line tools Python will NOT work.
-            framework_base = "/Library/Frameworks/Python.framework/Versions"
-            has_framework = False
-            if os.path.isdir(framework_base):
-                for ver in ["3.12", "3.11", "3.10", "3.9", "3.8", "3.7", "3.6"]:
-                    if os.path.isdir(os.path.join(framework_base, ver)):
-                        has_framework = True
-                        break
-            
-            if not has_framework:
+            elif "mac" in PLAT or "darwin" in PLAT:
                 console.print()
-                log_warn("System Python framework not detected. DaVinci Resolve requires it!")
+                log_warn("System Python framework (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
                 console.print(Text(f"{PAD}BadWords cannot integrate with DaVinci Resolve without the official Python.", style="bold yellow"), no_wrap=True)
-                console.print(Text(f"{PAD}Setup will now download and install the official Python 3.10 from python.org.", style="cyan"), no_wrap=True)
+                console.print(Text(f"{PAD}Setup will now download and install the official Python 3.12 from python.org.", style="cyan"), no_wrap=True)
                 console.print(Text(f"{PAD}This is a safe, standard installation, but it requires your Mac password.", style="bold red"), no_wrap=True)
                 pause("Press Enter to proceed with the Python installation...")
-                
-                sp_py = Spinner("Downloading Python 3.10 for macOS...").start()
-                py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-macos11.pkg"
+
+                sp_py = Spinner("Downloading Python 3.12 for macOS...").start()
+                py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-macos11.pkg"
                 py_pkg = os.path.join(tempfile.gettempdir(), "python_installer.pkg")
-                
+
                 try:
                     if download(py_url, py_pkg):
                         sp_py.done(ok=True)
                         log_step("Installing Python (please enter your Mac password if prompted)...")
-                        # Run the installer interactively so sudo password prompt is visible
                         res = subprocess.run(["sudo", "installer", "-pkg", py_pkg, "-target", "/"])
                         if res.returncode == 0:
-                            log_ok("System Python 3.10 installed successfully.")
+                            log_ok("System Python 3.12 installed successfully.")
                             py_auto_installed = True
                             try:
-                                with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
-                                    f.write("1")
+                                with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
+                                    f.write("3.12.9")
                             except Exception: pass
                         else:
                             log_warn(f"Failed to auto-install Python: exit code {res.returncode}")
@@ -1363,27 +2667,14 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     sp_py.done(ok=False)
                     log_warn(f"Failed to auto-install Python: {e}")
 
-        else:
-            # Linux
-            def _has_linux_python():
-                import shutil, subprocess
-                for cmd in ["python3", "python"]:
-                    exe = shutil.which(cmd)
-                    if exe:
-                        try:
-                            r = subprocess.run([exe, "-V"], capture_output=True, text=True, timeout=2)
-                            if "Python 3." in r.stdout or "Python 3." in r.stderr:
-                                return True
-                        except Exception: pass
-                return False
-                
-            if not _has_linux_python():
+            else:
+                # Linux
                 console.print()
-                log_warn("System Python not detected. DaVinci Resolve requires it!")
+                log_warn("Compatible System Python (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
                 console.print(Text(f"{PAD}Setup will try to safely install Python using your system package manager.", style="cyan"), no_wrap=True)
                 console.print(Text(f"{PAD}This requires administrator privileges. You may be prompted for your password.", style="bold red"), no_wrap=True)
                 pause("Press Enter to proceed with the Python installation...")
-                
+
                 log_step("Installing Python (please enter your sudo password if prompted)...")
                 try:
                     pkg_mgrs = [
@@ -1405,52 +2696,40 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                                 log_ok(f"Python installed via {cmd_name}.")
                                 py_auto_installed = True
                                 try:
-                                    with open(os.path.join(install_dir, ".python_auto_installed"), "w") as f:
-                                        f.write("1")
+                                    with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
+                                        f.write("3.12.9")
                                 except Exception: pass
                                 break
-                                
+
                     if not installed:
                         log_warn("Failed to automatically install Python using package manager.")
-                        log_warn("Please install python3 manually.")
+                        log_warn("Please install Python 3.10 - 3.12 manually.")
                 except Exception as e:
                     log_warn(f"Failed to auto-install Python: {e}")
 
         # ── Python for venv ───────────────────────────────────
-        # The bootstrap Python (from the bootstrapper) may be embedded/portable
-        # and lack the venv module. We search for a system Python that has it.
-        bootstrap_py = ARGS.bootstrap_python
-        target_py = None
-
-        # Search order: versioned names (unix), then py/python (Windows), then bootstrap fallback
-        _py_candidates = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3"]
-        if os.name == "nt":
-            _py_candidates += ["py", "python"]
-
-        for cmd in _py_candidates:
-            exe = shutil.which(cmd)
-            if exe:
-                try:
-                    r = subprocess.run([exe, "-c",
-                        "import sys, importlib; importlib.import_module('venv'); exit(0 if (3,10) <= sys.version_info < (3,15) else 1)"],
-                        capture_output=True)
-                    if r.returncode == 0:
-                        target_py = exe
-                        break
-                except Exception:
-                    pass
-
-        # Fallback: use bootstrap Python (may not have venv, but virtualenv fallback handles it)
+        target_py = _find_compatible_system_python()
         if not target_py:
-            target_py = bootstrap_py if os.path.isfile(bootstrap_py) else sys.executable
+            bootstrap_py = ARGS.bootstrap_python
+            if _is_py_compatible(bootstrap_py):
+                target_py = bootstrap_py
+            elif _is_py_compatible(sys.executable):
+                target_py = sys.executable
 
         # ── Venv ──────────────────────────────────────────────
         console.print()
         if not os.path.isdir(venv_dir):
+            if not target_py:
+                log_err("No compatible Python (3.10 - 3.12) with venv found!")
+                log_err("Please install Python 3.12 from https://www.python.org/downloads/ and try again.")
+                if not ARGS.non_interactive:
+                    pause()
+                return False
+
             log_step(f"Creating virtual environment ({target_py})...")
             _venv_ok = False
             try:
-                subprocess.run([target_py, "-m", "venv", venv_dir], check=True, capture_output=True)
+                subprocess.run([target_py, "-m", "venv", venv_dir], check=True, capture_output=True, **_sp_hidden_kwargs())
                 _venv_ok = True
             except (subprocess.CalledProcessError, FileNotFoundError, OSError):
                 pass
@@ -1460,12 +2739,12 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 try:
                     # Install virtualenv — try normal install first, then --user
                     _vi = subprocess.run([target_py, "-m", "pip", "install", "virtualenv", "--quiet"],
-                                         capture_output=True)
+                                         capture_output=True, **_sp_hidden_kwargs())
                     if _vi.returncode != 0:
                         subprocess.run([target_py, "-m", "pip", "install", "virtualenv", "--user", "--quiet"],
-                                       capture_output=True)
+                                       capture_output=True, **_sp_hidden_kwargs())
                     subprocess.run([target_py, "-m", "virtualenv", venv_dir],
-                                   check=True, capture_output=True)
+                                   check=True, capture_output=True, **_sp_hidden_kwargs())
                     _venv_ok = True
                 except Exception as e:
                     debug_log(f"virtualenv fallback also failed: {e}")
@@ -1474,9 +2753,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 log_ok("Virtual environment created.")
             else:
                 log_err("Failed to create virtual environment.")
-                log_err("Please install Python 3.10+ from https://python.org and try again.")
-                pause()
-                return
+                log_err("Please install Python 3.10 - 3.12 from https://python.org and try again.")
+                if not ARGS.non_interactive:
+                    pause()
+                return False
         else:
             log_ok("Virtual environment already exists.")
 
@@ -1498,7 +2778,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 sp = Spinner(label).start()
             r = subprocess.run(
                 [venv_py, "-m", "pip", "--no-cache-dir"] + list(args),
-                capture_output=True, text=True
+                capture_output=True, text=True, **_sp_hidden_kwargs()
             )
             ok = r.returncode == 0
             if sp:
@@ -1511,30 +2791,75 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         _pip_run("install", "--upgrade", "pip", "-q", label="Upgrading pip", spinner=False)
 
-        torch_ok = subprocess.run([venv_pip, "show", "torch"], capture_output=True).returncode == 0
+        torch_ok = False
+        try:
+            torch_ok = subprocess.run([venv_py, "-m", "pip", "show", "torch"], capture_output=True, **_sp_hidden_kwargs()).returncode == 0
+        except Exception:
+            pass
         if torch_ok:
             log_info("Legacy PyTorch installation detected. Uninstalling to save disk space...")
             _pip_run("uninstall", "-y", "torch", "torchaudio", "-q", label="Uninstalling PyTorch")
 
+        # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
         if is_update:
             log_info("Upgrading core dependencies...")
-            _pip_run("install", "--upgrade", "faster-whisper", "pypdf", "-q",
+            _pip_run("install", "--upgrade", "faster-whisper", "av<19", "pypdf", "-q",
                      label="Upgrading Whisper / PyPDF")
         else:
-            pkg_list = ["faster-whisper", "pypdf"]
+            pkg_list = ["faster-whisper", "av<19", "pypdf"]
             if has_nvidia and nvidia_pkgs:
                 pkg_list.extend(nvidia_pkgs.split())
             _pip_run("install", *pkg_list, "-q",
                      label="Installing Faster-Whisper + Dependencies")
 
-        pyside_ok = subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode == 0
+        pyside_ok = subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"],
+            capture_output=True, **_sp_hidden_kwargs()
+        ).returncode == 0
         if not pyside_ok:
             _pip_run("install", "PySide6", "-q", label="Installing PySide6 GUI library")
         else:
             log_info("PySide6 already installed.")
 
+        # Apple Silicon: GPU transcription engine (mlx-whisper), used for Device Auto/GPU.
+        # Installed without PyTorch: torch is only used by mlx-whisper's model converter, not for
+        # transcription (~630 MB saved). Optional: if it fails, BadWords keeps using the CPU engine.
+        import platform
+        if ("mac" in PLAT or "darwin" in PLAT) and platform.machine().lower() == "arm64":
+            mlx_ok = _pip_run("install", "--upgrade", "--no-deps", "mlx-whisper", "-q",
+                              label="Installing Apple GPU engine (MLX)")
+            mlx_ok = mlx_ok and _pip_run("install", "--upgrade", "mlx", "numba", "scipy", "tiktoken",
+                                         "more-itertools", "tqdm", "huggingface_hub", "-q",
+                                         label="Installing MLX dependencies")
+            if mlx_ok:
+                log_ok("Apple GPU engine (MLX) installed.")
+            else:
+                log_warn("Apple GPU engine (MLX) could not be installed. Transcription will use the CPU.")
 
-        log_ok("All dependencies installed.")
+        # ── Comprehensive Package Verification & Auto-Recovery ──
+        console.print()
+        log_step("Verifying installed packages (faster-whisper, PySide6, pypdf)...")
+        missing_pkgs = _check_missing_dependencies(venv_py, check_nvidia=has_nvidia, nvidia_pkgs=nvidia_pkgs)
+        retry_count = 0
+        MAX_RETRIES = 2
+
+        while missing_pkgs and retry_count < MAX_RETRIES:
+            retry_count += 1
+            log_warn(f"Missing or incomplete packages: {', '.join(missing_pkgs)}. Network issue suspected.")
+            log_step(f"Retrying download and installation (attempt {retry_count}/{MAX_RETRIES})...")
+
+            _pip_run("install", *missing_pkgs, "-q", label=f"Re-downloading: {', '.join(missing_pkgs)}")
+            missing_pkgs = _check_missing_dependencies(venv_py, check_nvidia=has_nvidia, nvidia_pkgs=nvidia_pkgs)
+
+        if missing_pkgs:
+            console.print()
+            log_err(f"Network error: Failed to download and verify required packages: {', '.join(missing_pkgs)}.")
+            log_err("Please check your internet connection and run setup again.")
+            if not ARGS.non_interactive:
+                pause()
+            return False
+
+        log_ok("All required packages (faster-whisper, PySide6, pypdf) successfully verified.")
 
         # ── Libs symlink ──────────────────────────────────────
         console.print()
@@ -1596,6 +2921,13 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             except Exception as e:
                 debug_log(f"Failed to patch PySide6: {e}")
 
+        if os.name == 'nt':
+            try:
+                from setupfiles.pe_patcher import ensure_badwords_exe
+                ensure_badwords_exe(install_dir)
+            except Exception as e:
+                debug_log(f"ensure_badwords_exe error: {e}")
+
         # ── DaVinci Resolve wrapper ───────────────────────────
         console.print()
         log_step("Configuring DaVinci Resolve integration...")
@@ -1622,7 +2954,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         except Exception:
             pass  # Protected directory — can't write log file, not fatal
 
-        if force_main:
+        if force_main or is_dev:
             try:
                 import json
                 dev_path = os.path.join(install_dir, "dev.json")
@@ -1631,6 +2963,11 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 log_ok("Created dev.json for dev installation.")
             except Exception as e:
                 log_warn(f"Failed to create dev.json: {e}")
+            _configure_no_self_upgrade(install_dir)
+
+        # ── OS Shortcuts & Registry Integration ───────────────
+        _create_os_shortcuts(install_dir, create_desktop=create_desktop, create_menu=create_menu)
+        log_ok("System shortcuts & application registration updated.")
 
         # ── Done ─────────────────────────────────────────────
         console.print()
@@ -1648,13 +2985,32 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         else:
             console.print(Text(f"{PAD}   1. A restart of DaVinci Resolve might be required.", style="yellow"), no_wrap=True)
             console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
-        console.print()
+        if ARGS.non_interactive or ARGS.no_launch:
+            return
+
+        console.print(Text(f"{PAD}Launch BadWords now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
+        sys.stdout.flush()
+        launched = False
+        try:
+            launch_ans = readline_with_esc()
+            if launch_ans.strip().lower() != "n":
+                if _launch_badwords(install_dir):
+                    log_ok("BadWords launched.")
+                    launched = True
+        except UserCancelled:
+            pass
+
+        if launched:
+            console.print()
+            time.sleep(0.6)
+            return
 
     finally:
         if tmp_dl:
             shutil.rmtree(tmp_dl, ignore_errors=True)
 
-    pause(f"{PAD}Press Enter to exit...")
+    if not ARGS.non_interactive:
+        pause(f"{PAD}Press Enter to exit...")
 
 # ── Dummy stubs ───────────────────────────────────────────────
 def option_dummy(n, label):
@@ -1665,7 +3021,7 @@ def option_dummy(n, label):
 
 
 # ── Option 2 — Repair Installation ─────────────────────────────
-def option_repair():
+def option_repair(preset_path=None):
     header()
     console.print(Text(f"{PAD}-- Repair Installation --", style="bold cyan"), no_wrap=True)
     console.print()
@@ -1678,46 +3034,51 @@ def option_repair():
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
 
-    log_step("Searching via DaVinci Resolve wrapper...")
-    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
-    if wrapper_dir:
-        log_ok(f"Wrapper found -> {wrapper_dir}")
-        install_dir = wrapper_dir
+    if preset_path or (ARGS.non_interactive and ARGS.install):
+        install_dir = preset_path or ARGS.install
     else:
-        log_warn("No wrapper detected. Falling back to deep scan...")
-        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
-        found_dirs = _deep_search_badwords()
-        sp_scan.done(ok=True)
-        if not found_dirs:
+        log_step("Searching via DaVinci Resolve wrapper...")
+        wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+        if wrapper_dir:
+            log_ok(f"Wrapper found -> {wrapper_dir}")
+            install_dir = wrapper_dir
+        else:
+            log_warn("No wrapper detected. Falling back to deep scan...")
+            sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+            found_dirs = _deep_search_badwords()
+            sp_scan.done(ok=True)
+            if not found_dirs:
+                console.print()
+                log_err("No BadWords installation found to repair.")
+                if not ARGS.non_interactive:
+                    pause()
+                return
+            install_dir = found_dirs[0]
+            log_ok(f"Installation found -> {install_dir}")
+
+    if not ARGS.non_interactive:
+        console.print()
+        console.print(Text(f'{PAD}Type "yes" to confirm Repair and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            answer = readline_with_esc()
+        except UserCancelled:
             console.print()
-            log_err("No BadWords installation found to repair.")
+            log_info("Repair cancelled.")
             pause()
             return
-        install_dir = found_dirs[0]
-        log_ok(f"Installation found -> {install_dir}")
-
-    console.print()
-    console.print(Text(f'{PAD}Type "yes" to confirm Repair and press Enter: ', style="bold yellow"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        answer = readline_with_esc()
-    except UserCancelled:
         console.print()
-        log_info("Repair cancelled.")
-        pause()
-        return
-    console.print()
 
-    if answer.strip().lower() != "yes":
-        log_info("Repair cancelled.")
-        pause()
-        return
+        if answer.strip().lower() != "yes":
+            log_info("Repair cancelled.")
+            pause()
+            return
 
     console.print()
     log_step(f"Cleaning core files in: {install_dir}")
     
     # Files/folders to KEEP
-    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json", "venv", ".python_auto_installed"}
+    protected = {"models", "saves", "pref.json", "user.json", "settings.json", "badwords_debug.log", "dev.json", "venv", ".python_auto_installed", ".no_self_upgrade"}
     
     sp_rm = Spinner("Removing core components").start()
     errors = []
@@ -1743,7 +3104,7 @@ def option_repair():
                             shutil.rmtree(p, onerror=_make_writable)  # noqa: deprecated
                         if os.path.exists(p):
                             if os.name == "nt":
-                                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", p], capture_output=True)
+                                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", p], capture_output=True, **_sp_hidden_kwargs())
                             else:
                                 subprocess.run(["rm", "-rf", p], capture_output=True)
                     else:
@@ -1896,48 +3257,43 @@ def option_move():
         except Exception:
             shutil.rmtree(old_libs, ignore_errors=True)
 
-    # Pick best available Python (must have venv support)
-    bootstrap_py = ARGS.bootstrap_python
-    target_py = None
-
-    _py_candidates = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3"]
-    if os.name == "nt":
-        _py_candidates += ["py", "python"]
-
-    for cmd in _py_candidates:
-        exe = shutil.which(cmd)
-        if exe:
-            try:
-                r = subprocess.run([exe, "-c",
-                    "import sys, importlib; importlib.import_module('venv'); exit(0 if (3,10) <= sys.version_info < (3,15) else 1)"],
-                    capture_output=True)
-                if r.returncode == 0:
-                    target_py = exe
-                    break
-            except Exception:
-                pass
+    # Pick best available Python (must have venv support and be compatible with DaVinci Resolve)
+    target_py = _find_compatible_system_python()
+    if not target_py:
+        bootstrap_py = ARGS.bootstrap_python
+        if _is_py_compatible(bootstrap_py):
+            target_py = bootstrap_py
+        elif _is_py_compatible(sys.executable):
+            target_py = sys.executable
 
     if not target_py:
-        target_py = bootstrap_py if os.path.isfile(bootstrap_py) else sys.executable
+        log_err("No compatible Python (3.10 - 3.12) with venv found!")
+        log_err("Please install Python 3.12 from https://www.python.org/downloads/ and try again.")
+        if rescued_pkgs and os.path.exists(rescued_pkgs):
+            shutil.rmtree(rescued_pkgs, ignore_errors=True)
+        if not ARGS.non_interactive:
+            pause()
+        return False
 
     log_step(f"Creating fresh venv ({target_py})...")
     try:
-        subprocess.run([target_py, "-m", "venv", new_venv], check=True, capture_output=True)
+        subprocess.run([target_py, "-m", "venv", new_venv], check=True, capture_output=True, **_sp_hidden_kwargs())
         log_ok("Virtual environment created.")
     except Exception:
         try:
             log_step("Built-in venv failed, trying virtualenv...")
             subprocess.run([target_py, "-m", "pip", "install", "virtualenv", "--quiet"],
-                           check=True, capture_output=True)
+                           check=True, capture_output=True, **_sp_hidden_kwargs())
             subprocess.run([target_py, "-m", "virtualenv", new_venv],
-                           check=True, capture_output=True)
+                           check=True, capture_output=True, **_sp_hidden_kwargs())
             log_ok("Virtual environment created.")
         except Exception as e:
             log_err(f"Failed to create venv: {e}")
             if rescued_pkgs and os.path.exists(rescued_pkgs):
                 shutil.rmtree(rescued_pkgs, ignore_errors=True)
-            pause()
-            return
+            if not ARGS.non_interactive:
+                pause()
+            return False
 
     if os.name == "nt":
         venv_py = os.path.join(new_venv, "Scripts", "python.exe")
@@ -1989,7 +3345,7 @@ def option_move():
         def _pip(label, *args):
             sp = Spinner(label).start()
             r = subprocess.run([venv_py, "-m", "pip"] + list(args),
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, **_sp_hidden_kwargs())
             sp.done(ok=r.returncode == 0)
             if r.returncode != 0:
                 for ln in (r.stderr or "").splitlines()[-8:]:
@@ -2000,7 +3356,7 @@ def option_move():
         _pip("Upgrading pip", "install", "--upgrade", "pip", "-q")
         has_nvidia = False
         try:
-            has_nvidia = subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0
+            has_nvidia = subprocess.run(["nvidia-smi"], capture_output=True, **_sp_hidden_kwargs()).returncode == 0
         except Exception:
             pass
         if not has_nvidia:
@@ -2018,10 +3374,27 @@ def option_move():
                      "--index-url", "https://download.pytorch.org/whl/cpu", "-q")
         _pip("Installing Faster-Whisper + Stable-TS + PyPDF",
              "install", "faster-whisper", "stable-ts", "pypdf", "-q")
-        if subprocess.run([venv_py, "-c", "import PySide6"], capture_output=True).returncode != 0:
+        if subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"],
+            capture_output=True, **_sp_hidden_kwargs()
+        ).returncode != 0:
             _pip("Installing PySide6", "install", "PySide6", "-q")
 
-        log_ok("Dependencies installed.")
+        # ── Verify dependencies ──
+        missing_repair = _check_missing_dependencies(venv_py)
+        if missing_repair:
+            log_warn(f"Missing packages detected during repair: {', '.join(missing_repair)}. Retrying installation...")
+            r = subprocess.run([venv_py, "-m", "pip", "install"] + missing_repair + ["-q"], capture_output=True, **_sp_hidden_kwargs())
+            missing_repair = _check_missing_dependencies(venv_py)
+
+        if missing_repair:
+            log_err(f"Repair failed: Could not install required packages: {', '.join(missing_repair)}.")
+            log_err("Please check your internet connection and try again.")
+            if not ARGS.non_interactive:
+                pause()
+            return False
+
+        log_ok("All dependencies verified.")
 
     # ── Step 3: Recreate libs symlink ────────────────────────
     console.print()
@@ -2036,7 +3409,7 @@ def option_move():
         linked = False
         if os.name == "nt":
             r = subprocess.run(f'mklink /J "{new_libs}" "{final_site_pkgs}"',
-                               shell=True, capture_output=True)
+                               shell=True, capture_output=True, **_sp_hidden_kwargs())
             linked = (r.returncode == 0)
         else:
             try:
@@ -2057,11 +3430,13 @@ def option_move():
     else:
         log_warn("Could not locate site-packages in new venv.")
 
-    # ── Step 6: Update DaVinci Resolve wrapper ───────────────
+    # ── Step 6: Update DaVinci Resolve wrapper & shortcuts ───
     console.print()
-    log_step("Updating DaVinci Resolve wrapper...")
+    log_step("Updating DaVinci Resolve wrapper & system shortcuts...")
+    _remove_os_shortcuts(install_dir)
+    _create_os_shortcuts(new_path)
     if _create_davinci_wrappers(new_path, resolve_dirs):
-        log_ok("Wrapper updated.")
+        log_ok("Wrapper and shortcuts updated.")
     else:
         log_warn("Failed to update wrapper.")
 
@@ -2081,10 +3456,11 @@ def option_move():
 # Signature files unique to a BadWords installation.
 # If a directory contains at least _BW_MATCH_MIN of these, it's ours.
 _BW_SIGNATURES = frozenset({
-    "main.py", "engine.py", "api.py",
-    "algorythms.py", "gui.py", "osdoc.py", "config.py"
+    "main.py", "engine.py", "api.py", "algorithms.py", "algorythms.py",
+    "assembler.py", "gui.py", "osdoc.py", "config.py",
+    "engine", "api", "gui", "config", "i18n", "handlers", "BadWords.exe", "BadWords"
 })
-_BW_MATCH_MIN = 3   # >=3 of 7 files = confirmed BadWords dir
+_BW_MATCH_MIN = 3   # >=3 of signatures = confirmed BadWords dir
 
 
 def _is_badwords_dir(d):
@@ -2241,27 +3617,38 @@ def option_uninstall():
             
     if python_auto_installed:
         console.print()
-        console.print(Text(f"{PAD}BadWords installer previously downloaded Python for its operation.", style="bold yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}Do you wish to uninstall it as well?", style="bold yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}  [yes] - Uninstalls Python from your system.", style="yellow"), no_wrap=True)
-        console.print(Text(f"{PAD}  [no]  - Leaves Python (safe if you use it for other apps).", style="yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}BadWords installer previously downloaded Python 3.12 for its operation.", style="bold yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}Do you wish to uninstall Python 3.12 as well?", style="bold yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}  [yes] - Uninstalls Python 3.12 from your system.", style="yellow"), no_wrap=True)
+        console.print(Text(f"{PAD}  [no]  - Leaves Python 3.12 (safe if you use it for other apps).", style="yellow"), no_wrap=True)
         console.print()
         console.print(Text(f'{PAD}Type "yes" or "no" and press Enter: ', style="bold white"), end="", no_wrap=True)
         sys.stdout.flush()
         try:
             ans_py = readline_with_esc()
             if ans_py.strip().lower() == "yes":
-                log_step("Uninstalling Python 3.10...")
+                log_step("Uninstalling Python 3.12...")
                 sp_py_un = Spinner("Removing Python from system...").start()
                 try:
-                    py_url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe"
-                    py_exe = os.path.join(tempfile.gettempdir(), "python_uninstaller.exe")
-                    if download(py_url, py_exe):
-                        res = subprocess.run([py_exe, "/uninstall", "/quiet"])
-                        sp_py_un.done(ok=(res.returncode in (0, 1641, 3010)))
+                    if os.name == "nt":
+                        py_url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+                        py_exe = os.path.join(tempfile.gettempdir(), "python_uninstaller.exe")
+                        if download(py_url, py_exe):
+                            res = subprocess.run([py_exe, "/uninstall", "/quiet"], **_sp_hidden_kwargs())
+                            sp_py_un.done(ok=(res.returncode in (0, 1641, 3010)))
+                        else:
+                            sp_py_un.done(ok=False)
+                            log_warn("Failed to download Python uninstaller.")
+
+                        # Clean user PATH and remove directory
+                        localappdata = os.environ.get("LOCALAPPDATA", "")
+                        if localappdata:
+                            target_py_dir = os.path.join(localappdata, "Programs", "Python", "Python312")
+                            _remove_from_windows_user_path(target_py_dir)
+                            _remove_from_windows_user_path(os.path.join(target_py_dir, "Scripts"))
+                            shutil.rmtree(target_py_dir, ignore_errors=True)
                     else:
-                        sp_py_un.done(ok=False)
-                        log_warn("Failed to download Python uninstaller.")
+                        sp_py_un.done(ok=True)
                 except Exception as e:
                     sp_py_un.done(ok=False)
                     log_warn(f"Failed to uninstall Python: {e}")
@@ -2313,15 +3700,20 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
     else:
         log_warn("No DaVinci Resolve wrappers found (may have already been removed).")
 
-    # Step 2: Clean Windows registry (before dir removal)
+    # Step 2: Clean Windows registry and system shortcuts
+    log_step("Cleaning system shortcuts and registry...")
+    for d in all_install_dirs:
+        try:
+            _remove_os_shortcuts(d)
+        except Exception as e:
+            debug_log(f"Shortcut cleanup error for {d}: {e}")
     if PLAT.startswith("win"):
-        log_step("Cleaning Windows registry entries...")
         for d in all_install_dirs:
             try:
                 _clean_legacy_inno_setup(d)
             except Exception as e:
                 log_warn(f"Registry cleanup error for {d}: {e}")
-        log_ok("Registry cleaned.")
+    log_ok("Shortcuts & registry cleaned.")
 
     # Step 3: Remove all found installation directories
     for install_dir in all_install_dirs:
@@ -2344,7 +3736,7 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
             # Robust OS-level fallback if Python's rmtree fails on tricky symlinks/permissions
             if os.path.exists(install_dir):
                 if os.name == "nt":
-                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", install_dir], capture_output=True)
+                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", install_dir], capture_output=True, **_sp_hidden_kwargs())
                 else:
                     subprocess.run(["rm", "-rf", install_dir], capture_output=True)
             
@@ -2362,65 +3754,76 @@ def _do_uninstall(resolve_dirs, all_install_dirs):
 
 
 # ── Option 4 — Complete Reset ──────────────────────────────────
-def option_reset():
+def option_reset(preset_path=None):
     header()
-    console.print(Text(f"{PAD}-- Complete Reset --", style="bold magenta"), no_wrap=True)
+    console.print(Text(f"{PAD}── Complete Reset ──", style="bold yellow"), no_wrap=True)
     console.print()
-    console.print(Text(f"{PAD}This will:", style="bold white"), no_wrap=True)
-    console.print(Text(f"{PAD}  1. Remove EVERYTHING (app, venv, models, settings, wrappers)", style="magenta"), no_wrap=True)
-    console.print(Text(f"{PAD}  2. Perform a fresh Standard Install from scratch", style="cyan"), no_wrap=True)
+    console.print(Text(f"{PAD}This will completely delete ALL BadWords files, including:", style="yellow"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Downloaded Whisper models", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Application settings and preferences", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Project saves (.bws)", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * Virtual environment and dependencies", style="dim"), no_wrap=True)
+    console.print(Text(f"{PAD}  * DaVinci Resolve script wrappers", style="dim"), no_wrap=True)
+    console.print()
+    console.print(Text(f"{PAD}And then perform a fresh installation from scratch.", style="yellow"), no_wrap=True)
     console.print()
 
     resolve_dirs = _resolve_script_dirs()
     default_dir  = _default_install_dir()
 
-    # Fast path: detect via Resolve wrapper
-    log_step("Searching via DaVinci Resolve wrapper...")
-    wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
-    if wrapper_dir:
-        log_ok(f"Wrapper found -> {wrapper_dir}")
+    if preset_path or (ARGS.non_interactive and ARGS.install):
+        custom_path = preset_path or ARGS.install
+        all_install_dirs = [custom_path] if os.path.exists(custom_path) else []
     else:
-        log_warn("No wrapper detected (will still deep-scan for leftovers).")
+        # Fast path: detect via Resolve wrapper
+        log_step("Searching via DaVinci Resolve wrapper...")
+        wrapper_dir = detect_existing_install(default_dir, resolve_dirs)
+        if wrapper_dir:
+            log_ok(f"Wrapper found -> {wrapper_dir}")
+        else:
+            log_warn("No wrapper detected (will still deep-scan for leftovers).")
 
-    # Deep search
-    sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
-    found_dirs = _deep_search_badwords()
-    sp_scan.done(ok=True)
+        # Deep search
+        sp_scan = Spinner("Deep-scanning system for BadWords installations").start()
+        found_dirs = _deep_search_badwords()
+        sp_scan.done(ok=True)
 
-    # Merge + deduplicate
-    all_install_dirs = list(dict.fromkeys(
-        [os.path.abspath(d) for d in ([wrapper_dir] if wrapper_dir else []) + found_dirs]
-    ))
-    
-    # Save the old path so we can reinstall there by default
-    reinstall_default = all_install_dirs[0] if all_install_dirs else default_dir
+        # Merge + deduplicate
+        all_install_dirs = list(dict.fromkeys(
+            [os.path.abspath(d) for d in ([wrapper_dir] if wrapper_dir else []) + found_dirs]
+        ))
+        
+        # Save the old path so we can reinstall there by default
+        reinstall_default = all_install_dirs[0] if all_install_dirs else default_dir
 
-    # Show what will be wiped
-    console.print()
-    if all_install_dirs:
-        console.print(Text(f"{PAD}The following installation(s) will be wiped:", style="bold white"), no_wrap=True)
-        for d in all_install_dirs:
-            console.print(Text(f"{PAD}  * {d}", style="magenta"), no_wrap=True)
-    else:
-        console.print(Text(f"{PAD}No existing installation found — will do a clean install.", style="dim"), no_wrap=True)
-    console.print()
-    console.print(Text(f"{PAD}All data (models, settings, saves) will be permanently lost.", style="bold magenta"), no_wrap=True)
-    console.print()
-    console.print(Text(f'{PAD}Type "yes" to confirm Complete Reset and press Enter: ', style="bold yellow"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        answer = readline_with_esc()
-    except UserCancelled:
+        # Show what will be wiped
         console.print()
-        log_info("Reset cancelled.")
-        pause()
-        return
-    console.print()
+        if all_install_dirs:
+            console.print(Text(f"{PAD}The following installation(s) will be wiped:", style="bold white"), no_wrap=True)
+            for d in all_install_dirs:
+                console.print(Text(f"{PAD}  * {d}", style="magenta"), no_wrap=True)
+        else:
+            console.print(Text(f"{PAD}No existing installation found — will do a clean install.", style="dim"), no_wrap=True)
+        console.print()
+        console.print(Text(f"{PAD}All data (models, settings, saves) will be permanently lost.", style="bold magenta"), no_wrap=True)
+        console.print()
 
-    if answer.strip().lower() != "yes":
-        log_info("Reset cancelled.")
-        pause()
-        return
+        if not ARGS.non_interactive:
+            console.print(Text(f'{PAD}Type "yes" to confirm Complete Reset and press Enter: ', style="bold yellow"), end="", no_wrap=True)
+            sys.stdout.flush()
+            try:
+                answer = readline_with_esc()
+            except UserCancelled:
+                console.print()
+                log_info("Reset cancelled.")
+                pause()
+                return
+            console.print()
+
+            if answer.strip().lower() != "yes":
+                log_info("Reset cancelled.")
+                pause()
+                return
 
     # ── Phase 1: Uninstall ────────────────────────────────────
     console.print()
@@ -2442,29 +3845,63 @@ def option_reset():
     console.print(Text(f"{PAD}[ Phase 2 / 2 ]  Installing BadWords from scratch...", style="bold cyan"), no_wrap=True)
     console.print()
 
-    # Let the user pick a new install path (or keep the default which is the previous install location)
-    console.print(Text(f"{PAD}Install path: {reinstall_default}", style="dim"), no_wrap=True)
-    console.print(Text(f"{PAD}Press Enter to use this path, or type a custom path: ", style="cyan"), end="", no_wrap=True)
-    sys.stdout.flush()
-    try:
-        custom_path = readline_with_esc()
-    except UserCancelled:
-        custom_path = ""
+    if not (preset_path or (ARGS.non_interactive and ARGS.install)):
+        # Let the user pick a new install path (or keep the default which is the previous install location)
+        console.print(Text(f"{PAD}Install path: {reinstall_default}", style="dim"), no_wrap=True)
+        console.print(Text(f"{PAD}Press Enter to use this path, or type a custom path: ", style="cyan"), end="", no_wrap=True)
+        sys.stdout.flush()
+        try:
+            custom_path = readline_with_esc()
+        except UserCancelled:
+            custom_path = ""
 
-    if custom_path.strip():
-        custom_path = os.path.expanduser(custom_path.strip())
-        if not custom_path.endswith(APP_NAME):
-            custom_path = os.path.join(custom_path.rstrip("/\\"), APP_NAME)
-        log_info(f"New install path: {custom_path}")
-    else:
-        custom_path = reinstall_default
-        log_info(f"Using path: {custom_path}")
+        if custom_path.strip():
+            custom_path = os.path.expanduser(custom_path.strip())
+            if not custom_path.endswith(APP_NAME):
+                custom_path = os.path.join(custom_path.rstrip("/\\"), APP_NAME)
+            log_info(f"New install path: {custom_path}")
+        else:
+            custom_path = reinstall_default
+            log_info(f"Using path: {custom_path}")
 
     option_install_update(preset_path=custom_path, title="── Complete Reset ──", title_color="yellow")
 
 
 # ── Main loop ─────────────────────────────────────────────────
 def main():
+    if os.name == 'nt':
+        # Proactively clear Zone.Identifier / SmartScreen block from any adjacent binaries
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_dir = os.path.dirname(script_dir)
+        for cand in [
+            os.path.join(script_dir, "windows", "BadWords.exe"),
+            os.path.join(repo_dir, "BadWords.exe"),
+            os.path.join(repo_dir, "badwords-setup-windows.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "BadWords-bootstrap", "BadWords-Setup.exe"),
+        ]:
+            if os.path.isfile(cand):
+                _unblock_file_windows(cand)
+
+    if ARGS.uninstall:
+        if ARGS.non_interactive:
+            target = ARGS.install or _default_install_dir()
+            _do_uninstall(_resolve_script_dirs(), [target])
+        else:
+            option_uninstall()
+        sys.exit(0)
+    elif ARGS.repair:
+        target = ARGS.install or _default_install_dir()
+        option_repair(preset_path=target)
+        sys.exit(0)
+    elif ARGS.reset:
+        target = ARGS.install or _default_install_dir()
+        option_reset(preset_path=target)
+        sys.exit(0)
+    elif ARGS.install:
+        option_install_update(preset_path=ARGS.install)
+        sys.exit(0)
+
     # One-time setup: resize + title + lock scrollbar + Quick Edit
     _resize()
     _set_title("BadWords Setup")
@@ -2480,7 +3917,41 @@ def main():
             elif choice == "1":
                 option_install_update()
             elif choice.lower() == "d":
-                option_install_update(force_main=True)
+                repo_root = ARGS.local_repo if ARGS.local_repo else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                local_main = os.path.join(repo_root, "src", "main.py")
+                if os.path.isfile(local_main):
+                    option_install_update(is_dev=True)
+                else:
+                    header()
+                    console.print(Text(f"{PAD}── Developer Installation (Select Git Branch) ──", style="bold magenta"), no_wrap=True)
+                    console.print()
+                    sp_b = Spinner("Fetching branch list from repository").start()
+                    branches = fetch_git_branches()
+                    sp_b.done(ok=True)
+
+                    console.print(Text(f"{PAD}Available branches:", style="bold white"), no_wrap=True)
+                    console.print()
+                    for idx, br in enumerate(branches, 1):
+                        console.print(Text(f"{PAD}[{idx}] {br}", style="cyan"), no_wrap=True)
+                    console.print()
+                    console.print(Text(f"{PAD}[0] Cancel and return to menu", style="white"), no_wrap=True)
+                    console.print()
+                    console.print(Text(f"{PAD}Select branch [1-{len(branches)}, 0 to cancel]: ", style="green"), end="", no_wrap=True)
+                    sys.stdout.flush()
+                    try:
+                        br_input = readline_with_esc().strip()
+                        if not br_input or br_input in ("0", "ESC"):
+                            continue
+                        br_idx = int(br_input) - 1
+                        if 0 <= br_idx < len(branches):
+                            chosen_branch = branches[br_idx]
+                            br_url = f"https://github.com/veritus-git/BadWords/archive/refs/heads/{chosen_branch}.zip"
+                            option_install_update(is_dev=True, branch_url=br_url, branch_name=chosen_branch)
+                        else:
+                            console.print(Text(f"{PAD}Invalid choice. Returning to menu.", style="red"), no_wrap=True)
+                            time.sleep(1)
+                    except (ValueError, UserCancelled):
+                        continue
             elif choice == "2":
                 option_repair()
             elif choice == "3":

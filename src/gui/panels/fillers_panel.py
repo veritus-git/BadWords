@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+"""
+MODULE: fillers_panel.py
+ROLE: GUI Activity Panel
+DESCRIPTION:
+Sidebar activity panel for inline filler words editing, word count, and automatic marking.
+"""
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QFrame
+)
+import config
+from gui.widgets.labels import QLabel
+from gui.widgets.buttons import QPushButton, ToggleSwitch, ReloadButton
+from .script_panel import wrap_activity_panel, create_panel_header
+
+
+def build_fillers_panel(win) -> QFrame:
+    """Build the Filler Words activity panel and bind widgets to main window."""
+    p_fillers = QWidget()
+    l_fillers = QVBoxLayout(p_fillers)
+    l_fillers.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+    l_fillers.setSpacing(config.S(10))
+
+    header = create_panel_header(
+        win,
+        "panel_fillers_title",
+        "panel_fillers_desc",
+        "Filler Words",
+        "Manage the list of vocal pauses and hesitations (e.g. 'umms', 'uhs') to detect and eliminate them automatically.",
+        show_divider=False
+    )
+    l_fillers.addWidget(header)
+
+    prefs = win.engine.load_preferences() or {}
+    fillers = prefs.get('filler_words', config.DEFAULT_BAD_WORDS)
+    
+    win.txt_fillers = QTextEdit()
+    win.txt_fillers.setAcceptRichText(False)
+    win.txt_fillers.setMinimumHeight(config.S(110))
+    win.txt_fillers.setStyleSheet(f"""
+        background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;
+        border-radius: {config.S(4)}px; padding: {config.S(4)}px;
+        font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt;
+    """)
+    win.txt_fillers.setText(", ".join(fillers))
+    l_fillers.addWidget(win.txt_fillers)
+    
+    filler_tools_layout = QHBoxLayout()
+    filler_tools_layout.setContentsMargins(0, config.S(2), 0, 0)
+    
+    win.lbl_filler_count = QLabel(win.txt("lbl_words"))
+    win.lbl_filler_count.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt;")
+    filler_tools_layout.addWidget(win.lbl_filler_count)
+    filler_tools_layout.addStretch()
+    
+    win.btn_reset_fillers = ReloadButton(size=26)
+    win.btn_reset_fillers.setToolTip(win.txt("tt_revert_to_default"))
+    win.btn_reset_fillers.clicked.connect(win._on_reset_inline_fillers)
+    filler_tools_layout.addWidget(win.btn_reset_fillers)
+    
+    win.btn_save_fillers = QPushButton(win.txt("btn_save"))
+    win.btn_save_fillers.setCursor(Qt.PointingHandCursor)
+    win.btn_save_fillers.setStyleSheet(
+        f"background-color: {config.BTN_GHOST_BG}; color: {config.FG_COLOR}; border-radius: {config.S(4)}px; font-weight: bold; font-size: {config.FS(9.5)}pt; padding: {config.S(4)}px {config.S(10)}px;"
+    )
+    win.btn_save_fillers.clicked.connect(win._on_save_inline_fillers)
+    filler_tools_layout.addWidget(win.btn_save_fillers)
+    l_fillers.addLayout(filler_tools_layout)
+    
+    win.txt_fillers.textChanged.connect(win._on_fillers_text_changed)
+    win.txt_fillers.document().documentLayout().documentSizeChanged.connect(lambda _sz: win._on_fillers_text_changed())
+    win._on_fillers_text_changed()
+    
+    row_auto_filler = QHBoxLayout()
+    row_auto_filler.addWidget(QLabel(win.txt("lbl_mark_filler_words_automat")))
+    row_auto_filler.addStretch()
+    info_auto_filler = win._create_info_icon("tt_mark_filler_words")
+    row_auto_filler.addWidget(info_auto_filler)
+    row_auto_filler.addSpacing(config.S(6))
+    win.tgl_auto_filler = ToggleSwitch()
+    win.tgl_auto_filler.setChecked(True)
+    row_auto_filler.addWidget(win.tgl_auto_filler)
+    l_fillers.addLayout(row_auto_filler)
+    
+    l_fillers.addStretch(1)
+    
+    return wrap_activity_panel(p_fillers)

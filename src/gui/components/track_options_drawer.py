@@ -1,0 +1,626 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#Copyright (c) 2026 Szymon Wolarz
+#Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+"""
+MODULE: track_options_drawer.py
+ROLE: GUI Component
+DESCRIPTION:
+Slide-out side panel for individual track options.
+"""
+
+
+from PySide6.QtWidgets import (
+    QLabel, QWidget, QScrollArea, QHBoxLayout, QFrame, QGraphicsOpacityEffect
+)
+from PySide6.QtCore import (
+    Qt,
+    QAbstractAnimation,
+    Property,
+    QVariantAnimation,
+    QEasingCurve
+)
+
+import config
+
+from gui.widgets.buttons import (
+    ToggleSwitch, TrackSquareCheckbox
+)
+from gui.widgets.labels import QLabel, MarqueeLabel
+from gui.widgets.layouts import FlowLayout
+# -------------------------------
+
+
+
+class _FlowListWidget(QWidget):
+    def resizeEvent(self, event):
+        if event is not None:
+            super().resizeEvent(event)
+        if getattr(self, '_bypass_min_height', False):
+            return
+        if self.layout() and hasattr(self.layout(), 'heightForWidth'):
+            h = self.layout().heightForWidth(self.width())
+            if self.minimumHeight() != h:
+                self.setMinimumHeight(h)
+
+
+class TrackOptionsDrawer(QWidget):
+    def __init__(self, parent_gui, engine, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QFrame
+        from PySide6.QtCore import Qt
+
+        self.parent_gui = parent_gui
+        self.engine = engine
+        self.is_expanded = False
+        self._anim = None
+        self._block_signals = False
+
+        self.setMaximumHeight(0)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setObjectName("TrackOptionsScroll")
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea#TrackOptionsScroll {{
+                background-color: #0f2d1e;
+                border: 1px solid #11703c;
+                border-top: none;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 0px;
+                border-bottom-left-radius: {config.S(6)}px;
+                border-bottom-right-radius: {config.S(6)}px;
+            }}
+            QScrollArea#TrackOptionsScroll > QWidget > QWidget {{
+                background: transparent;
+            }}
+        """)
+        main_layout.addWidget(self.scroll_area, 1)
+
+        self.inner_frame = QFrame()
+        self.inner_frame.setObjectName("TrackOptionsInnerFrame")
+        self.inner_frame.setStyleSheet("""
+            QFrame#TrackOptionsInnerFrame {
+                background: transparent;
+                border: none;
+            }
+        """)
+        self.scroll_area.setWidget(self.inner_frame)
+        self.scroll_area.setAlignment(Qt.AlignTop)
+
+        inner_layout = QVBoxLayout(self.inner_frame)
+        inner_layout.setAlignment(Qt.AlignTop)
+        inner_layout.setContentsMargins(config.S(10), config.S(6), config.S(10), config.S(8))
+        inner_layout.setSpacing(config.S(4))
+
+        def make_section_header(title_text):
+            w = QWidget()
+            lay = QHBoxLayout(w)
+            lay.setContentsMargins(0, config.S(4), 0, config.S(2))
+            lay.setSpacing(config.S(6))
+            lbl = QLabel(title_text)
+            lbl.setStyleSheet(f"font-size: {config.FS(8.5)}pt; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setStyleSheet("background-color: #1a5433; max-height: 1px; border: none;")
+            lay.addWidget(lbl)
+            lay.addWidget(line, 1)
+            return w
+
+        # Audio section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_audio_tracks')))
+
+        self.tgl_a_all = ToggleSwitch()
+        self.tgl_a_tr = ToggleSwitch()
+        self.tgl_a_cust = ToggleSwitch()
+
+        def make_toggle_row(lbl_text, tgl, info_tooltip_key=None):
+            w = QWidget()
+            w.setFixedHeight(config.S(26))
+            l = QHBoxLayout(w)
+            l.setContentsMargins(config.S(2), 0, config.S(2), 0)
+            l.setSpacing(config.S(6))
+            lbl = MarqueeLabel(lbl_text)
+            l.addWidget(lbl, 1)
+            if info_tooltip_key and hasattr(self.parent_gui, '_create_info_icon'):
+                info_icon = self.parent_gui._create_info_icon(info_tooltip_key)
+                l.addWidget(info_icon)
+                w._info_icon = info_icon
+            l.addWidget(tgl)
+            w._lbl = lbl
+            w._tgl = tgl
+            return w
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_a_all))
+
+        self.w_a_tr = make_toggle_row(self.parent_gui.txt("dlg_transcription_tracks"), self.tgl_a_tr)
+        inner_layout.addWidget(self.w_a_tr)
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_a_cust))
+
+        # Query project audio & video tracks
+        audio_tracks, video_tracks = self._get_project_tracks()
+
+        self.w_a_cust_list = _FlowListWidget()
+        self.w_a_cust_list.setMaximumHeight(0)
+        self.w_a_cust_list.setStyleSheet("background: transparent; border: none;")
+        
+        self.grid_a = FlowLayout(self.w_a_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
+        self.a_track_checkboxes = {}
+
+        for i, (idx, tname) in enumerate(audio_tracks):
+            cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
+            cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
+            self.grid_a.addWidget(cb)
+            self.a_track_checkboxes[idx] = cb
+        inner_layout.addWidget(self.w_a_cust_list)
+
+        inner_layout.addSpacing(config.S(2))
+
+        # Video section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_video_tracks')))
+
+        self.tgl_v_all = ToggleSwitch()
+        self.tgl_v_none = ToggleSwitch()
+        self.tgl_v_cust = ToggleSwitch()
+
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_all_tracks"), self.tgl_v_all))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_no_tracks"), self.tgl_v_none))
+        inner_layout.addWidget(make_toggle_row(self.parent_gui.txt("dlg_custom_selection"), self.tgl_v_cust))
+
+        self.w_v_cust_list = _FlowListWidget()
+        self.w_v_cust_list.setMaximumHeight(0)
+        self.w_v_cust_list.setStyleSheet("background: transparent; border: none;")
+        
+        self.grid_v = FlowLayout(self.w_v_cust_list, margin=config.S(4), hSpacing=config.S(14), vSpacing=config.S(4))
+        self.v_track_checkboxes = {}
+
+        for i, (idx, tname) in enumerate(video_tracks):
+            cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
+            cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
+            self.grid_v.addWidget(cb)
+            self.v_track_checkboxes[idx] = cb
+        inner_layout.addWidget(self.w_v_cust_list)
+
+        inner_layout.addSpacing(config.S(2))
+
+        # Clip linking section header
+        inner_layout.addWidget(make_section_header(self.parent_gui.txt('dlg_clip_linking')))
+
+        self.tgl_link_av = ToggleSwitch()
+        self.tgl_link_all = ToggleSwitch()
+
+        self.w_link_av = make_toggle_row(self.parent_gui.txt("dlg_link_av"), self.tgl_link_av, "tt_link_av_clips")
+        self.w_link_all = make_toggle_row(self.parent_gui.txt("dlg_link_all"), self.tgl_link_all, "tt_link_all_cut_tracks")
+
+        self.w_linking_box = QWidget()
+        l_link_box = QVBoxLayout(self.w_linking_box)
+        l_link_box.setContentsMargins(0, 0, 0, 0)
+        l_link_box.setSpacing(config.S(2))
+        l_link_box.addWidget(self.w_link_av)
+        l_link_box.addWidget(self.w_link_all)
+        inner_layout.addWidget(self.w_linking_box)
+
+        self._eff_drawer_linking = QGraphicsOpacityEffect(self.w_linking_box)
+        self.w_linking_box.setGraphicsEffect(self._eff_drawer_linking)
+
+        self._drawer_linking_anim = QVariantAnimation(self)
+        self._drawer_linking_anim.setDuration(250)
+        self._drawer_linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._drawer_linking_anim.valueChanged.connect(lambda val: self._eff_drawer_linking.setOpacity(val))
+
+        self.tgl_a_all.toggled.connect(lambda c: self._update_a_radios('all', c))
+        self.tgl_a_tr.toggled.connect(lambda c: self._update_a_radios('tr', c))
+        self.tgl_a_cust.toggled.connect(lambda c: self._update_a_radios('cust', c))
+
+        self.tgl_v_all.toggled.connect(lambda c: self._update_v_radios('all', c))
+        self.tgl_v_none.toggled.connect(lambda c: self._update_v_radios('none', c))
+        self.tgl_v_cust.toggled.connect(lambda c: self._update_v_radios('cust', c))
+
+        self.tgl_link_av.toggled.connect(lambda _: self.save_config())
+        self.tgl_link_all.toggled.connect(lambda _: self.save_config())
+
+        self.load_config()
+
+    def get_drawer_height(self) -> int:
+        return self.height()
+
+    def set_drawer_height(self, h: int):
+        self.setFixedHeight(h)
+
+    drawerHeight = Property(int, get_drawer_height, set_drawer_height)
+
+    def warmup(self):
+        """
+        Pre-polish, layout, and render the drawer offscreen once at startup.
+        This completely eliminates the frame 0 lag spike (270+ polish/layout events)
+        on the first expansion.
+        """
+        if getattr(self, '_warmed_up', False):
+            return
+        self._warmed_up = True
+        try:
+            prev_max = self.maximumHeight()
+            prev_min = self.minimumHeight()
+            self.inner_frame.layout().activate()
+            h = self.inner_frame.sizeHint().height() + 2
+            if h <= 2:
+                h = config.S(240)
+            self.setFixedHeight(h)
+            self.ensurePolished()
+            self.inner_frame.ensurePolished()
+            for child in self.findChildren(QWidget):
+                child.ensurePolished()
+            _ = self.grab()
+            self.setMinimumHeight(prev_min)
+            self.setMaximumHeight(prev_max)
+        except Exception:
+            pass
+
+    def sizeHint(self):
+        from PySide6.QtCore import QSize
+        if getattr(self, '_is_animating', False):
+            return QSize(self.width(), self.height())
+        if not self.is_expanded:
+            return QSize(self.width(), 0)
+        return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
+
+    def minimumSizeHint(self):
+        from PySide6.QtCore import QSize
+        if getattr(self, '_is_animating', False):
+            return QSize(self.width(), self.height())
+        if not self.is_expanded:
+            return QSize(self.width(), 0)
+        return QSize(self.width(), self.inner_frame.sizeHint().height() + 2)
+
+    def toggle_expand(self):
+        self.is_expanded = not self.is_expanded
+        if self.is_expanded:
+            self.refresh_tracks()
+        self._animate_to_size()
+
+    def _animate_to_size(self):
+        if getattr(self, '_block_signals', False):
+            return
+            
+        from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
+
+        a_cust_visible = self.tgl_a_cust.isChecked()
+        v_cust_visible = self.tgl_v_cust.isChecked()
+
+        a_cust_start = self.w_a_cust_list.height()
+        v_cust_start = self.w_v_cust_list.height()
+        drawer_start = self.height()
+
+        a_cust_target = self.w_a_cust_list.layout().sizeHint().height() if a_cust_visible else 0
+        v_cust_target = self.w_v_cust_list.layout().sizeHint().height() if v_cust_visible else 0
+
+        # Temporarily apply target heights to measure drawer target
+        self.w_a_cust_list._bypass_min_height = True
+        self.w_v_cust_list._bypass_min_height = True
+        self.w_a_cust_list.setMinimumHeight(0)
+        self.w_v_cust_list.setMinimumHeight(0)
+        
+        self.w_a_cust_list.setMaximumHeight(a_cust_target)
+        self.w_v_cust_list.setMaximumHeight(v_cust_target)
+        self.inner_frame.layout().activate()
+        drawer_target = self.inner_frame.sizeHint().height() + 2 if self.is_expanded else 0
+        
+        # Restore starting heights
+        self.w_a_cust_list.setMaximumHeight(a_cust_start)
+        self.w_v_cust_list.setMaximumHeight(v_cust_start)
+
+        if getattr(self, '_anim_group', None) and self._anim_group.state() == QAbstractAnimation.Running:
+            self._anim_group.stop()
+
+        self._anim_group = QParallelAnimationGroup(self)
+        
+        def _update_overlay():
+            if hasattr(self.parent_gui, 'p_main') and self.parent_gui.p_main:
+                self.parent_gui.p_main.resizeEvent(None)
+
+        duration = 350
+        primary_anim = None
+
+        if drawer_start != drawer_target:
+            anim_drawer = QPropertyAnimation(self, b"drawerHeight", self)
+            anim_drawer.setDuration(duration)
+            anim_drawer.setStartValue(drawer_start)
+            anim_drawer.setEndValue(drawer_target)
+            anim_drawer.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_drawer)
+            primary_anim = anim_drawer
+
+        if a_cust_start != a_cust_target:
+            anim_a_max = QPropertyAnimation(self.w_a_cust_list, b"maximumHeight", self)
+            anim_a_max.setDuration(duration)
+            anim_a_max.setStartValue(a_cust_start)
+            anim_a_max.setEndValue(a_cust_target)
+            anim_a_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_a_max)
+            if not primary_anim:
+                primary_anim = anim_a_max
+
+        if v_cust_start != v_cust_target:
+            anim_v_max = QPropertyAnimation(self.w_v_cust_list, b"maximumHeight", self)
+            anim_v_max.setDuration(duration)
+            anim_v_max.setStartValue(v_cust_start)
+            anim_v_max.setEndValue(v_cust_target)
+            anim_v_max.setEasingCurve(QEasingCurve.InOutCubic)
+            self._anim_group.addAnimation(anim_v_max)
+            if not primary_anim:
+                primary_anim = anim_v_max
+
+        if primary_anim:
+            primary_anim.valueChanged.connect(lambda _: _update_overlay())
+
+        self._is_animating = True
+        self._anim_group.start()
+        
+        def _on_finish():
+            self._is_animating = False
+            if self.is_expanded:
+                self.setFixedHeight(drawer_target)
+            else:
+                self.setFixedHeight(0)
+            if a_cust_visible:
+                self.w_a_cust_list._bypass_min_height = False
+                self.w_a_cust_list.setMaximumHeight(16777215)
+                self.w_a_cust_list.resizeEvent(None)
+            else:
+                self.w_a_cust_list.setMaximumHeight(0)
+                self.w_a_cust_list.setMinimumHeight(0)
+            if v_cust_visible:
+                self.w_v_cust_list._bypass_min_height = False
+                self.w_v_cust_list.setMaximumHeight(16777215)
+                self.w_v_cust_list.resizeEvent(None)
+            else:
+                self.w_v_cust_list.setMaximumHeight(0)
+                self.w_v_cust_list.setMinimumHeight(0)
+            _update_overlay()
+            
+        self._anim_group.finished.connect(_on_finish)
+
+    def load_config(self):
+        self._block_signals = True
+        try:
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            conf = src.get('assembly_track_config') or {}
+            amode = conf.get('audio_mode', 'all')
+            vmode = conf.get('video_mode', 'all')
+
+            self.tgl_a_all.setChecked(amode == 'all', animated=False)
+            self.tgl_a_tr.setChecked(amode == 'tr', animated=False)
+            self.tgl_a_cust.setChecked(amode == 'cust', animated=False)
+
+            self.tgl_v_all.setChecked(vmode == 'all', animated=False)
+            self.tgl_v_none.setChecked(vmode == 'none', animated=False)
+            self.tgl_v_cust.setChecked(vmode == 'cust', animated=False)
+
+            saved_a_custom = conf.get('audio_custom', [])
+            for i, cb in self.a_track_checkboxes.items():
+                chk = (i in saved_a_custom) if saved_a_custom else True
+                if cb.isChecked() != chk:
+                    cb.setChecked(chk)
+
+            saved_v_custom = conf.get('video_custom', [])
+            for i, cb in self.v_track_checkboxes.items():
+                chk = (i in saved_v_custom) if saved_v_custom else True
+                if cb.isChecked() != chk:
+                    cb.setChecked(chk)
+
+            if amode == 'cust':
+                self.w_a_cust_list.setMaximumHeight(16777215)
+            else:
+                self.w_a_cust_list.setMaximumHeight(0)
+                
+            if vmode == 'cust':
+                self.w_v_cust_list.setMaximumHeight(16777215)
+            else:
+                self.w_v_cust_list.setMaximumHeight(0)
+
+            prefs = self.engine.load_preferences() if self.engine else {}
+            link_av = prefs.get('link_av_clips', True)
+            link_all = prefs.get('link_all_cut_tracks', False)
+            self.tgl_link_av.setChecked(bool(link_av), animated=False)
+            self.tgl_link_all.setChecked(bool(link_all), animated=False)
+
+            # In Resolve mode, linking requires XML assembly
+            force_xml = bool(prefs.get('force_xml_assembly', False))
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            is_file_source = (src.get('source_type') == 'file')
+            linking_enabled = is_file_source or force_xml
+
+            if hasattr(self, 'tgl_link_av'):
+                self.tgl_link_av.set_blocked(not linking_enabled)
+            if hasattr(self, 'tgl_link_all'):
+                self.tgl_link_all.set_blocked(not linking_enabled)
+            if hasattr(self, 'w_linking_box'):
+                self.w_linking_box.setAttribute(Qt.WA_TransparentForMouseEvents, not linking_enabled)
+
+            tt = "" if linking_enabled else self.parent_gui.txt("tt_linking_requires_xml")
+            if hasattr(self, 'w_link_av'):
+                self.w_link_av.setToolTip(tt)
+            if hasattr(self, 'w_link_all'):
+                self.w_link_all.setToolTip(tt)
+
+            target_op = 1.0 if linking_enabled else 0.35
+            if hasattr(self, '_drawer_linking_anim') and hasattr(self, '_eff_drawer_linking'):
+                if self.isVisible():
+                    self._drawer_linking_anim.stop()
+                    self._drawer_linking_anim.setStartValue(self._eff_drawer_linking.opacity())
+                    self._drawer_linking_anim.setEndValue(target_op)
+                    self._drawer_linking_anim.start()
+                else:
+                    self._drawer_linking_anim.stop()
+                    self._eff_drawer_linking.setOpacity(target_op)
+        finally:
+            self._block_signals = False
+
+    def save_config(self):
+        if getattr(self, '_block_signals', False):
+            return
+        amode = 'all'
+        if self.tgl_a_tr.isChecked(): amode = 'tr'
+        elif self.tgl_a_cust.isChecked(): amode = 'cust'
+
+        vmode = 'all'
+        if self.tgl_v_none.isChecked(): vmode = 'none'
+        elif self.tgl_v_cust.isChecked(): vmode = 'cust'
+
+        a_custom = [i for i, cb in getattr(self, 'a_track_checkboxes', {}).items() if cb.isChecked()]
+        v_custom = [i for i, cb in getattr(self, 'v_track_checkboxes', {}).items() if cb.isChecked()]
+
+        res = {
+            'audio_mode': amode,
+            'audio_custom': a_custom,
+            'video_mode': vmode,
+            'video_custom': v_custom
+        }
+        src = getattr(self.parent_gui, '_transcription_source', None)
+        if isinstance(src, dict):
+            src['assembly_track_config'] = res
+
+        if self.engine:
+            prefs = self.engine.load_preferences() or {}
+            prefs['link_av_clips'] = bool(self.tgl_link_av.isChecked())
+            prefs['link_all_cut_tracks'] = bool(self.tgl_link_all.isChecked())
+            self.engine.save_preferences(prefs)
+
+    def _get_project_tracks(self):
+        audio_tracks = []
+        video_tracks = []
+        tracks_loaded = False
+
+        rh = getattr(self.engine, 'resolve_handler', None)
+        if rh:
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            tl_name = src.get('timeline_name')
+            try:
+                a_tr, v_tr = rh.get_timeline_tracks(tl_name)
+                if a_tr or v_tr:
+                    audio_tracks = a_tr
+                    video_tracks = v_tr
+                    tracks_loaded = True
+            except Exception:
+                pass
+
+        if not tracks_loaded:
+            max_a = 4
+            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+            tr_indices = src.get('track_indices', [])
+            if tr_indices:
+                max_a = max(max_a, max(tr_indices))
+            for i in range(1, max_a + 1):
+                audio_tracks.append((i, f"Audio {i}"))
+
+            for i in range(1, 5):
+                video_tracks.append((i, f"Video {i}"))
+
+        return audio_tracks, video_tracks
+
+    def refresh_tracks(self):
+        """Re-query timeline audio/video tracks and dynamically rebuild checkboxes."""
+        audio_tracks, video_tracks = self._get_project_tracks()
+
+
+        # Rebuild Audio checkboxes if changed
+        current_a_keys = list(self.a_track_checkboxes.keys())
+        new_a_keys = [idx for idx, _ in audio_tracks]
+        if current_a_keys != new_a_keys and hasattr(self, 'grid_a'):
+            for cb in list(self.a_track_checkboxes.values()):
+                self.grid_a.removeWidget(cb)
+                cb.deleteLater()
+            self.a_track_checkboxes.clear()
+
+            for idx, tname in audio_tracks:
+                cb = TrackSquareCheckbox(f"A{idx}", is_checked=True)
+                cb.toggled.connect(lambda chk, item_idx=idx: self._on_a_cb_toggled(item_idx, chk))
+                self.grid_a.addWidget(cb)
+                self.a_track_checkboxes[idx] = cb
+
+        # Rebuild Video checkboxes if changed
+        current_v_keys = list(self.v_track_checkboxes.keys())
+        new_v_keys = [idx for idx, _ in video_tracks]
+        if current_v_keys != new_v_keys and hasattr(self, 'grid_v'):
+            for cb in list(self.v_track_checkboxes.values()):
+                self.grid_v.removeWidget(cb)
+                cb.deleteLater()
+            self.v_track_checkboxes.clear()
+
+            for idx, tname in video_tracks:
+                cb = TrackSquareCheckbox(f"V{idx}", is_checked=True)
+                cb.toggled.connect(lambda chk, item_idx=idx: self._on_v_cb_toggled(item_idx, chk))
+                self.grid_v.addWidget(cb)
+                self.v_track_checkboxes[idx] = cb
+
+        self.load_config()
+
+    def _update_a_radios(self, src, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            if not (self.tgl_a_all.isChecked() or self.tgl_a_tr.isChecked() or self.tgl_a_cust.isChecked()):
+                self.tgl_a_all.setChecked(True)
+                return
+        else:
+            self._block_signals = True
+            try:
+                if src != 'all': self.tgl_a_all.setChecked(False)
+                if src != 'tr': self.tgl_a_tr.setChecked(False)
+                if src != 'cust': self.tgl_a_cust.setChecked(False)
+            finally:
+                self._block_signals = False
+
+        self._animate_to_size()
+        self.save_config()
+
+    def _update_v_radios(self, src, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            if not (self.tgl_v_all.isChecked() or self.tgl_v_none.isChecked() or self.tgl_v_cust.isChecked()):
+                self.tgl_v_all.setChecked(True)
+                return
+        else:
+            self._block_signals = True
+            try:
+                if src != 'all': self.tgl_v_all.setChecked(False)
+                if src != 'none': self.tgl_v_none.setChecked(False)
+                if src != 'cust': self.tgl_v_cust.setChecked(False)
+            finally:
+                self._block_signals = False
+
+        self._animate_to_size()
+        self.save_config()
+
+    def _on_a_cb_toggled(self, idx, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            any_checked = any(cb.isChecked() for cb in self.a_track_checkboxes.values())
+            if not any_checked:
+                self.a_track_checkboxes[idx].setChecked(True)
+                return
+        self.save_config()
+
+    def _on_v_cb_toggled(self, idx, checked):
+        if getattr(self, '_block_signals', False):
+            return
+        if not checked:
+            any_checked = any(cb.isChecked() for cb in self.v_track_checkboxes.values())
+            if not any_checked:
+                self.v_track_checkboxes[idx].setChecked(True)
+                return
+        self.save_config()
+
+

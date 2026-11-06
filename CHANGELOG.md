@@ -3,6 +3,47 @@
 All notable changes to the **BadWords** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [4.0.0] - 2026-11-06
+### Added
+- **Standalone Rough Cut Workstation**: Complete independence from DaVinci Resolve — open video or audio files directly from disk with a multi-file queue and drop zone.
+- **Multi-Format Timeline Export**: Direct sequence export into Final Cut Pro 7 XML (`.xml`), Final Cut Pro XML (`.fcpxml`), OpenTimelineIO (`.otio`), and CMX 3600 EDL (`.edl`).
+- **Background Video Preview Proxies**: Lightweight 360p video proxy generation in background for ultra-smooth scrub and playback of heavy 4K/8K media.
+- **Marquee Box Selection**: Desktop-style click-and-drag rectangular text selection in the transcript canvas to highlight and mark dialogue in bulk.
+- **Dual Mouse Marking Modes**: Toggle between Marquee Box Selection and Brush Painting, with freely configurable Left and Right mouse button bindings.
+- **Live Cut Strikethrough Preview**: Continuous visual strikethrough in transcript text showing exactly what will be removed upon assembly.
+- **Advanced Silence Tuning**: Dedicated Silence Detection panel with independent Cut vs. Mark toggles, decibel threshold (-60 dB to 0 dB), pauses to remove (%), min silence duration, min clip duration, and customizable keep-pause padding (default 0.10s) to prevent clipping syllables.
+- **Sub-5ms In-RAM Silence Recalculation**: Live recalculation of silence blocks directly from RAM waveform peaks, updating pause statistics and markers instantly without FFmpeg passes.
+- **Interactive Timeline Waveform Preview**: Bottom audio/video player with synchronized waveform rendering, progressive cut hatching, rounded clip notches, and playhead clamping.
+- **Real-Time Cut Skipping**: Dynamic audio skipping over cut/silence intervals during playback, enabling full acoustic preview of the rough cut before rendering.
+- **Apple Silicon Metal Acceleration**: Native GPU transcription via `mlx-whisper` on Apple Silicon Macs (M1-M5), achieving up to ~11x faster transcription than CPU.
+- **Chunked Live-Streaming Transcription**: Real-time token streaming with TopStatusIsland indicator and LLM-style token reveal.
+- **Dedicated Colors Sidebar Panel**: Active color palette legend with marker counts and one-click bulk removal.
+- **Modern Rust GUI Installer**: Sleek egui-based installer with dual animated progress bars, live pip output streaming, system registry integration, and fallback terminal setup.
+- **Native Standalone Launchers**: Single-binary executables for Windows (`BadWords.exe`), Linux (ELF), and macOS (Mach-O).
+- **Simplified Chinese (`zh`) UI Localization**: Expanded multi-language support to 11 fully localized languages.
+
+### Changed
+- **Default Timeline Assembly to FCP7 XML**: Shifted default assembly pipeline from `.drt` to FCP7 XML to permanently resolve DaVinci Resolve's clip unlinking bug and restore full compatibility with DaVinci Resolve Free 21.1+.
+- **DRT Assembly Preservation Option**: Maintained native `.drt` pipeline in Settings for DaVinci Resolve Studio (and Free < 21.1) users who require 100% preservation of Color grades, Fusion node graphs, and Fairlight FX.
+- **Modular Codebase Architecture**: Complete architectural split into clean packages (`gui/panels`, `gui/views`, `gui/dialogs`, `gui/widgets`, `handlers`, `engine`, `api`).
+- **Clustering & Timestamp Heuristics**: Refined Whisper clustering window to 22s and tuned inaudible token detection threshold to 0.67s.
+
+### Fixed
+- **PyAV 19 Breaking Change**: Resolved fatal `TypeError: open() got an unexpected keyword argument 'metadata_errors'` on fresh faster-whisper installs by injecting runtime compatibility shims and pinning `av<19`.
+- **Broadcast Wave (BWF) Timecode**: Conformed timecode offsets and sequence alignment across XML, EDL, and FCPXML exports.
+- **Audio Routing & Multi-Track**: Fixed media offline issues for discrete audio channels, preserved multi-track audio assignments, and corrected stereo pan routing.
+- **UI Responsiveness**: Implemented O(1) incremental layout streaming and dirty-rect painting to eliminate UI lag during multi-hour transcript handling.
+
+## [3.2.4] - 2026-07-31
+### Fixed
+- **Version Metadata**: Hotfixed application version metadata inconsistency in `config.py`.
+
+## [3.2.3] - 2026-07-31
+### Fixed
+- **Audio Cutting Engine**: Corrected positive offset handling for temporal speech boundary alignment and resolved silence overlap slicing.
+- **Audio Preview Word Synchronization**: Fixed word selection drift and added forced word highlight retention during audio preview seeking.
+- **WAV Assembly Resilience**: Clamped frame ranges in `WavAssemblyThread` and introduced safe PCM decoding via FFmpeg to prevent `wave.Error` crashes during assembly.
+
 ## [3.2.2] - 2026-07-30
 ### Added
 - **Advanced Color Assembly**: Extended the Assembly page logic, enabling users to dynamically select and cut any specific marker color.

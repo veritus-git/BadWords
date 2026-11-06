@@ -6,30 +6,9 @@
 
 """
 MODULE: algorithms.py
-ROLE: Tool Layer
+ROLE: Core Module
 DESCRIPTION:
-CORE LOGIC v6.7 (COVERAGE VALIDATION) - Script vs Transcript Alignment.
-Features:
-- ANALYZE (COMPARE) v5.0 implementation
-- SuperNormalization (SuperCompare) for robust matching
-- Numeric Greed (Handling split numbers/IPs)
-- Advanced Retake Detection (Fuzzy Anchor + Lookahead with noise skip)
-- PATCH v5.8: NUMERIC PROTECTION & STRICT TRACE (Smart Grouping)
-- PATCH v5.9: INSERTION PRIORITY (Fixes "any settings" issue)
-- PATCH v6.0: ANCHOR SECURITY & DEEP YELLOW (Fixes Blue Ocean & Missing Sync)
-- PATCH v6.1: FUZZY SKIP & TAIL CHECK (Fuzzy Deletion Lookahead & Trailing Missing)
-- PATCH v6.3: YELLOW MISSING REPORT (Correctly captures internal & tail missing words)
-- PATCH v6.4: ANTI-FREEZE HYBRID RETURN (Fixes 'infinite loop' caused by tuple return)
-- PATCH v6.5: DISTANCE PENALTY (Fixes False Long-Distance Retake bugs)
-- PATCH v6.6: HEAD SYNC & PDF NORMALIZATION (Fixes script start offset and messy PDF whitespaces)
-- PATCH v6.7: COVERAGE VALIDATION (Ensures found words/retakes are not marked missing)
-- DEBUG MODE: RGB Pattern Injection
-- Handling of Deletions and Insertions
-- Document readers (PDF/DOCX)
-- [NEW] GUI Helpers (Logic extracted from presentation layer)
-- [NEW] HALLUCINATION SHIELD: Algorithms explicitly ignore _is_hallucination tags to preserve them.
-- [STAGE 9] HALLUCINATION SANITIZER: sanitize_hallucinations() strips model repetition loops before alignment.
-- [STAGE 9] RETAKE SENSITIVITY: Short-word (< 4 chars) retake anchors use lowered fuzzy threshold (0.40).
+Implements core alignment algorithms (Script vs Transcript Alignment).
 """
 
 import re
@@ -964,7 +943,6 @@ class CompareEngine(CompareEngineBase):
         if self.algo_settings and self.algo_settings.get('run_phase_g', False):
             self._phase_g_merge_combos(match_pairs)
 
-        end_time = time.time()
         result = AnalysisResult(self.words_data)
         result.missing_indices = self.missing_script_indices
         return result
@@ -1933,17 +1911,6 @@ def _script_lines_for_side_by_side(script_text):
         return [script_text.strip()] if script_text.strip() else []
         
     return final_rows
-
-
-def _tokens_from_script_lines(lines):
-    tokens = []
-    for row_idx, line in enumerate(lines):
-        for match in re.finditer(r"\S+", line):
-            raw = match.group(0)
-            clean = super_clean(raw)
-            if clean:
-                tokens.append({"text": raw, "clean": clean, "row": row_idx})
-    return tokens
 
 
 def _tokens_from_words_data(words_data):
