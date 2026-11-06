@@ -1,7 +1,7 @@
 # BadWords - Complete User Guide & Manual
 
 > [!WARNING]
-> ### ⚠️ Outdated Manual Notice (Written for Version 3.2.4)
+> ### Outdated Manual Notice (Written for Version 3.2.4)
 > **Please note:** This comprehensive user guide and manual was written for **BadWords 3.2.4**, which is an older release.
 > 
 > BadWords has since transitioned to **v4.0**, introducing major new workflows and structural overhauls (such as standalone media import with multi-format timeline export, marquee box selection, interactive timeline waveform preview with real-time cut skipping, live in-RAM silence tuning, and FCP7 XML timeline assembly).

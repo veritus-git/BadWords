@@ -1,5 +1,5 @@
 # <img src="repo/banner.svg" alt="BadWords Logo" height="52" valign="middle" />&nbsp;
-**Cleaner Timelines, Faster. Simpler Rough-Cutting for DaVinci Resolve.**
+**Cleaner Timelines, Faster. The AI Rough Cut Studio — Built for DaVinci Resolve & Beyond.**
 
 <br>
 
@@ -28,7 +28,7 @@
 <br>
 
 > [!IMPORTANT]
-> ### ⚠️ BadWords v4 — Active Development & Early Access Notice
+> ### BadWords v4 - Active Development & Early Access Notice
 >
 > **BadWords v4 is still actively in development** and does not yet have every single feature I originally envisioned. 
 > 
@@ -36,7 +36,7 @@
 > The previous release (v3.2.4) came out quite a while ago, and more critically, it became completely unusable on fresh installations due to a breaking upstream change in PyAV (which removed an internal argument used by Faster-Whisper). At the same time, an immense number of upgrades, optimizations, and new tools had already accumulated in my local development tree. Rather than holding everything back, I worked hard to bring this version into a solid, functional state so that everyone can actually use BadWords again.
 > 
 > **Because v4 is in active development, encountering bugs, quirks, or rough edges IS possible.**  
-> If you run into **ANY bug, crash, or unexpected behavior**, or if something feels **unintuitive, confusing, or awkward and uncomfortable to use** — **I warmly encourage and genuinely ASK you to reach out!** Please open an [Issue on GitHub](https://github.com/veritus-git/BadWords/issues) or email me directly at **[badwords.git@gmail.com](mailto:badwords.git@gmail.com)**.
+> If you run into **ANY bug, crash, or unexpected behavior**, or if something feels **unintuitive, confusing, or awkward and uncomfortable to use** - **I warmly encourage and genuinely ASK you to reach out!** Please open an [Issue on GitHub](https://github.com/veritus-git/BadWords/issues) or email me directly at **[badwords.git@gmail.com](mailto:badwords.git@gmail.com)**.
 > 
 > As an 18-year-old solo developer, it is impossible for me to test every conceivable hardware setup, operating system configuration, audio format, and DaVinci Resolve project edge-case on my own. Your bug reports, feedback, and suggestions are what allow me to fix issues quickly, add new features, and keep pushing BadWords forward. If anything at all is unclear about how to use the app, please don't hesitate to reach out!
 
@@ -44,11 +44,13 @@
 
 ## <img src="repo/icons/info.svg" alt="Info" width="30" height="30" valign="text-bottom"> What is it?
 
-**BadWords** is a plugin-app for DaVinci Resolve built for anyone dealing with dialogue-heavy footage (podcasts, talking heads, gameplays). Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your workflow into an easy text-editing experience.
+**BadWords** is an all-in-one **AI Rough Cut Studio** built for video creators, editors, and anyone dealing with dialogue-heavy footage (podcasts, talking heads, interviews, gameplays). While deeply integrated with DaVinci Resolve, BadWords is no longer just a plugin — it now operates as a complete, standalone rough-cutting workstation capable of exporting cut timelines to **any NLE** (DaVinci Resolve, Adobe Premiere Pro, Apple Final Cut Pro, and more).
 
-It uses local AI (Faster-Whisper) to give you a full transcript of your audio. You can then color-code mistakes, compare it against your original script, and with one click, send the processed timeline back to Resolve — complete with markers and cuts. 
+Instead of scrubbing through hours of audio on a timeline to find silences, retakes, and filler words, BadWords transforms your rough-cutting workflow into an easy, intuitive text-editing experience.
 
-BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the final polishing to you.
+It uses local AI (Faster-Whisper & Apple MLX) to give you an ultra-precise verbatim transcript of your dialogue. You can color-code mistakes, compare it against your original script, tune silence cuts live in real time, preview cuts before assembling, and with one click, send the processed timeline back to Resolve — complete with markers, linked clips, and cuts — or export an interchange timeline for your editor of choice.
+
+BadWords does **80% of the tedious work for you** (cutting tight silences, marking obvious bloopers), leaving only the creative polishing to you.
 
 ## <img src="repo/icons/sparkles.svg" alt="Key Features" width="30" height="30" valign="text-bottom"> Key Features
 
@@ -66,9 +68,9 @@ Here is what makes BadWords stand out from other editing tools:
 
 1. **Select & Transcribe:** Launch BadWords directly from Resolve (or run in Standalone Mode by picking media files from disk), select your audio tracks, and hit Analyze. The AI transcribes everything.
 2. **Edit like a Document:** Your audio opens as text in an IDE-inspired editor. You (or the algorithm) can paint words with different colors:
-   * **Red** — Filler words / obvious mistakes to remove
-   * **Blue** — Retakes / duplicates
-   * **Green** — Typos / close matches
+   * **Red** - Filler words / obvious mistakes to remove
+   * **Blue** - Retakes / duplicates
+   * **Green** - Typos / close matches
 3. **Compare to Script or Analyze Standalone:** If you have an original script, BadWords can automatically compare it against your transcript to highlight deviations. No script? No problem! Use the Standalone Analysis to automatically detect stutters, false starts, and retakes from the raw audio.
 4. **Assemble or Export Timeline:** Once you're done playing with the text, hit Assemble (or Export). BadWords automatically generates a **brand new, clean timeline** inside Resolve with all your cuts and color markers applied perfectly, or exports a universal XML/EDL timeline for your NLE of choice.
 
@@ -99,18 +101,18 @@ Version 4.0 is a monumental leap forward for BadWords. What started as an urgent
   * **Lightweight Background Proxies:** Automatically generates fast 360p video preview proxies so you can scrub and preview massive 4K/8K camera footage with zero lag.
   * **Conforming & Timecode Support:** Automatic sequence framerate conformity, Broadcast Wave (BWF) timecode conforming, multi-track audio preservation, and stereo downmix/pan routing.
 
-* **Revolutionized Text Marking: Marquee Box Selection & Brush Painting:**
+* **More intuitive and productive Text Marking: Marquee Box Selection & Brush Painting:**
   * **Desktop-Style Marquee Box Selection:** Selecting and marking dialogue is now faster and more intuitive than ever. Just click and drag your cursor over words (just like drawing a selection rectangle on your computer desktop!) to highlight and color-code chunks of words in bulk.
   * **Configurable Mouse Modes:** The classic word-by-word painting mode hasn't gone anywhere! You can seamlessly switch between **Marquee Selection** and **Brush Painting**, and freely configure which action is bound to the Left vs. Right Mouse Button in Settings.
   * **Live Strikethrough Cut Preview:** Words marked for deletion are now visually struck through with a continuous line directly in the transcript editor, giving you an immediate preview of what Assemble will remove.
 
-* **Advanced Silence Detection with Real-Time In-RAM Tuning (<5ms):**
+* **Advanced Silence Detection with Real-Time In-RAM Tuning:**
   The Silence Detection sidebar panel has been thoroughly redesigned to give you complete creative control over your pacing:
   * **Independent Controls:** Separate switches for **Detect and cut silence** vs **Detect and mark silence**.
-  * **Decibel Threshold & Duration Sliders:** Dedicated sliders for Silence Threshold (-60 dB to 0 dB), Min Silence Duration, and Min Clip Duration.
+  * **Decibel Threshold & Duration Sliders:** Dedicated sliders for Silence Threshold (-80 dB to -10 dB), Min Silence Duration, and Min Clip Duration.
   * **Pauses to Remove (%):** Choose to eliminate 100% of dead air or retain a custom percentage of pauses for a natural conversational flow.
   * **Keep Pause Padding (s):** Adds a customizable safety buffer (default: 0.10s) before and after speech to guarantee you never clip the start or trailing end of a word.
-  * **Instant In-RAM Recalculation:** Adjusting any slider recalculates silence cuts directly from RAM waveform peaks in **under 5ms** without re-running FFmpeg or freezing the interface. You get live pause counters and duration stats (`226 pauses marked - 3:37 (26%)`) updated in real time!
+  * **Instant In-RAM Recalculation:** Adjusting any slider recalculates silence cuts directly from RAM waveform peaks **fast** without re-running FFmpeg or freezing the interface. You get live pause counters and duration stats (`226 pauses marked - 3:37 (26%)`) updated in real time!
 
 * **Interactive Timeline Preview with Real-Time Cut Skipping:**
   The bottom audio/video player has been upgraded into a comprehensive Timeline Preview:
@@ -128,7 +130,7 @@ Version 4.0 is a monumental leap forward for BadWords. What started as an urgent
 * **Timeline Assembly Paradigm Shift: FCP7 XML Default + Native DRT Option:**
   * **FCP7 XML by Default:** BadWords now defaults to Final Cut Pro 7 XML assembly. This eliminates DaVinci Resolve's long-standing `.drt` limitation where cut audio and video tracks became unlinked. In XML, clips remain linked and synchronized out of the box!
   * **Full DaVinci Free 21.1+ Parity:** Completely circumvents Blackmagic's decision to block `.drt` script imports in DaVinci Resolve Free 21.1+.
-  * **Native `.drt` Still Supported:** DaVinci Resolve Studio users (and Free < 21.1) who want 100% preservation of Color grades, Fusion comps, Fairlight plugins, and OFX can re-enable native `.drt` assembly in Settings at any time.
+  * **Native `.drt` Still Supported:** DaVinci Resolve Studio users (and Free < 21.1) who want 100% preservation of Color grades, Fusion comps, Fairlight plugins, and OFX can re-enable native `.drt` assembly in Settings at any time. (losing linking feature)
 
 * **Chunked Live-Streaming Transcription & Zero-Lag UI:**
   * Watch your transcript materialize in real-time chunks with an animated TopStatusIsland indicator and token reveal.
