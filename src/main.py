@@ -138,6 +138,144 @@ if sys.platform.startswith('linux'):
     except Exception:
         pass
 
+# --- Auto-healing bootstrapper for legacy v3 upgrades and broken virtualenvs ---
+def _auto_heal_environment():
+    """
+    Self-healing bootstrapper:
+    Executes BEFORE PySide6/Qt imports.
+    If BadWords was updated via legacy v3 updater (which only upgraded faster-whisper/pypdf,
+    omitting PySide6, av<19, and CUDA 12 packages), detect the missing environment and repair it in-place.
+    """
+    # 1. Check Python version compatibility
+    if sys.version_info < (3, 10):
+        msg = (
+            f"BadWords 4.0+ requires Python 3.10-3.12 (detected: Python {sys.version_info.major}.{sys.version_info.minor}).\n\n"
+            f"Due to the new architecture, please download the official BadWords setup installer to upgrade:\n"
+            f"https://github.com/veritus-git/BadWords/releases"
+        )
+        try:
+            import webbrowser
+            webbrowser.open("https://github.com/veritus-git/BadWords/releases/latest")
+        except Exception:
+            pass
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(None, msg, "BadWords - Upgrade Notice", 0x40)
+            except Exception:
+                pass
+        elif sys.platform == "darwin":
+            try:
+                import subprocess
+                subprocess.run(["osascript", "-e", f'display dialog "{msg}" buttons {{"OK"}} default button "OK" with title "BadWords"'], capture_output=True)
+            except Exception:
+                pass
+        print(f"[BadWords] {msg}", file=sys.stderr)
+        sys.exit(0)
+
+    # 2. Clean up any legacy root files that shadow packages
+    cur_dir = os.path.dirname(os.path.abspath(__file__))
+    legacy_files = [
+        "gui.py", "config.py", "transcribe.py", "timeline.py",
+        "interface.py", "silence.py", "audio.py", "whisper_net.py",
+        "BadWords_Launcher.py", "Badwords.py", "BadWords (Windows).py",
+        "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (macOS).py"
+    ]
+    for lf in legacy_files:
+        p = os.path.join(cur_dir, lf)
+        if os.path.isfile(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+    # 3. Clean up stale bytecode cache for legacy files
+    pycache = os.path.join(cur_dir, "__pycache__")
+    if os.path.isdir(pycache):
+        try:
+            for f in os.listdir(pycache):
+                if any(f.startswith(x.replace(".py", "")) for x in legacy_files):
+                    try:
+                        os.remove(os.path.join(pycache, f))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 4. Check whether core packages (PySide6, av, faster_whisper, pypdf) are present
+    needs_repair = False
+    try:
+        import PySide6
+        import faster_whisper
+        import av
+        import pypdf
+    except ImportError:
+        needs_repair = True
+
+    if needs_repair and os.environ.get("_BW_AUTO_HEAL_ATTEMPTED") != "1":
+        print("[BadWords] Legacy v3 migration detected — missing required libraries. Starting auto-healing...", file=sys.stderr)
+        import subprocess
+
+        # Determine if NVIDIA GPU is present
+        has_nvidia = False
+        if sys.platform == "win32":
+            for p in [r"C:\Windows\System32\nvcuda.dll", r"C:\Windows\System32\nvapi64.dll"]:
+                if os.path.isfile(p):
+                    has_nvidia = True
+                    break
+        elif sys.platform.startswith("linux"):
+            import shutil
+            if shutil.which("lspci"):
+                try:
+                    r = subprocess.run(["lspci"], capture_output=True, text=True)
+                    if "nvidia" in r.stdout.lower():
+                        has_nvidia = True
+                except Exception:
+                    pass
+
+        # Determine target Python binary (prefer local venv if present)
+        cand_venv_py = None
+        if sys.platform == "win32":
+            for vp in [os.path.join(cur_dir, "venv", "Scripts", "python.exe"),
+                       os.path.join(os.path.dirname(cur_dir), "venv", "Scripts", "python.exe")]:
+                if os.path.isfile(vp):
+                    cand_venv_py = vp
+                    break
+        else:
+            for vp in [os.path.join(cur_dir, "venv", "bin", "python3"),
+                       os.path.join(cur_dir, "venv", "bin", "python"),
+                       os.path.join(os.path.dirname(cur_dir), "venv", "bin", "python3")]:
+                if os.path.isfile(vp):
+                    cand_venv_py = vp
+                    break
+
+        py_exec = cand_venv_py if cand_venv_py else sys.executable
+
+        packages = ["PySide6", "av<19", "faster-whisper", "pypdf"]
+        if has_nvidia:
+            packages.extend(["nvidia-cublas-cu12", "nvidia-cudnn-cu12"])
+
+        pip_cmd = [py_exec, "-m", "pip", "install", "--upgrade"]
+        if py_exec == sys.executable and sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+            pip_cmd.append("--break-system-packages")
+        pip_cmd.extend(packages)
+
+        try:
+            subprocess.run(pip_cmd, check=True)
+            print("[BadWords] Auto-healing complete! Restarting...", file=sys.stderr)
+            new_env = os.environ.copy()
+            new_env["_BW_AUTO_HEAL_ATTEMPTED"] = "1"
+            target_run_py = py_exec
+            if sys.platform == "win32":
+                subprocess.Popen([target_run_py] + sys.argv, env=new_env)
+                sys.exit(0)
+            else:
+                os.execve(target_run_py, [target_run_py] + sys.argv, new_env)
+        except Exception as e:
+            print(f"[BadWords] Auto-healing pip installation failed: {e}", file=sys.stderr)
+
+_auto_heal_environment()
+
 import time
 try:
     from PySide6.QtWidgets import QApplication, QMessageBox
