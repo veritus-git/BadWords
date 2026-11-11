@@ -930,7 +930,7 @@ impl eframe::App for InstallerApp {
         }
 
         // ── Wykrywanie przełączania klawiatura vs mysz ────────────────
-        if ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO || i.pointer.any_click()) {
+        if ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO || i.pointer.any_click() || i.raw_scroll_delta != egui::Vec2::ZERO) {
             self.keyboard_navigation_active = false;
         }
 
@@ -1601,7 +1601,7 @@ impl eframe::App for InstallerApp {
                                                                                     egui::Sense::click(),
                                                                                 );
                                                                                 let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
-                                                                                if is_selected && (self.scroll_to_selected_branch || self.keyboard_navigation_active) {
+                                                                                if is_selected && self.scroll_to_selected_branch {
                                                                                     resp.scroll_to_me(None);
                                                                                 }
 
@@ -1746,7 +1746,7 @@ impl eframe::App for InstallerApp {
                                                                                     egui::Sense::click(),
                                                                                 );
                                                                                 let is_hovered = !is_disabled && (resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))));
-                                                                                if is_selected && (self.scroll_to_selected_version || self.keyboard_navigation_active) {
+                                                                                if is_selected && self.scroll_to_selected_version {
                                                                                     resp.scroll_to_me(None);
                                                                                 }
 
@@ -2878,5 +2878,36 @@ mod main_tests {
             let maj = clean.split('.').next().unwrap().parse::<u32>().unwrap();
             assert!(maj >= 4, "Legacy version {} should have been excluded", item.id);
         }
+    }
+
+    #[test]
+    fn test_legacy_installed_dynamic_injection_when_not_in_remote_releases() {
+        let temp_dir = std::env::temp_dir().join("badwords_test_legacy_dynamic");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let _ = std::fs::write(temp_dir.join("main.py"), "VERSION = '3.1.0'\n");
+        let _ = std::fs::write(temp_dir.join("settings.json"), "{}\n");
+
+        let mut app = InstallerApp::new();
+        app.detected_existing = Some(temp_dir.clone());
+        app.install_path_str = temp_dir.to_string_lossy().into_owned();
+
+        // Remote releases only contain v4+ versions (as returned by fetch_git_versions)
+        let releases = vec!["v4.0.0".to_string()];
+        app.update_version_items(&releases);
+
+        // Exactly ONE legacy item should be injected dynamically for the installed 3.1.0
+        let legacy_items: Vec<_> = app.version_items.iter().filter(|it| {
+            if it.id == "LOCAL" { return false; }
+            let clean = it.id.trim_start_matches(|c| c == 'v' || c == 'V');
+            clean.split('.').next().unwrap().parse::<u32>().map(|m| m < 4).unwrap_or(false)
+        }).collect();
+
+        assert_eq!(legacy_items.len(), 1, "Expected exactly 1 legacy version item injected for installed version");
+        assert_eq!(legacy_items[0].id, "v3.1.0");
+        assert!(legacy_items[0].is_disabled);
+        assert!(legacy_items[0].is_installed);
+        assert_eq!(legacy_items[0].badge.as_deref(), Some("INSTALLED"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

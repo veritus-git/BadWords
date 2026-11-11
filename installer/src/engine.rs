@@ -1539,34 +1539,22 @@ pub fn fetch_git_versions() -> Vec<String> {
     }
 
     if tags.is_empty() {
-        tags = vec![
-            "v4.0.1".to_string(),
-            "v4.0.0".to_string(),
-            "v3.2.4".to_string(),
-        ];
+        tags = vec!["4.0.0".to_string()];
     }
 
     let mut v4_tags: Vec<String> = Vec::new();
-    let mut legacy_tags: Vec<String> = Vec::new();
 
     for t in tags {
         let clean = t.trim_start_matches(|c| c == 'v' || c == 'V');
         if let Some(maj_str) = clean.split('.').next() {
             if let Ok(maj) = maj_str.parse::<u32>() {
-                if maj >= 4 {
-                    if !v4_tags.contains(&t) {
-                        v4_tags.push(t);
-                    }
-                } else {
-                    if !legacy_tags.contains(&t) {
-                        legacy_tags.push(t);
-                    }
+                if maj >= 4 && !v4_tags.contains(&t) {
+                    v4_tags.push(t);
                 }
             }
         }
     }
 
-    v4_tags.extend(legacy_tags);
     v4_tags
 }
 
