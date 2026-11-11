@@ -139,9 +139,26 @@ if sys.platform.startswith('linux'):
         pass
 
 import time
-from PySide6.QtWidgets import QApplication, QMessageBox
-from PySide6.QtGui import QFont
-from PySide6.QtCore import QThread, Signal, QTimer
+try:
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtGui import QFont
+    from PySide6.QtCore import QThread, Signal, QTimer
+except Exception as _early_err:
+    import sys, traceback
+    _tb = traceback.format_exc()
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                None,
+                f"Failed to initialize PySide6/Qt framework:\n\n{_early_err}\n\nPlease ensure Microsoft Visual C++ 2015-2022 Redistributable (x64) is installed.",
+                "BadWords - Fatal Startup Error",
+                0x10  # MB_ICONERROR
+            )
+        except Exception:
+            pass
+    print(f"CRITICAL EARLY BOOT ERROR: {_early_err}\n{_tb}", file=sys.stderr)
+    sys.exit(1)
 
 # Application module imports
 import config

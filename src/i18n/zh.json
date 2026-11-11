@@ -400,6 +400,7 @@
   "update_notify_failed": "更新失败。请重试或手动更新。",
   "update_notify_btn_later": "稍后提醒我",
   "update_notify_btn_dismiss": "不再通知我",
+  "update_notify_btn_cancel": "取消",
   "lbl_more_accurate": "更精准的转录",
   "tt_more_accurate": "此选项允许你在转录前先粘贴/导入剧本。\n将从剧本中提取关键词喂给 Whisper（音频转录模型），\n从而提高转录准确度。\n\n强烈建议包含大量非拼读词汇（如系统路径、带数字的名称、\n特殊字符等）的技术性剧本使用此选项。\n\n此外，此选项会自动运行“转录-剧本对照”算法，\n转录完成后颜色立即可见，并排对照视图也能即刻加载。",
   "tt_jump_to_word_info": "将达芬奇和内置音频播放器的播放头\n跳转到所点击词语被说出的确切时刻。\n\n可用快捷键：\nCTRL/ALT/SHIFT + 左/右键点击。",
@@ -562,5 +563,13 @@
   "tt_skip_cuts": "播放时跳过剪辑部分",
   "lbl_resolve_render_timeline_proxy": "渲染达芬奇时间线视频预览代理",
   "tt_resolve_render_timeline_proxy": "当在达芬奇时间线上检测到复杂剪辑、空镜、字幕或转场时，Whisper 完成后会在后台渲染轻量级 360p 代理，以真实还原时间线画面。",
-  "status_rendering_resolve_proxy": "正在渲染达芬奇时间线视频预览..."
+  "status_rendering_resolve_proxy": "正在渲染达芬奇时间线视频预览...",
+  "tt_add_more_files": "添加更多文件到序列",
+  "lbl_media_files": "媒体文件",
+  "lbl_video_files": "视频文件",
+  "lbl_audio_files": "音频文件",
+  "dlg_choose_media_files": "选择视频或音频文件",
+  "lbl_res_vertical": "竖屏 / Shorts 9:16",
+  "opt_mouse_text": "文本范围选择 (记事本风格)",
+  "update_notify_notes_title": "版本说明 / 更新消息："
 }

@@ -175,7 +175,7 @@ class FileDropZone(QWidget):
         self.btn_add_more_single = QPushButton("+")
         self.btn_add_more_single.setFixedSize(config.S(24), config.S(24))
         self.btn_add_more_single.setCursor(Qt.PointingHandCursor)
-        self.btn_add_more_single.setToolTip("Dodaj kolejne pliki do sekwencji")
+        self.btn_add_more_single.setToolTip(_txt(self._lang, "tt_add_more_files", "Add more files to sequence"))
         self.btn_add_more_single.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #38c172;
@@ -653,13 +653,17 @@ class FileDropZone(QWidget):
         video_patterns = " ".join(f"*{ext}" for ext in self.SUPPORTED_VIDEO_EXTENSIONS)
         audio_patterns = " ".join(f"*{ext}" for ext in self.SUPPORTED_AUDIO_EXTENSIONS)
         all_patterns = f"{video_patterns} {audio_patterns}"
+        media_txt = _txt(self._lang, "lbl_media_files", "Media files")
+        video_txt = _txt(self._lang, "lbl_video_files", "Video files")
+        audio_txt = _txt(self._lang, "lbl_audio_files", "Audio files")
+        dialog_title = _txt(self._lang, "dlg_choose_media_files", "Select video or audio files")
         filters = (
-            f"Pliki multimedialne ({all_patterns});;"
-            f"Pliki wideo ({video_patterns});;"
-            f"Pliki audio ({audio_patterns})"
+            f"{media_txt} ({all_patterns});;"
+            f"{video_txt} ({video_patterns});;"
+            f"{audio_txt} ({audio_patterns})"
         )
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Wybierz pliki wideo lub audio", "", filters
+            self, dialog_title, "", filters
         )
         if paths:
             if append:

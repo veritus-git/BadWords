@@ -34,6 +34,7 @@ BadWords/
     │   ├── __init__.py              # Central config export
     │   ├── app_constants.py         # App version, window base dimensions, system fonts
     │   ├── settings_defaults.py     # Default preferences dictionary (DEFAULT_SETTINGS) & restart keys
+    │   ├── release_notes.json       # User-facing release notes highlighted in update dialog
     │   ├── theme.py                 # Color constants, button styling, palette
     │   ├── languages.py             # Supported Whisper languages dictionary
     │   └── algo_constants.py        # Default bad words, timeline colors hex mapping
@@ -173,3 +174,6 @@ When working on this repository, you MUST follow these commandments:
    - Verify that imports work from root with `QT_QPA_PLATFORM=offscreen`.
 7. **Sync Installation Folder**:
    - After every code modification in `src/`, always synchronize the corresponding files to the installation directory `/mnt/dump/BadWords FILES/` (excluding runtime files like `settings.json`, `user.json`, `temp/`, `models/`, `saves/`, `__pycache__/`, `venv/`).
+8. **Curated Release Notes on Every Release**:
+   - Whenever creating a new application release (specifically an official **Release**, NOT every normal commit or tag), you MUST update `src/config/release_notes.json`.
+   - Populate the `"changes"` array with the most critical, user-facing highlights and improvements that concisely describe what changed since the previous newest release.

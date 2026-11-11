@@ -2319,7 +2319,7 @@ class AssembleSplitButton(QFrame):
             tt_text = (
                 self.parent_gui.txt("tt_assembly_locked_transcription")
                 if hasattr(self.parent_gui, 'txt')
-                else "Opcja zablokowana do czasu zakończenia transkrypcji"
+                else "This option is locked until transcription is complete"
             )
             from PySide6.QtGui import QCursor
             self.parent_gui.shared_tooltip.show_global(tt_text, QCursor.pos())

@@ -196,10 +196,18 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         avail = self._available_width()
         overflows = fm.horizontalAdvance(text) > avail
 
-        # Determine text colour based on selection state
+        # Determine text colour based on selection state with robust dark theme fallback
         is_selected = bool(option.state & QStyle.State_Selected)
         palette = option.palette
-        color = palette.highlightedText().color() if is_selected else palette.windowText().color()
+        default_selected_color = QColor("#ffffff")
+        default_normal_color = QColor("#d4d4d4")
+        
+        # Check system palette, but reject dark/black text since BadWords uses dark menus
+        pal_color = palette.highlightedText().color() if is_selected else palette.windowText().color()
+        if pal_color.isValid() and (pal_color.red() + pal_color.green() + pal_color.blue()) > 200:
+            color = pal_color
+        else:
+            color = default_selected_color if is_selected else default_normal_color
 
         is_animating = overflows and row == self._hovered_row
         if is_animating:

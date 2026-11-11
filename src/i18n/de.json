@@ -400,6 +400,7 @@
   "update_notify_failed": "Update fehlgeschlagen. Bitte versuche es erneut oder aktualisiere manuell.",
   "update_notify_btn_later": "Später erinnern",
   "update_notify_btn_dismiss": "Nicht mehr benachrichtigen",
+  "update_notify_btn_cancel": "Abbrechen",
   "lbl_more_accurate": "Genauere Transkription",
   "tt_more_accurate": "Mit dieser Option können Sie vor der Transkription ein Skript einfügen/importieren. Schlüsselwörter werden aus diesem Skript extrahiert und dann an Whisper (das Audio-Transkriptionsmodell) übergeben, wodurch die Transkription genauer wird.\n\nDiese Option wird besonders für rein technische Skripte empfohlen, die viele Wörter mit nicht-phonetischer Schreibweise enthalten (z. B. Systempfade, Namen mit Zahlen, Sonderzeichen usw.).\n\nZusätzlich führt diese Option automatisch den Transkript-Skript-Vergleichsalgorithmus aus, sodass nach Abschluss der Transkription die Farben sofort sichtbar sind und die Side-by-Side-Ansicht sofort geladen wird.",
   "tt_jump_to_word_info": "Springt mit dem DaVinci- und internen Audio-Player-Playhead genau an den Moment, an dem das angeklickte Wort gesprochen wurde.\n\nVerfügbare Tastenkürzel: STRG/ALT/UMSCHALT + Links-/Rechtsklick.",
@@ -562,5 +563,13 @@
   "tt_skip_cuts": "Geschnittene Abschnitte bei der Wiedergabe überspringen",
   "lbl_resolve_render_timeline_proxy": "DaVinci Timeline-Videovorschau-Proxy rendern",
   "tt_resolve_render_timeline_proxy": "Wenn komplexe Videoschnitte, B-Roll, Texte oder Übergänge auf der DaVinci-Timeline erkannt werden, wird nach Abschluss von Whisper im Hintergrund ein leichtes 360p-Proxy gerendert.",
-  "status_rendering_resolve_proxy": "DaVinci Timeline-Videovorschau wird gerendert..."
+  "status_rendering_resolve_proxy": "DaVinci Timeline-Videovorschau wird gerendert...",
+  "tt_add_more_files": "Weitere Dateien zur Sequenz hinzufügen",
+  "lbl_media_files": "Mediendateien",
+  "lbl_video_files": "Videodateien",
+  "lbl_audio_files": "Audiodateien",
+  "dlg_choose_media_files": "Video- oder Audiodateien auswählen",
+  "lbl_res_vertical": "Vertikal / Shorts 9:16",
+  "opt_mouse_text": "Textauswahl (Editor)",
+  "update_notify_notes_title": "Versionshinweise / Update-Mitteilung:"
 }

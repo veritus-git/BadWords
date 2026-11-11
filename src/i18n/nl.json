@@ -400,6 +400,7 @@
   "update_notify_failed": "Update mislukt. Probeer het opnieuw of update handmatig.",
   "update_notify_btn_later": "Herinner me later",
   "update_notify_btn_dismiss": "Niet meer waarschuwen",
+  "update_notify_btn_cancel": "Annuleren",
   "lbl_more_accurate": "Nauwkeurigere transcriptie",
   "tt_more_accurate": "Met deze optie kun je voor de transcriptie een script plakken/importeren. Sleutelwoorden worden uit dit script gehaald en aan Whisper (het audiotranscriptiemodel) geleverd, waardoor de transcriptie nauwkeuriger wordt.\n\nDeze optie wordt ten zeerste aanbevolen voor strikt technische scripts die veel woorden bevatten met een niet-fonetische spelling (bijv. systeempaden, namen met cijfers, speciale tekens, enz.).\n\nBovendien voert deze optie automatisch het algoritme voor vergelijking van transcript en script uit, dus na voltooiing van de transcriptie zijn de kleuren onmiddellijk zichtbaar en laadt de Side-by-side-weergave direct.",
   "tt_jump_to_word_info": "Springt met de DaVinci en interne audiospeler afspeelkop precies naar het moment waarop het geklikte woord werd uitgesproken.\n\nBeschikbare sneltoetsen: CTRL/ALT/SHIFT + Linker/Rechter Muisklik.",
@@ -562,5 +563,13 @@
   "tt_skip_cuts": "Overgeslagen geknipte secties tijdens het afspelen",
   "lbl_resolve_render_timeline_proxy": "Genereer DaVinci tijdlijn videovoorbeeld proxy",
   "tt_resolve_render_timeline_proxy": "Wanneer complexe videobewerkingen, b-roll, titels of overgangen worden gedetecteerd, wordt na Whisper op de achtergrond een lichte 360p-proxy gerenderd.",
-  "status_rendering_resolve_proxy": "DaVinci tijdlijn videovoorbeeld renderen..."
+  "status_rendering_resolve_proxy": "DaVinci tijdlijn videovoorbeeld renderen...",
+  "tt_add_more_files": "Meer bestanden aan volgorde toevoegen",
+  "lbl_media_files": "Mediabestanden",
+  "lbl_video_files": "Videobestanden",
+  "lbl_audio_files": "Audiobestanden",
+  "dlg_choose_media_files": "Video- of audiobestanden selecteren",
+  "lbl_res_vertical": "Verticaal / Shorts 9:16",
+  "opt_mouse_text": "Tekstselectie (Kladblok)",
+  "update_notify_notes_title": "Release-opmerkingen / Update-bericht:"
 }

@@ -400,6 +400,7 @@
   "update_notify_failed": "Aktualizacja nie powiodła się. Spróbuj ponownie lub zaktualizuj ręcznie.",
   "update_notify_btn_later": "Przypomnij mi później",
   "update_notify_btn_dismiss": "Nie powiadamiaj mnie więcej",
+  "update_notify_btn_cancel": "Anuluj",
   "lbl_more_accurate": "Dokładniejszy transkrypt",
   "tt_more_accurate": "Opcja ta pozwala na wklejenie/zaimportowanie scenariusza przed transkrypcją, z tego scenariusza wyciągane są słowa kluczowe, które następnie są podawane do Whispera, czyli modelu transkrybującego audio, dzięki czemu transkrypcja może być bardziej dokładna.\n\nTa opcja jest szczególnie polecana do scenariuszy stricte technicznych, zawierających wiele słów, których zapis jest inny niż fonetyczny (czyli np. ścieżki systemowe, nazwy z cyframi, znaki specjalne itd.).\n\nDodatkowo ta opcja samoczynnie przechodzi przez algorytm porównywania transkryptu ze scenariuszem, więc po zakończonej transkrypcji kolory są widoczne od razu, a widok Side-by-side załadowuje się natychmiastowo.",
   "tt_jump_to_word_info": "Skacze kursorem (playhead) DaVinci oraz wewnętrznego odtwarzacza do momentu, w którym kliknięte słowo zostało wypowiedziane.\n\nDostępne skróty: CTRL/ALT/SHIFT + Lewy/Prawy Przycisk Myszy.",
@@ -562,5 +563,13 @@
   "tt_mouse_rmb_mode": "Działanie prawego przycisku myszy w transkrypcji. Malowanie pędzlem koloruje słowa po najechaniu kursorem.",
   "lbl_resolve_render_timeline_proxy": "Renderuj podgląd wideo osi czasu (DaVinci)",
   "tt_resolve_render_timeline_proxy": "Gdy na osi czasu DaVinci zostaną wykryte cięcia, napisy, dodatkowe ścieżki wideo lub przejścia, w tle po zakończeniu Whisper wygenerowane zostanie lekkie proxy 360p, aby podgląd odzwierciedlał rzeczywisty montaż.",
-  "status_rendering_resolve_proxy": "Renderowanie podglądu osi czasu DaVinci..."
+  "status_rendering_resolve_proxy": "Renderowanie podglądu osi czasu DaVinci...",
+  "tt_add_more_files": "Dodaj kolejne pliki do sekwencji",
+  "lbl_media_files": "Pliki multimedialne",
+  "lbl_video_files": "Pliki wideo",
+  "lbl_audio_files": "Pliki audio",
+  "dlg_choose_media_files": "Wybierz pliki wideo lub audio",
+  "lbl_res_vertical": "Pionowe / Shorts 9:16",
+  "opt_mouse_text": "Zaznaczanie tekstu (Notatnik)",
+  "update_notify_notes_title": "Informacje o wydaniu / Wiadomość o aktualizacji:"
 }

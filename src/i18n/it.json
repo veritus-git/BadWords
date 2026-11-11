@@ -400,6 +400,7 @@
   "update_notify_failed": "Aggiornamento non riuscito. Riprova o aggiorna manualmente.",
   "update_notify_btn_later": "Ricordamelo più tardi",
   "update_notify_btn_dismiss": "Non avvisarmi più",
+  "update_notify_btn_cancel": "Annulla",
   "lbl_more_accurate": "Trascrizione più accurata",
   "tt_more_accurate": "Questa opzione ti consente di incollare/importare uno script prima della trascrizione. Le parole chiave vengono estratte da questo script e poi fornite a Whisper (il modello di trascrizione audio), rendendo la trascrizione più accurata.\n\nQuesta opzione è altamente raccomandata per script strettamente tecnici contenenti molte parole con ortografia non fonetica (es. percorsi di sistema, nomi con numeri, caratteri speciali, ecc.).\n\nInoltre, questa opzione esegue automaticamente l'algoritmo di confronto trascrizione-script, quindi, una volta completata la trascrizione, i colori sono Immediatamente visibili e la visualizzazione affiancata si carica all'istante.",
   "tt_jump_to_word_info": "Sposta il cursore di riproduzione di DaVinci e del lettore audio interno nel momento esatto in cui è stata pronunciata la parola cliccata.\n\nScorciatoie disponibili: CTRL/ALT/MAIUSC + Clic Sinistro/Destro.",
@@ -562,5 +563,13 @@
   "tt_skip_cuts": "Salta le sezioni tagliate durante la riproduzione",
   "lbl_resolve_render_timeline_proxy": "Genera proxy anteprima video timeline DaVinci",
   "tt_resolve_render_timeline_proxy": "Quando vengono rilevati tagli complessi, b-roll, titoli o transizioni sulla timeline DaVinci, viene renderizzato un proxy leggero a 360p in background dopo Whisper.",
-  "status_rendering_resolve_proxy": "Rendering anteprima video timeline DaVinci..."
+  "status_rendering_resolve_proxy": "Rendering anteprima video timeline DaVinci...",
+  "tt_add_more_files": "Aggiungi altri file alla sequenza",
+  "lbl_media_files": "File multimediali",
+  "lbl_video_files": "File video",
+  "lbl_audio_files": "File audio",
+  "dlg_choose_media_files": "Seleziona file video o audio",
+  "lbl_res_vertical": "Verticale / Shorts 9:16",
+  "opt_mouse_text": "Selezione del testo (Blocco note)",
+  "update_notify_notes_title": "Note di rilascio / Messaggio di aggiornamento:"
 }

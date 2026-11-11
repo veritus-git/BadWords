@@ -2592,7 +2592,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         selected_tl = getattr(self, 'combo_tl_1', None)
         selected_tl_name = selected_tl.text() if selected_tl else ""
         no_tl = self.txt("msg_no_timelines_detected")
-        select_txt = self.txt("txt_select", "Wybierz...")
+        select_txt = self.txt("txt_select", "Select...")
         valid_tls = getattr(selected_tl, 'options_list', []) if selected_tl else []
 
         if not is_file_source:
@@ -3816,7 +3816,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             selected_tl = getattr(self, 'combo_tl_0', None)
             selected_tl_name = selected_tl.text() if selected_tl else ""
             no_tl = self.txt("msg_no_timelines_detected")
-            select_txt = self.txt("txt_select", "Wybierz...")
+            select_txt = self.txt("txt_select", "Select...")
             valid_tls = getattr(selected_tl, 'options_list', []) if selected_tl else []
             if not selected_tl_name or selected_tl_name in (no_tl, select_txt, "Select...") or (valid_tls and selected_tl_name not in valid_tls):
                 dlg = CustomMsgBox(self, "BadWords", self.txt("msg_no_timelines_detected"), self.txt("btn_ok"))
@@ -4106,7 +4106,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         ap = getattr(self, "audio_preview", None)
         if ap and hasattr(ap, 'video_preview_widget'):
-            msg = self.txt("status_rendering_resolve_proxy", "Renderowanie podglądu osi czasu DaVinci...")
+            msg = self.txt("status_rendering_resolve_proxy", "Rendering DaVinci Resolve timeline preview...")
             ap.video_preview_widget.show_loading(True, msg)
 
         from handlers.analysis_worker import ResolveTimelineProxyWorker
@@ -4345,7 +4345,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, '_panel_left') and l_vis: self._panel_left.show()
             if hasattr(self, '_panel_right') and r_vis: self._panel_right.show()
 
-        dlg = CustomMsgBox(self, self.txt("msg_analysis_failed", "Błąd analizy"), str(err), self.txt("btn_ok", "OK"))
+        dlg = CustomMsgBox(self, self.txt("msg_analysis_failed", "Analysis Failed"), str(err), self.txt("btn_ok", "OK"))
         dlg.exec()
 
     def _on_analysis_finished(self, words_data, segments_data):
@@ -4383,7 +4383,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.go_to_page(2)
 
         if hasattr(self, 'top_island'):
-            self.top_island.set_completed(self.txt("msg_transcription_complete", "Transkrypcja zakończona"))
+            self.top_island.set_completed(self.txt("msg_transcription_complete", "Transcription complete"))
             
         self._set_live_transcription_lock(False)
         
@@ -5019,7 +5019,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             from osdoc import log_error
             log_error(f"[UpdateCheck] Failed to start check thread: {e}")
 
-    def _do_silent_auto_update(self, latest_ver: str, gh_url: str, gl_url: str):
+    def _do_silent_auto_update(self, latest_ver: str, gh_url: str, gl_url: str, release_notes: str = ""):
         """
         Run update script in a background daemon thread.
         No blocking on main thread → Resolve API connection stays alive.
@@ -5127,8 +5127,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             from osdoc import log_error
             log_error(f"[AutoUpdate] Could not show restart notice: {e}")
 
-    def _show_update_dialog(self, latest_ver: str, gh_url: str, gl_url: str):
-
+    def _show_update_dialog(self, latest_ver: str, gh_url: str, gl_url: str, release_notes: str = ""):
         """Show the UpdateNotifyDialog on the main (GUI) thread."""
         try:
             is_win = self.engine.os_doc.is_win
@@ -5144,6 +5143,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 is_win=is_win,
                 is_mac=is_mac,
                 install_dir=install_dir,
+                release_notes=release_notes,
             )
             self.engine.os_doc.force_dark_titlebar(int(dlg.winId()))
             dlg.exec()

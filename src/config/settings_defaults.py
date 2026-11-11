@@ -44,8 +44,8 @@ DEFAULT_SETTINGS = {
     "settings_view_mode":   "basic",
     "show_panel_headers":   True,
     # ── Mouse marking modes ──────────────────────────────────────────────────
-    "mouse_lmb_mode":       "box",          # "box" (Marquee selection / zaznaczanie ramką), "brush" (Pędzel), "none"
-    "mouse_rmb_mode":       "brush",        # "brush" (Pędzel / malowanie słowo po słowie), "box", "none"
+    "mouse_lmb_mode":       "text",         # "text" (Notepad-style text selection / zaznaczanie tekstu), "box", "brush", "none"
+    "mouse_rmb_mode":       "box",          # "box" (Marquee selection / zaznaczanie ramką), "text", "brush", "none"
     # ── Chunking ────────────────────────────────────────────────────────────
     "chunk_punct_count":    1,
     "chunk_max_words":      15,

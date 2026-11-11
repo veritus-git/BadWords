@@ -41,13 +41,17 @@ class TranscriptionCanvas(QWidget):
         self.setAttribute(Qt.WA_OpaquePaintEvent, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
 
-        # --- SELECTION & MARKING STATE (Rubberband / Marquee box + Brush) ---
+        # --- SELECTION & MARKING STATE (Rubberband / Marquee box + Brush + Notepad Text Select) ---
         self._is_box_selecting = False
         self._selection_start_pos = None
         self._selection_current_pos = None
         self._active_box_btn = None
         self._is_painting = False
         self._active_paint_btn = None
+        self._is_text_selecting = False
+        self._active_text_btn = None
+        self._text_selection_start_word_id = None
+        self._text_selection_current_word_id = None
         self._current_undo_action = None
 
         # --- VIEWPORT CULLING: cache visible_words so paintEvent never recomputes it ---
@@ -1146,7 +1150,7 @@ class TranscriptionCanvas(QWidget):
             for rect in active_underlines:
                 p.drawRoundedRect(rect, 1, 1)
 
-        # PASS 5: Rubberband / Marquee selection box
+        # PASS 5: Rubberband / Marquee selection box OR Linear Text Selection
         if getattr(self, '_is_box_selecting', False) and getattr(self, '_selection_start_pos', None) and getattr(self, '_selection_current_pos', None):
             sel_rect = QRect(self._selection_start_pos, self._selection_current_pos).normalized()
             if sel_rect.width() > 1 or sel_rect.height() > 1:
@@ -1160,6 +1164,35 @@ class TranscriptionCanvas(QWidget):
                 p.setBrush(QBrush(fill_color))
                 p.drawRoundedRect(QRectF(sel_rect), 2.5, 2.5)
                 p.restore()
+        elif getattr(self, '_is_text_selecting', False) and getattr(self, '_text_selection_start_word_id', None) is not None and getattr(self, '_text_selection_current_word_id', None) is not None:
+            min_id = min(self._text_selection_start_word_id, self._text_selection_current_word_id)
+            max_id = max(self._text_selection_start_word_id, self._text_selection_current_word_id)
+            marker_col = self.get_current_marker_color()
+            fill_color = QColor(marker_col.red(), marker_col.green(), marker_col.blue(), 85)
+            border_color = QColor(marker_col.red(), marker_col.green(), marker_col.blue(), 230)
+
+            p.save()
+            p.setRenderHint(QPainter.Antialiasing, False)
+            p.setPen(QPen(border_color, 1.0, Qt.SolidLine))
+            p.setBrush(QBrush(fill_color))
+
+            selected_words = [
+                w for w in self._cached_visible_words
+                if min_id <= w.get('id', -1) <= max_id and w.get('_rect')
+            ]
+            lines = {}
+            for w in selected_words:
+                wr = w['_rect']
+                line_key = round(wr.top() / 6.0) * 6
+                lines.setdefault(line_key, []).append(wr)
+
+            for _, rects in lines.items():
+                min_x = min(r.left() for r in rects)
+                max_x = max(r.right() for r in rects)
+                top = min(r.top() for r in rects) - 1.0
+                bottom = max(r.bottom() for r in rects) + 1.0
+                p.drawRect(QRectF(min_x - 2.0, top, (max_x - min_x) + 4.0, bottom - top))
+            p.restore()
 
     def get_current_marker_color(self) -> QColor:
         """Returns the QColor corresponding to the currently selected marker tool."""
@@ -1182,9 +1215,52 @@ class TranscriptionCanvas(QWidget):
     def get_mouse_modes(self):
         """Returns (lmb_mode, rmb_mode) preference tuple."""
         prefs = getattr(self.main_window.engine, 'load_preferences', lambda: {})() or {}
-        lmb = prefs.get('mouse_lmb_mode', 'box')
-        rmb = prefs.get('mouse_rmb_mode', 'brush')
+        lmb = prefs.get('mouse_lmb_mode', 'text')
+        rmb = prefs.get('mouse_rmb_mode', 'box')
         return lmb, rmb
+
+    def _word_at_pos(self, pos):
+        """Finds the transcription word under or closest to the given QPoint."""
+        for w in self._cached_visible_words:
+            if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'):
+                continue
+            rect = w.get('_rect')
+            if rect and rect.adjusted(-4, -2, 4, 2).contains(pos):
+                return w
+        # If no direct hit, find closest word within range
+        best_w = None
+        min_dist = float('inf')
+        px, py = pos.x(), pos.y()
+        for w in self._cached_visible_words:
+            if w.get('is_script_word') or w.get('is_script_bg') or w.get('is_script_placeholder'):
+                continue
+            rect = w.get('_rect')
+            if not rect:
+                continue
+            cx = rect.center().x()
+            cy = rect.center().y()
+            # Strongly weight current line distance
+            dist = (py - cy)**2 * 6 + (px - cx)**2
+            if dist < min_dist:
+                min_dist = dist
+                best_w = w
+        if min_dist <= 25000:
+            return best_w
+        return None
+
+    def _finish_text_selection(self):
+        start_id = getattr(self, '_text_selection_start_word_id', None)
+        curr_id = getattr(self, '_text_selection_current_word_id', None)
+        if start_id is None or curr_id is None or not self.words_data:
+            return
+        min_id = max(0, min(start_id, curr_id))
+        max_id = min(len(self.words_data) - 1, max(start_id, curr_id))
+        matched_words = [
+            self.words_data[i] for i in range(min_id, max_id + 1)
+            if not self.words_data[i].get('is_script_word') and not self.words_data[i].get('is_script_bg') and not self.words_data[i].get('is_script_placeholder')
+        ]
+        if matched_words:
+            self._apply_marker_to_words(matched_words)
 
     def _finish_box_selection(self, end_pos):
         if not getattr(self, '_selection_start_pos', None):
@@ -1207,6 +1283,10 @@ class TranscriptionCanvas(QWidget):
                 if sel_rect.intersects(w_rect):
                     matched_words.append(w)
 
+        if matched_words:
+            self._apply_marker_to_words(matched_words)
+
+    def _apply_marker_to_words(self, matched_words):
         if not matched_words:
             return
 
@@ -1429,7 +1509,7 @@ class TranscriptionCanvas(QWidget):
                 return  # Block painting if jump shortcut was used
 
         # Prevent dual-button conflict while dragging
-        if getattr(self, '_is_box_selecting', False) or getattr(self, '_is_painting', False):
+        if getattr(self, '_is_box_selecting', False) or getattr(self, '_is_painting', False) or getattr(self, '_is_text_selecting', False):
             return
 
         lmb_mode, rmb_mode = self.get_mouse_modes()
@@ -1447,6 +1527,15 @@ class TranscriptionCanvas(QWidget):
             self._selection_current_pos = event.pos()
             self._current_undo_action = {"type": "paint", "changes": {}}
             self.update()
+        elif action_mode == 'text':
+            hit_w = self._word_at_pos(event.pos())
+            if hit_w:
+                self._is_text_selecting = True
+                self._active_text_btn = event.button()
+                self._text_selection_start_word_id = hit_w['id']
+                self._text_selection_current_word_id = hit_w['id']
+                self._current_undo_action = {"type": "paint", "changes": {}}
+                self.update()
         elif action_mode == 'brush':
             self._is_painting = True
             self._active_paint_btn = event.button()
@@ -1472,6 +1561,25 @@ class TranscriptionCanvas(QWidget):
             except Exception:
                 pass
             self.update()
+        elif getattr(self, '_is_text_selecting', False) and (event.buttons() & getattr(self, '_active_text_btn', Qt.NoButton)):
+            hit_w = self._word_at_pos(event.pos())
+            if hit_w and hit_w['id'] != getattr(self, '_text_selection_current_word_id', None):
+                self._text_selection_current_word_id = hit_w['id']
+                self.update()
+            try:
+                scroll = getattr(self.main_window, 'scroll_area', None)
+                if scroll is not None and hasattr(scroll, 'viewport') and scroll.viewport() is not None:
+                    vp = scroll.viewport()
+                    g_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    vp_pt = vp.mapFromGlobal(g_pos)
+                    vbar = scroll.verticalScrollBar()
+                    if hasattr(vp_pt, 'y') and hasattr(vbar, 'setValue'):
+                        if vp_pt.y() < 25:
+                            vbar.setValue(vbar.value() - 15)
+                        elif vp_pt.y() > vp.height() - 25:
+                            vbar.setValue(vbar.value() + 15)
+            except Exception:
+                pass
         elif getattr(self, '_is_painting', False) and (event.buttons() & getattr(self, '_active_paint_btn', Qt.NoButton)):
             self._handle_mouse(event.pos())
 
@@ -1482,6 +1590,13 @@ class TranscriptionCanvas(QWidget):
             self._finish_box_selection(event.pos())
             self._selection_start_pos = None
             self._selection_current_pos = None
+            self.update()
+        elif getattr(self, '_is_text_selecting', False) and event.button() == getattr(self, '_active_text_btn', None):
+            self._is_text_selecting = False
+            self._active_text_btn = None
+            self._finish_text_selection()
+            self._text_selection_start_word_id = None
+            self._text_selection_current_word_id = None
             self.update()
         elif getattr(self, '_is_painting', False) and event.button() == getattr(self, '_active_paint_btn', None):
             self._is_painting = False
@@ -1503,6 +1618,14 @@ class TranscriptionCanvas(QWidget):
                 self._selection_start_pos = None
                 self._selection_current_pos = None
                 self._active_box_btn = None
+                self._current_undo_action = None
+                self.update()
+                return
+            if getattr(self, '_is_text_selecting', False):
+                self._is_text_selecting = False
+                self._active_text_btn = None
+                self._text_selection_start_word_id = None
+                self._text_selection_current_word_id = None
                 self._current_undo_action = None
                 self.update()
                 return

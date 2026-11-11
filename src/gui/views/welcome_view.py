@@ -321,7 +321,7 @@ class SourceHeaderWidget(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(config.S(4))
 
-        self.lbl_title = QLabel(win.txt("src_source") if hasattr(win, 'txt') else "Źródło")
+        self.lbl_title = QLabel(win.txt("src_source") if hasattr(win, 'txt') else "Source")
         self.lbl_title.setFixedHeight(config.S(18))
         self.lbl_title.setStyleSheet(
             f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
@@ -432,11 +432,11 @@ class SourceHeaderWidget(QWidget):
 
         self.dot.set_connected(is_conn)
         if is_conn:
-            disp_project = project_name or "Aktywny"
+            disp_project = project_name or (self.win.txt("lbl_active") if hasattr(self.win, 'txt') else "Active")
             if is_bridge:
-                txt_tpl = self.win.txt("status_resolve_bridge_connected") if hasattr(self.win, 'txt') else "Połączono (Bridge): {project}"
+                txt_tpl = self.win.txt("status_resolve_bridge_connected") if hasattr(self.win, 'txt') else "Connected (Bridge): {project}"
             else:
-                txt_tpl = self.win.txt("status_resolve_connected") if hasattr(self.win, 'txt') else "Połączono: {project}"
+                txt_tpl = self.win.txt("status_resolve_connected") if hasattr(self.win, 'txt') else "Connected: {project}"
             full_status = txt_tpl.replace("{project}", disp_project)
             self._full_status_text = full_status
             self._full_project_name = disp_project
@@ -445,10 +445,12 @@ class SourceHeaderWidget(QWidget):
                 f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
-            self.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
-            self.lbl_status.setToolTip(f"Połączono z projektem DaVinci Resolve: {disp_project}")
+            tt_tpl = self.win.txt("status_resolve_tooltip") if hasattr(self.win, 'txt') else "Connected to DaVinci Resolve project: {project}"
+            tt_text = tt_tpl.replace("{project}", disp_project)
+            self.setToolTip(tt_text)
+            self.lbl_status.setToolTip(tt_text)
         else:
-            self._full_status_text = self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "Brak połączenia"
+            self._full_status_text = self.win.txt("status_resolve_not_connected") if hasattr(self.win, 'txt') else "No connection"
             self._full_project_name = ""
             self._update_status_elision()
             self.lbl_status.setStyleSheet(
@@ -1562,7 +1564,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_0.setMinimumWidth(config.S(85))
         win.btn_stop_bridge_0.setMaximumWidth(config.S(125))
         win.btn_stop_bridge_0.setCursor(Qt.PointingHandCursor)
-        win.btn_stop_bridge_0.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu BadWords Bridge w DaVinci Resolve")
+        win.btn_stop_bridge_0.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Stop BadWords Bridge script in DaVinci Resolve")
         win.btn_stop_bridge_0.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
@@ -1575,7 +1577,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_0.clicked.connect(_on_stop_bridge)
 
         win.btn_ref_source_0 = ReloadButton(size=30)
-        win.btn_ref_source_0.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
+        win.btn_ref_source_0.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Reconnect")
         win.btn_ref_source_0.clicked.connect(win._refresh_davinci_connection)
 
         win.source_actions_0 = SourceActionsBox(win.btn_stop_bridge_0, win.btn_ref_source_0)
@@ -1608,7 +1610,7 @@ def build_welcome_view(win) -> QWidget:
     win._combo_lang.setFixedHeight(config.S(30))
     saved_lang = prefs.get('lang', '')
     display_name = config.SUPPORTED_LANGUAGES.get(saved_lang, saved_lang)
-    placeholder = win.txt("lbl_choose_recording_language") if hasattr(win, 'txt') else "Wybierz język nagrania"
+    placeholder = win.txt("lbl_choose_recording_language") if hasattr(win, 'txt') else "Select recording language"
     win._combo_lang.setText(display_name if display_name in lang_items else placeholder)
     win._combo_lang.valueChanged.connect(lambda v: win.engine.save_preferences({"lang": v}))
     win.settings_layout.addLayout(_row(win.txt("lbl_lang"), win._combo_lang))
@@ -1890,7 +1892,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_1.setMinimumWidth(config.S(85))
         win.btn_stop_bridge_1.setMaximumWidth(config.S(125))
         win.btn_stop_bridge_1.setCursor(Qt.PointingHandCursor)
-        win.btn_stop_bridge_1.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Zatrzymaj działanie skryptu BadWords Bridge w DaVinci Resolve")
+        win.btn_stop_bridge_1.setToolTip(win.txt("tt_stop_bridge") if hasattr(win, 'txt') else "Stop BadWords Bridge script in DaVinci Resolve")
         win.btn_stop_bridge_1.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
@@ -1903,7 +1905,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_1.clicked.connect(_on_stop_bridge)
 
         win.btn_ref_source_1 = ReloadButton(size=30)
-        win.btn_ref_source_1.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Połącz ponownie")
+        win.btn_ref_source_1.setToolTip(win.txt("btn_reconnect_resolve") if hasattr(win, 'txt') else "Reconnect")
         win.btn_ref_source_1.clicked.connect(win._refresh_davinci_connection)
 
         win.source_actions_1 = SourceActionsBox(win.btn_stop_bridge_1, win.btn_ref_source_1)
@@ -2036,7 +2038,7 @@ def build_welcome_view(win) -> QWidget:
     row_fs_hidden = QHBoxLayout(win.w_fs_hidden_info)
     row_fs_hidden.setContentsMargins(0, 0, 0, 0)
     row_fs_hidden.setSpacing(config.S(6))
-    lbl_why_hidden = QLabel(win.txt("lbl_why_options_hidden") if hasattr(win, 'txt') else "Dlaczego niektóre opcje są ukryte?")
+    lbl_why_hidden = QLabel(win.txt("lbl_why_options_hidden") if hasattr(win, 'txt') else "Why are some options hidden?")
     lbl_why_hidden.setStyleSheet(
         f"color: #9e9e9e; font-family: '{config.UI_FONT_NAME}'; "
         f"font-size: {config.FS(9.0)}pt; font-style: italic; background: transparent; padding: 0;"
@@ -2090,11 +2092,11 @@ def build_welcome_view(win) -> QWidget:
 
     # ── 5. Standalone Synchronization ─────────────────────────────────────────
     if is_standalone:
-        p_txt = win.txt("lbl_drop_file_prompt") if hasattr(win, 'txt') else "Przeciągnij plik wideo lub audio tutaj"
-        sub_txt = win.txt("lbl_drop_file_subprompt") if hasattr(win, 'txt') else "lub kliknij, aby wybrać z dysku"
-        add_txt = win.txt("btn_add") if hasattr(win, 'txt') else "Dodaj"
-        clear_txt = win.txt("btn_clear") if hasattr(win, 'txt') else "Wyczyść"
-        queue_txt = win.txt("lbl_queue") if hasattr(win, 'txt') else "Kolejka"
+        p_txt = win.txt("lbl_drop_file_prompt") if hasattr(win, 'txt') else "Drag & drop video or audio file here"
+        sub_txt = win.txt("lbl_drop_file_subprompt") if hasattr(win, 'txt') else "or click to browse from disk"
+        add_txt = win.txt("btn_add") if hasattr(win, 'txt') else "Add"
+        clear_txt = win.txt("btn_clear") if hasattr(win, 'txt') else "Clear"
+        queue_txt = win.txt("lbl_queue") if hasattr(win, 'txt') else "Queue"
         win.drop_zone_0.set_texts(p_txt, sub_txt, add_txt=add_txt, clear_txt=clear_txt, queue_txt=queue_txt)
         win.drop_zone_1.set_texts(p_txt, sub_txt, add_txt=add_txt, clear_txt=clear_txt, queue_txt=queue_txt)
 

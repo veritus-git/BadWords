@@ -400,6 +400,7 @@
   "update_notify_failed": "Échec de la mise à jour. Veuillez réessayer ou mettre à jour manuellement.",
   "update_notify_btn_later": "Me le rappeler plus tard",
   "update_notify_btn_dismiss": "Ne plus m'avertir",
+  "update_notify_btn_cancel": "Annuler",
   "lbl_more_accurate": "Transcription plus précise",
   "tt_more_accurate": "Cette option vous permet de coller/importer un script avant la transcription. Les mots-clés sont extraits de ce script puis fournis à Whisper (le modèle de transcription audio), rendant la transcription plus précise.\n\nCette option est fortement recommandée pour les scripts strictement techniques contenant de nombreux mots avec des orthographes non phonétiques (ex. chemins système, noms avec des chiffres, caractères spéciaux, etc.).\n\nDe plus, cette option exécute automatiquement l'algorithme de comparaison transcription-script, ainsi, après la fin de la transcription, les couleurs sont immédiatement visibles et la vue côte à côte se charge instantanément.",
   "tt_jump_to_word_info": "Déplace la tête de lecture de DaVinci et du lecteur audio interne au moment exact où le mot cliqué a été prononcé.\n\nRaccourcis disponibles : CTRL/ALT/MAJ + Clic Gauche/Droit.",
@@ -562,5 +563,13 @@
   "tt_skip_cuts": "Ignorer les sections coupées pendant la lecture",
   "lbl_resolve_render_timeline_proxy": "Générer le proxy d'aperçu vidéo de timeline DaVinci",
   "tt_resolve_render_timeline_proxy": "Lorsque des coupes, titres, pistes b-roll ou transitions sont détectés sur DaVinci, un proxy léger 360p est généré en arrière-plan après Whisper.",
-  "status_rendering_resolve_proxy": "Génération de l'aperçu vidéo de la timeline DaVinci..."
+  "status_rendering_resolve_proxy": "Génération de l'aperçu vidéo de la timeline DaVinci...",
+  "tt_add_more_files": "Ajouter d'autres fichiers à la séquence",
+  "lbl_media_files": "Fichiers multimédias",
+  "lbl_video_files": "Fichiers vidéo",
+  "lbl_audio_files": "Fichiers audio",
+  "dlg_choose_media_files": "Sélectionner des fichiers vidéo ou audio",
+  "lbl_res_vertical": "Vertical / Shorts 9:16",
+  "opt_mouse_text": "Sélection de texte (Bloc-notes)",
+  "update_notify_notes_title": "Notes de version / Message de mise à jour :"
 }

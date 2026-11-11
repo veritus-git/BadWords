@@ -3,30 +3,45 @@
 
 fn main() {
     let mut detected_version = None;
-    let candidates = [
-        "../src/config/app_constants.py",
-        "../config/app_constants.py",
-        "src/config/app_constants.py",
-    ];
 
-    for path in candidates {
-        let app_constants = std::path::Path::new(path);
-        if let Ok(content) = std::fs::read_to_string(app_constants) {
-            println!("cargo:rerun-if-changed={}", path);
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("VERSION") {
-                    if let Some((_, v)) = trimmed.split_once('=') {
-                        let clean = v.trim().trim_matches(|c| c == '"' || c == '\'').trim();
-                        if !clean.is_empty() {
-                            detected_version = Some(clean.to_string());
-                            break;
+    let ver_files = ["../.version", ".version"];
+    for vf in ver_files {
+        if let Ok(v) = std::fs::read_to_string(vf) {
+            println!("cargo:rerun-if-changed={}", vf);
+            let clean = v.trim().trim_matches(|c| c == 'v' || c == 'V').trim();
+            if !clean.is_empty() && clean.chars().any(|c| c.is_ascii_digit()) {
+                detected_version = Some(clean.to_string());
+                break;
+            }
+        }
+    }
+
+    if detected_version.is_none() {
+        let candidates = [
+            "../src/config/app_constants.py",
+            "../config/app_constants.py",
+            "src/config/app_constants.py",
+        ];
+
+        for path in candidates {
+            let app_constants = std::path::Path::new(path);
+            if let Ok(content) = std::fs::read_to_string(app_constants) {
+                println!("cargo:rerun-if-changed={}", path);
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("VERSION") || trimmed.starts_with("_DEFAULT_VERSION") {
+                        if let Some((_, v)) = trimmed.split_once('=') {
+                            let clean = v.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+                            if !clean.is_empty() && !clean.contains('(') && !clean.contains(')') && clean.chars().any(|c| c.is_ascii_digit()) {
+                                detected_version = Some(clean.to_string());
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            if detected_version.is_some() {
-                break;
+                if detected_version.is_some() {
+                    break;
+                }
             }
         }
     }

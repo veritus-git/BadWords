@@ -400,6 +400,7 @@
   "update_notify_failed": "Update failed. Please try again or update manually.",
   "update_notify_btn_later": "Remind me later",
   "update_notify_btn_dismiss": "Don't notify me again",
+  "update_notify_btn_cancel": "Cancel",
   "lbl_more_accurate": "More accurate transcription",
   "tt_more_accurate": "This option allows you to paste/import a script before transcription. Keywords are extracted from this script and fed to Whisper (the audio transcription model), making the transcription more accurate.\n\nThis option is highly recommended for strictly technical scripts containing many words with non-phonetic spellings (e.g., system paths, names with numbers, special characters, etc.).\n\nAdditionally, this option automatically runs the transcript-script comparison algorithm, so after transcription is complete, colors are immediately visible, and the Side-by-side view loads instantly.",
   "tt_jump_to_word_info": "Jumps the DaVinci and internal audio player playhead to the exact moment the clicked word was spoken.\n\nAvailable shortcuts: CTRL/ALT/SHIFT + Left/Right Click.",
@@ -562,5 +563,13 @@
   "tt_mouse_rmb_mode": "Transcript marking behavior for Right Mouse Button. Brush Painting marks words continuously as you drag over them.",
   "lbl_resolve_render_timeline_proxy": "Render DaVinci Timeline Preview Proxy",
   "tt_resolve_render_timeline_proxy": "When complex video edits, b-roll, text titles, or transitions are detected on the DaVinci timeline, a lightweight 360p video proxy is rendered in the background after Whisper finishes so the preview matches your real timeline composition.",
-  "status_rendering_resolve_proxy": "Rendering DaVinci timeline video preview..."
+  "status_rendering_resolve_proxy": "Rendering DaVinci timeline video preview...",
+  "tt_add_more_files": "Add more files to sequence",
+  "lbl_media_files": "Media files",
+  "lbl_video_files": "Video files",
+  "lbl_audio_files": "Audio files",
+  "dlg_choose_media_files": "Select video or audio files",
+  "lbl_res_vertical": "Vertical / Shorts 9:16",
+  "opt_mouse_text": "Text Selection (Notepad)",
+  "update_notify_notes_title": "Release Notes / Update Message:"
 }

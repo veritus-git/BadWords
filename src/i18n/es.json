@@ -400,6 +400,7 @@
   "update_notify_failed": "Error al actualizar. Inténtalo de nuevo o actualiza manualmente.",
   "update_notify_btn_later": "Recordarme más tarde",
   "update_notify_btn_dismiss": "No volver a notificarme",
+  "update_notify_btn_cancel": "Cancelar",
   "lbl_more_accurate": "Transcripción más precisa",
   "tt_more_accurate": "Esta opción le permite pegar/importar un guión antes de la transcripción. Se extraen palabras clave de este guión y luego se introducen en Whisper (el modelo de transcripción de audio), haciendo que la transcripción sea más precisa.\n\nEsta opción es muy recomendada para guiones estrictamente técnicos que contienen muchas palabras con ortografía no fonética (por ejemplo, rutas de sistema, nombres con números, caracteres especiales, etc.).\n\nAdemás, esta opción ejecuta automáticamente el algoritmo de comparación de transcripción y guión, por lo que una vez completada la transcripción, los colores son visibles de inmediato y la vista de lado a lado se carga al instante.",
   "tt_jump_to_word_info": "Salta el cabezal de reproducción de DaVinci y del reproductor de audio interno al momento exacto en que se pronunció la palabra clickeada.\n\nAtajos disponibles: CTRL/ALT/MAYÚS + Clic Izquierdo/Derecho.",
@@ -562,5 +563,13 @@
   "tt_skip_cuts": "Omitir secciones cortadas durante la reproducción",
   "lbl_resolve_render_timeline_proxy": "Renderizar proxy de previsualización de línea de tiempo DaVinci",
   "tt_resolve_render_timeline_proxy": "Cuando se detectan ediciones complejas, recursos b-roll, títulos o transiciones en DaVinci, se renderiza un proxy ligero de 360p en segundo plano tras finalizar Whisper.",
-  "status_rendering_resolve_proxy": "Renderizando previsualización de línea de tiempo DaVinci..."
+  "status_rendering_resolve_proxy": "Renderizando previsualización de línea de tiempo DaVinci...",
+  "tt_add_more_files": "Agregar más archivos a la secuencia",
+  "lbl_media_files": "Archivos multimedia",
+  "lbl_video_files": "Archivos de video",
+  "lbl_audio_files": "Archivos de audio",
+  "dlg_choose_media_files": "Seleccionar archivos de video o audio",
+  "lbl_res_vertical": "Vertical / Shorts 9:16",
+  "opt_mouse_text": "Selección de texto (Bloc de notas)",
+  "update_notify_notes_title": "Notas de la versión / Mensaje de actualización:"
 }

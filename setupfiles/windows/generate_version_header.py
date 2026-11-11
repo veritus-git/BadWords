@@ -19,9 +19,19 @@ HEADER_PATH = os.path.join(SCRIPT_DIR, "version.h")
 
 
 def get_version():
+    ver_file = os.path.join(ROOT_DIR, ".version")
+    if os.path.isfile(ver_file):
+        try:
+            with open(ver_file, "r", encoding="utf-8") as f:
+                v = f.read().strip().lstrip("vV")
+                if v:
+                    return v
+        except Exception:
+            pass
     if os.path.isfile(CONSTANTS_PATH):
         with open(CONSTANTS_PATH, "r", encoding="utf-8") as f:
-            m = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', f.read())
+            text = f.read()
+            m = re.search(r'_DEFAULT_VERSION\s*=\s*["\']([^"\']+)["\']', text) or re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', text)
             if m:
                 return m.group(1).strip()
     return "4.0.0"

@@ -65,7 +65,7 @@ def load_app_version(install_dir=None):
     return "4.0.0"
 
 UPDATER_VERSION = load_app_version()
-UPDATER_BUILD   = 2026090602
+UPDATER_BUILD   = 2026111002
 
 def is_no_self_upgrade_configured(install_dir: str = None, args_no_self_upgrade: bool = False) -> bool:
     """
@@ -411,9 +411,13 @@ def extract_updater_meta(code_str: str) -> tuple:
     """Extracts (version_tuple, build_int) from an updater.py file content."""
     ver = (0, 0, 0)
     bld = 0
-    m_ver = re.search(r'UPDATER_VERSION\s*=\s*["\']([^"\']+)["\']', code_str)
-    if m_ver:
+    m_ver = re.search(r'UPDATER_VERSION\s*=\s*(?:load_app_version\(\)|["\']([^"\']+)["\'])', code_str)
+    if m_ver and m_ver.group(1):
         ver = parse_version(m_ver.group(1))
+    else:
+        m_v2 = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', code_str)
+        if m_v2:
+            ver = parse_version(m_v2.group(1))
     m_bld = re.search(r'UPDATER_BUILD\s*=\s*(\d+)', code_str)
     if m_bld:
         try:
@@ -425,7 +429,7 @@ def extract_updater_meta(code_str: str) -> tuple:
 def self_upgrade_if_needed(tag: str, install_dir: str = None) -> bool:
     """
     Compares the running updater.py with updater.py from the latest git tag.
-    If the remote updater is strictly newer, replaces itself, pulls auxiliary files,
+    If the remote updater is strictly newer or different, replaces itself, pulls auxiliary files,
     and relaunches into the updated script.
     """
     if os.environ.get("_BW_UPDATER_SELF_UPGRADED") == "1":
@@ -451,6 +455,12 @@ def self_upgrade_if_needed(tag: str, install_dir: str = None) -> bool:
         warn(f"Remote updater from tag '{tag}' failed syntax check: {e}")
         return False
 
+    remote_hash = hashlib.sha256(remote_code).hexdigest()
+    local_hash = hashlib.sha256(current_content).hexdigest() if current_content else ""
+
+    if remote_hash == local_hash:
+        return False
+
     # Check version & build metadata to guarantee we never downgrade
     local_text = current_content.decode("utf-8", errors="replace")
     remote_text = remote_code.decode("utf-8", errors="replace")
@@ -458,17 +468,11 @@ def self_upgrade_if_needed(tag: str, install_dir: str = None) -> bool:
     local_ver, local_bld = extract_updater_meta(local_text)
     remote_ver, remote_bld = extract_updater_meta(remote_text)
 
-    # If remote doesn't have metadata (legacy script), or is older/equal, skip self-upgrade
-    if (remote_ver, remote_bld) <= (local_ver, local_bld):
+    # If local has a strictly higher build, skip self-upgrade
+    if remote_bld > 0 and local_bld > 0 and remote_bld < local_bld:
         return False
 
-    remote_hash = hashlib.sha256(remote_code).hexdigest()
-    local_hash = hashlib.sha256(current_content).hexdigest() if current_content else ""
-
-    if remote_hash == local_hash:
-        return False
-
-    log(f"Newer updater detected on tag '{tag}' (v{remote_ver[0]}.{remote_ver[1]}.{remote_ver[2]} build {remote_bld}). Self-upgrading...")
+    log(f"Newer or updated updater detected on tag '{tag}' (remote build: {remote_bld}, local build: {local_bld}). Self-upgrading...")
 
     # Overwrite running script
     try:
@@ -478,16 +482,18 @@ def self_upgrade_if_needed(tag: str, install_dir: str = None) -> bool:
         warn(f"Could not overwrite running script ({current_script}): {e}")
         return False
 
-    # Also sync into install_dir if present
+    # Also sync into install_dir (both setupfiles/updater.py and root updater.py)
     if install_dir and os.path.isdir(install_dir):
         inst_updater = os.path.join(install_dir, "setupfiles", "updater.py")
-        if os.path.abspath(inst_updater) != current_script:
-            try:
-                os.makedirs(os.path.dirname(inst_updater), exist_ok=True)
-                with open(inst_updater, "wb") as f:
-                    f.write(remote_code)
-            except Exception:
-                pass
+        root_updater = os.path.join(install_dir, "updater.py")
+        for u_dest in (inst_updater, root_updater):
+            if os.path.abspath(u_dest) != current_script:
+                try:
+                    os.makedirs(os.path.dirname(u_dest), exist_ok=True)
+                    with open(u_dest, "wb") as f:
+                        f.write(remote_code)
+                except Exception:
+                    pass
 
     # Pull auxiliary files required by the new updater
     sync_auxiliary_files(tag, install_dir)
@@ -881,6 +887,16 @@ def get_resolve_script_dirs():
     return unique
 
 def deploy_davinci_wrappers(install_dir):
+    try:
+        sys.path.insert(0, install_dir)
+        sys.path.insert(0, os.path.join(install_dir, "setupfiles"))
+        from setupfiles.setup import generate_davinci_wrapper
+        generate_davinci_wrapper(install_dir)
+        info("DaVinci Resolve script wrapper updated via setup module.")
+        return
+    except Exception as e:
+        warn(f"Invoking setup.generate_davinci_wrapper notice: {e}")
+
     wrapper_content = f'''#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # BadWords - AI-powered DaVinci Resolve Workflow Plugin
@@ -890,6 +906,42 @@ import sys
 import os
 
 INSTALL_DIR = r"{install_dir}"
+
+def _launch_external():
+    import subprocess
+    venv_py = os.path.join(INSTALL_DIR, "venv", "Scripts", "pythonw.exe") if sys.platform.startswith('win') else os.path.join(INSTALL_DIR, "venv", "bin", "python3")
+    if not os.path.isfile(venv_py):
+        venv_py = os.path.join(INSTALL_DIR, "venv", "Scripts", "python.exe") if sys.platform.startswith('win') else os.path.join(INSTALL_DIR, "venv", "bin", "python")
+    if not os.path.isfile(venv_py):
+        venv_py = sys.executable
+    main_py = os.path.join(INSTALL_DIR, "main.py")
+    if not os.path.isfile(main_py):
+        main_py = os.path.join(INSTALL_DIR, "src", "main.py")
+    if os.path.isfile(main_py):
+        kwargs = {{}}
+        if sys.platform.startswith('win'):
+            kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+        subprocess.Popen([venv_py, main_py, "--resolve-attached"], cwd=INSTALL_DIR, **kwargs)
+
+_venv_ver = None
+_cfg = os.path.join(INSTALL_DIR, "venv", "pyvenv.cfg")
+if os.path.isfile(_cfg):
+    try:
+        with open(_cfg, "r", encoding="utf-8", errors="ignore") as _f:
+            for _l in _f:
+                if _l.strip().lower().startswith("version"):
+                    _v_str = _l.split("=")[-1].strip()
+                    _p = [int(x) for x in _v_str.split(".")[:2] if x.isdigit()]
+                    if len(_p) == 2:
+                        _venv_ver = tuple(_p)
+                    break
+    except Exception:
+        pass
+
+_host_ver = sys.version_info[:2]
+if _venv_ver is not None and _venv_ver != _host_ver:
+    _launch_external()
+    sys.exit(0)
 
 if os.path.isdir(INSTALL_DIR):
     if INSTALL_DIR not in sys.path:
@@ -903,11 +955,14 @@ if os.path.isdir(INSTALL_DIR):
         main_script = os.path.join(INSTALL_DIR, "src", "main.py")
 
     if os.path.isfile(main_script):
-        with open(main_script, "rb") as f:
-            code = compile(f.read(), main_script, "exec")
-            globs = globals()
-            globs["__file__"] = main_script
-            exec(code, globs)
+        try:
+            with open(main_script, "rb") as f:
+                code = compile(f.read(), main_script, "exec")
+                globs = globals()
+                globs["__file__"] = main_script
+                exec(code, globs)
+        except Exception:
+            _launch_external()
 '''
     script_dirs = get_resolve_script_dirs()
     count = 0
@@ -987,6 +1042,7 @@ def refresh_os_launchers_and_shortcuts(install_dir):
 def main():
     parser = argparse.ArgumentParser(description="BadWords Auto-Updater")
     parser.add_argument("--install-dir", required=False, help="Path to BadWords installation directory")
+    parser.add_argument("--version", default="", help="Specific git tag/version to install (e.g. 4.0.0, v4.0.0)")
     parser.add_argument("--test-screenshot", default="", help="Save migration window screenshot to file and exit")
     parser.add_argument("--lang", default="", help="Language override for screenshot or test")
     parser.add_argument("--no-self-upgrade", action="store_true", help="Disable automatic updater self-upgrade")
@@ -1037,15 +1093,21 @@ def main():
     else:
         info("Updater self-upgrade skipped (--no-self-upgrade or developer configuration active).")
 
-    # 2. Check latest release for BadWords program update (RELEASES, not tags)
-    info("Checking latest release for BadWords update...")
-    rel_tag, zip_url, source_repo = get_latest_release()
-    if not rel_tag or not zip_url:
-        warn("Could not determine latest release from GitHub/GitLab releases, falling back to latest tag...")
-        rel_tag, zip_url, source_repo = get_latest_tag()
+    # 2. Check target release for BadWords program update
+    if getattr(args, 'version', None) and args.version.strip():
+        rel_tag = args.version.strip()
+        zip_url = f"https://github.com/veritus-git/BadWords/archive/refs/tags/{rel_tag}.zip"
+        source_repo = "GitHub Tag"
+        info(f"Target version explicitly requested: {rel_tag}")
+    else:
+        info("Checking latest release for BadWords update...")
+        rel_tag, zip_url, source_repo = get_latest_release()
+        if not rel_tag or not zip_url:
+            warn("Could not determine latest release from GitHub/GitLab releases, falling back to latest tag...")
+            rel_tag, zip_url, source_repo = get_latest_tag()
 
     if not rel_tag or not zip_url:
-        err("Could not determine latest version from GitHub or GitLab.")
+        err("Could not determine target version from GitHub or GitLab.")
         sys.exit(1)
 
     log(f"Target release: {rel_tag} (source: {source_repo})")
@@ -1065,7 +1127,21 @@ def main():
     zip_path = os.path.join(tmp_dir, "repo.zip")
 
     info(f"Downloading source release from {source_repo}...")
-    if not download(zip_url, zip_path):
+    dl_ok = download(zip_url, zip_path)
+    if not dl_ok:
+        # Try alternate tag formatting (with or without leading 'v') and mirror
+        alt_tag = rel_tag[1:] if (rel_tag.startswith("v") or rel_tag.startswith("V")) else f"v{rel_tag}"
+        alt_urls = [
+            f"https://github.com/veritus-git/BadWords/archive/refs/tags/{alt_tag}.zip",
+            f"https://gitlab.com/badwords/BadWords/-/archive/{rel_tag}/BadWords-{rel_tag}.zip",
+            f"https://gitlab.com/badwords/BadWords/-/archive/{alt_tag}/BadWords-{alt_tag}.zip",
+        ]
+        for a_url in alt_urls:
+            info(f"Retrying download using candidate URL: {a_url}")
+            if download(a_url, zip_path):
+                dl_ok = True
+                break
+    if not dl_ok:
         err("Download failed.")
         shutil.rmtree(tmp_dir, ignore_errors=True)
         sys.exit(1)
@@ -1139,7 +1215,42 @@ def main():
 
     log("Application files deployed cleanly.")
 
-    # 4. Pip upgrades
+    # Stamp .version file and sync app_constants
+    clean_tag = rel_tag.lstrip("vV")
+    try:
+        with open(os.path.join(install_dir, ".version"), "w", encoding="utf-8") as f:
+            f.write(f"{clean_tag}\n")
+    except Exception as e:
+        warn(f"Could not stamp .version file: {e}")
+
+    # Remove stale bytecode caches
+    info("Cleaning stale bytecode caches...")
+    for root, dirs, files in os.walk(install_dir):
+        if "venv" in root:
+            continue
+        for d in list(dirs):
+            if d == "__pycache__":
+                shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                dirs.remove(d)
+        for f in files:
+            if f.endswith(".pyc") or f.endswith(".pyo"):
+                try: os.remove(os.path.join(root, f))
+                except Exception: pass
+
+    # Clean legacy v3 root files
+    legacy_v3_files = [
+        "BadWords_Launcher.py", "transcribe.py", "timeline.py", "silence.py",
+        "audio.py", "BadWords.lua", "Badwords.py", "BadWords (Linux).py",
+        "BadWords (Mac).py", "BadWords (macOS).py", "BadWords (Windows).py",
+        "config.py", "gui.py", "interface.py", "whisper_net.py"
+    ]
+    for leg in legacy_v3_files:
+        leg_p = os.path.join(install_dir, leg)
+        if os.path.isfile(leg_p):
+            try: os.remove(leg_p)
+            except Exception: pass
+
+    # 4. Pip upgrades & venv integrity check
     venv_dir = os.path.join(install_dir, "venv")
     if os.name == "nt":
         venv_py = os.path.join(venv_dir, "Scripts", "python.exe")
@@ -1190,7 +1301,17 @@ def main():
             else:
                 warn("Apple GPU engine could not be installed. Transcription will use the CPU.")
 
-        log("Python packages upgraded.")
+        # Verify environment integrity
+        info("Verifying Python packages integrity...")
+        test_cmd = [venv_py, "-c", "import PySide6, faster_whisper, pypdf; print('OK')"]
+        verify_res = subprocess.run(test_cmd, capture_output=True, text=True, **_sp_hidden_kwargs())
+        if verify_res.returncode != 0:
+            warn(f"Integrity check notice: {verify_res.stderr.strip() if verify_res.stderr else 'missing modules'}. Running automatic repair...")
+            subprocess.run([venv_pip, "install", "--upgrade", "--force-reinstall", "faster-whisper", "av<19", "pypdf", "PySide6"],
+                           capture_output=True, **_sp_hidden_kwargs())
+            info("Auto-repair completed.")
+
+        log("Python packages verified and ready.")
     else:
         warn("venv pip not found — skipping package upgrade.")
 

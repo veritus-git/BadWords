@@ -77,6 +77,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     wchar_t log_path[MAX_PATH_LEN];
     _snwprintf(log_path, MAX_PATH_LEN, L"%s\\badwords_debug.log", install_dir);
     FILE *log_fp = _wfsopen(log_path, L"a", _SH_DENYNO);
+    if (!log_fp) {
+        wchar_t local_app[MAX_PATH_LEN] = {0};
+        if (GetEnvironmentVariableW(L"LOCALAPPDATA", local_app, MAX_PATH_LEN - 1)) {
+            _snwprintf(log_path, MAX_PATH_LEN, L"%s\\BadWords\\badwords_debug.log", local_app);
+            log_fp = _wfsopen(log_path, L"a", _SH_DENYNO);
+        }
+    }
     if (log_fp) {
         int log_fd = _fileno(log_fp);
         (void)_dup2(log_fd, 1);
@@ -115,6 +122,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         }
     }
     fwprintf(stderr, L"[LAUNCHER] Main script:   %s\n", main_py);
+
+    if (active_py[0] == L'\0') {
+        fwprintf(stderr, L"[LAUNCHER] ERROR: No valid python.exe or pythonw.exe found in %s\\venv\\Scripts\n", install_dir);
+        MessageBoxW(NULL,
+            L"BadWords could not locate Python in the virtual environment.\n\n"
+            L"Please reinstall or run the BadWords Setup Installer to repair the environment.",
+            L"BadWords - Python Environment Missing",
+            MB_ICONERROR | MB_OK);
+        return 1;
+    }
+    if (main_py[0] == L'\0') {
+        fwprintf(stderr, L"[LAUNCHER] ERROR: No main.py found in %s\n", install_dir);
+        MessageBoxW(NULL,
+            L"BadWords could not locate the main application script (main.py).\n\n"
+            L"Please reinstall or run the BadWords Setup Installer to repair the files.",
+            L"BadWords - Core Files Missing",
+            MB_ICONERROR | MB_OK);
+        return 1;
+    }
 
     // 5. Inspect pyvenv.cfg to detect Python home directory
     wchar_t venv_home[MAX_PATH_LEN] = {0};
@@ -315,15 +341,33 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     );
 
     if (ok) {
+        DWORD t_start = GetTickCount();
         WaitForSingleObject(pi.hProcess, INFINITE);
         DWORD exit_code = 0;
         GetExitCodeProcess(pi.hProcess, &exit_code);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        fwprintf(stderr, L"[LAUNCHER] Child process exited with code %lu\n", exit_code);
+        DWORD t_dur = GetTickCount() - t_start;
+        fwprintf(stderr, L"[LAUNCHER] Child process exited with code %lu (ran for %lu ms)\n", exit_code, t_dur);
+        if (exit_code != 0 && t_dur < 5000) {
+            wchar_t err_msg[1024];
+            _snwprintf(err_msg, 1024,
+                L"BadWords failed to start (exit code %lu).\n\n"
+                L"If this is a fresh Windows installation, please verify that Microsoft Visual C++ 2015-2022 Redistributable (x64) is installed.\n\n"
+                L"Diagnostic logs were written to:\n%s",
+                exit_code, log_path);
+            MessageBoxW(NULL, err_msg, L"BadWords - Startup Error", MB_ICONERROR | MB_OK);
+        }
         return (int)exit_code;
     } else {
-        fwprintf(stderr, L"[LAUNCHER] CreateProcessW failed (error %lu)\n", GetLastError());
+        DWORD err = GetLastError();
+        fwprintf(stderr, L"[LAUNCHER] CreateProcessW failed (error %lu)\n", err);
+        wchar_t err_msg[1024];
+        _snwprintf(err_msg, 1024,
+            L"Failed to launch BadWords process (System Error %lu).\n\n"
+            L"Command: %s",
+            err, cmdline);
+        MessageBoxW(NULL, err_msg, L"BadWords - Launch Error", MB_ICONERROR | MB_OK);
     }
 
     return 1;

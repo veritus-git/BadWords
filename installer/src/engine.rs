@@ -463,6 +463,13 @@ pub fn find_local_repo() -> Option<PathBuf> {
 
 /// Reads the version string from app_constants.py in a directory or fallback
 pub fn read_app_version_from_dir(dir: &Path) -> Option<String> {
+    let dot_version = dir.join(".version");
+    if let Ok(v) = fs::read_to_string(&dot_version) {
+        let trimmed = v.trim().trim_matches(|c| c == 'v' || c == 'V');
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
     let candidates = [
         dir.join("src").join("config").join("app_constants.py"),
         dir.join("config").join("app_constants.py"),
@@ -473,10 +480,10 @@ pub fn read_app_version_from_dir(dir: &Path) -> Option<String> {
         if let Ok(content) = fs::read_to_string(&config_path) {
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("VERSION") || trimmed.starts_with("APP_VERSION") {
+                if trimmed.starts_with("VERSION") || trimmed.starts_with("APP_VERSION") || trimmed.starts_with("_DEFAULT_VERSION") || trimmed.starts_with("base_ver") {
                     if let Some((_, val)) = trimmed.split_once('=') {
                         let clean = val.trim().trim_matches(|c| c == '"' || c == '\'').trim();
-                        if !clean.is_empty() {
+                        if !clean.is_empty() && !clean.contains('(') && !clean.contains(')') && clean.chars().any(|c| c.is_ascii_digit()) {
                             return Some(clean.to_string());
                         }
                     }
@@ -608,6 +615,9 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
                 }
             }
         }
+
+        let ver = read_app_version_from_dir(&repo_dir).unwrap_or_else(|| APP_VERSION.to_string());
+        let _ = fs::write(target_dir.join(".version"), format!("{}\n", ver));
 
         emit_log(sender, "OK", "Local application files deployed successfully.");
         return true;
@@ -865,6 +875,168 @@ pub fn fetch_git_branches() -> Vec<String> {
     vec!["main".to_string(), "dev-v4".to_string()]
 }
 
+/// Downloads and deploys BadWords from a specific git release tag (>= 4.0.0)
+fn deploy_version_files(target_dir: &Path, version: &str, sender: &EventSender) -> bool {
+    let temp_dir = std::env::temp_dir();
+    let zip_dest = temp_dir.join(format!("badwords_version_{}.zip", version));
+    let extract_dest = temp_dir.join(format!("badwords_version_{}_extracted", version));
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    let _ = fs::create_dir_all(&extract_dest);
+
+    let mut downloaded = false;
+    let alt_ver = if version.starts_with('v') || version.starts_with('V') {
+        version[1..].to_string()
+    } else {
+        format!("v{}", version)
+    };
+    let candidate_urls = vec![
+        format!("https://github.com/veritus-git/BadWords/archive/refs/tags/{}.zip", version),
+        format!("https://github.com/veritus-git/BadWords/archive/refs/tags/{}.zip", alt_ver),
+        format!("https://gitlab.com/badwords/BadWords/-/archive/{}/BadWords-{}.zip", version, version),
+        format!("https://gitlab.com/badwords/BadWords/-/archive/{}/BadWords-{}.zip", alt_ver, alt_ver),
+    ];
+
+    for url in candidate_urls {
+        emit_log(sender, "INFO", &format!("Fetching version package from: {}", url));
+        if download_file_with_progress(&url, &zip_dest, 30, "Deploying version files...", &format!("Downloading version '{}'", version), sender).is_ok() {
+            downloaded = true;
+            break;
+        }
+    }
+
+    if !downloaded {
+        emit_log(sender, "ERROR", &format!("Failed to download version '{}'. Check internet connection.", version));
+        return false;
+    }
+
+    emit_log(sender, "INFO", "Extracting BadWords package files...");
+    if extract_zip(&zip_dest, &extract_dest).is_err() {
+        emit_log(sender, "ERROR", "Failed to extract downloaded version archive.");
+        return false;
+    }
+
+    if let Ok(entries) = fs::read_dir(&extract_dest) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file()) {
+                let src_sub = if p.join("src").is_dir() { p.join("src") } else { p.clone() };
+                let _ = copy_dir_all(&src_sub, target_dir);
+
+                let assets_sub = p.join("assets");
+                if assets_sub.is_dir() {
+                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
+                }
+
+                let setup_sub = p.join("setupfiles");
+                if setup_sub.is_dir() {
+                    let _ = copy_dir_all(&setup_sub, target_dir.join("setupfiles"));
+                    let up_py = setup_sub.join("updater.py");
+                    if up_py.is_file() {
+                        let _ = fs::copy(up_py, target_dir.join("updater.py"));
+                    }
+                }
+
+                let installer_dest_name = if cfg!(target_os = "windows") { "badwords-installer.exe" } else { "badwords-installer" };
+                if let Ok(cur_exe) = std::env::current_exe() {
+                    let dest_bin = target_dir.join(installer_dest_name);
+                    if cur_exe != dest_bin {
+                        let _ = fs::copy(&cur_exe, &dest_bin);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                        }
+                    }
+                }
+
+                let clean_ver = version.trim_start_matches(|c| c == 'v' || c == 'V');
+                let _ = fs::write(target_dir.join(".version"), format!("{}\n", clean_ver));
+
+                emit_log(sender, "OK", &format!("Version '{}' deployed successfully.", version));
+                let _ = fs::remove_file(&zip_dest);
+                let _ = fs::remove_dir_all(&extract_dest);
+                return true;
+            }
+        }
+    }
+
+    let _ = fs::remove_file(&zip_dest);
+    let _ = fs::remove_dir_all(&extract_dest);
+    false
+}
+
+/// Fetches the list of git release tags (>= 4.0.0) from GitHub or GitLab API
+pub fn fetch_git_versions() -> Vec<String> {
+    let mut tags: Vec<String> = Vec::new();
+    if let Ok(resp) = ureq::get("https://api.github.com/repos/veritus-git/BadWords/releases")
+        .set("User-Agent", "badwords-installer")
+        .timeout(std::time::Duration::from_secs(6))
+        .call()
+    {
+        if let Ok(json) = resp.into_json::<serde_json::Value>() {
+            if let Some(arr) = json.as_array() {
+                tags = arr
+                    .iter()
+                    .filter(|rel| !rel.get("draft").and_then(|d| d.as_bool()).unwrap_or(false))
+                    .filter_map(|rel| rel.get("tag_name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+            }
+        }
+    }
+
+    if tags.is_empty() {
+        if let Ok(output) = os::create_hidden_command("curl")
+            .args(["-s", "-H", "User-Agent: badwords-installer", "https://api.github.com/repos/veritus-git/BadWords/releases"])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    if let Some(arr) = json.as_array() {
+                        tags = arr
+                            .iter()
+                            .filter(|rel| !rel.get("draft").and_then(|d| d.as_bool()).unwrap_or(false))
+                            .filter_map(|rel| rel.get("tag_name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                            .collect();
+                    }
+                }
+            }
+        }
+    }
+
+    if tags.is_empty() {
+        if let Ok(resp) = ureq::get("https://gitlab.com/api/v4/projects/badwords%2FBadWords/releases")
+            .set("User-Agent", "badwords-installer")
+            .timeout(std::time::Duration::from_secs(6))
+            .call()
+        {
+            if let Ok(json) = resp.into_json::<serde_json::Value>() {
+                if let Some(arr) = json.as_array() {
+                    tags = arr
+                        .iter()
+                        .filter_map(|b| b.get("tag_name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                        .collect();
+                }
+            }
+        }
+    }
+
+    let v4_tags: Vec<String> = tags
+        .into_iter()
+        .filter(|t| {
+            let clean = t.trim_start_matches(|c| c == 'v' || c == 'V');
+            if let Some(maj_str) = clean.split('.').next() {
+                maj_str.parse::<u32>().map(|m| m >= 4).unwrap_or(false)
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    v4_tags
+}
+
 /// Configures developer mode marker and settings.json flag
 pub fn configure_no_self_upgrade(target_dir: &Path, sender: &EventSender) {
     let marker = target_dir.join(".no_self_upgrade");
@@ -1025,25 +1197,51 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
 
     #[cfg(target_os = "macos")]
     {
-        let url = "https://evermeet.cx/ffmpeg/getrelease/zip";
-        let temp_dir = std::env::temp_dir();
-        let archive = temp_dir.join("ffmpeg_mac.zip");
+        // 1. Homebrew check first
+        for brew_p in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+            let bp = Path::new(brew_p);
+            if bp.is_file() && fs::copy(bp, &ffmpeg_bin).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                emit_log(sender, "OK", &format!("Copied Homebrew FFmpeg ({}) into bin/ directory.", brew_p));
+                return;
+            }
+        }
 
-        let dl_ok = download_file_with_progress(url, &archive, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (macOS)", sender).is_ok()
+        // Try installing via brew if available
+        if let Ok(output) = os::create_hidden_command("which").arg("brew").output() {
+            if output.status.success() {
+                emit_log(sender, "INFO", "Homebrew detected; installing FFmpeg via brew...");
+                let _ = os::create_hidden_command("brew").args(["install", "ffmpeg"]).status();
+                for brew_p in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+                    let bp = Path::new(brew_p);
+                    if bp.is_file() && fs::copy(bp, &ffmpeg_bin).is_ok() {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+                        emit_log(sender, "OK", "Installed and configured Homebrew FFmpeg.");
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 2. Direct static binary fallback from GitHub
+        let arch = if std::env::consts::ARCH == "aarch64" { "arm64" } else { "x64" };
+        let url = format!("https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-{}", arch);
+
+        emit_log(sender, "INFO", &format!("Downloading static FFmpeg binary for macOS ({}) from GitHub...", arch));
+        let dl_ok = download_file_with_progress(&url, &ffmpeg_bin, 48, "Configuring FFmpeg...", "Downloading portable FFmpeg (macOS)", sender).is_ok()
             || os::create_hidden_command("curl")
-                .args(["-L", "-f", "-s", "--max-time", "120", url, "-o", &archive.to_string_lossy()])
+                .args(["-L", "-f", "-s", "--max-time", "180", &url, "-o", &ffmpeg_bin.to_string_lossy()])
                 .status()
                 .map(|s| s.success())
                 .unwrap_or(false);
 
-        if dl_ok {
-            if extract_zip(&archive, bin_dir).is_ok() {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
-                emit_log(sender, "OK", "Portable FFmpeg for macOS installed successfully.");
-                let _ = fs::remove_file(&archive);
-                return;
-            }
+        if dl_ok && ffmpeg_bin.is_file() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&ffmpeg_bin, fs::Permissions::from_mode(0o755));
+            emit_log(sender, "OK", &format!("Portable static FFmpeg for macOS ({}) installed successfully.", arch));
+            return;
         }
     }
 
@@ -1435,6 +1633,7 @@ fn run_install_core(
     #[allow(unused_variables)] create_menu: bool,
     is_dev: bool,
     branch: Option<String>,
+    version: Option<String>,
     sender: EventSender,
 ) {
     std::thread::spawn(move || {
@@ -1490,7 +1689,7 @@ fn run_install_core(
         clean_wipe_target_dir(&target_dir, &sender);
 
         // 5. Sync / Download source files
-        if is_dev {
+        if is_dev || version.as_deref() == Some("LOCAL") {
             if let Some(ref br) = branch {
                 emit_progress(&sender, 30, 1, &format!("Deploying branch '{}'...", br), "Downloading branch archive");
                 if !deploy_branch_files(&target_dir, br, &sender) {
@@ -1505,6 +1704,12 @@ fn run_install_core(
                 }
             }
             configure_no_self_upgrade(&target_dir, &sender);
+        } else if let Some(ref ver) = version {
+            emit_progress(&sender, 30, 1, &format!("Deploying version '{}'...", ver), "Downloading release archive");
+            if !deploy_version_files(&target_dir, ver, &sender) {
+                emit_complete(&sender, "install", false, "Failed to deploy BadWords version package.");
+                return;
+            }
         } else {
             emit_progress(&sender, 30, 1, "Deploying application files...", "Copying BadWords source and assets");
             if !deploy_application_files(&target_dir, &sender) {
@@ -1580,8 +1785,8 @@ fn run_install_core(
 }
 
 /// Executes standard installation or update
-pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, sender: EventSender) {
-    run_install_core(target_dir, create_desktop, create_menu, false, None, sender);
+pub fn run_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused_variables)] create_menu: bool, version: Option<String>, sender: EventSender) {
+    run_install_core(target_dir, create_desktop, create_menu, false, None, version, sender);
 }
 
 /// Executes developer installation (local repo or branch archive, disabling updater self-upgrade)
@@ -1590,11 +1795,11 @@ pub fn run_dev_install(target_dir: PathBuf, create_desktop: bool, #[allow(unused
         Some(ref b) if b.contains("local") => None,
         other => other,
     };
-    run_install_core(target_dir, create_desktop, create_menu, true, clean_branch, sender);
+    run_install_core(target_dir, create_desktop, create_menu, true, clean_branch, None, sender);
 }
 
 /// Executes file verification and repair
-pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
+pub fn run_repair(mut target_dir: PathBuf, version: Option<String>, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", "Starting verification and repair...");
         emit_progress(&sender, 10, 0, "Scanning files...", "Verifying directory structure");
@@ -1612,7 +1817,18 @@ pub fn run_repair(mut target_dir: PathBuf, sender: EventSender) {
 
         // Re-deploy application core files
         emit_progress(&sender, 30, 1, "Repairing core files...", "Re-syncing files from repository");
-        let _ = deploy_application_files(&target_dir, &sender);
+        let deploy_ok = match version.as_deref() {
+            Some(ver) if ver != "LOCAL" => {
+                emit_progress(&sender, 30, 1, &format!("Repairing files from release '{}'...", ver), "Downloading release archive");
+                deploy_version_files(&target_dir, ver, &sender)
+            }
+            _ => deploy_application_files(&target_dir, &sender),
+        };
+        if !deploy_ok {
+            emit_log(&sender, "ERROR", "Failed to deploy core files during repair.");
+            emit_complete(&sender, "repair", false, "Failed to deploy BadWords files during repair.");
+            return;
+        }
 
         // Verify FFmpeg
         emit_progress(&sender, 45, 1, "Checking media engine...", "Verifying FFmpeg binary");
@@ -1739,7 +1955,7 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
 }
 
 /// Executes complete reset and clean reinstall
-pub fn run_reset(target_dir: PathBuf, sender: EventSender) {
+pub fn run_reset(target_dir: PathBuf, create_desktop: bool, create_menu: bool, version: Option<String>, sender: EventSender) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Resetting BadWords in: {}", target_dir.display()));
 
@@ -1750,7 +1966,11 @@ pub fn run_reset(target_dir: PathBuf, sender: EventSender) {
         }
 
         emit_progress(&sender, 35, 1, "Reinstalling fresh copy...", "Beginning clean installation");
-        run_install(target_dir, true, true, sender);
+        if version.as_deref() == Some("LOCAL") {
+            run_dev_install(target_dir, create_desktop, create_menu, None, sender);
+        } else {
+            run_install(target_dir, create_desktop, create_menu, version, sender);
+        }
     });
 }
 
@@ -1801,75 +2021,193 @@ fn generate_davinci_wrapper(install_dir: &Path) -> String {
     let main_script_str = install_dir.join("main.py").to_string_lossy().replace('\\', "/");
 
     format!(
-r#"import sys, os, traceback
+r#"import sys, os, traceback, builtins
+
+for _k in ("resolve", "bmd", "fusion", "fu"):
+    if _k in globals() and globals()[_k] is not None:
+        setattr(builtins, _k, globals()[_k])
+    elif _k in locals() and locals()[_k] is not None:
+        setattr(builtins, _k, locals()[_k])
 
 INSTALL_DIR = r"{install_str}"
 MAIN_SCRIPT = r"{main_script_str}"
+
+if not os.path.exists(MAIN_SCRIPT):
+    for _alt_cand in [
+        os.path.join(os.path.dirname(INSTALL_DIR), "main.py"),
+        os.path.join(os.path.dirname(INSTALL_DIR), "src", "main.py"),
+        os.path.join(INSTALL_DIR, "src", "main.py"),
+    ]:
+        if os.path.isfile(_alt_cand):
+            MAIN_SCRIPT = _alt_cand
+            break
 
 # 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
 _candidates = [
     r"{libs_str}",
     os.path.join(INSTALL_DIR, "libs"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "libs"),
     os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
+    os.path.join(os.path.dirname(INSTALL_DIR), "venv", "Lib", "site-packages"),
 ]
 
-_v_lib = os.path.join(INSTALL_DIR, "venv", "lib")
-if os.path.isdir(_v_lib):
-    try:
-        for _entry in os.listdir(_v_lib):
-            _sp = os.path.join(_v_lib, _entry, "site-packages")
-            if os.path.isdir(_sp) and _sp not in _candidates:
-                _candidates.append(_sp)
-    except Exception:
-        pass
+for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    for _lib_sub in ("lib", "lib64"):
+        _v_lib = os.path.join(_base, "venv", _lib_sub)
+        if os.path.isdir(_v_lib):
+            try:
+                for _entry in os.listdir(_v_lib):
+                    _sp = os.path.join(_v_lib, _entry, "site-packages")
+                    if os.path.isdir(_sp) and _sp not in _candidates:
+                        _candidates.append(_sp)
+            except Exception:
+                pass
 
-for _sp_dir in _candidates:
-    if os.path.isdir(_sp_dir):
-        if _sp_dir in sys.path:
-            sys.path.remove(_sp_dir)
-        sys.path.insert(0, _sp_dir)
+# 2. Launch external process helper
+def _launch_external():
+    import subprocess, shutil
+    clean_env = os.environ.copy()
+    clean_env["BADWORDS_EMBEDDED"] = "1"
+    if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
+        clean_paths = [p for p in clean_env['LD_LIBRARY_PATH'].split(os.pathsep) if 'resolve' not in p.lower()]
+        clean_env['LD_LIBRARY_PATH'] = os.pathsep.join(clean_paths)
+    for cand in [
+        os.path.join(INSTALL_DIR, 'BadWords'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords'),
+        os.path.join(INSTALL_DIR, 'BadWords.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords.exe'),
+    ]:
+        if os.path.isfile(cand) and (sys.platform.startswith('win') or os.access(cand, os.X_OK)):
+            try:
+                subprocess.Popen([cand, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+                print("[BadWords] Launched standalone binary:", cand)
+                return True
+            except Exception:
+                pass
 
-if INSTALL_DIR not in sys.path:
-    sys.path.append(INSTALL_DIR)
+    py_cands = [
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'python.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'pythonw.exe'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'python.exe'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3'),
+        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python3'),
+        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python'),
+    ]
+    py_bin = next((p for p in py_cands if os.path.isfile(p)), None)
+    if not py_bin:
+        curr_exe = sys.executable or ""
+        if "resolve" not in curr_exe.lower() and os.path.isfile(curr_exe):
+            py_bin = curr_exe
+        elif sys.platform.startswith('win'):
+            py_bin = shutil.which('pythonw') or shutil.which('python') or 'python'
+        else:
+            py_bin = shutil.which('python3') or shutil.which('python') or 'python3'
 
-# 2. Windows: register DLL search paths for PySide6 and shiboken6
-if sys.platform.startswith('win') and hasattr(os, 'add_dll_directory'):
-    for _sp_dir in _candidates:
-        if os.path.isdir(_sp_dir):
-            for _pkg in ['PySide6', 'shiboken6']:
-                _p = os.path.join(_sp_dir, _pkg)
-                if os.path.isdir(_p):
-                    try: os.add_dll_directory(_p)
-                    except Exception: pass
+    subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
+    print("[BadWords] Launched external process:", MAIN_SCRIPT)
+    return True
 
-# 3. Linux: Preload Qt6 shared libraries if needed
-if sys.platform.startswith('linux'):
-    import ctypes
-    for _sp_dir in _candidates:
-        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
-        if os.path.isdir(_qt_lib_dir):
-            _qt_preload = [
-                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-            ]
-            for _lib in _qt_preload:
-                _p = os.path.join(_qt_lib_dir, _lib)
-                if os.path.exists(_p):
-                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                    except OSError: pass
+# 3. Detect venv Python version to avoid CPython ABI crashes in host DaVinci Resolve
+_venv_ver = None
+for _v_base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    _cfg = os.path.join(_v_base, "venv", "pyvenv.cfg")
+    if os.path.isfile(_cfg):
+        try:
+            with open(_cfg, "r", encoding="utf-8") as _f:
+                for _l in _f:
+                    if _l.strip().lower().startswith("version"):
+                        _v_str = _l.split("=")[-1].strip()
+                        _p = [int(x) for x in _v_str.split(".")[:2] if x.isdigit()]
+                        if len(_p) == 2:
+                            _venv_ver = tuple(_p)
+                        break
+        except Exception:
+            pass
+        if _venv_ver:
             break
 
-# 4. Launch main script in-process (preserves DaVinci Resolve Free API connection)
-if os.path.exists(MAIN_SCRIPT):
-    try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy()
-        gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
-    except Exception as e:
-        print("Error:", e); traceback.print_exc()
+_host_ver = sys.version_info[:2]
+_is_abi_incompatible = (_venv_ver is not None and _venv_ver != _host_ver)
+
+if _is_abi_incompatible:
+    print(f"[BadWords] Host Python ({{_host_ver[0]}}.{{_host_ver[1]}}) differs from venv Python ({{_venv_ver[0]}}.{{_venv_ver[1]}}).")
+    print("[BadWords] Launching BadWords standalone process with Lua Bridge to prevent CPython ABI conflicts...")
+    _launch_external()
 else:
-    print("CRITICAL: script not found at", MAIN_SCRIPT)
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            if _sp_dir in sys.path:
+                sys.path.remove(_sp_dir)
+            sys.path.insert(0, _sp_dir)
+
+    for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+        if os.path.isdir(_p) and _p not in sys.path:
+            sys.path.append(_p)
+
+    # Windows: process identity & register DLL search paths
+    if sys.platform.startswith('win'):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+        except Exception:
+            pass
+        if hasattr(os, 'add_dll_directory'):
+            for _sp_dir in _candidates:
+                if os.path.isdir(_sp_dir):
+                    for _pkg in ['PySide6', 'shiboken6']:
+                        _p = os.path.join(_sp_dir, _pkg)
+                        if os.path.isdir(_p):
+                            try: os.add_dll_directory(_p)
+                            except Exception: pass
+                    _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                    if os.path.isdir(_nv_dir):
+                        import ctypes
+                        for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                            _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                            if os.path.isdir(_bin_p):
+                                try:
+                                    os.add_dll_directory(_bin_p)
+                                    os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                    for _f in os.listdir(_bin_p):
+                                        if _f.endswith('.dll'):
+                                            try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                            except Exception: pass
+                                except Exception: pass
+
+    # Linux: Preload Qt6 shared libraries if needed
+    if sys.platform.startswith('linux'):
+        import ctypes
+        for _sp_dir in _candidates:
+            _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+            if os.path.isdir(_qt_lib_dir):
+                _qt_preload = [
+                    'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                    'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+                ]
+                for _lib in _qt_preload:
+                    _p = os.path.join(_qt_lib_dir, _lib)
+                    if os.path.exists(_p):
+                        try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                        except OSError: pass
+                break
+
+    if os.path.exists(MAIN_SCRIPT):
+        os.environ["BADWORDS_EMBEDDED"] = "1"
+        if "--embedded" not in sys.argv:
+            sys.argv.append("--embedded")
+        try:
+            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+            gv = globals().copy()
+            gv['__file__'] = MAIN_SCRIPT
+            exec(code, gv)
+        except Exception as e:
+            print("[BadWords] In-process execution failed:", e)
+            print("[BadWords] Falling back to external process launch...")
+            _launch_external()
+    else:
+        print("CRITICAL: script not found at", MAIN_SCRIPT)
 "#
     )
 }

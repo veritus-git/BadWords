@@ -17,7 +17,27 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-VERSION = "4.0.0"
+
+def _detect_version() -> str:
+    base_ver = "4.0.0"
+    try:
+        import os
+        cur_dir = os.path.dirname(os.path.abspath(__file__))
+        for cand in [
+            os.path.join(cur_dir, "..", "..", ".version"),
+            os.path.join(cur_dir, "..", ".version"),
+            os.path.join(cur_dir, ".version"),
+        ]:
+            if os.path.isfile(cand):
+                with open(cand, "r", encoding="utf-8") as f:
+                    v = f.read().strip().lstrip('vV')
+                    if v:
+                        return v
+    except Exception:
+        pass
+    return base_ver
+
+VERSION = _detect_version()
 SUPPORT_WEBHOOK_URL = "http://frog02.mikr.us:41385/"
 POSTHOG_API_KEY = "phc_mNTg2LuyNaVX8AG7vW63JZKCXr2PLVGGHHT7jNv3BdKR"
 POSTHOG_HOST = "https://eu.i.posthog.com"

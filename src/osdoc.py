@@ -85,7 +85,7 @@ class ResolveStreamProxy:
                         self.log_func(f"[STDOUT/ERR] {txt}")
             self.stream.write(data)
         except Exception:
-            pass  # StreamProxy: celowe wyciszenie błędów logowania (nie możemy logować błędu loggera)
+            pass  # StreamProxy: intentional silencing of logging errors
     
     def flush(self):
         try:
@@ -96,7 +96,7 @@ class ResolveStreamProxy:
                 self._buffer = ""
             if hasattr(self.stream, 'flush'): self.stream.flush()
         except Exception:
-            pass  # StreamProxy: flush może nie być obsługiwany przez wszystkie streamy
+            pass  # StreamProxy: flush may not be supported by all streams
     
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
@@ -107,7 +107,7 @@ def log_info(msg):
         print(f"[INFO] {msg}")
         sys.stdout.flush()
     except Exception:
-        pass  # log_info: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
+        pass  # log_info: silence console print errors only (file logging succeeded)
 
 def log_error(msg):
     logging.error(msg)
@@ -116,7 +116,7 @@ def log_error(msg):
             print(f"[ERROR] {msg}", file=sys.__stderr__)
             sys.__stderr__.flush()
     except Exception:
-        pass  # log_error: wyciszamy tylko błędy wypisywania na konsolę (logowanie do pliku już się udało)
+        pass  # log_error: silence console print errors only (file logging succeeded)
 
 def log_warn(msg):
     logging.warning(msg)
@@ -169,7 +169,7 @@ class OSDoctor:
             self.legacy_pref_file = os.path.join(self.app_data_dir, 'pref.json')
             try: os.makedirs(self.app_data_dir, exist_ok=True)
             except Exception as e:
-                log_error(f"OSDoctor: nie można utworzyć katalogu fallback AppData: {e}")
+                log_error(f"OSDoctor: cannot create fallback AppData directory: {e}")
 
         # Init Temp
         self.temp_dir = self._init_smart_temp_dir()
@@ -193,10 +193,10 @@ class OSDoctor:
         self._ensure_telemetry_prefs()
 
     def _get_machine_id(self):
-        """Pobiera stabilny, niezmienny identyfikator instalacji systemu operacyjnego (Win/Lin/Mac)."""
+        """Retrieves stable, unique OS installation machine ID (Win/Lin/Mac)."""
         try:
             if self.is_win:
-                # Windows: Pobieramy stały MachineGuid z Rejestru
+                # Windows: Stable MachineGuid from Registry
                 import winreg
                 registry = winreg.HKEY_LOCAL_MACHINE
                 address = r"SOFTWARE\Microsoft\Cryptography"
@@ -206,13 +206,13 @@ class OSDoctor:
                 return str(value)
             
             elif self.is_linux:
-                # Linux: Używamy uniwersalnego machine-id z systemd
+                # Linux: Systemd machine-id
                 with open("/etc/machine-id", "r") as f:
                     return f.read().strip()
             
             elif self.os_type == "Darwin": 
-                # macOS: Natywny IOPlatformUUID z rejestru sprzętowego Apple (ioreg)
-                # Nie wywołuje monitów o prywatność jak MAC adres
+                # macOS: Native IOPlatformUUID from Apple hardware registry (ioreg)
+                # Does not trigger privacy prompts unlike MAC address
                 result = subprocess.run(
                     ['ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'], 
                     capture_output=True, text=True
@@ -558,7 +558,7 @@ class OSDoctor:
                 os.makedirs(path, exist_ok=True)
                 return path
             except Exception as e:
-                log_error(f"_init_smart_temp_dir: nie można utworzyć katalogu temp {path}: {e}")
+                log_error(f"_init_smart_temp_dir: cannot create temp directory {path}: {e}")
                 pass
         
         # Windows/Mac Default
@@ -1008,64 +1008,7 @@ for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
             except Exception:
                 pass
 
-for _sp_dir in _candidates:
-    if os.path.isdir(_sp_dir):
-        if _sp_dir in sys.path:
-            sys.path.remove(_sp_dir)
-        sys.path.insert(0, _sp_dir)
-
-for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.append(_p)
-
-# 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
-if sys.platform.startswith('win'):
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
-    except Exception:
-        pass
-    if hasattr(os, 'add_dll_directory'):
-        for _sp_dir in _candidates:
-            if os.path.isdir(_sp_dir):
-                for _pkg in ['PySide6', 'shiboken6']:
-                    _p = os.path.join(_sp_dir, _pkg)
-                    if os.path.isdir(_p):
-                        try: os.add_dll_directory(_p)
-                        except Exception: pass
-                _nv_dir = os.path.join(_sp_dir, 'nvidia')
-                if os.path.isdir(_nv_dir):
-                    import ctypes
-                    for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
-                        _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
-                        if os.path.isdir(_bin_p):
-                            try:
-                                os.add_dll_directory(_bin_p)
-                                os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
-                                for _f in os.listdir(_bin_p):
-                                    if _f.endswith('.dll'):
-                                        try: ctypes.CDLL(os.path.join(_bin_p, _f))
-                                        except Exception: pass
-                            except Exception: pass
-
-# 3. Linux: Preload Qt6 shared libraries if needed
-if sys.platform.startswith('linux'):
-    import ctypes
-    for _sp_dir in _candidates:
-        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
-        if os.path.isdir(_qt_lib_dir):
-            _qt_preload = [
-                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-            ]
-            for _lib in _qt_preload:
-                _p = os.path.join(_qt_lib_dir, _lib)
-                if os.path.exists(_p):
-                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                    except OSError: pass
-            break
-
-# 4. Launch main script
+# 2. Launch external process helper
 def _launch_external():
     import subprocess, shutil
     clean_env = os.environ.copy()
@@ -1111,21 +1054,105 @@ def _launch_external():
     print("[BadWords] Launched external process:", MAIN_SCRIPT)
     return True
 
-if os.path.exists(MAIN_SCRIPT):
-    os.environ["BADWORDS_EMBEDDED"] = "1"
-    if "--embedded" not in sys.argv:
-        sys.argv.append("--embedded")
-    try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy()
-        gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
-    except Exception as e:
-        print("[BadWords] In-process execution failed:", e)
-        print("[BadWords] Falling back to external process launch...")
-        _launch_external()
+# 3. Detect venv Python version to avoid CPython ABI crashes in host DaVinci Resolve
+_venv_ver = None
+for _v_base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    _cfg = os.path.join(_v_base, "venv", "pyvenv.cfg")
+    if os.path.isfile(_cfg):
+        try:
+            with open(_cfg, "r", encoding="utf-8") as _f:
+                for _l in _f:
+                    if _l.strip().lower().startswith("version"):
+                        _v_str = _l.split("=")[-1].strip()
+                        _p = [int(x) for x in _v_str.split(".")[:2] if x.isdigit()]
+                        if len(_p) == 2:
+                            _venv_ver = tuple(_p)
+                        break
+        except Exception:
+            pass
+        if _venv_ver:
+            break
+
+_host_ver = sys.version_info[:2]
+_is_abi_incompatible = (_venv_ver is not None and _venv_ver != _host_ver)
+
+if _is_abi_incompatible:
+    print(f"[BadWords] Host Python ({_host_ver[0]}.{_host_ver[1]}) differs from venv Python ({_venv_ver[0]}.{_venv_ver[1]}).")
+    print("[BadWords] Launching BadWords standalone process with Lua Bridge to prevent CPython ABI conflicts...")
+    _launch_external()
 else:
-    print("CRITICAL: script not found at", MAIN_SCRIPT)
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            if _sp_dir in sys.path:
+                sys.path.remove(_sp_dir)
+            sys.path.insert(0, _sp_dir)
+
+    for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+        if os.path.isdir(_p) and _p not in sys.path:
+            sys.path.append(_p)
+
+    # Windows: process identity & register DLL search paths
+    if sys.platform.startswith('win'):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+        except Exception:
+            pass
+        if hasattr(os, 'add_dll_directory'):
+            for _sp_dir in _candidates:
+                if os.path.isdir(_sp_dir):
+                    for _pkg in ['PySide6', 'shiboken6']:
+                        _p = os.path.join(_sp_dir, _pkg)
+                        if os.path.isdir(_p):
+                            try: os.add_dll_directory(_p)
+                            except Exception: pass
+                    _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                    if os.path.isdir(_nv_dir):
+                        import ctypes
+                        for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                            _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                            if os.path.isdir(_bin_p):
+                                try:
+                                    os.add_dll_directory(_bin_p)
+                                    os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                    for _f in os.listdir(_bin_p):
+                                        if _f.endswith('.dll'):
+                                            try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                            except Exception: pass
+                                except Exception: pass
+
+    # Linux: Preload Qt6 shared libraries if needed
+    if sys.platform.startswith('linux'):
+        import ctypes
+        for _sp_dir in _candidates:
+            _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+            if os.path.isdir(_qt_lib_dir):
+                _qt_preload = [
+                    'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                    'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+                ]
+                for _lib in _qt_preload:
+                    _p = os.path.join(_qt_lib_dir, _lib)
+                    if os.path.exists(_p):
+                        try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                        except OSError: pass
+                break
+
+    if os.path.exists(MAIN_SCRIPT):
+        os.environ["BADWORDS_EMBEDDED"] = "1"
+        if "--embedded" not in sys.argv:
+            sys.argv.append("--embedded")
+        try:
+            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+            gv = globals().copy()
+            gv['__file__'] = MAIN_SCRIPT
+            exec(code, gv)
+        except Exception as e:
+            print("[BadWords] In-process execution failed:", e)
+            print("[BadWords] Falling back to external process launch...")
+            _launch_external()
+    else:
+        print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
 
     def sync_resolve_scripts(self, force: bool = False) -> None:
@@ -1636,7 +1663,7 @@ else:
                 import importlib.util
                 fw_found = importlib.util.find_spec("faster_whisper") is not None
             except Exception as e:
-                log_error(f"check_dependencies: błąd sprawdzania faster_whisper: {e}")
+                log_error(f"check_dependencies: error checking faster_whisper: {e}")
         else:
             # Check VENV content
             venv_lib = os.path.join(self.install_dir, "venv", "lib")
@@ -1661,7 +1688,7 @@ else:
         Checks if physical NVIDIA hardware is present AND libraries are installed.
         Used by GUI and Engine to determine if 'GPU' mode is safe.
         """
-        # 1. Weryfikacja sprzętowa (Cross-platform z ukryciem konsoli na Win)
+        # 1. Hardware verification (cross-platform with hidden console on Win)
         has_hardware = False
         try:
             subprocess.run(
@@ -1679,9 +1706,9 @@ else:
             return False
 
         if self.is_win:
-            return True # Na Windowsie polegamy na sterownikach systemowych, jeśli karta istnieje
+            return True  # On Windows, rely on system drivers if GPU is present
             
-        # 2. Weryfikacja bibliotek (Linux)
+        # 2. Library verification (Linux)
         libs_path = os.path.join(self.install_dir, "libs")
         cublas_path = os.path.join(libs_path, "nvidia", "cublas")
         if os.path.exists(cublas_path):

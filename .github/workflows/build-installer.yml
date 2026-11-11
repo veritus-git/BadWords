@@ -49,6 +49,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Sync Release Version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+            CLEAN_VER="${TAG_NAME#v}"
+            echo "Stamping release version: $CLEAN_VER"
+            echo "$CLEAN_VER" > .version
+            echo "$CLEAN_VER" > src/.version
+            # Update default fallback in app_constants.py
+            sed -i -E "s/^_DEFAULT_VERSION = .*/_DEFAULT_VERSION = \"$CLEAN_VER\"/" src/config/app_constants.py
+            # Update Cargo.toml version
+            sed -i -E "s/^version = \".*\"/version = \"$CLEAN_VER\"/" installer/Cargo.toml
+          fi
+
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |

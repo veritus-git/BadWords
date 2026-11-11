@@ -875,7 +875,7 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
         return False, "All segments were cut out."
 
     log_info(f"assemble_via_seamless_cut: {len(keep_segments)} segment(s) to stitch into '{output_path}'")
-    set_status("Przygotowywanie bezstratnego montażu...")
+    set_status("Preparing lossless assembly...")
     set_progress(5)
 
     # 2. Setup temp directory
@@ -915,7 +915,7 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
             segment_files.append(seg_path)
 
         # 4. Write concat demuxer list
-        set_status("Łączenie wyciętych segmentów bez rekompresji...")
+        set_status("Concatenating cut segments without recompression...")
         set_progress(85)
 
         concat_list_path = os.path.join(temp_dir, "concat_list.txt")
@@ -948,7 +948,7 @@ def assemble_via_seamless_cut(source_file: str, ops: list, output_path: str,
             log_error(f"assemble_via_seamless_cut: concat failed (rc={concat_res.returncode}): {concat_res.stderr[-300:]}")
             return False, "Failed to concatenate segments."
 
-        set_status("Zakończono montaż bezstratny!")
+        set_status("Lossless assembly completed!")
         set_progress(100)
         log_info(f"assemble_via_seamless_cut: SUCCESS -> '{output_path}' ({os.path.getsize(output_path)} bytes)")
         return True, output_path
@@ -982,6 +982,22 @@ def _path_to_fileurl(path: str) -> str:
     return 'file://localhost' + encoded
 
 
+def _get_exact_fps(fps: float) -> float:
+    """
+    Returns exact rational float representation for NTSC frame rates.
+    For example, 23.976 -> 24000.0 / 1001.0, 29.97 -> 30000.0 / 1001.0, 59.94 -> 60000.0 / 1001.0.
+    """
+    if abs(fps - 23.976) < 0.01:
+        return 24000.0 / 1001.0
+    if abs(fps - 29.97) < 0.01:
+        return 30000.0 / 1001.0
+    if abs(fps - 47.952) < 0.01:
+        return 48000.0 / 1001.0
+    if abs(fps - 59.94) < 0.01:
+        return 60000.0 / 1001.0
+    return float(fps)
+
+
 def _get_fps_params(fps: float) -> tuple[int, str]:
     """
     Returns (timebase: int, is_ntsc: str) for XML timeline specifications.
@@ -996,7 +1012,7 @@ def _get_fps_params(fps: float) -> tuple[int, str]:
         59.94:  (60, "TRUE"),
     }
     for target_fps, (tb, ntsc) in ntsc_map.items():
-        if abs(fps - target_fps) < 0.005:
+        if abs(fps - target_fps) < 0.01:
             return tb, ntsc
     return int(round(fps)), "FALSE"
 
@@ -1161,19 +1177,20 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
     try:
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
         if not kept_ops:
-            return False, "Brak operacji cięcia do wyeksportowania."
+            return False, "No cut operations to export."
 
         if not clips_info:
-            return False, "Brak danych o klipach źródłowych."
+            return False, "No source clip data provided."
 
         total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
         timebase, ntsc_str = _get_fps_params(fps)
+        eff_fps = _get_exact_fps(fps)
 
         # Precompute frame bounds for each clip
         processed_clips = []
         for c in clips_info:
-            start_f = int(round(float(c.get("offset", 0.0)) * fps))
-            dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
+            start_f = int(round(float(c.get("offset", 0.0)) * eff_fps))
+            dur_f = max(1, int(round(float(c.get("duration", 0.0)) * eff_fps)))
 
             processed_clips.append({
                 "path": c["path"],
@@ -1250,7 +1267,7 @@ def build_standalone_fcp7_xml(clips_info: list, ops: list, output_path: str,
 
                 # Timecode block inside file element: DaVinci Resolve strictly requires
                 # <timecode> matching media embedded timecode to conform and link media online!
-                tc_frames, tc_str, _ = get_media_start_timecode_info(fp, float(timebase))
+                tc_frames, tc_str, _ = get_media_start_timecode_info(fp, eff_fps)
                 tc_el = ET.SubElement(file_el, "timecode")
                 r_tc = ET.SubElement(tc_el, "rate")
                 ET.SubElement(r_tc, "timebase").text = str(timebase)
@@ -1505,14 +1522,15 @@ def build_standalone_otio(clips_info: list, ops: list, output_path: str,
     try:
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
         if not kept_ops:
-            return False, "Brak operacji cięcia do wyeksportowania."
+            return False, "No cut operations to export."
 
+        eff_fps = _get_exact_fps(fps)
         total_dest_frames = sum(op["e"] - op["s"] for op in kept_ops)
 
         processed_clips = []
         for c in clips_info:
-            start_f = int(round(float(c.get("offset", 0.0)) * fps))
-            dur_f = max(1, int(round(float(c.get("duration", 0.0)) * fps)))
+            start_f = int(round(float(c.get("offset", 0.0)) * eff_fps))
+            dur_f = max(1, int(round(float(c.get("duration", 0.0)) * eff_fps)))
 
             processed_clips.append({
                 "path": c["path"],
@@ -1886,7 +1904,7 @@ def build_standalone_fcpxml(clips_info: list, ops: list, output_path: str,
     try:
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
         if not kept_ops:
-            return False, "Brak operacji cięcia do wyeksportowania."
+            return False, "No cut operations to export."
 
         fcpxml = ET.Element("fcpxml", version="1.9")
         resources = ET.SubElement(fcpxml, "resources")
@@ -1988,7 +2006,7 @@ def build_standalone_edl(clips_info: list, ops: list, output_path: str,
     try:
         kept_ops = [op for op in ops if op.get("type") != "silence_cut" and (op["e"] - op["s"]) >= 1]
         if not kept_ops:
-            return False, "Brak operacji cięcia do wyeksportowania."
+            return False, "No cut operations to export."
 
         is_drop = (abs(fps - 29.97) < 0.005 or abs(fps - 59.94) < 0.005)
         lines = [

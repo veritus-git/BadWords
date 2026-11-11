@@ -28,6 +28,46 @@ from gui.components.titlebar import CustomTitleBar
 from gui.utils import _txt, _center_on_screen
 
 
+def load_curated_release_notes(raw_fallback: str = "") -> str:
+    """Loads clean release notes from src/config/release_notes.json without version keys.
+    Format: {"changes": ["item 1", "item 2", ...]}
+    Falls back to raw_fallback (e.g. from GitHub release body) if json file is missing or empty.
+    """
+    import json
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    cand_paths = [
+        os.path.join(base_dir, "config", "release_notes.json"),
+        os.path.join(base_dir, "src", "config", "release_notes.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "release_notes.json"),
+    ]
+    for p in cand_paths:
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                items = []
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    items = data.get("changes") or data.get("notes") or []
+                if items:
+                    lines = []
+                    for it in items:
+                        s = str(it).strip()
+                        if s:
+                            if not s.startswith("-") and not s.startswith("•"):
+                                lines.append(f"- {s}")
+                            elif s.startswith("•"):
+                                lines.append(f"- {s.lstrip('•').strip()}")
+                            else:
+                                lines.append(s)
+                    if lines:
+                        return "\n".join(lines)
+            except Exception:
+                pass
+    return (raw_fallback or "").strip()
+
+
 class UpdateCheckThread(QThread):
     """
     Stdlib-only background worker that checks GitHub (with GitLab fallback)
@@ -35,11 +75,11 @@ class UpdateCheckThread(QThread):
 
     Signals
     -------
-    update_available(str, str, str)
+    update_available(str, str, str, str)
         Emitted when a newer version is detected.
-        Args: (latest_version, github_release_url, gitlab_release_url)
+        Args: (latest_version, github_release_url, gitlab_release_url, release_notes)
     """
-    update_available = Signal(str, str, str)
+    update_available = Signal(str, str, str, str)
 
     _cached_result: tuple | None = None
     _checked: bool = False
@@ -82,10 +122,10 @@ class UpdateCheckThread(QThread):
         if UpdateCheckThread._checked:
             cached = UpdateCheckThread._cached_result
             if cached:
-                latest_display, gh_page, gl_page = cached
+                latest_display, gh_page, gl_page, release_notes = cached
                 if self._parse_version(latest_display) > current_tuple:
                     log_info(f"[UpdateCheck] (cached) New version available: {latest_display}")
-                    self.update_available.emit(latest_display, gh_page, gl_page)
+                    self.update_available.emit(latest_display, gh_page, gl_page, release_notes)
                 else:
                     log_info(f"[UpdateCheck] (cached) Already up-to-date ({self._current}).")
             else:
@@ -96,18 +136,20 @@ class UpdateCheckThread(QThread):
             if UpdateCheckThread._checked:
                 cached = UpdateCheckThread._cached_result
                 if cached:
-                    latest_display, gh_page, gl_page = cached
+                    latest_display, gh_page, gl_page, release_notes = cached
                     if self._parse_version(latest_display) > current_tuple:
                         log_info(f"[UpdateCheck] (cached/lock) New version available: {latest_display}")
-                        self.update_available.emit(latest_display, gh_page, gl_page)
+                        self.update_available.emit(latest_display, gh_page, gl_page, release_notes)
                     else:
                         log_info(f"[UpdateCheck] (cached/lock) Already up-to-date ({self._current}).")
                 return
 
             latest_tag = None
+            release_notes = ""
             try:
                 data = self._fetch_json(self._GH_API)
                 latest_tag = data.get("tag_name", "").strip()
+                release_notes = data.get("body", "").strip()
                 log_info(f"[UpdateCheck] GitHub latest tag: {latest_tag!r}")
             except Exception as e:
                 log_error(f"[UpdateCheck] GitHub API failed: {e}")
@@ -117,8 +159,10 @@ class UpdateCheckThread(QThread):
                     data = self._fetch_json(self._GL_API)
                     if isinstance(data, list) and data:
                         latest_tag = data[0].get("tag_name", "").strip()
+                        release_notes = data[0].get("description", "").strip()
                     elif isinstance(data, dict):
                         latest_tag = data.get("tag_name", "").strip()
+                        release_notes = data.get("description", "").strip()
                     if latest_tag:
                         log_info(f"[UpdateCheck] GitLab latest tag: {latest_tag!r}")
                 except Exception as e:
@@ -134,10 +178,12 @@ class UpdateCheckThread(QThread):
             latest_tuple   = self._parse_version(latest_tag)
             latest_display = latest_tag.lstrip('vV')
 
+            popup_notes = load_curated_release_notes(release_notes)
+
             if latest_tuple > current_tuple:
                 log_info(f"[UpdateCheck] New version available: {latest_display} (current: {self._current})")
-                UpdateCheckThread._cached_result = (latest_display, self._GH_PAGE, self._GL_PAGE)
-                self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE)
+                UpdateCheckThread._cached_result = (latest_display, self._GH_PAGE, self._GL_PAGE, popup_notes)
+                self.update_available.emit(latest_display, self._GH_PAGE, self._GL_PAGE, popup_notes)
             else:
                 log_info(f"[UpdateCheck] Already up-to-date ({self._current}).")
                 UpdateCheckThread._cached_result = None
@@ -152,7 +198,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
 
     def __init__(self, parent, lang: str, current_ver: str, latest_ver: str,
                  gh_url: str, gl_url: str, is_win: bool, is_mac: bool,
-                 install_dir: str):
+                 install_dir: str, release_notes: str = ""):
         super().__init__(parent)
         self._lang    = lang
         self._engine  = getattr(parent, 'engine', None)
@@ -160,6 +206,8 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._is_win  = is_win
         self._gh_url  = gh_url
         self._install_dir = install_dir
+        self._release_notes = load_curated_release_notes(release_notes)
+        release_notes = self._release_notes
 
         self._update_done.connect(self._on_update_done)
 
@@ -247,29 +295,69 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
 
         def _ver_col(label_txt, ver_txt, ver_color):
             col = QVBoxLayout()
-            col.setSpacing(config.S(3))
+            col.setSpacing(config.S(4))
+            col.setAlignment(Qt.AlignCenter)
             lbl = QLabel(label_txt)
-            lbl.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; letter-spacing: 1px;")
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet(f"color: #777; font-size: {config.FS(9)}pt; letter-spacing: 1px;")
             val = QLabel(ver_txt)
-            val.setStyleSheet(f"color: {ver_color}; font-size: {config.FS(20)}pt; font-weight: bold;")
+            val.setAlignment(Qt.AlignCenter)
+            val.setStyleSheet(f"color: {ver_color}; font-size: {config.FS(22)}pt; font-weight: bold;")
             col.addWidget(lbl)
             col.addWidget(val)
             return col
 
         body.addWidget(ver_frame)
+        ver_layout.addStretch(1)
         ver_layout.addLayout(_ver_col(
-            _txt(lang, 'update_notify_lbl_current'), current_ver, "#555"
+            _txt(lang, 'update_notify_lbl_current'), current_ver, "#777"
         ))
 
         lbl_arrow = QLabel("→")
-        lbl_arrow.setStyleSheet(f"color: #333; font-size: {config.FS(24)}pt; padding: 0 {config.S(24)}px 0 {config.S(20)}px;")
+        lbl_arrow.setStyleSheet(f"color: #444; font-size: {config.FS(26)}pt; padding: 0 {config.S(36)}px 0 {config.S(36)}px;")
         lbl_arrow.setAlignment(Qt.AlignCenter)
         ver_layout.addWidget(lbl_arrow)
 
         ver_layout.addLayout(_ver_col(
             _txt(lang, 'update_notify_lbl_latest'), latest_ver, "#39ff7a"
         ))
-        ver_layout.addStretch()
+        ver_layout.addStretch(1)
+
+        if release_notes:
+            from PySide6.QtWidgets import QTextEdit
+            notes_card = QFrame()
+            notes_card.setStyleSheet("""
+                QFrame {
+                    background-color: #121212;
+                    border: 1px solid #222222;
+                    border-radius: 6px;
+                }
+            """)
+            notes_layout = QVBoxLayout(notes_card)
+            notes_layout.setContentsMargins(config.S(14), config.S(10), config.S(14), config.S(10))
+            notes_layout.setSpacing(config.S(6))
+
+            lbl_hdr = QLabel(_txt(lang, 'update_notify_notes_title', default="Release Notes / Update Message:"))
+            lbl_hdr.setStyleSheet(f"color: #888; font-size: {config.FS(9)}pt; font-weight: bold; background: transparent; border: none;")
+            notes_layout.addWidget(lbl_hdr)
+
+            te_notes = QTextEdit()
+            te_notes.setReadOnly(True)
+            te_notes.setPlainText(release_notes)
+            te_notes.setMinimumHeight(config.S(160))
+            te_notes.setMaximumHeight(config.S(230))
+            te_notes.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: transparent;
+                    color: #dcdcdc;
+                    border: none;
+                    font-size: {config.FS(10)}pt;
+                    line-height: 1.4;
+                    selection-background-color: #2ea043;
+                }}
+            """)
+            notes_layout.addWidget(te_notes)
+            body.addWidget(notes_card)
 
         self._lbl_status = QLabel("")
         self._lbl_status.setObjectName("lbl_status")
@@ -277,9 +365,15 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._lbl_status.hide()
         body.addWidget(self._lbl_status)
 
-        body.addSpacing(config.S(4))
+        body.addSpacing(config.S(8))
 
         btn_row = QHBoxLayout()
+
+        self._btn_cancel = QPushButton(_txt(lang, 'update_notify_btn_cancel'))
+        self._btn_cancel.setCursor(Qt.PointingHandCursor)
+        self._btn_cancel.clicked.connect(self.close)
+        btn_row.addWidget(self._btn_cancel)
+
         btn_row.addStretch()
 
         self._btn_dismiss = QPushButton(_txt(lang, 'update_notify_btn_dismiss'))
@@ -297,8 +391,8 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         btn_row.addWidget(self._btn_primary)
         body.addLayout(btn_row)
 
-        self.adjustSize()
-        _center_on_screen(self, self.width(), self.height())
+        self.setFixedSize(config.S(640), config.S(530))
+        _center_on_screen(self, config.S(640), config.S(530))
 
     def _on_update_now(self):
         self._btn_primary.setEnabled(False)

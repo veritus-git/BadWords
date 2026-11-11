@@ -1452,11 +1452,19 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         raw_auto_cut = settings.get('auto_cut_colors', [])
         auto_cut_colors = [c.lower() for c in raw_auto_cut] if isinstance(raw_auto_cut, list) else []
 
-        def t2f(t): return int(round(t * fps))
+        def _get_exact_fps(f_rate):
+            if abs(f_rate - 23.976) < 0.01: return 24000.0 / 1001.0
+            if abs(f_rate - 29.97) < 0.01: return 30000.0 / 1001.0
+            if abs(f_rate - 47.952) < 0.01: return 48000.0 / 1001.0
+            if abs(f_rate - 59.94) < 0.01: return 60000.0 / 1001.0
+            return float(f_rate)
+        eff_fps = _get_exact_fps(fps)
+
+        def t2f(t): return int(round(t * eff_fps))
         
-        offset_f = int(round(offset_s * fps))
-        pad_f = int(round(pad_s * fps))
-        snap_f = int(round(snap_max_s * fps))
+        offset_f = int(round(offset_s * eff_fps))
+        pad_f = int(round(pad_s * eff_fps))
+        snap_f = int(round(snap_max_s * eff_fps))
 
         raw_silence = words_data[0].get('meta_global_silence', None)
         _audio_end_s = words_data[-1].get('end', 0.0)

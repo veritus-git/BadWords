@@ -36,6 +36,7 @@ parser.add_argument("--platform", default=sys.platform)
 parser.add_argument("--bootstrap-python", default=sys.executable)
 parser.add_argument("--local-repo", default="")
 parser.add_argument("--install", default=None, help="Install to target path")
+parser.add_argument("--version", default=None, help="Install specific release tag (e.g. v4.0.0)")
 parser.add_argument("--repair", action="store_true", help="Run repair")
 parser.add_argument("--move", default=None, help="Move installation")
 parser.add_argument("--reset", action="store_true", help="Run complete reset")
@@ -1076,6 +1077,44 @@ def fetch_git_branches():
 
     return ["main", "dev-v4"]
 
+def fetch_git_versions():
+    """Fetches list of git release tags (>= 4.0.0) from GitHub / GitLab, sorted descending."""
+    UA = "BadWords-Installer/2.0 (https://github.com/veritus-git/BadWords)"
+    GH_RELEASES = "https://api.github.com/repos/veritus-git/BadWords/releases"
+    import json, urllib.request, re
+
+    raw_tags = []
+    try:
+        req = urllib.request.Request(GH_RELEASES, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+            if isinstance(data, list):
+                raw_tags = [b["tag_name"] for b in data if isinstance(b, dict) and "tag_name" in b and not b.get("draft", False)]
+    except Exception:
+        pass
+
+    if not raw_tags and shutil.which("curl"):
+        try:
+            r = subprocess.run(["curl", "-fsSL", "--max-time", "10", "-H", f"User-Agent: {UA}", GH_RELEASES],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout:
+                data = json.loads(r.stdout)
+                if isinstance(data, list):
+                    raw_tags = [b["tag_name"] for b in data if isinstance(b, dict) and "tag_name" in b and not b.get("draft", False)]
+        except Exception:
+            pass
+
+    def parse_t(t):
+        clean = re.sub(r"^[vV]", "", str(t).strip())
+        m = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", clean)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3)) if m.group(3) else 0)
+        return (0, 0, 0)
+
+    v4_tags = [t for t in raw_tags if parse_t(t)[0] >= 4]
+    v4_tags = sorted(list(set(v4_tags)), key=parse_t, reverse=True)
+    return v4_tags
+
 def detect_existing_install(default_dir, resolve_script_dirs):
     """Detect existing installation via system registration (Registry/.desktop), Resolve wrappers, or default dir."""
     # 1. Windows Registry check
@@ -1434,64 +1473,7 @@ for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
             except Exception:
                 pass
 
-for _sp_dir in _candidates:
-    if os.path.isdir(_sp_dir):
-        if _sp_dir in sys.path:
-            sys.path.remove(_sp_dir)
-        sys.path.insert(0, _sp_dir)
-
-for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.append(_p)
-
-# 2. Windows: process identity & register DLL search paths for PySide6, shiboken6, and NVIDIA CUDA
-if sys.platform.startswith('win'):
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
-    except Exception:
-        pass
-    if hasattr(os, 'add_dll_directory'):
-        for _sp_dir in _candidates:
-            if os.path.isdir(_sp_dir):
-                for _pkg in ['PySide6', 'shiboken6']:
-                    _p = os.path.join(_sp_dir, _pkg)
-                    if os.path.isdir(_p):
-                        try: os.add_dll_directory(_p)
-                        except Exception: pass
-                _nv_dir = os.path.join(_sp_dir, 'nvidia')
-                if os.path.isdir(_nv_dir):
-                    import ctypes
-                    for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
-                        _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
-                        if os.path.isdir(_bin_p):
-                            try:
-                                os.add_dll_directory(_bin_p)
-                                os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
-                                for _f in os.listdir(_bin_p):
-                                    if _f.endswith('.dll'):
-                                        try: ctypes.CDLL(os.path.join(_bin_p, _f))
-                                        except Exception: pass
-                            except Exception: pass
-
-# 3. Linux: Preload Qt6 shared libraries if needed
-if sys.platform.startswith('linux'):
-    import ctypes
-    for _sp_dir in _candidates:
-        _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
-        if os.path.isdir(_qt_lib_dir):
-            _qt_preload = [
-                'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-                'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-            ]
-            for _lib in _qt_preload:
-                _p = os.path.join(_qt_lib_dir, _lib)
-                if os.path.exists(_p):
-                    try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                    except OSError: pass
-            break
-
-# 4. Launch main script
+# 2. Launch external process helper
 def _launch_external():
     import subprocess, shutil
     clean_env = os.environ.copy()
@@ -1537,21 +1519,105 @@ def _launch_external():
     print("[BadWords] Launched external process:", MAIN_SCRIPT)
     return True
 
-if os.path.exists(MAIN_SCRIPT):
-    os.environ["BADWORDS_EMBEDDED"] = "1"
-    if "--embedded" not in sys.argv:
-        sys.argv.append("--embedded")
-    try:
-        with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-        gv = globals().copy()
-        gv['__file__'] = MAIN_SCRIPT
-        exec(code, gv)
-    except Exception as e:
-        print("[BadWords] In-process execution failed:", e)
-        print("[BadWords] Falling back to external process launch...")
-        _launch_external()
+# 3. Detect venv Python version to avoid CPython ABI crashes in host DaVinci Resolve
+_venv_ver = None
+for _v_base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+    _cfg = os.path.join(_v_base, "venv", "pyvenv.cfg")
+    if os.path.isfile(_cfg):
+        try:
+            with open(_cfg, "r", encoding="utf-8") as _f:
+                for _l in _f:
+                    if _l.strip().lower().startswith("version"):
+                        _v_str = _l.split("=")[-1].strip()
+                        _p = [int(x) for x in _v_str.split(".")[:2] if x.isdigit()]
+                        if len(_p) == 2:
+                            _venv_ver = tuple(_p)
+                        break
+        except Exception:
+            pass
+        if _venv_ver:
+            break
+
+_host_ver = sys.version_info[:2]
+_is_abi_incompatible = (_venv_ver is not None and _venv_ver != _host_ver)
+
+if _is_abi_incompatible:
+    print(f"[BadWords] Host Python ({_host_ver[0]}.{_host_ver[1]}) differs from venv Python ({_venv_ver[0]}.{_venv_ver[1]}).")
+    print("[BadWords] Launching BadWords standalone process with Lua Bridge to prevent CPython ABI conflicts...")
+    _launch_external()
 else:
-    print("CRITICAL: script not found at", MAIN_SCRIPT)
+    for _sp_dir in _candidates:
+        if os.path.isdir(_sp_dir):
+            if _sp_dir in sys.path:
+                sys.path.remove(_sp_dir)
+            sys.path.insert(0, _sp_dir)
+
+    for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
+        if os.path.isdir(_p) and _p not in sys.path:
+            sys.path.append(_p)
+
+    # Windows: process identity & register DLL search paths
+    if sys.platform.startswith('win'):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
+        except Exception:
+            pass
+        if hasattr(os, 'add_dll_directory'):
+            for _sp_dir in _candidates:
+                if os.path.isdir(_sp_dir):
+                    for _pkg in ['PySide6', 'shiboken6']:
+                        _p = os.path.join(_sp_dir, _pkg)
+                        if os.path.isdir(_p):
+                            try: os.add_dll_directory(_p)
+                            except Exception: pass
+                    _nv_dir = os.path.join(_sp_dir, 'nvidia')
+                    if os.path.isdir(_nv_dir):
+                        import ctypes
+                        for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
+                            _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
+                            if os.path.isdir(_bin_p):
+                                try:
+                                    os.add_dll_directory(_bin_p)
+                                    os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
+                                    for _f in os.listdir(_bin_p):
+                                        if _f.endswith('.dll'):
+                                            try: ctypes.CDLL(os.path.join(_bin_p, _f))
+                                            except Exception: pass
+                                except Exception: pass
+
+    # Linux: Preload Qt6 shared libraries if needed
+    if sys.platform.startswith('linux'):
+        import ctypes
+        for _sp_dir in _candidates:
+            _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
+            if os.path.isdir(_qt_lib_dir):
+                _qt_preload = [
+                    'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
+                    'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
+                ]
+                for _lib in _qt_preload:
+                    _p = os.path.join(_qt_lib_dir, _lib)
+                    if os.path.exists(_p):
+                        try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
+                        except OSError: pass
+                break
+
+    if os.path.exists(MAIN_SCRIPT):
+        os.environ["BADWORDS_EMBEDDED"] = "1"
+        if "--embedded" not in sys.argv:
+            sys.argv.append("--embedded")
+        try:
+            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
+            gv = globals().copy()
+            gv['__file__'] = MAIN_SCRIPT
+            exec(code, gv)
+        except Exception as e:
+            print("[BadWords] In-process execution failed:", e)
+            print("[BadWords] Falling back to external process launch...")
+            _launch_external()
+    else:
+        print("CRITICAL: script not found at", MAIN_SCRIPT)
 '''
     legacy_names = [
         "Badwords.py", "BadWords (Linux).py",
@@ -2181,9 +2247,12 @@ def _configure_no_self_upgrade(install_dir):
 
 
 # ── Option 1 — Standard Install / Update ─────────────────────
-def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green", is_dev=False, branch_url=None, branch_name=None):
+def option_install_update(force_main=False, preset_path=None, title="── Standard Install / Update ──", title_color="green", is_dev=False, branch_url=None, branch_name=None, version_tag=None, version_url=None):
     header()
-    if is_dev:
+    if version_tag:
+        lbl = f"── Version Installation ({version_tag}) ──"
+        console.print(Text(f"{PAD}{lbl}", style="bold magenta"), no_wrap=True)
+    elif is_dev:
         lbl = f"── Developer Installation ({branch_name or 'local repository'}) ──"
         console.print(Text(f"{PAD}{lbl}", style="bold magenta"), no_wrap=True)
     elif force_main:
@@ -2219,6 +2288,33 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 custom = os.path.join(custom.rstrip("/\\"), APP_NAME)
             install_dir = custom
             log_info(f"Using custom path: {install_dir}")
+
+        if not (version_tag or is_dev or force_main):
+            console.print()
+            console.print(Text(f"{PAD}Target version: Latest release", style="dim"), no_wrap=True)
+            console.print(Text(f"{PAD}Press Enter to use Latest, or type 'v' to pick a specific version: ", style="cyan"), end="", no_wrap=True)
+            sys.stdout.flush()
+            try:
+                ans_v = readline_with_esc()
+                if ans_v.strip().lower() == "v":
+                    sp_v = Spinner("Fetching release versions from repository").start()
+                    versions = fetch_git_versions()
+                    sp_v.done(ok=True)
+                    console.print()
+                    console.print(Text(f"{PAD}Available versions (>= v4.0.0):", style="bold white"), no_wrap=True)
+                    for idx, ver in enumerate(versions, 1):
+                        tag_clean = ver if ver.startswith("v") else f"v{ver}"
+                        console.print(Text(f"{PAD}[{idx}] {tag_clean}", style="cyan"), no_wrap=True)
+                    console.print()
+                    console.print(Text(f"{PAD}Select version [1-{len(versions)}, Enter for latest]: ", style="green"), end="", no_wrap=True)
+                    sys.stdout.flush()
+                    v_input = readline_with_esc().strip()
+                    if v_input and v_input.isdigit() and 1 <= int(v_input) <= len(versions):
+                        version_tag = versions[int(v_input) - 1]
+                        version_url = f"https://github.com/veritus-git/BadWords/archive/refs/tags/{version_tag}.zip"
+                        log_ok(f"Selected version: {version_tag}")
+            except UserCancelled:
+                pass
 
     # Shortcuts options
     if ARGS.non_interactive:
@@ -2286,7 +2382,12 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
     source_path = assets_path = None
     tmp_dl = None
 
-    if is_dev and branch_url:
+    if version_tag:
+        tag = version_tag
+        zip_url = version_url or f"https://github.com/veritus-git/BadWords/archive/refs/tags/{version_tag}.zip"
+        source_repo = f"GitHub (version: {tag})"
+        tmp_dl = tempfile.mkdtemp()
+    elif is_dev and branch_url:
         tag = branch_name or "dev"
         zip_url = branch_url
         source_repo = f"GitHub (branch: {tag})"
@@ -2305,6 +2406,17 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             sp_dl = Spinner(f"Downloading release {tag} from {source_repo}").start()
             zip_path = os.path.join(tmp_dl, "repo.zip")
             dl_ok = download(zip_url, zip_path)
+            if not dl_ok:
+                alt_tag = tag[1:] if (tag.startswith("v") or tag.startswith("V")) else f"v{tag}"
+                alt_urls = [
+                    f"https://github.com/veritus-git/BadWords/archive/refs/tags/{alt_tag}.zip",
+                    f"https://gitlab.com/badwords/BadWords/-/archive/{tag}/BadWords-{tag}.zip",
+                    f"https://gitlab.com/badwords/BadWords/-/archive/{alt_tag}/BadWords-{alt_tag}.zip",
+                ]
+                for a_url in alt_urls:
+                    if download(a_url, zip_path):
+                        dl_ok = True
+                        break
             sp_dl.done(ok=dl_ok)
             if not dl_ok:
                 log_err("Download failed.")
@@ -2449,6 +2561,28 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             up_py = os.path.join(setupfiles_src, "updater.py")
             if os.path.isfile(up_py):
                 shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
+
+        # Stamp .version file
+        ver_to_stamp = version_tag.lstrip("vV") if version_tag else (tag.lstrip("vV") if 'tag' in locals() and tag else "4.0.0")
+        try:
+            with open(os.path.join(install_dir, ".version"), "w", encoding="utf-8") as vf:
+                vf.write(ver_to_stamp.strip())
+        except Exception:
+            pass
+
+        # Clean stale __pycache__ and old pyc/pyo files
+        for root, dirs, files in os.walk(install_dir):
+            if "venv" in root:
+                continue
+            for d in dirs:
+                if d == "__pycache__":
+                    try: shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                    except Exception: pass
+            for f in files:
+                if f.endswith(".pyc") or f.endswith(".pyo"):
+                    try: os.remove(os.path.join(root, f))
+                    except Exception: pass
+
         log_ok("Application files cleanly deployed.")
 
         # ── FFmpeg ────────────────────────────────────────────
@@ -2537,7 +2671,32 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                                     break
                         else:
                             sp_ff.done(ok=False)
-                            log_warn("Homebrew not found. System FFmpeg will be used if present.")
+                            log_warn("Homebrew not found. Attempting static portable FFmpeg download...")
+
+                    if not os.path.isfile(ffmpeg_bin):
+                        import gzip
+                        is_arm = (platform.machine().lower() in ("arm64", "aarch64"))
+                        arch_name = "arm64" if is_arm else "x64"
+                        ff_url = f"https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-{arch_name}.gz"
+                        sp_dl = Spinner(f"Downloading static FFmpeg for macOS ({arch_name})").start()
+                        ff_gz = os.path.join(bin_dir, "ffmpeg.gz")
+                        dl_ok = download(ff_url, ff_gz)
+                        if dl_ok and os.path.isfile(ff_gz):
+                            try:
+                                with gzip.open(ff_gz, 'rb') as f_in, open(ffmpeg_bin, 'wb') as f_out:
+                                    shutil.copyfileobj(f_in, f_out)
+                                os.chmod(ffmpeg_bin, 0o755)
+                                sp_dl.done(ok=True)
+                                log_ok(f"Static FFmpeg ({arch_name}) installed into bin/ directory.")
+                            except Exception as ex:
+                                sp_dl.done(ok=False)
+                                log_warn(f"Failed to extract static FFmpeg: {ex}")
+                            finally:
+                                try: os.remove(ff_gz)
+                                except Exception: pass
+                        else:
+                            sp_dl.done(ok=False)
+                            log_warn("Failed to download static FFmpeg for macOS.")
                 else:
                     # Linux: try BtbN GitHub release first, fallback to johnvansickle
                     linux_urls = [
@@ -3898,8 +4057,10 @@ def main():
         target = ARGS.install or _default_install_dir()
         option_reset(preset_path=target)
         sys.exit(0)
-    elif ARGS.install:
-        option_install_update(preset_path=ARGS.install)
+    elif ARGS.install or ARGS.version:
+        v_tag = ARGS.version if ARGS.version else None
+        v_url = f"https://github.com/veritus-git/BadWords/archive/refs/tags/{v_tag}.zip" if v_tag else None
+        option_install_update(preset_path=ARGS.install, version_tag=v_tag, version_url=v_url)
         sys.exit(0)
 
     # One-time setup: resize + title + lock scrollbar + Quick Edit

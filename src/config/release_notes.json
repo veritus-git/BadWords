@@ -1,0 +1,11 @@
+{
+  "changes": [
+    "Fixed 23.976 fps (NTSC) timeline XML sync and sub-frame ripple cuts.",
+    "Added Notepad-style continuous text selection mode (set as default LMB).",
+    "High-contrast UI theme fixes for dropdowns and selection markers.",
+    "Self-healing updater & legacy v3 migration cleaner.",
+    "Automatic static FFmpeg downloader for macOS (Apple Silicon & Intel).",
+    "Unified 11-language localization with full English fallback."
+  ]
+}
+

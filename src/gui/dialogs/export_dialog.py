@@ -91,11 +91,11 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             first_fps = video_fps_list[0]
             if all(abs(f - first_fps) < 0.05 for f in video_fps_list):
                 self.default_fps = round(first_fps, 3)
-                self.fps_hint = self._t("hint_fps_uniform", f"Wszystkie klipy wideo mają {self.default_fps:g} FPS").replace("{fps}", f"{self.default_fps:g}")
+                self.fps_hint = self._t("hint_fps_uniform", f"All video clips have {self.default_fps:g} FPS").replace("{fps}", f"{self.default_fps:g}")
             else:
                 self.default_fps = round(first_fps, 3)
                 details = ", ".join(f"{f:g} FPS" for f in video_fps_list[:3])
-                self.fps_hint = self._t("hint_fps_mixed", f"Wykryto różne klatkaże: {details}").replace("{details}", details)
+                self.fps_hint = self._t("hint_fps_mixed", f"Different frame rates detected: {details}").replace("{details}", details)
         else:
             saved_fps = 24.0
             if self.engine:
@@ -280,7 +280,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self._tb.btn_min.hide()
         self._tb.btn_max.hide()
         if hasattr(self._tb, '_lbl_title'):
-            self._tb._lbl_title.setText(self._t("dlg_export_title", "Eksportuj oś czasu"))
+            self._tb._lbl_title.setText(self._t("dlg_export_title", "Export Timeline"))
         root_l.addWidget(self._tb)
 
         # Body container
@@ -292,10 +292,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # Header titles
         h_row = QVBoxLayout()
         h_row.setSpacing(config.S(2))
-        lbl_h = QLabel(self._t("dlg_export_title", "Eksportuj oś czasu"))
+        lbl_h = QLabel(self._t("dlg_export_title", "Export Timeline"))
         lbl_h.setObjectName("lbl_title")
         h_row.addWidget(lbl_h)
-        lbl_sub = QLabel(self._t("dlg_export_desc", "Wybierz format eksportu i parametry sekwencji montażowej"))
+        lbl_sub = QLabel(self._t("dlg_export_desc", "Select export format and sequence parameters"))
         lbl_sub.setObjectName("lbl_sub")
         h_row.addWidget(lbl_sub)
         c_lay.addLayout(h_row)
@@ -307,7 +307,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # ── 1. Export Format (Dropdown) ───────────────────────────────────────
         r_fmt = QHBoxLayout()
         r_fmt.setSpacing(config.S(8))
-        lbl_fmt = QLabel(self._t("lbl_export_format", "Format eksportu:"))
+        lbl_fmt = QLabel(self._t("lbl_export_format", "Export format:"))
         lbl_fmt.setFixedWidth(label_w)
         lbl_fmt.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_fmt.addWidget(lbl_fmt)
@@ -358,7 +358,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # ── 2. Sequence Name ──────────────────────────────────────────────────
         r_name = QHBoxLayout()
         r_name.setSpacing(config.S(8))
-        lbl_name = QLabel(self._t("lbl_export_seq_name", "Nazwa sekwencji:"))
+        lbl_name = QLabel(self._t("lbl_export_seq_name", "Sequence name:"))
         lbl_name.setFixedWidth(label_w)
         lbl_name.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_name.addWidget(lbl_name)
@@ -371,7 +371,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # ── 3. Timeline Frame Rate ────────────────────────────────────────────
         r_fps = QHBoxLayout()
         r_fps.setSpacing(config.S(8))
-        lbl_fps = QLabel(self._t("lbl_export_fps", "Klatkaż osi czasu:"))
+        lbl_fps = QLabel(self._t("lbl_export_fps", "Timeline frame rate:"))
         lbl_fps.setFixedWidth(label_w)
         lbl_fps.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_fps.addWidget(lbl_fps)
@@ -395,16 +395,16 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # ── 4. Timeline Resolution ────────────────────────────────────────────
         r_res = QHBoxLayout()
         r_res.setSpacing(config.S(8))
-        lbl_res = QLabel(self._t("lbl_export_res", "Rozdzielczość osi:"))
+        lbl_res = QLabel(self._t("lbl_export_res", "Timeline resolution:"))
         lbl_res.setFixedWidth(label_w)
         lbl_res.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_res.addWidget(lbl_res)
 
         self.res_options = [
-            f"{self.default_width} x {self.default_height} ({self._t('lbl_res_original', 'Oryginalna')})",
+            f"{self.default_width} x {self.default_height} ({self._t('lbl_res_original', 'Original')})",
             "1920 x 1080 (Full HD 16:9)",
             "3840 x 2160 (4K UHD 16:9)",
-            "1080 x 1920 (Pionowe / Shorts 9:16)",
+            f"1080 x 1920 ({self._t('lbl_res_vertical', 'Vertical / Shorts 9:16')})",
             "2560 x 1440 (2K QHD 16:9)",
             "1280 x 720 (HD 16:9)"
         ]
@@ -421,7 +421,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_audio.setContentsMargins(0, 0, 0, 0)
         r_audio.setSpacing(config.S(6))
 
-        self.lbl_aud = QLabel(self._t("lbl_export_preserve_audio", "Zachowaj oryginalne ścieżki audio (A1, A2...)"))
+        self.lbl_aud = QLabel(self._t("lbl_export_preserve_audio", "Preserve original audio tracks (A1, A2...)"))
         self.lbl_aud.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_audio.addWidget(self.lbl_aud)
 
@@ -442,7 +442,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_dest = QHBoxLayout()
         r_dest.setSpacing(config.S(8))
 
-        lbl_dst = QLabel(self._t("lbl_export_dest", "Katalog zapisu:"))
+        lbl_dst = QLabel(self._t("lbl_export_dest", "Output folder:"))
         lbl_dst.setFixedWidth(label_w)
         lbl_dst.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
         r_dest.addWidget(lbl_dst)
@@ -451,7 +451,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.txt_dest_dir.setFixedHeight(config.S(28))
         r_dest.addWidget(self.txt_dest_dir, 1)
 
-        btn_browse = QPushButton(self._t("btn_browse", "Przeglądaj..."))
+        btn_browse = QPushButton(self._t("btn_browse", "Browse..."))
         btn_browse.setCursor(Qt.PointingHandCursor)
         btn_browse.setFixedHeight(config.S(28))
         btn_browse.setStyleSheet(f"""
@@ -473,7 +473,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         h_actions.setSpacing(config.S(10))
         h_actions.addStretch()
 
-        btn_cancel = QPushButton(self._t("btn_cancel", "Anuluj"))
+        btn_cancel = QPushButton(self._t("btn_cancel", "Cancel"))
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.setFixedHeight(config.S(32))
         btn_cancel.setStyleSheet(f"""
@@ -506,7 +506,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         btn_exp_lay.setSpacing(config.S(8))
         btn_exp_lay.addStretch(1)
 
-        self.lbl_btn_export_text = QLabel(self._t("btn_export", "Eksportuj"))
+        self.lbl_btn_export_text = QLabel(self._t("btn_export", "Export"))
         self.lbl_btn_export_text.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.lbl_btn_export_text.setStyleSheet(f"color: #ffffff; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: bold; background: transparent; border: none;")
         btn_exp_lay.addWidget(self.lbl_btn_export_text)
@@ -549,23 +549,23 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 2.0
 
         if fmt_id == "fcp7_xml":
-            hint_text = self._t("hint_fmt_fcp7_xml", "Zalecany format uniwersalny. Pełne powiązanie wideo i audio (clip linking), rozbicie ścieżek oraz media mieszane.")
+            hint_text = self._t("hint_fmt_fcp7_xml", "Recommended universal format. Full clip linking, split tracks and mixed media support.")
             pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#38c172", dpr)
         elif fmt_id == "otio":
-            hint_text = self._t("hint_fmt_otio", "Nowoczesny format otwarty (Pixar/ASWF). Obsługuje wszystkie ścieżki i media. Zgodnie ze specyfikacją OTIO v1, brak natywnego powiązania klipów.")
+            hint_text = self._t("hint_fmt_otio", "Modern open standard (Pixar/ASWF). Supports all tracks and media without native clip linking per OTIO v1 spec.")
             pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#888888", dpr)
         elif fmt_id == "fcpxml":
-            hint_text = self._t("hint_fmt_fcpxml", "Dedykowany dla Final Cut Pro X. W DaVinci Resolve import zewnętrznych plików audio (.wav) może wymagać ich wcześniejszego załadowania do Media Pool.")
+            hint_text = self._t("hint_fmt_fcpxml", "Dedicated for Final Cut Pro X. In DaVinci Resolve, external audio files (.wav) may need to be imported into Media Pool first.")
             pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#888888", dpr)
         elif fmt_id == "edl":
             if not has_video:
-                hint_text = self._t("hint_fmt_edl_audio_warning", "DaVinci Resolve nie obsługuje importu list CMX 3600 EDL dla projektów czysto dźwiękowych (brak ścieżki wideo). Dla plików audio (.wav) wybierz format FCP 7 XML (.xml) lub OpenTimelineIO (.otio)!")
+                hint_text = self._t("hint_fmt_edl_audio_warning", "DaVinci Resolve does not support importing CMX 3600 EDL lists for audio-only projects. For audio files (.wav), choose FCP 7 XML (.xml) or OpenTimelineIO (.otio)!")
                 pix = self._render_svg_icon("exclamation-icon.svg", config.S(13), "#ffaa00", dpr)
             elif num_clips > 1 or has_mixed:
-                hint_text = self._t("hint_fmt_edl_warning", "CMX 3600 EDL to format taśmowy (1 ścieżka wideo, stereo). Przy wielu/mieszanych klipach zalecany jest FCP 7 XML lub OTIO!")
+                hint_text = self._t("hint_fmt_edl_warning", "CMX 3600 EDL is a tape format (1 video track, stereo). For multiple or mixed media, FCP 7 XML or OTIO is recommended!")
                 pix = self._render_svg_icon("exclamation-icon.svg", config.S(13), "#ffaa00", dpr)
             else:
-                hint_text = self._t("hint_fmt_edl", "Tradycyjny format CMX 3600 EDL dla pojedynczego klipu. Ograniczony do 1 ścieżki wideo i stereo.")
+                hint_text = self._t("hint_fmt_edl", "Traditional CMX 3600 EDL format for a single clip. Limited to 1 video track and stereo audio.")
                 pix = self._render_svg_icon("question-mark-sign-icon.svg", config.S(13), "#888888", dpr)
 
         self.info_fmt.setPixmap(pix)
@@ -650,20 +650,20 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         if os.path.exists(out_path):
             exists_box = CustomMsgBox(
                 self,
-                title=self._t("dlg_file_exists_title", "Plik już istnieje"),
-                message=self._t("dlg_file_exists_msg", "Plik \"{name}\" już istnieje w wybranym katalogu.\nCzy chcesz go podmienić, czy zmienić nazwę?").format(name=out_filename),
-                btn_yes_text=self._t("btn_overwrite", "Podmień"),
-                btn_no_text=self._t("btn_rename", "Zmień nazwę"),
-                btn_cancel_text=self._t("btn_cancel", "Anuluj")
+                title=self._t("dlg_file_exists_title", "File already exists"),
+                message=self._t("dlg_file_exists_msg", "File \"{name}\" already exists in the selected folder.\nDo you want to overwrite it or rename?").format(name=out_filename),
+                btn_yes_text=self._t("btn_overwrite", "Overwrite"),
+                btn_no_text=self._t("btn_rename", "Rename"),
+                btn_cancel_text=self._t("btn_cancel", "Cancel")
             )
             ret = exists_box.exec()
             if ret == QDialog.Rejected:
-                # User chose "Zmień nazwę" -> abort export, focus txt_seq_name and select all
+                # User chose "Rename" -> abort export, focus txt_seq_name and select all
                 self.txt_seq_name.setFocus()
                 self.txt_seq_name.selectAll()
                 return
             elif ret != QDialog.Accepted:
-                # User chose "Anuluj" or closed the modal -> abort export
+                # User chose "Cancel" or closed the modal -> abort export
                 return
 
         try:
@@ -681,7 +681,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             ops = self.engine.calculate_timeline_structure(self.words_data, target_fps, prefs)
 
         self.btn_export.setEnabled(False)
-        self.lbl_btn_export_text.setText(self._t("btn_exporting", "Eksportowanie..."))
+        self.lbl_btn_export_text.setText(self._t("btn_exporting", "Exporting..."))
         self.lbl_btn_export_icon.hide()
 
         ok = False
@@ -718,7 +718,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             )
 
         self.btn_export.setEnabled(True)
-        self.lbl_btn_export_text.setText(self._t("btn_export", "Eksportuj"))
+        self.lbl_btn_export_text.setText(self._t("btn_export", "Export"))
         self.lbl_btn_export_icon.show()
 
         if ok:
@@ -732,10 +732,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
             succ_dlg = CustomMsgBox(
                 self,
-                self._t("dlg_export_title", "Eksport zakończony"),
-                f"{self._t('msg_export_success', 'Oś czasu została pomyślnie wyeksportowana!')}\n\n{out_path}",
-                self._t("btn_open_folder", "Otwórz folder"),
-                btn_no_text=self._t("btn_close", "Zamknij")
+                self._t("dlg_export_title", "Export Complete"),
+                f"{self._t('msg_export_success', 'Timeline successfully exported!')}\n\n{out_path}",
+                self._t("btn_open_folder", "Open Folder"),
+                btn_no_text=self._t("btn_close", "Close")
             )
             if succ_dlg.exec():
                 QDesktopServices.openUrl(QUrl.fromLocalFile(dest_dir))
@@ -743,8 +743,8 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         else:
             err_dlg = CustomMsgBox(
                 self,
-                self._t("dlg_export_error", "Błąd eksportu"),
-                f"{self._t('msg_export_failed', 'Nie udało się wyeksportować osi czasu:')}\n{msg}",
+                self._t("dlg_export_error", "Export Error"),
+                f"{self._t('msg_export_failed', 'Failed to export timeline:')}\n{msg}",
                 "OK"
             )
             err_dlg.exec()

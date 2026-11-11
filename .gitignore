@@ -32,3 +32,6 @@ target/
 **/target/
 dist/
 installer/target/
+
+# Working directory / scratch reports
+raport/
