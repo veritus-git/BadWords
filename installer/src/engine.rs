@@ -76,6 +76,87 @@ fn copy_dir_with_progress(
     Ok(())
 }
 
+/// Checks if a directory is a protected OS root, system directory, or top-level user folder
+pub fn is_unsafe_dir_to_delete(dir: &Path) -> bool {
+    let clean_str = dir.to_string_lossy().trim().to_string();
+    if clean_str.is_empty() || clean_str == "." || clean_str == ".." {
+        return true;
+    }
+
+    let components: Vec<_> = dir.components().collect();
+    if components.is_empty() {
+        return true;
+    }
+
+    // Unix root and top-level root folders (/usr, /home, /etc, /var, /root, /boot, /bin, /sbin, /opt, /tmp)
+    #[cfg(unix)]
+    {
+        if components.len() <= 2 {
+            return true;
+        }
+    }
+
+    // Windows drive roots (e.g. C:\) and system paths
+    #[cfg(windows)]
+    {
+        if components.len() <= 2 {
+            return true;
+        }
+        let lower = clean_str.to_lowercase();
+        let protected_windows = [
+            r"c:\windows",
+            r"c:\program files",
+            r"c:\program files (x86)",
+            r"c:\users",
+            r"c:\programdata",
+        ];
+        for pw in protected_windows {
+            if lower == pw || lower == format!(r"{}\", pw) || lower == format!("{}/", pw) {
+                return true;
+            }
+        }
+    }
+
+    // Protect user home directory and primary personal folders
+    if let Some(home) = dirs::home_dir() {
+        if dir == home || dir == home.as_path() {
+            return true;
+        }
+    }
+    if let Some(dt) = dirs::desktop_dir() {
+        if dir == dt || dir == dt.as_path() {
+            return true;
+        }
+    }
+    if let Some(doc) = dirs::document_dir() {
+        if dir == doc || dir == doc.as_path() {
+            return true;
+        }
+    }
+    if let Some(dl) = dirs::download_dir() {
+        if dir == dl || dir == dl.as_path() {
+            return true;
+        }
+    }
+    if let Some(pic) = dirs::picture_dir() {
+        if dir == pic || dir == pic.as_path() {
+            return true;
+        }
+    }
+    if let Some(vid) = dirs::video_dir() {
+        if dir == vid || dir == vid.as_path() {
+            return true;
+        }
+    }
+    if let Some(aud) = dirs::audio_dir() {
+        if dir == aud || dir == aud.as_path() {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Recursively deletes a directory with continuous live progress
 fn delete_dir_with_progress(
     dir: &Path,
@@ -85,6 +166,10 @@ fn delete_dir_with_progress(
     sender: &EventSender,
 ) {
     if !dir.exists() {
+        return;
+    }
+    if is_unsafe_dir_to_delete(dir) {
+        emit_log(sender, "ERROR", &format!("Safety block: Refusing to delete protected system/user directory: {}", dir.display()));
         return;
     }
     let files = collect_all_files(dir, dir);
@@ -1955,14 +2040,39 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
 }
 
 /// Executes complete reset and clean reinstall
-pub fn run_reset(target_dir: PathBuf, create_desktop: bool, create_menu: bool, version: Option<String>, sender: EventSender) {
+pub fn run_reset(
+    target_dir: PathBuf,
+    old_dir: Option<PathBuf>,
+    create_desktop: bool,
+    create_menu: bool,
+    version: Option<String>,
+    sender: EventSender,
+) {
     std::thread::spawn(move || {
         emit_log(&sender, "INFO", &format!("Resetting BadWords in: {}", target_dir.display()));
 
+        // If a previous installation was detected at a different location, clean it up as part of the reset
+        if let Some(ref old) = old_dir {
+            if old.exists() && old != &target_dir && !is_unsafe_dir_to_delete(old) {
+                let looks_like_badwords = old.join("main.py").is_file()
+                    || old.join("src").join("main.py").is_file()
+                    || old.join(".version").is_file()
+                    || old.join("BadWords.exe").is_file()
+                    || old.join("BadWords").is_file();
+
+                if looks_like_badwords {
+                    emit_log(&sender, "INFO", &format!("Cleaning previous installation at: {}", old.display()));
+                    emit_progress(&sender, 5, 0, "Removing previous installation...", "Deleting old installation files");
+                    delete_dir_with_progress(old, 5, 20, "Removing previous installation...", &sender);
+                    emit_log(&sender, "OK", &format!("Previous installation at {} removed.", old.display()));
+                }
+            }
+        }
+
         if target_dir.exists() {
-            emit_progress(&sender, 5, 0, "Removing old files...", "Deleting existing installation files");
-            delete_dir_with_progress(&target_dir, 5, 30, "Removing old files...", &sender);
-            emit_log(&sender, "OK", "Previous installation removed.");
+            emit_progress(&sender, 20, 0, "Removing old files...", "Deleting existing installation files in target directory");
+            delete_dir_with_progress(&target_dir, 20, 35, "Removing old files...", &sender);
+            emit_log(&sender, "OK", "Target installation directory prepared.");
         }
 
         emit_progress(&sender, 35, 1, "Reinstalling fresh copy...", "Beginning clean installation");
@@ -2584,6 +2694,55 @@ pub fn remove_davinci_wrappers(sender: &EventSender) {
         if b.exists() {
             let _ = fs::remove_file(&b);
             emit_log(sender, "OK", &format!("Removed DaVinci bridge: {}", b.display()));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_unsafe_dir_to_delete() {
+        assert!(is_unsafe_dir_to_delete(Path::new("")));
+        assert!(is_unsafe_dir_to_delete(Path::new(".")));
+        assert!(is_unsafe_dir_to_delete(Path::new("..")));
+
+        #[cfg(unix)]
+        {
+            assert!(is_unsafe_dir_to_delete(Path::new("/")));
+            assert!(is_unsafe_dir_to_delete(Path::new("/usr")));
+            assert!(is_unsafe_dir_to_delete(Path::new("/home")));
+            assert!(is_unsafe_dir_to_delete(Path::new("/etc")));
+            assert!(is_unsafe_dir_to_delete(Path::new("/var")));
+            assert!(is_unsafe_dir_to_delete(Path::new("/tmp")));
+            assert!(is_unsafe_dir_to_delete(Path::new("/root")));
+        }
+
+        if let Some(home) = dirs::home_dir() {
+            assert!(is_unsafe_dir_to_delete(&home));
+        }
+        if let Some(dt) = dirs::desktop_dir() {
+            assert!(is_unsafe_dir_to_delete(&dt));
+        }
+
+        // Subdirectories of valid paths should NOT be marked unsafe
+        #[cfg(unix)]
+        {
+            assert!(!is_unsafe_dir_to_delete(Path::new("/opt/BadWords/app")));
+            assert!(!is_unsafe_dir_to_delete(Path::new("/tmp/test_bw_dir/BadWords")));
+        }
+    }
+
+    #[test]
+    fn test_read_app_version_from_dir() {
+        let repo_opt = find_local_repo();
+        if let Some(repo) = repo_opt {
+            let ver = read_app_version_from_dir(&repo);
+            assert!(ver.is_some());
+            let v_str = ver.unwrap();
+            assert!(!v_str.is_empty());
+            assert!(v_str.chars().any(|c| c.is_ascii_digit()));
         }
     }
 }

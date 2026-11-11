@@ -157,7 +157,8 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
         engine::run_repair(target_dir, target_ver, tx);
     } else if args.iter().any(|a| a == "--reset") {
         println!("[CLI] Running headless reset on: {}", target_dir.display());
-        engine::run_reset(target_dir, create_dt, create_menu, target_ver, tx);
+        let old_dir = os::detect_existing_install();
+        engine::run_reset(target_dir, old_dir, create_dt, create_menu, target_ver, tx);
     } else if let Some(br) = dev_branch {
         println!("[CLI] Running headless developer install (branch: {}) to: {}", br, target_dir.display());
         engine::run_dev_install(target_dir, create_dt, create_menu, Some(br), tx);
@@ -493,7 +494,12 @@ impl InstallerApp {
     }
 
     fn current_target_path(&self) -> PathBuf {
-        PathBuf::from(self.install_path_str.trim())
+        let trimmed = self.install_path_str.trim();
+        if trimmed.is_empty() {
+            self.detected_existing.clone().unwrap_or_else(os::default_install_dir)
+        } else {
+            PathBuf::from(trimmed)
+        }
     }
 
     fn toggle_terminal(&mut self) {
@@ -574,7 +580,8 @@ impl InstallerApp {
                 engine::run_move(from_dir, target, tx);
             }
             Some(InstallAction::Reset) => {
-                engine::run_reset(target, self.create_desktop_shortcut, self.create_start_menu_shortcut, self.selected_version.clone(), tx);
+                let old_dir = self.detected_existing.clone();
+                engine::run_reset(target, old_dir, self.create_desktop_shortcut, self.create_start_menu_shortcut, self.selected_version.clone(), tx);
             }
             Some(InstallAction::Uninstall) => {
                 engine::run_uninstall(target, self.uninstall_system_python, tx);
@@ -944,7 +951,11 @@ impl eframe::App for InstallerApp {
                 }
             }
             Screen::SelectPath => {
-                if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight)) {
+                let text_focused = ctx.wants_keyboard_input();
+                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if self.install_path_str.trim().is_empty() {
+                        self.install_path_str = self.current_target_path().to_string_lossy().into_owned();
+                    }
                     if self.action == Some(InstallAction::Move) || (self.is_dev_mode && self.selected_branch.is_some()) {
                         self.start_action();
                     } else if self.action == Some(InstallAction::Reset) {
@@ -952,12 +963,25 @@ impl eframe::App for InstallerApp {
                     } else {
                         self.trigger_version_selection();
                     }
-                } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
-                    if self.is_dev_mode && self.selected_branch.is_some() {
-                        self.screen = Screen::SelectBranch;
-                    } else {
-                        self.screen = Screen::Menu;
-                        self.is_dev_mode = false;
+                } else if !text_focused {
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                        if self.install_path_str.trim().is_empty() {
+                            self.install_path_str = self.current_target_path().to_string_lossy().into_owned();
+                        }
+                        if self.action == Some(InstallAction::Move) || (self.is_dev_mode && self.selected_branch.is_some()) {
+                            self.start_action();
+                        } else if self.action == Some(InstallAction::Reset) {
+                            self.screen = Screen::ConfirmAction;
+                        } else {
+                            self.trigger_version_selection();
+                        }
+                    } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
+                        if self.is_dev_mode && self.selected_branch.is_some() {
+                            self.screen = Screen::SelectBranch;
+                        } else {
+                            self.screen = Screen::Menu;
+                            self.is_dev_mode = false;
+                        }
                     }
                 }
             }
@@ -968,7 +992,7 @@ impl eframe::App for InstallerApp {
                     } else {
                         self.start_action();
                     }
-                } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft)) {
+                } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
                     if self.action == Some(InstallAction::Reset) {
                         self.screen = Screen::SelectPath;
                     } else {
@@ -1693,7 +1717,17 @@ impl eframe::App for InstallerApp {
                                                                     
                                                                     if custom_button(ui, ctx, [90.0, 36.0], t.browse_btn) {
                                                                         if let Some(folder) = dialogs::pick_folder(Some(&self.install_path_str)) {
-                                                                            self.install_path_str = folder;
+                                                                            let picked = PathBuf::from(folder.trim());
+                                                                            let ends_with_app = picked.file_name()
+                                                                                .map(|n| n.to_string_lossy().to_lowercase() == "badwords")
+                                                                                .unwrap_or(false);
+                                                                            let is_non_empty = picked.is_dir() && std::fs::read_dir(&picked).map(|mut it| it.next().is_some()).unwrap_or(false);
+                                                                            let final_path = if !ends_with_app && is_non_empty {
+                                                                                picked.join("BadWords")
+                                                                            } else {
+                                                                                picked
+                                                                            };
+                                                                            self.install_path_str = final_path.to_string_lossy().into_owned();
                                                                         }
                                                                     }
                                                                 });
@@ -1747,12 +1781,24 @@ impl eframe::App for InstallerApp {
                                                                             .color(egui::Color32::from_gray(220))
                                                                     );
                                                                     ui.add_space(8.0);
+                                                                    let target_display = self.current_target_path();
                                                                     ui.label(
-                                                                        egui::RichText::new(&self.install_path_str)
+                                                                        egui::RichText::new(format!("Target: {}", target_display.display()))
                                                                             .size(12.0)
                                                                             .monospace()
                                                                             .color(egui::Color32::from_rgb(251, 191, 36))
                                                                     );
+                                                                    if let Some(ref old) = self.detected_existing {
+                                                                        if old != &target_display {
+                                                                            ui.add_space(4.0);
+                                                                            ui.label(
+                                                                                egui::RichText::new(format!("Previous install will also be cleaned: {}", old.display()))
+                                                                                    .size(11.5)
+                                                                                    .monospace()
+                                                                                    .color(egui::Color32::from_rgb(248, 113, 113))
+                                                                            );
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
 
@@ -2079,6 +2125,9 @@ impl eframe::App for InstallerApp {
                                                     ui.add_space(10.0);
                                                     let btn_label = if self.action == Some(InstallAction::Move) { t.btn_move } else { t.btn_next };
                                                     if custom_button(ui, ctx, [100.0, 32.0], btn_label) {
+                                                        if self.install_path_str.trim().is_empty() {
+                                                            self.install_path_str = self.current_target_path().to_string_lossy().into_owned();
+                                                        }
                                                         if self.action == Some(InstallAction::Move) || (self.is_dev_mode && self.selected_branch.is_some()) {
                                                             self.start_action();
                                                         } else if self.action == Some(InstallAction::Reset) {
