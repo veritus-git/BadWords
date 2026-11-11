@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -e
+
+echo "[UPDATE] BadWords macOS Auto-Update starting..."
+
+# Locate installation path via Resolve wrapper or default
+WRAPPER="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/BadWords.py"
+INSTALL_DIR=""
+
+if [ -f "$WRAPPER" ]; then
+    INSTALL_DIR=$(grep -m1 '^INSTALL_DIR' "$WRAPPER" 2>/dev/null | cut -d'"' -f2 || true)
+    if [ -z "$INSTALL_DIR" ]; then
+        INSTALL_DIR=$(grep -m1 '^INSTALL_DIR' "$WRAPPER" 2>/dev/null | cut -d"'" -f2 || true)
+    fi
+fi
+
+if [ -z "$INSTALL_DIR" ] || [ ! -d "$INSTALL_DIR" ]; then
+    if [ -d "$HOME/BadWords" ]; then
+        INSTALL_DIR="$HOME/BadWords"
+    elif [ -d "/Applications/BadWords" ]; then
+        INSTALL_DIR="/Applications/BadWords"
+    else
+        INSTALL_DIR="$HOME/BadWords"
+    fi
+fi
+
+echo "[INFO] Target installation directory: $INSTALL_DIR"
+
+TMP_DIR=$(mktemp -d /tmp/bw_upd_XXXXXX)
+SETUP_BIN="$TMP_DIR/badwords-setup-macos"
+URL="https://github.com/veritus-git/BadWords/releases/latest/download/badwords-setup-macos"
+
+echo "[INFO] Downloading native macOS installer from $URL..."
+if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$URL" -o "$SETUP_BIN"
+else
+    echo "[ERROR] curl not found in PATH."
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+
+chmod +x "$SETUP_BIN"
+echo "[INFO] Executing BadWords installer headlessly..."
+"$SETUP_BIN" --headless --install "$INSTALL_DIR"
+EXIT_CODE=$?
+
+rm -rf "$TMP_DIR"
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "[UPDATE] BadWords successfully updated to v4!"
+    echo "[UPDATE] Please restart BadWords from DaVinci Resolve or Applications folder."
+else
+    echo "[ERROR] Installer failed with exit code $EXIT_CODE"
+fi
+
+exit $EXIT_CODE

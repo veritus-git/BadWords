@@ -364,7 +364,7 @@ def get_latest_tag():
     # Fallback to releases if tags API failed
     return get_latest_release()
 
-def fetch_raw_file_from_tag(tag: str, rel_path: str) -> bytes | None:
+def fetch_raw_file_from_tag(tag: str, rel_path: str):
     """
     Fetches raw bytes of a file from GitHub or GitLab at the specified git tag.
     """
@@ -1120,7 +1120,42 @@ def main():
 
     is_v4_migration = (curr_tuple[0] < 4 and target_tuple[0] >= 4)
     if is_v4_migration:
-        info("Detected migration from 3.x to 4.x. Update will proceed and show milestone notice upon completion.")
+        info("Detected migration from 3.x to 4.x. Attempting native installer upgrade...")
+        tmp_inst_dir = tempfile.mkdtemp(prefix="bw_upd_inst_")
+        if os.name == "nt":
+            bin_name = "badwords-setup-windows.exe"
+        elif sys.platform == "darwin":
+            bin_name = "badwords-setup-macos"
+        else:
+            bin_name = "badwords-setup-linux"
+
+        clean_tag = rel_tag.lstrip("vV")
+        installer_candidates = [
+            f"https://github.com/veritus-git/BadWords/releases/download/{clean_tag}/{bin_name}",
+            f"https://github.com/veritus-git/BadWords/releases/download/v{clean_tag}/{bin_name}",
+            f"https://github.com/veritus-git/BadWords/releases/latest/download/{bin_name}",
+        ]
+        inst_path = os.path.join(tmp_inst_dir, bin_name)
+        inst_downloaded = False
+        for i_url in installer_candidates:
+            info(f"Downloading native installer for seamless migration: {i_url}")
+            if download(i_url, inst_path):
+                inst_downloaded = True
+                break
+
+        if inst_downloaded and os.path.isfile(inst_path):
+            if os.name != "nt":
+                os.chmod(inst_path, 0o755)
+            info(f"Executing native installer in headless mode for {install_dir}...")
+            r_inst = subprocess.run([inst_path, "--headless", "--install", install_dir], **_sp_hidden_kwargs())
+            if r_inst.returncode == 0:
+                log(f"BadWords updated to {rel_tag} successfully via native installer!")
+                log("Please restart BadWords (close and relaunch from DaVinci Resolve or Desktop shortcut).")
+                shutil.rmtree(tmp_inst_dir, ignore_errors=True)
+                sys.exit(0)
+            else:
+                warn(f"Native installer headless returned code {r_inst.returncode}. Falling back to python source sync...")
+        shutil.rmtree(tmp_inst_dir, ignore_errors=True)
 
     # 3. Download and extract
     tmp_dir = tempfile.mkdtemp(prefix="bw_update_")
