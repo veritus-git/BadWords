@@ -2022,7 +2022,7 @@ fn setup_python_environment(
     let venv_valid = v_py.is_file()
         && os::create_hidden_command(&v_py)
             .arg("-c")
-            .arg("import sys")
+            .arg("import sys; sys.exit(0 if sys.version_info >= (3, 10) and sys.version_info < (3, 13) else 1)")
             .output()
             .is_ok_and(|o| o.status.success());
     if !venv_valid {
