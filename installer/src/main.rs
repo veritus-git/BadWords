@@ -118,10 +118,10 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
         if idx + 1 < args.len() {
             PathBuf::from(&args[idx + 1])
         } else {
-            os::default_install_dir()
+            os::detect_existing_install().unwrap_or_else(os::default_install_dir)
         }
     } else {
-        os::default_install_dir()
+        os::detect_existing_install().unwrap_or_else(os::default_install_dir)
     };
 
     let create_dt = !args.iter().any(|a| a == "--no-desktop-shortcut");
@@ -523,7 +523,7 @@ impl InstallerApp {
                 };
                 items.push(VersionItem {
                     id: tag.clone(),
-                    display_text: format!("{} (Legacy — v4+ required)", tag),
+                    display_text: format!("{} ({})", tag, t.legacy_version_suffix),
                     badge,
                     is_local: false,
                     is_latest: false,
@@ -563,7 +563,7 @@ impl InstallerApp {
                 if is_legacy {
                     items.push(VersionItem {
                         id: format!("v{}", inst_v),
-                        display_text: format!("v{} (Legacy — v4+ required)", inst_v),
+                        display_text: format!("v{} ({})", inst_v, t.legacy_version_suffix),
                         badge: Some("INSTALLED".to_string()),
                         is_local: false,
                         is_latest: false,
@@ -611,7 +611,7 @@ impl InstallerApp {
     }
 
     fn current_target_path(&self) -> PathBuf {
-        let trimmed = self.install_path_str.trim();
+        let trimmed = self.install_path_str.trim().trim_end_matches(['/', '\\']);
         let p = if trimmed.is_empty() {
             self.detected_existing.clone().unwrap_or_else(os::default_install_dir)
         } else {
@@ -620,6 +620,14 @@ impl InstallerApp {
         if p.is_file() {
             if let Some(parent) = p.parent() {
                 return parent.to_path_buf();
+            }
+        }
+        let fname = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if (fname == "badwords" || fname == "badwords.exe") && p.exists() {
+            if let Some(parent) = p.parent() {
+                if parent.is_dir() {
+                    return parent.to_path_buf();
+                }
             }
         }
         p
@@ -662,6 +670,7 @@ impl InstallerApp {
 
     fn trigger_version_selection(&mut self) {
         self.screen = Screen::SelectVersion;
+        self.update_version_items(&self.versions.clone());
         if self.version_items.is_empty() {
             self.version_fetching = true;
             let tx_v = self.tx.clone();
@@ -997,12 +1006,14 @@ impl eframe::App for InstallerApp {
                     if !self.version_items.is_empty() {
                         self.version_selected_index = (self.version_selected_index + self.version_items.len() - 1) % self.version_items.len();
                         if let Some(item) = self.version_items.get(self.version_selected_index) {
-                            if item.is_local {
-                                self.selected_version = Some("LOCAL".to_string());
-                                self.is_dev_mode = true;
-                            } else {
-                                self.selected_version = Some(item.id.clone());
-                                self.is_dev_mode = false;
+                            if !item.is_disabled {
+                                if item.is_local {
+                                    self.selected_version = Some("LOCAL".to_string());
+                                    self.is_dev_mode = true;
+                                } else {
+                                    self.selected_version = Some(item.id.clone());
+                                    self.is_dev_mode = false;
+                                }
                             }
                         }
                     }
@@ -1011,12 +1022,14 @@ impl eframe::App for InstallerApp {
                     if !self.version_items.is_empty() {
                         self.version_selected_index = (self.version_selected_index + 1) % self.version_items.len();
                         if let Some(item) = self.version_items.get(self.version_selected_index) {
-                            if item.is_local {
-                                self.selected_version = Some("LOCAL".to_string());
-                                self.is_dev_mode = true;
-                            } else {
-                                self.selected_version = Some(item.id.clone());
-                                self.is_dev_mode = false;
+                            if !item.is_disabled {
+                                if item.is_local {
+                                    self.selected_version = Some("LOCAL".to_string());
+                                    self.is_dev_mode = true;
+                                } else {
+                                    self.selected_version = Some(item.id.clone());
+                                    self.is_dev_mode = false;
+                                }
                             }
                         }
                     }
@@ -1809,18 +1822,7 @@ impl eframe::App for InstallerApp {
                                                                 } else if is_move {
                                                                     t.opt_move_title.to_string()
                                                                 } else if is_reset {
-                                                                    match self.language {
-                                                                        Language::Pl => "Folder Nowej Instalacji".to_string(),
-                                                                        Language::De => "Zielordner für Neuinstallation".to_string(),
-                                                                        Language::Es => "Carpeta para Nueva Instalación".to_string(),
-                                                                        Language::Fr => "Dossier de Nouvelle Installation".to_string(),
-                                                                        Language::It => "Cartella Nuova Installazione".to_string(),
-                                                                        Language::Nl => "Doelmap voor Schone Installatie".to_string(),
-                                                                        Language::Pt => "Pasta de Nova Instalação".to_string(),
-                                                                        Language::Ru => "Папка для чистой установки".to_string(),
-                                                                        Language::Uk => "Папка для чистого встановлення".to_string(),
-                                                                        Language::En => "Fresh Installation Folder".to_string(),
-                                                                    }
+                                                                    t.reset_path_title.to_string()
                                                                 } else {
                                                                     t.select_path_title.to_string()
                                                                 };
@@ -1835,18 +1837,7 @@ impl eframe::App for InstallerApp {
                                                                 let desc_text = if self.is_dev_mode && self.selected_branch.is_some() {
                                                                     "Choose the destination folder. Updater self-upgrade will be disabled."
                                                                 } else if is_reset {
-                                                                    match self.language {
-                                                                        Language::Pl => "Wybierz folder docelowy dla nowej instalacji. Domyślnie pozostaje obecny folder.",
-                                                                        Language::De => "Wählen Sie den Zielordner für die Neuinstallation. Standardmäßig bleibt der aktuelle Ordner.",
-                                                                        Language::Es => "Elija la carpeta de destino para la nueva instalación. Por defecto permanece la actual.",
-                                                                        Language::Fr => "Choisissez le dossier de destination pour la nouvelle installation.",
-                                                                        Language::It => "Scegli la cartella di destinazione per la nuova installazione.",
-                                                                        Language::Nl => "Kies de doelmap voor de nieuwe installatie. Standaard blijft de huidige map.",
-                                                                        Language::Pt => "Escolha a pasta de destino para a nova instalação.",
-                                                                        Language::Ru => "Выберите целевую папку для чистой установки. По умолчанию остается текущая.",
-                                                                        Language::Uk => "Оберіть цільову папку для нового встановлення. За замовчуванням залишається поточна.",
-                                                                        Language::En => "Choose destination folder for the fresh installation. Defaults to current path.",
-                                                                    }
+                                                                    t.reset_path_label
                                                                 } else {
                                                                     t.select_path_label
                                                                 };
@@ -1875,13 +1866,21 @@ impl eframe::App for InstallerApp {
                                                                         .inner_margin(egui::Margin::symmetric(10.0, 7.0))
                                                                         .rounding(3.0)
                                                                         .show(ui, |ui| {
-                                                                            ui.add_sized(
+                                                                            let text_resp = ui.add_sized(
                                                                                 [270.0, 20.0],
                                                                                 egui::TextEdit::singleline(&mut self.install_path_str)
                                                                                     .frame(false)
                                                                                     .text_color(egui::Color32::WHITE)
                                                                                     .font(egui::FontId::proportional(13.0))
                                                                             );
+                                                                            if text_resp.changed() {
+                                                                                let p = self.current_target_path();
+                                                                                let is_bw = p.join("main.py").is_file() || p.join("src").join("main.py").is_file();
+                                                                                if is_bw {
+                                                                                    self.detected_existing = Some(p);
+                                                                                }
+                                                                                self.update_version_items(&self.versions.clone());
+                                                                            }
                                                                         });
                                                                     
                                                                     ui.add_space(6.0);
@@ -1947,6 +1946,14 @@ impl eframe::App for InstallerApp {
                                                                         egui::RichText::new(t.confirm_uninstall_warn)
                                                                             .size(13.5)
                                                                             .color(egui::Color32::from_gray(220))
+                                                                    );
+                                                                    ui.add_space(8.0);
+                                                                    let target_display = self.current_target_path();
+                                                                    ui.label(
+                                                                        egui::RichText::new(format!("Target: {}", target_display.display()))
+                                                                            .size(12.0)
+                                                                            .monospace()
+                                                                            .color(egui::Color32::from_rgb(248, 113, 113))
                                                                     );
                                                                     if self.has_auto_python_marker {
                                                                         ui.add_space(14.0);
@@ -2683,4 +2690,78 @@ fn render_menu_option(
     painter.galley(rect.min + egui::vec2(28.0, 26.0), desc_galley, egui::Color32::from_gray(170));
 
     resp.clicked()
+}
+
+#[cfg(test)]
+mod main_tests {
+    use super::*;
+
+    #[test]
+    fn test_legacy_version_disabled_in_app() {
+        let mut app = InstallerApp::new();
+        let releases = vec![
+            "v4.0.1".to_string(),
+            "v4.0.0".to_string(),
+            "v3.2.4".to_string(),
+        ];
+        app.update_version_items(&releases);
+
+        let v4 = app.version_items.iter().find(|it| it.id == "v4.0.1").unwrap();
+        assert!(!v4.is_disabled);
+        assert!(v4.badge.as_deref() == Some("LATEST") || v4.badge.as_deref() == Some("LATEST • INSTALLED"));
+
+        let legacy = app.version_items.iter().find(|it| it.id == "v3.2.4").unwrap();
+        assert!(legacy.is_disabled);
+        assert!(legacy.disabled_reason.is_some());
+
+        // Selected index must point to a non-disabled version
+        let selected = &app.version_items[app.version_selected_index];
+        assert!(!selected.is_disabled);
+    }
+
+    #[test]
+    fn test_current_target_path_trailing_slashes_and_binary() {
+        let mut app = InstallerApp::new();
+        app.install_path_str = "/tmp/test_bw_path///".to_string();
+        assert_eq!(app.current_target_path(), PathBuf::from("/tmp/test_bw_path"));
+    }
+
+    #[test]
+    fn test_legacy_installed_version_badged_and_disabled() {
+        let temp_dir = std::env::temp_dir().join("badwords_test_legacy_installed");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let _ = std::fs::write(temp_dir.join("main.py"), "VERSION = '3.2.4'\n");
+        let _ = std::fs::write(temp_dir.join("settings.json"), "{}\n");
+
+        let mut app = InstallerApp::new();
+        app.detected_existing = Some(temp_dir.clone());
+        app.install_path_str = temp_dir.to_string_lossy().into_owned();
+
+        let releases = vec!["v4.0.1".to_string(), "v4.0.0".to_string(), "v3.2.4".to_string()];
+        app.update_version_items(&releases);
+
+        let legacy = app.version_items.iter().find(|it| it.id == "v3.2.4").unwrap();
+        assert!(legacy.is_disabled);
+        assert!(legacy.is_installed);
+        assert_eq!(legacy.badge.as_deref(), Some("INSTALLED"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_option_4_reset_screen_flow() {
+        let mut app = InstallerApp::new();
+        // 1. User selects Option 4 (index 3 in 0-based menu: Reset)
+        app.select_menu_option(3);
+        assert_eq!(app.action, Some(InstallAction::Reset));
+        assert_eq!(app.screen, Screen::SelectPath);
+
+        // 2. User confirms or changes path and proceeds -> transitions to SelectVersion
+        app.trigger_version_selection();
+        assert_eq!(app.screen, Screen::SelectVersion);
+
+        // 3. Selected index must be non-disabled
+        let sel_item = &app.version_items[app.version_selected_index];
+        assert!(!sel_item.is_disabled);
+    }
 }

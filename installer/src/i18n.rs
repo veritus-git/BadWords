@@ -167,6 +167,9 @@ impl Language {
                 minimize_tooltip: "Minimalizuj",
                 close_tooltip: "Zamknij",
                 legacy_version_disabled_notice: "Tylko wersje v4+ są możliwe do instalacji ze względu na zmiany w strukturze plików.",
+                legacy_version_suffix: "Wersja 3.x — wymagana v4+",
+                reset_path_title: "Folder Nowej Instalacji",
+                reset_path_label: "Wybierz folder docelowy dla nowej instalacji. Domyślnie pozostaje obecny folder.",
             },
 
             Language::De => Translations {
@@ -217,6 +220,9 @@ impl Language {
                 minimize_tooltip: "Minimieren",
                 close_tooltip: "Schließen",
                 legacy_version_disabled_notice: "Nur v4+-Versionen können aufgrund von Änderungen in der Dateistruktur installiert werden.",
+                legacy_version_suffix: "Legacy — v4+ erforderlich",
+                reset_path_title: "Zielordner für Neuinstallation",
+                reset_path_label: "Wählen Sie den Zielordner für die Neuinstallation. Standardmäßig bleibt der aktuelle Ordner.",
             },
 
             Language::Es => Translations {
@@ -267,6 +273,9 @@ impl Language {
                 minimize_tooltip: "Minimizar",
                 close_tooltip: "Cerrar",
                 legacy_version_disabled_notice: "Solo se pueden instalar versiones v4+ debido a cambios en la estructura de archivos.",
+                legacy_version_suffix: "Legacy — se requiere v4+",
+                reset_path_title: "Carpeta para Nueva Instalación",
+                reset_path_label: "Elija la carpeta de destino para la nueva instalación. Por defecto permanece la actual.",
             },
 
             Language::Fr => Translations {
@@ -317,6 +326,9 @@ impl Language {
                 minimize_tooltip: "Réduire",
                 close_tooltip: "Fermer",
                 legacy_version_disabled_notice: "Seules les versions v4+ peuvent être installées en raison des changements de structure de fichiers.",
+                legacy_version_suffix: "Legacy — v4+ requis",
+                reset_path_title: "Dossier de Nouvelle Installation",
+                reset_path_label: "Choisissez le dossier de destination pour la nouvelle installation. Par défaut, le dossier actuel reste.",
             },
 
             Language::It => Translations {
@@ -367,6 +379,9 @@ impl Language {
                 minimize_tooltip: "Riduci a icona",
                 close_tooltip: "Chiudi",
                 legacy_version_disabled_notice: "Solo le versioni v4+ possono essere installate a causa di modifiche alla struttura dei file.",
+                legacy_version_suffix: "Legacy — richiesta v4+",
+                reset_path_title: "Cartella Nuova Installazione",
+                reset_path_label: "Scegli la cartella di destinazione per la nuova installazione. Per impostazione predefinita rimane quella corrente.",
             },
 
             Language::Nl => Translations {
@@ -417,6 +432,9 @@ impl Language {
                 minimize_tooltip: "Minimaliseren",
                 close_tooltip: "Sluiten",
                 legacy_version_disabled_notice: "Alleen v4+-versies kunnen worden geïnstalleerd vanwege wijzigingen in de bestandsstructuur.",
+                legacy_version_suffix: "Legacy — v4+ vereist",
+                reset_path_title: "Doelmap voor Schone Installatie",
+                reset_path_label: "Kies de doelmap voor de nieuwe installatie. Standaard blijft de huidige map.",
             },
 
             Language::Pt => Translations {
@@ -467,6 +485,9 @@ impl Language {
                 minimize_tooltip: "Minimizar",
                 close_tooltip: "Fechar",
                 legacy_version_disabled_notice: "Apenas versões v4+ podem ser instaladas devido a mudanças na estrutura de arquivos.",
+                legacy_version_suffix: "Legacy — v4+ necessário",
+                reset_path_title: "Pasta de Nova Instalação",
+                reset_path_label: "Escolha a pasta de destino para a nova instalação. Por padrão, a pasta atual é mantida.",
             },
 
             Language::Ru => Translations {
@@ -517,6 +538,9 @@ impl Language {
                 minimize_tooltip: "Свернуть",
                 close_tooltip: "Закрыть",
                 legacy_version_disabled_notice: "Возможна установка только версий v4+ из-за изменений в структуре файлов.",
+                legacy_version_suffix: "Legacy — требуется v4+",
+                reset_path_title: "Папка для чистой установки",
+                reset_path_label: "Выберите целевую папку для чистой установки. По умолчанию остается текущая.",
             },
 
             Language::Uk => Translations {
@@ -567,6 +591,9 @@ impl Language {
                 minimize_tooltip: "Згорнути",
                 close_tooltip: "Закрити",
                 legacy_version_disabled_notice: "Можливе встановлення лише версій v4+ через зміни у структурі файлів.",
+                legacy_version_suffix: "Legacy — потрібна v4+",
+                reset_path_title: "Папка для чистого встановлення",
+                reset_path_label: "Оберіть цільову папку для нового встановлення. За замовчуванням залишається поточна.",
             },
 
             Language::En => Translations {
@@ -617,6 +644,9 @@ impl Language {
                 minimize_tooltip: "Minimize",
                 close_tooltip: "Close",
                 legacy_version_disabled_notice: "Only v4+ versions are installable due to file structure changes.",
+                legacy_version_suffix: "Legacy — v4+ required",
+                reset_path_title: "Fresh Installation Folder",
+                reset_path_label: "Choose destination folder for the fresh installation. Defaults to current path.",
             },
         }
     }
@@ -687,6 +717,9 @@ pub struct Translations {
     pub minimize_tooltip: &'static str,
     pub close_tooltip: &'static str,
     pub legacy_version_disabled_notice: &'static str,
+    pub legacy_version_suffix: &'static str,
+    pub reset_path_title: &'static str,
+    pub reset_path_label: &'static str,
 }
 
 impl Translations {

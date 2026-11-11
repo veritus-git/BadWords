@@ -371,17 +371,15 @@ pub fn detect_installed_location() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         if let Some(home) = dirs::home_dir() {
-            let mut desktop_files = vec![
-                home.join(".local").join("share").join("applications").join("badwords.desktop"),
-                home.join(".local").join("share").join("applications").join("BadWords.desktop"),
-                PathBuf::from("/usr/share/applications/badwords.desktop"),
-                PathBuf::from("/usr/share/applications/BadWords.desktop"),
-            ];
-
+            let mut desktop_files = Vec::new();
             for dt_dir in find_all_linux_desktop_dirs(&home) {
                 desktop_files.push(dt_dir.join("BadWords.desktop"));
                 desktop_files.push(dt_dir.join("badwords.desktop"));
             }
+            desktop_files.push(home.join(".local").join("share").join("applications").join("badwords.desktop"));
+            desktop_files.push(home.join(".local").join("share").join("applications").join("BadWords.desktop"));
+            desktop_files.push(PathBuf::from("/usr/share/applications/badwords.desktop"));
+            desktop_files.push(PathBuf::from("/usr/share/applications/BadWords.desktop"));
 
             for df in desktop_files {
                 if df.is_file() {

@@ -790,6 +790,8 @@ pub fn read_app_version_from_dir(dir: &Path) -> Option<String> {
                     || trimmed.starts_with("CURRENT_VERSION")
                     || trimmed.starts_with("_DEFAULT_VERSION")
                     || trimmed.starts_with("base_ver")
+                    || trimmed.starts_with("__version__")
+                    || trimmed.starts_with("__VERSION__")
                 {
                     if let Some((_, val)) = trimmed.split_once('=') {
                         let clean = val.trim().trim_matches(|c| c == '"' || c == '\'').trim();
@@ -859,9 +861,14 @@ fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
                 continue;
             }
 
+            let name_lower = file_name.to_lowercase();
+            if name_lower.contains("installer") || name_lower.starts_with("badwords-setup") {
+                continue;
+            }
+
             // Do not delete current running installer exe if it's placed in target_dir
             if let Ok(cur_exe) = std::env::current_exe() {
-                if cur_exe == p {
+                if cur_exe == p || fs::canonicalize(&cur_exe).ok() == fs::canonicalize(&p).ok() {
                     continue;
                 }
             }
@@ -1529,6 +1536,14 @@ pub fn fetch_git_versions() -> Vec<String> {
                 }
             }
         }
+    }
+
+    if tags.is_empty() {
+        tags = vec![
+            "v4.0.1".to_string(),
+            "v4.0.0".to_string(),
+            "v3.2.4".to_string(),
+        ];
     }
 
     let mut v4_tags: Vec<String> = Vec::new();
@@ -2495,7 +2510,10 @@ fn run_install_core(
         );
         let bin_dir = target_dir.join("bin");
         let models_dir = target_dir.join("models");
-        let assets_dir = target_dir.join("assets").join("icons");
+        let assets_parent = target_dir.join("assets");
+        let assets_dir = assets_parent.join("icons");
+        let bridge_dir = target_dir.join("bridge");
+        let venv_dir = target_dir.join("venv");
 
         if let Err(e) = fs::create_dir_all(&target_dir) {
             if !target_dir.is_dir() {
@@ -2517,8 +2535,12 @@ fn run_install_core(
         let _ = fs::create_dir_all(&bin_dir);
         if models_dir.is_file() { let _ = fs::remove_file(&models_dir); }
         let _ = fs::create_dir_all(&models_dir);
+        if assets_parent.is_file() { let _ = fs::remove_file(&assets_parent); }
         if assets_dir.is_file() { let _ = fs::remove_file(&assets_dir); }
         let _ = fs::create_dir_all(&assets_dir);
+        if bridge_dir.is_file() { let _ = fs::remove_file(&bridge_dir); }
+        let _ = fs::create_dir_all(&bridge_dir);
+        if venv_dir.is_file() { let _ = fs::remove_file(&venv_dir); }
         emit_log(
             &sender,
             "OK",
@@ -3974,6 +3996,9 @@ mod tests {
         let _ = fs::write(test_dir.join("main.py"), "#!/usr/bin/env python3\n");
         let _ = fs::write(test_dir.join(".version"), "4.0.1\n");
 
+        let test_marker = std::env::temp_dir().join("badwords_test_marker_isolated");
+        std::env::set_var("BADWORDS_TEST_MARKER_PATH", &test_marker);
+
         os::record_installed_location(&test_dir);
 
         let detected = os::detect_existing_install();
@@ -3984,6 +4009,8 @@ mod tests {
         assert_eq!(ver.as_deref(), Some("4.0.1"));
 
         os::remove_installed_location();
+        std::env::remove_var("BADWORDS_TEST_MARKER_PATH");
+        let _ = fs::remove_file(&test_marker);
         let _ = fs::remove_dir_all(&test_dir);
     }
 
@@ -3997,5 +4024,25 @@ mod tests {
         assert_eq!(ver.as_deref(), Some("3.2.4"));
 
         let _ = fs::remove_dir_all(&legacy_dir);
+    }
+
+    #[test]
+    fn test_version_pep396_detection() {
+        let temp_dir = std::env::temp_dir().join("badwords_test_pep396");
+        let _ = fs::create_dir_all(&temp_dir);
+        let _ = fs::write(temp_dir.join("main.py"), "__version__ = '3.2.4'\n");
+        let ver = read_app_version_from_dir(&temp_dir);
+        assert_eq!(ver.as_deref(), Some("3.2.4"));
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_fetch_git_versions_order_and_fallback() {
+        let versions = fetch_git_versions();
+        assert!(!versions.is_empty());
+        let first = &versions[0];
+        let clean_first = first.trim_start_matches(|c| c == 'v' || c == 'V');
+        let maj = clean_first.split('.').next().unwrap().parse::<u32>().unwrap();
+        assert!(maj >= 4);
     }
 }
