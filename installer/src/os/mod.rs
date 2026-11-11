@@ -175,9 +175,71 @@ pub fn resolve_script_dirs() -> Vec<PathBuf> {
     unique
 }
 
-/// Detects existing BadWords installation path via OS registration, DaVinci Resolve wrappers, or standard directories.
+/// Returns the persistent marker file path storing the active BadWords installation path
+pub fn install_path_marker_file() -> Option<PathBuf> {
+    if let Some(cfg) = dirs::config_dir() {
+        return Some(cfg.join(APP_NAME).join("install_path"));
+    }
+    if let Some(home) = dirs::home_dir() {
+        return Some(home.join(".config").join(APP_NAME).join("install_path"));
+    }
+    None
+}
+
+/// Saves the installed path to the persistent system marker
+pub fn record_installed_location(path: &std::path::Path) {
+    if let Some(marker) = install_path_marker_file() {
+        if let Some(parent) = marker.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&marker, path.to_string_lossy().as_bytes());
+    }
+    if let Some(data) = dirs::data_local_dir() {
+        let p = data.join(APP_NAME).join("install_path");
+        if let Some(parent) = p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&p, path.to_string_lossy().as_bytes());
+    }
+}
+
+/// Removes persistent installation markers during uninstallation
+pub fn remove_installed_location() {
+    if let Some(marker) = install_path_marker_file() {
+        let _ = std::fs::remove_file(&marker);
+    }
+    if let Some(data) = dirs::data_local_dir() {
+        let p = data.join(APP_NAME).join("install_path");
+        let _ = std::fs::remove_file(&p);
+    }
+}
+
+/// Detects existing BadWords installation path via persistent marker, OS registration, DaVinci Resolve wrappers, current binary location, or standard directories.
 pub fn detect_existing_install() -> Option<PathBuf> {
-    // 1. Check OS native registration (Windows Registry, Linux .desktop entry, macOS App Bundle)
+    // 1. Check persistent configuration marker file
+    if let Some(marker) = install_path_marker_file() {
+        if marker.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&marker) {
+                let p = PathBuf::from(content.trim());
+                if p.is_dir() && (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    if let Some(data) = dirs::data_local_dir() {
+        let marker = data.join(APP_NAME).join("install_path");
+        if marker.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&marker) {
+                let p = PathBuf::from(content.trim());
+                if p.is_dir() && (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    // 2. Check OS native registration (Windows Registry, Linux .desktop entry, macOS App Bundle)
     #[cfg(target_os = "windows")]
     if let Some(p) = windows::detect_installed_location() {
         return Some(p);
@@ -193,24 +255,49 @@ pub fn detect_existing_install() -> Option<PathBuf> {
         return Some(p);
     }
 
-    // 2. Check DaVinci Resolve script wrappers (legacy versions e.g. 3.2.4)
+    // 3. Check DaVinci Resolve script wrappers (Lua Bridge & Python wrappers)
     let script_dirs = resolve_script_dirs();
+    let wrapper_names = [
+        "BadWords Bridge.lua",
+        "BadWords.lua",
+        "BadWords.py",
+        "BadWords (Linux).py",
+        "BadWords (Mac).py",
+        "BadWords (Windows).py",
+        "Badwords.py",
+        "BadWords_Launcher.py",
+    ];
     for dir in script_dirs {
-        for filename in ["BadWords.py", "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (Windows).py", "Badwords.py"] {
+        for filename in wrapper_names {
             let wrapper = dir.join(filename);
             if wrapper.is_file() {
                 if let Ok(content) = std::fs::read_to_string(&wrapper) {
                     for line in content.lines() {
                         let trimmed = line.trim();
-                        if trimmed.starts_with("INSTALL_DIR") {
-                            if let Some((_, val)) = trimmed.split_once('=') {
+                        if trimmed.contains("INSTALL_DIR") {
+                            let clean_str = if let Some(start) = trimmed.find("[[") {
+                                if let Some(end) = trimmed.rfind("]]") {
+                                    if end > start + 2 {
+                                        trimmed[start + 2..end].trim()
+                                    } else {
+                                        ""
+                                    }
+                                } else {
+                                    ""
+                                }
+                            } else if let Some((_, val)) = trimmed.split_once('=') {
                                 let mut raw = val.trim();
                                 if raw.starts_with('r') || raw.starts_with('R') {
                                     raw = &raw[1..];
                                 }
-                                let clean_path = raw.trim().trim_matches(|c| c == '"' || c == '\'');
-                                let path = PathBuf::from(clean_path);
-                                if path.exists() && (path.join("main.py").is_file() || path.join("src").join("main.py").is_file()) {
+                                raw.trim().trim_matches(|c| c == '"' || c == '\'').trim()
+                            } else {
+                                ""
+                            };
+
+                            if !clean_str.is_empty() {
+                                let path = PathBuf::from(clean_str);
+                                if path.exists() && (path.join("main.py").is_file() || path.join("src").join("main.py").is_file() || path.join("updater.py").is_file() || path.join("algorithms.py").is_file()) {
                                     return Some(path);
                                 }
                             }
@@ -218,6 +305,36 @@ pub fn detect_existing_install() -> Option<PathBuf> {
                     }
                 }
             }
+        }
+    }
+
+    // 4. Check if current executable is located inside an installed BadWords folder
+    if let Ok(cur_exe) = std::env::current_exe() {
+        if let Some(parent) = cur_exe.parent() {
+            let has_main = parent.join("main.py").is_file() || parent.join("src").join("main.py").is_file();
+            let is_not_installer_repo = !parent.join("installer").join("Cargo.toml").is_file();
+            let has_install_markers = parent.join("venv").is_dir()
+                || parent.join(".version").is_file()
+                || parent.join("settings.json").is_file()
+                || parent.join("BadWords").is_file()
+                || parent.join("BadWords.exe").is_file();
+            if has_main && is_not_installer_repo && has_install_markers {
+                return Some(parent.to_path_buf());
+            }
+        }
+    }
+
+    // 5. Check if current working directory is an installed BadWords folder
+    if let Ok(cur_dir) = std::env::current_dir() {
+        let has_main = cur_dir.join("main.py").is_file() || cur_dir.join("src").join("main.py").is_file();
+        let is_not_installer_repo = !cur_dir.join("installer").join("Cargo.toml").is_file();
+        let has_install_markers = cur_dir.join("venv").is_dir()
+            || cur_dir.join(".version").is_file()
+            || cur_dir.join("settings.json").is_file()
+            || cur_dir.join("BadWords").is_file()
+            || cur_dir.join("BadWords.exe").is_file();
+        if has_main && is_not_installer_repo && has_install_markers {
+            return Some(cur_dir);
         }
     }
 

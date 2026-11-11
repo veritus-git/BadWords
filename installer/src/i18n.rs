@@ -166,6 +166,7 @@ impl Language {
                 terminal_tooltip: "Otwórz/Zamknij konsolę logów na żywo (T)",
                 minimize_tooltip: "Minimalizuj",
                 close_tooltip: "Zamknij",
+                legacy_version_disabled_notice: "Tylko wersje v4+ są możliwe do instalacji ze względu na zmiany w strukturze plików.",
             },
 
             Language::De => Translations {
@@ -215,6 +216,7 @@ impl Language {
                 terminal_tooltip: "Live-Terminalkonsole öffnen/schließen (T)",
                 minimize_tooltip: "Minimieren",
                 close_tooltip: "Schließen",
+                legacy_version_disabled_notice: "Nur v4+-Versionen können aufgrund von Änderungen in der Dateistruktur installiert werden.",
             },
 
             Language::Es => Translations {
@@ -264,6 +266,7 @@ impl Language {
                 terminal_tooltip: "Abrir/Cerrar consola de terminal en vivo (T)",
                 minimize_tooltip: "Minimizar",
                 close_tooltip: "Cerrar",
+                legacy_version_disabled_notice: "Solo se pueden instalar versiones v4+ debido a cambios en la estructura de archivos.",
             },
 
             Language::Fr => Translations {
@@ -313,6 +316,7 @@ impl Language {
                 terminal_tooltip: "Ouvrir/Fermer la console de terminal en direct (T)",
                 minimize_tooltip: "Réduire",
                 close_tooltip: "Fermer",
+                legacy_version_disabled_notice: "Seules les versions v4+ peuvent être installées en raison des changements de structure de fichiers.",
             },
 
             Language::It => Translations {
@@ -362,6 +366,7 @@ impl Language {
                 terminal_tooltip: "Apri/Chiudi console terminale live (T)",
                 minimize_tooltip: "Riduci a icona",
                 close_tooltip: "Chiudi",
+                legacy_version_disabled_notice: "Solo le versioni v4+ possono essere installate a causa di modifiche alla struttura dei file.",
             },
 
             Language::Nl => Translations {
@@ -411,6 +416,7 @@ impl Language {
                 terminal_tooltip: "Live terminalconsole openen/sluiten (T)",
                 minimize_tooltip: "Minimaliseren",
                 close_tooltip: "Sluiten",
+                legacy_version_disabled_notice: "Alleen v4+-versies kunnen worden geïnstalleerd vanwege wijzigingen in de bestandsstructuur.",
             },
 
             Language::Pt => Translations {
@@ -460,6 +466,7 @@ impl Language {
                 terminal_tooltip: "Abrir/Fechar consola de terminal em direto (T)",
                 minimize_tooltip: "Minimizar",
                 close_tooltip: "Fechar",
+                legacy_version_disabled_notice: "Apenas versões v4+ podem ser instaladas devido a mudanças na estrutura de arquivos.",
             },
 
             Language::Ru => Translations {
@@ -509,6 +516,7 @@ impl Language {
                 terminal_tooltip: "Открыть/Закрыть консоль логов в реальном времени (T)",
                 minimize_tooltip: "Свернуть",
                 close_tooltip: "Закрыть",
+                legacy_version_disabled_notice: "Возможна установка только версий v4+ из-за изменений в структуре файлов.",
             },
 
             Language::Uk => Translations {
@@ -558,6 +566,7 @@ impl Language {
                 terminal_tooltip: "Відкрити/Закрити консоль логів у реальному часі (T)",
                 minimize_tooltip: "Згорнути",
                 close_tooltip: "Закрити",
+                legacy_version_disabled_notice: "Можливе встановлення лише версій v4+ через зміни у структурі файлів.",
             },
 
             Language::En => Translations {
@@ -607,6 +616,7 @@ impl Language {
                 terminal_tooltip: "Open/Close Live Terminal Logs (T)",
                 minimize_tooltip: "Minimize",
                 close_tooltip: "Close",
+                legacy_version_disabled_notice: "Only v4+ versions are installable due to file structure changes.",
             },
         }
     }
@@ -676,6 +686,7 @@ pub struct Translations {
     pub terminal_tooltip: &'static str,
     pub minimize_tooltip: &'static str,
     pub close_tooltip: &'static str,
+    pub legacy_version_disabled_notice: &'static str,
 }
 
 impl Translations {

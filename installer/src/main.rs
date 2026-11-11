@@ -297,6 +297,9 @@ struct VersionItem {
     badge: Option<String>,
     is_local: bool,
     is_latest: bool,
+    is_installed: bool,
+    is_disabled: bool,
+    disabled_reason: Option<String>,
 }
 
 struct InstallerApp {
@@ -451,33 +454,136 @@ impl InstallerApp {
         format!("{} ({}).", trimmed, self.hardware_tier.tag())
     }
 
+    fn get_installed_version(&self) -> Option<String> {
+        let target = self.current_target_path();
+        if let Some(v) = engine::read_app_version_from_dir(&target) {
+            return Some(v);
+        }
+        if let Some(ref detected) = self.detected_existing {
+            if let Some(v) = engine::read_app_version_from_dir(detected) {
+                return Some(v);
+            }
+        }
+        os::detect_existing_install().and_then(|p| engine::read_app_version_from_dir(&p))
+    }
+
     fn update_version_items(&mut self, raw_releases: &[String]) {
         let prev_selected_id = self.version_items.get(self.version_selected_index).map(|it| it.id.clone());
         let mut items = Vec::new();
         let local_repo = engine::find_local_repo();
 
+        let installed_opt = self.get_installed_version();
+        let clean_installed = installed_opt.as_deref().map(|v| v.trim().trim_start_matches(|c| c == 'v' || c == 'V').to_string());
+
+        let t = self.language.t();
+
         if let Some(ref repo_path) = local_repo {
             let local_ver = engine::read_app_version_from_dir(repo_path)
                 .or_else(engine::detect_local_version)
                 .unwrap_or_else(|| APP_VERSION.to_string());
+            let clean_local = local_ver.trim().trim_start_matches(|c| c == 'v' || c == 'V');
+            let is_inst = clean_installed.as_deref() == Some(clean_local);
+            let badge = if is_inst {
+                Some("LOCAL • INSTALLED".to_string())
+            } else {
+                Some("LOCAL".to_string())
+            };
             items.push(VersionItem {
                 id: "LOCAL".to_string(),
                 display_text: local_ver,
-                badge: Some("LOCAL".to_string()),
+                badge,
                 is_local: true,
                 is_latest: false,
+                is_installed: is_inst,
+                is_disabled: false,
+                disabled_reason: None,
             });
         }
 
-        for (idx, tag) in raw_releases.iter().enumerate() {
-            let is_first = idx == 0;
-            items.push(VersionItem {
-                id: tag.clone(),
-                display_text: tag.clone(),
-                badge: if is_first { Some("LATEST".to_string()) } else { None },
-                is_local: false,
-                is_latest: is_first,
-            });
+        let mut has_seen_first_v4 = false;
+        for tag in raw_releases {
+            let clean_tag = tag.trim().trim_start_matches(|c| c == 'v' || c == 'V');
+            let is_legacy = if let Some(maj_str) = clean_tag.split('.').next() {
+                maj_str.parse::<u32>().map(|m| m < 4).unwrap_or(false)
+            } else {
+                false
+            };
+
+            let is_inst = clean_installed.as_deref() == Some(clean_tag);
+            let is_first = !has_seen_first_v4 && !is_legacy;
+            if is_first {
+                has_seen_first_v4 = true;
+            }
+
+            if is_legacy {
+                let badge = if is_inst {
+                    Some("INSTALLED".to_string())
+                } else {
+                    None
+                };
+                items.push(VersionItem {
+                    id: tag.clone(),
+                    display_text: format!("{} (Legacy — v4+ required)", tag),
+                    badge,
+                    is_local: false,
+                    is_latest: false,
+                    is_installed: is_inst,
+                    is_disabled: true,
+                    disabled_reason: Some(t.legacy_version_disabled_notice.to_string()),
+                });
+            } else {
+                let badge = match (is_first, is_inst) {
+                    (true, true) => Some("LATEST • INSTALLED".to_string()),
+                    (true, false) => Some("LATEST".to_string()),
+                    (false, true) => Some("INSTALLED".to_string()),
+                    (false, false) => None,
+                };
+                items.push(VersionItem {
+                    id: tag.clone(),
+                    display_text: tag.clone(),
+                    badge,
+                    is_local: false,
+                    is_latest: is_first,
+                    is_installed: is_inst,
+                    is_disabled: false,
+                    disabled_reason: None,
+                });
+            }
+        }
+
+        // If an installed version was detected on system, but wasn't in raw_releases or LOCAL:
+        if let Some(ref inst_v) = clean_installed {
+            let already_in_list = items.iter().any(|it| it.is_installed);
+            if !already_in_list {
+                let is_legacy = if let Some(maj_str) = inst_v.split('.').next() {
+                    maj_str.parse::<u32>().map(|m| m < 4).unwrap_or(false)
+                } else {
+                    false
+                };
+                if is_legacy {
+                    items.push(VersionItem {
+                        id: format!("v{}", inst_v),
+                        display_text: format!("v{} (Legacy — v4+ required)", inst_v),
+                        badge: Some("INSTALLED".to_string()),
+                        is_local: false,
+                        is_latest: false,
+                        is_installed: true,
+                        is_disabled: true,
+                        disabled_reason: Some(t.legacy_version_disabled_notice.to_string()),
+                    });
+                } else {
+                    items.push(VersionItem {
+                        id: format!("v{}", inst_v),
+                        display_text: format!("v{}", inst_v),
+                        badge: Some("INSTALLED".to_string()),
+                        is_local: false,
+                        is_latest: false,
+                        is_installed: true,
+                        is_disabled: false,
+                        disabled_reason: None,
+                    });
+                }
+            }
         }
 
         self.version_items = items;
@@ -485,30 +591,38 @@ impl InstallerApp {
             if let Some(pos) = self.version_items.iter().position(|it| it.id == prev_id) {
                 self.version_selected_index = pos;
             } else {
-                self.version_selected_index = 0;
+                self.version_selected_index = self.version_items.iter().position(|it| !it.is_disabled).unwrap_or(0);
             }
         } else {
-            self.version_selected_index = 0;
+            self.version_selected_index = self.version_items.iter().position(|it| !it.is_disabled).unwrap_or(0);
         }
 
         if let Some(curr) = self.version_items.get(self.version_selected_index) {
-            if curr.is_local {
-                self.selected_version = Some("LOCAL".to_string());
-                self.is_dev_mode = true;
-            } else {
-                self.selected_version = Some(curr.id.clone());
-                self.is_dev_mode = false;
+            if !curr.is_disabled {
+                if curr.is_local {
+                    self.selected_version = Some("LOCAL".to_string());
+                    self.is_dev_mode = true;
+                } else {
+                    self.selected_version = Some(curr.id.clone());
+                    self.is_dev_mode = false;
+                }
             }
         }
     }
 
     fn current_target_path(&self) -> PathBuf {
         let trimmed = self.install_path_str.trim();
-        if trimmed.is_empty() {
+        let p = if trimmed.is_empty() {
             self.detected_existing.clone().unwrap_or_else(os::default_install_dir)
         } else {
             PathBuf::from(trimmed)
+        };
+        if p.is_file() {
+            if let Some(parent) = p.parent() {
+                return parent.to_path_buf();
+            }
         }
+        p
     }
 
     fn toggle_terminal(&mut self) {
@@ -908,14 +1022,20 @@ impl eframe::App for InstallerApp {
                     }
                 } else if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::Space)) {
                     if let Some(item) = self.version_items.get(self.version_selected_index) {
-                        if item.is_local {
-                            self.selected_version = Some("LOCAL".to_string());
-                            self.is_dev_mode = true;
-                        } else {
-                            self.selected_version = Some(item.id.clone());
-                            self.is_dev_mode = false;
+                        if !item.is_disabled {
+                            if item.is_local {
+                                self.selected_version = Some("LOCAL".to_string());
+                                self.is_dev_mode = true;
+                            } else {
+                                self.selected_version = Some(item.id.clone());
+                                self.is_dev_mode = false;
+                            }
+                            if self.action == Some(InstallAction::Reset) {
+                                self.screen = Screen::ConfirmAction;
+                            } else {
+                                self.start_action();
+                            }
                         }
-                        self.start_action();
                     }
                 } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
                     match self.action {
@@ -923,7 +1043,7 @@ impl eframe::App for InstallerApp {
                             self.screen = Screen::Menu;
                         }
                         Some(InstallAction::Reset) => {
-                            self.screen = Screen::ConfirmAction;
+                            self.screen = Screen::SelectPath;
                         }
                         _ => {
                             self.screen = Screen::SelectPath;
@@ -943,18 +1063,20 @@ impl eframe::App for InstallerApp {
                     ];
                     for (k, idx) in num_keys {
                         if ctx.input(|i| i.key_pressed(k)) && idx < self.version_items.len() {
-                            self.keyboard_navigation_active = true;
-                            self.version_selected_index = idx;
                             if let Some(item) = self.version_items.get(idx) {
-                                if item.is_local {
-                                    self.selected_version = Some("LOCAL".to_string());
-                                    self.is_dev_mode = true;
-                                } else {
-                                    self.selected_version = Some(item.id.clone());
-                                    self.is_dev_mode = false;
+                                if !item.is_disabled {
+                                    self.keyboard_navigation_active = true;
+                                    self.version_selected_index = idx;
+                                    if item.is_local {
+                                        self.selected_version = Some("LOCAL".to_string());
+                                        self.is_dev_mode = true;
+                                    } else {
+                                        self.selected_version = Some(item.id.clone());
+                                        self.is_dev_mode = false;
+                                    }
+                                    break;
                                 }
                             }
-                            break;
                         }
                     }
                 }
@@ -967,8 +1089,6 @@ impl eframe::App for InstallerApp {
                     }
                     if self.action == Some(InstallAction::Move) || (self.is_dev_mode && self.selected_branch.is_some()) {
                         self.start_action();
-                    } else if self.action == Some(InstallAction::Reset) {
-                        self.screen = Screen::ConfirmAction;
                     } else {
                         self.trigger_version_selection();
                     }
@@ -979,8 +1099,6 @@ impl eframe::App for InstallerApp {
                         }
                         if self.action == Some(InstallAction::Move) || (self.is_dev_mode && self.selected_branch.is_some()) {
                             self.start_action();
-                        } else if self.action == Some(InstallAction::Reset) {
-                            self.screen = Screen::ConfirmAction;
                         } else {
                             self.trigger_version_selection();
                         }
@@ -996,14 +1114,10 @@ impl eframe::App for InstallerApp {
             }
             Screen::ConfirmAction => {
                 if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::ArrowRight)) {
-                    if self.action == Some(InstallAction::Reset) {
-                        self.trigger_version_selection();
-                    } else {
-                        self.start_action();
-                    }
+                    self.start_action();
                 } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
                     if self.action == Some(InstallAction::Reset) {
-                        self.screen = Screen::SelectPath;
+                        self.screen = Screen::SelectVersion;
                     } else {
                         self.screen = Screen::Menu;
                     }
@@ -1528,14 +1642,23 @@ impl eframe::App for InstallerApp {
 
                                                                             for (idx, entry) in self.version_items.iter().enumerate() {
                                                                                 let is_selected = idx == self.version_selected_index;
+                                                                                let is_disabled = entry.is_disabled;
                                                                                 let (rect, resp) = ui.allocate_exact_size(
                                                                                     egui::vec2(row_width, row_height),
-                                                                                    egui::Sense::click(),
+                                                                                    if is_disabled { egui::Sense::hover() } else { egui::Sense::click() },
                                                                                 );
-                                                                                let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
+                                                                                let is_hovered = !is_disabled && (resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))));
 
-                                                                                let bg_color = if is_selected {
-                                                                                    if entry.is_local {
+                                                                                let bg_color = if is_disabled {
+                                                                                    if is_selected {
+                                                                                        egui::Color32::from_rgb(26, 26, 26)
+                                                                                    } else {
+                                                                                        egui::Color32::from_rgb(18, 18, 18)
+                                                                                    }
+                                                                                } else if is_selected {
+                                                                                    if entry.is_installed {
+                                                                                        egui::Color32::from_rgb(30, 20, 42)
+                                                                                    } else if entry.is_local {
                                                                                         egui::Color32::from_rgb(20, 32, 48)
                                                                                     } else if entry.is_latest {
                                                                                         egui::Color32::from_rgb(20, 42, 26)
@@ -1548,8 +1671,12 @@ impl eframe::App for InstallerApp {
                                                                                     egui::Color32::from_rgb(24, 24, 24)
                                                                                 };
 
-                                                                                let border_color = if is_selected {
-                                                                                    if entry.is_local {
+                                                                                let border_color = if is_disabled {
+                                                                                    egui::Color32::from_rgb(38, 38, 38)
+                                                                                } else if is_selected {
+                                                                                    if entry.is_installed {
+                                                                                        egui::Color32::from_rgb(192, 132, 252)
+                                                                                    } else if entry.is_local {
                                                                                         egui::Color32::from_rgb(96, 165, 250)
                                                                                     } else if entry.is_latest {
                                                                                         egui::Color32::from_rgb(0x3c, 0x9a, 0x3d)
@@ -1564,12 +1691,16 @@ impl eframe::App for InstallerApp {
 
                                                                                 ui.painter().rect(rect, 5.0, bg_color, egui::Stroke::new(1.0_f32, border_color));
 
-                                                                                let text_color = if entry.is_local {
+                                                                                let text_color = if is_disabled {
+                                                                                    egui::Color32::from_gray(105)
+                                                                                } else if is_selected {
+                                                                                    egui::Color32::WHITE
+                                                                                } else if entry.is_installed {
+                                                                                    egui::Color32::from_rgb(233, 213, 255)
+                                                                                } else if entry.is_local {
                                                                                     egui::Color32::from_rgb(147, 197, 253)
                                                                                 } else if entry.is_latest {
                                                                                     egui::Color32::from_rgb(0x3c, 0x9a, 0x3d)
-                                                                                } else if is_selected {
-                                                                                    egui::Color32::WHITE
                                                                                 } else if is_hovered {
                                                                                     egui::Color32::from_gray(235)
                                                                                 } else {
@@ -1587,7 +1718,11 @@ impl eframe::App for InstallerApp {
 
                                                                                 // Right aligned badge (exactly pad_x from right edge)
                                                                                 if let Some(ref badge_text) = entry.badge {
-                                                                                    let badge_color = if entry.is_local {
+                                                                                    let badge_color = if is_disabled {
+                                                                                        egui::Color32::from_gray(120)
+                                                                                    } else if entry.is_installed {
+                                                                                        egui::Color32::from_rgb(192, 132, 252)
+                                                                                    } else if entry.is_local {
                                                                                         egui::Color32::from_rgb(147, 197, 253)
                                                                                     } else {
                                                                                         egui::Color32::from_rgb(0x3c, 0x9a, 0x3d)
@@ -1602,37 +1737,64 @@ impl eframe::App for InstallerApp {
                                                                                     );
                                                                                 }
 
-                                                                                if resp.double_clicked() {
-                                                                                    double_clicked_idx = Some(idx);
-                                                                                } else if resp.clicked() {
-                                                                                    clicked_idx = Some(idx);
+                                                                                if is_disabled {
+                                                                                    if resp.hovered() {
+                                                                                        if let Some(ref reason) = entry.disabled_reason {
+                                                                                            resp.clone().on_hover_text(reason);
+                                                                                        }
+                                                                                    }
+                                                                                } else {
+                                                                                    if resp.double_clicked() {
+                                                                                        double_clicked_idx = Some(idx);
+                                                                                    } else if resp.clicked() {
+                                                                                        clicked_idx = Some(idx);
+                                                                                    }
                                                                                 }
 
                                                                                 ui.add_space(5.0);
                                                                             }
                                                                         });
 
+                                                                    if let Some(curr) = self.version_items.get(self.version_selected_index) {
+                                                                        if curr.is_disabled {
+                                                                            ui.add_space(6.0);
+                                                                            ui.label(
+                                                                                egui::RichText::new(format!("⚠️ {}", curr.disabled_reason.as_deref().unwrap_or(t.legacy_version_disabled_notice)))
+                                                                                    .size(11.5)
+                                                                                    .color(egui::Color32::from_rgb(248, 113, 113))
+                                                                            );
+                                                                        }
+                                                                    }
+
                                                                     if let Some(idx) = double_clicked_idx {
-                                                                        self.version_selected_index = idx;
                                                                         if let Some(item) = self.version_items.get(idx) {
-                                                                            if item.is_local {
-                                                                                self.selected_version = Some("LOCAL".to_string());
-                                                                                self.is_dev_mode = true;
-                                                                            } else {
-                                                                                self.selected_version = Some(item.id.clone());
-                                                                                self.is_dev_mode = false;
+                                                                            if !item.is_disabled {
+                                                                                self.version_selected_index = idx;
+                                                                                if item.is_local {
+                                                                                    self.selected_version = Some("LOCAL".to_string());
+                                                                                    self.is_dev_mode = true;
+                                                                                } else {
+                                                                                    self.selected_version = Some(item.id.clone());
+                                                                                    self.is_dev_mode = false;
+                                                                                }
+                                                                                if self.action == Some(InstallAction::Reset) {
+                                                                                    self.screen = Screen::ConfirmAction;
+                                                                                } else {
+                                                                                    self.start_action();
+                                                                                }
                                                                             }
                                                                         }
-                                                                        self.start_action();
                                                                     } else if let Some(idx) = clicked_idx {
-                                                                        self.version_selected_index = idx;
                                                                         if let Some(item) = self.version_items.get(idx) {
-                                                                            if item.is_local {
-                                                                                self.selected_version = Some("LOCAL".to_string());
-                                                                                self.is_dev_mode = true;
-                                                                            } else {
-                                                                                self.selected_version = Some(item.id.clone());
-                                                                                self.is_dev_mode = false;
+                                                                            if !item.is_disabled {
+                                                                                self.version_selected_index = idx;
+                                                                                if item.is_local {
+                                                                                    self.selected_version = Some("LOCAL".to_string());
+                                                                                    self.is_dev_mode = true;
+                                                                                } else {
+                                                                                    self.selected_version = Some(item.id.clone());
+                                                                                    self.is_dev_mode = false;
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
@@ -1727,16 +1889,27 @@ impl eframe::App for InstallerApp {
                                                                     if custom_button(ui, ctx, [90.0, 36.0], t.browse_btn) {
                                                                         if let Some(folder) = dialogs::pick_folder(Some(&self.install_path_str)) {
                                                                             let picked = PathBuf::from(folder.trim());
-                                                                            let ends_with_app = picked.file_name()
-                                                                                .map(|n| n.to_string_lossy().to_lowercase() == "badwords")
-                                                                                .unwrap_or(false);
-                                                                            let is_non_empty = picked.is_dir() && std::fs::read_dir(&picked).map(|mut it| it.next().is_some()).unwrap_or(false);
-                                                                            let final_path = if !ends_with_app && is_non_empty {
+                                                                            let name_lower = picked.file_name()
+                                                                                .map(|n| n.to_string_lossy().to_lowercase())
+                                                                                .unwrap_or_default();
+                                                                            let is_badwords_dir = name_lower.contains("badwords");
+                                                                            let has_badwords_files = picked.join("main.py").is_file()
+                                                                                || picked.join("src").join("main.py").is_file()
+                                                                                || picked.join(".version").is_file()
+                                                                                || picked.join("badwords-installer").is_file()
+                                                                                || picked.join("BadWords").is_file()
+                                                                                || picked.join("BadWords.exe").is_file();
+
+                                                                            let final_path = if !is_badwords_dir && !has_badwords_files {
                                                                                 picked.join("BadWords")
                                                                             } else {
                                                                                 picked
                                                                             };
                                                                             self.install_path_str = final_path.to_string_lossy().into_owned();
+                                                                            if has_badwords_files || is_badwords_dir {
+                                                                                self.detected_existing = Some(final_path.clone());
+                                                                            }
+                                                                            self.update_version_items(&self.versions.clone());
                                                                         }
                                                                     }
                                                                 });
@@ -1798,6 +1971,15 @@ impl eframe::App for InstallerApp {
                                                                             .monospace()
                                                                             .color(egui::Color32::from_rgb(251, 191, 36))
                                                                     );
+                                                                    if let Some(ref ver) = self.selected_version {
+                                                                        ui.add_space(4.0);
+                                                                        ui.label(
+                                                                            egui::RichText::new(format!("Version: {}", ver))
+                                                                                .size(12.0)
+                                                                                .monospace()
+                                                                                .color(egui::Color32::from_rgb(147, 197, 253))
+                                                                        );
+                                                                    }
                                                                     if let Some(ref old) = self.detected_existing {
                                                                         if old != &target_display {
                                                                             ui.add_space(4.0);
@@ -2097,21 +2279,30 @@ impl eframe::App for InstallerApp {
                                                     ui.add_space(10.0);
                                                     let action_btn = match self.action {
                                                         Some(InstallAction::Repair) => t.btn_repair,
-                                                        Some(InstallAction::Reset) => t.btn_reset,
+                                                        Some(InstallAction::Reset) => t.btn_next,
                                                         _ => t.btn_next,
                                                     };
-                                                    if custom_button(ui, ctx, [100.0, 32.0], action_btn) {
-                                                        if let Some(item) = self.version_items.get(self.version_selected_index) {
-                                                            if item.is_local {
-                                                                self.selected_version = Some("LOCAL".to_string());
-                                                                self.is_dev_mode = true;
-                                                            } else {
-                                                                self.selected_version = Some(item.id.clone());
-                                                                self.is_dev_mode = false;
+                                                    let is_curr_disabled = self.version_items.get(self.version_selected_index).map(|it| it.is_disabled).unwrap_or(false);
+                                                    ui.add_enabled_ui(!is_curr_disabled, |ui| {
+                                                        if custom_button(ui, ctx, [100.0, 32.0], action_btn) {
+                                                            if let Some(item) = self.version_items.get(self.version_selected_index) {
+                                                                if !item.is_disabled {
+                                                                    if item.is_local {
+                                                                        self.selected_version = Some("LOCAL".to_string());
+                                                                        self.is_dev_mode = true;
+                                                                    } else {
+                                                                        self.selected_version = Some(item.id.clone());
+                                                                        self.is_dev_mode = false;
+                                                                    }
+                                                                    if self.action == Some(InstallAction::Reset) {
+                                                                        self.screen = Screen::ConfirmAction;
+                                                                    } else {
+                                                                        self.start_action();
+                                                                    }
+                                                                }
                                                             }
                                                         }
-                                                        self.start_action();
-                                                    }
+                                                    });
                                                     ui.add_space(10.0);
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
                                                         match self.action {
@@ -2119,7 +2310,7 @@ impl eframe::App for InstallerApp {
                                                                 self.screen = Screen::Menu;
                                                             }
                                                             Some(InstallAction::Reset) => {
-                                                                self.screen = Screen::ConfirmAction;
+                                                                self.screen = Screen::SelectPath;
                                                             }
                                                             _ => {
                                                                 self.screen = Screen::SelectPath;
@@ -2140,8 +2331,6 @@ impl eframe::App for InstallerApp {
                                                         }
                                                         if self.action == Some(InstallAction::Move) || (self.is_dev_mode && self.selected_branch.is_some()) {
                                                             self.start_action();
-                                                        } else if self.action == Some(InstallAction::Reset) {
-                                                            self.screen = Screen::ConfirmAction;
                                                         } else {
                                                             self.trigger_version_selection();
                                                         }
@@ -2165,16 +2354,12 @@ impl eframe::App for InstallerApp {
                                                     let is_uninstall = self.action == Some(InstallAction::Uninstall);
                                                     let btn_label = if is_uninstall { t.btn_uninstall } else { t.btn_reset };
                                                     if custom_button(ui, ctx, [115.0, 32.0], btn_label) {
-                                                        if self.action == Some(InstallAction::Reset) {
-                                                            self.trigger_version_selection();
-                                                        } else {
-                                                            self.start_action();
-                                                        }
+                                                        self.start_action();
                                                     }
                                                     ui.add_space(10.0);
                                                     if custom_button(ui, ctx, [100.0, 32.0], t.btn_back) {
                                                         if self.action == Some(InstallAction::Reset) {
-                                                            self.screen = Screen::SelectPath;
+                                                            self.screen = Screen::SelectVersion;
                                                         } else {
                                                             self.screen = Screen::Menu;
                                                         }

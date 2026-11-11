@@ -366,17 +366,22 @@ pub fn remove_linux_desktop_entry() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Detects existing installation path from Linux XDG .desktop entries
+/// Detects existing installation path from Linux XDG .desktop entries, desktop shortcuts, and local bin symlinks
 pub fn detect_installed_location() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         if let Some(home) = dirs::home_dir() {
-            let desktop_files = [
+            let mut desktop_files = vec![
                 home.join(".local").join("share").join("applications").join("badwords.desktop"),
                 home.join(".local").join("share").join("applications").join("BadWords.desktop"),
                 PathBuf::from("/usr/share/applications/badwords.desktop"),
                 PathBuf::from("/usr/share/applications/BadWords.desktop"),
             ];
+
+            for dt_dir in find_all_linux_desktop_dirs(&home) {
+                desktop_files.push(dt_dir.join("BadWords.desktop"));
+                desktop_files.push(dt_dir.join("badwords.desktop"));
+            }
 
             for df in desktop_files {
                 if df.is_file() {
@@ -389,7 +394,39 @@ pub fn detect_installed_location() -> Option<PathBuf> {
                                 if (p.join("main.py").is_file() || p.join("src").join("main.py").is_file()) && p.exists() {
                                     return Some(p);
                                 }
+                            } else if line.starts_with("Exec=") {
+                                let exec_str = line.trim_start_matches("Exec=").trim();
+                                let raw_token = if exec_str.starts_with('"') {
+                                    exec_str.trim_start_matches('"').split('"').next().unwrap_or("")
+                                } else {
+                                    exec_str.split_whitespace().next().unwrap_or("")
+                                };
+                                let exe_path = PathBuf::from(raw_token);
+                                if exe_path.is_file() {
+                                    if let Some(parent) = exe_path.parent() {
+                                        if (parent.join("main.py").is_file() || parent.join("src").join("main.py").is_file()) && parent.exists() {
+                                            return Some(parent.to_path_buf());
+                                        }
+                                        if let Some(grand) = parent.parent() {
+                                            if (grand.join("main.py").is_file() || grand.join("src").join("main.py").is_file()) && grand.exists() {
+                                                return Some(grand.to_path_buf());
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Check ~/.local/bin/badwords symlink
+            let local_bin = home.join(".local").join("bin").join("badwords");
+            if local_bin.exists() || local_bin.is_symlink() {
+                if let Ok(target) = std::fs::read_link(&local_bin).or_else(|_| std::fs::canonicalize(&local_bin)) {
+                    if let Some(parent) = target.parent() {
+                        if (parent.join("main.py").is_file() || parent.join("src").join("main.py").is_file()) && parent.exists() {
+                            return Some(parent.to_path_buf());
                         }
                     }
                 }
