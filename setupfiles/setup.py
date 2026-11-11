@@ -1542,7 +1542,7 @@ _host_ver = sys.version_info[:2]
 _is_abi_incompatible = (_venv_ver is not None and _venv_ver != _host_ver)
 
 if _is_abi_incompatible:
-    print(f"[BadWords] Host Python ({_host_ver[0]}.{_host_ver[1]}) differs from venv Python ({_venv_ver[0]}.{_venv_ver[1]}).")
+    print(f"[BadWords] Host Python ({{_host_ver[0]}}.{{_host_ver[1]}}) differs from venv Python ({{_venv_ver[0]}}.{{_venv_ver[1]}}).")
     print("[BadWords] Launching BadWords standalone process with Lua Bridge to prevent CPython ABI conflicts...")
     _launch_external()
 else:

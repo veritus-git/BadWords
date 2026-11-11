@@ -17,9 +17,10 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
+_DEFAULT_VERSION = "4.0.1"
 
 def _detect_version() -> str:
-    base_ver = "4.0.0"
+    # 1. Stamped version file (created by installer, updater, or CI build)
     try:
         import os
         cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +36,25 @@ def _detect_version() -> str:
                         return v
     except Exception:
         pass
-    return base_ver
+
+    # 2. Dynamic Git tag detection when running inside repository
+    try:
+        import subprocess, os
+        cur_dir = os.path.dirname(os.path.abspath(__file__))
+        git_dir = os.path.join(cur_dir, "..", "..", ".git")
+        if os.path.exists(git_dir):
+            out = subprocess.check_output(
+                ["git", "describe", "--tags", "--exact-match"],
+                cwd=os.path.dirname(git_dir),
+                stderr=subprocess.DEVNULL,
+                timeout=1.5
+            ).decode("utf-8").strip()
+            if out:
+                return out.lstrip("vV")
+    except Exception:
+        pass
+
+    return _DEFAULT_VERSION
 
 VERSION = _detect_version()
 SUPPORT_WEBHOOK_URL = "http://frog02.mikr.us:41385/"

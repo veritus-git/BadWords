@@ -143,6 +143,7 @@ impl Language {
                 browse_btn: "Przeglądaj...",
                 shortcut_desktop: "Utwórz skrót na Pulpicie",
                 shortcut_menu: "Utwórz skrót w Menu Start / Aplikacjach",
+                required_disk_space: "Wymagane jest co najmniej 500 MB wolnego miejsca na dysku.",
                 
                 confirm_title: "Potwierdzenie operacji",
                 confirm_uninstall_warn: "Ta operacja całkowicie usunie BadWords z systemu, w tym venv i integracje DaVinci Resolve.",
@@ -191,6 +192,7 @@ impl Language {
                 browse_btn: "Durchsuchen...",
                 shortcut_desktop: "Desktop-Verknüpfung erstellen",
                 shortcut_menu: "Startmenü / Anwendungsmenü-Verknüpfung erstellen",
+                required_disk_space: "Es sind mindestens 500 MB freier Speicherplatz erforderlich.",
                 
                 confirm_title: "Aktion bestätigen",
                 confirm_uninstall_warn: "Dieser Vorgang entfernt BadWords, venv und DaVinci Resolve Integrationen vollständig vom System.",
@@ -239,6 +241,7 @@ impl Language {
                 browse_btn: "Examinar...",
                 shortcut_desktop: "Crear acceso directo en el Escritorio",
                 shortcut_menu: "Crear acceso directo en el Menú Inicio",
+                required_disk_space: "Se requieren al menos 500 MB de espacio libre en disco.",
                 
                 confirm_title: "Confirmar acción",
                 confirm_uninstall_warn: "Esta operación eliminará completamente BadWords, el venv y las integraciones de DaVinci Resolve.",
@@ -287,6 +290,7 @@ impl Language {
                 browse_btn: "Parcourir...",
                 shortcut_desktop: "Créer un raccourci sur le Bureau",
                 shortcut_menu: "Créer un raccourci dans le Menu Démarrer / Applications",
+                required_disk_space: "Au moins 500 Mo d'espace disque libre sont requis.",
                 
                 confirm_title: "Confirmer l'action",
                 confirm_uninstall_warn: "Cette action supprimera complètement BadWords, le venv et les intégrations DaVinci Resolve.",
@@ -335,6 +339,7 @@ impl Language {
                 browse_btn: "Sfoglia...",
                 shortcut_desktop: "Crea collegamento sul Desktop",
                 shortcut_menu: "Crea collegamento nel Menu Start",
+                required_disk_space: "Sono richiesti almeno 500 MB di spazio libero su disco.",
                 
                 confirm_title: "Conferma azione",
                 confirm_uninstall_warn: "Questa operazione rimuoverà completamente BadWords, il venv e le integrazioni DaVinci Resolve.",
@@ -383,6 +388,7 @@ impl Language {
                 browse_btn: "Bladeren...",
                 shortcut_desktop: "Bureaublad-snelkoppeling maken",
                 shortcut_menu: "Startmenu / Toepassingsmenu snelkoppeling maken",
+                required_disk_space: "Er is minimaal 500 MB vrije schijfruimte vereist.",
                 
                 confirm_title: "Actie bevestigen",
                 confirm_uninstall_warn: "Hiermee verwijdert u BadWords, venv en DaVinci Resolve integraties volledig van het systeem.",
@@ -431,6 +437,7 @@ impl Language {
                 browse_btn: "Procurar...",
                 shortcut_desktop: "Criar atalho no Ambiente de Trabalho",
                 shortcut_menu: "Criar atalho no Menu Iniciar",
+                required_disk_space: "É necessário pelo menos 500 MB de espaço livre em disco.",
                 
                 confirm_title: "Confirmar Ação",
                 confirm_uninstall_warn: "Esta operação irá remover completamente o BadWords, venv e integrações do DaVinci Resolve.",
@@ -479,6 +486,7 @@ impl Language {
                 browse_btn: "Обзор...",
                 shortcut_desktop: "Создать ярлык на Рабочем столе",
                 shortcut_menu: "Создать ярлык в Меню Пуск / Приложениях",
+                required_disk_space: "Требуется не менее 500 МБ свободного места на диске.",
                 
                 confirm_title: "Подтверждение действия",
                 confirm_uninstall_warn: "Эта операция полностью удалит BadWords, venv и интеграции с DaVinci Resolve.",
@@ -527,6 +535,7 @@ impl Language {
                 browse_btn: "Огляд...",
                 shortcut_desktop: "Створити ярлик на Робочому столі",
                 shortcut_menu: "Створити ярлик у Меню Пуск / Програмах",
+                required_disk_space: "Потрібно щонайменше 500 МБ вільного місця на диску.",
                 
                 confirm_title: "Підтвердження дії",
                 confirm_uninstall_warn: "Ця дія повністю видалить BadWords, venv та інтеграції з DaVinci Resolve.",
@@ -575,6 +584,7 @@ impl Language {
                 browse_btn: "Browse...",
                 shortcut_desktop: "Create Desktop Shortcut",
                 shortcut_menu: "Create Start Menu / Application Menu Shortcut",
+                required_disk_space: "At least 500 MB of free disk space is required.",
                 
                 confirm_title: "Confirm Action",
                 confirm_uninstall_warn: "This operation will completely remove BadWords from your system, including its venv and DaVinci Resolve integrations.",
@@ -627,6 +637,7 @@ pub struct Translations {
     pub browse_btn: &'static str,
     pub shortcut_desktop: &'static str,
     pub shortcut_menu: &'static str,
+    pub required_disk_space: &'static str,
     
     pub confirm_title: &'static str,
     pub confirm_uninstall_warn: &'static str,

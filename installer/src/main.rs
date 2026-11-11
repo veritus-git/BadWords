@@ -1743,7 +1743,7 @@ impl eframe::App for InstallerApp {
 
                                                                 ui.add_space(14.0);
                                                                 ui.label(
-                                                                    egui::RichText::new("At least 500 MB of free disk space is required.")
+                                                                    egui::RichText::new(t.required_disk_space)
                                                                         .size(11.5)
                                                                         .color(egui::Color32::from_gray(160))
                                                                 );
