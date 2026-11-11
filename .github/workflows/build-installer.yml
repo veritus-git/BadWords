@@ -114,6 +114,7 @@ jobs:
 
       - name: Upload Private Action Artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ matrix.output_name }}
           path: dist/*
