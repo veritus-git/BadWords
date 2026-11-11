@@ -17,6 +17,21 @@ fn main() {
     }
 
     if detected_version.is_none() {
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["describe", "--tags", "--exact-match"])
+            .output()
+        {
+            if output.status.success() {
+                let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let clean = s.trim_start_matches(|c| c == 'v' || c == 'V').trim().to_string();
+                if !clean.is_empty() && clean.chars().any(|c| c.is_ascii_digit()) {
+                    detected_version = Some(clean);
+                }
+            }
+        }
+    }
+
+    if detected_version.is_none() {
         let candidates = [
             "../src/config/app_constants.py",
             "../config/app_constants.py",
