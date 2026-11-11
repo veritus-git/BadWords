@@ -337,6 +337,8 @@ struct InstallerApp {
     has_auto_python_marker: bool,
     operation_success: bool,
     hardware_tier: engine::HardwareTier,
+    scroll_to_selected_version: bool,
+    scroll_to_selected_branch: bool,
     tx: Sender<IpcEvent>,
     rx: Receiver<IpcEvent>,
 }
@@ -411,6 +413,8 @@ impl InstallerApp {
             has_auto_python_marker: false,
             operation_success: true,
             hardware_tier: engine::detect_hardware_tier(),
+            scroll_to_selected_version: true,
+            scroll_to_selected_branch: true,
             tx,
             rx,
         };
@@ -516,18 +520,17 @@ impl InstallerApp {
             }
 
             if is_legacy {
-                let badge = if is_inst {
-                    Some("INSTALLED".to_string())
-                } else {
-                    None
-                };
+                // Legacy (v3.x) entries are strictly hidden unless currently installed on user's machine
+                if !is_inst {
+                    continue;
+                }
                 items.push(VersionItem {
                     id: tag.clone(),
                     display_text: format!("{} ({})", tag, t.legacy_version_suffix),
-                    badge,
+                    badge: Some("INSTALLED".to_string()),
                     is_local: false,
                     is_latest: false,
-                    is_installed: is_inst,
+                    is_installed: true,
                     is_disabled: true,
                     disabled_reason: Some(t.legacy_version_disabled_notice.to_string()),
                 });
@@ -651,6 +654,7 @@ impl InstallerApp {
     fn trigger_developer_mode(&mut self) {
         self.is_dev_mode = true;
         self.screen = Screen::SelectBranch;
+        self.scroll_to_selected_branch = true;
         self.branches = vec![];
         self.branch_selected_index = 0;
         self.branch_fetching = true;
@@ -670,6 +674,7 @@ impl InstallerApp {
 
     fn trigger_version_selection(&mut self) {
         self.screen = Screen::SelectVersion;
+        self.scroll_to_selected_version = true;
         self.update_version_items(&self.versions.clone());
         if self.version_items.is_empty() {
             self.version_fetching = true;
@@ -858,6 +863,7 @@ impl eframe::App for InstallerApp {
                 if let Some(arr) = event.data.get("branches").and_then(|v| v.as_array()) {
                     self.branches = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
                     self.branch_fetching = false;
+                    self.scroll_to_selected_branch = true;
                     if let Some(pos) = self.branches.iter().position(|b| b == "dev-v4" || b == "main") {
                         self.branch_selected_index = pos;
                         self.selected_branch = Some(self.branches[pos].clone());
@@ -871,6 +877,7 @@ impl eframe::App for InstallerApp {
                     self.versions = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
                     self.update_version_items(&self.versions.clone());
                     self.version_fetching = false;
+                    self.scroll_to_selected_version = true;
                 }
             } else if event.event == "log" {
                 let level = event.data.get("level").and_then(|v| v.as_str()).unwrap_or("INFO").to_string();
@@ -982,11 +989,13 @@ impl eframe::App for InstallerApp {
             Screen::SelectBranch => {
                 if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
                     self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_branch = true;
                     if !self.branches.is_empty() {
                         self.branch_selected_index = (self.branch_selected_index + self.branches.len() - 1) % self.branches.len();
                     }
                 } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
                     self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_branch = true;
                     if !self.branches.is_empty() {
                         self.branch_selected_index = (self.branch_selected_index + 1) % self.branches.len();
                     }
@@ -1003,6 +1012,7 @@ impl eframe::App for InstallerApp {
             Screen::SelectVersion => {
                 if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
                     self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_version = true;
                     if !self.version_items.is_empty() {
                         self.version_selected_index = (self.version_selected_index + self.version_items.len() - 1) % self.version_items.len();
                         if let Some(item) = self.version_items.get(self.version_selected_index) {
@@ -1019,8 +1029,77 @@ impl eframe::App for InstallerApp {
                     }
                 } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
                     self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_version = true;
                     if !self.version_items.is_empty() {
                         self.version_selected_index = (self.version_selected_index + 1) % self.version_items.len();
+                        if let Some(item) = self.version_items.get(self.version_selected_index) {
+                            if !item.is_disabled {
+                                if item.is_local {
+                                    self.selected_version = Some("LOCAL".to_string());
+                                    self.is_dev_mode = true;
+                                } else {
+                                    self.selected_version = Some(item.id.clone());
+                                    self.is_dev_mode = false;
+                                }
+                            }
+                        }
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::PageUp)) {
+                    self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_version = true;
+                    if !self.version_items.is_empty() {
+                        self.version_selected_index = self.version_selected_index.saturating_sub(5);
+                        if let Some(item) = self.version_items.get(self.version_selected_index) {
+                            if !item.is_disabled {
+                                if item.is_local {
+                                    self.selected_version = Some("LOCAL".to_string());
+                                    self.is_dev_mode = true;
+                                } else {
+                                    self.selected_version = Some(item.id.clone());
+                                    self.is_dev_mode = false;
+                                }
+                            }
+                        }
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::PageDown)) {
+                    self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_version = true;
+                    if !self.version_items.is_empty() {
+                        self.version_selected_index = (self.version_selected_index + 5).min(self.version_items.len() - 1);
+                        if let Some(item) = self.version_items.get(self.version_selected_index) {
+                            if !item.is_disabled {
+                                if item.is_local {
+                                    self.selected_version = Some("LOCAL".to_string());
+                                    self.is_dev_mode = true;
+                                } else {
+                                    self.selected_version = Some(item.id.clone());
+                                    self.is_dev_mode = false;
+                                }
+                            }
+                        }
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::Home)) {
+                    self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_version = true;
+                    if !self.version_items.is_empty() {
+                        self.version_selected_index = 0;
+                        if let Some(item) = self.version_items.get(0) {
+                            if !item.is_disabled {
+                                if item.is_local {
+                                    self.selected_version = Some("LOCAL".to_string());
+                                    self.is_dev_mode = true;
+                                } else {
+                                    self.selected_version = Some(item.id.clone());
+                                    self.is_dev_mode = false;
+                                }
+                            }
+                        }
+                    }
+                } else if ctx.input(|i| i.key_pressed(egui::Key::End)) {
+                    self.keyboard_navigation_active = true;
+                    self.scroll_to_selected_version = true;
+                    if !self.version_items.is_empty() {
+                        self.version_selected_index = self.version_items.len() - 1;
                         if let Some(item) = self.version_items.get(self.version_selected_index) {
                             if !item.is_disabled {
                                 if item.is_local {
@@ -1079,6 +1158,7 @@ impl eframe::App for InstallerApp {
                             if let Some(item) = self.version_items.get(idx) {
                                 if !item.is_disabled {
                                     self.keyboard_navigation_active = true;
+                                    self.scroll_to_selected_version = true;
                                     self.version_selected_index = idx;
                                     if item.is_local {
                                         self.selected_version = Some("LOCAL".to_string());
@@ -1131,6 +1211,7 @@ impl eframe::App for InstallerApp {
                 } else if ctx.input(|i| i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::Escape)) {
                     if self.action == Some(InstallAction::Reset) {
                         self.screen = Screen::SelectVersion;
+                        self.scroll_to_selected_version = true;
                     } else {
                         self.screen = Screen::Menu;
                     }
@@ -1520,6 +1601,9 @@ impl eframe::App for InstallerApp {
                                                                                     egui::Sense::click(),
                                                                                 );
                                                                                 let is_hovered = resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
+                                                                                if is_selected && (self.scroll_to_selected_branch || self.keyboard_navigation_active) {
+                                                                                    resp.scroll_to_me(None);
+                                                                                }
 
                                                                                 let bg_color = if is_selected {
                                                                                     egui::Color32::from_rgb(45, 55, 72)
@@ -1571,6 +1655,7 @@ impl eframe::App for InstallerApp {
                                                                                 ui.add_space(4.0);
                                                                             }
                                                                         });
+                                                                    self.scroll_to_selected_branch = false;
 
                                                                     if let Some(idx) = double_clicked_idx {
                                                                         self.branch_selected_index = idx;
@@ -1658,9 +1743,12 @@ impl eframe::App for InstallerApp {
                                                                                 let is_disabled = entry.is_disabled;
                                                                                 let (rect, resp) = ui.allocate_exact_size(
                                                                                     egui::vec2(row_width, row_height),
-                                                                                    if is_disabled { egui::Sense::hover() } else { egui::Sense::click() },
+                                                                                    egui::Sense::click(),
                                                                                 );
                                                                                 let is_hovered = !is_disabled && (resp.hovered() || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))));
+                                                                                if is_selected && (self.scroll_to_selected_version || self.keyboard_navigation_active) {
+                                                                                    resp.scroll_to_me(None);
+                                                                                }
 
                                                                                 let bg_color = if is_disabled {
                                                                                     if is_selected {
@@ -1767,6 +1855,7 @@ impl eframe::App for InstallerApp {
                                                                                 ui.add_space(5.0);
                                                                             }
                                                                         });
+                                                                    self.scroll_to_selected_version = false;
 
                                                                     if let Some(curr) = self.version_items.get(self.version_selected_index) {
                                                                         if curr.is_disabled {
@@ -2710,9 +2799,8 @@ mod main_tests {
         assert!(!v4.is_disabled);
         assert!(v4.badge.as_deref() == Some("LATEST") || v4.badge.as_deref() == Some("LATEST • INSTALLED"));
 
-        let legacy = app.version_items.iter().find(|it| it.id == "v3.2.4").unwrap();
-        assert!(legacy.is_disabled);
-        assert!(legacy.disabled_reason.is_some());
+        // Uninstalled v3.x releases must NOT appear in version list
+        assert!(app.version_items.iter().all(|it| it.id != "v3.2.4"));
 
         // Selected index must point to a non-disabled version
         let selected = &app.version_items[app.version_selected_index];
@@ -2760,8 +2848,35 @@ mod main_tests {
         app.trigger_version_selection();
         assert_eq!(app.screen, Screen::SelectVersion);
 
-        // 3. Selected index must be non-disabled
+        // 3. Selected index must point to a non-disabled version
         let sel_item = &app.version_items[app.version_selected_index];
         assert!(!sel_item.is_disabled);
+        assert!(app.scroll_to_selected_version);
+    }
+
+    #[test]
+    fn test_uninstalled_multiple_legacy_excluded() {
+        let mut app = InstallerApp::new();
+        // Simulate no BadWords install
+        app.detected_existing = None;
+        let releases = vec![
+            "v4.0.1".to_string(),
+            "v4.0.0".to_string(),
+            "v3.2.4".to_string(),
+            "v3.2.3".to_string(),
+            "v3.1.0".to_string(),
+            "v2.0.3".to_string(),
+        ];
+        app.update_version_items(&releases);
+
+        // Every version item present must NOT have major version < 4
+        for item in &app.version_items {
+            if item.id == "LOCAL" {
+                continue;
+            }
+            let clean = item.id.trim_start_matches(|c| c == 'v' || c == 'V');
+            let maj = clean.split('.').next().unwrap().parse::<u32>().unwrap();
+            assert!(maj >= 4, "Legacy version {} should have been excluded", item.id);
+        }
     }
 }
