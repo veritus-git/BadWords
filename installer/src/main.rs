@@ -195,7 +195,7 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
 fn run_standalone_terminal() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("BadWords Setup — Terminal Console")
+            .with_title("BadWords Setup - Terminal Console")
             .with_inner_size([650.0, 480.0])
             .with_min_inner_size([400.0, 300.0])
             .with_resizable(true)
@@ -209,7 +209,7 @@ fn run_standalone_terminal() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "BadWords Setup — Terminal",
+        "BadWords Setup - Terminal",
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
@@ -1772,7 +1772,7 @@ impl eframe::App for InstallerApp {
                                                                         if curr.is_disabled {
                                                                             ui.add_space(6.0);
                                                                             ui.label(
-                                                                                egui::RichText::new(format!("⚠️ {}", curr.disabled_reason.as_deref().unwrap_or(t.legacy_version_disabled_notice)))
+                                                                                egui::RichText::new(curr.disabled_reason.as_deref().unwrap_or(t.legacy_version_disabled_notice))
                                                                                     .size(11.5)
                                                                                     .color(egui::Color32::from_rgb(248, 113, 113))
                                                                             );
