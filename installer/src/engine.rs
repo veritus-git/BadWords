@@ -93,41 +93,54 @@ pub fn is_unsafe_dir_to_delete(dir: &Path) -> bool {
         return true;
     }
 
-    let components: Vec<_> = dir.components().collect();
-    if components.is_empty() {
+    let normalized = clean_str.replace('\\', "/");
+    let lower = normalized.to_lowercase();
+    let segments: Vec<&str> = lower.split('/').filter(|s| !s.is_empty()).collect();
+
+    if segments.is_empty() {
         return true;
     }
 
-    // Unix root and top-level root folders (/usr, /home, /etc, /var, /root, /boot, /bin, /sbin, /opt, /tmp)
-    #[cfg(unix)]
-    {
-        if components.len() <= 2 {
+    // Windows drive prefix detection: e.g. "c:" or "d:"
+    let has_drive_prefix = segments[0].len() == 2
+        && segments[0].ends_with(':')
+        && segments[0].chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false);
+
+    if has_drive_prefix {
+        // Just the drive root: "C:" or "D:/"
+        if segments.len() <= 1 {
+            return true;
+        }
+    } else {
+        // Unix root-level folders: e.g. "/", "/usr", "/home", "/etc", "/Applications", "/Library"
+        if segments.len() <= 1 {
             return true;
         }
     }
 
-    // Windows drive roots (e.g. C:\) and system paths
-    #[cfg(windows)]
-    {
-        if components.len() <= 2 {
+    // Protect OS root directories and standard system folders
+    let protected_roots = [
+        "c:/windows", "c:/program files", "c:/program files (x86)",
+        "c:/users", "c:/programdata", "c:/recovery", "c:/system volume information",
+        "/usr", "/home", "/etc", "/var", "/root", "/boot", "/bin", "/sbin",
+        "/opt", "/tmp", "/dev", "/proc", "/sys", "/applications", "/library",
+        "/system", "/volumes", "/users"
+    ];
+    for pr in protected_roots {
+        if lower == pr || lower == format!("{}/", pr) {
             return true;
-        }
-        let lower = clean_str.to_lowercase();
-        let protected_windows = [
-            r"c:\windows",
-            r"c:\program files",
-            r"c:\program files (x86)",
-            r"c:\users",
-            r"c:\programdata",
-        ];
-        for pw in protected_windows {
-            if lower == pw || lower == format!(r"{}\", pw) || lower == format!("{}/", pw) {
-                return true;
-            }
         }
     }
 
-    // Protect user home directory and primary personal folders
+    // User home directory protection: e.g. "/home/username", "/Users/username", "C:/Users/username"
+    if (lower.starts_with("/home/") && segments.len() == 2)
+        || (lower.starts_with("/users/") && segments.len() == 2)
+        || (has_drive_prefix && lower.starts_with(&format!("{}/users/", segments[0])) && segments.len() == 3)
+    {
+        return true;
+    }
+
+    // Dynamic checks against dirs crate
     if let Some(home) = dirs::home_dir() {
         if dir == home || dir == home.as_path() {
             return true;
@@ -186,10 +199,7 @@ pub fn is_unsafe_dir_to_delete(dir: &Path) -> bool {
     }
 
     // Protect any directory named after system/user app folders
-    let lower_name = dir
-        .file_name()
-        .map(|n| n.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+    let lower_name = segments.last().copied().unwrap_or_default();
 
     let protected_dir_names = [
         "local", "roaming", "locallow", "appdata", "application support",
@@ -200,7 +210,7 @@ pub fn is_unsafe_dir_to_delete(dir: &Path) -> bool {
         "share", ".local", ".config", "library", "applications", "system"
     ];
 
-    if protected_dir_names.contains(&lower_name.as_str()) {
+    if protected_dir_names.contains(&lower_name) {
         return true;
     }
 
@@ -212,9 +222,13 @@ pub fn is_legitimate_badwords_dir(dir: &Path) -> bool {
     if is_unsafe_dir_to_delete(dir) {
         return false;
     }
-    let lower_name = dir
-        .file_name()
-        .map(|n| n.to_string_lossy().to_lowercase())
+    let clean_str = dir.to_string_lossy();
+    let normalized = clean_str.replace('\\', "/");
+    let lower_name = normalized
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .last()
+        .map(|s| s.to_lowercase())
         .unwrap_or_default();
 
     // The directory name itself MUST contain "badwords" (e.g. BadWords, BadWords FILES, badwords)
@@ -898,6 +912,18 @@ pub fn detect_local_version() -> Option<String> {
 /// while strictly preserving personal user settings, models, saves, venv and binaries (whitelist).
 fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
     if !target_dir.is_dir() {
+        return;
+    }
+
+    if is_unsafe_dir_to_delete(target_dir) || !is_legitimate_badwords_dir(target_dir) {
+        emit_log(
+            sender,
+            "ERROR",
+            &format!(
+                "Safety block: Refusing to wipe non-BadWords or protected system directory: {}",
+                target_dir.display()
+            ),
+        );
         return;
     }
 
@@ -3056,6 +3082,42 @@ pub fn run_move(from_dir: PathBuf, to_dir: PathBuf, sender: EventSender) {
             ),
         );
 
+        if is_unsafe_dir_to_delete(&from_dir) || !is_legitimate_badwords_dir(&from_dir) {
+            emit_log(
+                &sender,
+                "ERROR",
+                &format!(
+                    "Safety block: Refusing to move from non-BadWords or protected system directory: {}",
+                    from_dir.display()
+                ),
+            );
+            emit_complete(
+                &sender,
+                "move",
+                false,
+                "Safety block: source directory is protected or does not belong to BadWords.",
+            );
+            return;
+        }
+
+        if is_unsafe_dir_to_delete(&to_dir) || !is_legitimate_badwords_dir(&to_dir) {
+            emit_log(
+                &sender,
+                "ERROR",
+                &format!(
+                    "Safety block: Destination path is a protected system directory or does not contain 'BadWords': {}",
+                    to_dir.display()
+                ),
+            );
+            emit_complete(
+                &sender,
+                "move",
+                false,
+                "Safety block: destination path is protected or does not contain 'BadWords'.",
+            );
+            return;
+        }
+
         if !from_dir.exists() {
             emit_log(&sender, "ERROR", "Source installation directory not found!");
             emit_complete(
@@ -3169,6 +3231,24 @@ pub fn run_reset(
             "INFO",
             &format!("Resetting BadWords in: {}", target_dir.display()),
         );
+
+        if is_unsafe_dir_to_delete(&target_dir) || !is_legitimate_badwords_dir(&target_dir) {
+            emit_log(
+                &sender,
+                "ERROR",
+                &format!(
+                    "Safety block: Refusing to reset in non-BadWords or protected system directory: {}",
+                    target_dir.display()
+                ),
+            );
+            emit_complete(
+                &sender,
+                "reset",
+                false,
+                "Safety block: target directory is protected or does not belong to BadWords.",
+            );
+            return;
+        }
 
         // If a previous installation was detected at a different location, clean it up as part of the reset
         if let Some(ref old) = old_dir {
@@ -4013,6 +4093,46 @@ mod tests {
                 "/tmp/test_bw_dir/BadWords"
             )));
         }
+    }
+
+    #[test]
+    fn test_is_legitimate_badwords_dir_cross_platform() {
+        // System and user root directories must NEVER be deemed legitimate BadWords directories
+        assert!(!is_legitimate_badwords_dir(Path::new("/")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/usr")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/home")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/home/user")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/home/user/.local/share")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/home/user/.config")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/Applications")));
+        assert!(!is_legitimate_badwords_dir(Path::new("/Library/Application Support")));
+        assert!(!is_legitimate_badwords_dir(Path::new(r"C:\Users\User\AppData\Local")));
+        assert!(!is_legitimate_badwords_dir(Path::new(r"C:\Users\User\AppData\Roaming")));
+        assert!(!is_legitimate_badwords_dir(Path::new(r"C:\Program Files")));
+        assert!(!is_legitimate_badwords_dir(Path::new(r"C:\ProgramData")));
+
+        // Legitimate BadWords directories containing "badwords"
+        assert!(is_legitimate_badwords_dir(Path::new("/home/user/.local/share/BadWords")));
+        assert!(is_legitimate_badwords_dir(Path::new("/Applications/BadWords")));
+        assert!(is_legitimate_badwords_dir(Path::new("/tmp/test/BadWords")));
+        assert!(is_legitimate_badwords_dir(Path::new(r"C:\Users\User\AppData\Local\BadWords")));
+        assert!(is_legitimate_badwords_dir(Path::new(r"C:\Users\GoldenImage\AppData\Local\BadWords")));
+        assert!(is_legitimate_badwords_dir(Path::new(r"C:\Program Files\BadWords")));
+        assert!(is_legitimate_badwords_dir(Path::new(r"D:\BadWords FILES")));
+        assert!(is_legitimate_badwords_dir(Path::new("/Users/username/Library/Application Support/BadWords")));
+
+        // Bare drives must never be deleted
+        assert!(!is_legitimate_badwords_dir(Path::new(r"C:\")));
+        assert!(!is_legitimate_badwords_dir(Path::new(r"D:\")));
+        assert!(!is_legitimate_badwords_dir(Path::new("C:")));
+
+        // Third-party contamination check: if a directory contains another app like BraveSoftware, reject it!
+        let temp_test_dir = std::env::temp_dir().join("test_badwords_safety_guard");
+        let _ = fs::create_dir_all(&temp_test_dir);
+        let contaminated_sub = temp_test_dir.join("BraveSoftware");
+        let _ = fs::create_dir_all(&contaminated_sub);
+        assert!(!is_legitimate_badwords_dir(&temp_test_dir));
+        let _ = fs::remove_dir_all(&temp_test_dir);
     }
 
     #[test]
