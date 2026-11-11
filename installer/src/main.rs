@@ -447,7 +447,8 @@ impl InstallerApp {
     pub fn get_required_disk_space_text(&self, t: &i18n::Translations) -> String {
         let size_str = i18n::format_disk_size(self.hardware_tier.required_gb(), self.language);
         let base_text = t.required_disk_space(&size_str);
-        format!("{} ({})", base_text, self.hardware_tier.tag())
+        let trimmed = base_text.trim_end_matches('.');
+        format!("{} ({}).", trimmed, self.hardware_tier.tag())
     }
 
     fn update_version_items(&mut self, raw_releases: &[String]) {

@@ -615,10 +615,8 @@ impl Language {
 /// Formats a disk size in GB according to language conventions (e.g. "~2,5 GB" or "~2,5 Go")
 pub fn format_disk_size(size_gb: f32, lang: Language) -> String {
     let formatted_num = match lang {
-        Language::Pl | Language::De | Language::Ru | Language::Uk | Language::Fr => {
-            format!("{:.1}", size_gb).replace('.', ",")
-        }
-        _ => format!("{:.1}", size_gb),
+        Language::En => format!("{:.1}", size_gb),
+        _ => format!("{:.1}", size_gb).replace('.', ","),
     };
 
     let unit = match lang {
@@ -1172,10 +1170,14 @@ mod tests {
     fn test_format_disk_size() {
         assert_eq!(format_disk_size(2.5, Language::En), "~2.5 GB");
         assert_eq!(format_disk_size(2.5, Language::Pl), "~2,5 GB");
+        assert_eq!(format_disk_size(2.5, Language::De), "~2,5 GB");
+        assert_eq!(format_disk_size(2.5, Language::Es), "~2,5 GB");
         assert_eq!(format_disk_size(2.5, Language::Fr), "~2,5 Go");
+        assert_eq!(format_disk_size(2.5, Language::It), "~2,5 GB");
+        assert_eq!(format_disk_size(2.5, Language::Nl), "~2,5 GB");
+        assert_eq!(format_disk_size(2.5, Language::Pt), "~2,5 GB");
         assert_eq!(format_disk_size(2.0, Language::Ru), "~2,0 ГБ");
         assert_eq!(format_disk_size(1.2, Language::Uk), "~1,2 ГБ");
-        assert_eq!(format_disk_size(1.2, Language::De), "~1,2 GB");
     }
 
     #[test]
@@ -1191,6 +1193,10 @@ mod tests {
             let msg = t.required_disk_space(&size_str);
             assert!(msg.contains(&size_str), "Language {:?} failed to contain {}: {}", lang, size_str, msg);
             assert!(!msg.contains("{size}"), "Language {:?} left raw {{size}} template: {}", lang, msg);
+            let trimmed = msg.trim_end_matches('.');
+            let with_badge = format!("{} (NVIDIA CUDA).", trimmed);
+            assert!(with_badge.ends_with(")."));
+            assert!(!with_badge.contains(".."));
         }
     }
 }

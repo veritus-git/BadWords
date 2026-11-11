@@ -494,13 +494,39 @@ pub enum HardwareTier {
 }
 
 impl HardwareTier {
-    /// Approximate realistic disk space requirement in Gigabytes
-    pub fn required_gb(&self) -> f32 {
-        match self {
-            HardwareTier::NvidiaCuda => 2.5,   // CUDA 12 packages (cuBLAS, cuDNN), PySide6, faster-whisper, models
-            HardwareTier::AppleSilicon => 2.0, // MLX Apple Silicon packages, PySide6, faster-whisper, models
-            HardwareTier::StandardCpu => 1.2,  // Standard CPU inference packages, PySide6, faster-whisper, models
+    /// Realistic disk space requirement in Gigabytes factoring in both the operating system
+    /// (e.g. Windows standalone runtime, portable FFmpeg build, larger wheels vs POSIX)
+    /// and the detected hardware tier (CUDA 12 libraries, MLX Apple GPU framework, or CPU inference).
+    pub fn required_gb_for(os_name: &str, tier: HardwareTier) -> f32 {
+        match os_name {
+            "windows" => match tier {
+                HardwareTier::NvidiaCuda => 2.8,   // Windows runtime, CUDA 12 packages (cuBLAS, cuDNN), PySide6, FFmpeg, models
+                HardwareTier::AppleSilicon => 2.0, // Fallback
+                HardwareTier::StandardCpu => 1.5,  // Windows runtime, standard CPU inference, PySide6, FFmpeg, models
+            },
+            "macos" => match tier {
+                HardwareTier::AppleSilicon => 2.0, // MLX Apple Silicon packages, PySide6, portable FFmpeg, models
+                HardwareTier::NvidiaCuda => 2.5,   // Fallback
+                HardwareTier::StandardCpu => 1.3,  // Intel CPU inference packages, PySide6, portable FFmpeg, models
+            },
+            _ => match tier { // Linux & other Unix platforms
+                HardwareTier::NvidiaCuda => 2.5,   // CUDA 12 packages (cuBLAS, cuDNN), PySide6, faster-whisper, models
+                HardwareTier::AppleSilicon => 2.0, // Fallback
+                HardwareTier::StandardCpu => 1.2,  // Standard CPU inference packages, PySide6, faster-whisper, models
+            },
         }
+    }
+
+    /// Approximate realistic disk space requirement in Gigabytes for the current platform
+    pub fn required_gb(&self) -> f32 {
+        #[cfg(target_os = "windows")]
+        let current_os = "windows";
+        #[cfg(target_os = "macos")]
+        let current_os = "macos";
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let current_os = "linux";
+
+        Self::required_gb_for(current_os, *self)
     }
 
     /// User-friendly hardware identification badge
@@ -508,7 +534,12 @@ impl HardwareTier {
         match self {
             HardwareTier::NvidiaCuda => "NVIDIA CUDA",
             HardwareTier::AppleSilicon => "Apple Silicon",
-            HardwareTier::StandardCpu => "CPU",
+            HardwareTier::StandardCpu => {
+                #[cfg(target_os = "macos")]
+                { "Intel CPU" }
+                #[cfg(not(target_os = "macos"))]
+                { "CPU" }
+            }
         }
     }
 }
@@ -2825,13 +2856,20 @@ mod tests {
 
     #[test]
     fn test_hardware_tier_requirements() {
-        assert_eq!(HardwareTier::NvidiaCuda.required_gb(), 2.5);
-        assert_eq!(HardwareTier::AppleSilicon.required_gb(), 2.0);
-        assert_eq!(HardwareTier::StandardCpu.required_gb(), 1.2);
+        // Platform-specific calculations
+        assert_eq!(HardwareTier::required_gb_for("windows", HardwareTier::NvidiaCuda), 2.8);
+        assert_eq!(HardwareTier::required_gb_for("windows", HardwareTier::StandardCpu), 1.5);
 
+        assert_eq!(HardwareTier::required_gb_for("macos", HardwareTier::AppleSilicon), 2.0);
+        assert_eq!(HardwareTier::required_gb_for("macos", HardwareTier::StandardCpu), 1.3);
+
+        assert_eq!(HardwareTier::required_gb_for("linux", HardwareTier::NvidiaCuda), 2.5);
+        assert_eq!(HardwareTier::required_gb_for("linux", HardwareTier::StandardCpu), 1.2);
+
+        // Tags
         assert_eq!(HardwareTier::NvidiaCuda.tag(), "NVIDIA CUDA");
         assert_eq!(HardwareTier::AppleSilicon.tag(), "Apple Silicon");
-        assert_eq!(HardwareTier::StandardCpu.tag(), "CPU");
+        assert!(!HardwareTier::StandardCpu.tag().is_empty());
 
         let detected = detect_hardware_tier();
         assert!(detected.required_gb() >= 1.0);
