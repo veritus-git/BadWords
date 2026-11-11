@@ -163,8 +163,80 @@ pub fn is_unsafe_dir_to_delete(dir: &Path) -> bool {
             return true;
         }
     }
+    // Protect AppData, Roaming, Local, Config, and Cache system folders
+    if let Some(data_local) = dirs::data_local_dir() {
+        if dir == data_local || dir == data_local.as_path() {
+            return true;
+        }
+    }
+    if let Some(config) = dirs::config_dir() {
+        if dir == config || dir == config.as_path() {
+            return true;
+        }
+    }
+    if let Some(data) = dirs::data_dir() {
+        if dir == data || dir == data.as_path() {
+            return true;
+        }
+    }
+    if let Some(cache) = dirs::cache_dir() {
+        if dir == cache || dir == cache.as_path() {
+            return true;
+        }
+    }
+
+    // Protect any directory named after system/user app folders
+    let lower_name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    let protected_dir_names = [
+        "local", "roaming", "locallow", "appdata", "application support",
+        "program files", "program files (x86)", "programdata", "users",
+        "windows", "system32", "syswow64", "documents and settings",
+        "desktop", "documents", "downloads", "pictures", "videos", "music",
+        "etc", "usr", "var", "bin", "sbin", "opt", "home", "root", "tmp", "temp",
+        "share", ".local", ".config", "library", "applications", "system"
+    ];
+
+    if protected_dir_names.contains(&lower_name.as_str()) {
+        return true;
+    }
 
     false
+}
+
+/// Strict check: verifies that dir is a genuine BadWords directory before deleting
+pub fn is_legitimate_badwords_dir(dir: &Path) -> bool {
+    if is_unsafe_dir_to_delete(dir) {
+        return false;
+    }
+    let lower_name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    // The directory name itself MUST contain "badwords" (e.g. BadWords, BadWords FILES, badwords)
+    if !lower_name.contains("badwords") {
+        return false;
+    }
+
+    // Failsafe: if directory contains other major third-party apps, refuse to delete!
+    let prohibited_neighbors = [
+        "microsoft", "bravesoftware", "google", "ubisoft", "steam",
+        "epic games", "mozilla", "discord", "packages"
+    ];
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if prohibited_neighbors.iter().any(|&p| name == p || name.contains(p)) {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 /// Recursively deletes a directory with continuous live progress
@@ -178,12 +250,12 @@ fn delete_dir_with_progress(
     if !dir.exists() {
         return;
     }
-    if is_unsafe_dir_to_delete(dir) {
+    if is_unsafe_dir_to_delete(dir) || !is_legitimate_badwords_dir(dir) {
         emit_log(
             sender,
             "ERROR",
             &format!(
-                "Safety block: Refusing to delete protected system/user directory: {}",
+                "Safety block: Refusing to delete protected or non-BadWords directory: {}",
                 dir.display()
             ),
         );
@@ -3166,6 +3238,24 @@ pub fn run_reset(
 /// Executes complete uninstallation with live file-by-file progress
 pub fn run_uninstall(target_dir: PathBuf, uninstall_system_python: bool, sender: EventSender) {
     std::thread::spawn(move || {
+        if is_unsafe_dir_to_delete(&target_dir) || !is_legitimate_badwords_dir(&target_dir) {
+            emit_log(
+                &sender,
+                "ERROR",
+                &format!(
+                    "Safety block: Refusing to uninstall from non-BadWords or protected system directory: {}",
+                    target_dir.display()
+                ),
+            );
+            emit_complete(
+                &sender,
+                "uninstall",
+                false,
+                "Safety block: target directory is protected or does not belong to BadWords.",
+            );
+            return;
+        }
+
         emit_log(
             &sender,
             "INFO",

@@ -625,14 +625,6 @@ impl InstallerApp {
                 return parent.to_path_buf();
             }
         }
-        let fname = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-        if (fname == "badwords" || fname == "badwords.exe") && p.exists() {
-            if let Some(parent) = p.parent() {
-                if parent.is_dir() {
-                    return parent.to_path_buf();
-                }
-            }
-        }
         p
     }
 
@@ -2812,6 +2804,18 @@ mod main_tests {
         let mut app = InstallerApp::new();
         app.install_path_str = "/tmp/test_bw_path///".to_string();
         assert_eq!(app.current_target_path(), PathBuf::from("/tmp/test_bw_path"));
+    }
+
+    #[test]
+    fn test_current_target_path_does_not_strip_badwords_directory() {
+        let temp_dir = std::env::temp_dir().join("test_appdata").join("Local").join("BadWords");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let mut app = InstallerApp::new();
+        app.install_path_str = temp_dir.to_string_lossy().into_owned();
+        assert_eq!(app.current_target_path(), temp_dir);
+
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("test_appdata"));
     }
 
     #[test]
