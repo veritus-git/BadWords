@@ -484,8 +484,37 @@ fn find_python() -> Option<String> {
     None
 }
 
+/// Detected hardware acceleration tier and corresponding disk space requirements
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum HardwareTier {
+    NvidiaCuda,
+    AppleSilicon,
+    StandardCpu,
+}
+
+impl HardwareTier {
+    /// Approximate realistic disk space requirement in Gigabytes
+    pub fn required_gb(&self) -> f32 {
+        match self {
+            HardwareTier::NvidiaCuda => 2.5,   // CUDA 12 packages (cuBLAS, cuDNN), PySide6, faster-whisper, models
+            HardwareTier::AppleSilicon => 2.0, // MLX Apple Silicon packages, PySide6, faster-whisper, models
+            HardwareTier::StandardCpu => 1.2,  // Standard CPU inference packages, PySide6, faster-whisper, models
+        }
+    }
+
+    /// User-friendly hardware identification badge
+    pub fn tag(&self) -> &'static str {
+        match self {
+            HardwareTier::NvidiaCuda => "NVIDIA CUDA",
+            HardwareTier::AppleSilicon => "Apple Silicon",
+            HardwareTier::StandardCpu => "CPU",
+        }
+    }
+}
+
 /// Detects NVIDIA GPU hardware for CUDA 12 acceleration
-fn detect_nvidia_gpu() -> bool {
+pub fn detect_nvidia_gpu() -> bool {
     #[cfg(target_os = "windows")]
     {
         if Path::new(r"C:\Windows\System32\nvcuda.dll").exists() || Path::new(r"C:\Windows\System32\nvapi64.dll").exists() {
@@ -503,9 +532,29 @@ fn detect_nvidia_gpu() -> bool {
                 }
             }
         }
+        if let Ok(output) = os::create_hidden_command("nvidia-smi").output() {
+            if output.status.success() {
+                return true;
+            }
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
+        // 1. Direct Linux kernel driver device node & proc checks (instantaneous)
+        if Path::new("/dev/nvidia0").exists() || Path::new("/proc/driver/nvidia").exists() {
+            return true;
+        }
+        // WSL2 CUDA check
+        if Path::new("/usr/lib/wsl/lib/libcuda.so.1").exists() || Path::new("/usr/lib/wsl/lib/libcuda.so").exists() {
+            return true;
+        }
+        // 2. Query nvidia-smi tool
+        if let Ok(output) = os::create_hidden_command("nvidia-smi").output() {
+            if output.status.success() {
+                return true;
+            }
+        }
+        // 3. Fallback to PCI / hardware inventory
         if let Ok(output) = os::create_hidden_command("lspci").output() {
             if String::from_utf8_lossy(&output.stdout).to_lowercase().contains("nvidia") {
                 return true;
@@ -518,6 +567,34 @@ fn detect_nvidia_gpu() -> bool {
         }
     }
     false
+}
+
+/// Detects the target hardware tier for the current machine
+pub fn detect_hardware_tier() -> HardwareTier {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        return HardwareTier::AppleSilicon;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Check for Apple Silicon if running in translated x86_64 mode
+        if let Ok(output) = os::create_hidden_command("sysctl").args(["-n", "machdep.cpu.brand_string"]).output() {
+            let brand = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if brand.contains("apple") {
+                return HardwareTier::AppleSilicon;
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        if detect_nvidia_gpu() {
+            return HardwareTier::NvidiaCuda;
+        }
+    }
+
+    HardwareTier::StandardCpu
 }
 
 /// Locates local source repository if available
@@ -2744,5 +2821,20 @@ mod tests {
             assert!(!v_str.is_empty());
             assert!(v_str.chars().any(|c| c.is_ascii_digit()));
         }
+    }
+
+    #[test]
+    fn test_hardware_tier_requirements() {
+        assert_eq!(HardwareTier::NvidiaCuda.required_gb(), 2.5);
+        assert_eq!(HardwareTier::AppleSilicon.required_gb(), 2.0);
+        assert_eq!(HardwareTier::StandardCpu.required_gb(), 1.2);
+
+        assert_eq!(HardwareTier::NvidiaCuda.tag(), "NVIDIA CUDA");
+        assert_eq!(HardwareTier::AppleSilicon.tag(), "Apple Silicon");
+        assert_eq!(HardwareTier::StandardCpu.tag(), "CPU");
+
+        let detected = detect_hardware_tier();
+        assert!(detected.required_gb() >= 1.0);
+        assert!(!detected.tag().is_empty());
     }
 }

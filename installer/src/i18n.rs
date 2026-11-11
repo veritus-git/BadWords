@@ -143,7 +143,7 @@ impl Language {
                 browse_btn: "Przeglądaj...",
                 shortcut_desktop: "Utwórz skrót na Pulpicie",
                 shortcut_menu: "Utwórz skrót w Menu Start / Aplikacjach",
-                required_disk_space: "Wymagane jest co najmniej 500 MB wolnego miejsca na dysku.",
+                required_disk_space_fmt: "Wymagane jest co najmniej {size} wolnego miejsca na dysku.",
                 
                 confirm_title: "Potwierdzenie operacji",
                 confirm_uninstall_warn: "Ta operacja całkowicie usunie BadWords z systemu, w tym venv i integracje DaVinci Resolve.",
@@ -192,7 +192,7 @@ impl Language {
                 browse_btn: "Durchsuchen...",
                 shortcut_desktop: "Desktop-Verknüpfung erstellen",
                 shortcut_menu: "Startmenü / Anwendungsmenü-Verknüpfung erstellen",
-                required_disk_space: "Es sind mindestens 500 MB freier Speicherplatz erforderlich.",
+                required_disk_space_fmt: "Es sind mindestens {size} freier Speicherplatz erforderlich.",
                 
                 confirm_title: "Aktion bestätigen",
                 confirm_uninstall_warn: "Dieser Vorgang entfernt BadWords, venv und DaVinci Resolve Integrationen vollständig vom System.",
@@ -241,7 +241,7 @@ impl Language {
                 browse_btn: "Examinar...",
                 shortcut_desktop: "Crear acceso directo en el Escritorio",
                 shortcut_menu: "Crear acceso directo en el Menú Inicio",
-                required_disk_space: "Se requieren al menos 500 MB de espacio libre en disco.",
+                required_disk_space_fmt: "Se requieren al menos {size} de espacio libre en disco.",
                 
                 confirm_title: "Confirmar acción",
                 confirm_uninstall_warn: "Esta operación eliminará completamente BadWords, el venv y las integraciones de DaVinci Resolve.",
@@ -290,7 +290,7 @@ impl Language {
                 browse_btn: "Parcourir...",
                 shortcut_desktop: "Créer un raccourci sur le Bureau",
                 shortcut_menu: "Créer un raccourci dans le Menu Démarrer / Applications",
-                required_disk_space: "Au moins 500 Mo d'espace disque libre sont requis.",
+                required_disk_space_fmt: "Au moins {size} d'espace disque libre sont requis.",
                 
                 confirm_title: "Confirmer l'action",
                 confirm_uninstall_warn: "Cette action supprimera complètement BadWords, le venv et les intégrations DaVinci Resolve.",
@@ -339,7 +339,7 @@ impl Language {
                 browse_btn: "Sfoglia...",
                 shortcut_desktop: "Crea collegamento sul Desktop",
                 shortcut_menu: "Crea collegamento nel Menu Start",
-                required_disk_space: "Sono richiesti almeno 500 MB di spazio libero su disco.",
+                required_disk_space_fmt: "Sono richiesti almeno {size} di spazio libero su disco.",
                 
                 confirm_title: "Conferma azione",
                 confirm_uninstall_warn: "Questa operazione rimuoverà completamente BadWords, il venv e le integrazioni DaVinci Resolve.",
@@ -388,7 +388,7 @@ impl Language {
                 browse_btn: "Bladeren...",
                 shortcut_desktop: "Bureaublad-snelkoppeling maken",
                 shortcut_menu: "Startmenu / Toepassingsmenu snelkoppeling maken",
-                required_disk_space: "Er is minimaal 500 MB vrije schijfruimte vereist.",
+                required_disk_space_fmt: "Er is minimaal {size} vrije schijfruimte vereist.",
                 
                 confirm_title: "Actie bevestigen",
                 confirm_uninstall_warn: "Hiermee verwijdert u BadWords, venv en DaVinci Resolve integraties volledig van het systeem.",
@@ -437,7 +437,7 @@ impl Language {
                 browse_btn: "Procurar...",
                 shortcut_desktop: "Criar atalho no Ambiente de Trabalho",
                 shortcut_menu: "Criar atalho no Menu Iniciar",
-                required_disk_space: "É necessário pelo menos 500 MB de espaço livre em disco.",
+                required_disk_space_fmt: "É necessário pelo menos {size} de espaço livre em disco.",
                 
                 confirm_title: "Confirmar Ação",
                 confirm_uninstall_warn: "Esta operação irá remover completamente o BadWords, venv e integrações do DaVinci Resolve.",
@@ -486,7 +486,7 @@ impl Language {
                 browse_btn: "Обзор...",
                 shortcut_desktop: "Создать ярлык на Рабочем столе",
                 shortcut_menu: "Создать ярлык в Меню Пуск / Приложениях",
-                required_disk_space: "Требуется не менее 500 МБ свободного места на диске.",
+                required_disk_space_fmt: "Требуется не менее {size} свободного места на диске.",
                 
                 confirm_title: "Подтверждение действия",
                 confirm_uninstall_warn: "Эта операция полностью удалит BadWords, venv и интеграции с DaVinci Resolve.",
@@ -535,7 +535,7 @@ impl Language {
                 browse_btn: "Огляд...",
                 shortcut_desktop: "Створити ярлик на Робочому столі",
                 shortcut_menu: "Створити ярлик у Меню Пуск / Програмах",
-                required_disk_space: "Потрібно щонайменше 500 МБ вільного місця на диску.",
+                required_disk_space_fmt: "Потрібно щонайменше {size} вільного місця на диску.",
                 
                 confirm_title: "Підтвердження дії",
                 confirm_uninstall_warn: "Ця дія повністю видалить BadWords, venv та інтеграції з DaVinci Resolve.",
@@ -584,7 +584,7 @@ impl Language {
                 browse_btn: "Browse...",
                 shortcut_desktop: "Create Desktop Shortcut",
                 shortcut_menu: "Create Start Menu / Application Menu Shortcut",
-                required_disk_space: "At least 500 MB of free disk space is required.",
+                required_disk_space_fmt: "At least {size} of free disk space is required.",
                 
                 confirm_title: "Confirm Action",
                 confirm_uninstall_warn: "This operation will completely remove BadWords from your system, including its venv and DaVinci Resolve integrations.",
@@ -612,6 +612,24 @@ impl Language {
     }
 }
 
+/// Formats a disk size in GB according to language conventions (e.g. "~2,5 GB" or "~2,5 Go")
+pub fn format_disk_size(size_gb: f32, lang: Language) -> String {
+    let formatted_num = match lang {
+        Language::Pl | Language::De | Language::Ru | Language::Uk | Language::Fr => {
+            format!("{:.1}", size_gb).replace('.', ",")
+        }
+        _ => format!("{:.1}", size_gb),
+    };
+
+    let unit = match lang {
+        Language::Fr => "Go",
+        Language::Ru | Language::Uk => "ГБ",
+        _ => "GB",
+    };
+
+    format!("~{} {}", formatted_num, unit)
+}
+
 #[allow(dead_code)]
 pub struct Translations {
     pub welcome_title: &'static str,
@@ -637,7 +655,7 @@ pub struct Translations {
     pub browse_btn: &'static str,
     pub shortcut_desktop: &'static str,
     pub shortcut_menu: &'static str,
-    pub required_disk_space: &'static str,
+    pub required_disk_space_fmt: &'static str,
     
     pub confirm_title: &'static str,
     pub confirm_uninstall_warn: &'static str,
@@ -660,6 +678,13 @@ pub struct Translations {
     pub terminal_tooltip: &'static str,
     pub minimize_tooltip: &'static str,
     pub close_tooltip: &'static str,
+}
+
+impl Translations {
+    /// Formats the required disk space message with the calculated realistic size string
+    pub fn required_disk_space(&self, size: &str) -> String {
+        self.required_disk_space_fmt.replace("{size}", size)
+    }
 }
 
 /// Translates engine progress status titles and details into the chosen language in real time
@@ -1137,4 +1162,35 @@ pub fn translate_phrase(text: &str, lang: Language) -> String {
     }
 
     text.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_disk_size() {
+        assert_eq!(format_disk_size(2.5, Language::En), "~2.5 GB");
+        assert_eq!(format_disk_size(2.5, Language::Pl), "~2,5 GB");
+        assert_eq!(format_disk_size(2.5, Language::Fr), "~2,5 Go");
+        assert_eq!(format_disk_size(2.0, Language::Ru), "~2,0 ГБ");
+        assert_eq!(format_disk_size(1.2, Language::Uk), "~1,2 ГБ");
+        assert_eq!(format_disk_size(1.2, Language::De), "~1,2 GB");
+    }
+
+    #[test]
+    fn test_required_disk_space_all_languages() {
+        let languages = [
+            Language::Pl, Language::De, Language::Es, Language::Fr, Language::It,
+            Language::Nl, Language::Pt, Language::Ru, Language::Uk, Language::En,
+        ];
+
+        for lang in languages {
+            let t = lang.t();
+            let size_str = format_disk_size(2.5, lang);
+            let msg = t.required_disk_space(&size_str);
+            assert!(msg.contains(&size_str), "Language {:?} failed to contain {}: {}", lang, size_str, msg);
+            assert!(!msg.contains("{size}"), "Language {:?} left raw {{size}} template: {}", lang, msg);
+        }
+    }
 }

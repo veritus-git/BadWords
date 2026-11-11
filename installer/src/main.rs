@@ -333,6 +333,7 @@ struct InstallerApp {
     uninstall_system_python: bool,
     has_auto_python_marker: bool,
     operation_success: bool,
+    hardware_tier: engine::HardwareTier,
     tx: Sender<IpcEvent>,
     rx: Receiver<IpcEvent>,
 }
@@ -406,6 +407,7 @@ impl InstallerApp {
             uninstall_system_python: false,
             has_auto_python_marker: false,
             operation_success: true,
+            hardware_tier: engine::detect_hardware_tier(),
             tx,
             rx,
         };
@@ -440,6 +442,12 @@ impl InstallerApp {
             app.screen = Screen::SelectPath;
         }
         app
+    }
+
+    pub fn get_required_disk_space_text(&self, t: &i18n::Translations) -> String {
+        let size_str = i18n::format_disk_size(self.hardware_tier.required_gb(), self.language);
+        let base_text = t.required_disk_space(&size_str);
+        format!("{} ({})", base_text, self.hardware_tier.tag())
     }
 
     fn update_version_items(&mut self, raw_releases: &[String]) {
@@ -1742,8 +1750,9 @@ impl eframe::App for InstallerApp {
                                                                 }
 
                                                                 ui.add_space(14.0);
+                                                                let req_disk_msg = self.get_required_disk_space_text(&t);
                                                                 ui.label(
-                                                                    egui::RichText::new(t.required_disk_space)
+                                                                    egui::RichText::new(req_disk_msg)
                                                                         .size(11.5)
                                                                         .color(egui::Color32::from_gray(160))
                                                                 );

@@ -67,7 +67,15 @@ jobs:
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          for i in 1 2 3 4 5; do sudo apt-get update && break || sleep 5; done
+          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/99retries
+          echo 'Acquire::http::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99timeout
+          if [ -f /etc/resolv.conf ]; then
+            sudo rm -f /etc/resolv.conf
+            printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" | sudo tee /etc/resolv.conf
+          fi
+          for i in 1 2 3 4 5; do sudo apt-get update && break || sleep 4; done
           sudo apt-get install -y --fix-missing libxkbcommon-dev libx11-dev libasound2-dev libudev-dev libfontconfig1-dev libdbus-1-dev desktop-file-utils
 
       - name: Setup Rust Toolchain
