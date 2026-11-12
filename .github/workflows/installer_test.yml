@@ -72,7 +72,9 @@ jobs:
           brew install ffmpeg || true
 
       - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
 
       - name: Compile BadWords Installer
         run: cargo build --release --manifest-path installer/Cargo.toml

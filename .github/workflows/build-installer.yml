@@ -79,7 +79,9 @@ jobs:
           sudo apt-get install -y --fix-missing libxkbcommon-dev libx11-dev libasound2-dev libudev-dev libfontconfig1-dev libdbus-1-dev desktop-file-utils
 
       - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
 
       - name: Build Installer Binary
         run: cargo build --release --manifest-path installer/Cargo.toml
