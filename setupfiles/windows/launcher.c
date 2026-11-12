@@ -251,11 +251,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     // 9. Set Working Directory
     wchar_t work_dir[MAX_PATH_LEN];
     _snwprintf(work_dir, MAX_PATH_LEN, L"%s\\src", install_dir);
+    if (!dir_exists_w(work_dir)) {
+        wcsncpy(work_dir, install_dir, MAX_PATH_LEN - 1);
+    }
     if (dir_exists_w(work_dir)) {
         SetCurrentDirectoryW(work_dir);
-    } else {
+    } else if (dir_exists_w(install_dir)) {
         SetCurrentDirectoryW(install_dir);
     }
+
+    const wchar_t *lp_work_dir = dir_exists_w(work_dir) ? work_dir : (dir_exists_w(install_dir) ? install_dir : NULL);
 
     // 10. Strategy A: In-Process Execution via python3xx.dll
     if (python_dll[0] != L'\0' && file_exists_w(python_dll)) {
@@ -318,6 +323,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     wchar_t cmdline[MAX_ENV_LEN];
     _snwprintf(cmdline, MAX_ENV_LEN, L"\"%s\" \"%s\"", active_py, main_py);
 
+    int argc = 0;
+    LPWSTR *argvW = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argvW && argc > 1) {
+        for (int i = 1; i < argc; i++) {
+            size_t cur_len = wcslen(cmdline);
+            _snwprintf(cmdline + cur_len, MAX_ENV_LEN - cur_len, L" \"%s\"", argvW[i]);
+        }
+    }
+    if (argvW) {
+        LocalFree(argvW);
+    }
+
     STARTUPINFOW si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
@@ -335,7 +352,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         FALSE,
         CREATE_NO_WINDOW,
         NULL,
-        work_dir,
+        lp_work_dir,
         &si,
         &pi
     );
