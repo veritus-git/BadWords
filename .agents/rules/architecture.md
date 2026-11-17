@@ -38,20 +38,28 @@ description: Core architecture layers, 3-zone boundaries, protected workarounds,
 
 ## 4. Mandatory AI Coding Commandments
 1. **No Monoliths**: Keep modules focused in their proper subpackages. Do not bloat `main_window.py`.
-2. **English Only**: Code, variable names, comments, terminal logs, and git commits must be in English. Translations go in `src/i18n/*.json`.
-3. **Continuous State Tracking (`docs/DEV_STATE.md`)**:
+2. **English Only**: Code, variable names, docstrings, code comments, terminal logs, and git commits must be strictly in English. Translations go in `src/i18n/*.json`.
+3. **Mandatory License Header**: Every new Python, Rust, C++, or Shell script file must include the following MIT license header at the top:
+   ```python
+   #Copyright (c) 2026 Szymon Wolarz
+   #Licensed under the MIT License. See LICENSE file in the project root for full license information.
+   ```
+4. **GitHub CLI Authenticated**: The GitHub CLI (`gh`) is fully authenticated and available in the environment for pull requests, issues, and release automation.
+5. **UI Animation & Smooth Dimming**:
+   - When toggling options that disable dependent controls (patterned after `src/gui/panels/silence_panel.py`), do not abruptly hide them. Use smooth opacity transitions (duration 200–250ms, `QEasingCurve.InOutQuad`, opacity 1.0 <-> 0.35) and set `setAttribute(Qt.WA_TransparentForMouseEvents, not is_active)`.
+6. **Continuous State Tracking (`docs/DEV_STATE.md`)**:
    * Record task progress, changes made, and pending steps in `docs/DEV_STATE.md` progressively (not just at session end) so multi-turn context is never lost.
-4. **Empirical Verification (No Guesswork)**:
+7. **Empirical Verification (No Guesswork)**:
    * Never guess APIs or behavior ("co mi się wydaje"). Verify against official docs, codebase inspection, or minimal reproduction scripts before committing.
-5. **No Runtime Trash in Git**: Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, or `raport/`.
-6. **Mandatory Verification Protocol**:
+8. **No Runtime Trash in Git**: Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, or `raport/`.
+9. **Mandatory Verification Protocol**:
    * Run automated tests: `python3 run_tests.py` (ALL tests must pass).
    * Run bytecode compilation: `python3 -m compileall src`.
    * Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
    * If modifying Rust installer: `cargo check` and `cargo test`.
-7. **Sync Installation Folder**:
+10. **Sync Installation Folder**:
    * After any change in `src/`, `installer/`, or `setupfiles/`, synchronize to `/mnt/dump/BadWords FILES/` (excluding runtime user data).
-8. **Curated Release Notes on Releases**:
+11. **Curated Release Notes on Releases**:
    * When preparing an official Release, update `src/config/release_notes.json`.
-9. **Automated Commit & Push**:
+12. **Automated Commit & Push**:
    * Commit with conventional commit messages and push to all configured remotes (`git push all <branch>`).

@@ -2599,3 +2599,135 @@ class TrackSquareCheckbox(QWidget):
         self.toggled.emit(self.is_checked)
         super().mousePressEvent(event)
 
+
+class AssemblyModeSelector(QWidget):
+    """
+    Two-segment block selector for DaVinci Resolve timeline assembly method:
+    [ XML ] vs [ DRT ].
+    Fully compatible with ToggleSwitch interface (isChecked, setChecked, toggled).
+    """
+    toggled = Signal(bool)       # True if XML, False if DRT
+    mode_changed = Signal(str)   # "xml" or "drt"
+
+    def __init__(self, current_mode="xml", is_drt_disabled=False, parent=None):
+        super().__init__(parent)
+        self._is_drt_disabled = bool(is_drt_disabled)
+        self._mode = "xml" if (self._is_drt_disabled or str(current_mode).lower() == "xml") else "drt"
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(config.S(6))
+
+        self.btn_xml = QPushButton("XML", self)
+        self.btn_xml.setCursor(Qt.PointingHandCursor)
+        self.btn_xml.setFixedHeight(config.S(28))
+        self.btn_xml.setFixedWidth(config.S(75))
+
+        self.btn_drt = QPushButton("DRT", self)
+        self.btn_drt.setFixedHeight(config.S(28))
+        self.btn_drt.setFixedWidth(config.S(75))
+
+        if self._is_drt_disabled:
+            self.btn_drt.setEnabled(False)
+            self.btn_drt.setCursor(Qt.ForbiddenCursor)
+        else:
+            self.btn_drt.setCursor(Qt.PointingHandCursor)
+
+        self.btn_xml.clicked.connect(lambda: self.set_mode("xml"))
+        self.btn_drt.clicked.connect(lambda: self.set_mode("drt"))
+
+        layout.addWidget(self.btn_xml)
+        layout.addWidget(self.btn_drt)
+        layout.addStretch()
+
+        self._refresh_styles()
+
+    def set_drt_disabled(self, disabled: bool, tooltip: str = ""):
+        self._is_drt_disabled = bool(disabled)
+        if self._is_drt_disabled:
+            self.btn_drt.setEnabled(False)
+            self.btn_drt.setCursor(Qt.ForbiddenCursor)
+            if tooltip:
+                self.btn_drt.setToolTip(tooltip)
+            if self._mode == "drt":
+                self.set_mode("xml")
+        else:
+            self.btn_drt.setEnabled(True)
+            self.btn_drt.setCursor(Qt.PointingHandCursor)
+            self.btn_drt.setToolTip(tooltip)
+        self._refresh_styles()
+
+    def set_mode(self, mode: str):
+        mode_str = "xml" if str(mode).lower() == "xml" else "drt"
+        if self._is_drt_disabled and mode_str == "drt":
+            return
+        if mode_str != self._mode:
+            self._mode = mode_str
+            self._refresh_styles()
+            self.mode_changed.emit(self._mode)
+            self.toggled.emit(self._mode == "xml")
+
+    def get_mode(self) -> str:
+        return self._mode
+
+    def mode(self) -> str:
+        return self._mode
+
+    def isChecked(self) -> bool:
+        """Compatibility with ToggleSwitch (True == XML)."""
+        return self._mode == "xml"
+
+    def setChecked(self, checked: bool, animated: bool = False):
+        """Compatibility with ToggleSwitch."""
+        self.set_mode("xml" if checked else "drt")
+
+    def _refresh_styles(self):
+        active_qss = f"""
+            QPushButton {{
+                background-color: {config.BTN_BG};
+                color: #ffffff;
+                border: 1px solid #125c2f;
+                border-radius: {config.S(4)}px;
+                font-weight: bold;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QPushButton:hover {{
+                background-color: {config.BTN_ACTIVE};
+            }}
+        """
+        inactive_qss = f"""
+            QPushButton {{
+                background-color: #1e1e1e;
+                color: #888888;
+                border: 1px solid #333333;
+                border-radius: {config.S(4)}px;
+                font-weight: normal;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9.5)}pt;
+            }}
+            QPushButton:hover {{
+                background-color: #2a2d2e;
+                color: #ffffff;
+                border-color: #555555;
+            }}
+        """
+        disabled_qss = f"""
+            QPushButton {{
+                background-color: #151515;
+                color: #444444;
+                border: 1px solid #222222;
+                border-radius: {config.S(4)}px;
+                font-weight: normal;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9.5)}pt;
+            }}
+        """
+        if self._mode == "xml":
+            self.btn_xml.setStyleSheet(active_qss)
+            self.btn_drt.setStyleSheet(disabled_qss if self._is_drt_disabled else inactive_qss)
+        else:
+            self.btn_xml.setStyleSheet(inactive_qss)
+            self.btn_drt.setStyleSheet(active_qss)
+
+

@@ -34,6 +34,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
+| `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), and telemetry popup drop shadow. | **PASS** |
 | `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, CUDA functionality probing, GitHub issue #19 (`cublas64_12.dll` missing probe detection), and silent Resolve decoupling when Resolve is not installed. | **PASS** |
 | `tests/test_visual_progress_bar.py` | Visual regression test for `LiquidProgressBar`: renders screenshots into `tests/artifacts/`, verifies all 4 rounded corners and anti-aliasing clipping across determinate (50%, 100%) and 3-phase indeterminate states (entering, centered, exiting) to prevent squared-off corner regressions (`setClipRect`). | **PASS** |
 | `tests/test_timeline_cuts.py` | Multi-framerate calculation across standard & drop rates (23.976, 29.97, 47.952, 59.94, 60.0, 25.0 fps), exact rational drop-frame timebases (24000/1001, 30000/1001), silence cut ripple deletion, color cut extraction, timeline end capping. | **PASS** |
@@ -86,15 +87,30 @@ Test Runner: `run_tests.py` using Python `unittest`.
      * In `track_options_drawer.py`: skipped querying Resolve tracks when in file mode.
      * `_jump_playhead()` no-ops cleanly in standalone file mode.
 6. **AI Codex & Rules Update**:
-   - Updated `.agents/rules/architecture.md` with 3-Zone architecture, empirical verification rule, progressive task tracking, and token budget efficiency.
-   - Established persistent task state tracking via `docs/DEV_STATE.md`.
+   - Updated `.agents/rules/architecture.md` with 3-Zone architecture, empirical verification rule, progressive task tracking, token budget efficiency, mandatory MIT license header, GitHub CLI (`gh`) authentication note, and smooth dimming UI animation conventions.
+   - Maintained strict 100% English convention across codex, code comments, and terminal output.
+7. **Settings Architecture Refactor & Setup UX Enhancement (2026-11-17)**:
+   - **Terminal Auto-Closure on Linux & macOS**:
+     * Updated `setupfiles/linux-setup.sh` and `setupfiles/mac-setup.sh` to launch native installer executable detached (`nohup "$EXE" "$@" >/dev/null 2>&1 &` / `setsid`) and exit 0 immediately so terminal closes.
+   - **Settings Dialog Overhaul (`SettingsDialog`)**:
+     * Split overcrowded Interface tab into "Appearance & Scaling" (Theme, UI Scaling slider 75%–150%, Font selector) and "Editor & Canvas" (Segmented/Continuous flow, line height, text select mode, marquee).
+     * Added dedicated "DaVinci Resolve" tab featuring `AssemblyModeSelector` (`[ XML ]` vs `[ DRT ]` clickable segment blocks).
+     * Integrated DaVinci Free 21.1+ check (`is_free_21_1_or_newer`): DRT is locked/disabled with informative tooltip on Free 21.1+, while older Free (< 21.1) and Studio retain DRT support.
+     * Implemented animated smooth dimming (0.35 opacity) and interaction blocking on XML-dependent settings (`xml_preserve_track_order`, `link_av_clips`, `link_all_cut_tracks`) when DRT is active, matching silence panel UX.
+     * Decoupled Feedback/Bug Report into dedicated "Support & Feedback" tab and moved telemetry toggles/project info to "About & Privacy" tab.
+     * Added real-time search bar on the left sidebar above category list to filter options and controls across tabs dynamically.
+     * Implemented lazy page construction (`_ensure_page_built`) for instant dialog opening and dark DWM initialization to eliminate white flash on Windows.
+   - **Telemetry Consent Popup Styling**:
+     * Removed hard border on inner frame and added soft drop shadow (`QGraphicsDropShadowEffect(blurRadius=30, offset=(0,0))`) matching `SettingsDialog`.
+   - **Dynamic Version Detection & Fallback**:
+     * Enhanced `_detect_version()` in `src/config/app_constants.py` to auto-detect git tags via `git describe --tags --exact-match` and `--abbrev=0`, cleaning commit counts/hashes and falling back to default version.
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 30 tests pass.
+1. Run `python3 run_tests.py` to verify all 44 tests pass.
 2. Run `python3 -m compileall src` to ensure bytecode consistency.
-3. Check `tests/artifacts/` for visual progress bar screenshots.
-4. Synchronize modified files to `/mnt/dump/BadWords FILES/` as per rule 7.
+3. Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
+4. Ensure files are synchronized with `/mnt/dump/BadWords FILES/`.
 

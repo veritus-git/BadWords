@@ -178,11 +178,29 @@ start_native_executable() {
     shift
     chmod +x "$bin" 2>/dev/null || true
 
-    if "$bin" "$@"; then
-        exit 0
-    else
+    # If headless (no X11 / Wayland display), fall back immediately to terminal installer
+    if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
         invoke_python_fallback "$@"
+        return
     fi
+
+    # Launch GUI in a detached session so the calling terminal can exit immediately
+    if command -v setsid &>/dev/null; then
+        setsid "$bin" "$@" >/dev/null 2>&1 &
+    else
+        nohup "$bin" "$@" >/dev/null 2>&1 &
+    fi
+    local pid=$!
+
+    # Quick sanity check: verify process did not crash on startup
+    sleep 0.4
+    if kill -0 "$pid" 2>/dev/null; then
+        disown "$pid" 2>/dev/null || true
+        exit 0
+    fi
+
+    # Process terminated immediately (e.g. missing shared libraries); fall back to terminal UI
+    invoke_python_fallback "$@"
 }
 
 # 0. Force fallback check (for testing or explicitly requested CLI mode)

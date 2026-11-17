@@ -28,8 +28,10 @@ from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import (
     QPushButton, ToggleSwitch, ShortcutCaptureButton,
     MouseShortcutCaptureButton, CustomDropdown, SearchableDropdown,
-    ReloadButton, CloseIconButton, SquareIconButton, CustomNumberInput
+    ReloadButton, CloseIconButton, SquareIconButton, CustomNumberInput,
+    AssemblyModeSelector, TrackSquareCheckbox
 )
+from gui.widgets.sliders import JumpSlider
 from gui.widgets.labels import QLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
 from gui.widgets.delegates import MarqueeItemDelegate
@@ -157,6 +159,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         if parent and (getattr(parent, '_always_on_top_active', False) or bool(parent.windowFlags() & Qt.WindowStaysOnTopHint)):
             self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
 
+        # Eliminate white flash on Windows before Qt finishes dark styling
+        if getattr(self, '_is_win', False):
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+                val = ctypes.c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
+                )
+            except Exception:
+                pass
+
+        self._search_rows = []
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
@@ -325,16 +341,56 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         root.setSpacing(0)
         outer_layout.addLayout(root)
 
-        # ── LEFT: Category list ───────────────────────────────────────────
+        # ── LEFT: Search bar + Category list ─────────────────────────────
+        left_panel = QWidget()
+        left_panel.setFixedWidth(config.S(165))
+        left_panel.setStyleSheet(f"""
+            QWidget {{
+                background-color: {config.SIDEBAR_BG};
+                border-right: 1px solid {config.SEPARATOR_COL};
+            }}
+            QListWidget {{
+                border-right: none;
+            }}
+        """)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(config.S(8), config.S(8), config.S(8), config.S(8))
+        left_layout.setSpacing(config.S(6))
+
+        # Search bar
+        self.search_edit = QLineEdit()
+        self.search_edit.setObjectName("SettingsSearch")
+        self.search_edit.setPlaceholderText(self.txt("search_settings_placeholder"))
+        self.search_edit.setFixedHeight(config.S(28))
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setStyleSheet(f"""
+            QLineEdit#SettingsSearch {{
+                background-color: #1a1a1a;
+                color: {config.FG_COLOR};
+                border: 1px solid #333333;
+                border-radius: {config.S(4)}px;
+                padding: 0 {config.S(8)}px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS(9)}pt;
+            }}
+            QLineEdit#SettingsSearch:focus {{
+                border: 1px solid {config.BTN_BG};
+                background-color: #222222;
+            }}
+        """)
+        self.search_edit.textChanged.connect(self._on_search_query_changed)
+        left_layout.addWidget(self.search_edit)
+
         self.category_list = QListWidget()
-        self.category_list.setFixedWidth(config.S(155))
         self.category_list.setFocusPolicy(Qt.NoFocus)
         self.category_list.setFont(QFont(config.UI_FONT_NAME, config.FS(10)))
         # Disable horizontal scrollbar — marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
         self.category_list.setItemDelegate(self._marquee_delegate)
-        root.addWidget(self.category_list)
+        left_layout.addWidget(self.category_list, 1)
+
+        root.addWidget(left_panel)
 
         # ── RIGHT: stacked pages + bottom bar ────────────────────────────
         right_layout = QVBoxLayout()
@@ -403,6 +459,90 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         lbl_info.setStyleSheet("color: #888; font-size: 11pt;")
         return lbl_info
 
+    def _open_external_url(self, url: str):
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl(url))
+
+    def _row_matches(self, query: str, lbl_text: str, cnt, lbl_w) -> bool:
+        if not query:
+            return True
+        if query in lbl_text.lower():
+            return True
+        if lbl_w and hasattr(lbl_w, 'toolTip') and query in (lbl_w.toolTip() or "").lower():
+            return True
+        if cnt:
+            if hasattr(cnt, 'toolTip') and query in (cnt.toolTip() or "").lower():
+                return True
+            for child in cnt.findChildren(QWidget):
+                if hasattr(child, 'text') and query in (child.text() or "").lower():
+                    return True
+                if hasattr(child, 'toolTip') and query in (child.toolTip() or "").lower():
+                    return True
+        return False
+
+    def _on_search_query_changed(self, text: str):
+        query = text.strip().lower()
+        if not query:
+            for idx in range(self.category_list.count()):
+                item = self.category_list.item(idx)
+                if idx == 6: # AI Engine
+                    item.setHidden(self._is_basic_mode)
+                else:
+                    item.setHidden(False)
+            curr_idx = self.stack.currentIndex()
+            self._filter_page_rows(curr_idx, "")
+            return
+
+        if hasattr(self, '_ensure_all_pages_built'):
+            self._ensure_all_pages_built()
+
+        matching_pages = set()
+        for idx in range(self.category_list.count()):
+            cat_name = self.category_list.item(idx).text().lower()
+            if query in cat_name:
+                matching_pages.add(idx)
+
+        if hasattr(self, '_search_rows'):
+            for p_idx, lbl_text, cnt, lbl_w, is_adv in self._search_rows:
+                if is_adv and self._is_basic_mode:
+                    continue
+                if self._row_matches(query, lbl_text, cnt, lbl_w):
+                    matching_pages.add(p_idx)
+
+        first_visible = None
+        for idx in range(self.category_list.count()):
+            item = self.category_list.item(idx)
+            is_visible = (idx in matching_pages)
+            if idx == 6 and self._is_basic_mode:
+                is_visible = False
+            item.setHidden(not is_visible)
+            if is_visible and first_visible is None:
+                first_visible = idx
+
+        curr = self.category_list.currentRow()
+        if curr not in matching_pages and first_visible is not None:
+            self.category_list.setCurrentRow(first_visible)
+        else:
+            self._filter_page_rows(self.stack.currentIndex(), query)
+
+    def _filter_page_rows(self, page_idx: int, query: str):
+        if not hasattr(self, '_search_rows'):
+            return
+        for p_idx, lbl_text, cnt, lbl_w, is_adv in self._search_rows:
+            if p_idx != page_idx:
+                continue
+            if is_adv and self._is_basic_mode:
+                if cnt:
+                    cnt.setVisible(False)
+                if lbl_w:
+                    lbl_w.setVisible(False)
+                continue
+            matches = self._row_matches(query, lbl_text, cnt, lbl_w)
+            if cnt:
+                cnt.setVisible(matches)
+            if lbl_w:
+                lbl_w.setVisible(matches)
 
     def _set_view_mode(self, mode):
         self.setUpdatesEnabled(False)
@@ -416,12 +556,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 
             self._is_basic_mode = (mode == 'basic')
             
-            if hasattr(self, 'category_list') and self.category_list.count() > 4:
-                item = self.category_list.item(4) # AI Engine
+            if hasattr(self, 'category_list') and self.category_list.count() > 6:
+                item = self.category_list.item(6) # AI Engine
                 if item:
                     item.setHidden(self._is_basic_mode)
                     
-                if self._is_basic_mode and self.category_list.currentRow() == 4:
+                if self._is_basic_mode and self.category_list.currentRow() == 6:
                     self.category_list.setCurrentRow(0)
                     
             if hasattr(self, 'btn_view_basic') and hasattr(self, 'btn_view_advanced'):
@@ -474,6 +614,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.setUpdatesEnabled(False)
         try:
             self._advanced_widgets = []
+            self._search_rows = []
             self.category_list.clear()
             while self.stack.count() > 0:
                 w = self.stack.widget(0)
@@ -484,16 +625,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             view_mode = prefs.get('settings_view_mode', 'basic')
             self._is_basic_mode = (view_mode == 'basic')
 
-            self.category_list.addItem(self.txt("tab_general"))
-            self.category_list.addItem(self.txt("tab_transcript"))
-            self.category_list.addItem(self.txt("tab_shortcuts"))
-            self.category_list.addItem(self.txt("tab_custom_markers"))
-            self.category_list.addItem(self.txt("tab_ai_engine"))
-            self.category_list.addItem(self.txt("tab_telemetry"))
-            self.category_list.addItem(self.txt("tab_support"))
+            self.category_list.addItem(self.txt("tab_general"))        # 0
+            self.category_list.addItem(self.txt("tab_appearance"))     # 1
+            self.category_list.addItem(self.txt("tab_editor"))         # 2
+            self.category_list.addItem(self.txt("tab_davinci"))        # 3
+            self.category_list.addItem(self.txt("tab_shortcuts"))      # 4
+            self.category_list.addItem(self.txt("tab_custom_markers")) # 5
+            self.category_list.addItem(self.txt("tab_ai_engine"))      # 6
+            self.category_list.addItem(self.txt("tab_support"))        # 7
+            self.category_list.addItem(self.txt("tab_about"))          # 8
 
             if self._is_basic_mode:
-                item = self.category_list.item(4)
+                item = self.category_list.item(6)
                 if item:
                     item.setHidden(True)
 
@@ -517,6 +660,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             self._ensure_page_built = _ensure_page_built
 
+            def _ensure_all_pages_built():
+                for i in range(self.category_list.count()):
+                    self._ensure_page_built(i)
+
+            self._ensure_all_pages_built = _ensure_all_pages_built
+
             # Lazy-load: build page 0 immediately so dialog opens in < 3ms
             self._ensure_page_built(0)
 
@@ -539,6 +688,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     self.w_footer.hide()
                 else:
                     self.w_footer.show()
+                if hasattr(self, 'search_edit') and self.search_edit.text().strip():
+                    self._filter_page_rows(idx, self.search_edit.text().strip().lower())
                     
             self.category_list.currentRowChanged.connect(_on_tab_changed)
 
@@ -547,11 +698,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         finally:
             self.setUpdatesEnabled(True)
 
-    def _add_row(self, form, label_text, widget, default_val, setter_func, info_key=None):
+    def _add_row(self, form, label_text, widget, default_val, setter_func, info_key=None, is_advanced=False):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
-        has_toggle = (isinstance(widget, ToggleSwitch) or widget.findChild(ToggleSwitch) is not None)
+        has_toggle = (isinstance(widget, ToggleSwitch) or widget.findChild(ToggleSwitch) is not None or isinstance(widget, AssemblyModeSelector) or widget.findChild(AssemblyModeSelector) is not None)
         row.setSpacing(config.S(10) if has_toggle else config.S(4))
         row.setAlignment(Qt.AlignVCenter)
         if not has_toggle:
@@ -580,11 +731,23 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             lbl_layout.addStretch()
             form.addRow(lbl_container, container)
             self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
-            return lbl_container, container
+            res_lbl = lbl_container
         else:
             form.addRow(lbl, container)
             self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
-            return lbl, container
+            res_lbl = lbl
+
+        curr_page_idx = getattr(self, '_current_building_page_idx', 0)
+        if hasattr(self, '_search_rows'):
+            self._search_rows.append((curr_page_idx, label_text, container, res_lbl, is_advanced))
+
+        if is_advanced:
+            self._advanced_widgets.extend([res_lbl, container])
+            if getattr(self, '_is_basic_mode', True):
+                res_lbl.setVisible(False)
+                container.setVisible(False)
+
+        return res_lbl, container
 
     def _build_page(self, idx):
         if idx < 0 or idx >= self.stack.count():
@@ -592,7 +755,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         scroll = self.stack.widget(idx)
         prefs = self.engine.load_preferences() or {}
         
-        mapping = {0: 'general', 1: 'transcript', 2: 'shortcuts', 3: 'custom_markers', 4: 'ai_engine', 5: 'telemetry', 6: 'support'}
+        mapping = {
+            0: 'general',
+            1: 'appearance',
+            2: 'editor',
+            3: 'davinci',
+            4: 'shortcuts',
+            5: 'custom_markers',
+            6: 'ai_engine',
+            7: 'support',
+            8: 'about',
+        }
             
         page_name = mapping.get(idx)
         if not page_name:
@@ -607,6 +780,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
     def _build_page_general(self, prefs):
         # PAGE 0 — GENERAL
         # ─────────────────────────────────────────────────────────────────
+        self._current_building_page_idx = 0
         page_gen = QWidget()
         page_gen.setStyleSheet("background: transparent;")
         l_gen = QVBoxLayout(page_gen)
@@ -698,8 +872,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         tgl_notify_row.addStretch()
         ver_card_lay.addLayout(tgl_notify_row)
 
-        # Row 3: Auto-update toggle
-        tgl_autoupd_row = QHBoxLayout()
+        # Row 3: Auto-update toggle (Advanced)
+        w_autoupd_row = QWidget()
+        tgl_autoupd_row = QHBoxLayout(w_autoupd_row)
+        tgl_autoupd_row.setContentsMargins(0, 0, 0, 0)
         tgl_autoupd_row.setSpacing(10)
         self.tgl_auto_update_on_start = ToggleSwitch()
         self.tgl_auto_update_on_start.setChecked(
@@ -712,7 +888,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         tgl_autoupd_row.addWidget(self.tgl_auto_update_on_start)
         tgl_autoupd_row.addWidget(lbl_autoupd)
         tgl_autoupd_row.addStretch()
-        ver_card_lay.addLayout(tgl_autoupd_row)
+        self._advanced_widgets.append(w_autoupd_row)
+        if self._is_basic_mode:
+            w_autoupd_row.setVisible(False)
+        ver_card_lay.addWidget(w_autoupd_row)
 
         l_gen.addWidget(ver_card)
         l_gen.addSpacing(12)
@@ -998,6 +1177,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         break
             btn_rev_icon.clicked.connect(lambda *args: set_icon_default("default"))
 
+        # Show panel headers toggle (Advanced)
+        self.tgl_show_panel_headers = ToggleSwitch()
+        self.tgl_show_panel_headers.setChecked(bool(prefs.get("show_panel_headers", True)), animated=False)
+        self.tgl_show_panel_headers.toggled.connect(lambda checked: self.engine.save_preferences({"show_panel_headers": checked}))
+        w_panel_hdr = QWidget()
+        l_panel_hdr = QHBoxLayout(w_panel_hdr)
+        l_panel_hdr.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_panel_hdr.addStretch()
+        l_panel_hdr.addWidget(self._get_info_icon("tt_show_panel_headers"))
+        l_panel_hdr.addSpacing(config.S(8))
+        l_panel_hdr.addWidget(self.tgl_show_panel_headers)
+        self._add_row(form_gen, self.txt("lbl_show_panel_headers"), w_panel_hdr,
+                 True, lambda v: self.tgl_show_panel_headers.setChecked(v, animated=True), is_advanced=True)
+
         l_gen.addLayout(form_gen)
         l_gen.addSpacing(8)
         l_gen.addStretch()
@@ -1029,9 +1222,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_gen
 
     def _build_page_shortcuts(self, prefs):
-        # PAGE 1 — SHORTCUTS
-
-
+        # PAGE 4 — SHORTCUTS
+        self._current_building_page_idx = 4
         # ─────────────────────────────────────────────────────────────────
         page_shorts = QWidget()
         page_shorts.setStyleSheet("background: transparent;")
@@ -1211,7 +1403,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_shorts
 
     def _build_page_custom_markers(self, prefs):
-        # PAGE 2 — CUSTOM MARKERS
+        # PAGE 5 — CUSTOM MARKERS
+        self._current_building_page_idx = 5
         # ─────────────────────────────────────────────────────────────────
         page_markers = QWidget()
         page_markers.setStyleSheet("background: transparent;")
@@ -1280,27 +1473,57 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         return page_markers
 
-    def _build_page_transcript(self, prefs):
-        # PAGE 3 — TRANSCRIPT
-        # ─────────────────────────────────────────────────────────────────
-        page_transcript = QWidget()
-        page_transcript.setStyleSheet("background: transparent;")
-        l_transcript = QVBoxLayout(page_transcript)
-        l_transcript.setContentsMargins(24, 20, 24, 16)
-        l_transcript.setSpacing(0)
+    def _build_page_appearance(self, prefs):
+        # PAGE 1 — APPEARANCE & SCALING
+        self._current_building_page_idx = 1
+        page_app = QWidget()
+        page_app.setStyleSheet("background: transparent;")
+        l_app = QVBoxLayout(page_app)
+        l_app.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        l_app.setSpacing(config.S(14))
 
-        # Always-on-top container (collapses cleanly with 0px gap in basic mode)
-        w_ontop_box = QWidget()
-        w_ontop_box.setStyleSheet("background: transparent;")
-        l_ontop_box = QVBoxLayout(w_ontop_box)
-        l_ontop_box.setContentsMargins(0, 0, 0, 0)
-        l_ontop_box.setSpacing(0)
+        form = QFormLayout()
+        form.setSpacing(config.S(14))
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        form_ontop = QFormLayout()
-        form_ontop.setSpacing(14)
-        form_ontop.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form_ontop.setContentsMargins(0, 0, 0, 0)
-        
+        # 1. UI Scaling Slider (75% to 150%)
+        saved_scale = int(prefs.get('ui_scale_pct', 100))
+        self.slider_ui_scale = JumpSlider(Qt.Horizontal)
+        self.slider_ui_scale.setRange(75, 150)
+        self.slider_ui_scale.setValue(saved_scale)
+        self.slider_ui_scale.setFixedHeight(config.S(20))
+
+        self.lbl_ui_scale_val = QLabel(f"{saved_scale}%")
+        self.lbl_ui_scale_val.setFixedWidth(config.S(48))
+        self.lbl_ui_scale_val.setStyleSheet(f"font-size: {config.FS(9.5)}pt; color: #aaa;")
+
+        scale_row = QWidget()
+        scale_lay = QHBoxLayout(scale_row)
+        scale_lay.setContentsMargins(0, 0, 0, 0)
+        scale_lay.setSpacing(config.S(8))
+        scale_lay.addWidget(self.slider_ui_scale, 1)
+        scale_lay.addWidget(self.lbl_ui_scale_val, 0)
+
+        def _on_scale_val(v):
+            self.lbl_ui_scale_val.setText(f"{v}%")
+
+        def _on_scale_released():
+            v = self.slider_ui_scale.value()
+            self.engine.save_preferences({"ui_scale_pct": v})
+            config.set_ui_scale(v)
+
+        def _reset_scale(val):
+            self.slider_ui_scale.setValue(val)
+            self.lbl_ui_scale_val.setText(f"{val}%")
+            self.engine.save_preferences({"ui_scale_pct": val})
+            config.set_ui_scale(val)
+
+        self.slider_ui_scale.valueChanged.connect(_on_scale_val)
+        self.slider_ui_scale.sliderReleased.connect(_on_scale_released)
+
+        self._add_row(form, self.txt("lbl_ui_scaling"), scale_row, 100, _reset_scale, info_key="tt_ui_scaling")
+
+        # 2. Always on top
         self.chk_ontop = ToggleSwitch()
         self.chk_ontop.setChecked(bool(prefs.get('always_on_top', False)), animated=False)
         w_ontop = QWidget()
@@ -1310,20 +1533,70 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop.addWidget(self._get_info_icon("tt_always_on_top"))
         l_ontop.addSpacing(config.S(8))
         l_ontop.addWidget(self.chk_ontop)
-        
-        self._add_row(form_ontop, self.txt("lbl_always_on_top"), w_ontop,
-                 False, lambda v: self.chk_ontop.setChecked(v, animated=True))
-        l_ontop_box.addLayout(form_ontop)
-        l_ontop_box.addSpacing(14)
-        
-        self._advanced_widgets.append(w_ontop_box)
-        l_transcript.addWidget(w_ontop_box)
+        self._add_row(form, self.txt("lbl_always_on_top"), w_ontop, False, lambda v: self.chk_ontop.setChecked(v, animated=True))
 
-        form_transcript = QFormLayout()
-        form_transcript.setSpacing(14)
-        form_transcript.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        # 3. Transcript font family, size, line height
+        self.combo_font = SearchableDropdown(_get_system_font_families)
+        self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
 
-        # Display Mode (moved from General)
+        self.spin_fsize = CustomNumberInput(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])), 8, 48)
+        self.spin_lheight = CustomNumberInput(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])), 0, 40)
+
+        self._add_row(form, self.txt("lbl_transcript_font"), self.combo_font, self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
+        self._add_row(form, self.txt("lbl_font_size_pt"), self.spin_fsize, self.DEFAULTS['editor_font_size'], self.spin_fsize.setValue)
+        self._add_row(form, self.txt("lbl_line_spacing_px"), self.spin_lheight, self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue, is_advanced=True)
+
+        l_app.addLayout(form)
+
+        # Font preview
+        from PySide6.QtWidgets import QTextEdit
+        self.lbl_preview = QTextEdit()
+        self.lbl_preview.setReadOnly(True)
+        self.lbl_preview.setFocusPolicy(Qt.NoFocus)
+        self.lbl_preview.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lbl_preview.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lbl_preview.setFrameShape(QFrame.NoFrame)
+        self.lbl_preview.document().setDocumentMargin(0)
+        self.lbl_preview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.lbl_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        def _update_preview_height(_=None):
+            try:
+                lh = self.spin_lheight.value()
+                new_h = int(self.lbl_preview.document().size().height()) - lh + 24
+                new_h = max(30, new_h)
+                if self.lbl_preview.height() != new_h:
+                    self.lbl_preview.setFixedHeight(new_h)
+            except Exception:
+                pass
+
+        self.lbl_preview.document().documentLayout().documentSizeChanged.connect(_update_preview_height)
+        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
+        l_app.addSpacing(10)
+        l_app.addWidget(self.lbl_preview)
+
+        self.combo_font.valueChanged.connect(self._update_preview)
+        self.spin_fsize.valueChanged.connect(self._update_preview)
+        self.spin_lheight.valueChanged.connect(self._update_preview)
+        self._update_preview()
+        l_app.addStretch(1)
+
+        return page_app
+
+    def _build_page_editor(self, prefs):
+        # PAGE 2 — EDITOR & CANVAS
+        self._current_building_page_idx = 2
+        page_ed = QWidget()
+        page_ed.setStyleSheet("background: transparent;")
+        l_ed = QVBoxLayout(page_ed)
+        l_ed.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        l_ed.setSpacing(config.S(14))
+
+        form = QFormLayout()
+        form.setSpacing(config.S(14))
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Display Mode
         view_items = [self.txt("opt_continuous_flow"), self.txt("opt_segmented_blocks")]
         self.combo_view = CustomDropdown(
             view_items,
@@ -1338,186 +1611,112 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 "segmented" if _is_segmented_text(v) else ("continuous" if _is_continuous_text(v) else self.combo_view.property("view_mode_key"))
             )
         )
-        self._add_row(form_transcript, self.txt("lbl_display_mode"), self.combo_view,
-                 self.txt("opt_segmented_blocks"), lambda v: self.combo_view.setValue(self.txt("opt_segmented_blocks")))
+        self._add_row(form, self.txt("lbl_display_mode"), self.combo_view,
+                      self.txt("opt_segmented_blocks"), lambda v: self.combo_view.setValue(self.txt("opt_segmented_blocks")))
 
-        # Mouse selection mode — Left Mouse Button (LMB)
-        mouse_lmb_items = [
-            self.txt("opt_mouse_box"),
-            self.txt("opt_mouse_text"),
-            self.txt("opt_mouse_brush"),
-            self.txt("opt_mouse_none")
-        ]
-        self.combo_mouse_lmb = CustomDropdown(
-            mouse_lmb_items,
-            options_getter=lambda: [
-                self.txt("opt_mouse_box"),
-                self.txt("opt_mouse_text"),
-                self.txt("opt_mouse_brush"),
-                self.txt("opt_mouse_none")
-            ]
-        )
+        # Mouse LMB mode
+        mouse_lmb_items = [self.txt("opt_mouse_box"), self.txt("opt_mouse_text"), self.txt("opt_mouse_brush"), self.txt("opt_mouse_none")]
+        self.combo_mouse_lmb = CustomDropdown(mouse_lmb_items, options_getter=lambda: [self.txt("opt_mouse_box"), self.txt("opt_mouse_text"), self.txt("opt_mouse_brush"), self.txt("opt_mouse_none")])
         curr_lmb = prefs.get('mouse_lmb_mode', 'text')
         self.combo_mouse_lmb.setProperty("mouse_mode_key", curr_lmb)
-        lmb_text_map = {
-            'text': self.txt("opt_mouse_text"),
-            'box': self.txt("opt_mouse_box"),
-            'brush': self.txt("opt_mouse_brush"),
-            'none': self.txt("opt_mouse_none")
-        }
+        lmb_text_map = {'text': self.txt("opt_mouse_text"), 'box': self.txt("opt_mouse_box"), 'brush': self.txt("opt_mouse_brush"), 'none': self.txt("opt_mouse_none")}
         self.combo_mouse_lmb.setText(lmb_text_map.get(curr_lmb, self.txt("opt_mouse_text")))
-        self.combo_mouse_lmb.valueChanged.connect(
-            lambda v: self.combo_mouse_lmb.setProperty(
-                "mouse_mode_key",
-                _get_mouse_mode_from_text(v, self.combo_mouse_lmb.property("mouse_mode_key") or "text")
-            )
-        )
-        self._add_row(form_transcript, self.txt("lbl_mouse_lmb_mode"), self.combo_mouse_lmb,
-                 self.txt("opt_mouse_text"), lambda v: self.combo_mouse_lmb.setValue(self.txt("opt_mouse_text")), info_key="tt_mouse_lmb_mode")
+        self.combo_mouse_lmb.valueChanged.connect(lambda v: self.combo_mouse_lmb.setProperty("mouse_mode_key", _get_mouse_mode_from_text(v, self.combo_mouse_lmb.property("mouse_mode_key") or "text")))
+        self._add_row(form, self.txt("lbl_mouse_lmb_mode"), self.combo_mouse_lmb, self.txt("opt_mouse_text"), lambda v: self.combo_mouse_lmb.setValue(self.txt("opt_mouse_text")), info_key="tt_mouse_lmb_mode")
 
-        # Mouse selection mode — Right Mouse Button (RMB)
-        mouse_rmb_items = [
-            self.txt("opt_mouse_box"),
-            self.txt("opt_mouse_text"),
-            self.txt("opt_mouse_brush"),
-            self.txt("opt_mouse_none")
-        ]
-        self.combo_mouse_rmb = CustomDropdown(
-            mouse_rmb_items,
-            options_getter=lambda: [
-                self.txt("opt_mouse_box"),
-                self.txt("opt_mouse_text"),
-                self.txt("opt_mouse_brush"),
-                self.txt("opt_mouse_none")
-            ]
-        )
+        # Mouse RMB mode [Advanced]
+        mouse_rmb_items = [self.txt("opt_mouse_box"), self.txt("opt_mouse_text"), self.txt("opt_mouse_brush"), self.txt("opt_mouse_none")]
+        self.combo_mouse_rmb = CustomDropdown(mouse_rmb_items, options_getter=lambda: [self.txt("opt_mouse_box"), self.txt("opt_mouse_text"), self.txt("opt_mouse_brush"), self.txt("opt_mouse_none")])
         curr_rmb = prefs.get('mouse_rmb_mode', 'box')
         self.combo_mouse_rmb.setProperty("mouse_mode_key", curr_rmb)
-        rmb_text_map = {
-            'box': self.txt("opt_mouse_box"),
-            'text': self.txt("opt_mouse_text"),
-            'brush': self.txt("opt_mouse_brush"),
-            'none': self.txt("opt_mouse_none")
-        }
+        rmb_text_map = {'box': self.txt("opt_mouse_box"), 'text': self.txt("opt_mouse_text"), 'brush': self.txt("opt_mouse_brush"), 'none': self.txt("opt_mouse_none")}
         self.combo_mouse_rmb.setText(rmb_text_map.get(curr_rmb, self.txt("opt_mouse_box")))
-        self.combo_mouse_rmb.valueChanged.connect(
-            lambda v: self.combo_mouse_rmb.setProperty(
-                "mouse_mode_key",
-                _get_mouse_mode_from_text(v, self.combo_mouse_rmb.property("mouse_mode_key") or "box")
-            )
-        )
-        self._add_row(form_transcript, self.txt("lbl_mouse_rmb_mode"), self.combo_mouse_rmb,
-                 self.txt("opt_mouse_box"), lambda v: self.combo_mouse_rmb.setValue(self.txt("opt_mouse_box")), info_key="tt_mouse_rmb_mode")
+        self.combo_mouse_rmb.valueChanged.connect(lambda v: self.combo_mouse_rmb.setProperty("mouse_mode_key", _get_mouse_mode_from_text(v, self.combo_mouse_rmb.property("mouse_mode_key") or "box")))
+        self._add_row(form, self.txt("lbl_mouse_rmb_mode"), self.combo_mouse_rmb, self.txt("opt_mouse_box"), lambda v: self.combo_mouse_rmb.setValue(self.txt("opt_mouse_box")), info_key="tt_mouse_rmb_mode", is_advanced=True)
 
-        self._chunk_widgets = []
-        def _add_chunk_row(form, label_text, widget, default_val, setter_func, info_key):
-            container = QWidget()
-            row = QHBoxLayout(container)
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(config.S(4))
-            row.setAlignment(Qt.AlignVCenter)
-            row.addStretch()
-            widget.setFixedWidth(config.S(240))
-            row.addWidget(widget)
-            
-            btn_rev = ReloadButton(size=30)
-            btn_rev.setToolTip(self.txt("tt_revert_to_default"))
-            def create_reset_handler(s_func, d_val):
-                return lambda checked=False: s_func(d_val)
-            btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
-            row.addWidget(btn_rev)
-            
-            lbl_container = QWidget()
-            lbl_container.setMinimumWidth(config.S(160))
-            lbl_layout = QHBoxLayout(lbl_container)
-            lbl_layout.setContentsMargins(0, 0, 0, 0)
-            lbl_layout.setSpacing(6)
-            lbl = QLabel(label_text)
-            lbl_layout.addWidget(lbl)
-            lbl_layout.addWidget(self._get_info_icon(info_key))
-            lbl_layout.addStretch()
-            
-            form.addRow(lbl_container, container)
-            self.revert_funcs.append(lambda d=default_val, s=setter_func: s(d))
-            return lbl_container, container
-
+        # Chunk parameters [Advanced]
         self.spin_chunk_max = CustomNumberInput(int(prefs.get('chunk_max_words', 15)), 5, 200)
-        lbl_max, cnt_max = _add_chunk_row(form_transcript, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 15, self.spin_chunk_max.setValue, "tt_chunk_max_words")
-        self._chunk_widgets.extend([lbl_max, cnt_max])
-        self._advanced_widgets.extend([lbl_max, cnt_max])
+        self._add_row(form, self.txt("lbl_chunk_max_words"), self.spin_chunk_max, 15, self.spin_chunk_max.setValue, info_key="tt_chunk_max_words", is_advanced=True)
 
         self.spin_chunk_look = CustomNumberInput(int(prefs.get('chunk_lookahead', 3)), 0, 20)
-        lbl_look, cnt_look = _add_chunk_row(form_transcript, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, "tt_chunk_lookahead")
-        self._chunk_widgets.extend([lbl_look, cnt_look])
-        self._advanced_widgets.extend([lbl_look, cnt_look])
+        self._add_row(form, self.txt("lbl_chunk_lookahead"), self.spin_chunk_look, 3, self.spin_chunk_look.setValue, info_key="tt_chunk_lookahead", is_advanced=True)
 
         self.spin_chunk_min = CustomNumberInput(int(prefs.get('chunk_min_chars', 7)), 1, 50)
-        lbl_min, cnt_min = _add_chunk_row(form_transcript, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, "tt_chunk_min_chars")
-        self._chunk_widgets.extend([lbl_min, cnt_min])
-        self._advanced_widgets.extend([lbl_min, cnt_min])
+        self._add_row(form, self.txt("lbl_chunk_min_chars"), self.spin_chunk_min, 7, self.spin_chunk_min.setValue, info_key="tt_chunk_min_chars", is_advanced=True)
 
-        def _update_chunk_state(idx):
-            is_seg = (idx == 1)
-            for w in self._chunk_widgets:
-                w.setVisible(is_seg and not self._is_basic_mode)
-        
-        self.combo_view.valueChanged.connect(lambda v: _update_chunk_state(1 if _is_segmented_text(v) else 0))
-        _update_chunk_state(1 if is_seg else 0)
+        # Timestamp precise [Advanced]
+        self.tgl_timestamp_precise = ToggleSwitch()
+        self.tgl_timestamp_precise.setChecked(bool(prefs.get("timestamp_precise", config.DEFAULT_SETTINGS["timestamp_precise"])), animated=False)
+        self.tgl_timestamp_precise.toggled.connect(lambda checked: self.engine.save_preferences({"timestamp_precise": checked}))
+        w_ts_precise = QWidget()
+        l_ts_precise = QHBoxLayout(w_ts_precise)
+        l_ts_precise.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l_ts_precise.addStretch()
+        l_ts_precise.addWidget(self._get_info_icon("tt_timestamp_precise"))
+        l_ts_precise.addSpacing(config.S(8))
+        l_ts_precise.addWidget(self.tgl_timestamp_precise)
+        self._add_row(form, self.txt("lbl_timestamp_precise"), w_ts_precise, False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=True), is_advanced=True)
 
-        # Font family, size, line height
-        self.combo_font = SearchableDropdown(_get_system_font_families)
-        self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
+        l_ed.addLayout(form)
+        l_ed.addStretch(1)
+        return page_ed
 
-        self.spin_fsize = CustomNumberInput(int(prefs.get('editor_font_size', self.DEFAULTS['editor_font_size'])), 8, 48)
-        self.spin_lheight = CustomNumberInput(int(prefs.get('editor_line_height', self.DEFAULTS['editor_line_height'])), 0, 40)
+    def _build_page_davinci(self, prefs):
+        # PAGE 3 — DAVINCI RESOLVE
+        self._current_building_page_idx = 3
+        page_dav = QWidget()
+        page_dav.setStyleSheet("background: transparent;")
+        l_dav = QVBoxLayout(page_dav)
+        l_dav.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        l_dav.setSpacing(config.S(14))
 
-        self._add_row(form_transcript, self.txt("lbl_transcript_font"), self.combo_font,
-                 self.DEFAULTS['editor_font_family'], self.combo_font.setValue)
-        self._add_row(form_transcript, self.txt("lbl_font_size_pt"),    self.spin_fsize,
-                 self.DEFAULTS['editor_font_size'],   self.spin_fsize.setValue)
-        self._add_row(form_transcript, self.txt("lbl_line_spacing_px"), self.spin_lheight,
-                 self.DEFAULTS['editor_line_height'], self.spin_lheight.setValue)
-        l_transcript.addLayout(form_transcript)
+        form = QFormLayout()
+        form.setSpacing(config.S(14))
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        # Font preview
-        from PySide6.QtWidgets import QTextEdit
-        self.lbl_preview = QTextEdit()
-        self.lbl_preview.setReadOnly(True)
-        self.lbl_preview.setFocusPolicy(Qt.NoFocus)
-        self.lbl_preview.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.lbl_preview.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.lbl_preview.setFrameShape(QFrame.NoFrame)
-        self.lbl_preview.document().setDocumentMargin(0)
-        self.lbl_preview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.lbl_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        
-        def _update_preview_height(_=None):
-            try:
-                lh = self.spin_lheight.value()
-                # Document size includes lh added to the bottom of the last line.
-                # We subtract lh to get the actual visual height, then add 24px padding.
-                new_h = int(self.lbl_preview.document().size().height()) - lh + 24
-                # Ensure height doesn't become too small due to calculation artifacts
-                new_h = max(30, new_h)
-                if self.lbl_preview.height() != new_h:
-                    self.lbl_preview.setFixedHeight(new_h)
-            except: pass
-            
-        self.lbl_preview.document().documentLayout().documentSizeChanged.connect(_update_preview_height)
-        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
-        l_transcript.addSpacing(10)
-        l_transcript.addWidget(self.lbl_preview)
+        # Check DaVinci Free 21.1+
+        is_free_21_1 = False
+        if hasattr(self.engine, 'resolve_handler') and self.engine.resolve_handler and hasattr(self.engine.resolve_handler, 'is_free_21_1_or_newer'):
+            is_free_21_1 = self.engine.resolve_handler.is_free_21_1_or_newer()
+        elif hasattr(self.engine, 'os_doc') and self.engine.os_doc:
+            ed_info = self.engine.os_doc.get_resolve_edition_info()
+            is_free_21_1 = (ed_info.get("edition") == "Free" and ed_info.get("is_21_1_or_newer", False))
 
+        # 1. Timeline assembly method selector: [ XML ] / [ DRT ]
+        force_xml_init = bool(prefs.get("force_xml_assembly", config.DEFAULT_SETTINGS["force_xml_assembly"]))
+        if is_free_21_1:
+            force_xml_init = True
 
-        # Removed sep_chunk
-        # ── Sync DaVinci timeline on chapter switch ─ BOTTOM of Transcript tab
-        # (below font preview and chunking settings, applies to both basic/advanced)
-        l_transcript.addSpacing(14)
+        self.w_assembly_selector = AssemblyModeSelector(
+            current_mode="xml" if force_xml_init else "drt",
+            is_drt_disabled=is_free_21_1,
+            parent=page_dav
+        )
+        if is_free_21_1:
+            self.w_assembly_selector.set_drt_disabled(True, self.txt("tt_assembly_drt_disabled_free"))
+        else:
+            self.w_assembly_selector.btn_xml.setToolTip(self.txt("tt_assembly_xml"))
+            self.w_assembly_selector.btn_drt.setToolTip(self.txt("tt_assembly_drt"))
 
-        form_bottom = QFormLayout()
-        form_bottom.setSpacing(14)
-        form_bottom.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tgl_force_xml_assembly = self.w_assembly_selector
 
+        w_assembly_wrap = QWidget()
+        l_assembly_wrap = QHBoxLayout(w_assembly_wrap)
+        l_assembly_wrap.setContentsMargins(0, 0, 0, 0)
+        l_assembly_wrap.addStretch()
+        l_assembly_wrap.addWidget(self._get_info_icon("tt_assembly_method"))
+        l_assembly_wrap.addSpacing(config.S(8))
+        l_assembly_wrap.addWidget(self.w_assembly_selector)
+
+        self._add_row(
+            form,
+            self.txt("lbl_assembly_method"),
+            w_assembly_wrap,
+            True,
+            lambda v: self.w_assembly_selector.setChecked(v)
+        )
+
+        # 2. Sync playback with DaVinci
         self.chk_sync_davinci = ToggleSwitch()
         self.chk_sync_davinci.setChecked(bool(prefs.get('sync_davinci_chapter', True)), animated=False)
         w_sync = QWidget()
@@ -1527,21 +1726,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_sync.addWidget(self._get_info_icon("tt_sync_davinci_chapter"))
         l_sync.addSpacing(config.S(8))
         l_sync.addWidget(self.chk_sync_davinci)
-        self._add_row(form_bottom, self.txt("chk_sync_davinci"), w_sync,
-                 True, lambda v: self.chk_sync_davinci.setChecked(v, animated=True))
+        self._add_row(form, self.txt("chk_sync_davinci"), w_sync, True, lambda v: self.chk_sync_davinci.setChecked(v, animated=True))
 
-        # Track order toggle — directly below sync davinci
-        import config as _cfg_bot
-        _bot_prefs = self.engine.load_preferences() or {}
+        # 3. XML Preserve track order [Advanced]
         self.tgl_xml_preserve_track_order = ToggleSwitch()
-        self.tgl_xml_preserve_track_order.setChecked(
-            bool(_bot_prefs.get("xml_preserve_track_order",
-                                _cfg_bot.DEFAULT_SETTINGS["xml_preserve_track_order"])),
-            animated=False
-        )
-        self.tgl_xml_preserve_track_order.toggled.connect(
-            lambda checked: self.engine.save_preferences({"xml_preserve_track_order": checked})
-        )
+        self.tgl_xml_preserve_track_order.setChecked(bool(prefs.get("xml_preserve_track_order", config.DEFAULT_SETTINGS["xml_preserve_track_order"])), animated=False)
+        self.tgl_xml_preserve_track_order.toggled.connect(lambda checked: self.engine.save_preferences({"xml_preserve_track_order": checked}))
         w_xml_track = QWidget()
         l_xml_track = QHBoxLayout(w_xml_track)
         l_xml_track.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
@@ -1549,42 +1739,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_xml_track.addWidget(self._get_info_icon("tt_xml_preserve_track_order"))
         l_xml_track.addSpacing(config.S(8))
         l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
-        self._add_row(form_bottom, self.txt("lbl_xml_preserve_track_order"), w_xml_track,
-                 False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=True))
+        self.lbl_xml_track, self._row_xml_track = self._add_row(form, self.txt("lbl_xml_preserve_track_order"), w_xml_track, False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=True), is_advanced=True)
 
-        # Force XML assembly toggle — directly below preserve track order
-        self.tgl_force_xml_assembly = ToggleSwitch()
-        self.tgl_force_xml_assembly.setChecked(
-            bool(_bot_prefs.get("force_xml_assembly",
-                                _cfg_bot.DEFAULT_SETTINGS["force_xml_assembly"])),
-            animated=False
-        )
-        self.tgl_force_xml_assembly.toggled.connect(
-            lambda checked: (
-                self.engine.save_preferences({"force_xml_assembly": checked}),
-                _update_linking_availability(checked, animated=True)
-            )
-        )
-        w_force_xml = QWidget()
-        l_force_xml = QHBoxLayout(w_force_xml)
-        l_force_xml.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
-        l_force_xml.addStretch()
-        l_force_xml.addWidget(self._get_info_icon("tt_force_xml_assembly"))
-        l_force_xml.addSpacing(config.S(8))
-        l_force_xml.addWidget(self.tgl_force_xml_assembly)
-        self._add_row(form_bottom, self.txt("lbl_force_xml_assembly"), w_force_xml,
-                 False, lambda v: self.tgl_force_xml_assembly.setChecked(v, animated=True))
-
-        # Link matching A/V toggle
+        # 4. Link matching A/V clips [Advanced]
         self.tgl_link_av_clips = ToggleSwitch()
-        self.tgl_link_av_clips.setChecked(
-            bool(_bot_prefs.get("link_av_clips",
-                                _cfg_bot.DEFAULT_SETTINGS["link_av_clips"])),
-            animated=False
-        )
-        self.tgl_link_av_clips.toggled.connect(
-            lambda checked: self.engine.save_preferences({"link_av_clips": checked})
-        )
+        self.tgl_link_av_clips.setChecked(bool(prefs.get("link_av_clips", config.DEFAULT_SETTINGS["link_av_clips"])), animated=False)
+        self.tgl_link_av_clips.toggled.connect(lambda checked: self.engine.save_preferences({"link_av_clips": checked}))
         w_link_av = QWidget()
         l_link_av = QHBoxLayout(w_link_av)
         l_link_av.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
@@ -1592,19 +1752,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
         l_link_av.addSpacing(config.S(8))
         l_link_av.addWidget(self.tgl_link_av_clips)
-        lbl_link_av, row_link_av = self._add_row(form_bottom, self.txt("lbl_link_av_clips"), w_link_av,
-                 False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True))
+        self.lbl_link_av, self._row_link_av = self._add_row(form, self.txt("lbl_link_av_clips"), w_link_av, False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True), is_advanced=True)
 
-        # Link all cut tracks toggle
+        # 5. Link all cut tracks [Advanced]
         self.tgl_link_all_cut_tracks = ToggleSwitch()
-        self.tgl_link_all_cut_tracks.setChecked(
-            bool(_bot_prefs.get("link_all_cut_tracks",
-                                _cfg_bot.DEFAULT_SETTINGS["link_all_cut_tracks"])),
-            animated=False
-        )
-        self.tgl_link_all_cut_tracks.toggled.connect(
-            lambda checked: self.engine.save_preferences({"link_all_cut_tracks": checked})
-        )
+        self.tgl_link_all_cut_tracks.setChecked(bool(prefs.get("link_all_cut_tracks", config.DEFAULT_SETTINGS["link_all_cut_tracks"])), animated=False)
+        self.tgl_link_all_cut_tracks.toggled.connect(lambda checked: self.engine.save_preferences({"link_all_cut_tracks": checked}))
         w_link_all = QWidget()
         l_link_all = QHBoxLayout(w_link_all)
         l_link_all.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
@@ -1612,66 +1765,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
         l_link_all.addSpacing(config.S(8))
         l_link_all.addWidget(self.tgl_link_all_cut_tracks)
-        lbl_link_all, row_link_all = self._add_row(form_bottom, self.txt("lbl_link_all_cut_tracks"), w_link_all,
-                 False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True))
+        self.lbl_link_all, self._row_link_all = self._add_row(form, self.txt("lbl_link_all_cut_tracks"), w_link_all, False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True), is_advanced=True)
 
-        self._linking_anim = QVariantAnimation(self)
-        self._linking_anim.setDuration(200)
-        self._linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
-
-        def _apply_linking_opacity(val: float):
-            lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
-            lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
-            self.tgl_link_av_clips.set_opacity(val)
-            self.tgl_link_all_cut_tracks.set_opacity(val)
-
-        self._linking_anim.valueChanged.connect(_apply_linking_opacity)
-        self._curr_linking_op = 1.0
-
-        def _update_linking_availability(force_xml_on: bool, animated: bool = False):
-            parent_main = self.parent() or getattr(self, 'main_window', None)
-            is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
-            enabled = is_file or force_xml_on
-            self.tgl_link_av_clips.set_blocked(not enabled)
-            self.tgl_link_all_cut_tracks.set_blocked(not enabled)
-            row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
-            row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, not enabled)
-            tt = "" if enabled else self.txt("tt_linking_requires_xml")
-            w_link_av.setToolTip(tt)
-            w_link_all.setToolTip(tt)
-            lbl_link_av.setToolTip(tt)
-            lbl_link_all.setToolTip(tt)
-
-            target_op = 1.0 if enabled else 0.35
-            if animated:
-                self._linking_anim.stop()
-                self._linking_anim.setStartValue(self._curr_linking_op)
-                self._linking_anim.setEndValue(target_op)
-                self._curr_linking_op = target_op
-                self._linking_anim.start()
-            else:
-                self._linking_anim.stop()
-                self._curr_linking_op = target_op
-                _apply_linking_opacity(target_op)
-
-            if parent_main and hasattr(parent_main, 'w_track_options'):
-                try:
-                    parent_main.w_track_options.load_config()
-                except Exception:
-                    pass
-
-        _update_linking_availability(self.tgl_force_xml_assembly.isChecked(), animated=False)
-
-        # DaVinci timeline video proxy render toggle
+        # 6. DaVinci timeline video proxy render [Advanced]
         self.tgl_resolve_render_timeline_proxy = ToggleSwitch()
-        self.tgl_resolve_render_timeline_proxy.setChecked(
-            bool(_bot_prefs.get("resolve_render_timeline_proxy",
-                                _cfg_bot.DEFAULT_SETTINGS["resolve_render_timeline_proxy"])),
-            animated=False
-        )
-        self.tgl_resolve_render_timeline_proxy.toggled.connect(
-            lambda checked: self.engine.save_preferences({"resolve_render_timeline_proxy": checked})
-        )
+        self.tgl_resolve_render_timeline_proxy.setChecked(bool(prefs.get("resolve_render_timeline_proxy", config.DEFAULT_SETTINGS["resolve_render_timeline_proxy"])), animated=False)
+        self.tgl_resolve_render_timeline_proxy.toggled.connect(lambda checked: self.engine.save_preferences({"resolve_render_timeline_proxy": checked}))
         w_res_proxy = QWidget()
         l_res_proxy = QHBoxLayout(w_res_proxy)
         l_res_proxy.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
@@ -1679,65 +1778,93 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_res_proxy.addWidget(self._get_info_icon("tt_resolve_render_timeline_proxy"))
         l_res_proxy.addSpacing(config.S(8))
         l_res_proxy.addWidget(self.tgl_resolve_render_timeline_proxy)
-        self._add_row(form_bottom, self.txt("lbl_resolve_render_timeline_proxy"), w_res_proxy,
-                 False, lambda v: self.tgl_resolve_render_timeline_proxy.setChecked(v, animated=True))
+        self._add_row(form, self.txt("lbl_resolve_render_timeline_proxy"), w_res_proxy, True, lambda v: self.tgl_resolve_render_timeline_proxy.setChecked(v, animated=True), is_advanced=True)
 
-        # ── Precise timestamps toggle — bottom of Transcript tab (basic + advanced) ──
-        self.tgl_timestamp_precise = ToggleSwitch()
-        self.tgl_timestamp_precise.setChecked(
-            bool(prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise'])),
-            animated=False
+        # Linking availability animation (patterned after silence panel)
+        self._linking_anim = QVariantAnimation(self)
+        self._linking_anim.setDuration(250)
+        self._linking_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._linking_anim.valueChanged.connect(self._apply_linking_opacity)
+        self._curr_linking_op = 1.0
+
+        self.w_assembly_selector.mode_changed.connect(
+            lambda mode: (
+                self.engine.save_preferences({"force_xml_assembly": (mode == "xml"), "timeline_assembly_method": mode}),
+                self._update_linking_availability(mode == "xml", animated=True)
+            )
         )
-        def _on_timestamp_precise_changed(checked):
-            self.engine.save_preferences({"timestamp_precise": checked})
-            main_w = self.parent()
-            if main_w and hasattr(main_w, 'text_canvas'):
-                main_w.text_canvas.invalidate_font_cache()
-                main_w.text_canvas._calculate_layout()
-                main_w.text_canvas.update()
 
-        self.tgl_timestamp_precise.toggled.connect(_on_timestamp_precise_changed)
-        w_ts_precise = QWidget()
-        l_ts_precise = QHBoxLayout(w_ts_precise)
-        l_ts_precise.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
-        l_ts_precise.addStretch()
-        l_ts_precise.addWidget(self._get_info_icon("tt_timestamp_precise"))
-        l_ts_precise.addSpacing(config.S(8))
-        l_ts_precise.addWidget(self.tgl_timestamp_precise)
-        self._add_row(form_bottom, self.txt("lbl_timestamp_precise"), w_ts_precise,
-                 False, lambda v: self.tgl_timestamp_precise.setChecked(v, animated=True))
+        self._update_linking_availability(self.w_assembly_selector.isChecked(), animated=False)
 
-        # ── Show panel headers toggle (basic + advanced) ──
-        self.tgl_show_panel_headers = ToggleSwitch()
-        self.tgl_show_panel_headers.setChecked(
-            bool(prefs.get('show_panel_headers', True)),
-            animated=False
-        )
-        w_panel_hdr = QWidget()
-        l_panel_hdr = QHBoxLayout(w_panel_hdr)
-        l_panel_hdr.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
-        l_panel_hdr.addStretch()
-        l_panel_hdr.addWidget(self._get_info_icon("tt_show_panel_headers"))
-        l_panel_hdr.addSpacing(config.S(8))
-        l_panel_hdr.addWidget(self.tgl_show_panel_headers)
-        self._add_row(form_bottom, self.txt("lbl_show_panel_headers"), w_panel_hdr,
-                 True, lambda v: self.tgl_show_panel_headers.setChecked(v, animated=True))
+        l_dav.addLayout(form)
+        l_dav.addStretch(1)
+        return page_dav
 
-        l_transcript.addLayout(form_bottom)
-        l_transcript.addSpacing(14)
+    def _apply_linking_opacity(self, val: float):
+        if hasattr(self, '_row_link_av') and self._row_link_av:
+            self._row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, val < 0.9)
+        if hasattr(self, '_row_link_all') and self._row_link_all:
+            self._row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, val < 0.9)
+        if hasattr(self, '_row_xml_track') and self._row_xml_track:
+            self._row_xml_track.setAttribute(Qt.WA_TransparentForMouseEvents, val < 0.9)
 
-        self.combo_font.valueChanged.connect(self._update_preview)
-        self.spin_fsize.valueChanged.connect(self._update_preview)
-        self.spin_lheight.valueChanged.connect(self._update_preview)
-        self._update_preview()
-        l_transcript.addStretch()
+        if hasattr(self, 'lbl_link_av') and self.lbl_link_av:
+            self.lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+        if hasattr(self, 'lbl_link_all') and self.lbl_link_all:
+            self.lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+        if hasattr(self, 'lbl_xml_track') and self.lbl_xml_track:
+            self.lbl_xml_track.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
 
-        # ─────────────────────────────────────────────────────────────────
+        if hasattr(self, 'tgl_link_av_clips') and hasattr(self.tgl_link_av_clips, 'set_opacity'):
+            self.tgl_link_av_clips.set_opacity(val)
+        if hasattr(self, 'tgl_link_all_cut_tracks') and hasattr(self.tgl_link_all_cut_tracks, 'set_opacity'):
+            self.tgl_link_all_cut_tracks.set_opacity(val)
+        if hasattr(self, 'tgl_xml_preserve_track_order') and hasattr(self.tgl_xml_preserve_track_order, 'set_opacity'):
+            self.tgl_xml_preserve_track_order.set_opacity(val)
 
-        return page_transcript
+    def _update_linking_availability(self, is_xml_on: bool, animated: bool = False):
+        parent_main = self.parent() or getattr(self, 'main_window', None)
+        is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
+        enabled = is_file or is_xml_on
+
+        if hasattr(self, 'tgl_link_av_clips'):
+            self.tgl_link_av_clips.set_blocked(not enabled)
+        if hasattr(self, 'tgl_link_all_cut_tracks'):
+            self.tgl_link_all_cut_tracks.set_blocked(not enabled)
+        if hasattr(self, 'tgl_xml_preserve_track_order'):
+            self.tgl_xml_preserve_track_order.set_blocked(not enabled)
+
+        tt = "" if enabled else self.txt("tt_linking_requires_xml")
+        if hasattr(self, '_row_link_av') and self._row_link_av:
+            self._row_link_av.setToolTip(tt)
+        if hasattr(self, '_row_link_all') and self._row_link_all:
+            self._row_link_all.setToolTip(tt)
+        if hasattr(self, '_row_xml_track') and self._row_xml_track:
+            self._row_xml_track.setToolTip(tt)
+
+        target_op = 1.0 if enabled else 0.35
+        if animated:
+            if hasattr(self, '_linking_anim'):
+                self._linking_anim.stop()
+                self._linking_anim.setStartValue(self._curr_linking_op)
+                self._linking_anim.setEndValue(target_op)
+                self._curr_linking_op = target_op
+                self._linking_anim.start()
+        else:
+            if hasattr(self, '_linking_anim'):
+                self._linking_anim.stop()
+            self._curr_linking_op = target_op
+            self._apply_linking_opacity(target_op)
+
+        if parent_main and hasattr(parent_main, 'w_track_options'):
+            try:
+                parent_main.w_track_options.load_config()
+            except Exception:
+                pass
 
     def _build_page_ai_engine(self, prefs):
-        # PAGE 5 — AI ENGINE
+        # PAGE 6 — AI ENGINE
+        self._current_building_page_idx = 6
         # ─────────────────────────────────────────────────────────────────
         page_ai = QWidget()
         page_ai.setStyleSheet("background: transparent;")
@@ -1920,219 +2047,52 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         return page_ai
 
-    def _build_page_telemetry(self, prefs):
-        # PAGE 8 — TELEMETRY
-        # ─────────────────────────────────────────────────────────────────
-        page_telem = QWidget()
-        page_telem.setStyleSheet("background: transparent;")
-        l_telem = QVBoxLayout(page_telem)
-        l_telem.setContentsMargins(24, 20, 24, 16)
-        l_telem.setSpacing(12)
-
-        # Info label
-        lbl_telem_info = QLabel(self.txt("msg_telemetry_settings"))
-        lbl_telem_info.setWordWrap(True)
-        lbl_telem_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
-        l_telem.addWidget(lbl_telem_info)
-
-        form_telem = QFormLayout()
-        form_telem.setSpacing(14)
-        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        user_data = getattr(self.engine.os_doc, 'user_data', {})
-
-        self.chk_telemetry_opt_in = ToggleSwitch()
-        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
-        w1 = QWidget()
-        l1 = QHBoxLayout(w1)
-        l1.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
-        l1.addStretch()
-        l1.addWidget(self.chk_telemetry_opt_in)
-        self._add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1,
-                 False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=True))
-
-        self.chk_telemetry_geo = ToggleSwitch()
-        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
-        w2 = QWidget()
-        l2 = QHBoxLayout(w2)
-        l2.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
-        l2.addStretch()
-        l2.addWidget(self.chk_telemetry_geo)
-        self._add_row(form_telem, self.txt("chk_telemetry_geo"), w2,
-                 True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=True))
-
-        l_telem.addLayout(form_telem)
-        l_telem.addStretch()
-
-        # ── Project links — pinned at the bottom ───────────────────────────
-        from PySide6.QtGui import QDesktopServices
-        from PySide6.QtCore import QUrl
-
-        _BTN_LINK_SS = """
-            QPushButton {
-                color: #1a7a45;
-                background: transparent;
-                border: none;
-                text-align: left;
-                padding: 0px;
-                font-size: 9pt;
-                text-decoration: underline;
-            }
-            QPushButton:hover {
-                color: #2dcc70;
-            }
-        """
-
-        # Buy Me a Coffee link — description above, URL as button
-        lbl_coffee_desc = QLabel(self.txt("link_coffee_desc"))
-        lbl_coffee_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
-        l_telem.addWidget(lbl_coffee_desc)
-
-        btn_coffee = QPushButton("buymeacoffee.com/badwords")
-        btn_coffee.setFlat(True)
-        btn_coffee.setCursor(Qt.PointingHandCursor)
-        btn_coffee.setStyleSheet(_BTN_LINK_SS)
-        btn_coffee.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/badwords")))
-        l_telem.addWidget(btn_coffee)
-
-        l_telem.addSpacing(10)
-
-        # GitHub repo link — description above, URL as button
-        lbl_repo_desc = QLabel(self.txt("link_repo_desc"))
-        lbl_repo_desc.setStyleSheet("color: #888888; font-size: 10pt; background: transparent;")
-        l_telem.addWidget(lbl_repo_desc)
-
-        btn_repo = QPushButton("github.com/veritus-git/BadWords")
-        btn_repo.setFlat(True)
-        btn_repo.setCursor(Qt.PointingHandCursor)
-        btn_repo.setStyleSheet(_BTN_LINK_SS)
-        btn_repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/veritus-git/BadWords")))
-        l_telem.addWidget(btn_repo)
-
-        l_telem.addSpacing(12)
-
-
-
-        # ─────────────────────────────────────────────────────────────────
-
-        return page_telem
-
     def _build_page_support(self, prefs):
-        # PAGE 9 — SUPPORT
-        # ─────────────────────────────────────────────────────────────────
+        # PAGE 7 — SUPPORT & BUG REPORT
+        self._current_building_page_idx = 7
         page_support = QWidget()
         page_support.setStyleSheet("background: transparent;")
         l_support = QVBoxLayout(page_support)
-        l_support.setContentsMargins(24, 20, 24, 16)
-        l_support.setSpacing(12)
+        l_support.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        l_support.setSpacing(config.S(14))
 
         lbl_support_info = QLabel(self.txt("msg_support_info"))
         lbl_support_info.setWordWrap(True)
-        lbl_support_info.setStyleSheet("color: #AAAAAA; font-size: 9pt;")
+        lbl_support_info.setStyleSheet("color: #AAAAAA; font-size: 9.5pt;")
         l_support.addWidget(lbl_support_info)
 
-        # Logs location
-        import os
-        log_file_path = getattr(self.engine.os_doc, 'log_file', '')
-        if not log_file_path:
-            log_file_path = os.path.join(getattr(self.engine.os_doc, 'install_dir', ''), 'badwords_debug.log')
-        log_dir = os.path.dirname(log_file_path) if log_file_path else ''
-            
-        w_logs = QWidget()
-        l_logs = QHBoxLayout(w_logs)
-        l_logs.setContentsMargins(0, 0, 0, 0)
-        l_logs.setSpacing(8)
-        lbl_logs = QLabel(self.txt("lbl_logs_path"))
-        lbl_logs.setStyleSheet("color: #CCCCCC; font-size: 10pt;")
-        
-        w_path = QWidget()
-        w_path.setStyleSheet("background-color: #1e1e1e; border: 1px solid #333; border-radius: 3px;")
-        l_path = QHBoxLayout(w_path)
-        l_path.setContentsMargins(4, 0, 0, 0)
-        l_path.setSpacing(2)
-        
-        val_logs = QLineEdit(str(log_file_path))
-        val_logs.setReadOnly(True)
-        val_logs.setStyleSheet("color: #AAAAAA; font-family: monospace; background: transparent; border: none;")
-        val_logs.setCursorPosition(0)
-        
-        btn_copy_logs = QPushButton("")
-        import PySide6.QtGui as qg
-        from gui.utils import get_layout_icon_path
-        btn_copy_logs.setIcon(qg.QIcon(get_layout_icon_path("copy.png")))
-        btn_copy_logs.setToolTip(self.txt("btn_copy_path"))
-        btn_copy_logs.setStyleSheet("background: transparent; border: none; padding: 4px;")
-        btn_copy_logs.setCursor(Qt.PointingHandCursor)
-        def _copy_path():
-            import PySide6.QtGui as qg
-            qg.QGuiApplication.clipboard().setText(str(log_file_path))
-        btn_copy_logs.clicked.connect(_copy_path)
-        
-        l_path.addWidget(val_logs, stretch=1)
-        l_path.addWidget(btn_copy_logs)
-        
-        btn_logs = QPushButton(self.txt("btn_open_logs_dir"))
-        btn_logs.setObjectName("btn_ghost_sm")
-        btn_logs.setFixedHeight(config.S(28))
-        btn_logs.setCursor(Qt.PointingHandCursor)
-        def _open_logs():
-            import os
-            try:
-                if self.engine.os_doc.is_win:
-                    os.startfile(log_dir)
-                elif getattr(self.engine.os_doc, 'is_mac', False):
-                    import subprocess
-                    subprocess.Popen(['open', log_dir])
-                else:
-                    import subprocess
-                    subprocess.Popen(['xdg-open', log_dir])
-            except: pass
-        btn_logs.clicked.connect(_open_logs)
-        l_logs.addWidget(lbl_logs)
-        l_logs.addWidget(w_path, stretch=1)
-        l_logs.addWidget(btn_logs)
-        l_support.addWidget(w_logs)
-
-        # Separator
-        sep_supp = QFrame()
-        sep_supp.setFrameShape(QFrame.HLine)
-        sep_supp.setStyleSheet("background-color: #222; max-height: 1px; border: none;")
-        l_support.addWidget(sep_supp)
-        l_support.addSpacing(6)
-
         l_inputs = QVBoxLayout()
-        l_inputs.setSpacing(14)
-        
+        l_inputs.setSpacing(config.S(14))
+
         self.input_support_email = QLineEdit()
         self.input_support_email.setPlaceholderText(self.txt("ph_support_email"))
         l_inputs.addWidget(self.input_support_email)
-        
+
         self.input_support_title = QLineEdit()
         self.input_support_title.setPlaceholderText(self.txt("lbl_support_title"))
         l_inputs.addWidget(self.input_support_title)
 
-        from PySide6.QtWidgets import QTextEdit
-        self.input_support_body = QTextEdit()
+        self.input_support_body = WrappingPlaceholderTextEdit()
         self.input_support_body.setPlaceholderText(self.txt("lbl_support_body"))
-        self.input_support_body.setMinimumHeight(150)
+        self.input_support_body.setMinimumHeight(config.S(140))
         l_inputs.addWidget(self.input_support_body)
 
-        # Attachments list (above the bottom buttons)
+        # Attachments container
         self.w_attachments_list = QWidget()
         self.l_attachments_list = QVBoxLayout(self.w_attachments_list)
         self.l_attachments_list.setContentsMargins(0, 0, 0, 0)
         self.l_attachments_list.setSpacing(4)
         l_inputs.addWidget(self.w_attachments_list)
-
         self.w_attachments_list.hide()
 
         self.support_attachments = []
+
         def _render_attachments():
             while self.l_attachments_list.count():
                 child = self.l_attachments_list.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
-                    
+
             if not self.support_attachments:
                 self.w_attachments_list.hide()
             else:
@@ -2142,32 +2102,44 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     w_row.setStyleSheet("background: #1a1a1a; border: 1px solid #333; border-radius: 3px;")
                     l_row = QHBoxLayout(w_row)
                     l_row.setContentsMargins(6, 2, 2, 2)
-                    
+
                     lbl_name = QLabel(p)
                     lbl_name.setStyleSheet("color: #aaa; border: none; font-size: 9pt;")
-                    
+
                     btn_del = CloseIconButton(size=20)
+
                     def _del(checked=False, path=p):
                         if path in self.support_attachments:
                             self.support_attachments.remove(path)
                             _render_attachments()
+
                     btn_del.clicked.connect(_del)
-                    
+
                     l_row.addWidget(lbl_name, stretch=1)
                     l_row.addWidget(btn_del)
                     self.l_attachments_list.addWidget(w_row)
 
         l_support.addLayout(l_inputs)
 
-        # Bottom row: Attach | Stretch | Send
+        # Options row: attach logs checkbox
+        self.chk_attach_logs = TrackSquareCheckbox(
+            self.txt("lbl_include_logs_with_report"),
+            is_checked=True,
+            font_size=config.FS(9.5),
+            parent=page_support
+        )
+        self.chk_attach_logs.setToolTip(self.txt("tt_include_logs_with_report"))
+        l_support.addWidget(self.chk_attach_logs)
+
+        # Bottom row: Attach screenshots | Stretch | Send Report
         w_send = QWidget()
         l_send = QHBoxLayout(w_send)
         l_send.setContentsMargins(0, 0, 0, 0)
-        
+
         btn_attach = QPushButton(self.txt("btn_attach_screenshots"))
         btn_attach.setCursor(Qt.PointingHandCursor)
-        btn_attach.setStyleSheet(f"background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;")
-        
+        btn_attach.setStyleSheet("background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;")
+
         def _attach():
             from PySide6.QtWidgets import QFileDialog
             files, _ = QFileDialog.getOpenFileNames(self, self.txt("btn_attach_screenshots"), "", "Images (*.png *.jpg *.jpeg)")
@@ -2177,20 +2149,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 import PySide6.QtCore as qc
                 qc.QTimer.singleShot(1500, lambda: btn_attach.setText(self.txt("btn_attach_screenshots")))
                 qc.QTimer.singleShot(1500, lambda: btn_attach.setStyleSheet("background-color: #2b2b2b; color: #ddd; padding: 6px 14px; border: 1px solid #444; border-radius: 4px;"))
-                
+
                 for f in files:
                     if f not in self.support_attachments:
                         self.support_attachments.append(f)
                 _render_attachments()
+
         btn_attach.clicked.connect(_attach)
         l_send.addWidget(btn_attach)
-        
         l_send.addStretch()
-        
+
         btn_send = QPushButton(self.txt("btn_send_report"))
         btn_send.setCursor(Qt.PointingHandCursor)
         btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
-        
+
         def _send_report():
             title = self.input_support_title.text().strip()
             body = self.input_support_body.toPlainText().strip()
@@ -2202,9 +2174,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             btn_send.setText("...")
 
             attachments = list(self.support_attachments)
+            include_logs = self.chk_attach_logs.isChecked()
 
             class SendSignals(QObject):
                 finished = Signal(bool, str)
+
             signals = SendSignals(self)
 
             def _worker():
@@ -2215,16 +2189,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     fd, tmp_logs = tempfile.mkstemp(suffix='.zip', prefix='bw_logs_')
                     os.close(fd)
                     with zipfile.ZipFile(tmp_logs, 'w', zipfile.ZIP_DEFLATED) as zf:
-                        l_file = getattr(self.engine.os_doc, 'log_file', '')
-                        if l_file and os.path.exists(l_file):
-                            zf.write(l_file, os.path.basename(l_file))
-                        inst_dir = getattr(self.engine.os_doc, 'install_dir', '')
-                        u_file = getattr(self.engine.os_doc, 'user_file', os.path.join(inst_dir, 'user.json'))
-                        s_file = getattr(self.engine.os_doc, 'settings_file', os.path.join(inst_dir, 'settings.json'))
-                        p_file = getattr(self.engine.os_doc, 'legacy_pref_file', os.path.join(inst_dir, 'pref.json'))
-                        for cfile, p in [('user.json', u_file), ('settings.json', s_file), ('pref.json', p_file)]:
-                            if p and os.path.exists(p):
-                                zf.write(p, cfile)
+                        if include_logs:
+                            l_file = getattr(self.engine.os_doc, 'log_file', '')
+                            if l_file and os.path.exists(l_file):
+                                zf.write(l_file, os.path.basename(l_file))
+                            inst_dir = getattr(self.engine.os_doc, 'install_dir', '')
+                            u_file = getattr(self.engine.os_doc, 'user_file', os.path.join(inst_dir, 'user.json'))
+                            s_file = getattr(self.engine.os_doc, 'settings_file', os.path.join(inst_dir, 'settings.json'))
+                            p_file = getattr(self.engine.os_doc, 'legacy_pref_file', os.path.join(inst_dir, 'pref.json'))
+                            for cfile, p in [('user.json', u_file), ('settings.json', s_file), ('pref.json', p_file)]:
+                                if p and os.path.exists(p):
+                                    zf.write(p, cfile)
                         from PySide6.QtGui import QImage
                         for i, p in enumerate(attachments):
                             if os.path.exists(p):
@@ -2250,31 +2225,33 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         log_info("Webhook URL not defined in config.py, skipping actual HTTP POST.")
                         return True, ""
 
+                    content_msg = f"@here\n>>> **Version:** {getattr(config, 'VERSION', 'Unknown')}\n**Email:** {email if email else 'None'}\n**Title:** {title}\n\n**Body:**\n{body}"
                     data_payload = {
                         'title': title,
                         'body': body,
                         'email': email,
                         'version': getattr(config, 'VERSION', 'Unknown'),
-                        'content': f"@here\n>>> **Version:** {getattr(config, 'VERSION', 'Unknown')}\n**Email:** {email if email else 'None'}\n**Title:** {title}\n\n**Body:**\n{body}"
+                        'content': content_msg
                     }
 
                     boundary = f"----BadWordsBoundary{uuid.uuid4().hex}"
                     body_bytes = bytearray()
+                    crlf = chr(13).encode() + chr(10).encode()
                     for k, v in data_payload.items():
-                        body_bytes.extend(f"--{boundary}\r\n".encode("utf-8"))
-                        body_bytes.extend(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode("utf-8"))
+                        body_bytes.extend(b"--" + boundary.encode() + crlf)
+                        body_bytes.extend(b'Content-Disposition: form-data; name="' + k.encode() + b'"' + crlf + crlf)
                         body_bytes.extend(str(v).encode("utf-8"))
-                        body_bytes.extend(b"\r\n")
+                        body_bytes.extend(crlf)
 
                     if os.path.exists(tmp_logs):
-                        body_bytes.extend(f"--{boundary}\r\n".encode("utf-8"))
-                        body_bytes.extend(b'Content-Disposition: form-data; name="file"; filename="logs.zip"\r\n')
-                        body_bytes.extend(b"Content-Type: application/zip\r\n\r\n")
+                        body_bytes.extend(b"--" + boundary.encode() + crlf)
+                        body_bytes.extend(b'Content-Disposition: form-data; name="file"; filename="logs.zip"' + crlf)
+                        body_bytes.extend(b'Content-Type: application/zip' + crlf + crlf)
                         with open(tmp_logs, "rb") as f_zip:
                             body_bytes.extend(f_zip.read())
-                        body_bytes.extend(b"\r\n")
+                        body_bytes.extend(crlf)
 
-                    body_bytes.extend(f"--{boundary}--\r\n".encode("utf-8"))
+                    body_bytes.extend(b"--" + boundary.encode() + b"--" + crlf)
 
                     headers = {
                         "Content-Type": f"multipart/form-data; boundary={boundary}",
@@ -2307,8 +2284,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     return False, str(e)
                 finally:
                     if tmp_logs and os.path.exists(tmp_logs):
-                        try: os.remove(tmp_logs)
-                        except Exception: pass
+                        try:
+                            os.remove(tmp_logs)
+                        except Exception:
+                            pass
 
             def _thread_target():
                 success, msg = _worker()
@@ -2318,11 +2297,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 btn_send.setEnabled(True)
                 if success:
                     btn_send.setText(self.txt("msg_success"))
-                    btn_send.setStyleSheet(f"background-color: #1a7a3e; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
+                    btn_send.setStyleSheet("background-color: #1a7a3e; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
                     import PySide6.QtCore as qc
                     qc.QTimer.singleShot(2000, lambda: btn_send.setText(self.txt("btn_send_report")))
                     qc.QTimer.singleShot(2000, lambda: btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;"))
-                    
+
                     self.input_support_title.clear()
                     self.input_support_body.clear()
                     self.input_support_email.clear()
@@ -2341,14 +2320,142 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_support.addWidget(w_send)
 
         l_support.addStretch()
-
-        # FIX: Capture the exact UI state right after full construction
-        # This prevents false-positive unsaved changes warnings when disk JSON
-        # lacks keys that are correctly populated with defaults by the UI.
-        self._initial_state = self._get_current_state_dict()
-
-
         return page_support
+
+    def _build_page_about(self, prefs):
+        # PAGE 8 — ABOUT & PRIVACY
+        self._current_building_page_idx = 8
+        page_about = QWidget()
+        page_about.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page_about)
+        layout.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        layout.setSpacing(config.S(14))
+
+        # Title & version info card
+        info_card = QFrame()
+        info_card.setStyleSheet("QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }")
+        card_lay = QVBoxLayout(info_card)
+        card_lay.setContentsMargins(config.S(16), config.S(14), config.S(16), config.S(14))
+        card_lay.setSpacing(config.S(8))
+
+        lbl_app = QLabel(f"BadWords v{config.VERSION}")
+        lbl_app.setStyleSheet(f"font-size: {config.FS(13)}pt; font-weight: bold; color: #fff;")
+        lbl_desc = QLabel("Local AI-powered video editing and silence removal for DaVinci Resolve.")
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setStyleSheet(f"font-size: {config.FS(9.5)}pt; color: #888;")
+        card_lay.addWidget(lbl_app)
+        card_lay.addWidget(lbl_desc)
+        layout.addWidget(info_card)
+
+        # Quick Links
+        links_row = QHBoxLayout()
+        links_row.setSpacing(config.S(8))
+
+        btn_coffee = QPushButton("☕ Buy Me a Coffee")
+        btn_coffee.setCursor(Qt.PointingHandCursor)
+        btn_coffee.setStyleSheet("QPushButton { background: #1e1e1e; border: 1px solid #333; border-radius: 4px; padding: 6px 12px; color: #ccc; } QPushButton:hover { background: #282828; color: #fff; border-color: #555; }")
+        btn_coffee.clicked.connect(lambda: self._open_external_url("https://buymeacoffee.com/badwords"))
+
+        btn_repo = QPushButton("GitHub Repository")
+        btn_repo.setCursor(Qt.PointingHandCursor)
+        btn_repo.setStyleSheet("QPushButton { background: #1e1e1e; border: 1px solid #333; border-radius: 4px; padding: 6px 12px; color: #ccc; } QPushButton:hover { background: #282828; color: #fff; border-color: #555; }")
+        btn_repo.clicked.connect(lambda: self._open_external_url("https://github.com/veritus-git/BadWords"))
+
+        links_row.addWidget(btn_coffee)
+        links_row.addWidget(btn_repo)
+        links_row.addStretch()
+        layout.addLayout(links_row)
+
+        # Diagnostics & Logs section [Advanced]
+        diag_box = QWidget()
+        diag_lay = QVBoxLayout(diag_box)
+        diag_lay.setContentsMargins(0, 0, 0, 0)
+        diag_lay.setSpacing(config.S(8))
+
+        lbl_diag_hdr = QLabel(self.txt("header_diagnostics"))
+        lbl_diag_hdr.setStyleSheet(f"font-weight: bold; font-size: {config.FS(10.5)}pt; color: #eee;")
+        diag_lay.addWidget(lbl_diag_hdr)
+
+        import os
+        log_file_path = getattr(self.engine.os_doc, 'log_file', '')
+        if not log_file_path:
+            log_file_path = os.path.join(getattr(self.engine.os_doc, 'install_dir', ''), 'badwords_debug.log')
+        log_dir = os.path.dirname(log_file_path) if log_file_path else ''
+
+        val_logs = QLineEdit(str(log_file_path))
+        val_logs.setReadOnly(True)
+        val_logs.setStyleSheet("color: #AAAAAA; font-family: monospace; background: #1a1a1a; border: 1px solid #333; border-radius: 3px; padding: 4px 8px;")
+
+        btn_copy_logs = QPushButton(self.txt("btn_copy_path"))
+        btn_copy_logs.setObjectName("btn_ghost_sm")
+        btn_copy_logs.setCursor(Qt.PointingHandCursor)
+        from PySide6.QtGui import QGuiApplication
+        btn_copy_logs.clicked.connect(lambda: QGuiApplication.clipboard().setText(str(log_file_path)))
+
+        btn_open_logs = QPushButton(self.txt("btn_open_logs_dir"))
+        btn_open_logs.setObjectName("btn_ghost_sm")
+        btn_open_logs.setCursor(Qt.PointingHandCursor)
+
+        def _open_logs():
+            try:
+                if getattr(self.engine.os_doc, 'is_win', False):
+                    os.startfile(log_dir)
+                elif getattr(self.engine.os_doc, 'is_mac', False):
+                    import subprocess
+                    subprocess.Popen(['open', log_dir])
+                else:
+                    import subprocess
+                    subprocess.Popen(['xdg-open', log_dir])
+            except Exception:
+                pass
+
+        btn_open_logs.clicked.connect(_open_logs)
+
+        diag_btns = QHBoxLayout()
+        diag_btns.setSpacing(config.S(6))
+        diag_btns.addWidget(val_logs, 1)
+        diag_btns.addWidget(btn_copy_logs)
+        diag_btns.addWidget(btn_open_logs)
+        diag_lay.addLayout(diag_btns)
+
+        self._advanced_widgets.append(diag_box)
+        if self._is_basic_mode:
+            diag_box.setVisible(False)
+        layout.addWidget(diag_box)
+
+        # Privacy & Telemetry section
+        lbl_telem_hdr = QLabel(self.txt("header_privacy_telemetry"))
+        lbl_telem_hdr.setStyleSheet(f"font-weight: bold; font-size: {config.FS(10.5)}pt; color: #eee;")
+        layout.addSpacing(config.S(6))
+        layout.addWidget(lbl_telem_hdr)
+
+        form_telem = QFormLayout()
+        form_telem.setSpacing(config.S(14))
+        form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        user_data = getattr(self.engine.os_doc, 'user_data', {})
+
+        self.chk_telemetry_opt_in = ToggleSwitch()
+        self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
+        w1 = QWidget()
+        l1 = QHBoxLayout(w1)
+        l1.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l1.addStretch()
+        l1.addWidget(self.chk_telemetry_opt_in)
+        self._add_row(form_telem, self.txt("chk_telemetry_opt_in"), w1, False, lambda v: self.chk_telemetry_opt_in.setChecked(v, animated=True))
+
+        self.chk_telemetry_geo = ToggleSwitch()
+        self.chk_telemetry_geo.setChecked(bool(user_data.get('telemetry_geo', True)), animated=False)
+        w2 = QWidget()
+        l2 = QHBoxLayout(w2)
+        l2.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l2.addStretch()
+        l2.addWidget(self.chk_telemetry_geo)
+        self._add_row(form_telem, self.txt("chk_telemetry_geo"), w2, True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=True))
+
+        layout.addLayout(form_telem)
+        layout.addStretch(1)
+        return page_about
 
     def _restore_all_defaults(self):
         msg_box = CustomMsgBox(
@@ -2917,6 +3024,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', config.UI_FONT_NAME), 'currentText'),
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
+            'ui_scale_pct':       self._safe_get('slider_ui_scale', old_prefs.get('ui_scale_pct', 100), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
             'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
             'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
@@ -3022,6 +3130,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._safe_set('combo_font', _g('editor_font_family', config.UI_FONT_NAME), 'setText')
         self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
         self._safe_set('spin_lheight', _g('editor_line_height', 7), 'setValue')
+        self._safe_set('slider_ui_scale', _g('ui_scale_pct', 100), 'setValue')
         
         self.current_custom_markers = _g('custom_markers', [])
         try:

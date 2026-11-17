@@ -114,6 +114,9 @@ DEFAULT_SETTINGS = {
     # True (default): always assemble using the FCP7 XML pipeline (supports track linking & 100% online clips)
     # False: use native .drt (retains Fusion comps & Resolve generators, but cannot link cut tracks; Studio only)
     "force_xml_assembly": True,
+    "timeline_assembly_method": "xml",
+    # ── UI Scaling (75% to 150%) ─────────────────────────────────────────────
+    "ui_scale_pct": 100,
     # True (default): automatically link matching video & audio originating from the same media clip
     "link_av_clips": True,
     # False (default): link all video and audio tracks together across each cut slice

@@ -156,11 +156,19 @@ start_native_executable() {
     chmod +x "$bin" 2>/dev/null || true
     xattr -d com.apple.quarantine "$bin" 2>/dev/null || true
 
-    if "$bin" "$@"; then
+    # Launch GUI in background detached from this terminal session
+    nohup "$bin" "$@" >/dev/null 2>&1 &
+    local pid=$!
+
+    # Quick sanity check: verify process did not crash on startup
+    sleep 0.4
+    if kill -0 "$pid" 2>/dev/null; then
+        disown "$pid" 2>/dev/null || true
         exit 0
-    else
-        invoke_python_fallback "$@"
     fi
+
+    # Process terminated or blocked by Gatekeeper; fall back to rich terminal installer
+    invoke_python_fallback "$@"
 }
 
 # 0. Force fallback check (for testing or explicitly requested CLI mode)

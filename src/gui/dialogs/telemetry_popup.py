@@ -61,7 +61,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
             QDialog, TelemetryPopup {{ background-color: transparent; }}
             QFrame#MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: 1px solid #000000;
+                border: none;
                 border-radius: {config.S(8)}px;
             }}
             QLabel#lbl_title {{
@@ -119,10 +119,25 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
 
         # --- Outer wrapper ---
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(1, 1, 1, 1)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
-        self.inner_frame = QFrame(self)
+        class SolidFrame(QFrame):
+            def paintEvent(self, e):
+                from PySide6.QtGui import QPainter, QColor
+                p = QPainter(self)
+                p.fillRect(self.rect(), QColor(config.BG_COLOR))
+                super().paintEvent(e)
+
+        self.inner_frame = SolidFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 0)
+        self.inner_frame.setGraphicsEffect(shadow)
 
         main_layout.addWidget(self.inner_frame)
 
@@ -228,10 +243,10 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         HORIZ_MARGINS = config.S(15 + 15 + 20 + 20)
         self._lbl_msg.setMaximumWidth(DIALOG_W - HORIZ_MARGINS)
 
-        self.setFixedWidth(DIALOG_W)
+        self.setFixedWidth(DIALOG_W + config.S(30))
         self.adjustSize()
         h = max(self.sizeHint().height(), self.height())
-        _center_on_screen(self, DIALOG_W, h)
+        _center_on_screen(self, DIALOG_W + config.S(30), h)
 
     def _show_lang_picker(self):
         """Open a floating language picker anchored below the lang button."""

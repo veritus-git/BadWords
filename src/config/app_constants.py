@@ -17,7 +17,7 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-_DEFAULT_VERSION = "4.0.1"
+_DEFAULT_VERSION = "4.0.2"
 
 def _detect_version() -> str:
     # 1. Stamped version file (created by installer, updater, or CI build)
@@ -43,14 +43,27 @@ def _detect_version() -> str:
         cur_dir = os.path.dirname(os.path.abspath(__file__))
         git_dir = os.path.join(cur_dir, "..", "..", ".git")
         if os.path.exists(git_dir):
-            out = subprocess.check_output(
+            repo_root = os.path.dirname(git_dir)
+            import re
+            for cmd in (
                 ["git", "describe", "--tags", "--exact-match"],
-                cwd=os.path.dirname(git_dir),
-                stderr=subprocess.DEVNULL,
-                timeout=1.5
-            ).decode("utf-8").strip()
-            if out:
-                return out.lstrip("vV")
+                ["git", "describe", "--tags", "--abbrev=0"],
+                ["git", "describe", "--tags"],
+            ):
+                try:
+                    raw = subprocess.check_output(
+                        cmd,
+                        cwd=repo_root,
+                        stderr=subprocess.DEVNULL,
+                        timeout=1.5
+                    )
+                    out = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+                    out = out.strip()
+                    if out:
+                        cleaned = re.sub(r'-\d+-g[0-9a-fA-F]+$', '', out)
+                        return cleaned.lstrip("vV")
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -69,12 +82,72 @@ IS_WIN = platform.system() == "Windows"
 
 # Global Scale Factor (defaults: 0.85 on macOS, 1.0 on standard 1080p/4K Windows/Linux)
 SCALE_FACTOR = 0.85 if IS_MAC else 1.0
+UI_SCALE_PERCENT = 100
 
-def init_ui_scaling(app=None):
+def set_ui_scale(pct: int | float):
     """
-    Initializes or dynamically adjusts SCALE_FACTOR based on the primary screen's available height.
+    Sets global UI scaling factor from a percentage (75% to 150%) and recomputes layout tokens.
+    """
+    global SCALE_FACTOR, UI_SCALE_PERCENT, CFG_WINDOW_W_BASE, CFG_WINDOW_H_BASE, SETTINGS_WINDOW_W, SETTINGS_WINDOW_H
+    global SIDEBAR_WIDTH, BTN_HEIGHT, INPUT_HEIGHT
+    global FONT_XS, FONT_SM, FONT_BASE, FONT_MD, FONT_LG, FONT_XL, FONT_TITLE, FONT_DISPLAY
+
+    clamped_pct = max(75, min(150, int(round(float(pct)))))
+    UI_SCALE_PERCENT = clamped_pct
+    factor = float(clamped_pct) / 100.0
+    if IS_MAC:
+        factor *= 0.85
+    SCALE_FACTOR = factor
+
+    CFG_WINDOW_W_BASE = S(400)
+    CFG_WINDOW_H_BASE = S(740)
+    SETTINGS_WINDOW_W = S(750)
+    SETTINGS_WINDOW_H = S(580)
+    SIDEBAR_WIDTH = S(50)
+    BTN_HEIGHT = S(32)
+    INPUT_HEIGHT = S(30)
+
+    FONT_XS = FS(8)
+    FONT_SM = FS(9)
+    FONT_BASE = FS(10)
+    FONT_MD = FS(11)
+    FONT_LG = FS(13)
+    FONT_XL = FS(15)
+    FONT_TITLE = FS(18)
+    FONT_DISPLAY = FS(36)
+
+    import sys
+    for mod_name in ('config', 'src.config', 'config.app_constants', 'src.config.app_constants', __name__):
+        mod = sys.modules.get(mod_name)
+        if mod:
+            setattr(mod, 'SCALE_FACTOR', SCALE_FACTOR)
+            setattr(mod, 'UI_SCALE_PERCENT', UI_SCALE_PERCENT)
+            setattr(mod, 'CFG_WINDOW_W_BASE', CFG_WINDOW_W_BASE)
+            setattr(mod, 'CFG_WINDOW_H_BASE', CFG_WINDOW_H_BASE)
+            setattr(mod, 'SETTINGS_WINDOW_W', SETTINGS_WINDOW_W)
+            setattr(mod, 'SETTINGS_WINDOW_H', SETTINGS_WINDOW_H)
+            setattr(mod, 'SIDEBAR_WIDTH', SIDEBAR_WIDTH)
+            setattr(mod, 'BTN_HEIGHT', BTN_HEIGHT)
+            setattr(mod, 'INPUT_HEIGHT', INPUT_HEIGHT)
+            setattr(mod, 'FONT_XS', FONT_XS)
+            setattr(mod, 'FONT_SM', FONT_SM)
+            setattr(mod, 'FONT_BASE', FONT_BASE)
+            setattr(mod, 'FONT_MD', FONT_MD)
+            setattr(mod, 'FONT_LG', FONT_LG)
+            setattr(mod, 'FONT_XL', FONT_XL)
+            setattr(mod, 'FONT_TITLE', FONT_TITLE)
+            setattr(mod, 'FONT_DISPLAY', FONT_DISPLAY)
+
+def init_ui_scaling(app=None, scale_pct=None):
+    """
+    Initializes or dynamically adjusts SCALE_FACTOR based on the primary screen's available height
+    or a user-defined scaling percentage (75% to 150%).
     Ensures optimal proportions on macOS Retina, laptops (768p/900p), 1080p, and 4K displays.
     """
+    if scale_pct is not None:
+        set_ui_scale(scale_pct)
+        return
+
     global SCALE_FACTOR, CFG_WINDOW_W_BASE, CFG_WINDOW_H_BASE, SETTINGS_WINDOW_W, SETTINGS_WINDOW_H
     global SIDEBAR_WIDTH, BTN_HEIGHT, INPUT_HEIGHT
     global FONT_XS, FONT_SM, FONT_BASE, FONT_MD, FONT_LG, FONT_XL, FONT_TITLE, FONT_DISPLAY
@@ -123,6 +196,7 @@ def init_ui_scaling(app=None):
         mod = sys.modules.get(mod_name)
         if mod:
             setattr(mod, 'SCALE_FACTOR', SCALE_FACTOR)
+            setattr(mod, 'UI_SCALE_PERCENT', UI_SCALE_PERCENT)
             setattr(mod, 'CFG_WINDOW_W_BASE', CFG_WINDOW_W_BASE)
             setattr(mod, 'CFG_WINDOW_H_BASE', CFG_WINDOW_H_BASE)
             setattr(mod, 'SETTINGS_WINDOW_W', SETTINGS_WINDOW_W)
