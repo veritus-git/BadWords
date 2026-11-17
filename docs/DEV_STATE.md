@@ -57,17 +57,19 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - Implemented automatic migration of legacy config, saves, and temp from `src/` to `.dev_workspace/`.
 3. **Automated Test Suite**:
    - Created test framework in `tests/` and test runner `run_tests.py`.
-   - 23 comprehensive unit & visual regression tests implemented and passing.
+   - 27 comprehensive unit & visual regression tests implemented and passing.
 4. **School PC Crash & Environment Fixes (2026-11-17)**:
-   - **DaVinci Resolve Script Sync (`_host_ver` undefined)**: Fixed f-string interpolation bug in `generate_davinci_wrapper_content()` in `src/osdoc.py`.
+   - **DaVinci Resolve Script Sync (`_host_ver` undefined & ctypes.CDLL cleanup)**: Fixed f-string interpolation bug in `generate_davinci_wrapper_content()` in `src/osdoc.py`, and removed remaining unsafe `ctypes.CDLL` preload loop in generated wrapper.
    - **Feedback / Bug Report Form Crash (`No module named 'requests'`)**: Replaced `requests.post()` in `src/gui/dialogs/settings_dialog.py` with zero-dependency standard library `urllib.request` multipart/form-data POST.
-   - **Update Check Failure (`No module named 'certifi'`)**: Added graceful fallback to `ssl.create_default_context()` across `src/main.py`, `src/gui/dialogs/update_dialog.py`, `src/gui/dialogs/settings_dialog.py`, and `src/gui/main_window.py`.
-   - **Kepler / Legacy GPU Incompatibility (CUDA 12 vs Driver < 525)**: Updated `has_nvidia_support()` in `src/osdoc.py` to check driver major version and reject driver < 525; implemented `is_cuda_functional()` probe in `TranscriptionMixin`; added regex protection in `_get_optimal_compute_type()` against unexpected `nvidia-smi` error strings.
-   - **Windows CPU Return Code 3221225477 (0xC0000005) Access Violation**:
+   - **Update Check Failure (`No module named 'certifi'`)**: Added graceful fallback to `ssl.create_default_context()` across `src/main.py`, `src/gui/dialogs/update_dialog.py`, `src/gui/dialogs/settings_dialog.py`, `src/engine/preferences.py`, and `src/gui/main_window.py`.
+   - **Kepler / Legacy GPU Incompatibility (CUDA 12 vs Driver < 525)**: Updated `has_nvidia_support()` in `src/osdoc.py` to check driver major version and reject driver < 525 (with fallback Windows search paths); implemented `is_cuda_functional()` probe in `TranscriptionMixin`; added regex protection in `_get_optimal_compute_type()` against unexpected `nvidia-smi` error strings.
+   - **Windows CPU Return Code 3221225477 (0xC0000005) Access Violation & Unicode Paths**:
      * Suppressed CUDA preinit injection when `fw_device == 'cpu'`.
-     * Removed unsafe blind `ctypes.CDLL` preload loop in `setup_cuda_dll_paths()`.
+     * Removed unsafe blind `ctypes.CDLL` preload loop in `setup_cuda_dll_paths()` and DaVinci wrapper.
+     * Fixed critical `NameError: name 'log_warn' is not defined` in `src/engine/transcription.py` that broke fallback paths.
      * Enabled `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`, `KMP_DUPLICATE_LIB_OK=TRUE`, and `OMP_WAIT_POLICY=PASSIVE` across all child subprocesses.
-     * Implemented 8.3 short path conversion via `get_short_path()` for non-ASCII usernames (e.g. `C:\Users\Uczeń\...`).
+     * Implemented 8.3 short path conversion via `get_short_path()` with parent folder fallback for non-existent target files.
+     * Applied safe short paths to `audio_path`, `models_dir`, `libs_dir`, `bin_dir`, `json_output_path`, and `python_exec` in both chunked and single-file runners and model downloader.
      * Added automatic graceful fallback to CPU mode upon runner failure.
 5. **AI Codex & Rules Update**:
    - Updated `.agents/rules/architecture.md` with 3-Zone architecture, empirical verification rule, progressive task tracking, and token budget efficiency.
@@ -77,7 +79,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 23 tests pass.
+1. Run `python3 run_tests.py` to verify all 27 tests pass.
 2. Run `python3 -m compileall src` to ensure bytecode consistency.
 3. Check `tests/artifacts/` for visual progress bar screenshots.
 4. Synchronize modified files to `/mnt/dump/BadWords FILES/` as per rule 7.

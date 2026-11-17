@@ -27,7 +27,7 @@ import difflib  # Essential for on-the-fly fuzzy matching
 
 import config
 import algorithms
-from osdoc import log_info, log_error
+from osdoc import log_info, log_warn, log_error
 
 
 class ModelDownloadError(RuntimeError):
@@ -302,15 +302,17 @@ class TranscriptionMixin:
     def download_whisper_model_interactive(self, model_name, progress_callback=None, status_callback=None, use_mlx=False):
         log_info(f"Starting interactive download for {'MLX' if use_mlx else 'Faster-Whisper'} model: {model_name}")
         if model_name == "large": model_name = "large-v3"
+        safe_models_dir = self.os_doc.get_short_path(self.models_dir)
+        safe_libs_dir = self.os_doc.get_short_path(self.libs_dir)
         if use_mlx:
             mlx_repo = MLX_MODEL_REPOS.get(model_name, MLX_MODEL_REPOS["large-v3"])
             dl_code = (f'from huggingface_hub import snapshot_download\n'
                        f'    print("Downloading {mlx_repo}...")\n'
-                       f'    snapshot_download({mlx_repo!r}, cache_dir={self.models_dir!r})')
+                       f'    snapshot_download({mlx_repo!r}, cache_dir={safe_models_dir!r})')
         else:
             dl_code = (f'from faster_whisper import download_model\n'
                        f'    print("Downloading {model_name}...")\n'
-                       f'    download_model("{model_name}", cache_dir={self.models_dir!r})')
+                       f'    download_model("{model_name}", cache_dir={safe_models_dir!r})')
 
         script_content = f"""# -*- coding: utf-8 -*-
 import sys
@@ -362,20 +364,20 @@ os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"  # Fix for Windows Non-Admin/Non-DevMode
 
 # FORCE CACHE DIR (Inside python script)
-os.environ["HF_HOME"] = {repr(self.models_dir)}
-os.environ["XDG_CACHE_HOME"] = {repr(self.models_dir)}
+os.environ["HF_HOME"] = {repr(safe_models_dir)}
+os.environ["XDG_CACHE_HOME"] = {repr(safe_models_dir)}
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 os.environ["OPENBLAS_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
 os.environ["NUMEXPR_NUM_THREADS"] = "2"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
-libs_dir = {repr(self.libs_dir)}
+libs_dir = {repr(safe_libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
 try:
-    print("DL-START: Target dir " + {repr(self.models_dir)})
+    print("DL-START: Target dir " + {repr(safe_models_dir)})
     {dl_code}
     print("Download Complete.")
 except Exception as e:
@@ -387,10 +389,11 @@ except Exception as e:
             f.write(script_content)
 
         python_exec = self._get_python_executable()
+        safe_python_exec = self.os_doc.get_short_path(python_exec)
         safe_runner_path = self.os_doc.get_short_path(runner_path)
-        cmd = [python_exec, safe_runner_path]
+        cmd = [safe_python_exec, safe_runner_path]
         env = os.environ.copy()
-        env["HF_HOME"] = self.models_dir
+        env["HF_HOME"] = safe_models_dir
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
@@ -646,6 +649,13 @@ elif sys.platform.startswith("linux"):
         json_output_path = os.path.join(output_dir, unique_name + ".json")
         runner_script_path = os.path.join(output_dir, f"fw_runner_{unique_name}.py")
 
+        safe_audio_path = self.os_doc.get_short_path(audio_path)
+        safe_models_dir = self.os_doc.get_short_path(self.models_dir)
+        safe_libs_dir = self.os_doc.get_short_path(self.libs_dir)
+        safe_bin_dir = self.os_doc.get_short_path(self.os_doc.bin_dir)
+        safe_output_dir = self.os_doc.get_short_path(output_dir)
+        safe_json_path = os.path.join(safe_output_dir, unique_name + ".json")
+
         if model == "large": model = "large-v3"
         # macOS never supports CUDA; force CPU on Darwin even if settings contain 'GPU'
         fw_device = "cuda" if "GPU" in device_mode and not self.os_doc.is_mac else "cpu"
@@ -690,7 +700,7 @@ elif sys.platform.startswith("linux"):
         log_info(f"[WhisperThreading] {threading_info['reason']}")
 
         env = os.environ.copy()
-        env["HF_HOME"] = self.models_dir
+        env["HF_HOME"] = safe_models_dir
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
@@ -710,7 +720,7 @@ elif sys.platform.startswith("linux"):
                     env["PATH"] = os.pathsep.join(cuda_bins) + os.pathsep + env.get("PATH", "")
             elif self.os_doc.is_linux:
                 nvidia_libs_paths = []
-                nvidia_base = os.path.join(self.libs_dir, "nvidia")
+                nvidia_base = os.path.join(safe_libs_dir, "nvidia")
                 if os.path.exists(nvidia_base):
                     log_info(f"Scanning for NVIDIA libs in: {nvidia_base}")
                     for root, dirs, files in os.walk(nvidia_base):
@@ -750,20 +760,20 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
-os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")
+os.environ["PATH"] = {repr(safe_bin_dir)} + os.pathsep + os.environ.get("PATH", "")
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-os.environ["HF_HOME"] = {repr(self.models_dir)}
+os.environ["HF_HOME"] = {repr(safe_models_dir)}
 os.environ["OMP_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 os.environ["MKL_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 os.environ["OPENBLAS_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 os.environ["NUMEXPR_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 {f'os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(str(optimal_cpu_threads))}' if self.os_doc.is_mac else ""}
-libs_dir = {repr(self.libs_dir)}
+libs_dir = {repr(safe_libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
@@ -834,10 +844,10 @@ try:
     model = WhisperModel(
         model_size, device=target_device, compute_type=target_compute,
         cpu_threads=cpu_threads_val, num_workers=workers,
-        download_root={repr(self.models_dir)}
+        download_root={repr(safe_models_dir)}
     )
     print("[Chunked] Model loaded. Decoding audio array...")
-    audio_array  = decode_audio({repr(audio_path)}, sampling_rate=16000)
+    audio_array  = decode_audio({repr(safe_audio_path)}, sampling_rate=16000)
     total_chunks = len(ISLANDS)
     print(f"[Chunked] {{total_chunks}} islands to process.")
     print("[Chunked] Initializing transcription threads...", flush=True)
@@ -960,7 +970,7 @@ try:
             output_segments.extend(results_dict[i])
 
     final_data = {{"segments": output_segments, "language": {repr(lang)}}}
-    with open({repr(json_output_path)}, "w", encoding="utf-8") as f:
+    with open({repr(safe_json_path)}, "w", encoding="utf-8") as f:
         json.dump(final_data, f)
     print("Transcription Done.")
 except Exception as e:
@@ -991,7 +1001,7 @@ if sys.platform == 'win32':
         pass
 
 # FIXED v11.2: Force include portable bin in PATH for stable-ts subprocess calls
-os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")
+os.environ["PATH"] = {repr(safe_bin_dir)} + os.pathsep + os.environ.get("PATH", "")
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -999,14 +1009,14 @@ os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-os.environ["HF_HOME"] = {repr(self.models_dir)}
+os.environ["HF_HOME"] = {repr(safe_models_dir)}
 os.environ["OMP_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 os.environ["MKL_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 os.environ["OPENBLAS_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 os.environ["NUMEXPR_NUM_THREADS"] = {repr(str(optimal_cpu_threads))}
 {f'os.environ["VECLIB_MAXIMUM_THREADS"] = {repr(str(optimal_cpu_threads))}' if self.os_doc.is_mac else ""}
 
-libs_dir = {repr(self.libs_dir)}
+libs_dir = {repr(safe_libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
@@ -1031,14 +1041,14 @@ try:
         compute_type=target_compute, 
         cpu_threads=cpu_threads_cnt,
         num_workers=num_workers_cnt,
-        download_root={repr(self.models_dir)}
+        download_root={repr(safe_models_dir)}
     )
 
     print("Model Loaded Successfully. Starting STABLE Transcription...")
     
     # Parameters for strict VERBATIM output (STAGE 9: Unchain for phrasal retakes)
     segments_gen, info = model.transcribe(
-        {repr(audio_path)}, 
+        {repr(safe_audio_path)}, 
         beam_size={repr(prefs.get('ai_beam_size', 1))},
         patience={repr(prefs.get('ai_patience', 1.0))},
         language={repr(lang) if lang != "Auto" else "None"},
@@ -1095,7 +1105,7 @@ try:
         "language": getattr(info, 'language', {repr(lang)})
     }}
     
-    with open({repr(json_output_path)}, "w", encoding="utf-8") as f:
+    with open({repr(safe_json_path)}, "w", encoding="utf-8") as f:
         json.dump(final_data, f)
         
     print("Transcription Done.")
@@ -1110,8 +1120,9 @@ except Exception as e:
             f.write(script_content)
 
         python_exec = self._get_python_executable()
+        safe_python_exec = self.os_doc.get_short_path(python_exec)
         safe_runner_path = self.os_doc.get_short_path(runner_script_path)
-        cmd = [python_exec, "-u", safe_runner_path]
+        cmd = [safe_python_exec, "-u", safe_runner_path]
         env["PYTHONUNBUFFERED"] = "1"
         
         log_info(f"Running Whisper Runner ({'MLX, Apple GPU' if self.use_mlx_for(device_mode) else 'Faster-Whisper'}). Script: {runner_script_path}")
@@ -1190,8 +1201,9 @@ except Exception as e:
                     )
                 return None
                 
-            if os.path.exists(json_output_path):
-                return json_output_path
+            json_target = safe_json_path if os.path.exists(safe_json_path) else json_output_path
+            if os.path.exists(json_target):
+                return json_target
             else:
                 log_error("JSON output missing after execution.")
                 return None
@@ -1213,8 +1225,9 @@ except Exception as e:
                 )
             return None
         finally:
-            if os.path.exists(runner_script_path):
-                try: os.remove(runner_script_path)
-                except Exception as e:
-                    log_error(f"run_whisper: runner script cleanup failed: {e}")
+            for p in (runner_script_path, safe_runner_path):
+                if p and os.path.exists(p):
+                    try: os.remove(p)
+                    except Exception as e:
+                        log_error(f"run_whisper: runner script cleanup failed: {e}")
 

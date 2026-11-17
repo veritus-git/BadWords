@@ -1204,17 +1204,12 @@ else:
                             except Exception: pass
                     _nv_dir = os.path.join(_sp_dir, 'nvidia')
                     if os.path.isdir(_nv_dir):
-                        import ctypes
                         for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
                             _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
                             if os.path.isdir(_bin_p):
                                 try:
                                     os.add_dll_directory(_bin_p)
                                     os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
-                                    for _f in os.listdir(_bin_p):
-                                        if _f.endswith('.dll'):
-                                            try: ctypes.CDLL(os.path.join(_bin_p, _f))
-                                            except Exception: pass
                                 except Exception: pass
 
     # Linux: Preload Qt6 shared libraries if needed
@@ -1454,19 +1449,30 @@ else:
         """
         On Windows, converts a path containing spaces or non-ASCII characters to its 8.3 short path
         via GetShortPathNameW to ensure total compatibility with C runtimes, OpenMP, and subprocesses.
+        If the file itself does not yet exist, converts its parent directory to short path.
         """
         if not path or not self.is_win:
             return path
         try:
+            norm_path = os.path.normpath(path)
             import ctypes
             from ctypes import wintypes
             _GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
             _GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
             _GetShortPathNameW.restype = wintypes.DWORD
             buf = ctypes.create_unicode_buffer(1024)
-            length = _GetShortPathNameW(path, buf, 1024)
+            length = _GetShortPathNameW(norm_path, buf, 1024)
+            if length > 1024:
+                buf = ctypes.create_unicode_buffer(length)
+                length = _GetShortPathNameW(norm_path, buf, length)
             if length > 0 and buf.value:
                 return buf.value
+
+            # If path does not exist on disk, attempt to convert existing parent directory
+            parent = os.path.dirname(norm_path)
+            if parent and parent != norm_path and os.path.exists(parent):
+                short_parent = self.get_short_path(parent)
+                return os.path.join(short_parent, os.path.basename(norm_path))
         except Exception:
             pass
         return path
@@ -1808,9 +1814,18 @@ else:
         """
         # 1. Hardware verification (cross-platform with hidden console on Win)
         has_hardware = False
+        nvsmi = "nvidia-smi"
+        if self.is_win and not shutil.which("nvidia-smi"):
+            for cand in [
+                os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvidia-smi.exe"),
+                r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+            ]:
+                if os.path.isfile(cand):
+                    nvsmi = cand
+                    break
         try:
             res = subprocess.run(
-                ['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'], 
+                [nvsmi, '--query-gpu=driver_version', '--format=csv,noheader'], 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE, 
                 text=True,
@@ -1830,7 +1845,7 @@ else:
         except Exception:
             try:
                 res = subprocess.run(
-                    ['nvidia-smi'], 
+                    [nvsmi], 
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.DEVNULL, 
                     text=True,
@@ -1871,8 +1886,8 @@ else:
     def setup_cuda_dll_paths(self) -> list:
         """
         Discovers all NVIDIA CUDA / cuBLAS / cuDNN / NVRTC DLL directories,
-        registers them with os.add_dll_directory, prepends them to os.environ["PATH"],
-        and preloads critical DLLs via ctypes.CDLL to guarantee CTranslate2 succeeds on Windows.
+        registers them with os.add_dll_directory, and prepends them to os.environ["PATH"]
+        to guarantee CTranslate2 succeeds on Windows without crashing SEH.
         Returns the list of discovered DLL directories.
         """
         if not self.is_win:

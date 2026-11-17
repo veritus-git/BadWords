@@ -147,7 +147,7 @@ class PreferencesMixin:
                     try:
                         import certifi
                         ctx = ssl.create_default_context(cafile=certifi.where())
-                    except ImportError:
+                    except Exception:
                         ctx = ssl.create_default_context()
                     
                     with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
