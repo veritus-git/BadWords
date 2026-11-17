@@ -1166,8 +1166,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # ------------------------------------------------------------------
 
     def _jump_playhead(self, timestamp_s):
+        if getattr(self, 'current_source_type', 'resolve') == 'file':
+            return
         rh = getattr(self.engine, 'resolve_handler', None) if self.engine else None
-        if not rh: return
+        if not rh or not rh.is_connected(): return
         
         tl_name = None
         if getattr(self, '_current_chapter_idx', -1) >= 0 and self._chapters:
@@ -2319,6 +2321,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     if not rh:
                         self.data_ready.emit([], "", {})
                         return
+
+                    if os_doc and hasattr(os_doc, 'get_resolve_installation_info'):
+                        if not os_doc.get_resolve_installation_info().get("installed", False):
+                            self.data_ready.emit([], "", {})
+                            return
 
                     if not rh.is_connected():
                         if os_doc and hasattr(os_doc, 'is_process_running'):

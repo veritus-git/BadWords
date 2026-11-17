@@ -202,24 +202,46 @@ class TranscriptionMixin:
                     cur_ld = env.get("LD_LIBRARY_PATH", "")
                     env["LD_LIBRARY_PATH"] = ":".join(nvidia_libs_paths) + ((":" + cur_ld) if cur_ld else "")
 
-        probe_script = (
-            "import sys\n"
-            "try:\n"
-            "    import ctranslate2\n"
-            "    cnt = ctranslate2.get_cuda_device_count()\n"
-            "    if cnt <= 0:\n"
-            "        print('NO_CUDA_DEVICES')\n"
-            "        sys.exit(2)\n"
-            "    types = ctranslate2.get_supported_compute_types('cuda')\n"
-            "    if not types:\n"
-            "        print('NO_COMPUTE_TYPES')\n"
-            "        sys.exit(3)\n"
-            "    print('CUDA_OK')\n"
-            "    sys.exit(0)\n"
-            "except Exception as e:\n"
-            "    print(f'CUDA_INIT_ERROR: {e}')\n"
-            "    sys.exit(1)\n"
-        )
+        safe_libs_dir = self.os_doc.get_short_path(self.libs_dir) if (hasattr(self, 'os_doc') and hasattr(self, 'libs_dir') and self.libs_dir) else ""
+        cuda_preinit = self._get_cuda_preinit_code("cuda")
+
+        probe_script = f"""
+import sys, os
+libs_dir = {repr(safe_libs_dir)}
+if libs_dir and os.path.exists(libs_dir) and libs_dir not in sys.path:
+    sys.path.insert(0, libs_dir)
+
+{cuda_preinit}
+
+try:
+    import ctranslate2
+    cnt = ctranslate2.get_cuda_device_count()
+    if cnt <= 0:
+        print('NO_CUDA_DEVICES')
+        sys.exit(2)
+    types = ctranslate2.get_supported_compute_types('cuda')
+    if not types:
+        print('NO_COMPUTE_TYPES')
+        sys.exit(3)
+    if sys.platform.startswith('win'):
+        import ctypes
+        loaded = False
+        for dll_name in ['cublas64_12.dll', 'cublas64_11.dll']:
+            try:
+                ctypes.CDLL(dll_name)
+                loaded = True
+                break
+            except Exception:
+                pass
+        if not loaded:
+            print('CUBLAS_MISSING: Library cublas64_12.dll or cublas64_11.dll is not found or cannot be loaded')
+            sys.exit(4)
+    print('CUDA_OK')
+    sys.exit(0)
+except Exception as e:
+    print(f'CUDA_INIT_ERROR: {{e}}')
+    sys.exit(1)
+"""
 
         try:
             kwargs = {}
@@ -592,16 +614,20 @@ except Exception:
         """
         if fw_device != "cuda":
             return ""
-        return '''
+        safe_libs_dir = self.os_doc.get_short_path(self.libs_dir) if (hasattr(self, 'os_doc') and hasattr(self, 'libs_dir') and self.libs_dir) else ""
+        return f'''
 # --- NVIDIA CUDA / cuBLAS / cuDNN Dynamic DLL Injection ---
 import sys, os
 if sys.platform.startswith("win"):
     _cuda_dirs = []
     _sp_candidates = [
+        {repr(safe_libs_dir)},
         os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages"),
         os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Lib", "site-packages"),
-    ] + [p for p in sys.path if "site-packages" in p]
+    ] + [p for p in sys.path if p]
     for _sp in _sp_candidates:
+        if not _sp or not os.path.isdir(_sp):
+            continue
         _nv = os.path.join(_sp, "nvidia")
         if os.path.isdir(_nv):
             for _sub in ["cublas", "cudnn", "cuda_nvrtc", "cuda_runtime"]:
@@ -617,9 +643,11 @@ if sys.platform.startswith("win"):
                 except Exception:
                     pass
 elif sys.platform.startswith("linux"):
-    _sp_candidates = [p for p in sys.path if "site-packages" in p]
+    _sp_candidates = [{repr(safe_libs_dir)}] + [p for p in sys.path if p]
     _so_dirs = []
     for _sp in _sp_candidates:
+        if not _sp or not os.path.isdir(_sp):
+            continue
         _nv = os.path.join(_sp, "nvidia")
         if os.path.isdir(_nv):
             for _root, _dirs, _files in os.walk(_nv):

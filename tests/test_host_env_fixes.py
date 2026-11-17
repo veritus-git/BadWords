@@ -199,6 +199,42 @@ class TestHostEnvFixes(unittest.TestCase):
                     self.assertTrue(cpu_called, "run_whisper must fall back to CPU when GPU runner crashes.")
                     self.assertEqual(res, "/fallback/cpu/result.json")
 
+    def test_is_cuda_functional_detects_missing_cublas_issue19(self):
+        """
+        Regression test for GitHub issue #19:
+        CTranslate2 probe fails with CUBLAS_MISSING because cublas64_12.dll is not found.
+        Verify is_cuda_functional reports (False, reason) containing CUBLAS_MISSING.
+        """
+        mock_res = MagicMock()
+        mock_res.stdout = "CUBLAS_MISSING: Library cublas64_12.dll or cublas64_11.dll is not found or cannot be loaded\n"
+        mock_res.returncode = 4
+
+        with patch("subprocess.run", return_value=mock_res):
+            usable, reason = self.engine.is_cuda_functional()
+            self.assertFalse(usable, "CUDA must be reported unfunctional when cuBLAS DLL is missing.")
+            self.assertIn("CUBLAS_MISSING", reason)
+
+    def test_sync_resolve_scripts_skipped_when_resolve_not_installed(self):
+        """
+        Verify sync_resolve_scripts returns immediately without writing to filesystem
+        when DaVinci Resolve is not installed.
+        """
+        with patch.object(self.doc, "get_resolve_installation_info", return_value={"installed": False}):
+            with patch.object(self.doc, "get_resolve_script_utility_dirs") as mock_dirs:
+                self.doc.sync_resolve_scripts()
+                mock_dirs.assert_not_called()
+
+    def test_resolve_handler_silent_when_resolve_not_installed(self):
+        """
+        Verify ResolveHandler initializes silently with backend=None when DaVinci Resolve
+        is not installed on the system, preventing spurious logs.
+        """
+        import api
+        with patch.object(self.doc, "get_resolve_installation_info", return_value={"installed": False}):
+            rh = api.ResolveHandler(self.doc)
+            self.assertFalse(rh.is_connected())
+            self.assertIsNone(rh.backend)
+
 
 if __name__ == "__main__":
     unittest.main()

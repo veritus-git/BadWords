@@ -64,17 +64,17 @@ class ResolveHandler:
         self._async_thread = threading.Thread(target=self._async_worker, daemon=True, name="ResolveAsyncWorker")
         self._async_thread.start()
         
-        # Attempt to load script module
-        self._load_resolve_script_module()
+        # Attempt to load script module silently on boot
+        self._load_resolve_script_module(silent=True)
 
-        # Connect to Resolve or Bridge
-        self._connect()
+        # Connect to Resolve or Bridge silently on boot
+        self._connect(silent=True)
 
-    def _load_resolve_script_module(self):
+    def _load_resolve_script_module(self, silent: bool = False):
         """Dynamically imports DaVinciResolveScript using path from OSDoctor."""
         if hasattr(self, 'bmd') and self.bmd:
             return
-        api_path = self.os_doc.get_resolve_api_path()
+        api_path = self.os_doc.get_resolve_api_path() if self.os_doc else None
         if not api_path: return
 
         try:
@@ -83,11 +83,18 @@ class ResolveHandler:
             import DaVinciResolveScript as bmd # type: ignore
             self.bmd = bmd
         except ImportError:
-            log_error("Could not import DaVinciResolveScript module.")
+            if not silent:
+                log_warn("Could not import DaVinciResolveScript module.")
 
     def _connect(self, silent: bool = False):
         """Establishes connection to the running Resolve instance."""
         try:
+            # If DaVinci Resolve is not installed on this system, exit immediately and cleanly
+            if hasattr(self, 'os_doc') and self.os_doc:
+                info = self.os_doc.get_resolve_installation_info()
+                if not info.get("installed", False):
+                    self.backend = None
+                    return
             # ══════════════════════════════════════════════════════════════════════
             # 1. NATIVE RESOLVE CONNECTION (PRIORITY 1: EMBEDDED / DIRECT SCRIPTING)
             # ══════════════════════════════════════════════════════════════════════

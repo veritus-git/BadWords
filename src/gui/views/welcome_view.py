@@ -1420,16 +1420,21 @@ def build_welcome_view(win) -> QWidget:
     prefs = win.engine.load_preferences() or {}
     is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
 
+    resolve_installed = False
+    if hasattr(win, 'engine') and hasattr(win.engine, 'os_doc'):
+        resolve_installed = win.engine.os_doc.get_resolve_installation_info().get("installed", False)
+
     is_standalone = not is_embedded_in_resolve()
     win.is_standalone = is_standalone
     rh = getattr(win.engine, 'resolve_handler', None)
-    if is_standalone and rh and rh.is_connected():
+    if is_standalone and resolve_installed and rh and rh.is_connected():
         win.current_source_type = "resolve"
     else:
         win.current_source_type = "file" if is_standalone else "resolve"
 
     opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
     opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
+    source_options = [opt_file, opt_dr] if resolve_installed else [opt_file]
 
     def _on_stop_bridge():
         if hasattr(win, 'engine') and hasattr(win.engine, 'resolve_handler'):
@@ -1443,7 +1448,7 @@ def build_welcome_view(win) -> QWidget:
 
     # Zero-overhead event-driven bridge watcher (OS-level ReadDirectoryChangesW / inotify)
     # Consumes 0% CPU, spawns zero subprocesses (no terminal popups), and zero GIL contention.
-    if is_standalone and not hasattr(win, '_bridge_file_watcher'):
+    if is_standalone and resolve_installed and not hasattr(win, '_bridge_file_watcher'):
         from PySide6.QtCore import QFileSystemWatcher
         win._bridge_file_watcher = QFileSystemWatcher(win)
 
@@ -1546,7 +1551,7 @@ def build_welcome_view(win) -> QWidget:
     win.combo_tr_0.setFixedHeight(config.S(30))
 
     if is_standalone:
-        win.combo_source_0 = CustomDropdown([opt_file, opt_dr])
+        win.combo_source_0 = CustomDropdown(source_options)
         win.combo_source_0.setText(opt_file if win.current_source_type == "file" else opt_dr)
         win.combo_source_0.setFixedHeight(config.S(30))
 
@@ -1872,9 +1877,7 @@ def build_welcome_view(win) -> QWidget:
     win.combo_tr_1.setFixedHeight(config.S(30))
 
     if is_standalone:
-        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
-        opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
-        win.combo_source_1 = CustomDropdown([opt_file, opt_dr])
+        win.combo_source_1 = CustomDropdown(source_options)
         win.combo_source_1.setText(opt_file if win.current_source_type == "file" else opt_dr)
         win.combo_source_1.setFixedHeight(config.S(30))
 

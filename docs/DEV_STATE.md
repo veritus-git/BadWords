@@ -34,7 +34,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
-| `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, and CUDA functionality probing. | **PASS** |
+| `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, CUDA functionality probing, GitHub issue #19 (`cublas64_12.dll` missing probe detection), and silent Resolve decoupling when Resolve is not installed. | **PASS** |
 | `tests/test_visual_progress_bar.py` | Visual regression test for `LiquidProgressBar`: renders screenshots into `tests/artifacts/`, verifies all 4 rounded corners and anti-aliasing clipping across determinate (50%, 100%) and 3-phase indeterminate states (entering, centered, exiting) to prevent squared-off corner regressions (`setClipRect`). | **PASS** |
 | `tests/test_timeline_cuts.py` | Multi-framerate calculation across standard & drop rates (23.976, 29.97, 47.952, 59.94, 60.0, 25.0 fps), exact rational drop-frame timebases (24000/1001, 30000/1001), silence cut ripple deletion, color cut extraction, timeline end capping. | **PASS** |
 | `tests/test_algorithms.py` | Heuristic repetition/retake detection, 2-layer visual priority (`manual_status` > `algo_status` across both repeat and auto-filler passes), fuzzy string comparison. | **PASS** |
@@ -57,7 +57,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - Implemented automatic migration of legacy config, saves, and temp from `src/` to `.dev_workspace/`.
 3. **Automated Test Suite**:
    - Created test framework in `tests/` and test runner `run_tests.py`.
-   - 27 comprehensive unit & visual regression tests implemented and passing.
+   - 30 comprehensive unit & visual regression tests implemented and passing.
 4. **School PC Crash & Environment Fixes (2026-11-17)**:
    - **DaVinci Resolve Script Sync (`_host_ver` undefined & ctypes.CDLL cleanup)**: Fixed f-string interpolation bug in `generate_davinci_wrapper_content()` in `src/osdoc.py`, and removed remaining unsafe `ctypes.CDLL` preload loop in generated wrapper.
    - **Feedback / Bug Report Form Crash (`No module named 'requests'`)**: Replaced `requests.post()` in `src/gui/dialogs/settings_dialog.py` with zero-dependency standard library `urllib.request` multipart/form-data POST.
@@ -71,7 +71,18 @@ Test Runner: `run_tests.py` using Python `unittest`.
      * Implemented 8.3 short path conversion via `get_short_path()` with parent folder fallback for non-existent target files.
      * Applied safe short paths to `audio_path`, `models_dir`, `libs_dir`, `bin_dir`, `json_output_path`, and `python_exec` in both chunked and single-file runners and model downloader.
      * Added automatic graceful fallback to CPU mode upon runner failure.
-5. **AI Codex & Rules Update**:
+5. **Standalone vs DaVinci Decoupling & GitHub Issue #19 Fix (2026-11-17)**:
+   - **GitHub Issue #19 Fix (`Library cublas64_12.dll is not found or cannot be loaded`)**:
+     * Expanded `_get_cuda_preinit_code` search paths to include `safe_libs_dir` and all `sys.path` entries.
+     * Hardened `is_cuda_functional()` probe script by injecting dynamic preinit DLL paths and checking loadability of `cublas64_12.dll` / `cublas64_11.dll` on Windows prior to execution.
+     * If cuBLAS is missing, `is_cuda_functional()` gracefully rejects GPU mode and Auto Mode defaults cleanly to CPU without crashing.
+     * In runner failure, `run_whisper` catches exit code 1 / runtime errors and automatically re-executes transcription in CPU mode.
+   - **Standalone Mode Clean Decoupling from DaVinci Resolve**:
+     * Guarded `sync_resolve_scripts()`: returns immediately without touching filesystem or logging warnings when DaVinci Resolve is not installed.
+     * Guarded `ResolveHandler.__init__()`: initializes silently on boot (`silent=True`); early return if Resolve is not installed; no spurious `Could not import DaVinciResolveScript` errors.
+     * In `welcome_view.py`: if DaVinci Resolve is not installed, the source selector dropdown offers only "Plik lokalny" (Local file), preventing user confusion.
+     * In `main_window.py`: `_populate_timeline_track_combos()` and `_jump_playhead()` no-op cleanly in standalone file mode without querying non-existent Resolve timelines.
+6. **AI Codex & Rules Update**:
    - Updated `.agents/rules/architecture.md` with 3-Zone architecture, empirical verification rule, progressive task tracking, and token budget efficiency.
    - Established persistent task state tracking via `docs/DEV_STATE.md`.
 
@@ -79,7 +90,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 27 tests pass.
+1. Run `python3 run_tests.py` to verify all 30 tests pass.
 2. Run `python3 -m compileall src` to ensure bytecode consistency.
 3. Check `tests/artifacts/` for visual progress bar screenshots.
 4. Synchronize modified files to `/mnt/dump/BadWords FILES/` as per rule 7.

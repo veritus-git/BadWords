@@ -1261,6 +1261,8 @@ else:
         """
         try:
             info = self.get_resolve_installation_info()
+            if not info.get("installed", False):
+                return
             util_dirs = self.get_resolve_script_utility_dirs()
             if not util_dirs:
                 return
