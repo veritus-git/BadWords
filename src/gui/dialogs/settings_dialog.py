@@ -1065,9 +1065,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
                 )
 
-        _thr = UpdateCheckThread(config.VERSION, parent=self)
+        _thr = UpdateCheckThread(config.VERSION, parent=None)
         _thr.update_available.connect(_on_update_known_for_card)
         _thr.finished.connect(_on_check_done_for_card)
+        _thr.finished.connect(_thr.deleteLater)
         _thr.start()
         self._settings_ver_thread = _thr
 
@@ -1741,7 +1742,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_xml_track.addWidget(self.tgl_xml_preserve_track_order)
         self.lbl_xml_track, self._row_xml_track = self._add_row(form, self.txt("lbl_xml_preserve_track_order"), w_xml_track, False, lambda v: self.tgl_xml_preserve_track_order.setChecked(v, animated=True), is_advanced=True)
 
-        # 4. Link matching A/V clips [Advanced]
+        # 4. Link matching A/V clips
         self.tgl_link_av_clips = ToggleSwitch()
         self.tgl_link_av_clips.setChecked(bool(prefs.get("link_av_clips", config.DEFAULT_SETTINGS["link_av_clips"])), animated=False)
         self.tgl_link_av_clips.toggled.connect(lambda checked: self.engine.save_preferences({"link_av_clips": checked}))
@@ -1752,9 +1753,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_av.addWidget(self._get_info_icon("tt_link_av_clips"))
         l_link_av.addSpacing(config.S(8))
         l_link_av.addWidget(self.tgl_link_av_clips)
-        self.lbl_link_av, self._row_link_av = self._add_row(form, self.txt("lbl_link_av_clips"), w_link_av, False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True), is_advanced=True)
+        self.lbl_link_av, self._row_link_av = self._add_row(form, self.txt("lbl_link_av_clips"), w_link_av, False, lambda v: self.tgl_link_av_clips.setChecked(v, animated=True), is_advanced=False)
 
-        # 5. Link all cut tracks [Advanced]
+        # 5. Link all cut tracks
         self.tgl_link_all_cut_tracks = ToggleSwitch()
         self.tgl_link_all_cut_tracks.setChecked(bool(prefs.get("link_all_cut_tracks", config.DEFAULT_SETTINGS["link_all_cut_tracks"])), animated=False)
         self.tgl_link_all_cut_tracks.toggled.connect(lambda checked: self.engine.save_preferences({"link_all_cut_tracks": checked}))
@@ -1765,7 +1766,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_link_all.addWidget(self._get_info_icon("tt_link_all_cut_tracks"))
         l_link_all.addSpacing(config.S(8))
         l_link_all.addWidget(self.tgl_link_all_cut_tracks)
-        self.lbl_link_all, self._row_link_all = self._add_row(form, self.txt("lbl_link_all_cut_tracks"), w_link_all, False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True), is_advanced=True)
+        self.lbl_link_all, self._row_link_all = self._add_row(form, self.txt("lbl_link_all_cut_tracks"), w_link_all, False, lambda v: self.tgl_link_all_cut_tracks.setChecked(v, animated=True), is_advanced=False)
 
         # 6. DaVinci timeline video proxy render [Advanced]
         self.tgl_resolve_render_timeline_proxy = ToggleSwitch()
@@ -1801,19 +1802,25 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_dav
 
     def _apply_linking_opacity(self, val: float):
+        self._curr_linking_op = float(val)
+        is_translucent = (val < 0.9)
+
         if hasattr(self, '_row_link_av') and self._row_link_av:
-            self._row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, val < 0.9)
+            self._row_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
         if hasattr(self, '_row_link_all') and self._row_link_all:
-            self._row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, val < 0.9)
+            self._row_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
         if hasattr(self, '_row_xml_track') and self._row_xml_track:
-            self._row_xml_track.setAttribute(Qt.WA_TransparentForMouseEvents, val < 0.9)
+            self._row_xml_track.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
 
         if hasattr(self, 'lbl_link_av') and self.lbl_link_av:
             self.lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.lbl_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
         if hasattr(self, 'lbl_link_all') and self.lbl_link_all:
             self.lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.lbl_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
         if hasattr(self, 'lbl_xml_track') and self.lbl_xml_track:
             self.lbl_xml_track.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.lbl_xml_track.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
 
         if hasattr(self, 'tgl_link_av_clips') and hasattr(self.tgl_link_av_clips, 'set_opacity'):
             self.tgl_link_av_clips.set_opacity(val)
@@ -1823,9 +1830,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self.tgl_xml_preserve_track_order.set_opacity(val)
 
     def _update_linking_availability(self, is_xml_on: bool, animated: bool = False):
-        parent_main = self.parent() or getattr(self, 'main_window', None)
-        is_file = getattr(parent_main, 'current_source_type', 'resolve') == 'file' if parent_main else False
-        enabled = is_file or is_xml_on
+        enabled = bool(is_xml_on)
 
         if hasattr(self, 'tgl_link_av_clips'):
             self.tgl_link_av_clips.set_blocked(not enabled)
@@ -1843,7 +1848,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._row_xml_track.setToolTip(tt)
 
         target_op = 1.0 if enabled else 0.35
-        if animated:
+        if animated and self.isVisible():
             if hasattr(self, '_linking_anim'):
                 self._linking_anim.stop()
                 self._linking_anim.setStartValue(self._curr_linking_op)
@@ -1856,8 +1861,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._curr_linking_op = target_op
             self._apply_linking_opacity(target_op)
 
+        parent_main = self.parent() or getattr(self, 'main_window', None)
         if parent_main and hasattr(parent_main, 'w_track_options'):
             try:
+                parent_main.w_track_options.load_config()
+            except Exception:
+                pass
                 parent_main.w_track_options.load_config()
             except Exception:
                 pass
@@ -3028,6 +3037,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
             'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
             'force_xml_assembly':   self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked'),
+            'timeline_assembly_method': "xml" if self._safe_get('tgl_force_xml_assembly', old_prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS['force_xml_assembly']), 'isChecked') else "drt",
             'link_av_clips':        self._safe_get('tgl_link_av_clips', old_prefs.get('link_av_clips', config.DEFAULT_SETTINGS['link_av_clips']), 'isChecked'),
             'link_all_cut_tracks':  self._safe_get('tgl_link_all_cut_tracks', old_prefs.get('link_all_cut_tracks', config.DEFAULT_SETTINGS['link_all_cut_tracks']), 'isChecked'),
             'resolve_render_timeline_proxy': self._safe_get('tgl_resolve_render_timeline_proxy', old_prefs.get('resolve_render_timeline_proxy', config.DEFAULT_SETTINGS['resolve_render_timeline_proxy']), 'isChecked'),

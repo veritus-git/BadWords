@@ -17,7 +17,7 @@ import platform
 # APPLICATION INFO
 # ==========================================
 APP_NAME = "BadWords"
-_DEFAULT_VERSION = "4.0.2"
+_DEFAULT_VERSION = "4.0.1"
 
 def _detect_version() -> str:
     # 1. Stamped version file (created by installer, updater, or CI build)

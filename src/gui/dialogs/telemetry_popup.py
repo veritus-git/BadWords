@@ -119,7 +119,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
 
         # --- Outer wrapper ---
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
 
         class SolidFrame(QFrame):
             def paintEvent(self, e):
@@ -134,7 +134,7 @@ class TelemetryPopup(FramelessWindowMixin, _BaseDialog):
         from PySide6.QtWidgets import QGraphicsDropShadowEffect
         from PySide6.QtGui import QColor
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(config.S(30))
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 0)
         self.inner_frame.setGraphicsEffect(shadow)

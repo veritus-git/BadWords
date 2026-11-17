@@ -435,7 +435,7 @@ class TrackOptionsDrawer(QWidget):
             self.tgl_link_all.setChecked(bool(link_all), animated=False)
 
             # In Resolve mode, linking requires XML assembly
-            force_xml = bool(prefs.get('force_xml_assembly', False))
+            force_xml = bool(prefs.get('force_xml_assembly', config.DEFAULT_SETTINGS.get('force_xml_assembly', True))) or (prefs.get('timeline_assembly_method') == 'xml')
             src = getattr(self.parent_gui, '_transcription_source', None) or {}
             is_file_source = (src.get('source_type') == 'file')
             linking_enabled = is_file_source or force_xml

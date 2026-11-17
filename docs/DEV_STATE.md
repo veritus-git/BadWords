@@ -100,16 +100,21 @@ Test Runner: `run_tests.py` using Python `unittest`.
      * Decoupled Feedback/Bug Report into dedicated "Support & Feedback" tab and moved telemetry toggles/project info to "About & Privacy" tab.
      * Added real-time search bar on the left sidebar above category list to filter options and controls across tabs dynamically.
      * Implemented lazy page construction (`_ensure_page_built`) for instant dialog opening and dark DWM initialization to eliminate white flash on Windows.
+     * Fixed DaVinci DRT dimming bug when running standalone/file mode and kept primary XML linking options visible in basic mode.
+     * Persisted `timeline_assembly_method` in `_collect_preferences()` and added support across `audio_engine.py` and `track_options_drawer.py`.
    - **Telemetry Consent Popup Styling**:
-     * Removed hard border on inner frame and added soft drop shadow (`QGraphicsDropShadowEffect(blurRadius=30, offset=(0,0))`) matching `SettingsDialog`.
+     * Removed hard border on inner frame and added soft drop shadow (`QGraphicsDropShadowEffect(blurRadius=config.S(30), offset=(0,0))`) matching `SettingsDialog`.
    - **Dynamic Version Detection & Fallback**:
-     * Enhanced `_detect_version()` in `src/config/app_constants.py` to auto-detect git tags via `git describe --tags --exact-match` and `--abbrev=0`, cleaning commit counts/hashes and falling back to default version.
+     * Restored `_DEFAULT_VERSION = "4.0.1"` fallback in `src/config/app_constants.py` while ensuring `_detect_version()` auto-detects git tags via `git describe --tags --exact-match` and `--abbrev=0`.
+   - **Visual Verification Artifacts & Mandatory Rule 12**:
+     * Added Rule 12 to `.agents/rules/architecture.md` mandating visual verification PNG screenshots for all GUI changes.
+     * Rendered all 5 required verification screenshots into `tests/artifacts/` (`settings_dialog_general.png`, `settings_dialog_appearance.png`, `settings_dialog_davinci_xml.png`, `settings_dialog_davinci_drt.png`, `telemetry_popup.png`).
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 44 tests pass.
+1. Run `python3 run_tests.py` to verify all 46 tests pass.
 2. Run `python3 -m compileall src` to ensure bytecode consistency.
 3. Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
 4. Ensure files are synchronized with `/mnt/dump/BadWords FILES/`.

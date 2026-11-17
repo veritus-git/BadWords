@@ -164,6 +164,8 @@ start_native_executable() {
     sleep 0.4
     if kill -0 "$pid" 2>/dev/null; then
         disown "$pid" 2>/dev/null || true
+        # Attempt to auto-close macOS Terminal.app window if launched interactively
+        osascript -e 'tell application "Terminal" to close (every window whose name contains "mac-setup")' >/dev/null 2>&1 || true
         exit 0
     fi
 

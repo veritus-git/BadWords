@@ -2299,7 +2299,7 @@ except Exception as e:
                 # Skip DRT immediately and go straight to XML assembly.
                 # Also skip DRT if user explicitly enabled force_xml_assembly or BADWORDS_FORCE_XML=1.
                 skip_drt = False
-                force_xml = bool(prefs.get("force_xml_assembly", False)) or (os.environ.get("BADWORDS_FORCE_XML") == "1")
+                force_xml = bool(prefs.get("force_xml_assembly", False)) or (prefs.get("timeline_assembly_method") == "xml") or (os.environ.get("BADWORDS_FORCE_XML") == "1")
                 has_linking = bool(settings.get("link_av_clips", False)) or bool(settings.get("link_all_cut_tracks", False))
 
                 # Rule: If user did NOT select any linking option in assemble drawer,

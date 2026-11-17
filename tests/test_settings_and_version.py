@@ -28,6 +28,12 @@ from gui.dialogs.telemetry_popup import TelemetryPopup
 
 
 class TestSettingsAndVersion(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from gui.dialogs.update_dialog import UpdateCheckThread
+        UpdateCheckThread._checked = True
+        UpdateCheckThread._cached_result = ("4.0.1", "https://github.com", "https://gitlab.com", "")
+
     def setUp(self):
         self._initial_scale = config.SCALE_FACTOR
         self._initial_pct = getattr(config, "UI_SCALE_PERCENT", 100)
@@ -184,9 +190,12 @@ class TestSettingsAndVersion(unittest.TestCase):
             self.assertIsNotNone(page)
 
     def test_settings_dialog_davinci_tab_xml_dimming(self):
-        """Verify XML dependent settings dim and block when DRT is selected."""
+        """Verify XML dependent settings dim and block when DRT is selected, even with a parent in file mode."""
         engine = self._create_mock_engine(is_free_21_1=False)
-        dialog = SettingsDialog(engine)
+        from PySide6.QtWidgets import QWidget
+        parent_mock = QWidget()
+        parent_mock.current_source_type = "file"
+        dialog = SettingsDialog(engine, parent=parent_mock)
 
         # Load DaVinci tab (index 3)
         dialog._ensure_page_built(3)
@@ -197,12 +206,45 @@ class TestSettingsAndVersion(unittest.TestCase):
         self.assertTrue(dialog.tgl_xml_preserve_track_order._blocked)
         self.assertTrue(dialog.tgl_link_av_clips._blocked)
         self.assertTrue(dialog.tgl_link_all_cut_tracks._blocked)
+        self.assertAlmostEqual(dialog._curr_linking_op, 0.35, places=2)
+        self.assertAlmostEqual(dialog.tgl_link_av_clips._opacity, 0.35, places=2)
 
         # Select XML
         dialog.w_assembly_selector.set_mode("xml")
         self.assertFalse(dialog.tgl_xml_preserve_track_order._blocked)
         self.assertFalse(dialog.tgl_link_av_clips._blocked)
         self.assertFalse(dialog.tgl_link_all_cut_tracks._blocked)
+        self.assertAlmostEqual(dialog._curr_linking_op, 1.0, places=2)
+        self.assertAlmostEqual(dialog.tgl_link_av_clips._opacity, 1.0, places=2)
+
+    def test_settings_dialog_davinci_options_visible_in_basic_mode(self):
+        """Verify primary XML linking options remain visible in basic mode."""
+        engine = self._create_mock_engine(is_free_21_1=False)
+        dialog = SettingsDialog(engine)
+        dialog._ensure_page_built(3)
+
+        # link_av_clips and link_all_cut_tracks should be visible (not hidden) in basic mode
+        self.assertFalse(dialog._row_link_av.isHidden())
+        self.assertFalse(dialog._row_link_all.isHidden())
+
+        # xml_preserve_track_order should be hidden in basic mode
+        self.assertTrue(dialog._row_xml_track.isHidden())
+
+    def test_settings_dialog_collect_preferences_preserves_assembly_method(self):
+        """Verify _collect_preferences captures both force_xml_assembly and timeline_assembly_method."""
+        engine = self._create_mock_engine()
+        dialog = SettingsDialog(engine)
+        dialog._ensure_page_built(3)
+
+        dialog.w_assembly_selector.set_mode("drt")
+        prefs = dialog._get_current_state_dict()
+        self.assertFalse(prefs["force_xml_assembly"])
+        self.assertEqual(prefs["timeline_assembly_method"], "drt")
+
+        dialog.w_assembly_selector.set_mode("xml")
+        prefs = dialog._get_current_state_dict()
+        self.assertTrue(prefs["force_xml_assembly"])
+        self.assertEqual(prefs["timeline_assembly_method"], "xml")
 
     def test_settings_dialog_search_filtering(self):
         """Verify search bar filters tabs dynamically."""

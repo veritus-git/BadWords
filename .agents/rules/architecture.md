@@ -61,5 +61,7 @@ description: Core architecture layers, 3-zone boundaries, protected workarounds,
    * After any change in `src/`, `installer/`, or `setupfiles/`, synchronize to `/mnt/dump/BadWords FILES/` (excluding runtime user data).
 11. **Curated Release Notes on Releases**:
    * When preparing an official Release, update `src/config/release_notes.json`.
-12. **Automated Commit & Push**:
+12. **Visual Reports & Verification Screenshots**:
+   * Any change or task that modifies or introduces visual GUI components, dialogs, panels, or layout MUST include real rendered PNG screenshots in the task artifacts (saved under `tests/artifacts/` or `raport/screenshots/`) and displayed/linked in the final report, so the user can visually verify rendering, alignment, borders, and layouts before launching the application.
+13. **Automated Commit & Push**:
    * Commit with conventional commit messages and push to all configured remotes (`git push all <branch>`).
