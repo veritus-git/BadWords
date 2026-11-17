@@ -499,9 +499,15 @@ def _run_auto_update_if_needed(os_doc, splash=None):
     GH_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/updater.py"
     GL_SCRIPT = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/updater.py"
 
+    def _get_ssl_ctx():
+        try:
+            import certifi
+            return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            return ssl.create_default_context()
+
     def _fetch_json(url):
-        import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
+        ctx = _get_ssl_ctx()
         req = urllib.request.Request(url, headers={"User-Agent": "BadWords-AutoUpdate/1.0"})
         with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
             return json.loads(r.read().decode())
@@ -533,8 +539,7 @@ def _run_auto_update_if_needed(os_doc, splash=None):
     osdoc.log_info(f"[AutoUpdate] New version {latest_tag} found — downloading update script...")
 
     # ── 2. Download updater.py ───────────────────────────────────────────
-    import certifi
-    ctx = ssl.create_default_context(cafile=certifi.where())
+    ctx = _get_ssl_ctx()
     content = None
     for url in (GH_SCRIPT, GL_SCRIPT):
         try:

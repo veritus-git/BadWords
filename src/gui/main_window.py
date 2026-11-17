@@ -5054,8 +5054,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             tmp = None
             try:
                 import sys, os
-                import certifi
-                ctx = ssl.create_default_context(cafile=certifi.where())
+                try:
+                    import certifi
+                    ctx = ssl.create_default_context(cafile=certifi.where())
+                except Exception:
+                    ctx = ssl.create_default_context()
                 content = None
                 for url in urls:
                     try:

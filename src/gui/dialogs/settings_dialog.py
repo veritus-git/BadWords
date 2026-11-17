@@ -799,8 +799,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     tmp = None
                     try:
                         import sys, os
-                        import certifi
-                        ctx = ssl.create_default_context(cafile=certifi.where())
+                        try:
+                            import certifi
+                            ctx = ssl.create_default_context(cafile=certifi.where())
+                        except Exception:
+                            ctx = ssl.create_default_context()
                         content = None
                         for url in urls:
                             try:
@@ -2205,10 +2208,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             signals = SendSignals(self)
 
             def _worker():
-                import os, zipfile, tempfile, requests
+                import os, zipfile, tempfile, uuid, urllib.request, urllib.error, ssl
                 from osdoc import log_info, log_error
                 tmp_logs = ""
-                opened_files = []
                 try:
                     fd, tmp_logs = tempfile.mkstemp(suffix='.zip', prefix='bw_logs_')
                     os.close(fd)
@@ -2236,16 +2238,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                                     zf.write(tmp_img, f"screenshot_{i+1}.jpg")
                                     try:
                                         os.remove(tmp_img)
-                                    except:
+                                    except Exception:
                                         pass
                                 else:
                                     zf.write(p, f"screenshot_{i+1}{os.path.splitext(p)[1]}")
-                    
-                    files_payload = []
-                    import builtins
-                    f_logs = builtins.open(tmp_logs, 'rb')
-                    opened_files.append(f_logs)
-                    files_payload.append(('file', ('logs.zip', f_logs, 'application/zip')))
+
+                    webhook_url = getattr(config, 'SUPPORT_WEBHOOK_URL', '')
+                    if not webhook_url:
+                        import time
+                        time.sleep(1)
+                        log_info("Webhook URL not defined in config.py, skipping actual HTTP POST.")
+                        return True, ""
 
                     data_payload = {
                         'title': title,
@@ -2255,29 +2258,57 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         'content': f"@here\n>>> **Version:** {getattr(config, 'VERSION', 'Unknown')}\n**Email:** {email if email else 'None'}\n**Title:** {title}\n\n**Body:**\n{body}"
                     }
 
-                    webhook_url = getattr(config, 'SUPPORT_WEBHOOK_URL', '')
-                    if not webhook_url:
-                        import time
-                        time.sleep(1)
-                        log_info("Webhook URL not defined in config.py, skipping actual HTTP POST.")
-                        return True, ""
+                    boundary = f"----BadWordsBoundary{uuid.uuid4().hex}"
+                    body_bytes = bytearray()
+                    for k, v in data_payload.items():
+                        body_bytes.extend(f"--{boundary}\r\n".encode("utf-8"))
+                        body_bytes.extend(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode("utf-8"))
+                        body_bytes.extend(str(v).encode("utf-8"))
+                        body_bytes.extend(b"\r\n")
 
-                    resp = requests.post(webhook_url, data=data_payload, files=files_payload, timeout=30)
-                    success = resp.status_code in (200, 201, 202, 204)
-                    if not success:
-                        log_error(f"Support report send failed: {resp.status_code} {resp.text}")
-                    return success, resp.text
+                    if os.path.exists(tmp_logs):
+                        body_bytes.extend(f"--{boundary}\r\n".encode("utf-8"))
+                        body_bytes.extend(b'Content-Disposition: form-data; name="file"; filename="logs.zip"\r\n')
+                        body_bytes.extend(b"Content-Type: application/zip\r\n\r\n")
+                        with open(tmp_logs, "rb") as f_zip:
+                            body_bytes.extend(f_zip.read())
+                        body_bytes.extend(b"\r\n")
+
+                    body_bytes.extend(f"--{boundary}--\r\n".encode("utf-8"))
+
+                    headers = {
+                        "Content-Type": f"multipart/form-data; boundary={boundary}",
+                        "Content-Length": str(len(body_bytes)),
+                        "User-Agent": f"BadWords/{getattr(config, 'VERSION', '1.0')}"
+                    }
+
+                    try:
+                        import certifi
+                        ctx = ssl.create_default_context(cafile=certifi.where())
+                    except Exception:
+                        ctx = ssl.create_default_context()
+
+                    req = urllib.request.Request(webhook_url, data=bytes(body_bytes), headers=headers, method="POST")
+                    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                        code = resp.getcode()
+                        resp_text = resp.read().decode("utf-8", errors="replace")
+                        success = code in (200, 201, 202, 204)
+                        if not success:
+                            log_error(f"Support report send failed: {code} {resp_text}")
+                        return success, resp_text
+                except urllib.error.HTTPError as he:
+                    from osdoc import log_error
+                    err_msg = f"HTTP {he.code}: {he.reason}"
+                    log_error(f"Support report HTTP error: {err_msg}")
+                    return False, err_msg
                 except Exception as e:
                     from osdoc import log_error
                     log_error(f"Support report exception: {e}")
                     return False, str(e)
                 finally:
-                    for f in opened_files:
-                        try: f.close()
-                        except: pass
                     if tmp_logs and os.path.exists(tmp_logs):
                         try: os.remove(tmp_logs)
-                        except: pass
+                        except Exception: pass
 
             def _thread_target():
                 success, msg = _worker()

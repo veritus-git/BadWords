@@ -13,6 +13,7 @@ File management and project document structure system.
 
 import os
 import sys
+import re
 import time
 import platform
 import shutil
@@ -1172,7 +1173,7 @@ _host_ver = sys.version_info[:2]
 _is_abi_incompatible = (_venv_ver is not None and _venv_ver != _host_ver)
 
 if _is_abi_incompatible:
-    print(f"[BadWords] Host Python ({_host_ver[0]}.{_host_ver[1]}) differs from venv Python ({_venv_ver[0]}.{_venv_ver[1]}).")
+    print("[BadWords] Host Python (" + str(_host_ver[0]) + "." + str(_host_ver[1]) + ") differs from venv Python (" + str(_venv_ver[0]) + "." + str(_venv_ver[1]) + ").")
     print("[BadWords] Launching BadWords standalone process with Lua Bridge to prevent CPython ABI conflicts...")
     _launch_external()
 else:
@@ -1441,13 +1442,34 @@ else:
         Returns cross-platform subprocess kwargs, abstracting Windows startupinfo.
         Strictly suppresses console window creation on Windows (CREATE_NO_WINDOW + SW_HIDE).
         """
-        if self.is_win or os.name == 'nt':
+        if (self.is_win or os.name == 'nt') and hasattr(subprocess, 'STARTUPINFO'):
             si = subprocess.STARTUPINFO()
             si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 0x00000001)
             si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
             cf = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
             return {"startupinfo": si, "creationflags": cf}
         return {}
+
+    def get_short_path(self, path: str) -> str:
+        """
+        On Windows, converts a path containing spaces or non-ASCII characters to its 8.3 short path
+        via GetShortPathNameW to ensure total compatibility with C runtimes, OpenMP, and subprocesses.
+        """
+        if not path or not self.is_win:
+            return path
+        try:
+            import ctypes
+            from ctypes import wintypes
+            _GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
+            _GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+            _GetShortPathNameW.restype = wintypes.DWORD
+            buf = ctypes.create_unicode_buffer(1024)
+            length = _GetShortPathNameW(path, buf, 1024)
+            if length > 0 and buf.value:
+                return buf.value
+        except Exception:
+            pass
+        return path
 
     def force_dark_titlebar(self, window_id: int):
         """Forces the native Windows title bar to dark mode via DWM API."""
@@ -1780,28 +1802,56 @@ else:
 
     def has_nvidia_support(self):
         """
-        Checks if physical NVIDIA hardware is present AND libraries are installed.
+        Checks if physical NVIDIA hardware is present AND libraries/driver are sufficient.
+        CUDA 12 runtime requires NVIDIA driver >= 525 (Windows: >= 528.33, Linux: >= 525.60.13).
         Used by GUI and Engine to determine if 'GPU' mode is safe.
         """
         # 1. Hardware verification (cross-platform with hidden console on Win)
         has_hardware = False
         try:
-            subprocess.run(
-                ['nvidia-smi'], 
-                stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL, 
+            res = subprocess.run(
+                ['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True,
                 check=True,
                 **self.get_subprocess_kwargs()
             )
+            out = res.stdout.strip()
+            if out:
+                first_line = out.split('\n')[0].strip()
+                m = re.search(r'(\d+)(?:\.\d+)?', first_line)
+                if m:
+                    driver_major = int(m.group(1))
+                    if driver_major < 525:
+                        log_warn(f"[CUDA] NVIDIA GPU detected, but driver version ({first_line}) is below 525 (CUDA 12 minimum required). Kepler/legacy GPUs not supported by CUDA 12. Disabling GPU mode.")
+                        return False
             has_hardware = True
         except Exception:
-            has_hardware = False
+            try:
+                res = subprocess.run(
+                    ['nvidia-smi'], 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.DEVNULL, 
+                    text=True,
+                    check=True,
+                    **self.get_subprocess_kwargs()
+                )
+                m = re.search(r'Driver Version:\s*(\d+)', res.stdout)
+                if m:
+                    driver_major = int(m.group(1))
+                    if driver_major < 525:
+                        log_warn(f"[CUDA] NVIDIA GPU detected via nvidia-smi, but driver version ({m.group(0)}) is below 525. Disabling GPU mode.")
+                        return False
+                has_hardware = True
+            except Exception:
+                has_hardware = False
 
         if not has_hardware:
             return False
 
         if self.is_win:
-            return True  # On Windows, rely on system drivers if GPU is present
+            return True  # On Windows, rely on system drivers if GPU is present and driver >= 525
             
         # 2. Library verification (Linux)
         libs_path = os.path.join(self.install_dir, "libs")
@@ -1859,19 +1909,6 @@ else:
                         os.add_dll_directory(bd)
                     except Exception:
                         pass
-                        
-            # 3. Preload all DLLs via ctypes so CTranslate2 LoadLibrary calls resolve immediately
-            import ctypes
-            for bd in discovered_bins:
-                try:
-                    for f in os.listdir(bd):
-                        if f.endswith(".dll"):
-                            try:
-                                ctypes.CDLL(os.path.join(bd, f))
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
             log_info(f"[CUDA] Successfully registered {len(discovered_bins)} NVIDIA DLL directories.")
         return discovered_bins
 

@@ -154,14 +154,17 @@ class TranscriptionMixin:
                 errors='replace',
                 **self.os_doc.get_subprocess_kwargs()
             )
+            if result.returncode != 0:
+                log_info(f"[ComputeDetect] nvidia-smi failed (exit code {result.returncode}); falling back to int8")
+                return "int8"
             output = result.stdout.strip()
             if not output:
                 return "int8_float32"  # fallback for GPU with unknown cap
 
             first_gpu_cap = output.split('\n')[0].strip()
-            if '.' in first_gpu_cap:
-                major, _minor = first_gpu_cap.split('.', 1)
-                major = int(major)
+            m = re.match(r'^(\d+)\.(\d+)$', first_gpu_cap)
+            if m:
+                major = int(m.group(1))
                 if major >= 7:
                     return "int8_float16"   # RTX 2000+ (Volta/Turing/Ampere/Ada)
                 else:
@@ -170,6 +173,78 @@ class TranscriptionMixin:
         except (FileNotFoundError, ValueError, Exception) as e:
             log_info(f"[ComputeDetect] nvidia-smi failed ({e}); falling back to int8")
             return "int8"
+
+    def is_cuda_functional(self) -> tuple:
+        """
+        Validates whether CUDA runtime, driver, and ctranslate2 can actually initialize on GPU.
+        Checks for driver incompatibility (e.g. driver < 525 for CUDA 12) or hardware errors.
+        Returns: (usable: bool, reason: str)
+        """
+        if self.os_doc.is_mac:
+            return False, "macOS does not support CUDA"
+
+        python_exe = self._get_python_executable()
+        env = os.environ.copy()
+        if self.os_doc.is_win:
+            cuda_bins = self.os_doc.setup_cuda_dll_paths()
+            if cuda_bins:
+                env["PATH"] = os.pathsep.join(cuda_bins) + os.pathsep + env.get("PATH", "")
+        elif self.os_doc.is_linux:
+            nvidia_base = os.path.join(self.libs_dir, "nvidia")
+            if os.path.exists(nvidia_base):
+                nvidia_libs_paths = []
+                for root, dirs, files in os.walk(nvidia_base):
+                    if 'lib' in dirs:
+                        lib_path = os.path.abspath(os.path.join(root, 'lib'))
+                        if lib_path not in nvidia_libs_paths:
+                            nvidia_libs_paths.append(lib_path)
+                if nvidia_libs_paths:
+                    cur_ld = env.get("LD_LIBRARY_PATH", "")
+                    env["LD_LIBRARY_PATH"] = ":".join(nvidia_libs_paths) + ((":" + cur_ld) if cur_ld else "")
+
+        probe_script = (
+            "import sys\n"
+            "try:\n"
+            "    import ctranslate2\n"
+            "    cnt = ctranslate2.get_cuda_device_count()\n"
+            "    if cnt <= 0:\n"
+            "        print('NO_CUDA_DEVICES')\n"
+            "        sys.exit(2)\n"
+            "    types = ctranslate2.get_supported_compute_types('cuda')\n"
+            "    if not types:\n"
+            "        print('NO_COMPUTE_TYPES')\n"
+            "        sys.exit(3)\n"
+            "    print('CUDA_OK')\n"
+            "    sys.exit(0)\n"
+            "except Exception as e:\n"
+            "    print(f'CUDA_INIT_ERROR: {e}')\n"
+            "    sys.exit(1)\n"
+        )
+
+        try:
+            kwargs = {}
+            if hasattr(self.os_doc, 'get_subprocess_kwargs'):
+                kwargs = self.os_doc.get_subprocess_kwargs()
+            if not kwargs and os.name == 'nt':
+                kwargs = {
+                    "creationflags": getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000),
+                    "startupinfo": subprocess.STARTUPINFO()
+                }
+                kwargs["startupinfo"].dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
+                kwargs["startupinfo"].wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
+            res = subprocess.run(
+                [python_exe, "-c", probe_script],
+                capture_output=True, text=True, timeout=10,
+                env=env,
+                **kwargs
+            )
+            out = res.stdout.strip()
+            if res.returncode == 0 and "CUDA_OK" in out:
+                return True, ""
+            err_line = out if out else (res.stderr.strip() or f"exit code {res.returncode}")
+            return False, err_line
+        except Exception as exc:
+            return False, str(exc)
 
     def verify_hardware_compute(self, device_pref: str, compute_pref: str) -> bool:
         """
@@ -194,6 +269,11 @@ class TranscriptionMixin:
 
         try:
             python_exe = self.os_doc.get_venv_python_path()
+            env = os.environ.copy()
+            if target_device == "cuda" and self.os_doc.is_win:
+                cuda_bins = self.os_doc.setup_cuda_dll_paths()
+                if cuda_bins:
+                    env["PATH"] = os.pathsep.join(cuda_bins) + os.pathsep + env.get("PATH", "")
             kwargs = {}
             if hasattr(self.os_doc, 'get_subprocess_kwargs'):
                 kwargs = self.os_doc.get_subprocess_kwargs()
@@ -207,6 +287,7 @@ class TranscriptionMixin:
             result = subprocess.run(
                 [python_exe, "-c", probe_script],
                 capture_output=True, text=True, timeout=15,
+                env=env,
                 **kwargs,
             )
             log_info(f"[VerifyCompute] target={target_device} probe stdout: {result.stdout.strip()}")
@@ -231,12 +312,19 @@ class TranscriptionMixin:
                        f'    print("Downloading {model_name}...")\n'
                        f'    download_model("{model_name}", cache_dir={self.models_dir!r})')
 
-        script_content = f"""
+        script_content = f"""# -*- coding: utf-8 -*-
 import sys
 import os
 import re
 
 if sys.platform == 'win32':
+    try:
+        if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
@@ -263,6 +351,9 @@ if sys.stderr is not None:
 if sys.stdout is not None:
     sys.stdout = FakeTTY(sys.stdout)
 os.environ["PYTHONUNBUFFERED"] = "1"
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["PYTHONUTF8"] = "1"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
 os.environ["TQDM_DISABLE"] = "0"
 
@@ -296,9 +387,15 @@ except Exception as e:
             f.write(script_content)
 
         python_exec = self._get_python_executable()
-        cmd = [python_exec, runner_path]
+        safe_runner_path = self.os_doc.get_short_path(runner_path)
+        cmd = [python_exec, safe_runner_path]
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
+        env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+        env["OMP_WAIT_POLICY"] = "PASSIVE"
         
         try:
             # Disable tqdm in huggingface_hub so it doesn't pollute stdout with \r
@@ -482,13 +579,16 @@ except Exception:
     pass
 '''
 
-    def _get_cuda_preinit_code(self) -> str:
+    def _get_cuda_preinit_code(self, fw_device: str = "cuda") -> str:
         """
         Standalone pre-init script snippet injected into faster-whisper runner scripts.
         On Windows, discovers nvidia-cublas/cudnn/cuda_nvrtc bin folders, adds them via
-        os.add_dll_directory, prepends to PATH, and preloads cublas/cudnn DLLs via ctypes.CDLL.
-        On Linux, discovers nvidia lib directories and adds them to LD_LIBRARY_PATH.
+        os.add_dll_directory, and prepends to PATH.
+        CRITICAL: ONLY injected if fw_device == 'cuda'!
+        In CPU mode, CUDA DLLs must NEVER be injected or loaded, preventing SEH 0xC0000005 crashes.
         """
+        if fw_device != "cuda":
+            return ""
         return '''
 # --- NVIDIA CUDA / cuBLAS / cuDNN Dynamic DLL Injection ---
 import sys, os
@@ -513,17 +613,6 @@ if sys.platform.startswith("win"):
                     os.add_dll_directory(_d)
                 except Exception:
                     pass
-        import ctypes
-        for _d in _cuda_dirs:
-            try:
-                for _f in os.listdir(_d):
-                    if _f.lower().endswith(".dll"):
-                        try:
-                            ctypes.CDLL(os.path.join(_d, _f))
-                        except Exception:
-                            pass
-            except Exception:
-                pass
 elif sys.platform.startswith("linux"):
     _sp_candidates = [p for p in sys.path if "site-packages" in p]
     _so_dirs = []
@@ -560,6 +649,23 @@ elif sys.platform.startswith("linux"):
         if model == "large": model = "large-v3"
         # macOS never supports CUDA; force CPU on Darwin even if settings contain 'GPU'
         fw_device = "cuda" if "GPU" in device_mode and not self.os_doc.is_mac else "cpu"
+
+        # Validate CUDA availability before launching runner to avoid crashes on incompatible drivers/GPUs
+        if fw_device == "cuda":
+            cuda_usable, cuda_reason = self.is_cuda_functional()
+            if not cuda_usable:
+                log_warn(f"[CUDA Fallback] CUDA runtime cannot initialize ({cuda_reason}). Automatically falling back to CPU mode.")
+                if progress_callback:
+                    try: progress_callback(-1)
+                    except Exception: pass
+                return self.run_whisper(
+                    audio_path, model, lang, verbatim, "CPU", "int8",
+                    filler_words_list=filler_words_list,
+                    initial_prompt=initial_prompt,
+                    progress_callback=progress_callback,
+                    islands=islands,
+                    chunk_callback=chunk_callback,
+                )
         
         prefs = self.os_doc.get_all_prefs()
 
@@ -585,6 +691,11 @@ elif sys.platform.startswith("linux"):
 
         env = os.environ.copy()
         env["HF_HOME"] = self.models_dir
+        env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+        env["OMP_WAIT_POLICY"] = "PASSIVE"
         env["OMP_NUM_THREADS"] = str(optimal_cpu_threads)
         env["MKL_NUM_THREADS"] = str(optimal_cpu_threads)
         env["OPENBLAS_NUM_THREADS"] = str(optimal_cpu_threads)
@@ -621,11 +732,18 @@ elif sys.platform.startswith("linux"):
                                                        islands, json_output_path, prefs)
         elif use_chunking:
             log_info(f"[Chunked] {len(islands)} sound islands → in-memory NumPy slicing.")
-            script_content = f"""
+            script_content = f"""# -*- coding: utf-8 -*-
 import sys, os, json, time
 import numpy as np
 
 if sys.platform == 'win32':
+    try:
+        if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
@@ -633,6 +751,10 @@ if sys.platform == 'win32':
         pass
 
 os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["PYTHONUTF8"] = "1"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HOME"] = {repr(self.models_dir)}
@@ -645,7 +767,7 @@ libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
-{self._get_cuda_preinit_code()}
+{self._get_cuda_preinit_code(fw_device)}
 {self._get_av_compat_code()}
 
 try:
@@ -848,13 +970,20 @@ except Exception as e:
 """
         else:
             # ── Original single-file runner (unchanged) ──────────────────────
-            script_content = f"""
+            script_content = f"""# -*- coding: utf-8 -*-
 import sys
 import os
 import json
 import time
 
 if sys.platform == 'win32':
+    try:
+        if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
@@ -863,6 +992,10 @@ if sys.platform == 'win32':
 
 # FIXED v11.2: Force include portable bin in PATH for stable-ts subprocess calls
 os.environ["PATH"] = {repr(self.os_doc.bin_dir)} + os.pathsep + os.environ.get("PATH", "")
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["PYTHONUTF8"] = "1"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -877,7 +1010,7 @@ libs_dir = {repr(self.libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
-{self._get_cuda_preinit_code()}
+{self._get_cuda_preinit_code(fw_device)}
 {self._get_av_compat_code()}
 
 try:
@@ -977,7 +1110,8 @@ except Exception as e:
             f.write(script_content)
 
         python_exec = self._get_python_executable()
-        cmd = [python_exec, "-u", runner_script_path]
+        safe_runner_path = self.os_doc.get_short_path(runner_script_path)
+        cmd = [python_exec, "-u", safe_runner_path]
         env["PYTHONUNBUFFERED"] = "1"
         
         log_info(f"Running Whisper Runner ({'MLX, Apple GPU' if self.use_mlx_for(device_mode) else 'Faster-Whisper'}). Script: {runner_script_path}")
@@ -1041,6 +1175,19 @@ except Exception as e:
             
             if process.returncode != 0:
                 log_error(f"Subprocess Failed. Return Code: {process.returncode}")
+                if fw_device == "cuda":
+                    log_warn("[CUDA Fallback] GPU runner process failed. Retrying transcription automatically in CPU mode...")
+                    if progress_callback:
+                        try: progress_callback(-1)
+                        except Exception: pass
+                    return self.run_whisper(
+                        audio_path, model, lang, verbatim, "CPU", "int8",
+                        filler_words_list=filler_words_list,
+                        initial_prompt=initial_prompt,
+                        progress_callback=progress_callback,
+                        islands=islands,
+                        chunk_callback=chunk_callback,
+                    )
                 return None
                 
             if os.path.exists(json_output_path):
@@ -1051,6 +1198,19 @@ except Exception as e:
                 
         except Exception as e:
             log_error(f"Exception in run_whisper: {e}")
+            if fw_device == "cuda":
+                log_warn("[CUDA Fallback] Exception during GPU execution. Retrying automatically in CPU mode...")
+                if progress_callback:
+                    try: progress_callback(-1)
+                    except Exception: pass
+                return self.run_whisper(
+                    audio_path, model, lang, verbatim, "CPU", "int8",
+                    filler_words_list=filler_words_list,
+                    initial_prompt=initial_prompt,
+                    progress_callback=progress_callback,
+                    islands=islands,
+                    chunk_callback=chunk_callback,
+                )
             return None
         finally:
             if os.path.exists(runner_script_path):

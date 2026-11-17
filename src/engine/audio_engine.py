@@ -656,10 +656,15 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             raw_device = settings.get('device', 'Auto')
             
             if isinstance(raw_device, str) and raw_device.lower() == "auto":
-                # Check for physical existence of NVIDIA libs in venv
+                # Check for physical existence of NVIDIA hardware & driver >= 525
                 if self.os_doc.has_nvidia_support():
-                    device_mode = "GPU"
-                    log_info("Auto Mode: Detected NVIDIA libs. Using GPU.")
+                    cuda_ok, cuda_err = self.is_cuda_functional()
+                    if cuda_ok:
+                        device_mode = "GPU"
+                        log_info("Auto Mode: Detected NVIDIA libs & verified CUDA runtime. Using GPU.")
+                    else:
+                        device_mode = "CPU"
+                        log_warn(f"Auto Mode: NVIDIA GPU present but CUDA initialization failed ({cuda_err}). Gracefully falling back to CPU.")
                 elif self.mlx_available():
                     device_mode = "GPU"
                     log_info("Auto Mode: Apple Silicon with MLX. Using GPU (mlx-whisper).")

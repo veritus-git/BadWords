@@ -105,8 +105,11 @@ class UpdateCheckThread(QThread):
     @staticmethod
     def _fetch_json(url: str, timeout: int = 8):
         import urllib.request, json, ssl
-        import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ctx = ssl.create_default_context()
         req = urllib.request.Request(url, headers={"User-Agent": "BadWords-UpdateCheck/1.0"})
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             return json.loads(resp.read().decode('utf-8'))
@@ -409,8 +412,12 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         def _worker():
             tmp_script = None
             try:
-                import urllib.request, ssl, certifi
-                ctx = ssl.create_default_context(cafile=certifi.where())
+                import urllib.request, ssl
+                try:
+                    import certifi
+                    ctx = ssl.create_default_context(cafile=certifi.where())
+                except Exception:
+                    ctx = ssl.create_default_context()
 
                 script_content = None
                 for url in (url_primary, url_fallback):
