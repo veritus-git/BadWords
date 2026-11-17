@@ -36,7 +36,7 @@ class TestTimelineCuts(unittest.TestCase):
 
     def test_multi_framerate_cut_calculations(self):
         """Test timeline structure cuts across multiple standard frame rates."""
-        rates = [23.976, 29.97, 60.0, 25.0]
+        rates = [23.976, 29.97, 47.952, 59.94, 60.0, 25.0]
 
         settings = {
             'offset': 0.0,
@@ -67,6 +67,29 @@ class TestTimelineCuts(unittest.TestCase):
                 for i in range(len(surviving) - 1):
                     self.assertLessEqual(surviving[i]['e'], surviving[i + 1]['s'],
                                         f"Surviving clips overlap at fps {fps}: {surviving[i]} vs {surviving[i+1]}")
+
+    def test_exact_drop_frame_math(self):
+        """Verify that NTSC/drop frame rates use exact rational timebases (e.g. 24000/1001)."""
+        words = [
+            {
+                'id': 1, 'word': 'Test', 'start': 1000.0, 'end': 1010.0, 'status': 'normal',
+                'meta_global_silence': [{'s': 0.0, 'e': 1000.0}]
+            }
+        ]
+        # At 23.976 fps, effective rate is 24000.0 / 1001.0
+        # Frame for 1000.0s should be round(1000.0 * 24000 / 1001) = 23976
+        surviving, _ = self.engine.calculate_timeline_structure_with_cuts(
+            copy.deepcopy(words), 23.976, {'silence_cut': True, 'silence_keep': 0.0, 'ui_spin_pad': 0.0}
+        )
+        expected_start = int(round(1000.0 * 24000.0 / 1001.0))
+        self.assertEqual(surviving[0]['s'], expected_start)
+
+        # At 29.97 fps, effective rate is 30000.0 / 1001.0
+        surviving_29, _ = self.engine.calculate_timeline_structure_with_cuts(
+            copy.deepcopy(words), 29.97, {'silence_cut': True, 'silence_keep': 0.0, 'ui_spin_pad': 0.0}
+        )
+        expected_start_29 = int(round(1000.0 * 30000.0 / 1001.0))
+        self.assertEqual(surviving_29[0]['s'], expected_start_29)
 
     def test_silence_cut_disabled_vs_enabled(self):
         """Verify that disabling silence cut keeps silence regions intact."""

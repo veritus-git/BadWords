@@ -90,6 +90,18 @@ class TestAlgorithms(unittest.TestCase):
         self.assertTrue(algorithms.check_fuzzy_match("resolve", "resolv"))
         self.assertFalse(algorithms.check_fuzzy_match("davinci", "premiere"))
 
+    def test_auto_filler_preserves_manual_status(self):
+        """Verify apply_auto_filler_logic respects manual_status two-layer priority invariant."""
+        words = [
+            {'id': 1, 'text': 'um', 'status': 'normal', 'manual_status': 'normal'},
+            {'id': 2, 'text': 'uh', 'status': None, 'manual_status': None},
+        ]
+        algorithms.apply_auto_filler_logic(words, ['um', 'uh'], True)
+        self.assertEqual(words[0]['status'], 'normal', "User manual_status was overwritten by filler pass")
+        self.assertEqual(words[0]['manual_status'], 'normal')
+        self.assertEqual(words[1]['status'], 'bad', "Filler word without manual override was not marked bad")
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -173,6 +173,35 @@ class OSDoctor:
                         os.remove(src_cand)
                     except Exception:
                         pass
+
+            # One-time migration: migrate legacy saves/temp from src/ to .dev_workspace/
+            legacy_saves = os.path.join(self.install_dir, "saves")
+            target_saves = os.path.join(self.dev_data_dir, "saves")
+            if os.path.isdir(legacy_saves):
+                try:
+                    os.makedirs(target_saves, exist_ok=True)
+                    for item in os.listdir(legacy_saves):
+                        s = os.path.join(legacy_saves, item)
+                        d = os.path.join(target_saves, item)
+                        if not os.path.exists(d):
+                            shutil.move(s, d)
+                    shutil.rmtree(legacy_saves)
+                except Exception:
+                    pass
+
+            legacy_temp = os.path.join(self.install_dir, "temp")
+            if os.path.isdir(legacy_temp):
+                try:
+                    shutil.rmtree(legacy_temp)
+                except Exception:
+                    pass
+
+            legacy_models = os.path.join(self.install_dir, "models")
+            if os.path.isdir(legacy_models) and not os.listdir(legacy_models):
+                try:
+                    os.rmdir(legacy_models)
+                except Exception:
+                    pass
         else:
             # Installed Mode: Self-Contained next to installation files
             self.dev_data_dir = ""

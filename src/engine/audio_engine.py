@@ -51,12 +51,20 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 self.libs_dir = lb
                 break
 
-        cand_models = [
-            os.path.join(self.os_doc.install_dir, "models"),
-            os.path.join(os.path.dirname(self.os_doc.install_dir), "models"),
-            "/mnt/dump/BadWords FILES/models",
-        ]
-        self.models_dir = cand_models[0]
+        if getattr(self.os_doc, 'is_dev', False):
+            cand_models = [
+                "/mnt/dump/BadWords FILES/models",
+                os.path.join(os.path.dirname(self.os_doc.install_dir), "models"),
+                os.path.join(self.os_doc.app_data_dir, "models"),
+            ]
+            self.models_dir = os.path.join(self.os_doc.app_data_dir, "models")
+        else:
+            cand_models = [
+                os.path.join(self.os_doc.install_dir, "models"),
+                os.path.join(os.path.dirname(self.os_doc.install_dir), "models"),
+                "/mnt/dump/BadWords FILES/models",
+            ]
+            self.models_dir = cand_models[0]
         for m in cand_models:
             if os.path.isdir(m) and any(e.startswith("models--") for e in os.listdir(m)):
                 self.models_dir = m

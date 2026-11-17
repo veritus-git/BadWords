@@ -23,13 +23,15 @@ class TestDataContracts(unittest.TestCase):
         """Verify words_data[0] preserves metadata across timeline structure calculations."""
         meta_silence = [{'s': 0.0, 'e': 1.0}, {'s': 2.0, 'e': 3.0}]
         custom_meta = {'session_id': 'bw_test_123', 'timeline_track': 1}
+        session_tags = ['take_1', 'cam_a', 'raw']
 
         words_data = [
             {
                 'id': 1, 'word': 'First', 'text': 'First',
                 'start': 1.0, 'end': 2.0, 'status': 'normal',
                 'meta_global_silence': meta_silence,
-                'custom_meta': custom_meta
+                'custom_meta': custom_meta,
+                'session_tags': session_tags
             },
             {
                 'id': 2, 'word': 'Second', 'text': 'Second',
@@ -46,6 +48,7 @@ class TestDataContracts(unittest.TestCase):
         self.assertIn('meta_global_silence', words_data[0], "words_data[0] lost meta_global_silence")
         self.assertEqual(words_data[0]['meta_global_silence'], meta_silence)
         self.assertEqual(words_data[0]['custom_meta'], custom_meta)
+        self.assertEqual(words_data[0]['session_tags'], session_tags)
 
     def test_empty_words_data_safety(self):
         """Verify that empty words_data does not raise exceptions and returns empty structures."""
@@ -74,3 +77,4 @@ class TestDataContracts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -348,6 +348,7 @@ def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str =
             import json
             install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             for cand_settings in [
+                os.path.join(os.path.dirname(install_dir), ".dev_workspace", "settings.json"),
                 os.path.join(install_dir, "settings.json"),
                 os.path.join(os.path.dirname(install_dir), "settings.json"),
                 os.path.join(os.path.expanduser("~"), "Library", "Application Support", "BadWords", "settings.json"),

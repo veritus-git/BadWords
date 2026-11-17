@@ -39,17 +39,19 @@ description: Core architecture layers, 3-zone boundaries, protected workarounds,
 ## 4. Mandatory AI Coding Commandments
 1. **No Monoliths**: Keep modules focused in their proper subpackages. Do not bloat `main_window.py`.
 2. **English Only**: Code, variable names, comments, terminal logs, and git commits must be in English. Translations go in `src/i18n/*.json`.
-3. **Task State Tracking (`docs/DEV_STATE.md`)**:
-   * Record ongoing task state, changes made, and pending steps in `docs/DEV_STATE.md` so multi-session tasks are never lost.
-4. **No Runtime Trash in Git**: Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, or `raport/`.
-5. **Mandatory Verification Protocol**:
+3. **Continuous State Tracking (`docs/DEV_STATE.md`)**:
+   * Record task progress, changes made, and pending steps in `docs/DEV_STATE.md` progressively (not just at session end) so multi-turn context is never lost.
+4. **Empirical Verification (No Guesswork)**:
+   * Never guess APIs or behavior ("co mi się wydaje"). Verify against official docs, codebase inspection, or minimal reproduction scripts before committing.
+5. **No Runtime Trash in Git**: Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, or `raport/`.
+6. **Mandatory Verification Protocol**:
    * Run automated tests: `python3 run_tests.py` (ALL tests must pass).
    * Run bytecode compilation: `python3 -m compileall src`.
    * Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
    * If modifying Rust installer: `cargo check` and `cargo test`.
-6. **Sync Installation Folder**:
+7. **Sync Installation Folder**:
    * After any change in `src/`, `installer/`, or `setupfiles/`, synchronize to `/mnt/dump/BadWords FILES/` (excluding runtime user data).
-7. **Curated Release Notes on Releases**:
+8. **Curated Release Notes on Releases**:
    * When preparing an official Release, update `src/config/release_notes.json`.
-8. **Automated Commit & Push**:
+9. **Automated Commit & Push**:
    * Commit with conventional commit messages and push to all configured remotes (`git push all <branch>`).
