@@ -1,0 +1,1 @@
+# BadWords Automated Test Suite

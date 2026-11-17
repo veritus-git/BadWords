@@ -170,11 +170,20 @@ def _app_icon() -> QIcon:
         import json
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         icon_name = "default"
-        settings_file = os.path.join(install_dir, "settings.json")
-        if os.path.exists(settings_file):
-            with open(settings_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                icon_name = data.get('app_icon', 'default')
+        settings_candidates = [
+            os.path.join(os.path.dirname(install_dir), ".dev_workspace", "settings.json"),
+            os.path.join(install_dir, "settings.json"),
+            os.path.join(os.path.dirname(install_dir), "settings.json"),
+        ]
+        for sc in settings_candidates:
+            if os.path.isfile(sc):
+                try:
+                    with open(sc, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        icon_name = data.get('app_icon', 'default')
+                        break
+                except Exception:
+                    pass
 
         icon_path = get_icon_path(icon_name)
         if icon_path and os.path.exists(icon_path):
@@ -191,11 +200,20 @@ def _titlebar_icon(icon_name: str = None) -> QIcon:
             import json
             install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             icon_name = "default"
-            settings_file = os.path.join(install_dir, "settings.json")
-            if os.path.exists(settings_file):
-                with open(settings_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    icon_name = data.get('app_icon', 'default')
+            settings_candidates = [
+                os.path.join(os.path.dirname(install_dir), ".dev_workspace", "settings.json"),
+                os.path.join(install_dir, "settings.json"),
+                os.path.join(os.path.dirname(install_dir), "settings.json"),
+            ]
+            for sc in settings_candidates:
+                if os.path.isfile(sc):
+                    try:
+                        with open(sc, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            icon_name = data.get('app_icon', 'default')
+                            break
+                    except Exception:
+                        pass
 
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         candidates = [

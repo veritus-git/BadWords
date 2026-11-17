@@ -480,7 +480,7 @@ def _run_auto_update_if_needed(os_doc, splash=None):
             QApplication.processEvents()
 
     # Read prefs without importing gui/Qt
-    prefs_path = os.path.join(os_doc.install_dir, 'settings.json')
+    prefs_path = getattr(os_doc, 'settings_file', os.path.join(os_doc.install_dir, 'settings.json'))
     try:
         with open(prefs_path, 'r', encoding='utf-8') as f:
             prefs = json.load(f)

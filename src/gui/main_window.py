@@ -1628,7 +1628,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QFileDialog
         import os
         
-        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        saves_dir = getattr(self.engine.os_doc, 'saves_dir', os.path.join(self.engine.os_doc.install_dir, "saves"))
         os.makedirs(saves_dir, exist_ok=True)
         
         # SMART TIMELINE NAMING
@@ -1762,7 +1762,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         from PySide6.QtWidgets import QFileDialog
         import os
 
-        saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+        saves_dir = getattr(self.engine.os_doc, 'saves_dir', os.path.join(self.engine.os_doc.install_dir, "saves"))
         os.makedirs(saves_dir, exist_ok=True)
 
         # Build default filename from source info
@@ -1840,7 +1840,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             
             path = override_path
             if not path:
-                saves_dir = os.path.join(self.engine.os_doc.install_dir, "saves")
+                saves_dir = getattr(self.engine.os_doc, 'saves_dir', os.path.join(self.engine.os_doc.install_dir, "saves"))
                 os.makedirs(saves_dir, exist_ok=True)
                 
                 path, _ = QFileDialog.getOpenFileName(

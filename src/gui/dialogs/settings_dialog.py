@@ -2217,11 +2217,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         if l_file and os.path.exists(l_file):
                             zf.write(l_file, os.path.basename(l_file))
                         inst_dir = getattr(self.engine.os_doc, 'install_dir', '')
-                        if inst_dir:
-                            for cfile in ['user.json', 'settings.json', 'pref.json']:
-                                p = os.path.join(inst_dir, cfile)
-                                if os.path.exists(p):
-                                    zf.write(p, cfile)
+                        u_file = getattr(self.engine.os_doc, 'user_file', os.path.join(inst_dir, 'user.json'))
+                        s_file = getattr(self.engine.os_doc, 'settings_file', os.path.join(inst_dir, 'settings.json'))
+                        p_file = getattr(self.engine.os_doc, 'legacy_pref_file', os.path.join(inst_dir, 'pref.json'))
+                        for cfile, p in [('user.json', u_file), ('settings.json', s_file), ('pref.json', p_file)]:
+                            if p and os.path.exists(p):
+                                zf.write(p, cfile)
                         from PySide6.QtGui import QImage
                         for i, p in enumerate(attachments):
                             if os.path.exists(p):

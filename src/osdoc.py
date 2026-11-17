@@ -147,26 +147,56 @@ class OSDoctor:
         # Instead of using system APPDATA, we use the directory where this script resides.
         self.install_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Force AppData to be the Install Dir
-        self.app_data_dir = self.install_dir
+        # --- DEV WORKSPACE VS INSTALLED ENVIRONMENT ISOLATION ---
+        self.is_dev, self.repo_root = self._detect_dev_mode()
+
+        if self.is_dev:
+            # Development Mode: isolate all runtime data into repo-level .dev_workspace
+            self.dev_data_dir = os.path.join(self.repo_root, ".dev_workspace")
+            try:
+                os.makedirs(self.dev_data_dir, exist_ok=True)
+            except Exception as e:
+                print(f"[WARN] Failed to create dev workspace directory: {e}")
+            self.app_data_dir = self.dev_data_dir
+
+            # One-time migration: if legacy config exists in src/ but not in .dev_workspace/, migrate it
+            for fn in ("settings.json", "user.json", "pref.json"):
+                src_cand = os.path.join(self.install_dir, fn)
+                dst_cand = os.path.join(self.dev_data_dir, fn)
+                if os.path.isfile(src_cand) and not os.path.isfile(dst_cand):
+                    try:
+                        shutil.copy2(src_cand, dst_cand)
+                    except Exception:
+                        pass
+                if os.path.isfile(src_cand):
+                    try:
+                        os.remove(src_cand)
+                    except Exception:
+                        pass
+        else:
+            # Installed Mode: Self-Contained next to installation files
+            self.dev_data_dir = ""
+            self.app_data_dir = self.install_dir
         
         # Define internal structure paths
         self.bin_dir = os.path.join(self.install_dir, "bin")
         self.log_file = os.path.join(self.app_data_dir, "badwords_debug.log")
         # Split config: user identity/consent → user.json, app prefs → settings.json
-        self.user_file     = os.path.join(self.install_dir, 'user.json')
-        self.settings_file = os.path.join(self.install_dir, 'settings.json')
+        self.user_file     = os.path.join(self.app_data_dir, 'user.json')
+        self.settings_file = os.path.join(self.app_data_dir, 'settings.json')
         # Legacy path for one-time migration
-        self.legacy_pref_file = os.path.join(self.install_dir, 'pref.json')
+        self.legacy_pref_file = os.path.join(self.app_data_dir, 'pref.json')
         self.saves_dir = os.path.join(self.app_data_dir, "saves")
         
         # Fallback check
-        if not os.access(self.install_dir, os.W_OK):
+        target_check_dir = self.app_data_dir
+        if not os.access(target_check_dir, os.W_OK):
             self.app_data_dir = os.path.join(tempfile.gettempdir(), "BadWords_Fallback")
             self.log_file = os.path.join(self.app_data_dir, "badwords.log")
             self.user_file     = os.path.join(self.app_data_dir, 'user.json')
             self.settings_file = os.path.join(self.app_data_dir, 'settings.json')
             self.legacy_pref_file = os.path.join(self.app_data_dir, 'pref.json')
+            self.saves_dir = os.path.join(self.app_data_dir, "saves")
             try: os.makedirs(self.app_data_dir, exist_ok=True)
             except Exception as e:
                 log_error(f"OSDoctor: cannot create fallback AppData directory: {e}")
@@ -191,6 +221,32 @@ class OSDoctor:
         
         # --- ENSURE TELEMETRY UUID IS GENERATED ---
         self._ensure_telemetry_prefs()
+
+    def _detect_dev_mode(self) -> tuple:
+        """
+        Detects if running in a development workspace (e.g. Git repository checkout).
+        Returns: (is_dev: bool, repo_root: str)
+        """
+        if os.environ.get("BADWORDS_FORCE_INSTALLED") == "1":
+            return False, ""
+        if os.environ.get("BADWORDS_DEV") == "1":
+            cur = os.path.abspath(self.install_dir)
+            parent = os.path.dirname(cur)
+            root = parent if os.path.basename(cur) == "src" else cur
+            return True, root
+
+        cur = os.path.abspath(self.install_dir)
+        parent = os.path.dirname(cur)
+        # 1. If install_dir is 'src' and parent has .git
+        if os.path.basename(cur) == "src" and os.path.exists(os.path.join(parent, ".git")):
+            return True, parent
+        # 2. If install_dir itself has .git
+        if os.path.exists(os.path.join(cur, ".git")):
+            return True, cur
+        # 3. If parent has .git
+        if os.path.exists(os.path.join(parent, ".git")):
+            return True, parent
+        return False, ""
 
     def _get_machine_id(self):
         """Retrieves stable, unique OS installation machine ID (Win/Lin/Mac)."""
@@ -542,6 +598,14 @@ class OSDoctor:
         """
         Determines the best location for heavy temporary files (Audio Renders).
         """
+        if getattr(self, "is_dev", False):
+            path = os.path.join(self.app_data_dir, "temp")
+            try:
+                os.makedirs(path, exist_ok=True)
+                return path
+            except Exception as e:
+                log_error(f"_init_smart_temp_dir: cannot create dev temp directory {path}: {e}")
+
         # Linux Resolve visibility fix: Use Videos/Documents if possible
         if self.is_linux:
             home = os.path.expanduser("~")
@@ -588,7 +652,9 @@ class OSDoctor:
         log_info("="*30)
         log_info("BadWords Session Started")
         log_info(f"OS: {self.os_type} {platform.release()}")
+        log_info(f"Environment Mode: {'Development Workspace (' + self.app_data_dir + ')' if self.is_dev else 'Installed Instance (' + self.install_dir + ')'}")
         log_info(f"Install Dir: {self.install_dir}")
+        log_info(f"Data Dir: {self.app_data_dir}")
         log_info(f"Bin Dir (FFmpeg): {self.bin_dir}")
         log_info(f"VENV Python: {self.get_venv_python_path()}")
         log_info(f"NVIDIA Support Detected: {self.has_nvidia_support()}")
