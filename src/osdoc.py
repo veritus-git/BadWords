@@ -768,7 +768,7 @@ class OSDoctor:
             if p and os.path.exists(p):
                 return os.path.dirname(p) if os.path.isfile(p) else p
                 
-        return paths[0] if paths else ""
+        return ""
 
     def get_resolve_installation_info(self) -> dict:
         """
@@ -1907,12 +1907,20 @@ else:
                 candidates.append(p)
                 
         for sp in candidates:
+            if not sp or not os.path.isdir(sp):
+                continue
             nv_base = os.path.join(sp, "nvidia")
             if os.path.isdir(nv_base):
                 for sub in ["cublas", "cudnn", "cuda_nvrtc", "cuda_runtime"]:
                     bin_dir = os.path.join(nv_base, sub, "bin")
                     if os.path.isdir(bin_dir) and bin_dir not in discovered_bins:
                         discovered_bins.append(os.path.abspath(bin_dir))
+            torch_lib = os.path.join(sp, "torch", "lib")
+            if os.path.isdir(torch_lib) and torch_lib not in discovered_bins:
+                discovered_bins.append(os.path.abspath(torch_lib))
+            cand_bin = os.path.join(sp, "bin")
+            if os.path.isdir(cand_bin) and cand_bin not in discovered_bins:
+                discovered_bins.append(os.path.abspath(cand_bin))
                         
         if discovered_bins:
             # 1. Prepend to os.environ["PATH"]

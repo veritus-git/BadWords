@@ -57,7 +57,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - Implemented automatic migration of legacy config, saves, and temp from `src/` to `.dev_workspace/`.
 3. **Automated Test Suite**:
    - Created test framework in `tests/` and test runner `run_tests.py`.
-   - 30 comprehensive unit & visual regression tests implemented and passing.
+   - 33 comprehensive unit & visual regression tests implemented and passing.
 4. **School PC Crash & Environment Fixes (2026-11-17)**:
    - **DaVinci Resolve Script Sync (`_host_ver` undefined & ctypes.CDLL cleanup)**: Fixed f-string interpolation bug in `generate_davinci_wrapper_content()` in `src/osdoc.py`, and removed remaining unsafe `ctypes.CDLL` preload loop in generated wrapper.
    - **Feedback / Bug Report Form Crash (`No module named 'requests'`)**: Replaced `requests.post()` in `src/gui/dialogs/settings_dialog.py` with zero-dependency standard library `urllib.request` multipart/form-data POST.
@@ -73,15 +73,18 @@ Test Runner: `run_tests.py` using Python `unittest`.
      * Added automatic graceful fallback to CPU mode upon runner failure.
 5. **Standalone vs DaVinci Decoupling & GitHub Issue #19 Fix (2026-11-17)**:
    - **GitHub Issue #19 Fix (`Library cublas64_12.dll is not found or cannot be loaded`)**:
-     * Expanded `_get_cuda_preinit_code` search paths to include `safe_libs_dir` and all `sys.path` entries.
-     * Hardened `is_cuda_functional()` probe script by injecting dynamic preinit DLL paths and checking loadability of `cublas64_12.dll` / `cublas64_11.dll` on Windows prior to execution.
+     * Expanded `_get_cuda_preinit_code` search paths to include `safe_libs_dir`, `torch/lib`, `bin`, and all `sys.path` entries.
+     * Hardened `is_cuda_functional()` probe script by injecting dynamic preinit DLL paths and checking loadability of `cublas64_12.dll` / `cublas64_11.dll` (Windows) and `libcublas.so.12` / `libcublas.so.11` (Linux) prior to execution.
      * If cuBLAS is missing, `is_cuda_functional()` gracefully rejects GPU mode and Auto Mode defaults cleanly to CPU without crashing.
      * In runner failure, `run_whisper` catches exit code 1 / runtime errors and automatically re-executes transcription in CPU mode.
    - **Standalone Mode Clean Decoupling from DaVinci Resolve**:
      * Guarded `sync_resolve_scripts()`: returns immediately without touching filesystem or logging warnings when DaVinci Resolve is not installed.
-     * Guarded `ResolveHandler.__init__()`: initializes silently on boot (`silent=True`); early return if Resolve is not installed; no spurious `Could not import DaVinciResolveScript` errors.
+     * Guarded `ResolveHandler.__init__()`: initializes silently on boot (`silent=True`); early return in `_connect()` and `_load_resolve_script_module()` if Resolve is not installed; no spurious `Could not import DaVinciResolveScript` errors or `sys.path` pollution.
+     * Fixed `get_resolve_api_path()` to return `""` when candidate paths do not exist.
      * In `welcome_view.py`: if DaVinci Resolve is not installed, the source selector dropdown offers only "Plik lokalny" (Local file), preventing user confusion.
-     * In `main_window.py`: `_populate_timeline_track_combos()` and `_jump_playhead()` no-op cleanly in standalone file mode without querying non-existent Resolve timelines.
+     * In `main_window.py`: skipped `_populate_timeline_track_combos()` on boot in file mode, deferring it until the user actually switches to Resolve mode.
+     * In `track_options_drawer.py`: skipped querying Resolve tracks when in file mode.
+     * `_jump_playhead()` no-ops cleanly in standalone file mode.
 6. **AI Codex & Rules Update**:
    - Updated `.agents/rules/architecture.md` with 3-Zone architecture, empirical verification rule, progressive task tracking, and token budget efficiency.
    - Established persistent task state tracking via `docs/DEV_STATE.md`.

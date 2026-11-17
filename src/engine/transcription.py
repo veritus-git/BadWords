@@ -236,6 +236,19 @@ try:
         if not loaded:
             print('CUBLAS_MISSING: Library cublas64_12.dll or cublas64_11.dll is not found or cannot be loaded')
             sys.exit(4)
+    elif sys.platform.startswith('linux'):
+        import ctypes
+        loaded = False
+        for so_name in ['libcublas.so.12', 'libcublas.so.11', 'libcublas.so']:
+            try:
+                ctypes.CDLL(so_name)
+                loaded = True
+                break
+            except Exception:
+                pass
+        if not loaded:
+            print('CUBLAS_MISSING: Library libcublas.so.12 or libcublas.so.11 is not found or cannot be loaded')
+            sys.exit(4)
     print('CUDA_OK')
     sys.exit(0)
 except Exception as e:
@@ -634,6 +647,12 @@ if sys.platform.startswith("win"):
                 _b = os.path.join(_nv, _sub, "bin")
                 if os.path.isdir(_b) and _b not in _cuda_dirs:
                     _cuda_dirs.append(os.path.abspath(_b))
+        _t_lib = os.path.join(_sp, "torch", "lib")
+        if os.path.isdir(_t_lib) and _t_lib not in _cuda_dirs:
+            _cuda_dirs.append(os.path.abspath(_t_lib))
+        _b_cand = os.path.join(_sp, "bin")
+        if os.path.isdir(_b_cand) and _b_cand not in _cuda_dirs:
+            _cuda_dirs.append(os.path.abspath(_b_cand))
     if _cuda_dirs:
         os.environ["PATH"] = os.pathsep.join(_cuda_dirs) + os.pathsep + os.environ.get("PATH", "")
         if hasattr(os, "add_dll_directory"):

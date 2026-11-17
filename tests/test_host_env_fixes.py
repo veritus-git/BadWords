@@ -235,6 +235,43 @@ class TestHostEnvFixes(unittest.TestCase):
             self.assertFalse(rh.is_connected())
             self.assertIsNone(rh.backend)
 
+    def test_get_resolve_api_path_returns_empty_when_no_paths_exist(self):
+        """
+        Verify get_resolve_api_path returns empty string when no candidate paths exist,
+        rather than returning a non-existent path that pollutes sys.path.
+        """
+        with patch("os.path.exists", return_value=False):
+            with patch.dict(os.environ, {}, clear=True):
+                path = self.doc.get_resolve_api_path()
+                self.assertEqual(path, "")
+
+    def test_resolve_handler_load_script_module_skipped_when_resolve_not_installed(self):
+        """
+        Verify _load_resolve_script_module does not pollute sys.path when DaVinci
+        Resolve is not installed on the system.
+        """
+        import api
+        with patch.object(self.doc, "get_resolve_installation_info", return_value={"installed": False}):
+            with patch.object(self.doc, "get_resolve_api_path") as mock_api_path:
+                rh = api.ResolveHandler(self.doc)
+                rh.bmd = None
+                rh._load_resolve_script_module()
+                mock_api_path.assert_not_called()
+
+    def test_populate_timeline_combos_skipped_in_file_mode(self):
+        """
+        Verify _populate_timeline_track_combos returns immediately without querying
+        Resolve or launching a worker thread when running in standalone file mode.
+        """
+        class DummyWin:
+            current_source_type = "file"
+            engine = self.engine
+
+        dummy = DummyWin()
+        from gui.main_window import BadWordsGUI
+        BadWordsGUI._populate_timeline_track_combos(dummy)
+        self.assertFalse(hasattr(dummy, "_timeline_worker"))
+
 
 if __name__ == "__main__":
     unittest.main()

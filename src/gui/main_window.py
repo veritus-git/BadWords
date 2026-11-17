@@ -2299,6 +2299,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         populates both timeline dropdowns (combo_tl_0 / combo_tl_1) asynchronously.
         Guarantees zero UI lag / freezing on Windows.
         """
+        if getattr(self, 'current_source_type', 'resolve') == 'file':
+            return
+
         from PySide6.QtCore import QThread, Signal
 
         if getattr(self, '_timeline_worker', None) and self._timeline_worker.isRunning():

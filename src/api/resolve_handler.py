@@ -74,6 +74,10 @@ class ResolveHandler:
         """Dynamically imports DaVinciResolveScript using path from OSDoctor."""
         if hasattr(self, 'bmd') and self.bmd:
             return
+        if hasattr(self, 'os_doc') and self.os_doc:
+            info = self.os_doc.get_resolve_installation_info()
+            if not info.get("installed", False):
+                return
         api_path = self.os_doc.get_resolve_api_path() if self.os_doc else None
         if not api_path: return
 

@@ -1372,6 +1372,8 @@ class WelcomePageView(QWidget):
             win._sync_script_edit_height(animated=False)
         if hasattr(win, 'btn_assemble'):
             win.btn_assemble.set_export_mode(mode == "file")
+        if mode == "resolve" and hasattr(win, '_populate_timeline_track_combos'):
+            win._populate_timeline_track_combos()
 
     def switch_source_animated(self, mode: str):
         if getattr(self.win, 'current_source_type', 'file') == mode and not self._is_animating:

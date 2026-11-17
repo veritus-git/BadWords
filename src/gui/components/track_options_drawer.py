@@ -502,8 +502,9 @@ class TrackOptionsDrawer(QWidget):
         tracks_loaded = False
 
         rh = getattr(self.engine, 'resolve_handler', None)
-        if rh:
-            src = getattr(self.parent_gui, '_transcription_source', None) or {}
+        src = getattr(self.parent_gui, '_transcription_source', None) or {}
+        is_file = (src.get('source_type') == 'file') or (getattr(self.parent_gui, 'current_source_type', 'resolve') == 'file')
+        if rh and not is_file:
             tl_name = src.get('timeline_name')
             try:
                 a_tr, v_tr = rh.get_timeline_tracks(tl_name)
