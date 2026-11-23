@@ -193,7 +193,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._main_window = parent
         self.engine = engine
         self.setWindowTitle(self.txt("tool_settings"))
-        self.frameless_init(is_popup=False, use_linux_csd_shadow=True)
+        self.frameless_init(is_popup=False, use_linux_csd_shadow=False)
         self.setWindowIcon(_app_icon())
         self.setMinimumSize(config.S(640), config.S(460))
 
@@ -210,7 +210,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             QDialog {{ background-color: {dialog_bg}; }}
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: 1px solid #1a1a1a;
+                border: 1px solid #0f0f0f;
             }}
             QPushButton {{
                 padding: {config.S(6)}px {config.S(16)}px;
@@ -484,8 +484,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._build_ui()
 
         pad_extra = (getattr(self, '_csd_shadow_margin', 14) * 2) if getattr(self, '_use_linux_csd_shadow', False) else 0
-        init_w = max(config.SETTINGS_WINDOW_W, 740) + pad_extra
-        init_h = max(config.SETTINGS_WINDOW_H, 550) + pad_extra
+        init_w = config.SETTINGS_WINDOW_W + pad_extra
+        init_h = config.SETTINGS_WINDOW_H + pad_extra
         _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
         self.init_normal_geometry(
             saved_w=self.width(),

@@ -170,6 +170,30 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
             self.assertEqual(settings_win.size(), QSize(768, 598))
         settings_win.close()
 
+    def test_button_restore_exact_premax_geometry_and_rip_ignores_stale_flag(self):
+        screen_geo = QRect(0, 0, 1920, 1080)
+        from PySide6.QtWidgets import QMainWindow
+        class _DummyWin(FramelessWindowMixin, QMainWindow):
+            def __init__(self):
+                super().__init__()
+                self.frameless_init(is_popup=False)
+        fake_screen = MagicMock()
+        fake_screen.availableGeometry.return_value = screen_geo
+        win = _DummyWin()
+        win.init_normal_geometry(screen=fake_screen, ratio=0.70, apply_geometry=True)
+        with patch.object(win, "screen", return_value=fake_screen):
+            win._session_user_geometry = QRect(137, 91, 1001, 703)  # exact geometry before maximizing
+            win.resize(1920, 1080)
+            win._restore_after_unmaximize(via_button=True)
+            self.assertEqual(win.geometry(), QRect(137, 91, 1001, 703))
+            # A stale button flag must not leak: rip afterwards is always 70% x 70%
+            self.assertFalse(win._restore_via_button)
+            win._restoring_from_max = False
+            win.resize(1920, 1080)
+            win._restore_after_unmaximize(via_button=False)
+            self.assertEqual(win.size(), QSize(1344, 756))
+        win.close()
+
     def test_maximized_grips_hidden_and_snapped_csd_shadow_collapses(self):
         engine = self._create_mock_engine()
         from PySide6.QtWidgets import QMainWindow
@@ -181,30 +205,13 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         dlg.show()
         app.processEvents()
 
-        fake_screen = MagicMock()
-        fake_screen.availableGeometry.return_value = QRect(0, 0, 1920, 1040)
-        with patch.object(dlg, "screen", return_value=fake_screen), \
-             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_screen):
-            # Floating normal window -> 14px shadow margin & enabled shadow & visible grips
-            with patch.object(dlg, "frameGeometry", return_value=QRect(400, 200, 768, 598)):
-                dlg._sync_csd_shadow_state()
-                dlg._update_grips()
-                m_float = dlg.layout().contentsMargins()
-                self.assertEqual((m_float.left(), m_float.top(), m_float.right(), m_float.bottom()), (14, 14, 14, 14))
-                self.assertTrue(dlg.inner_frame.graphicsEffect().isEnabled())
-                self.assertTrue(all(not g.isHidden() for g in dlg._grips))
-
-            # Snapped to right half of screen (Aero Snap / tiling) -> 0px margin & shadow disabled!
-            with patch.object(dlg, "frameGeometry", return_value=QRect(960, 0, 960, 1040)):
-                dlg._sync_csd_shadow_state()
-                m_snap = dlg.layout().contentsMargins()
-                self.assertEqual((m_snap.left(), m_snap.top(), m_snap.right(), m_snap.bottom()), (0, 0, 0, 0))
-                self.assertFalse(dlg.inner_frame.graphicsEffect().isEnabled())
-
-            # Maximized -> ALL 8 resize grips hidden (no top-edge/top-right resize blocking close or rip!)
-            with patch.object(dlg, "isMaximized", return_value=True):
-                dlg._update_grips()
-                self.assertTrue(all(g.isHidden() for g in dlg._grips))
+        # Floating window -> grips visible; maximized -> ALL 8 resize grips hidden (no top-edge/top-right resize)
+        dlg._update_grips()
+        self.assertTrue(all(not g.isHidden() for g in dlg._grips))
+        with patch.object(dlg, "isMaximized", return_value=True):
+            dlg._update_grips()
+            self.assertTrue(all(g.isHidden() for g in dlg._grips))
+        dlg._update_grips()
 
         # Render Polish 0.85-scaled SettingsDialog (1280x800 laptop/VM scenario) to verify zero right-edge clipping
         art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
@@ -374,22 +381,12 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         self.assertLessEqual(host._content.width(), config.S(660))
         self.assertTrue(dlg.grab().save(os.path.join(art_dir, "point3_settings_maximized.png")))
 
-        # Verify Linux CSD shadow margin collapses to 0 and effect disables when maximized, then restores when floating
-        with patch.object(dlg, "isMaximized", return_value=True):
-            dlg._sync_csd_shadow_state()
-            m_max = dlg.layout().contentsMargins()
-            self.assertEqual((m_max.left(), m_max.top(), m_max.right(), m_max.bottom()), (0, 0, 0, 0))
-            self.assertFalse(dlg.inner_frame.graphicsEffect().isEnabled())
-        fake_scr_1080 = MagicMock()
-        fake_scr_1080.availableGeometry.return_value = QRect(0, 0, 1920, 1080)
-        with patch.object(dlg, "isMaximized", return_value=False), \
-             patch.object(dlg, "screen", return_value=fake_scr_1080), \
-             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_scr_1080), \
-             patch.object(dlg, "frameGeometry", return_value=QRect(200, 150, 768, 598)):
-            dlg._sync_csd_shadow_state()
-            m_win = dlg.layout().contentsMargins()
-            self.assertEqual((m_win.left(), m_win.top(), m_win.right(), m_win.bottom()), (14, 14, 14, 14))
-            self.assertTrue(dlg.inner_frame.graphicsEffect().isEnabled())
+        # Settings mirrors the main window 1:1: no CSD drop-shadow padding, flush window + 1px border
+        self.assertFalse(dlg._use_linux_csd_shadow)
+        m0 = dlg.layout().contentsMargins()
+        self.assertEqual((m0.left(), m0.top(), m0.right(), m0.bottom()), (0, 0, 0, 0))
+        self.assertIsNone(dlg.inner_frame.graphicsEffect())
+        self.assertIn("border: 1px solid", dlg.styleSheet())
 
         # Verify Wayland Always on Top hint renders when Wayland is active
         with patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland"}):

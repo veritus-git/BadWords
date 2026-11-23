@@ -102,9 +102,11 @@ fn main() -> eframe::Result<()> {
         return run_headless_cli(&args);
     }
 
-    #[cfg(target_os = "macos")]
+    // INVARIANT: Windows/macOS use an opaque window without a painted shadow margin
+    // (wgpu on Windows has no per-pixel alpha, so a transparent shadow margin renders as a black square).
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let (total_w, total_h) = (650.0, 550.0);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let (total_w, total_h) = (706.0, 606.0);
 
     let mut viewport = egui::ViewportBuilder::default()
@@ -113,7 +115,7 @@ fn main() -> eframe::Result<()> {
         .with_max_inner_size([total_w, total_h])
         .with_resizable(false)
         .with_decorations(false)
-        .with_transparent(true)
+        .with_transparent(cfg!(not(any(target_os = "macos", target_os = "windows"))))
         .with_icon(
             eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_monochrome.png"))
                 .expect("Failed to load icon"),
@@ -1330,9 +1332,9 @@ impl eframe::App for InstallerApp {
         }
 
         // ── Główny Panel Aplikacji (Ścisłe wymiary) ──
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         let (win_w, win_h, margin) = (650.0, 550.0, 0.0);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let (win_w, win_h, margin) = (706.0, 606.0, 28.0);
 
         egui::CentralPanel::default()
@@ -1341,7 +1343,7 @@ impl eframe::App for InstallerApp {
                 ui.set_min_size(egui::vec2(win_w, win_h));
                 ui.set_max_size(egui::vec2(win_w, win_h));
 
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 {
                     let window_rect = egui::Rect::from_min_size(
                         ui.min_rect().min + egui::vec2(margin, margin),
@@ -1364,6 +1366,13 @@ impl eframe::App for InstallerApp {
                         painter.add(egui::Shape::Mesh(mesh));
                     }
                 }
+
+                #[cfg(target_os = "windows")]
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_size(ui.min_rect().min, egui::vec2(650.0, 550.0)),
+                    0.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(12, 12, 12)),
+                );
 
                 // Ciało Okna (Dokładnie 650x550px)
                 egui::Frame::none()

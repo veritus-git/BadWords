@@ -47,7 +47,7 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **84 tests** across 10 modules, plus **18 Cargo tests** in `installer/`).
+Test Runner: `run_tests.py` using Python `unittest` (total: **85 tests** across 10 modules, plus **18 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |

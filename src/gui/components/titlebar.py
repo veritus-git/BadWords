@@ -582,8 +582,8 @@ class CustomTitleBar(QWidget):
                         win._sync_win_normal_placement(use_button_restore=True)
                     ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0)  # SC_RESTORE
                 else:
-                    if hasattr(win, '_sync_win_normal_placement'):
-                        win._sync_win_normal_placement(use_button_restore=False)
+                    # INVARIANT: never touch WINDOWPLACEMENT before SC_MAXIMIZE - on a normal window
+                    # SetWindowPlacement moves/resizes it first (visible 70% jump before maximizing).
                     ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0)  # SC_MAXIMIZE
                 return
             except Exception:

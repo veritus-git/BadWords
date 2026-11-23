@@ -15,7 +15,7 @@ shadow management, user normal-size restoration, and popup Always-on-Top inherit
 
 from PySide6.QtWidgets import QWidget, QMainWindow, QDialog, QAbstractButton, QLineEdit
 from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer, QEvent
-from PySide6.QtGui import QGuiApplication, QCursor
+from PySide6.QtGui import QGuiApplication, QCursor, QColor
 
 _HAS_QFRAMELESS = False
 _BaseMainWindow = QMainWindow
@@ -504,6 +504,8 @@ class FramelessWindowMixin:
             now_max = self.isMaximized()
 
             if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
+                # INVARIANT: No DWM cloak / SWP_FRAMECHANGED on maximize/restore transitions - they blank the
+                # window white for a moment while ripping it out of maximized. Only repair styles if missing.
                 try:
                     import ctypes
                     hwnd = int(self.winId())
@@ -511,24 +513,10 @@ class FramelessWindowMixin:
                         user32 = ctypes.windll.user32
                         GWL_STYLE = -16
                         style = user32.GetWindowLongW(hwnd, GWL_STYLE)
-                        style |= 0x00040000  # WS_THICKFRAME
-                        style |= 0x00C00000  # WS_CAPTION
-                        style |= 0x00080000  # WS_SYSMENU
-                        style |= 0x00020000  # WS_MINIMIZEBOX
-                        style |= 0x00010000  # WS_MAXIMIZEBOX
-                        user32.SetWindowLongW(hwnd, GWL_STYLE, style)
-
-                        if was_max and not now_max:
-                            val = ctypes.c_int(1)
-                            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
-
-                        user32.SetWindowPos(
-                            hwnd, None, 0, 0, 0, 0,
-                            0x0001 | 0x0002 | 0x0004 | 0x0020
-                        )
-
-                        if was_max and not now_max:
-                            QTimer.singleShot(30, self._dwm_uncloak)
+                        wanted = style | 0x00040000 | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000
+                        if wanted != style:
+                            user32.SetWindowLongW(hwnd, GWL_STYLE, wanted)
+                            user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
                 except Exception:
                     pass
 
@@ -543,11 +531,34 @@ class FramelessWindowMixin:
 
             if was_max and not now_max and not self.isFullScreen():
                 via_btn = bool(getattr(self, '_restore_via_button', False))
-                QTimer.singleShot(0, lambda vb=via_btn: self._restore_after_unmaximize(via_button=vb))
+                self._restore_via_button = False  # never let a stale button flag leak into the next rip
+                if not getattr(self, '_is_win', False):
+                    # Windows restores through WINDOWPLACEMENT.rcNormalPosition (no post-correction = no jump/flash)
+                    QTimer.singleShot(0, lambda vb=via_btn: self._restore_after_unmaximize(via_button=vb))
         elif event.type() == QEvent.Type.ActivationChange:
             if hasattr(self, '_update_shortcut_enabled_states'):
                 self._update_shortcut_enabled_states()
         super().changeEvent(event)
+
+    def _apply_dark_class_brush(self, hwnd: int):
+        """Sets the Win32 window-class background brush to the app BG color so freshly exposed
+        client area (maximize/rip resize) is dark instead of flashing white."""
+        try:
+            import ctypes
+            import config as _cfg
+            col = QColor(_cfg.BG_COLOR)
+            colorref = (col.blue() << 16) | (col.green() << 8) | col.red()
+            gdi32 = ctypes.windll.gdi32
+            user32 = ctypes.windll.user32
+            gdi32.CreateSolidBrush.restype = ctypes.c_void_p
+            gdi32.CreateSolidBrush.argtypes = [ctypes.c_uint]
+            user32.SetClassLongPtrW.restype = ctypes.c_void_p
+            user32.SetClassLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+            if getattr(self, '_dark_brush', None) is None:
+                self._dark_brush = gdi32.CreateSolidBrush(colorref)
+            user32.SetClassLongPtrW(hwnd, -10, self._dark_brush)  # GCLP_HBRBACKGROUND
+        except Exception:
+            pass
 
     def _dwm_uncloak(self):
         try:
@@ -617,6 +628,7 @@ class FramelessWindowMixin:
                     dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
 
                     self._sync_win_normal_placement()
+                    self._apply_dark_class_brush(hwnd)
 
                     user32.SetWindowPos(
                         hwnd, None, 0, 0, 0, 0,
