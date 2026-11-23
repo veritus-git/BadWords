@@ -84,6 +84,8 @@ jobs:
           toolchain: 1.99.1
 
       - name: Build Installer Binary
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
         run: cargo build --release --manifest-path installer/Cargo.toml
 
       - name: Set up MSVC environment (Windows)
@@ -97,8 +99,22 @@ jobs:
           python setupfiles\windows\generate_version_header.py
           cd setupfiles\windows
           rc /fo launcher.res launcher.rc
-          cl /O2 /Fe:BadWords.exe launcher.c launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
+          cl /O2 /MT /Fe:BadWords.exe launcher.c launcher.res /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
           cd ..\..
+
+      - name: Verify Zero Dynamic VCRUNTIME140.dll Dependency (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($bin in @("installer/target/release/badwords-installer.exe", "setupfiles/windows/BadWords.exe")) {
+            Write-Host "Checking PE imports of $bin..."
+            $deps = & dumpbin /dependents $bin | Out-String
+            Write-Host $deps
+            if ($deps -match "(?i)VCRUNTIME140|MSVCP140") {
+              Write-Error "FATAL: $bin still dynamically imports VCRUNTIME140/MSVCP140! Static CRT linking is required for clean Windows 11."
+              exit 1
+            }
+          }
 
       - name: Prepare Artifact
         shell: bash

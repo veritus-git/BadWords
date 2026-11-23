@@ -253,9 +253,43 @@ impl eframe::App for StandaloneTerminalApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if custom_button(ui, ctx, [130.0, 26.0], "Copy All Logs") {
                             ctx.output_mut(|o| o.copied_text = self.last_content.clone());
+                            #[cfg(target_os = "linux")]
+                            {
+                                // Wayland / KDE Plasma clipboard helper fallback so copied text persists
+                                let text = self.last_content.clone();
+                                std::thread::spawn(move || {
+                                    for (bin, args) in [
+                                        ("wl-copy", vec![]),
+                                        ("xclip", vec!["-selection", "clipboard"]),
+                                        ("xsel", vec!["--clipboard", "--input"]),
+                                    ] {
+                                        if let Ok(mut child) = std::process::Command::new(bin)
+                                            .args(&args)
+                                            .stdin(std::process::Stdio::piped())
+                                            .stdout(std::process::Stdio::null())
+                                            .stderr(std::process::Stdio::null())
+                                            .spawn()
+                                        {
+                                            if let Some(mut stdin) = child.stdin.take() {
+                                                use std::io::Write;
+                                                let _ = stdin.write_all(text.as_bytes());
+                                            }
+                                            let _ = child.wait();
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
                         }
                     });
                 });
+
+                ui.label(
+                    egui::RichText::new(format!("Log file: {}", crate::state::log_file_path().display()))
+                        .size(11.0)
+                        .color(egui::Color32::from_gray(145))
+                        .family(egui::FontFamily::Monospace),
+                );
                 
                 ui.add_space(8.0);
                 ui.separator();

@@ -6,16 +6,25 @@
 use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
-/// Checks if an official macOS Python framework (3.8+) exists in /Library/Frameworks/Python.framework
+/// Checks if a compatible macOS Python (3.10 - 3.12) exists in Framework, Homebrew, PATH, or standalone cache
 pub fn has_system_python() -> bool {
     #[cfg(target_os = "macos")]
     {
+        if crate::os::find_standalone_python().is_some() {
+            return true;
+        }
         let framework_base = Path::new("/Library/Frameworks/Python.framework/Versions");
         if framework_base.is_dir() {
             for ver in ["3.12", "3.11", "3.10"] {
-                if framework_base.join(ver).is_dir() {
+                let bin = framework_base.join(ver).join("bin").join("python3");
+                if bin.is_file() && crate::os::is_python_venv_capable(&bin) {
                     return true;
                 }
+            }
+        }
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3"] {
+            if crate::os::is_python_venv_capable(cmd) {
+                return true;
             }
         }
     }
@@ -23,34 +32,12 @@ pub fn has_system_python() -> bool {
 }
 
 #[allow(dead_code)]
-/// Downloads and installs official Python 3.12 macOS framework package
+/// Downloads and sets up a standalone Python 3.12 runtime on macOS (zero sudo required)
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "macos")]
     {
-        crate::state::emit_log(sender, "INFO", "Downloading official Python 3.12 for macOS...");
-        let temp_dir = std::env::temp_dir();
-        let py_pkg = temp_dir.join("python-3.12.9-macos11.pkg");
-        let url = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-macos11.pkg";
-
-        if let Ok(resp) = ureq::get(url).call() {
-            if let Ok(mut out) = std::fs::File::create(&py_pkg) {
-                let mut reader = resp.into_reader();
-                let _ = std::io::copy(&mut reader, &mut out);
-            }
-        }
-
-        if py_pkg.exists() {
-            crate::state::emit_log(sender, "INFO", "Installing Python 3.10 framework...");
-            let status = std::process::Command::new("sudo")
-                .args(["installer", "-pkg", &py_pkg.to_string_lossy(), "-target", "/"])
-                .status();
-
-            if let Ok(st) = status {
-                if st.success() {
-                    crate::state::emit_log(sender, "OK", "System Python framework installed successfully.");
-                    return true;
-                }
-            }
+        if crate::os::download_standalone_python_unix(sender) {
+            return true;
         }
     }
     #[cfg(not(target_os = "macos"))]

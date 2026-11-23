@@ -629,23 +629,26 @@ fn find_python() -> Option<String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        let candidates = [
-            "python3.12",
-            "python3.11",
-            "python3.10",
-            "python3",
-            "python",
-        ];
+        if let Some(standalone) = os::find_standalone_python() {
+            return Some(standalone.to_string_lossy().to_string());
+        }
+
+        let mut candidates: Vec<String> = Vec::new();
+        #[cfg(target_os = "macos")]
+        {
+            for ver in ["3.12", "3.11", "3.10"] {
+                candidates.push(format!("/Library/Frameworks/Python.framework/Versions/{}/bin/python3", ver));
+                candidates.push(format!("/opt/homebrew/opt/python@{}/bin/python{}", ver, ver));
+                candidates.push(format!("/usr/local/opt/python@{}/bin/python{}", ver, ver));
+            }
+        }
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3", "python"] {
+            candidates.push(cmd.to_string());
+        }
 
         for cmd in candidates {
-            if let Ok(output) = os::create_hidden_command(cmd)
-                .arg("-c")
-                .arg("import sys; exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)")
-                .output()
-            {
-                if output.status.success() {
-                    return Some(cmd.to_string());
-                }
+            if os::is_python_venv_capable(&cmd) {
+                return Some(cmd);
             }
         }
     }
@@ -2531,6 +2534,12 @@ fn run_install_core(
             "INFO",
             &format!("AI Acceleration Mode: {}", gpu_label),
         );
+
+        // 1b. On fresh Windows 10/11 PCs, ensure Microsoft VC++ 2015-2022 Redistributable is installed
+        #[cfg(target_os = "windows")]
+        {
+            os::windows::ensure_vc_redist(&sender);
+        }
 
         // 2. System Python Check & Auto-Installation (Required for DaVinci Resolve scripts menu!)
         let has_sys_py = os::has_system_python();

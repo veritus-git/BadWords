@@ -85,6 +85,242 @@ pub fn unblock_dir(path: &std::path::Path) {
     let _ = path;
 }
 
+/// Returns the user-local directory for the standalone portable Python 3.12 runtime (Linux / macOS)
+pub fn standalone_python_root() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(base) = dirs::data_dir() {
+            return Some(base.join("BadWords-runtime").join("python312"));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(base) = dirs::data_local_dir() {
+            return Some(base.join("BadWords-runtime").join("python312"));
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        return None;
+    }
+    None
+}
+
+/// Checks if a given Python executable is version 3.10 - 3.12 AND has working venv + ensurepip
+pub fn is_python_venv_capable<P: AsRef<std::ffi::OsStr>>(cmd: P) -> bool {
+    create_hidden_command(cmd)
+        .args([
+            "-c",
+            "import sys, venv, ensurepip; sys.exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)",
+        ])
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// Locates an already-downloaded standalone portable Python 3.12 binary on Linux/macOS
+#[cfg(unix)]
+pub fn find_standalone_python() -> Option<PathBuf> {
+    let mut dirs_to_check: Vec<PathBuf> = Vec::new();
+    if let Some(root) = standalone_python_root() {
+        dirs_to_check.push(root);
+    }
+    if let Some(cache) = dirs::cache_dir() {
+        dirs_to_check.push(cache.join("BadWords-bootstrap").join("python"));
+    }
+    if let Some(home) = dirs::home_dir() {
+        let fallback_cache = home.join(".cache").join("BadWords-bootstrap").join("python");
+        if !dirs_to_check.contains(&fallback_cache) {
+            dirs_to_check.push(fallback_cache);
+        }
+    }
+
+    for base in dirs_to_check {
+        for rel in ["bin/python3.12", "bin/python3", "python/bin/python3.12", "python/bin/python3"] {
+            let cand = base.join(rel);
+            if cand.is_file() && is_python_venv_capable(&cand) {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+/// Downloads and extracts a relocatable standalone CPython 3.12 build from astral-sh/python-build-standalone.
+/// Requires ZERO root/sudo privileges and works on every Linux distro (Fedora 41-44, Arch, Ubuntu, immutable OS) and macOS.
+#[cfg(unix)]
+pub fn download_standalone_python_unix(sender: &crate::state::EventSender) -> bool {
+    if let Some(existing) = find_standalone_python() {
+        crate::state::emit_log(
+            sender,
+            "OK",
+            &format!("Using cached standalone Python 3.12 runtime: {}", existing.display()),
+        );
+        return true;
+    }
+
+    let dest_dir = match standalone_python_root() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let triple = if cfg!(target_os = "linux") {
+        if std::env::consts::ARCH == "aarch64" {
+            "aarch64-unknown-linux-gnu"
+        } else {
+            "x86_64-unknown-linux-gnu"
+        }
+    } else if cfg!(target_os = "macos") {
+        if std::env::consts::ARCH == "aarch64" {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-apple-darwin"
+        }
+    } else {
+        return false;
+    };
+
+    const PBS_FALLBACK_TAG: &str = "20250317";
+    const PBS_FALLBACK_VER: &str = "3.12.9";
+    let pinned_url = format!(
+        "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/cpython-{ver}+{tag}-{triple}-install_only.tar.gz",
+        tag = PBS_FALLBACK_TAG,
+        ver = PBS_FALLBACK_VER,
+        triple = triple,
+    );
+
+    let agent = ureq::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .redirects(10)
+        .build();
+
+    let mut download_urls: Vec<String> = Vec::new();
+    // Try resolving latest CPython 3.12 build from GitHub API first
+    if let Ok(resp) = agent
+        .get("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest")
+        .set("User-Agent", "BadWords-Installer")
+        .call()
+    {
+        if let Ok(body) = resp.into_string() {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(assets) = val.get("assets").and_then(|a| a.as_array()) {
+                    let needle_suffix = format!("-{}-install_only.tar.gz", triple);
+                    for asset in assets {
+                        if let (Some(name), Some(url)) = (
+                            asset.get("name").and_then(|n| n.as_str()),
+                            asset.get("browser_download_url").and_then(|u| u.as_str()),
+                        ) {
+                            if name.starts_with("cpython-3.12.") && name.ends_with(&needle_suffix) {
+                                download_urls.push(url.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !download_urls.contains(&pinned_url) {
+        download_urls.push(pinned_url);
+    }
+
+    let archive_path = std::env::temp_dir().join(format!("bw_pbs_py312_{}.tar.gz", std::process::id()));
+    let mut downloaded = false;
+
+    for url in &download_urls {
+        crate::state::emit_log(
+            sender,
+            "INFO",
+            &format!("Downloading portable Python 3.12 ({})...", triple),
+        );
+        let dl_agent = ureq::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .redirects(10)
+            .build();
+        if let Ok(resp) = dl_agent.get(url).set("User-Agent", "BadWords-Installer").call() {
+            if let Ok(mut out) = std::fs::File::create(&archive_path) {
+                let mut reader = resp.into_reader();
+                let mut buf = [0u8; 65536];
+                let mut total: u64 = 0;
+                let mut last_mb: u64 = 0;
+                let mut copy_ok = true;
+                loop {
+                    match std::io::Read::read(&mut reader, &mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if std::io::Write::write_all(&mut out, &buf[..n]).is_err() {
+                                copy_ok = false;
+                                break;
+                            }
+                            total += n as u64;
+                            let mb = total / (1024 * 1024);
+                            if mb >= last_mb + 5 {
+                                last_mb = mb;
+                                crate::state::emit_log(
+                                    sender,
+                                    "INFO",
+                                    &format!("Downloading portable Python 3.12... ({} MB)", mb),
+                                );
+                            }
+                        }
+                        Err(_) => {
+                            copy_ok = false;
+                            break;
+                        }
+                    }
+                }
+                if copy_ok && total > 10_000_000 {
+                    downloaded = true;
+                    break;
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&archive_path);
+    }
+
+    if !downloaded {
+        crate::state::emit_log(sender, "ERROR", "Failed to download portable Python 3.12 runtime archive.");
+        return false;
+    }
+
+    crate::state::emit_log(sender, "INFO", "Extracting portable Python 3.12 runtime...");
+    let _ = std::fs::remove_dir_all(&dest_dir);
+    if std::fs::create_dir_all(&dest_dir).is_err() {
+        let _ = std::fs::remove_file(&archive_path);
+        return false;
+    }
+
+    let extract_ok = std::process::Command::new("tar")
+        .args([
+            "-xzf",
+            archive_path.to_string_lossy().as_ref(),
+            "-C",
+            dest_dir.to_string_lossy().as_ref(),
+            "--strip-components=1",
+        ])
+        .status()
+        .is_ok_and(|s| s.success());
+
+    let _ = std::fs::remove_file(&archive_path);
+
+    if !extract_ok {
+        crate::state::emit_log(sender, "ERROR", "Failed to extract portable Python 3.12 runtime archive.");
+        let _ = std::fs::remove_dir_all(&dest_dir);
+        return false;
+    }
+
+    if let Some(py_bin) = find_standalone_python() {
+        crate::state::emit_log(
+            sender,
+            "OK",
+            &format!("Portable Python 3.12 runtime ready (no admin password needed): {}", py_bin.display()),
+        );
+        return true;
+    }
+
+    crate::state::emit_log(sender, "ERROR", "Extracted Python 3.12 runtime failed verification.");
+    false
+}
+
 /// Automatically installs official System Python for current OS
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "windows")]
@@ -108,7 +344,21 @@ pub fn uninstall_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "windows")]
     return windows::uninstall_system_python(sender);
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        if let Some(root) = standalone_python_root() {
+            if let Some(parent) = root.parent() {
+                if parent.exists() {
+                    let _ = std::fs::remove_dir_all(parent);
+                    crate::state::emit_log(sender, "OK", "Removed standalone Python 3.12 runtime.");
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         let _ = sender;
         false

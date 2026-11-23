@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Szymon Wolarz
+# Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+# Statically link the MSVC C Runtime (VCRUNTIME140.dll) into badwords-setup-windows.exe
+# so the installer runs cleanly on fresh Windows 10/11 installations without VC++ Redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

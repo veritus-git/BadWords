@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Szymon Wolarz
+﻿# Copyright (c) 2026 Szymon Wolarz
 # Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # ============================================================
@@ -38,16 +38,20 @@ New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
 New-Item -ItemType Directory -Path $BW_TMP -Force | Out-Null
 
 # -- Helper: Run Rich Terminal Python Fallback -----------------
-function Invoke-PythonFallback() {
+function Invoke-PythonFallback($ReasonText = "") {
     Write-Host ""
     Write-Host "========================================================================" -ForegroundColor Cyan
-    Write-Host " [!] Windows Security Notice:" -ForegroundColor Yellow
-    Write-Host "     The graphical installer binary was blocked by Windows Smart App" -ForegroundColor White
-    Write-Host "     Control (SAC) or SmartScreen because it lacks an EV certificate." -ForegroundColor White
+    Write-Host " [!] Windows Compatibility & Security Notice:" -ForegroundColor Yellow
+    if (-not [string]::IsNullOrWhiteSpace($ReasonText)) {
+        Write-Host "     $ReasonText" -ForegroundColor White
+    } else {
+        Write-Host "     The graphical installer binary could not start on this PC" -ForegroundColor White
+        Write-Host "     (blocked by Smart App Control/SmartScreen or missing VC++ runtime)." -ForegroundColor White
+    }
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " How would you like to proceed?" -ForegroundColor White
-    Write-Host "  [1] Run Terminal Installer via Python (Recommended)" -ForegroundColor Green
-    Write-Host "  [2] Exit (I want to change Windows Security settings and try again)" -ForegroundColor DarkGray
+    Write-Host "  [1] Run Terminal Installer via Python (Recommended - works everywhere)" -ForegroundColor Green
+    Write-Host "  [2] Exit" -ForegroundColor DarkGray
     Write-Host "========================================================================" -ForegroundColor Cyan
     
     $choice = Read-Host "Select an option [1 or 2, default: 1]"
@@ -168,6 +172,20 @@ function Clear-FileZoneIdentifier($path) {
     try { Remove-Item -LiteralPath "$path:Zone.Identifier" -Force -ErrorAction SilentlyContinue } catch {}
 }
 
+function Test-BinaryNeedsMissingVcRuntime($exePath) {
+    try {
+        $vcDll = Join-Path $env:SystemRoot "System32\vcruntime140.dll"
+        if (Test-Path $vcDll) { return $false }
+        # Check whether this binary dynamically imports VCRUNTIME140.dll (older builds prior to static CRT)
+        $bytes = [System.IO.File]::ReadAllBytes($exePath)
+        $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+        if ($ascii.IndexOf("VCRUNTIME140.dll", [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            return $true
+        }
+    } catch {}
+    return $false
+}
+
 function Start-NativeExecutable($exePath, $arguments) {
     Clear-FileZoneIdentifier $exePath
     $parent = Split-Path -Parent $exePath
@@ -175,6 +193,12 @@ function Start-NativeExecutable($exePath, $arguments) {
         Clear-FileZoneIdentifier (Join-Path $parent "BadWords.exe")
         Clear-FileZoneIdentifier (Join-Path $parent "badwords-setup-windows.exe")
     }
+
+    if (Test-BinaryNeedsMissingVcRuntime $exePath) {
+        Invoke-PythonFallback "This Windows PC does not have Microsoft Visual C++ Runtime (VCRUNTIME140.dll) installed yet."
+        return
+    }
+
     try {
         if ($arguments -and $arguments.Count -gt 0) {
             $p = Start-Process -FilePath $exePath -ArgumentList $arguments -PassThru -ErrorAction Stop
@@ -182,6 +206,18 @@ function Start-NativeExecutable($exePath, $arguments) {
             $p = Start-Process -FilePath $exePath -PassThru -ErrorAction Stop
         }
         if ($p -and $p.Id) {
+            # Verify the process does not immediately crash on startup (e.g. missing DLL 0xC0000135)
+            for ($i = 0; $i -lt 8; $i++) {
+                Start-Sleep -Milliseconds 150
+                try { $p.Refresh() } catch {}
+                if ($p.HasExited) {
+                    if ($p.ExitCode -ne 0) {
+                        Invoke-PythonFallback "The graphical installer exited immediately with error code $($p.ExitCode)."
+                        return
+                    }
+                    exit 0
+                }
+            }
             exit 0
         }
     } catch {

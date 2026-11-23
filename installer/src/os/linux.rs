@@ -5,48 +5,57 @@
 
 use std::path::{Path, PathBuf};
 
-/// Checks if Python 3.10+ is available in system PATH
+/// Checks if a venv-capable Python 3.10 - 3.12 is available (system PATH or cached standalone runtime)
 pub fn has_system_python() -> bool {
     #[cfg(target_os = "linux")]
     {
-        for cmd in ["python3", "python"] {
-            if let Ok(out) = std::process::Command::new(cmd)
-                .arg("-c")
-                .arg("import sys; exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)")
-                .output()
-            {
-                if out.status.success() {
-                    return true;
-                }
+        if crate::os::find_standalone_python().is_some() {
+            return true;
+        }
+        for cmd in ["python3.12", "python3.11", "python3.10", "python3", "python"] {
+            if crate::os::is_python_venv_capable(cmd) {
+                return true;
             }
         }
     }
     false
 }
 
-/// Attempts to install Python 3 & python3-venv using native package manager
+/// Obtains a compatible Python 3.12 runtime without requiring sudo/root privileges.
+/// Uses relocatable python-build-standalone so Fedora 41-44 (Python 3.13/3.14), Arch,
+/// Ubuntu without python3-venv, and immutable distros (Bazzite/Silverblue/SteamOS) work seamlessly.
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
     #[cfg(target_os = "linux")]
     {
-        crate::state::emit_log(sender, "INFO", "Attempting to install Python 3 via package manager...");
+        if crate::os::download_standalone_python_unix(sender) {
+            return true;
+        }
+        crate::state::emit_log(
+            sender,
+            "WARN",
+            "Portable Python 3.12 download failed; trying package manager fallback...",
+        );
         let managers: [(&str, Vec<&str>); 4] = [
-            ("apt-get", vec!["apt-get", "install", "-y", "python3", "python3-venv"]),
-            ("dnf", vec!["dnf", "install", "-y", "python3"]),
-            ("yum", vec!["yum", "install", "-y", "python3"]),
+            ("apt-get", vec!["apt-get", "install", "-y", "python3.12", "python3.12-venv"]),
+            ("dnf", vec!["dnf", "install", "-y", "python3.12"]),
             ("pacman", vec!["pacman", "-Sy", "--noconfirm", "python"]),
+            ("zypper", vec!["zypper", "install", "-y", "python312"]),
         ];
+
+        let has_pkexec = std::process::Command::new("which")
+            .arg("pkexec")
+            .output()
+            .is_ok_and(|o| o.status.success());
 
         for (cmd, args) in managers {
             if let Ok(which) = std::process::Command::new("which").arg(cmd).output() {
                 if which.status.success() {
-                    crate::state::emit_log(sender, "INFO", &format!("Detected package manager: {}. Running installation...", cmd));
-                    if cmd == "apt-get" {
-                        let _ = std::process::Command::new("sudo").args(["apt-get", "update"]).status();
-                    }
-                    let status = std::process::Command::new("sudo").args(&args).status();
+                    crate::state::emit_log(sender, "INFO", &format!("Detected package manager: {}. Attempting elevation...", cmd));
+                    let elev = if has_pkexec { "pkexec" } else { "sudo" };
+                    let status = std::process::Command::new(elev).args(&args).status();
                     if let Ok(st) = status {
-                        if st.success() {
-                            crate::state::emit_log(sender, "OK", &format!("Python 3 installed successfully via {}.", cmd));
+                        if st.success() && has_system_python() {
+                            crate::state::emit_log(sender, "OK", &format!("Python 3.12 installed via {}.", cmd));
                             return true;
                         }
                     }

@@ -2545,6 +2545,28 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     except Exception:
                         pass
 
+        # ── Windows VC++ Runtime Check (fresh Windows 10/11) ──
+        if os.name == "nt":
+            sys_root = os.environ.get("SystemRoot", r"C:\Windows")
+            sys32 = os.path.join(sys_root, "System32")
+            if not (os.path.isfile(os.path.join(sys32, "vcruntime140.dll")) and os.path.isfile(os.path.join(sys32, "msvcp140.dll"))):
+                log_warn("Microsoft Visual C++ 2015-2022 Runtime not found in System32. Downloading vc_redist.x64.exe...")
+                try:
+                    vc_url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                    vc_exe = os.path.join(tempfile.gettempdir(), "bw_vc_redist.x64.exe")
+                    if download(vc_url, vc_exe) and os.path.getsize(vc_exe) > 10_000_000:
+                        log_step("Installing Microsoft Visual C++ Runtime (approve UAC prompt if asked)...")
+                        vc_res = subprocess.run([vc_exe, "/install", "/passive", "/norestart"])
+                        if vc_res.returncode in (0, 1638, 3010):
+                            log_ok("Microsoft Visual C++ Runtime installed successfully.")
+                        else:
+                            log_warn(f"VC++ Runtime installer exited with code {vc_res.returncode} (continuing).")
+                    if os.path.exists(vc_exe):
+                        try: os.remove(vc_exe)
+                        except Exception: pass
+                except Exception as ve:
+                    log_warn(f"Could not install VC++ Runtime automatically: {ve}")
+
         # ── System Python Check ───────────────────────────────
         comp_py = _find_compatible_system_python()
         if not comp_py:
@@ -2591,6 +2613,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     sp_py.done(ok=False)
                     log_warn(f"Failed to auto-install Python: {e}")
 
+            elif _is_py_compatible(ARGS.bootstrap_python):
+                log_ok(f"Using portable Python 3.12 runtime: {ARGS.bootstrap_python}")
+                comp_py = ARGS.bootstrap_python
+
             elif "mac" in PLAT or "darwin" in PLAT:
                 console.print()
                 log_warn("System Python framework (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
@@ -2625,19 +2651,19 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                     log_warn(f"Failed to auto-install Python: {e}")
 
             else:
-                # Linux
+                # Linux fallback (only reached if bootstrap Python was not 3.10 - 3.12)
                 console.print()
-                log_warn("Compatible System Python (3.10 - 3.12) not detected. DaVinci Resolve requires it!")
-                console.print(Text(f"{PAD}Setup will try to safely install Python using your system package manager.", style="cyan"), no_wrap=True)
+                log_warn("Compatible System Python (3.10 - 3.12) not detected.")
+                console.print(Text(f"{PAD}Setup will try to safely install Python 3.12 using your system package manager.", style="cyan"), no_wrap=True)
                 console.print(Text(f"{PAD}This requires administrator privileges. You may be prompted for your password.", style="bold red"), no_wrap=True)
                 pause("Press Enter to proceed with the Python installation...")
 
-                log_step("Installing Python (please enter your sudo password if prompted)...")
+                log_step("Installing Python 3.12 (please enter your sudo password if prompted)...")
                 try:
                     pkg_mgrs = [
-                        (["apt-get", "update"], ["apt-get", "install", "-y", "python3", "python3-venv"]),
-                        (["dnf", "install", "-y", "python3"]),
-                        (["yum", "install", "-y", "python3"]),
+                        (["apt-get", "update"], ["apt-get", "install", "-y", "python3.12", "python3.12-venv"]),
+                        (["dnf", "install", "-y", "python3.12"]),
+                        (["zypper", "install", "-y", "python312"]),
                         (["pacman", "-Sy", "--noconfirm", "python"])
                     ]
                     installed = False
@@ -2648,9 +2674,9 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                             if len(cmds) > 1:
                                 subprocess.run(["sudo"] + cmds[0], check=False)
                             res = subprocess.run(["sudo"] + base_cmd)
-                            if res.returncode == 0:
+                            if res.returncode == 0 and _find_compatible_system_python():
                                 installed = True
-                                log_ok(f"Python installed via {cmd_name}.")
+                                log_ok(f"Python 3.12 installed via {cmd_name}.")
                                 py_auto_installed = True
                                 try:
                                     with open(os.path.join(install_dir, ".python_auto_installed"), "w", encoding="utf-8") as f:
@@ -2659,7 +2685,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                                 break
 
                     if not installed:
-                        log_warn("Failed to automatically install Python using package manager.")
+                        log_warn("Failed to automatically install Python 3.12 using package manager.")
                         log_warn("Please install Python 3.10 - 3.12 manually.")
                 except Exception as e:
                     log_warn(f"Failed to auto-install Python: {e}")

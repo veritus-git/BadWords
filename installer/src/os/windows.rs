@@ -250,6 +250,84 @@ pub fn remove_from_user_path(paths: &[&Path]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Ensures Microsoft Visual C++ 2015-2022 Redistributable (x64) is present on fresh Windows 10/11 PCs
+/// so PySide6, ctranslate2, and PyAV native DLLs load cleanly on first launch.
+#[allow(dead_code)]
+pub fn ensure_vc_redist(sender: &crate::state::EventSender) {
+    #[cfg(target_os = "windows")]
+    {
+        let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        let sys32 = PathBuf::from(sys_root).join("System32");
+        let has_vcruntime = sys32.join("vcruntime140.dll").is_file();
+        let has_msvcp = sys32.join("msvcp140.dll").is_file();
+        if has_vcruntime && has_msvcp {
+            return;
+        }
+
+        crate::state::emit_log(
+            sender,
+            "INFO",
+            "Microsoft Visual C++ 2015-2022 Runtime not found in System32; downloading official vc_redist.x64.exe...",
+        );
+        let temp_dir = std::env::temp_dir();
+        let redist_exe = temp_dir.join("bw_vc_redist.x64.exe");
+        let url = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
+
+        let agent = ureq::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .redirects(10)
+            .build();
+
+        let mut ok_dl = false;
+        if let Ok(resp) = agent.get(url).set("User-Agent", "BadWords-Installer").call() {
+            if let Ok(mut out) = std::fs::File::create(&redist_exe) {
+                let mut reader = resp.into_reader();
+                if std::io::copy(&mut reader, &mut out).is_ok()
+                    && redist_exe.metadata().map(|m| m.len()).unwrap_or(0) > 10_000_000
+                {
+                    ok_dl = true;
+                }
+            }
+        }
+
+        if ok_dl {
+            unblock_file(&redist_exe);
+            crate::state::emit_log(
+                sender,
+                "INFO",
+                "Installing Microsoft Visual C++ Runtime (approve UAC prompt if asked)...",
+            );
+            let status = std::process::Command::new(&redist_exe)
+                .args(["/install", "/passive", "/norestart"])
+                .status();
+            let _ = std::fs::remove_file(&redist_exe);
+            if let Ok(st) = status {
+                let code = st.code().unwrap_or(-1);
+                if code == 0 || code == 1638 || code == 3010 {
+                    crate::state::emit_log(sender, "OK", "Microsoft Visual C++ Runtime installed successfully.");
+                } else {
+                    crate::state::emit_log(
+                        sender,
+                        "WARN",
+                        &format!("VC++ Runtime installer exited with code {} (continuing with bundled runtime).", code),
+                    );
+                }
+            }
+        } else {
+            let _ = std::fs::remove_file(&redist_exe);
+            crate::state::emit_log(
+                sender,
+                "WARN",
+                "Could not download Microsoft Visual C++ Runtime; continuing with bundled DLLs.",
+            );
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = sender;
+    }
+}
+
 /// Downloads and automatically installs official Python 3.12 on Windows (quiet, user scope, no admin required)
 #[allow(dead_code)]
 pub fn install_system_python(sender: &crate::state::EventSender) -> bool {
