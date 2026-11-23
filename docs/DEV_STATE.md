@@ -1,7 +1,7 @@
 # BadWords Development State & Task Tracking
 
 > **Status**: Active  
-> **Last Updated**: 2026-11-17  
+> **Last Updated**: 2026-11-23  
 > **Active Environment**: Development Workspace (`.dev_workspace/`)  
 
 ---
@@ -41,6 +41,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
 | `tests/test_algorithms.py` | Heuristic repetition/retake detection, 2-layer visual priority (`manual_status` > `algo_status` across both repeat and auto-filler passes), fuzzy string comparison. | **PASS** |
 | `tests/test_assembler_xml.py` | Final Cut Pro 7 XML generation (`<xmeml version="5">`), XML schema and frame accuracy validation. | **PASS** |
 | `tests/test_data_contracts.py` | Invariant preservation of `words_data[0]` metadata (`meta_global_silence`, session tags, custom metadata), required word keys, empty dataset safety. | **PASS** |
+| `tests/test_startup_guard.py` | Startup pipeline: Python 3.10–3.12 gate, Python 3.8 grammar compatibility for `src/startup/`, foreign `sys.path` pruning, consent-only self-heal, Resolve process safety, Discord multipart crash report + opt-out, unified Resolve wrapper isolation, DEV Resolve sync protection, lazy `gui` / instant `BootSplash` visual render. | **PASS** |
 
 ---
 
@@ -109,12 +110,19 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - **Visual Verification Artifacts & Mandatory Rule 12**:
      * Added Rule 12 to `.agents/rules/architecture.md` mandating visual verification PNG screenshots for all GUI changes.
      * Rendered all 5 required verification screenshots into `tests/artifacts/` (`settings_dialog_general.png`, `settings_dialog_appearance.png`, `settings_dialog_davinci_xml.png`, `settings_dialog_davinci_drt.png`, `telemetry_popup.png`).
+8. **Point 1 Cementing: Startup Pipeline, Runtime Isolation & Consent-Based Self-Heal (2026-11-23)**:
+   - Created `src/startup/` package (Python 3.8-parseable, stdlib-only guards, unified `runtime_mode`, `i18n_lite`, cross-platform `native_dialogs`, consent-gated `crash_report` + `fatal_dialog`, `legacy_cleanup`, Linux `qt_env`, consent-based `self_heal`, and instant `BootSplash`).
+   - Made `src/gui/__init__.py` lazy (PEP 562) and refactored `src/main.py` so `BootSplash` displays immediately before `OSDoctor`, `api`, `engine`, or `gui.main_window` load; removed dead `<3.9` PySide6 hotfix and dead blocking auto-updater.
+   - Deferred `OSDoctor` GPU/CPU probing to `log_hardware_info()` inside `InitThread`; removed hardcoded paths and runtime `venv/Scripts/BadWords.exe` copying/patching (`pe_patcher.ensure_badwords_exe`); guarded `sync_resolve_scripts` in DEV mode and stopped deleting `BadWords.py` on Free 21.1+.
+   - Unified all 4 Resolve wrapper generators (`osdoc.py`, `installer/src/engine.rs`, `setupfiles/setup.py`, `setupfiles/updater.py`) onto `setupfiles/resolve_wrapper_template.py` with full foreign Python/Conda isolation and macOS `.app` external fallback.
+   - Hardened `windows/launcher.c`, `linux/launcher.c`, and `macos/launcher.c` to load only the exact matching Python library version, strip `PYTHONHOME`/foreign `PYTHONPATH`, set `PYTHONNOUSERSITE=1`, and respect `EXIT_FATAL_REPORTED = 3`.
+   - Added 11-language startup/self-heal i18n keys, `tests/test_startup_guard.py`, and documented invariants in `docs/CEMENTED.md` (Section 6).
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 46 tests pass.
+1. Run `python3 run_tests.py` to verify all 60 tests pass.
 2. Run `python3 -m compileall src` to ensure bytecode consistency.
 3. Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
 4. Ensure files are synchronized with `/mnt/dump/BadWords FILES/`.

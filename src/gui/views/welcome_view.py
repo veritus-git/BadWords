@@ -31,28 +31,7 @@ from gui.widgets.buttons import CustomDropdown, SearchableDropdown, MultiSelectD
 from gui.widgets.file_drop_zone import FileDropZone
 
 
-def is_embedded_in_resolve() -> bool:
-    """Returns True if BadWords was launched from inside DaVinci Resolve (Workspace -> Scripts)."""
-    import sys, os
-    if os.environ.get("BADWORDS_EMBEDDED") == "1" or "--embedded" in sys.argv:
-        return True
-
-    for mod_name in ('__main__', 'builtins'):
-        mod = sys.modules.get(mod_name)
-        if not mod:
-            continue
-        obj_res = getattr(mod, 'resolve', None)
-        if obj_res is not None:
-            type_name = type(obj_res).__name__
-            if type_name != 'ResolveHandler' and hasattr(obj_res, 'GetProjectManager'):
-                return True
-        obj_bmd = getattr(mod, 'bmd', None)
-        if obj_bmd is not None and hasattr(obj_bmd, 'scriptapp'):
-            return True
-
-    if 'fscript' in sys.executable.lower():
-        return True
-    return False
+from startup.runtime_mode import is_embedded_in_resolve  # noqa: E402, F401
 def force_sync_geometry(w: QWidget):
     """
     Recursively ensures all child layouts and widget geometries are polished,

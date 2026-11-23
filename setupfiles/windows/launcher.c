@@ -142,8 +142,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         return 1;
     }
 
-    // 5. Inspect pyvenv.cfg to detect Python home directory
+    // 5. Inspect pyvenv.cfg to detect Python home and version
     wchar_t venv_home[MAX_PATH_LEN] = {0};
+    int py_maj = 0;
+    int py_min = -1;
     wchar_t pyvenv_cfg[MAX_PATH_LEN];
     _snwprintf(pyvenv_cfg, MAX_PATH_LEN, L"%s\\venv\\pyvenv.cfg", install_dir);
     FILE *fcfg = _wfsopen(pyvenv_cfg, L"r", _SH_DENYNO);
@@ -159,13 +161,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             trim_w(k); trim_w(v);
             if (_wcsicmp(k, L"home") == 0) {
                 wcsncpy(venv_home, v, MAX_PATH_LEN - 1);
+            } else if (_wcsicmp(k, L"version") == 0 || _wcsicmp(k, L"version_info") == 0) {
+                int mj = 0, mn = -1;
+                if (swscanf(v, L"%d.%d", &mj, &mn) == 2 && mj > 0 && mn >= 0) {
+                    py_maj = mj;
+                    py_min = mn;
+                }
             }
         }
         fclose(fcfg);
-        fwprintf(stderr, L"[LAUNCHER] pyvenv.cfg home: %s\n", venv_home);
+        fwprintf(stderr, L"[LAUNCHER] pyvenv.cfg home: %s (ver=%d.%d)\n", venv_home, py_maj, py_min);
     }
 
-    // 6. Discover python3xx.dll
+    // 6. Discover exact pythonXYY.dll matching pyvenv.cfg
     wchar_t python_dll[MAX_PATH_LEN] = {0};
     const wchar_t *search_dirs[4] = {0};
     int sc = 0;
@@ -179,29 +187,35 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         search_dirs[sc++] = venv_home;
     }
 
-    wchar_t forwarder_dll[MAX_PATH_LEN] = {0};
-    for (int d = 0; d < sc && python_dll[0] == L'\0'; d++) {
-        wchar_t mask[MAX_PATH_LEN];
-        _snwprintf(mask, MAX_PATH_LEN, L"%s\\python3*.dll", search_dirs[d]);
-        WIN32_FIND_DATAW fd;
-        HANDLE hFind = FindFirstFileW(mask, &fd);
-        if (hFind != INVALID_HANDLE_VALUE) {
-            do {
-                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                    // Prefer specific version DLL (e.g. python312.dll)
-                    if (_wcsicmp(fd.cFileName, L"python3.dll") != 0) {
-                        _snwprintf(python_dll, MAX_PATH_LEN, L"%s\\%s", search_dirs[d], fd.cFileName);
-                        break;
-                    } else if (forwarder_dll[0] == L'\0') {
-                        _snwprintf(forwarder_dll, MAX_PATH_LEN, L"%s\\%s", search_dirs[d], fd.cFileName);
-                    }
-                }
-            } while (FindNextFileW(hFind, &fd));
-            FindClose(hFind);
+    if (py_maj > 0 && py_min >= 0) {
+        wchar_t exact_dll_name[64];
+        _snwprintf(exact_dll_name, 64, L"python%d%d.dll", py_maj, py_min);
+        for (int d = 0; d < sc; d++) {
+            wchar_t cand_dll[MAX_PATH_LEN];
+            _snwprintf(cand_dll, MAX_PATH_LEN, L"%s\\%s", search_dirs[d], exact_dll_name);
+            if (file_exists_w(cand_dll)) {
+                wcsncpy(python_dll, cand_dll, MAX_PATH_LEN - 1);
+                break;
+            }
         }
-    }
-    if (python_dll[0] == L'\0' && forwarder_dll[0] != L'\0') {
-        wcsncpy(python_dll, forwarder_dll, MAX_PATH_LEN - 1);
+    } else {
+        for (int d = 0; d < sc && python_dll[0] == L'\0'; d++) {
+            wchar_t mask[MAX_PATH_LEN];
+            _snwprintf(mask, MAX_PATH_LEN, L"%s\\python3*.dll", search_dirs[d]);
+            WIN32_FIND_DATAW fd;
+            HANDLE hFind = FindFirstFileW(mask, &fd);
+            if (hFind != INVALID_HANDLE_VALUE) {
+                do {
+                    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                        if (_wcsicmp(fd.cFileName, L"python3.dll") != 0) {
+                            _snwprintf(python_dll, MAX_PATH_LEN, L"%s\\%s", search_dirs[d], fd.cFileName);
+                            break;
+                        }
+                    }
+                } while (FindNextFileW(hFind, &fd));
+                FindClose(hFind);
+            }
+        }
     }
     fwprintf(stderr, L"[LAUNCHER] Python DLL:    %s\n", python_dll[0] ? python_dll : L"(none)");
 
@@ -214,10 +228,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
     fwprintf(stderr, L"[LAUNCHER] Site packages: %s\n", site_pkgs[0] ? site_pkgs : L"(none)");
 
-    // 8. Configure Virtual Environment Variables
+    // 8. Configure Isolated Virtual Environment Variables (strip foreign Python/Conda)
     wchar_t venv_dir[MAX_PATH_LEN];
     _snwprintf(venv_dir, MAX_PATH_LEN, L"%s\\venv", install_dir);
     SetEnvironmentVariableW(L"VIRTUAL_ENV", venv_dir);
+    SetEnvironmentVariableW(L"PYTHONHOME", NULL);
+    SetEnvironmentVariableW(L"PYTHONNOUSERSITE", L"1");
 
     wchar_t cur_path[MAX_ENV_LEN] = {0};
     GetEnvironmentVariableW(L"PATH", cur_path, MAX_ENV_LEN - 1);
@@ -230,21 +246,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
     SetEnvironmentVariableW(L"PATH", new_path);
 
-    wchar_t cur_pypath[MAX_ENV_LEN] = {0};
-    GetEnvironmentVariableW(L"PYTHONPATH", cur_pypath, MAX_ENV_LEN - 1);
     wchar_t py_path[MAX_ENV_LEN];
     if (site_pkgs[0] != L'\0') {
-        if (cur_pypath[0] != L'\0') {
-            _snwprintf(py_path, MAX_ENV_LEN, L"%s\\src;%s;%s;%s", install_dir, install_dir, site_pkgs, cur_pypath);
-        } else {
-            _snwprintf(py_path, MAX_ENV_LEN, L"%s\\src;%s;%s", install_dir, install_dir, site_pkgs);
-        }
+        _snwprintf(py_path, MAX_ENV_LEN, L"%s\\src;%s;%s", install_dir, install_dir, site_pkgs);
     } else {
-        if (cur_pypath[0] != L'\0') {
-            _snwprintf(py_path, MAX_ENV_LEN, L"%s\\src;%s;%s", install_dir, install_dir, cur_pypath);
-        } else {
-            _snwprintf(py_path, MAX_ENV_LEN, L"%s\\src;%s", install_dir, install_dir);
-        }
+        _snwprintf(py_path, MAX_ENV_LEN, L"%s\\src;%s", install_dir, install_dir);
     }
     SetEnvironmentVariableW(L"PYTHONPATH", py_path);
 
@@ -275,9 +281,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         HMODULE hPy = LoadLibraryW(python_dll);
         if (hPy) {
             int (*Py_BytesMain)(int, char **) = (int (*)(int, char **))GetProcAddress(hPy, "Py_BytesMain");
-            if (!Py_BytesMain) {
-                Py_BytesMain = (int (*)(int, char **))GetProcAddress(hPy, "Py_Main");
-            }
             if (Py_BytesMain) {
                 fwprintf(stderr, L"[LAUNCHER] Invoking in-process Py_BytesMain (BadWords.exe)...\n");
 
@@ -307,11 +310,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
                 new_argv[new_argc] = NULL;
                 if (argvW) LocalFree(argvW);
 
+                DWORD t_start = GetTickCount();
                 int ret = Py_BytesMain(new_argc, new_argv);
-                fwprintf(stderr, L"[LAUNCHER] In-process execution finished with code %d\n", ret);
+                DWORD t_dur = GetTickCount() - t_start;
+                fwprintf(stderr, L"[LAUNCHER] In-process execution finished with code %d (ran for %lu ms)\n", ret, t_dur);
+                if (ret != 0 && ret != 3 && t_dur < 5000) {
+                    wchar_t err_msg[1024];
+                    _snwprintf(err_msg, 1024,
+                        L"BadWords failed to start (exit code %d).\n\n"
+                        L"Diagnostic logs were written to:\n%s\n\n"
+                        L"On a fresh Windows installation, installing Microsoft Visual C++ 2015-2022 Redistributable (x64) may help.",
+                        ret, log_path);
+                    MessageBoxW(NULL, err_msg, L"BadWords - Startup Error", MB_ICONERROR | MB_OK);
+                }
                 return ret;
             } else {
-                fwprintf(stderr, L"[LAUNCHER] GetProcAddress failed to find Py_BytesMain / Py_Main\n");
+                fwprintf(stderr, L"[LAUNCHER] GetProcAddress failed to find Py_BytesMain\n");
             }
         } else {
             fwprintf(stderr, L"[LAUNCHER] LoadLibraryW failed (error %lu)\n", GetLastError());
@@ -366,12 +380,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         CloseHandle(pi.hThread);
         DWORD t_dur = GetTickCount() - t_start;
         fwprintf(stderr, L"[LAUNCHER] Child process exited with code %lu (ran for %lu ms)\n", exit_code, t_dur);
-        if (exit_code != 0 && t_dur < 5000) {
+        if (exit_code != 0 && exit_code != 3 && t_dur < 5000) {
             wchar_t err_msg[1024];
             _snwprintf(err_msg, 1024,
                 L"BadWords failed to start (exit code %lu).\n\n"
-                L"If this is a fresh Windows installation, please verify that Microsoft Visual C++ 2015-2022 Redistributable (x64) is installed.\n\n"
-                L"Diagnostic logs were written to:\n%s",
+                L"Diagnostic logs were written to:\n%s\n\n"
+                L"On a fresh Windows installation, installing Microsoft Visual C++ 2015-2022 Redistributable (x64) may help.",
                 exit_code, log_path);
             MessageBoxW(NULL, err_msg, L"BadWords - Startup Error", MB_ICONERROR | MB_OK);
         }

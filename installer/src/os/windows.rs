@@ -466,26 +466,35 @@ pub fn create_windows_shortcuts(
             }
         };
         let launcher_exe = install_dir.join("BadWords.exe");
-        if !launcher_exe.is_file() {
-            let setup_cand = install_dir.join("setupfiles").join("windows").join("BadWords.exe");
-            let bootstrap_cand = std::env::var("LOCALAPPDATA")
-                .map(|l| PathBuf::from(l).join("BadWords-bootstrap").join("BadWords.exe"))
-                .unwrap_or_default();
+        let setup_cand = install_dir.join("setupfiles").join("windows").join("BadWords.exe");
+        let bootstrap_cand = std::env::var("LOCALAPPDATA")
+            .map(|l| PathBuf::from(l).join("BadWords-bootstrap").join("BadWords.exe"))
+            .unwrap_or_default();
+        let exe_dir_cand = std::env::current_exe()
+            .ok()
+            .and_then(|cur| cur.parent().map(|p| p.join("BadWords.exe")))
+            .unwrap_or_default();
 
-            if setup_cand.is_file() {
-                unblock_file(&setup_cand);
-                let _ = std::fs::copy(&setup_cand, &launcher_exe);
-            } else if bootstrap_cand.is_file() {
-                unblock_file(&bootstrap_cand);
-                let _ = std::fs::copy(&bootstrap_cand, &launcher_exe);
-            } else if let Ok(cur_exe) = std::env::current_exe() {
-                if let Some(p) = cur_exe.parent() {
-                    let cand = p.join("BadWords.exe");
-                    if cand.is_file() {
-                        unblock_file(&cand);
-                        let _ = std::fs::copy(&cand, &launcher_exe);
+        let local_cand = [setup_cand, bootstrap_cand, exe_dir_cand]
+            .into_iter()
+            .find(|c| c.is_file());
+
+        if let Some(cand) = local_cand {
+            unblock_file(&cand);
+            let mut should_copy = !launcher_exe.is_file();
+            if !should_copy {
+                if let (Ok(cm), Ok(tm)) = (cand.metadata(), launcher_exe.metadata()) {
+                    if cm.len() != tm.len() {
+                        should_copy = true;
+                    } else if let (Ok(ct), Ok(tt)) = (cm.modified(), tm.modified()) {
+                        if ct > tt {
+                            should_copy = true;
+                        }
                     }
                 }
+            }
+            if should_copy {
+                let _ = std::fs::copy(&cand, &launcher_exe);
             }
         }
         if !launcher_exe.is_file() {

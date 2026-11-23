@@ -9,12 +9,23 @@ MODULE: main.py
 ROLE: Core Module
 DESCRIPTION:
 Main entry point for the BadWords application.
+# INVARIANT: The guard section at the top of this file must remain parseable by
+# Python 3.8 so incompatible host interpreters display a clear dialog.
+# INVARIANT: The version gate runs before any third-party imports.
+# INVARIANT: No network calls, pip installs, or browser launches occur without consent.
+# INVARIANT: BootSplash is displayed before heavy OSDoctor/api/engine/main_window loading.
 """
 
-import sys
-import os
-import traceback
 import builtins
+import importlib
+import os
+import sys
+import time
+import traceback
+
+_SRC = os.path.dirname(os.path.abspath(__file__))
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 # Propagate DaVinci Resolve embedded globals to builtins so all worker threads can access them
 for _k in ("resolve", "bmd", "fusion", "fu"):
@@ -32,278 +43,31 @@ os.environ.setdefault("MKL_NUM_THREADS", "2")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
 os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
 
-# --- Windows Subprocess Window Suppression (Guarantees zero console/window flashes) ---
-if sys.platform == "win32" or os.name == "nt":
-    try:
-        import subprocess
-        _orig_popen_init = subprocess.Popen.__init__
-        def _safe_popen_init(self, *args, **kwargs):
-            kwargs["creationflags"] = kwargs.get("creationflags", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-            si = kwargs.get("startupinfo")
-            if si is None:
-                si = subprocess.STARTUPINFO()
-            si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
-            si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
-            kwargs["startupinfo"] = si
-            if "stdin" not in kwargs or kwargs["stdin"] is None:
-                kwargs["stdin"] = subprocess.DEVNULL
-            return _orig_popen_init(self, *args, **kwargs)
-        subprocess.Popen.__init__ = _safe_popen_init
-    except Exception:
-        pass
+# --- Early startup guard (stdlib-only, Python 3.8+ parseable) ---
+from startup import EXIT_FATAL_REPORTED, env_guard, fatal_dialog
 
-# --- Hotfix for older Python versions (Resolve 20 + Python < 3.9) ---
-if sys.version_info < (3, 9):
-    try:
-        for p in sys.path:
-            pyside_init = os.path.join(p, "PySide6", "__init__.py")
-            if os.path.exists(pyside_init):
-                with open(pyside_init, "r", encoding="utf-8") as f:
-                    p_content = f.read()
-                if "def __getattr__(name: str) -> list[str]:" in p_content:
-                    p_content = p_content.replace("def __getattr__(name: str) -> list[str]:", "def __getattr__(name: str) -> list:")
-                    with open(pyside_init, "w", encoding="utf-8") as f:
-                        f.write(p_content)
-                break
-    except Exception:
-        pass
-# --- Linux Qt6 / KDE Environment Isolation (prevents system Qt conflict on Fedora KDE, Arch, etc.) ---
-if sys.platform.startswith('linux'):
-    if 'QT_QPA_PLATFORMTHEME' in os.environ:
-        del os.environ['QT_QPA_PLATFORMTHEME']
-    os.environ.pop('QT_STYLE_OVERRIDE', None)
+env_guard.prune_mismatched_version_paths()
+if not env_guard.check_python_version():
+    fatal_dialog.show_fatal("python_version", src_dir=_SRC)
+    sys.exit(EXIT_FATAL_REPORTED)
 
-    try:
-        import ctypes
-        _cand_dirs = [
-            os.path.dirname(os.path.abspath(__file__)),
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        ] + list(sys.path)
-
-        _qt_lib_dir = None
-        _qt_plugins_dir = None
-        for _d in _cand_dirs:
-            if not _d or not os.path.isdir(_d):
-                continue
-            _lib_check = os.path.join(_d, "PySide6", "Qt", "lib")
-            if os.path.isdir(_lib_check):
-                _qt_lib_dir = _lib_check
-                _plugins_check = os.path.join(_d, "PySide6", "Qt", "plugins")
-                if os.path.isdir(_plugins_check):
-                    _qt_plugins_dir = _plugins_check
-                break
-            _vlib = os.path.join(_d, "venv", "lib")
-            if os.path.isdir(_vlib):
-                try:
-                    for _sub in os.listdir(_vlib):
-                        _sp_lib = os.path.join(_vlib, _sub, "site-packages", "PySide6", "Qt", "lib")
-                        if os.path.isdir(_sp_lib):
-                            _qt_lib_dir = _sp_lib
-                            _sp_plugins = os.path.join(_vlib, _sub, "site-packages", "PySide6", "Qt", "plugins")
-                            if os.path.isdir(_sp_plugins):
-                                _qt_plugins_dir = _sp_plugins
-                            break
-                except Exception:
-                    pass
-                if _qt_lib_dir:
-                    break
-
-        if _qt_plugins_dir:
-            os.environ['QT_PLUGIN_PATH'] = _qt_plugins_dir
-
-        if _qt_lib_dir:
-            _cur_ld = os.environ.get('LD_LIBRARY_PATH', '')
-            if _cur_ld:
-                os.environ['LD_LIBRARY_PATH'] = f"{_qt_lib_dir}:{_cur_ld}"
-            else:
-                os.environ['LD_LIBRARY_PATH'] = _qt_lib_dir
-
-            _qt_preload = [
-                'libQt6Core.so.6',
-                'libQt6Network.so.6',
-                'libQt6DBus.so.6',
-                'libQt6Gui.so.6',
-                'libQt6Widgets.so.6',
-                'libQt6OpenGL.so.6',
-                'libQt6WaylandClient.so.6',
-                'libQt6XcbQpa.so.6',
-            ]
-            for _lib_name in _qt_preload:
-                _p = os.path.join(_qt_lib_dir, _lib_name)
-                if os.path.isfile(_p):
-                    try:
-                        ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                    except Exception:
-                        pass
-    except Exception:
-        pass
-
-# --- Auto-healing bootstrapper for legacy v3 upgrades and broken virtualenvs ---
-def _auto_heal_environment():
-    """
-    Self-healing bootstrapper:
-    Executes BEFORE PySide6/Qt imports.
-    If BadWords was updated via legacy v3 updater (which only upgraded faster-whisper/pypdf,
-    omitting PySide6, av<19, and CUDA 12 packages), detect the missing environment and repair it in-place.
-    """
-    # 1. Check Python version compatibility
-    if sys.version_info < (3, 10):
-        msg = (
-            f"BadWords 4.0+ requires Python 3.10-3.12 (detected: Python {sys.version_info.major}.{sys.version_info.minor}).\n\n"
-            f"Due to the new architecture, please download the official BadWords setup installer to upgrade:\n"
-            f"https://github.com/veritus-git/BadWords/releases"
-        )
-        try:
-            import webbrowser
-            webbrowser.open("https://github.com/veritus-git/BadWords/releases/latest")
-        except Exception:
-            pass
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                ctypes.windll.user32.MessageBoxW(None, msg, "BadWords - Upgrade Notice", 0x40)
-            except Exception:
-                pass
-        elif sys.platform == "darwin":
-            try:
-                import subprocess
-                subprocess.run(["osascript", "-e", f'display dialog "{msg}" buttons {{"OK"}} default button "OK" with title "BadWords"'], capture_output=True)
-            except Exception:
-                pass
-        print(f"[BadWords] {msg}", file=sys.stderr)
-        sys.exit(0)
-
-    # 2. Clean up any legacy root files that shadow packages
-    cur_dir = os.path.dirname(os.path.abspath(__file__))
-    legacy_files = [
-        "gui.py", "config.py", "transcribe.py", "timeline.py",
-        "interface.py", "silence.py", "audio.py", "whisper_net.py",
-        "BadWords_Launcher.py", "Badwords.py", "BadWords (Windows).py",
-        "BadWords (Linux).py", "BadWords (Mac).py", "BadWords (macOS).py"
-    ]
-    for lf in legacy_files:
-        p = os.path.join(cur_dir, lf)
-        if os.path.isfile(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
-
-    # 3. Clean up stale bytecode cache for legacy files
-    pycache = os.path.join(cur_dir, "__pycache__")
-    if os.path.isdir(pycache):
-        try:
-            for f in os.listdir(pycache):
-                if any(f.startswith(x.replace(".py", "")) for x in legacy_files):
-                    try:
-                        os.remove(os.path.join(pycache, f))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-    # 4. Check whether core packages (PySide6, av, faster_whisper, pypdf) are present
-    needs_repair = False
-    try:
-        import PySide6
-        import faster_whisper
-        import av
-        import pypdf
-    except ImportError:
-        needs_repair = True
-
-    if needs_repair and os.environ.get("_BW_AUTO_HEAL_ATTEMPTED") != "1":
-        print("[BadWords] Legacy v3 migration detected — missing required libraries. Starting auto-healing...", file=sys.stderr)
-        import subprocess
-
-        # Determine if NVIDIA GPU is present
-        has_nvidia = False
-        if sys.platform == "win32":
-            for p in [r"C:\Windows\System32\nvcuda.dll", r"C:\Windows\System32\nvapi64.dll"]:
-                if os.path.isfile(p):
-                    has_nvidia = True
-                    break
-        elif sys.platform.startswith("linux"):
-            import shutil
-            if shutil.which("lspci"):
-                try:
-                    r = subprocess.run(["lspci"], capture_output=True, text=True)
-                    if "nvidia" in r.stdout.lower():
-                        has_nvidia = True
-                except Exception:
-                    pass
-
-        # Determine target Python binary (prefer local venv if present)
-        cand_venv_py = None
-        if sys.platform == "win32":
-            for vp in [os.path.join(cur_dir, "venv", "Scripts", "python.exe"),
-                       os.path.join(os.path.dirname(cur_dir), "venv", "Scripts", "python.exe")]:
-                if os.path.isfile(vp):
-                    cand_venv_py = vp
-                    break
-        else:
-            for vp in [os.path.join(cur_dir, "venv", "bin", "python3"),
-                       os.path.join(cur_dir, "venv", "bin", "python"),
-                       os.path.join(os.path.dirname(cur_dir), "venv", "bin", "python3")]:
-                if os.path.isfile(vp):
-                    cand_venv_py = vp
-                    break
-
-        py_exec = cand_venv_py if cand_venv_py else sys.executable
-
-        packages = ["PySide6", "av<19", "faster-whisper", "pypdf"]
-        if has_nvidia:
-            packages.extend(["nvidia-cublas-cu12", "nvidia-cudnn-cu12"])
-
-        pip_cmd = [py_exec, "-m", "pip", "install", "--upgrade"]
-        if py_exec == sys.executable and sys.prefix == getattr(sys, "base_prefix", sys.prefix):
-            pip_cmd.append("--break-system-packages")
-        pip_cmd.extend(packages)
-
-        try:
-            subprocess.run(pip_cmd, check=True)
-            print("[BadWords] Auto-healing complete! Restarting...", file=sys.stderr)
-            new_env = os.environ.copy()
-            new_env["_BW_AUTO_HEAL_ATTEMPTED"] = "1"
-            target_run_py = py_exec
-            if sys.platform == "win32":
-                subprocess.Popen([target_run_py] + sys.argv, env=new_env)
-                sys.exit(0)
-            else:
-                os.execve(target_run_py, [target_run_py] + sys.argv, new_env)
-        except Exception as e:
-            print(f"[BadWords] Auto-healing pip installation failed: {e}", file=sys.stderr)
-
-_auto_heal_environment()
-
-import time
-try:
-    from PySide6.QtWidgets import QApplication, QMessageBox
-    from PySide6.QtGui import QFont
-    from PySide6.QtCore import QThread, Signal, QTimer
-except Exception as _early_err:
-    import sys, traceback
-    _tb = traceback.format_exc()
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(
-                None,
-                f"Failed to initialize PySide6/Qt framework:\n\n{_early_err}\n\nPlease ensure Microsoft Visual C++ 2015-2022 Redistributable (x64) is installed.",
-                "BadWords - Fatal Startup Error",
-                0x10  # MB_ICONERROR
-            )
-        except Exception:
-            pass
-    print(f"CRITICAL EARLY BOOT ERROR: {_early_err}\n{_tb}", file=sys.stderr)
-    sys.exit(1)
-
-# Application module imports
-import config
+# Importing osdoc installs the single Windows hidden-subprocess Popen hook.
 import osdoc
-import api
-import engine
-import gui
+
+from startup import legacy_cleanup, qt_env, runtime_mode, self_heal
+
+legacy_cleanup.run(_SRC)
+qt_env.isolate_linux_qt_env(_SRC)
+self_heal.ensure_components(_SRC)
+
+try:
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QFont, QSurfaceFormat
+    from PySide6.QtCore import QLoggingCategory, QThread, QTimer, Signal
+except Exception as _early_err:
+    _tb = traceback.format_exc()
+    fatal_dialog.show_fatal("qt", error_text=str(_early_err), tb_text=_tb, src_dir=_SRC)
+    sys.exit(EXIT_FATAL_REPORTED)
 
 
 # ==========================================
@@ -312,35 +76,32 @@ import gui
 
 class InitThread(QThread):
     """
-    Runs heavyweight initialization (ResolveHandler, AudioEngine) off the
-    main thread so the splash screen stays responsive.
-
-    Signals are delivered to slots on the MAIN thread automatically by Qt's
-    queued-connection mechanism, so all GUI work in the slots is thread-safe.
-
-    Signals
-    -------
-    loaded(resolve, audio_engine)
-        Emitted when both objects are ready.
-    error(message)
-        Emitted if an exception is raised during initialization.
+    Runs heavyweight initialization (hardware probes, Resolve script sync,
+    ResolveHandler, AudioEngine) off the main thread while BootSplash is visible.
     """
     loaded = Signal(object, object)
-    error  = Signal(str)
+    error = Signal(str)
 
-    def __init__(self, os_doc, parent=None):
+    def __init__(self, os_doc, api_mod, engine_mod, parent=None):
         super().__init__(parent)
         self.os_doc = os_doc
+        self.api_mod = api_mod
+        self.engine_mod = engine_mod
 
     def run(self):
         try:
+            try:
+                self.os_doc.log_hardware_info()
+            except Exception as he:
+                osdoc.log_warn(f"log_hardware_info error during startup: {he}")
+
             try:
                 self.os_doc.sync_resolve_scripts()
             except Exception as se:
                 osdoc.log_warn(f"sync_resolve_scripts error during startup: {se}")
 
-            resolve      = api.ResolveHandler(self.os_doc)
-            audio_engine = engine.AudioEngine(self.os_doc, resolve)
+            resolve = self.api_mod.ResolveHandler(self.os_doc)
+            audio_engine = self.engine_mod.AudioEngine(self.os_doc, resolve)
             self.loaded.emit(resolve, audio_engine)
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
@@ -353,91 +114,82 @@ class InitThread(QThread):
 class AppController:
     """
     Owns every long-lived object in the application so Python's garbage
-    collector never destroys a window simply because a helper function
-    returned.
-
-    Lifetime: one instance is created in main() and stored in the module-
-    level ``_controller`` variable, keeping it alive for the duration of
-    the Qt event loop.
+    collector never destroys a window simply because a helper function returned.
     """
 
-    def __init__(self, os_doc: osdoc.OSDoctor):
-        self.os_doc      = os_doc
-
-        # These attributes MUST be kept as instance variables.
-        # If they were local variables inside on_loaded(), the GC would
-        # destroy the QWidgets the moment that function returned.
-        self.splash      = None   # gui.SplashScreen
-        self.main_win    = None   # gui.BadWordsGUI
-        self.init_thread = None   # InitThread
-
-    # ------------------------------------------------------------------
-    # Start-up sequence
-    # ------------------------------------------------------------------
+    def __init__(self, splash):
+        self.os_doc = None
+        self.splash = splash
+        self.main_win = None
+        self.init_thread = None
 
     def start(self):
-        """Create the splash and kick off background initialization."""
-        self._splash_start_time = time.time()
-        self.splash = gui.SplashScreen()
-        self.splash.show()
-        QApplication.processEvents()  # Paint splash before heavy loading starts
+        """Initialize OSDoctor, import backend packages, and start InitThread while splash is visible."""
+        try:
+            self._splash_start_time = time.time()
+            self.os_doc = osdoc.OSDoctor()
+            osdoc.log_info("Event loop started.")
+            QApplication.processEvents()
 
-        self.init_thread = InitThread(self.os_doc)
-        self.init_thread.loaded.connect(self.on_loaded)
-        self.init_thread.error.connect(self.on_error)
-        self.init_thread.start()
+            import api
+            QApplication.processEvents()
+            import engine
+            QApplication.processEvents()
 
-    # ------------------------------------------------------------------
-    # Signal handlers (always called on the MAIN THREAD by Qt)
-    # ------------------------------------------------------------------
+            self.init_thread = InitThread(self.os_doc, api, engine)
+            self.init_thread.loaded.connect(self.on_loaded)
+            self.init_thread.error.connect(self.on_error)
+            self.init_thread.start()
+
+            # Pre-import main window on main thread in next event-loop tick while InitThread works
+            QTimer.singleShot(0, self._preimport_main_window)
+        except Exception as e:
+            self.on_error(f"{e}\n\n{traceback.format_exc()}")
+
+    def _preimport_main_window(self):
+        try:
+            importlib.import_module("gui.main_window")
+        except Exception as e:
+            osdoc.log_warn(f"Main window pre-import warning: {e}")
 
     def on_loaded(self, resolve, audio_engine):
         """Called on the main thread when InitThread finishes successfully."""
         self._finish_startup(resolve, audio_engine)
 
     def _finish_startup(self, resolve, audio_engine):
+        import gui
+
         osdoc.log_info("Loading complete. Building main window.")
-
-        # IMPORTANT: store on self, NOT as a local variable.
         self.main_win = gui.BadWordsGUI(audio_engine, resolve)
-
-        # Wire clean-shutdown callback
         self.main_win.closeEvent_callback = self._on_close
 
-        if getattr(self.main_win, '_is_mac', False):
+        if getattr(self.main_win, "_is_mac", False):
             self.main_win.showFullScreen()
         else:
             self.main_win.showMaximized()
         self.main_win.raise_()
         self.main_win.activateWindow()
 
-        # Track window screen to dynamically sync animation interval when moved across monitors
         gui.track_window_screen(self.main_win)
 
-        # Close splash only after main window is displayed
         if self.splash:
             self.splash.close()
             self.splash = None
         osdoc.log_info("Main window displayed.")
 
     def on_error(self, message: str):
-        """Called on the main thread when InitThread raises an exception."""
+        """Called on the main thread when InitThread or startup fails."""
         osdoc.log_error(f"CRITICAL ERROR during init:\n{message}")
         if self.splash:
             self.splash.close()
             self.splash = None
-        QMessageBox.critical(
-            None,
-            "Critical Application Error",
-            f"An unexpected error occurred during startup:\n\n"
-            f"{message.split(chr(10))[0]}"
-            f"\n\nDetails saved to log file."
-        )
-        QApplication.instance().quit()
-
-    # ------------------------------------------------------------------
-    # Shutdown
-    # ------------------------------------------------------------------
+        first_line = message.split("\n")[0] if message else "Startup initialization failed"
+        fatal_dialog.show_fatal("generic", error_text=first_line, tb_text=message, src_dir=_SRC)
+        app = QApplication.instance()
+        if app is not None:
+            app.exit(EXIT_FATAL_REPORTED)
+        else:
+            sys.exit(EXIT_FATAL_REPORTED)
 
     def _on_close(self):
         """Called when the user closes the main window."""
@@ -449,155 +201,15 @@ class AppController:
                 pass
         if self.os_doc:
             self.os_doc.cleanup_temp()
-        QApplication.instance().quit()
-
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
 
 # ==========================================
 # MODULE-LEVEL REFERENCE (prevents GC)
 # ==========================================
-# Storing the controller at module level ensures Python will NEVER garbage-
-# collect it (and therefore the windows it owns) while the event loop runs.
 _controller: AppController = None
-
-
-# ==========================================
-# ENTRY POINT
-# ==========================================
-
-def _run_auto_update_if_needed(os_doc, splash=None):
-    """
-    Called AFTER QApplication and SplashScreen exist.
-    If auto_update_on_start is enabled and a newer version exists on GitHub/GitLab,
-    download the update script, run it (blocking — splash stays visible),
-    then re-exec this process so fresh files are loaded.
-    """
-    import json, urllib.request, ssl, subprocess, tempfile, os, sys
-
-    def _set_splash(text):
-        if splash is not None and hasattr(splash, 'set_status'):
-            splash.set_status(text)
-            QApplication.processEvents()
-
-    # Read prefs without importing gui/Qt
-    prefs_path = getattr(os_doc, 'settings_file', os.path.join(os_doc.install_dir, 'settings.json'))
-    try:
-        with open(prefs_path, 'r', encoding='utf-8') as f:
-            prefs = json.load(f)
-    except Exception:
-        return
-
-    if not prefs.get('auto_update_on_start', False):
-        return
-
-    _set_splash('Checking for updates…')
-    osdoc.log_info("[AutoUpdate] auto_update_on_start is ON — checking for updates...")
-
-    # ── 1. Fetch latest tag ─────────────────────────────────────────────
-    GH_API = "https://api.github.com/repos/veritus-git/BadWords/releases/latest"
-    GL_API = "https://gitlab.com/api/v4/projects/veritus-git%2FBadWords/releases/permalink/latest"
-    GH_SCRIPT = "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/updater.py"
-    GL_SCRIPT = "https://gitlab.com/badwords/BadWords/-/raw/main/setupfiles/updater.py"
-
-    def _get_ssl_ctx():
-        try:
-            import certifi
-            return ssl.create_default_context(cafile=certifi.where())
-        except Exception:
-            return ssl.create_default_context()
-
-    def _fetch_json(url):
-        ctx = _get_ssl_ctx()
-        req = urllib.request.Request(url, headers={"User-Agent": "BadWords-AutoUpdate/1.0"})
-        with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
-            return json.loads(r.read().decode())
-
-    def _parse_ver(tag):
-        try:
-            return tuple(int(x) for x in tag.strip().lstrip('vV').split('.'))
-        except Exception:
-            return (0,)
-
-    import config as _cfg
-    current = _parse_ver(_cfg.VERSION)
-    latest_tag = None
-    try:
-        latest_tag = _fetch_json(GH_API).get("tag_name", "").strip()
-    except Exception:
-        pass
-    if not latest_tag:
-        try:
-            latest_tag = _fetch_json(GL_API).get("tag_name", "").strip()
-        except Exception:
-            pass
-
-    if not latest_tag or _parse_ver(latest_tag) <= current:
-        osdoc.log_info(f"[AutoUpdate] Already up-to-date ({_cfg.VERSION}). Skipping.")
-        return
-
-    _set_splash(f'Updating to {latest_tag}…')
-    osdoc.log_info(f"[AutoUpdate] New version {latest_tag} found — downloading update script...")
-
-    # ── 2. Download updater.py ───────────────────────────────────────────
-    ctx = _get_ssl_ctx()
-    content = None
-    for url in (GH_SCRIPT, GL_SCRIPT):
-        try:
-            with urllib.request.urlopen(url, timeout=20, context=ctx) as r:
-                content = r.read()
-            break
-        except Exception:
-            continue
-
-    if not content:
-        osdoc.log_info("[AutoUpdate] Could not download update script. Skipping.")
-        return
-
-    # ── 3. Run updater.py via Python (blocking; splash stays visible) ───
-    fd, tmp_path = tempfile.mkstemp(suffix='.py', prefix='bw_autoupd_')
-    try:
-        with os.fdopen(fd, 'wb') as fh:
-            fh.write(content)
-        
-        venv_py = os_doc.get_venv_python_path() if hasattr(os_doc, 'get_venv_python_path') else sys.executable
-        sp_kwargs = os_doc.get_subprocess_kwargs() if hasattr(os_doc, 'get_subprocess_kwargs') else {}
-        if not sp_kwargs and os.name == 'nt':
-            sp_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= getattr(subprocess, 'STARTF_USESHOWWINDOW', 1)
-            si.wShowWindow = getattr(subprocess, 'SW_HIDE', 0)
-            sp_kwargs['startupinfo'] = si
-        cmd = [venv_py, tmp_path, '--install-dir', os_doc.install_dir]
-
-        osdoc.log_info("[AutoUpdate] Running update script via Python (blocking)...")
-        result = subprocess.run(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=600,
-            **sp_kwargs
-        )
-        if result.returncode == 0:
-            osdoc.log_info("[AutoUpdate] Update script completed successfully.")
-            _set_splash('Update complete — restarting…')
-        else:
-            osdoc.log_info(f"[AutoUpdate] Update script exited with code {result.returncode}.")
-    except Exception as e:
-        osdoc.log_info(f"[AutoUpdate] Update script failed: {e}")
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
-    # ── 5. Re-exec this process to load fresh files ──────────────────────
-    osdoc.log_info("[AutoUpdate] Re-launching BadWords with updated files...")
-    try:
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        osdoc.log_info(f"[AutoUpdate] Re-exec failed: {e}. Continuing with current files.")
 
 
 # ==========================================
@@ -607,111 +219,88 @@ def _run_auto_update_if_needed(os_doc, splash=None):
 def main():
     global _controller
 
-    os_doc = None
-
     try:
-        # 1. System layer — fast, safe on main thread
-        os_doc = osdoc.OSDoctor()
-        if os_doc.is_win:
+        if sys.platform == "win32":
             try:
                 import ctypes
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
-                # WinMM high-resolution timer (1ms) eliminates animation frame-pacing stutter
                 ctypes.windll.winmm.timeBeginPeriod(1)
             except Exception:
                 pass
 
-        # Hardware VSync surface format
-        from PySide6.QtGui import QSurfaceFormat
         fmt = QSurfaceFormat()
-        fmt.setSwapInterval(1)  # Hardware VSync
+        fmt.setSwapInterval(1)
         QSurfaceFormat.setDefaultFormat(fmt)
 
-        # 2. QApplication must exist before any QWidget
-        from PySide6.QtCore import QLoggingCategory
         QLoggingCategory.setFilterRules("qt.text.font.db.warning=false\nqt.text.font.db.debug=false")
 
         app = QApplication(sys.argv)
-        app.setQuitOnLastWindowClosed(False)  # We control shutdown via closeEvent
+        app.setQuitOnLastWindowClosed(False)
+
+        import config
+        from gui.utils import _app_icon, init_embedded_fonts, setup_macos_standalone_identity
+        from gui.vsync import init_high_refresh_sync
+        from startup.boot_splash import BootSplash
+
         app.setApplicationName(config.APP_NAME)
         app.setApplicationDisplayName(config.APP_NAME)
         app.setOrganizationName("Veritus")
         app.setOrganizationDomain("veritus.badwords")
 
-        # Initialize hardware VSync / high-refresh rate synchronization dynamically
-        gui.init_high_refresh_sync(app)
-
-        # Initialize UI scaling factor dynamically based on screen geometry
+        init_high_refresh_sync(app)
         config.init_ui_scaling(app)
 
-        # Register embedded cross-platform UI font (Ubuntu Sans / Ubuntu) into Qt Font Engine
-        gui.init_embedded_fonts()
+        init_embedded_fonts()
         default_font = QFont(config.UI_FONT_NAME, config.FS(config.BASE_FONT_PT))
         default_font.setStyleStrategy(QFont.PreferAntialias)
         default_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
         default_font.setWeight(QFont.Weight.Normal)
         app.setFont(default_font)
 
-        if os_doc.is_mac:
-            app.setStyle('Fusion')
+        if sys.platform == "darwin":
+            app.setStyle("Fusion")
             try:
-                is_standalone = not (
-                    hasattr(sys.modules.get('__main__'), 'resolve') or
-                    hasattr(sys.modules.get('builtins'), 'resolve') or
-                    hasattr(sys.modules.get('__main__'), 'bmd') or
-                    hasattr(sys.modules.get('builtins'), 'bmd') or
-                    'fscript' in sys.executable.lower() or
-                    os.environ.get('RESOLVE_SCRIPT_API') is not None
-                )
-                if is_standalone:
-                    gui.setup_macos_standalone_identity(config.APP_NAME)
+                if not runtime_mode.is_embedded_in_resolve():
+                    setup_macos_standalone_identity(config.APP_NAME)
             except Exception:
                 pass
-        elif os_doc.is_linux:
+        elif sys.platform.startswith("linux"):
             try:
-                import ctypes, ctypes.util
+                import ctypes
+                import ctypes.util
                 libc_name = ctypes.util.find_library("c") or "libc.so.6"
                 libc = ctypes.CDLL(libc_name)
-                PR_SET_NAME = 15
-                libc.prctl(PR_SET_NAME, b"BadWords\0", 0, 0, 0)
+                libc.prctl(15, b"BadWords\0", 0, 0, 0)
             except Exception:
                 pass
 
-        app_icon = gui._app_icon()
+        app_icon = _app_icon()
         if not app_icon.isNull():
             app.setWindowIcon(app_icon)
 
-
         app.setStyleSheet(config.scrollbar_qss(8))
 
-        # 3. Create controller (holds all GUI references → GC-safe)
-        _controller = AppController(os_doc)
-        _controller.start()  # Shows splash, runs auto-update if needed, starts InitThread
+        # Show BootSplash immediately BEFORE OSDoctor / api / engine / main_window load
+        splash = BootSplash()
+        splash.show()
+        app.processEvents()
 
-        # 4. Hand control to Qt — app.exec() blocks here until app.quit() is called
-        osdoc.log_info("Event loop started.")
+        _controller = AppController(splash)
+        QTimer.singleShot(0, _controller.start)
+
         sys.exit(app.exec())
 
     except Exception as e:
         error_trace = traceback.format_exc()
-        error_msg   = f"CRITICAL ERROR: {e}\n{error_trace}"
-
-        if os_doc:
-            osdoc.log_error(error_msg)
-        else:
-            print(error_msg, file=sys.stderr)
+        error_msg = f"CRITICAL ERROR: {e}\n{error_trace}"
 
         try:
-            _app = QApplication.instance() or QApplication(sys.argv)
-            QMessageBox.critical(
-                None,
-                "Critical Application Error",
-                f"An unexpected error occurred:\n{e}\n\nDetails saved to log file."
-            )
+            osdoc.log_error(error_msg)
         except Exception:
-            pass
+            print(error_msg, file=sys.stderr)
 
-        sys.exit(1)
+        fatal_dialog.show_fatal("generic", error_text=str(e), tb_text=error_trace, src_dir=_SRC)
+        sys.exit(EXIT_FATAL_REPORTED)
 
 
 if __name__ == "__main__":

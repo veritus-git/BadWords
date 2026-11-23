@@ -31,13 +31,8 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 ## Baseline Protected Workarounds (Pre-Roadmap)
 
 ### 1. Python < 3.9 PySide6 Typings Hotfix
-- **Status:** Protected Workaround (Pending full Stage 1 audit in Point 1)
-- **Files:** `src/main.py` (lines 55–69)
-- **How It Works:** On startup when `sys.version_info < (3, 9)`, scans `sys.path` for `PySide6/__init__.py` and patches `def __getattr__(name: str) -> list[str]:` to `def __getattr__(name: str) -> list:`.
-- **Why It Exists:** Embedded Python 3.8/3.9 inside older DaVinci Resolve hosts raises `TypeError: unsupported operand type(s) for |` or PEP 585 generic type errors at import time.
-- **Invariants (DO NOT BREAK):**
-  - `# INVARIANT:` Must execute **before** any `from PySide6...` import in `src/main.py`.
-- **Regression Tests:** Verified on startup; covered in Stage 1 Point 1 cementing.
+- **Status:** Removed (replaced by Section 6 on 2026-11-23)
+- **Why Removed:** BadWords 4.x requires Python 3.10–3.12 (enforced at startup before any third-party import). The obsolete runtime patch on `PySide6/__init__.py` was removed in Point 1 cementing.
 
 ### 2. Resolve Headless Console Stream Buffering (`ResolveStreamProxy`)
 - **Status:** Protected Workaround (Pending full Stage 1 audit in Point 2)
@@ -79,3 +74,30 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 - **Invariants (DO NOT BREAK):**
   - `# INVARIANT:` Must ignore transient `RuntimeError` on deleted Qt objects and cancel/hide tooltip timers on `Leave`, `Hide`, `MouseButtonPress`, and `WindowDeactivate`.
 - **Regression Tests:** Covered in Stage 3 Point 12A cementing.
+
+---
+
+## Cemented Roadmap Modules
+
+### 6. Startup Pipeline, Runtime Isolation & Consent-Based Self-Heal
+- **Status:** Cemented (2026-11-23)
+- **Files:** `src/main.py`, `src/startup/` (`__init__.py`, `env_guard.py`, `runtime_mode.py`, `i18n_lite.py`, `native_dialogs.py`, `crash_report.py`, `fatal_dialog.py`, `legacy_cleanup.py`, `qt_env.py`, `self_heal.py`, `boot_splash.py`), `src/gui/__init__.py`, `src/gui/dialogs/splash_screen.py`, `src/gui/views/welcome_view.py`, `src/osdoc.py`, `setupfiles/resolve_wrapper_template.py`, `setupfiles/windows/launcher.c`, `setupfiles/linux/launcher.c`, `setupfiles/macos/launcher.c`, `setupfiles/setup.py`, `setupfiles/updater.py`, `setupfiles/pe_patcher.py`, `installer/src/engine.rs`, `installer/src/os/windows.rs`, `tests/test_startup_guard.py`
+- **How It Works:**
+  1. **Early Guard (`src/startup/`)**: Executes stdlib-only checks before third-party imports. Strips foreign Python/Conda `sys.path` entries tagged with a different minor version (`env_guard.prune_mismatched_version_paths`), enforces Python `3.10 <= ver < 3.13` (`check_python_version`) without auto-opening a browser, relies on `osdoc`'s single idempotent Windows hidden-subprocess hook, cleans legacy v3 files (`legacy_cleanup`), isolates Linux Qt6 (`qt_env`), and verifies core packages (`self_heal.ensure_components`).
+  2. **Consent-Based Self-Heal & Crash Reporting**: Missing packages (`HARD_REQUIRED`: `PySide6`, `numpy`; `SOFT_REQUIRED`: `faster_whisper`, `av`, `pypdf`) prompt explicit user consent before running `pip` strictly inside BadWords' own venv (never touching system Python). Fatal startup errors display a localized Qt or native OS dialog (`MessageBoxW` / `osascript` / `zenity` / `kdialog`) with real cause, log path, and an optional consent-gated crash report upload to `SUPPORT_WEBHOOK_URL` (`crash_report.send_report`).
+  3. **Instant BootSplash & Deferred Backend**: `src/gui/__init__.py` uses PEP 562 lazy loading so `BootSplash` displays immediately after `QApplication` setup, before `OSDoctor.__init__`, `api`, `engine`, or `gui.main_window` are loaded. `AppController.start()` imports `api` and `engine`, runs `InitThread` (`log_hardware_info`, `sync_resolve_scripts`, `ResolveHandler`, `AudioEngine`), and pre-imports `gui.main_window` while `BootSplash` remains responsive.
+  4. **Unified DaVinci Resolve Wrapper**: `setupfiles/resolve_wrapper_template.py` is the single template consumed by `osdoc.py`, `installer/src/engine.rs`, `setupfiles/setup.py`, and `setupfiles/updater.py`. When host Python matches venv Python, it executes in-process (preserving native connection in Resolve Free < 21.1); on version mismatch or failure, it spawns BadWords in an isolated external process stripped of host/Conda env vars (`PYTHONNOUSERSITE=1`, no `PYTHONHOME`/foreign `PYTHONPATH`, never falling back to host/system Python).
+- **OS-Specific Behavior:**
+  - **Windows:** `launcher.c` reads `pyvenv.cfg` and loads only the exact matching `pythonXYY.dll` (otherwise falls back to `CreateProcessW`), clears `PYTHONHOME` and foreign `PYTHONPATH`, sets `PYTHONNOUSERSITE=1`, and skips `MessageBoxW` when Python exits with `EXIT_FATAL_REPORTED` (`3`). `osdoc.get_venv_python_path` no longer copies `BadWords.exe` into `venv/Scripts`; `installer/src/os/windows.rs` and `setupfiles/setup.py` refresh root `BadWords.exe` when size or mtime differs.
+  - **Linux:** `launcher.c` discovers only the exact `libpythonX.Y.so*` matching `pyvenv.cfg` and strips foreign Python env vars. `qt_env.isolate_linux_qt_env` runs before `PySide6` import. Native dialogs fall back to `zenity` → `kdialog` → `notify-send`.
+  - **macOS:** `launcher.c` discovers only the exact `ver_short` framework/dylib. Resolve external fallback launches `BadWords.app` (`open -n ... --args --embedded`) when installed. Standalone identity check ignores `RESOLVE_SCRIPT_API` and uses `startup.runtime_mode.is_embedded_in_resolve()`.
+- **Invariants (DO NOT BREAK):**
+  - `# INVARIANT:` `src/startup/` and the guard section at the top of `src/main.py` must remain parseable by Python 3.8 grammar.
+  - `# INVARIANT:` Version gate must run before any third-party import; never auto-open a browser on startup errors.
+  - `# INVARIANT:` Exit code `3` (`EXIT_FATAL_REPORTED`) means Python already presented a fatal dialog; native launchers must not display a duplicate dialog.
+  - `# INVARIANT:` `BootSplash` and `import gui` must never eagerly import `gui.main_window`.
+  - `# INVARIANT:` `OSDoctor.__init__` must not run GPU/CPU probing subprocesses (`log_hardware_info()` runs inside `InitThread`).
+  - `# INVARIANT:` `self_heal` must never run without explicit user consent, never target system Python, and never `os.execve` inside a host DaVinci Resolve process.
+  - `# INVARIANT:` `sync_resolve_scripts` never deletes `BadWords.py` based on Resolve edition and never writes to real Resolve script directories in DEV mode.
+- **Regression Tests:** `tests/test_startup_guard.py`, `tests/test_host_env_fixes.py`, `installer/src/engine.rs` (`test_generate_davinci_wrapper_template_and_isolation`)
+- **Do Not Change Without Product Owner Approval:** Supported Python range (3.10–3.12), consent-only self-heal & crash reporting policy, in-process wrapper priority for Resolve Free < 21.1, `EXIT_FATAL_REPORTED = 3` contract.

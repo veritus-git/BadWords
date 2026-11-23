@@ -178,8 +178,10 @@ int main(int argc, char *argv[]) {
     }
     fprintf(stderr, "[LAUNCHER] Main script:   %s\n", main_py);
 
-    // 5. Inspect pyvenv.cfg to detect Python home and library path
+    // 5. Inspect pyvenv.cfg to detect Python home and version
     char venv_home[MAX_PATH_LEN] = {0};
+    char py_version[64] = {0};
+    char ver_short[16] = {0};
     char pyvenv_cfg[MAX_PATH_LEN];
     snprintf(pyvenv_cfg, sizeof(pyvenv_cfg), "%s/venv/pyvenv.cfg", install_dir);
     FILE *fcfg = fopen(pyvenv_cfg, "r");
@@ -195,13 +197,19 @@ int main(int argc, char *argv[]) {
             trim(k); trim(v);
             if (strcmp(k, "home") == 0) {
                 strncpy(venv_home, v, sizeof(venv_home) - 1);
+            } else if (strcmp(k, "version") == 0 || strcmp(k, "version_info") == 0) {
+                strncpy(py_version, v, sizeof(py_version) - 1);
+                int mj = 0, mn = -1;
+                if (sscanf(py_version, "%d.%d", &mj, &mn) == 2 && mj > 0 && mn >= 0) {
+                    snprintf(ver_short, sizeof(ver_short), "%d.%d", mj, mn);
+                }
             }
         }
         fclose(fcfg);
-        fprintf(stderr, "[LAUNCHER] Base Python home from pyvenv.cfg: %s\n", venv_home);
+        fprintf(stderr, "[LAUNCHER] Base Python home from pyvenv.cfg: %s (ver=%s)\n", venv_home, ver_short);
     }
 
-    // 6. Discover libpython if not explicitly provided
+    // 6. Discover exact libpython matching pyvenv.cfg version
     if (python_lib[0] == '\0' || !file_exists(python_lib)) {
         // Option A: Check framework from venv_home (.../Versions/X.Y/bin -> .../Versions/X.Y/Python)
         if (venv_home[0] != '\0') {
@@ -215,16 +223,10 @@ int main(int argc, char *argv[]) {
             snprintf(cand, sizeof(cand), "%s/Python", base_prefix);
             if (file_exists(cand)) {
                 strncpy(python_lib, cand, sizeof(python_lib) - 1);
-            } else {
-                snprintf(cand, sizeof(cand), "%s/lib/libpython3.12.dylib", base_prefix);
-                if (file_exists(cand)) strncpy(python_lib, cand, sizeof(python_lib) - 1);
-                else {
-                    snprintf(cand, sizeof(cand), "%s/lib/libpython3.11.dylib", base_prefix);
-                    if (file_exists(cand)) strncpy(python_lib, cand, sizeof(python_lib) - 1);
-                    else {
-                        snprintf(cand, sizeof(cand), "%s/lib/libpython3.10.dylib", base_prefix);
-                        if (file_exists(cand)) strncpy(python_lib, cand, sizeof(python_lib) - 1);
-                    }
+            } else if (ver_short[0] != '\0') {
+                snprintf(cand, sizeof(cand), "%s/lib/libpython%s.dylib", base_prefix, ver_short);
+                if (file_exists(cand)) {
+                    strncpy(python_lib, cand, sizeof(python_lib) - 1);
                 }
             }
         }
@@ -246,21 +248,13 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // Option C: Standard system framework & Homebrew paths
-        if (python_lib[0] == '\0' || !file_exists(python_lib)) {
-            const char *cand_libs[] = {
-                "/Library/Frameworks/Python.framework/Versions/3.12/Python",
-                "/Library/Frameworks/Python.framework/Versions/3.11/Python",
-                "/Library/Frameworks/Python.framework/Versions/3.10/Python",
-                "/Library/Frameworks/Python.framework/Versions/3.9/Python",
-                "/opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/Python",
-                "/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python",
-                "/opt/homebrew/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/Python",
-                "/usr/local/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/Python",
-                "/usr/local/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python",
-                "/usr/local/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/Python",
-                NULL
-            };
+        // Option C: Standard system framework & Homebrew paths strictly for ver_short
+        if ((python_lib[0] == '\0' || !file_exists(python_lib)) && ver_short[0] != '\0') {
+            char c1[MAX_PATH_LEN], c2[MAX_PATH_LEN], c3[MAX_PATH_LEN];
+            snprintf(c1, sizeof(c1), "/Library/Frameworks/Python.framework/Versions/%s/Python", ver_short);
+            snprintf(c2, sizeof(c2), "/opt/homebrew/opt/python@%s/Frameworks/Python.framework/Versions/%s/Python", ver_short, ver_short);
+            snprintf(c3, sizeof(c3), "/usr/local/opt/python@%s/Frameworks/Python.framework/Versions/%s/Python", ver_short, ver_short);
+            const char *cand_libs[] = { c1, c2, c3, NULL };
             for (int i = 0; cand_libs[i] != NULL; i++) {
                 if (file_exists(cand_libs[i])) {
                     strncpy(python_lib, cand_libs[i], sizeof(python_lib) - 1);
@@ -292,12 +286,14 @@ int main(int argc, char *argv[]) {
     }
     fprintf(stderr, "[LAUNCHER] Site packages:  %s\n", site_pkgs[0] ? site_pkgs : "(none)");
 
-    // 8. Configure Virtual Environment Variables
+    // 8. Configure Isolated Virtual Environment Variables (strip foreign Python/Conda)
     char venv_dir[MAX_PATH_LEN];
     snprintf(venv_dir, sizeof(venv_dir), "%s/venv", install_dir);
     if (dir_exists(venv_dir)) {
         setenv("VIRTUAL_ENV", venv_dir, 1);
     }
+    unsetenv("PYTHONHOME");
+    setenv("PYTHONNOUSERSITE", "1", 1);
 
     char new_path[MAX_ENV_LEN];
     const char *cur_path = getenv("PATH");
@@ -305,19 +301,10 @@ int main(int argc, char *argv[]) {
     setenv("PATH", new_path, 1);
 
     char py_path[MAX_ENV_LEN];
-    const char *cur_pypath = getenv("PYTHONPATH");
     if (site_pkgs[0] != '\0') {
-        if (cur_pypath && cur_pypath[0] != '\0') {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s:%s:%s", install_dir, install_dir, site_pkgs, cur_pypath);
-        } else {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s:%s", install_dir, install_dir, site_pkgs);
-        }
+        snprintf(py_path, sizeof(py_path), "%s/src:%s:%s", install_dir, install_dir, site_pkgs);
     } else {
-        if (cur_pypath && cur_pypath[0] != '\0') {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s:%s", install_dir, install_dir, cur_pypath);
-        } else {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s", install_dir, install_dir);
-        }
+        snprintf(py_path, sizeof(py_path), "%s/src:%s", install_dir, install_dir);
     }
     setenv("PYTHONPATH", py_path, 1);
 
@@ -356,9 +343,6 @@ int main(int argc, char *argv[]) {
         void *py_handle = dlopen(python_lib, RTLD_NOW | RTLD_GLOBAL);
         if (py_handle) {
             int (*Py_BytesMain)(int, char **) = (int (*)(int, char **))dlsym(py_handle, "Py_BytesMain");
-            if (!Py_BytesMain) {
-                Py_BytesMain = (int (*)(int, char **))dlsym(py_handle, "Py_Main");
-            }
             if (Py_BytesMain) {
                 fprintf(stderr, "[LAUNCHER] Invoking in-process Py_BytesMain...\n");
                 int ret = Py_BytesMain(new_argc, new_argv);
@@ -366,7 +350,7 @@ int main(int argc, char *argv[]) {
                 free(new_argv);
                 return ret;
             } else {
-                fprintf(stderr, "[LAUNCHER] dlsym could not find Py_BytesMain/Py_Main: %s\n", dlerror());
+                fprintf(stderr, "[LAUNCHER] dlsym could not find Py_BytesMain: %s\n", dlerror());
             }
         } else {
             fprintf(stderr, "[LAUNCHER] dlopen failed: %s\n", dlerror());

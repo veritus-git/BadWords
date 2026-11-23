@@ -21,7 +21,7 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 - **Installed**: Runtime data stays inside/next to install dir.
 
 ## 3. Cemented Modules Index (Details: `docs/CEMENTED.md`)
-1. Python <3.9 typings
+1. Startup & runtime guard
 2. Resolve stream proxy
 3. CUDA/CPU isolation
 4. Frameless window mixin

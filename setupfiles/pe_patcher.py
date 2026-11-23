@@ -99,43 +99,7 @@ def patch_exe_icon(exe_path: str, ico_path: str) -> bool:
         return False
 
 
-def ensure_badwords_exe(install_dir: str) -> str:
-    """
-    Creates and patches venv/Scripts/BadWords.exe from pythonw.exe on Windows.
-    Returns the path to BadWords.exe if successfully created/existing, or pythonw.exe fallback.
-    """
-    if os.name != 'nt':
-        return ""
-
-    import shutil
-
-    venv_scripts = os.path.join(install_dir, "venv", "Scripts")
-    pyw = os.path.join(venv_scripts, "pythonw.exe")
-    bw_exe = os.path.join(venv_scripts, "BadWords.exe")
-
-    if not os.path.isfile(pyw):
-        return ""
-
-    try:
-        if not os.path.isfile(bw_exe) or os.path.getmtime(pyw) > os.path.getmtime(bw_exe):
-            shutil.copy2(pyw, bw_exe)
-
-        ico_path = os.path.join(install_dir, "assets", "icons", "icon_default.ico")
-        if not os.path.isfile(ico_path):
-            ico_path = os.path.join(install_dir, "icons", "icon_default.ico")
-
-        if os.path.isfile(ico_path):
-            patch_exe_icon(bw_exe, ico_path)
-
-        return bw_exe if os.path.isfile(bw_exe) else pyw
-    except Exception:
-        return pyw
-
-
 if __name__ == '__main__':
     if len(sys.argv) > 2:
         res = patch_exe_icon(sys.argv[1], sys.argv[2])
         print("Patched successfully" if res else "Patch failed")
-    elif len(sys.argv) > 1:
-        res_exe = ensure_badwords_exe(sys.argv[1])
-        print(f"Target executable: {res_exe}")

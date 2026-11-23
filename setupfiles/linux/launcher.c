@@ -209,7 +209,7 @@ int main(int argc, char *argv[]) {
             trim(k); trim(v);
             if (strcmp(k, "home") == 0) {
                 strncpy(venv_home, v, sizeof(venv_home) - 1);
-            } else if (strcmp(k, "version") == 0) {
+            } else if (strcmp(k, "version") == 0 || strcmp(k, "version_info") == 0) {
                 strncpy(py_version, v, sizeof(py_version) - 1);
             }
         }
@@ -217,44 +217,47 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "[LAUNCHER] pyvenv.cfg: home=%s, version=%s\n", venv_home, py_version);
     }
 
-    // 7. Discover libpython if not explicitly provided
+    // 7. Discover exact libpython matching pyvenv.cfg version (never load a mismatched version)
     if (python_lib[0] == '\0' || !file_exists(python_lib)) {
         char ver_short[16] = {0};
         if (py_version[0] != '\0') {
-            char *dot = strchr(py_version, '.');
-            if (dot) {
-                char *dot2 = strchr(dot + 1, '.');
-                if (dot2) {
-                    strncpy(ver_short, py_version, dot2 - py_version);
-                } else {
-                    strncpy(ver_short, py_version, sizeof(ver_short) - 1);
-                }
+            int mj = 0, mn = -1;
+            if (sscanf(py_version, "%d.%d", &mj, &mn) == 2 && mj > 0 && mn >= 0) {
+                snprintf(ver_short, sizeof(ver_short), "%d.%d", mj, mn);
             }
         }
 
-        const char *search_dirs[] = {
-            "/usr/lib/x86_64-linux-gnu",
-            "/usr/lib64",
-            "/usr/lib",
-            "/usr/local/lib",
-            NULL
-        };
+        if (ver_short[0] != '\0') {
+            char venv_home_lib[MAX_PATH_LEN] = {0};
+            if (venv_home[0] != '\0') {
+                char vh_copy[MAX_PATH_LEN];
+                strncpy(vh_copy, venv_home, sizeof(vh_copy) - 1);
+                vh_copy[sizeof(vh_copy) - 1] = '\0';
+                char *slash = strrchr(vh_copy, '/');
+                if (slash && strcmp(slash, "/bin") == 0) {
+                    *slash = '\0';
+                }
+                snprintf(venv_home_lib, sizeof(venv_home_lib), "%s/lib", vh_copy);
+            }
 
-        const char *versions[] = {
-            ver_short[0] ? ver_short : "3.12",
-            "3.12", "3.11", "3.10", "3.9", "3.13",
-            NULL
-        };
+            const char *search_dirs[] = {
+                venv_home_lib[0] ? venv_home_lib : NULL,
+                "/usr/lib/x86_64-linux-gnu",
+                "/usr/lib64",
+                "/usr/lib",
+                "/usr/local/lib",
+                NULL
+            };
 
-        for (int d = 0; search_dirs[d] != NULL && python_lib[0] == '\0'; d++) {
-            for (int v = 0; versions[v] != NULL && python_lib[0] == '\0'; v++) {
+            for (int d = 0; d < 5 && python_lib[0] == '\0'; d++) {
+                if (!search_dirs[d]) continue;
                 char cand_so[MAX_PATH_LEN];
-                snprintf(cand_so, sizeof(cand_so), "%s/libpython%s.so.1.0", search_dirs[d], versions[v]);
+                snprintf(cand_so, sizeof(cand_so), "%s/libpython%s.so.1.0", search_dirs[d], ver_short);
                 if (file_exists(cand_so)) {
                     strncpy(python_lib, cand_so, sizeof(python_lib) - 1);
                     break;
                 }
-                snprintf(cand_so, sizeof(cand_so), "%s/libpython%s.so", search_dirs[d], versions[v]);
+                snprintf(cand_so, sizeof(cand_so), "%s/libpython%s.so", search_dirs[d], ver_short);
                 if (file_exists(cand_so)) {
                     strncpy(python_lib, cand_so, sizeof(python_lib) - 1);
                     break;
@@ -285,12 +288,14 @@ int main(int argc, char *argv[]) {
     }
     fprintf(stderr, "[LAUNCHER] Site packages:  %s\n", site_pkgs[0] ? site_pkgs : "(none)");
 
-    // 9. Configure Virtual Environment Variables
+    // 9. Configure Isolated Virtual Environment Variables (strip foreign Python/Conda)
     char venv_dir[MAX_PATH_LEN];
     snprintf(venv_dir, sizeof(venv_dir), "%s/venv", install_dir);
     if (dir_exists(venv_dir)) {
         setenv("VIRTUAL_ENV", venv_dir, 1);
     }
+    unsetenv("PYTHONHOME");
+    setenv("PYTHONNOUSERSITE", "1", 1);
 
     char new_path[MAX_ENV_LEN];
     const char *cur_path = getenv("PATH");
@@ -298,19 +303,10 @@ int main(int argc, char *argv[]) {
     setenv("PATH", new_path, 1);
 
     char py_path[MAX_ENV_LEN];
-    const char *cur_pypath = getenv("PYTHONPATH");
     if (site_pkgs[0] != '\0') {
-        if (cur_pypath && cur_pypath[0] != '\0') {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s:%s:%s", install_dir, install_dir, site_pkgs, cur_pypath);
-        } else {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s:%s", install_dir, install_dir, site_pkgs);
-        }
+        snprintf(py_path, sizeof(py_path), "%s/src:%s:%s", install_dir, install_dir, site_pkgs);
     } else {
-        if (cur_pypath && cur_pypath[0] != '\0') {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s:%s", install_dir, install_dir, cur_pypath);
-        } else {
-            snprintf(py_path, sizeof(py_path), "%s/src:%s", install_dir, install_dir);
-        }
+        snprintf(py_path, sizeof(py_path), "%s/src:%s", install_dir, install_dir);
     }
     setenv("PYTHONPATH", py_path, 1);
 
@@ -384,9 +380,6 @@ int main(int argc, char *argv[]) {
         void *py_handle = dlopen(python_lib, RTLD_NOW | RTLD_GLOBAL);
         if (py_handle) {
             int (*Py_BytesMain)(int, char **) = (int (*)(int, char **))dlsym(py_handle, "Py_BytesMain");
-            if (!Py_BytesMain) {
-                Py_BytesMain = (int (*)(int, char **))dlsym(py_handle, "Py_Main");
-            }
             if (Py_BytesMain) {
                 fprintf(stderr, "[LAUNCHER] Invoking in-process Py_BytesMain (comm=BadWords)...\n");
                 prctl(PR_SET_NAME, "BadWords", 0, 0, 0);
@@ -397,7 +390,7 @@ int main(int argc, char *argv[]) {
                 free(new_argv);
                 return ret;
             } else {
-                fprintf(stderr, "[LAUNCHER] dlsym could not find Py_BytesMain/Py_Main: %s\n", dlerror());
+                fprintf(stderr, "[LAUNCHER] dlsym could not find Py_BytesMain: %s\n", dlerror());
             }
         } else {
             fprintf(stderr, "[LAUNCHER] dlopen failed: %s\n", dlerror());

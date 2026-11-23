@@ -3418,208 +3418,12 @@ pub fn run_uninstall(target_dir: PathBuf, uninstall_system_python: bool, sender:
     });
 }
 
-/// Generates the Python wrapper script for DaVinci Resolve (1:1 with setupfiles/setup.py)
+const WRAPPER_TEMPLATE: &str = include_str!("../../setupfiles/resolve_wrapper_template.py");
+
+/// Generates the Python wrapper script for DaVinci Resolve from unified template
 fn generate_davinci_wrapper(install_dir: &Path) -> String {
     let install_str = install_dir.to_string_lossy().replace('\\', "/");
-    let libs_str = install_dir
-        .join("libs")
-        .to_string_lossy()
-        .replace('\\', "/");
-    let main_script_str = install_dir
-        .join("main.py")
-        .to_string_lossy()
-        .replace('\\', "/");
-
-    format!(
-        r#"import sys, os, traceback, builtins
-
-for _k in ("resolve", "bmd", "fusion", "fu"):
-    if _k in globals() and globals()[_k] is not None:
-        setattr(builtins, _k, globals()[_k])
-    elif _k in locals() and locals()[_k] is not None:
-        setattr(builtins, _k, locals()[_k])
-
-INSTALL_DIR = r"{install_str}"
-MAIN_SCRIPT = r"{main_script_str}"
-
-if not os.path.exists(MAIN_SCRIPT):
-    for _alt_cand in [
-        os.path.join(os.path.dirname(INSTALL_DIR), "main.py"),
-        os.path.join(os.path.dirname(INSTALL_DIR), "src", "main.py"),
-        os.path.join(INSTALL_DIR, "src", "main.py"),
-    ]:
-        if os.path.isfile(_alt_cand):
-            MAIN_SCRIPT = _alt_cand
-            break
-
-# 1. Discover all site-packages candidates (venv direct paths + libs symlink/junction)
-_candidates = [
-    r"{libs_str}",
-    os.path.join(INSTALL_DIR, "libs"),
-    os.path.join(os.path.dirname(INSTALL_DIR), "libs"),
-    os.path.join(INSTALL_DIR, "venv", "Lib", "site-packages"),
-    os.path.join(os.path.dirname(INSTALL_DIR), "venv", "Lib", "site-packages"),
-]
-
-for _base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
-    for _lib_sub in ("lib", "lib64"):
-        _v_lib = os.path.join(_base, "venv", _lib_sub)
-        if os.path.isdir(_v_lib):
-            try:
-                for _entry in os.listdir(_v_lib):
-                    _sp = os.path.join(_v_lib, _entry, "site-packages")
-                    if os.path.isdir(_sp) and _sp not in _candidates:
-                        _candidates.append(_sp)
-            except Exception:
-                pass
-
-# 2. Launch external process helper
-def _launch_external():
-    import subprocess, shutil
-    clean_env = os.environ.copy()
-    clean_env["BADWORDS_EMBEDDED"] = "1"
-    if sys.platform.startswith('linux') and 'LD_LIBRARY_PATH' in clean_env:
-        clean_paths = [p for p in clean_env['LD_LIBRARY_PATH'].split(os.pathsep) if 'resolve' not in p.lower()]
-        clean_env['LD_LIBRARY_PATH'] = os.pathsep.join(clean_paths)
-    for cand in [
-        os.path.join(INSTALL_DIR, 'BadWords'),
-        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords'),
-        os.path.join(INSTALL_DIR, 'BadWords.exe'),
-        os.path.join(os.path.dirname(INSTALL_DIR), 'BadWords.exe'),
-    ]:
-        if os.path.isfile(cand) and (sys.platform.startswith('win') or os.access(cand, os.X_OK)):
-            try:
-                subprocess.Popen([cand, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
-                print("[BadWords] Launched standalone binary:", cand)
-                return True
-            except Exception:
-                pass
-
-    py_cands = [
-        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'pythonw.exe'),
-        os.path.join(INSTALL_DIR, 'venv', 'Scripts', 'python.exe'),
-        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'pythonw.exe'),
-        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'Scripts', 'python.exe'),
-        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python3'),
-        os.path.join(INSTALL_DIR, 'venv', 'bin', 'python'),
-        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python3'),
-        os.path.join(os.path.dirname(INSTALL_DIR), 'venv', 'bin', 'python'),
-    ]
-    py_bin = next((p for p in py_cands if os.path.isfile(p)), None)
-    if not py_bin:
-        curr_exe = sys.executable or ""
-        if "resolve" not in curr_exe.lower() and os.path.isfile(curr_exe):
-            py_bin = curr_exe
-        elif sys.platform.startswith('win'):
-            py_bin = shutil.which('pythonw') or shutil.which('python') or 'python'
-        else:
-            py_bin = shutil.which('python3') or shutil.which('python') or 'python3'
-
-    subprocess.Popen([py_bin, MAIN_SCRIPT, '--embedded'], env=clean_env, cwd=INSTALL_DIR)
-    print("[BadWords] Launched external process:", MAIN_SCRIPT)
-    return True
-
-# 3. Detect venv Python version to avoid CPython ABI crashes in host DaVinci Resolve
-_venv_ver = None
-for _v_base in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
-    _cfg = os.path.join(_v_base, "venv", "pyvenv.cfg")
-    if os.path.isfile(_cfg):
-        try:
-            with open(_cfg, "r", encoding="utf-8") as _f:
-                for _l in _f:
-                    if _l.strip().lower().startswith("version"):
-                        _v_str = _l.split("=")[-1].strip()
-                        _p = [int(x) for x in _v_str.split(".")[:2] if x.isdigit()]
-                        if len(_p) == 2:
-                            _venv_ver = tuple(_p)
-                        break
-        except Exception:
-            pass
-        if _venv_ver:
-            break
-
-_host_ver = sys.version_info[:2]
-_is_abi_incompatible = (_venv_ver is not None and _venv_ver != _host_ver)
-
-if _is_abi_incompatible:
-    print(f"[BadWords] Host Python ({{_host_ver[0]}}.{{_host_ver[1]}}) differs from venv Python ({{_venv_ver[0]}}.{{_venv_ver[1]}}).")
-    print("[BadWords] Launching BadWords standalone process with Lua Bridge to prevent CPython ABI conflicts...")
-    _launch_external()
-else:
-    for _sp_dir in _candidates:
-        if os.path.isdir(_sp_dir):
-            if _sp_dir in sys.path:
-                sys.path.remove(_sp_dir)
-            sys.path.insert(0, _sp_dir)
-
-    for _p in (INSTALL_DIR, os.path.dirname(INSTALL_DIR)):
-        if os.path.isdir(_p) and _p not in sys.path:
-            sys.path.append(_p)
-
-    # Windows: process identity & register DLL search paths
-    if sys.platform.startswith('win'):
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("veritus.badwords.editor.v4")
-        except Exception:
-            pass
-        if hasattr(os, 'add_dll_directory'):
-            for _sp_dir in _candidates:
-                if os.path.isdir(_sp_dir):
-                    for _pkg in ['PySide6', 'shiboken6']:
-                        _p = os.path.join(_sp_dir, _pkg)
-                        if os.path.isdir(_p):
-                            try: os.add_dll_directory(_p)
-                            except Exception: pass
-                    _nv_dir = os.path.join(_sp_dir, 'nvidia')
-                    if os.path.isdir(_nv_dir):
-                        import ctypes
-                        for _nv_pkg in ['cublas', 'cudnn', 'cuda_nvrtc', 'cuda_runtime']:
-                            _bin_p = os.path.join(_nv_dir, _nv_pkg, 'bin')
-                            if os.path.isdir(_bin_p):
-                                try:
-                                    os.add_dll_directory(_bin_p)
-                                    os.environ["PATH"] = _bin_p + os.pathsep + os.environ.get("PATH", "")
-                                    for _f in os.listdir(_bin_p):
-                                        if _f.endswith('.dll'):
-                                            try: ctypes.CDLL(os.path.join(_bin_p, _f))
-                                            except Exception: pass
-                                except Exception: pass
-
-    # Linux: Preload Qt6 shared libraries if needed
-    if sys.platform.startswith('linux'):
-        import ctypes
-        for _sp_dir in _candidates:
-            _qt_lib_dir = os.path.join(_sp_dir, "PySide6", "Qt", "lib")
-            if os.path.isdir(_qt_lib_dir):
-                _qt_preload = [
-                    'libQt6Core.so.6','libQt6Network.so.6','libQt6DBus.so.6',
-                    'libQt6Gui.so.6','libQt6Widgets.so.6','libQt6OpenGL.so.6','libQt6XcbQpa.so.6',
-                ]
-                for _lib in _qt_preload:
-                    _p = os.path.join(_qt_lib_dir, _lib)
-                    if os.path.exists(_p):
-                        try: ctypes.CDLL(_p, mode=ctypes.RTLD_GLOBAL)
-                        except OSError: pass
-                break
-
-    if os.path.exists(MAIN_SCRIPT):
-        os.environ["BADWORDS_EMBEDDED"] = "1"
-        if "--embedded" not in sys.argv:
-            sys.argv.append("--embedded")
-        try:
-            with open(MAIN_SCRIPT, encoding='utf-8') as f: code = f.read()
-            gv = globals().copy()
-            gv['__file__'] = MAIN_SCRIPT
-            exec(code, gv)
-        except Exception as e:
-            print("[BadWords] In-process execution failed:", e)
-            print("[BadWords] Falling back to external process launch...")
-            _launch_external()
-    else:
-        print("CRITICAL: script not found at", MAIN_SCRIPT)
-"#
-    )
+    WRAPPER_TEMPLATE.replace("__BADWORDS_INSTALL_DIR__", &install_str)
 }
 
 const LEGACY_WRAPPER_NAMES: &[&str] = &[
@@ -3882,15 +3686,12 @@ pub fn generate_davinci_bridge(target_dir: &Path) -> String {
 
 /// Deploys DaVinci Resolve scripts:
 /// - Studio: installs BadWords.py; removes BadWords Bridge.lua (native external scripting used)
-/// - Free >= 21.1: installs BadWords Bridge.lua; removes BadWords.py (API blocked)
-/// - Free < 21.1: installs BadWords Bridge.lua and BadWords.py
+/// - Free / Unknown: installs BadWords.py (harmless in Free 21.1+, protects Unknown macOS bundles) and BadWords Bridge.lua
 pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
     let resolve_dirs = resolve_script_dirs();
     let res_info = detect_resolve_info();
 
     let is_studio = res_info.edition == ResolveEdition::Studio;
-    // Only a confirmed Free 21.1+ drops BadWords.py; Unknown deploys both BadWords.py and the Bridge
-    let is_free_21_1 = res_info.edition == ResolveEdition::Free && res_info.is_21_1_or_newer;
 
     emit_log(
         sender,
@@ -3956,43 +3757,23 @@ pub fn deploy_davinci_wrapper(target_dir: &Path, sender: &EventSender) -> bool {
         }
     } else {
         // ── FREE EDITION (or Unknown) ──────────────────────────────────────────────────
-        // 1. BadWords Bridge.lua MUST ALWAYS be installed!
-        // 2. BadWords.py:
-        //    - If Free >= 21.1: REMOVE BadWords.py (API blocked).
-        //    - If Free < 21.1: Deploy BadWords.py.
-        if is_free_21_1 {
-            for r_dir in &resolve_dirs {
-                let wrapper_path = r_dir.join("BadWords.py");
-                if wrapper_path.exists() {
-                    let _ = fs::remove_file(&wrapper_path);
-                    emit_log(
-                        sender,
-                        "OK",
-                        &format!(
-                            "Removed BadWords.py (blocked in Resolve Free 21.1+): {}",
-                            wrapper_path.display()
-                        ),
-                    );
+        // 1. BadWords.py: always deployed in primary dir (never deleted based on edition)
+        // 2. BadWords Bridge.lua: ALWAYS installed for Free / Unknown
+        for r_dir in &resolve_dirs {
+            let _ = fs::create_dir_all(r_dir);
+            let wrapper_path = r_dir.join("BadWords.py");
+            if fs::write(&wrapper_path, &wrapper_code).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
                 }
-            }
-        } else {
-            for r_dir in &resolve_dirs {
-                let _ = fs::create_dir_all(r_dir);
-                let wrapper_path = r_dir.join("BadWords.py");
-                if fs::write(&wrapper_path, &wrapper_code).is_ok() {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ =
-                            fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755));
-                    }
-                    emit_log(
-                        sender,
-                        "OK",
-                        &format!("DaVinci wrapper created at: {}", wrapper_path.display()),
-                    );
-                    break;
-                }
+                emit_log(
+                    sender,
+                    "OK",
+                    &format!("DaVinci wrapper created at: {}", wrapper_path.display()),
+                );
+                break;
             }
         }
 
@@ -4242,5 +4023,15 @@ mod tests {
         let clean_first = first.trim_start_matches(|c| c == 'v' || c == 'V');
         let maj = clean_first.split('.').next().unwrap().parse::<u32>().unwrap();
         assert!(maj >= 4);
+    }
+
+    #[test]
+    fn test_generate_davinci_wrapper_template_and_isolation() {
+        let p = PathBuf::from(r"C:\Users\Test\BadWords");
+        let generated = generate_davinci_wrapper(&p);
+        assert!(generated.contains("C:/Users/Test/BadWords"));
+        assert!(!generated.contains("__BADWORDS_INSTALL_DIR__"));
+        assert!(!generated.contains("ctypes.CDLL(os.path.join(_bin_p"));
+        assert!(generated.contains("PYTHONNOUSERSITE"));
     }
 }
