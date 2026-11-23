@@ -200,21 +200,33 @@ function Start-NativeExecutable($exePath, $arguments) {
     }
 
     try {
+        $env:BADWORDS_BOOTSTRAP = "1"
         if ($arguments -and $arguments.Count -gt 0) {
             $p = Start-Process -FilePath $exePath -ArgumentList $arguments -PassThru -ErrorAction Stop
         } else {
             $p = Start-Process -FilePath $exePath -PassThru -ErrorAction Stop
         }
         if ($p -and $p.Id) {
-            # Verify the process does not immediately crash on startup (e.g. missing DLL 0xC0000135)
-            for ($i = 0; $i -lt 8; $i++) {
-                Start-Sleep -Milliseconds 150
+            # Verify the process opens a window and does not immediately crash on startup (missing DLL or graphics init)
+            $setupLog = Join-Path ([System.IO.Path]::GetTempPath()) "badwords_setup.log"
+            for ($i = 0; $i -lt 25; $i++) {
+                Start-Sleep -Milliseconds 200
                 try { $p.Refresh() } catch {}
                 if ($p.HasExited) {
                     if ($p.ExitCode -ne 0) {
-                        Invoke-PythonFallback "The graphical installer exited immediately with error code $($p.ExitCode)."
+                        $errDetail = ""
+                        if (Test-Path $setupLog) {
+                            try {
+                                $errLine = Get-Content $setupLog -ErrorAction SilentlyContinue | Where-Object { $_ -match "ERR!" } | Select-Object -Last 1
+                                if ($errLine) { $errDetail = " ($errLine)" }
+                            } catch {}
+                        }
+                        Invoke-PythonFallback "The graphical installer exited immediately with error code $($p.ExitCode)$errDetail."
                         return
                     }
+                    exit 0
+                }
+                if ($p.MainWindowHandle -ne [IntPtr]::Zero) {
                     exit 0
                 }
             }

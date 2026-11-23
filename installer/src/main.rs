@@ -45,26 +45,57 @@ struct LogEntry {
     message: String,
 }
 
+fn append_startup_log(line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(state::log_file_path())
+    {
+        let _ = writeln!(f, "{}", line);
+    }
+}
+
+fn configure_renderer(options: &mut eframe::NativeOptions, force_glow: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        // INVARIANT: Prefer WGPU (DirectX 12 + built-in Windows WARP software fallback) on Windows
+        // so clean VMs, RDP sessions, and PCs without OpenGL 2.0+ ICD drivers launch cleanly.
+        options.renderer = if force_glow {
+            eframe::Renderer::Glow
+        } else {
+            eframe::Renderer::Wgpu
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (options, force_glow);
+    }
+}
+
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    let force_glow = args.iter().any(|a| a == "--renderer-glow");
     if args.iter().any(|a| a == "--terminal") {
-        return run_standalone_terminal();
+        return run_standalone_terminal(force_glow);
     }
 
-    // Proactively unblock installer and adjacent binaries on Windows (stripping Zone.Identifier)
+    // Fast non-blocking Mark-of-the-Web strip on Windows (pure NTFS ADS removal, <1ms, zero PowerShell)
     #[cfg(target_os = "windows")]
     {
         if let Ok(cur_exe) = std::env::current_exe() {
-            os::unblock_file(&cur_exe);
+            os::unblock_file_fast(&cur_exe);
             if let Some(p) = cur_exe.parent() {
-                os::unblock_file(&p.join("BadWords.exe"));
-                os::unblock_file(&p.join("badwords-setup-windows.exe"));
+                os::unblock_file_fast(&p.join("BadWords.exe"));
+                os::unblock_file_fast(&p.join("badwords-setup-windows.exe"));
             }
         }
     }
 
-    // Reset log file for fresh session
-    let _ = std::fs::write(state::log_file_path(), "=== BadWords Setup Session Log ===\n");
+    // Reset log file for fresh session (preserve previous attempt log when retrying with --renderer-glow)
+    if !force_glow {
+        let _ = std::fs::write(state::log_file_path(), "=== BadWords Setup Session Log ===\n");
+    }
 
     // CLI / Headless integration mode for testing & CI
     if args.iter().any(|a| a == "--cli" || a == "--headless") {
@@ -92,13 +123,19 @@ fn main() -> eframe::Result<()> {
         viewport = viewport.with_position([pos_x, pos_y]);
     }
 
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport,
         ..Default::default()
     };
+    configure_renderer(&mut options, force_glow);
+
+    append_startup_log(&format!(
+        "[INFO] Starting GUI installer v{} (force_glow={})",
+        APP_VERSION, force_glow
+    ));
 
     let app_args = args.clone();
-    eframe::run_native(
+    let res = eframe::run_native(
         "BadWords Setup",
         options,
         Box::new(move |cc| {
@@ -106,7 +143,44 @@ fn main() -> eframe::Result<()> {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Box::new(InstallerApp::new_with_args(&app_args))
         }),
-    )
+    );
+
+    if let Err(ref err) = res {
+        let err_str = format!("{}", err);
+        append_startup_log(&format!("[ERR!] GUI startup failed: {}", err_str));
+
+        // On Windows, if WGPU/DX12 failed on the first try, retry once in a fresh process with OpenGL (glow)
+        #[cfg(target_os = "windows")]
+        if !force_glow {
+            if let Ok(cur_exe) = std::env::current_exe() {
+                append_startup_log("[INFO] Retrying GUI startup with OpenGL (glow) renderer...");
+                let mut child_args: Vec<String> = args.iter().skip(1).cloned().collect();
+                child_args.push("--renderer-glow".to_string());
+                if let Ok(status) = std::process::Command::new(&cur_exe).args(&child_args).status() {
+                    if status.success() {
+                        return Ok(());
+                    }
+                    std::process::exit(status.code().unwrap_or(2));
+                }
+            }
+        }
+
+        // If launched directly by user (not via windows-setup.ps1 bootstrapper), show a visible error dialog
+        if std::env::var_os("BADWORDS_BOOTSTRAP").is_none() {
+            let log_path = state::log_file_path();
+            os::show_fatal_error_box(
+                "BadWords Setup - Graphics Initialization Failed",
+                &format!(
+                    "The graphical installer could not initialize a graphics context on this PC.\n\nDetails: {}\n\nLog file: {}\n\nTip: You can install BadWords via PowerShell terminal fallback:\nirm \"https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1\" | iex",
+                    err_str,
+                    log_path.display()
+                ),
+            );
+        }
+        std::process::exit(2);
+    }
+
+    res
 }
 
 /// Headless CLI runner for GitHub Actions & automated scripts
@@ -191,9 +265,9 @@ fn run_headless_cli(args: &[String]) -> eframe::Result<()> {
     Ok(())
 }
 
-/// Standalone terminal process - 100% niezależny proces OS bez lagów
-fn run_standalone_terminal() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
+/// Standalone terminal process - 100% independent OS process without UI lag
+fn run_standalone_terminal(force_glow: bool) -> eframe::Result<()> {
+    let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("BadWords Setup - Terminal Console")
             .with_inner_size([650.0, 480.0])
@@ -207,6 +281,7 @@ fn run_standalone_terminal() -> eframe::Result<()> {
             ),
         ..Default::default()
     };
+    configure_renderer(&mut options, force_glow);
 
     eframe::run_native(
         "BadWords Setup - Terminal",

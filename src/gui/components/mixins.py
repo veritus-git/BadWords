@@ -132,6 +132,9 @@ class ResizeGrip(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             win = self.window()
+            if hasattr(win, '_is_effectively_maximized') and win._is_effectively_maximized():
+                event.ignore()
+                return
             if hasattr(win, 'windowHandle') and win.windowHandle():
                 try:
                     win.windowHandle().startSystemResize(self.edge)
@@ -159,10 +162,17 @@ class FramelessWindowMixin:
         self._use_linux_csd_shadow = bool(
             use_linux_csd_shadow and self._is_root and not self._is_win and not self._is_mac
         )
-        self._user_normal_size = None
+        self._default_normal_size = None
+        self._session_user_geometry = None
+        self._always_restore_default_size = False
+        self._restore_via_button = False
         self._normal_ratio = 0.70
+        self._normal_min_w = 640
+        self._normal_min_h = 460
         self._restoring_from_max = False
+        self._last_restored_geo = None
         self._csd_shadow_margin = 14
+        self._csd_shadow_collapsed = None
 
         if self._is_win:
             if self._is_root:
@@ -231,6 +241,74 @@ class FramelessWindowMixin:
         if cur != is_top:
             self.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
 
+    def _is_effectively_maximized(self) -> bool:
+        """
+        True whenever the window is maximized or fullscreen.
+        # INVARIANT: Top/corner resize grips and WM_NCHITTEST edges MUST be
+        # completely disabled when maximized so top-right close clicks and
+        # top-edge drag-detach ('ripping') never trigger resize.
+        """
+        if self.isMaximized() or self.isFullScreen():
+            return True
+        if getattr(self, '_is_win', False) and self.testAttribute(Qt.WA_WState_Created):
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                if hwnd and ctypes.windll.user32.IsZoomed(hwnd):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _is_snapped_or_tiled(self) -> bool:
+        """
+        Returns True when a Linux CSD window is maximized, fullscreen, or snapped/tiled
+        against screen edges (left/right/top/bottom half or quarter Aero Snap), so the
+        outer translucent drop-shadow padding collapses to 0px and the window sits flush.
+        """
+        if self._is_effectively_maximized():
+            return True
+        if not getattr(self, '_use_linux_csd_shadow', False):
+            return False
+        if not self.isVisible():
+            return False
+        geo = self.frameGeometry()
+        if not geo.isValid() or geo.width() <= 0 or geo.height() <= 0:
+            return False
+        scr = (
+            QGuiApplication.screenAt(geo.center())
+            or self.screen()
+            or QGuiApplication.primaryScreen()
+        )
+        if not scr:
+            return False
+        avail = scr.availableGeometry()
+        if not avail.isValid() or avail.width() <= 0 or avail.height() <= 0:
+            return False
+
+        tol = 4
+        touch_left = abs(geo.left() - avail.left()) <= tol
+        touch_right = abs(geo.right() - avail.right()) <= tol
+        touch_top = abs(geo.top() - avail.top()) <= tol
+        touch_bottom = abs(geo.bottom() - avail.bottom()) <= tol
+
+        # Left/right half-screen snap or vertical maximize (touches both top and bottom)
+        if touch_top and touch_bottom:
+            return True
+        # Top/bottom half-screen snap or horizontal maximize (touches both left and right)
+        if touch_left and touch_right:
+            return True
+        # Quarter-screen snap (touches corner + matches ~half width & ~half height)
+        if (touch_left or touch_right) and (touch_top or touch_bottom):
+            half_w = avail.width() // 2
+            half_h = avail.height() // 2
+            if abs(geo.width() - half_w) <= 36 and abs(geo.height() - half_h) <= 36:
+                return True
+        # Pseudo-maximized (fills available work area without Qt.WindowMaximized flag)
+        if geo.width() >= avail.width() - tol and geo.height() >= avail.height() - tol:
+            return True
+        return False
+
     def init_normal_geometry(
         self,
         saved_w: int = None,
@@ -240,12 +318,20 @@ class FramelessWindowMixin:
         min_w: int = 640,
         min_h: int = 460,
         apply_geometry: bool = True,
+        always_restore_default: bool = False,
     ) -> QRect:
         """
-        Initializes the remembered normal (non-maximized) size and optionally positions
-        the window before maximizing so restoring/ripping out of maximize returns to it.
+        Initializes default normal (non-maximized) geometry.
+        - Main window (always_restore_default=False): default is 70% x 70% of active screen;
+          ripping out of maximized ALWAYS uses 70% x 70%, while Restore button uses the
+          user's last in-session geometry if they manually resized/snapped it.
+        - Settings window (always_restore_default=True): exiting maximize ALWAYS returns
+          to the small default size (saved_w x saved_h).
         """
         self._normal_ratio = float(ratio)
+        self._normal_min_w = int(min_w)
+        self._normal_min_h = int(min_h)
+        self._always_restore_default_size = bool(always_restore_default)
         if screen is None:
             screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         sg = screen.availableGeometry() if screen else QRect(100, 100, 1280, 720)
@@ -260,24 +346,66 @@ class FramelessWindowMixin:
         else:
             geo = default_geo
 
-        self._user_normal_size = QSize(geo.width(), geo.height())
-        self._user_normal_geo = QRect(geo)
+        self._default_normal_size = QSize(geo.width(), geo.height())
+        self._session_user_geometry = None
         if apply_geometry:
             self.setGeometry(geo)
         return geo
 
-    def get_user_normal_size(self) -> QSize | None:
-        return getattr(self, '_user_normal_size', None)
+    def get_session_user_geometry(self) -> QRect | None:
+        return getattr(self, '_session_user_geometry', None)
 
-    def _sync_win_normal_placement(self):
-        """Updates Win32 WINDOWPLACEMENT.rcNormalPosition so Windows Aero drag-detach
-        ('ripping' out of maximized) restores to the remembered normal size."""
+    def _compute_restore_target_geometry(self, via_button: bool = False) -> QRect:
+        """
+        Computes exact target geometry when leaving maximized state:
+        - Settings window (_always_restore_default_size=True): ALWAYS small default size.
+        - Main window ripped by titlebar (via_button=False): ALWAYS 70% x 70% of active screen.
+        - Main window Restore button (via_button=True): last in-session user geometry if set
+          (e.g. half-screen Aero Snap or manual resize), otherwise 70% x 70% centered.
+        """
+        scr = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        sg = scr.availableGeometry() if scr else QRect(100, 100, 1280, 720)
+
+        if getattr(self, '_always_restore_default_size', False):
+            def_sz = getattr(self, '_default_normal_size', None)
+            if def_sz and def_sz.isValid():
+                w = min(def_sz.width(), sg.width())
+                h = min(def_sz.height(), sg.height())
+                x = sg.x() + (sg.width() - w) // 2
+                y = sg.y() + (sg.height() - h) // 2
+                return QRect(x, y, w, h)
+
+        if via_button:
+            user_geo = getattr(self, '_session_user_geometry', None)
+            if user_geo and user_geo.isValid() and user_geo.width() > 0 and user_geo.height() > 0:
+                w = min(user_geo.width(), sg.width())
+                h = min(user_geo.height(), sg.height())
+                x = max(sg.left(), min(user_geo.x(), sg.right() - w + 1))
+                y = max(sg.top(), min(user_geo.y(), sg.bottom() - h + 1))
+                return QRect(x, y, w, h)
+
+        return compute_default_normal_geometry(
+            sg,
+            ratio=getattr(self, '_normal_ratio', 0.70),
+            min_w=getattr(self, '_normal_min_w', 640),
+            min_h=getattr(self, '_normal_min_h', 460),
+        )
+
+    def _sync_win_normal_placement(self, use_button_restore: bool = False):
+        """
+        Updates Win32 WINDOWPLACEMENT.rcNormalPosition:
+        - use_button_restore=False (default while maximized): sets rcNormalPosition to 70% x 70%
+          (or small default for Settings) so Windows Aero drag-detach ('ripping') ALWAYS detaches
+          at that exact size.
+        - use_button_restore=True (right before SC_RESTORE button click): sets rcNormalPosition to
+          the in-session user geometry (if any) or 70% x 70% / default size.
+        """
         if not getattr(self, '_is_win', False) or not getattr(self, '_is_root', False):
             return
         if not self.testAttribute(Qt.WA_WState_Created):
             return
-        normal_sz = getattr(self, '_user_normal_size', None)
-        if not normal_sz or not normal_sz.isValid():
+        target_geo = self._compute_restore_target_geometry(via_button=use_button_restore)
+        if not target_geo or not target_geo.isValid():
             return
         try:
             import ctypes
@@ -302,89 +430,69 @@ class FramelessWindowMixin:
                 return
 
             dpr = max(1.0, float(self.devicePixelRatioF()))
-            phys_w = int(round(normal_sz.width() * dpr))
-            phys_h = int(round(normal_sz.height() * dpr))
+            phys_x = int(round(target_geo.x() * dpr))
+            phys_y = int(round(target_geo.y() * dpr))
+            phys_w = int(round(target_geo.width() * dpr))
+            phys_h = int(round(target_geo.height() * dpr))
 
-            # Keep current normal center or fall back to screen center
-            cur_rc = wp.rcNormalPosition
-            cur_w = cur_rc.right - cur_rc.left
-            cur_h = cur_rc.bottom - cur_rc.top
-            if cur_w > 0 and cur_h > 0:
-                cx = cur_rc.left + cur_w // 2
-                cy = cur_rc.top + cur_h // 2
-                left = cx - phys_w // 2
-                top = cy - phys_h // 2
-            else:
-                scr = self.screen() or QGuiApplication.primaryScreen()
-                sg = scr.availableGeometry() if scr else QRect(0, 0, 1280, 720)
-                left = int(round((sg.x() + (sg.width() - normal_sz.width()) / 2.0) * dpr))
-                top = int(round((sg.y() + (sg.height() - normal_sz.height()) / 2.0) * dpr))
-
-            wp.rcNormalPosition.left = left
-            wp.rcNormalPosition.top = top
-            wp.rcNormalPosition.right = left + phys_w
-            wp.rcNormalPosition.bottom = top + phys_h
+            wp.rcNormalPosition.left = phys_x
+            wp.rcNormalPosition.top = phys_y
+            wp.rcNormalPosition.right = phys_x + phys_w
+            wp.rcNormalPosition.bottom = phys_y + phys_h
             ctypes.windll.user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
         except Exception:
             pass
 
     def _sync_csd_shadow_state(self):
-        """On Linux CSD windows with drop shadow, collapse outer shadow margin when maximized/fullscreen."""
+        """On Linux CSD windows with drop shadow, collapse outer shadow margin when maximized, fullscreen, or snapped/tiled."""
         if not getattr(self, '_use_linux_csd_shadow', False):
             return
-        is_full = self.isMaximized() or self.isFullScreen()
+        collapse = self._is_snapped_or_tiled()
+        if collapse == getattr(self, '_csd_shadow_collapsed', None):
+            return
+        self._csd_shadow_collapsed = collapse
         lay = self.layout()
         if lay is not None:
-            m = 0 if is_full else getattr(self, '_csd_shadow_margin', 14)
+            m = 0 if collapse else getattr(self, '_csd_shadow_margin', 14)
             lay.setContentsMargins(m, m, m, m)
         frame = self._get_root_frame()
         if frame is not None and frame.graphicsEffect() is not None:
-            frame.graphicsEffect().setEnabled(not is_full)
+            frame.graphicsEffect().setEnabled(not collapse)
         self._update_grips()
 
-    def _restore_user_normal_size(self):
-        """Enforces restoring to the remembered normal size after exiting maximized state."""
+    def _restore_after_unmaximize(self, via_button: bool = False):
+        """Enforces exact post-maximize geometry (button restore vs titlebar rip vs Settings default)."""
         if not getattr(self, '_is_root', False):
             return
-        if self.isMaximized() or self.isFullScreen():
-            return
-        normal_sz = getattr(self, '_user_normal_size', None)
-        if not normal_sz or not normal_sz.isValid():
+        if self._is_effectively_maximized():
             return
 
-        scr = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        sg = scr.availableGeometry() if scr else None
-        target_w = normal_sz.width()
-        target_h = normal_sz.height()
-        if sg and sg.isValid():
-            target_w = min(target_w, sg.width())
-            target_h = min(target_h, sg.height())
-
-        # Only override if current restored size is missing or still near full screen
-        cur_w, cur_h = self.width(), self.height()
-        near_full = bool(
-            sg and sg.isValid() and cur_w >= int(sg.width() * 0.95) and cur_h >= int(sg.height() * 0.95)
-        )
-        size_mismatch = abs(cur_w - target_w) > 4 or abs(cur_h - target_h) > 4
-        if not (near_full or size_mismatch):
+        target_geo = self._compute_restore_target_geometry(via_button=via_button)
+        if not target_geo or not target_geo.isValid():
             return
 
         self._restoring_from_max = True
         try:
-            self.resize(target_w, target_h)
-            if sg and sg.isValid():
-                if near_full:
-                    # Center cleanly if WM left window occupying the full monitor
-                    x = sg.x() + (sg.width() - target_w) // 2
-                    y = sg.y() + (sg.height() - target_h) // 2
-                    self.move(x, y)
-                else:
-                    # Clamp to screen bounds (supports negative secondary coordinates)
-                    x = max(sg.left(), min(self.x(), sg.right() - target_w + 1))
-                    y = max(sg.top(), min(self.y(), sg.bottom() - target_h + 1))
-                    self.move(x, y)
+            if via_button or getattr(self, '_always_restore_default_size', False):
+                self.setGeometry(target_geo)
+            else:
+                # Ripping out of maximized: always enforce exact 70% x 70% size while keeping window under cursor/on screen
+                self.resize(target_geo.width(), target_geo.height())
+                scr = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+                sg = scr.availableGeometry() if scr else None
+                if sg and sg.isValid():
+                    cur_x, cur_y = self.x(), self.y()
+                    near_origin = abs(cur_x - sg.x()) <= 8 and abs(cur_y - sg.y()) <= 8
+                    if near_origin:
+                        self.move(target_geo.x(), target_geo.y())
+                    else:
+                        x = max(sg.left(), min(cur_x, sg.right() - target_geo.width() + 1))
+                        y = max(sg.top(), min(cur_y, sg.bottom() - target_geo.height() + 1))
+                        self.move(x, y)
+            self._last_restored_geo = QRect(self.geometry())
         finally:
-            QTimer.singleShot(0, lambda: setattr(self, '_restoring_from_max', False))
+            self._restore_via_button = False
+            QTimer.singleShot(80, lambda: setattr(self, '_restoring_from_max', False))
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
@@ -426,10 +534,16 @@ class FramelessWindowMixin:
 
             self._was_maximized = now_max
             self._sync_csd_shadow_state()
+            self._update_grips()
             self._refresh_max_state()
 
+            if now_max and getattr(self, '_is_win', False):
+                # Keep Win32 rcNormalPosition at rip size (70% or Settings default) while maximized
+                self._sync_win_normal_placement(use_button_restore=False)
+
             if was_max and not now_max and not self.isFullScreen():
-                QTimer.singleShot(0, self._restore_user_normal_size)
+                via_btn = bool(getattr(self, '_restore_via_button', False))
+                QTimer.singleShot(0, lambda vb=via_btn: self._restore_after_unmaximize(via_button=vb))
         elif event.type() == QEvent.Type.ActivationChange:
             if hasattr(self, '_update_shortcut_enabled_states'):
                 self._update_shortcut_enabled_states()
@@ -463,6 +577,7 @@ class FramelessWindowMixin:
 
         super().showEvent(event)
         self._sync_csd_shadow_state()
+        self._update_grips()
 
         if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
             try:
@@ -523,9 +638,8 @@ class FramelessWindowMixin:
             except Exception:
                 pass
 
-        if hasattr(self, '_grips') and getattr(self, '_is_root', False):
-            for grip in self._grips:
-                grip.raise_()
+        # Refresh grips after Win32/WM show so hidden grips are never raised over maximized titlebar
+        self._update_grips()
 
     def _refresh_max_state(self):
         is_max = self.isMaximized()
@@ -548,36 +662,47 @@ class FramelessWindowMixin:
         for edge in edges:
             grip = ResizeGrip(self, edge)
             self._grips.append(grip)
-            grip.raise_()
+
+    def _record_session_user_geometry_if_applicable(self):
+        """Records in-session manual geometry (e.g., manual resize or Aero Snap) for Main Window Restore button."""
+        if (
+            not getattr(self, '_is_root', False)
+            or getattr(self, '_always_restore_default_size', False)
+            or not self.isVisible()
+            or self._is_effectively_maximized()
+            or getattr(self, '_restoring_from_max', False)
+        ):
+            return
+        geo = QRect(self.geometry())
+        if not geo.isValid() or geo.width() <= 0 or geo.height() <= 0:
+            return
+        scr = self.screen() or QGuiApplication.primaryScreen()
+        sg = scr.availableGeometry() if scr else None
+        if sg and geo.width() >= int(sg.width() * 0.96) and geo.height() >= int(sg.height() * 0.96):
+            return
+        # Ignore exact echo of programmatic restore geometry
+        last_rest = getattr(self, '_last_restored_geo', None)
+        if last_rest is not None and abs(geo.width() - last_rest.width()) <= 2 and abs(geo.height() - last_rest.height()) <= 2 and abs(geo.x() - last_rest.x()) <= 2 and abs(geo.y() - last_rest.y()) <= 2:
+            return
+        self._session_user_geometry = geo
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._sync_csd_shadow_state()
+        self._update_grips()
+        self._record_session_user_geometry_if_applicable()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._sync_csd_shadow_state()
         self._update_grips()
-
-        # Record manual user normal size (skip during startup/maximize/restore)
-        if (
-            getattr(self, '_is_root', False)
-            and self.isVisible()
-            and not self.isMaximized()
-            and not self.isFullScreen()
-            and not getattr(self, '_restoring_from_max', False)
-        ):
-            scr = self.screen() or QGuiApplication.primaryScreen()
-            sg = scr.availableGeometry() if scr else None
-            sz = self.size()
-            if not sg or sz.width() < int(sg.width() * 0.96) or sz.height() < int(sg.height() * 0.96):
-                self._user_normal_size = QSize(sz)
-                if getattr(self, '_is_win', False):
-                    self._sync_win_normal_placement()
-                cb = getattr(self, '_on_user_normal_size_changed', None)
-                if callable(cb):
-                    cb(sz.width(), sz.height())
+        self._record_session_user_geometry_if_applicable()
 
     def _update_grips(self):
         if not hasattr(self, '_grips'):
             return
 
-        is_full = self.isMaximized() or self.isFullScreen()
+        is_full = self._is_effectively_maximized()
         b = 6
         b_top = 4  # Thin top border strip so titlebar close/min/max buttons remain unobstructed
 
@@ -793,7 +918,7 @@ class FramelessWindowMixin:
                 win_w=w,
                 win_h=h,
                 border_px=self._RESIZE_BORDER,
-                is_maximized=self.isMaximized(),
+                is_maximized=self._is_effectively_maximized(),
                 is_fullscreen=self.isFullScreen(),
                 titlebar_height=tb_height,
                 is_on_max_btn=is_on_max_btn,

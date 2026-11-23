@@ -68,6 +68,23 @@ pub fn has_system_python() -> bool {
     false
 }
 
+#[allow(dead_code)]
+/// Fast non-blocking Mark-of-the-Web strip on Windows (pure NTFS ADS removal, zero subprocesses)
+pub fn unblock_file_fast(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    windows::unblock_file_fast(path);
+    #[cfg(not(target_os = "windows"))]
+    let _ = path;
+}
+
+/// Displays a native fatal error dialog on Windows (or stderr on Unix)
+pub fn show_fatal_error_box(title: &str, message: &str) {
+    #[cfg(target_os = "windows")]
+    windows::show_fatal_error_box(title, message);
+    #[cfg(not(target_os = "windows"))]
+    eprintln!("[FATAL] {}: {}", title, message);
+}
+
 /// Strips Mark-of-the-Web (Zone.Identifier) on Windows
 pub fn unblock_file(path: &std::path::Path) {
     #[cfg(target_os = "windows")]

@@ -10,6 +10,44 @@ use winreg::enums::*;
 #[cfg(target_os = "windows")]
 use winreg::RegKey;
 
+/// Fast, non-blocking removal of Windows Mark-of-the-Web (Zone.Identifier NTFS ADS).
+/// Never spawns PowerShell so installer startup stays instant (<1ms).
+pub fn unblock_file_fast(path: &Path) {
+    #[cfg(target_os = "windows")]
+    {
+        if !path.exists() {
+            return;
+        }
+        let ads_path = format!("{}:Zone.Identifier", path.to_string_lossy());
+        let _ = std::fs::remove_file(&ads_path);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+    }
+}
+
+/// Shows a native Win32 MessageBoxW when GUI initialization fails outside the bootstrapper,
+/// ensuring the installer never vanishes silently under windows_subsystem = "windows".
+pub fn show_fatal_error_box(title: &str, message: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        extern "system" {
+            fn MessageBoxW(hwnd: isize, text: *const u16, caption: *const u16, utype: u32) -> i32;
+        }
+        let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let msg_w: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
+        const MB_OK_ICONERROR: u32 = 0x0000_0010;
+        unsafe {
+            let _ = MessageBoxW(0, msg_w.as_ptr(), title_w.as_ptr(), MB_OK_ICONERROR);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        eprintln!("[FATAL] {}: {}", title, message);
+    }
+}
+
 /// Strips the Windows Mark-of-the-Web (Zone.Identifier NTFS stream) from a file or binary
 pub fn unblock_file(path: &Path) {
     #[cfg(target_os = "windows")]

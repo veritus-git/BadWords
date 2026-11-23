@@ -19,6 +19,8 @@ urlencoding = "2.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+eframe = { version = "0.27", features = ["wgpu"] }
+wgpu = { version = "0.19", features = ["dx12"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

@@ -4534,38 +4534,23 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # Positioning
     # ------------------------------------------------------------------
 
-    def _on_user_normal_size_changed(self, w: int, h: int):
-        if not hasattr(self, '_normal_size_save_timer'):
-            self._normal_size_save_timer = QTimer(self)
-            self._normal_size_save_timer.setSingleShot(True)
-            self._normal_size_save_timer.timeout.connect(self._flush_user_normal_size)
-        self._pending_normal_size = (int(w), int(h))
-        self._normal_size_save_timer.start(350)
-
-    def _flush_user_normal_size(self):
-        sz = getattr(self, '_pending_normal_size', None)
-        if not sz:
-            return
-        try:
-            self.engine.save_preferences({"window_normal_w": sz[0], "window_normal_h": sz[1]})
-        except Exception:
-            pass
-
     def _maximize_on_active_screen(self, show: bool = True):
         """
-        Prepare 70% x 70% (or user-remembered) normal geometry on the cursor's monitor,
-        and maximize cleanly across Windows, Linux, and macOS (Decision 1A & 2A).
+        Prepare 70% x 70% default normal geometry on the cursor's monitor,
+        and maximize cleanly across Windows, Linux, and macOS.
+        Ripping out of maximized always returns to 70% x 70%; clicking Restore
+        returns to any in-session user geometry (e.g. half-screen snap) or 70% x 70%.
         """
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        prefs = self.engine.load_preferences() or {}
         self.init_normal_geometry(
-            saved_w=prefs.get('window_normal_w'),
-            saved_h=prefs.get('window_normal_h'),
+            saved_w=None,
+            saved_h=None,
             screen=screen,
             ratio=0.70,
             min_w=config.S(640),
             min_h=config.S(460),
             apply_geometry=True,
+            always_restore_default=False,
         )
         if show:
             self.showMaximized()
@@ -5189,9 +5174,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # ------------------------------------------------------------------
 
     def closeEvent(self, event):
+        # INVARIANT: If Settings is open with unsaved changes, prompt and block
+        # closing BOTH Settings and MainWindow until the user resolves them.
+        dlg = getattr(self, '_settings_dialog', None)
+        if dlg is not None and dlg.isVisible() and hasattr(dlg, 'has_unsaved_changes') and dlg.has_unsaved_changes():
+            if dlg.isMinimized():
+                dlg.showNormal()
+            dlg.raise_()
+            dlg.activateWindow()
+            dlg.close()
+            if dlg.isVisible():
+                event.ignore()
+                return
+
         msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
         if msg_box.exec() == QDialog.Accepted:
-            self._flush_user_normal_size()
             if getattr(self, '_settings_dialog', None) is not None:
                 try:
                     self._settings_dialog.hide()

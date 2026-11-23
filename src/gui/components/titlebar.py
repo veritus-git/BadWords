@@ -577,22 +577,24 @@ class CustomTitleBar(QWidget):
                 import ctypes
                 hwnd = int(win.winId())
                 if win.isMaximized():
+                    win._restore_via_button = True
+                    if hasattr(win, '_sync_win_normal_placement'):
+                        win._sync_win_normal_placement(use_button_restore=True)
                     ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0)  # SC_RESTORE
                 else:
                     if hasattr(win, '_sync_win_normal_placement'):
-                        win._sync_win_normal_placement()
+                        win._sync_win_normal_placement(use_button_restore=False)
                     ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0)  # SC_MAXIMIZE
                 return
             except Exception:
                 pass
 
         if win.isMaximized():
+            win._restore_via_button = True
             win.showNormal()
-            if hasattr(win, '_restore_user_normal_size'):
-                win._restore_user_normal_size()
+            if hasattr(win, '_restore_after_unmaximize'):
+                win._restore_after_unmaximize(via_button=True)
         else:
-            if not getattr(win, '_user_normal_size', None):
-                win._user_normal_size = win.size()
             win.showMaximized()
 
     def mousePressEvent(self, event):
@@ -616,6 +618,10 @@ class CustomTitleBar(QWidget):
 
         win = self.window()
         self._is_dragging = False
+
+        # Ripping out of maximized MUST always restore to 70% x 70% (main) or default size (Settings)
+        if win.isMaximized():
+            win._restore_via_button = False
 
         if hasattr(win, 'windowHandle') and win.windowHandle():
             try:

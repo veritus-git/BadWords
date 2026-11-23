@@ -116,7 +116,7 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
             HTMAXBUTTON,
         )
 
-    def test_70pct_default_and_user_normal_size_restore(self):
+    def test_70pct_rip_vs_button_restore_and_settings_default_size(self):
         screen_geo = QRect(0, 0, 1920, 1080)
         geo = compute_default_normal_geometry(screen_geo, ratio=0.70, min_w=640, min_h=460)
         self.assertEqual(geo.width(), 1344)
@@ -124,7 +124,6 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         self.assertEqual(geo.x(), (1920 - 1344) // 2)
         self.assertEqual(geo.y(), (1080 - 756) // 2)
 
-        # Simulated root window remembers user-resized normal size across maximize/restore & drag-detach
         from PySide6.QtWidgets import QMainWindow
         class _DummyWin(FramelessWindowMixin, QMainWindow):
             def __init__(self):
@@ -134,15 +133,135 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         fake_screen = MagicMock()
         fake_screen.availableGeometry.return_value = screen_geo
         win = _DummyWin()
-        win.init_normal_geometry(saved_w=1120, saved_h=680, screen=fake_screen, apply_geometry=True)
-        self.assertEqual(win.get_user_normal_size(), QSize(1120, 680))
+        win.init_normal_geometry(screen=fake_screen, ratio=0.70, apply_geometry=True, always_restore_default=False)
 
-        # Simulate OS restoring window to ~100% screen before _restore_user_normal_size enforces user size
         with patch.object(win, "screen", return_value=fake_screen):
+            # 1. Button restore with NO user customization -> 70% x 70%
             win.resize(1920, 1080)
-            win._restore_user_normal_size()
-            self.assertEqual(win.size(), QSize(1120, 680))
+            win._restore_after_unmaximize(via_button=True)
+            self.assertEqual(win.size(), QSize(1344, 756))
+
+            # 2. User snaps window to right half of screen during session
+            win._restoring_from_max = False
+            win._session_user_geometry = QRect(960, 0, 960, 1080)
+
+            # 3. Ripping out of maximize (via_button=False) ALWAYS uses 70% x 70%
+            win.resize(1920, 1080)
+            win._restore_after_unmaximize(via_button=False)
+            self.assertEqual(win.size(), QSize(1344, 756))
+
+            # 4. Clicking Restore button (via_button=True) restores the user's in-session right-half geometry
+            win.resize(1920, 1080)
+            win._restore_after_unmaximize(via_button=True)
+            self.assertEqual(win.geometry(), QRect(960, 0, 960, 1080))
         win.close()
+
+        # 5. Settings-style window (always_restore_default=True) ALWAYS restores to its small default size
+        settings_win = _DummyWin()
+        settings_win.init_normal_geometry(
+            saved_w=768, saved_h=598, screen=fake_screen, apply_geometry=True, always_restore_default=True
+        )
+        with patch.object(settings_win, "screen", return_value=fake_screen):
+            settings_win.resize(1100, 750)  # User stretched it while windowed
+            settings_win._restore_after_unmaximize(via_button=True)
+            self.assertEqual(settings_win.size(), QSize(768, 598))
+            settings_win.resize(1200, 800)
+            settings_win._restore_after_unmaximize(via_button=False)
+            self.assertEqual(settings_win.size(), QSize(768, 598))
+        settings_win.close()
+
+    def test_maximized_grips_hidden_and_snapped_csd_shadow_collapses(self):
+        engine = self._create_mock_engine()
+        from PySide6.QtWidgets import QMainWindow
+        main_win = QMainWindow()
+        main_win._always_on_top_active = False
+
+        # Test Linux CSD shadow collapses on Aero Snap (half-screen right) AND grips hide when maximized
+        dlg = SettingsDialog(engine, main_win)
+        dlg.show()
+        app.processEvents()
+
+        fake_screen = MagicMock()
+        fake_screen.availableGeometry.return_value = QRect(0, 0, 1920, 1040)
+        with patch.object(dlg, "screen", return_value=fake_screen), \
+             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_screen):
+            # Floating normal window -> 14px shadow margin & enabled shadow & visible grips
+            with patch.object(dlg, "frameGeometry", return_value=QRect(400, 200, 768, 598)):
+                dlg._sync_csd_shadow_state()
+                dlg._update_grips()
+                m_float = dlg.layout().contentsMargins()
+                self.assertEqual((m_float.left(), m_float.top(), m_float.right(), m_float.bottom()), (14, 14, 14, 14))
+                self.assertTrue(dlg.inner_frame.graphicsEffect().isEnabled())
+                self.assertTrue(all(not g.isHidden() for g in dlg._grips))
+
+            # Snapped to right half of screen (Aero Snap / tiling) -> 0px margin & shadow disabled!
+            with patch.object(dlg, "frameGeometry", return_value=QRect(960, 0, 960, 1040)):
+                dlg._sync_csd_shadow_state()
+                m_snap = dlg.layout().contentsMargins()
+                self.assertEqual((m_snap.left(), m_snap.top(), m_snap.right(), m_snap.bottom()), (0, 0, 0, 0))
+                self.assertFalse(dlg.inner_frame.graphicsEffect().isEnabled())
+
+            # Maximized -> ALL 8 resize grips hidden (no top-edge/top-right resize blocking close or rip!)
+            with patch.object(dlg, "isMaximized", return_value=True):
+                dlg._update_grips()
+                self.assertTrue(all(g.isHidden() for g in dlg._grips))
+
+        # Render Polish 0.85-scaled SettingsDialog (1280x800 laptop/VM scenario) to verify zero right-edge clipping
+        art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+        os.makedirs(art_dir, exist_ok=True)
+        pl_engine = self._create_mock_engine()
+        pl_engine.load_preferences.return_value["gui_lang"] = "pl"
+        pl_engine.current_lang = "pl"
+        old_scale = config.SCALE_FACTOR
+        try:
+            config.set_ui_scale(0.85)
+            dlg_pl = SettingsDialog(pl_engine, main_win)
+            dlg_pl.show()
+            app.processEvents()
+            # Ensure right edge of Widok Zaawansowany button fits cleanly inside its scroll viewport
+            vp_w = dlg_pl.stack.widget(0).viewport().width()
+            adv_right = dlg_pl.btn_view_advanced.mapTo(dlg_pl.stack.widget(0).viewport(), QPoint(dlg_pl.btn_view_advanced.width(), 0)).x()
+            self.assertLessEqual(adv_right, vp_w + 2, f"Right-edge clipping detected: {adv_right} > {vp_w}")
+            self.assertTrue(dlg_pl.grab().save(os.path.join(art_dir, "point3_settings_pl_scaled85.png")))
+            dlg_pl.close()
+        finally:
+            config.set_ui_scale(old_scale)
+
+        dlg.close()
+        main_win.close()
+
+    def test_main_window_close_guards_unsaved_settings(self):
+        import osdoc, api, engine, gui
+        gui.BadWordsGUI.check_telemetry = lambda self: None
+        gui.BadWordsGUI._start_update_check = lambda self: None
+        od = osdoc.OSDoctor()
+        rh = api.ResolveHandler(od)
+        eng = engine.AudioEngine(od, rh)
+        mw = gui.BadWordsGUI(eng, rh)
+        dlg = mw._get_settings_dialog()
+        dlg.show()
+        app.processEvents()
+
+        # Simulate dirty/unsaved settings where user cancels the UnsavedChangesDialog -> dlg stays visible
+        from PySide6.QtGui import QCloseEvent
+        with patch.object(dlg, "has_unsaved_changes", return_value=True), \
+             patch.object(dlg, "close", return_value=False) as mock_dlg_close:
+            ev = QCloseEvent()
+            mw.closeEvent(ev)
+            mock_dlg_close.assert_called_once()
+            self.assertFalse(ev.isAccepted(), "Main window must NOT close if Settings stayed open with unsaved changes!")
+            self.assertTrue(dlg.isVisible())
+
+        # Simulate Settings closing cleanly when user confirms Quit -> both close
+        with patch.object(dlg, "has_unsaved_changes", return_value=False), \
+             patch("gui.main_window.CustomMsgBox") as mock_msg:
+            mock_msg.return_value.exec.return_value = 1  # QDialog.Accepted
+            ev2 = QCloseEvent()
+            mw.closeEvent(ev2)
+            self.assertTrue(ev2.isAccepted())
+            self.assertIsNone(mw._settings_dialog)
+
+        mw.deleteLater()
 
     def test_titlebar_neutral_hover_icon_size_and_no_overlap(self):
         from PySide6.QtWidgets import QMainWindow
@@ -255,13 +374,18 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         self.assertLessEqual(host._content.width(), config.S(660))
         self.assertTrue(dlg.grab().save(os.path.join(art_dir, "point3_settings_maximized.png")))
 
-        # Verify Linux CSD shadow margin collapses to 0 and effect disables when maximized, then restores
+        # Verify Linux CSD shadow margin collapses to 0 and effect disables when maximized, then restores when floating
         with patch.object(dlg, "isMaximized", return_value=True):
             dlg._sync_csd_shadow_state()
             m_max = dlg.layout().contentsMargins()
             self.assertEqual((m_max.left(), m_max.top(), m_max.right(), m_max.bottom()), (0, 0, 0, 0))
             self.assertFalse(dlg.inner_frame.graphicsEffect().isEnabled())
-        with patch.object(dlg, "isMaximized", return_value=False):
+        fake_scr_1080 = MagicMock()
+        fake_scr_1080.availableGeometry.return_value = QRect(0, 0, 1920, 1080)
+        with patch.object(dlg, "isMaximized", return_value=False), \
+             patch.object(dlg, "screen", return_value=fake_scr_1080), \
+             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_scr_1080), \
+             patch.object(dlg, "frameGeometry", return_value=QRect(200, 150, 768, 598)):
             dlg._sync_csd_shadow_state()
             m_win = dlg.layout().contentsMargins()
             self.assertEqual((m_win.left(), m_win.top(), m_win.right(), m_win.bottom()), (14, 14, 14, 14))

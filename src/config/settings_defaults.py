@@ -88,8 +88,6 @@ DEFAULT_SETTINGS = {
     "hidden_panels":        [],
     "accent_color":         "green",
     "app_icon":             "default",
-    "window_normal_w":      None,
-    "window_normal_h":      None,
     # ── Algorithm tuning ────────────────────────────────────────────────────
     "algo_fuzzy_threshold":   75,
     "algo_retake_lookahead":  80,

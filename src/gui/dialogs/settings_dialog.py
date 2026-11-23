@@ -109,27 +109,36 @@ def _get_mouse_mode_from_text(text: str, default: str = 'box') -> str:
 
 
 class _CenteredPageHost(QWidget):
-    """Centers settings page content up to max_width when widened/maximized while keeping 100% width when narrow."""
+    """Centers settings page content up to max_width when widened/maximized without latching minimumWidth."""
     def __init__(self, content: QWidget, max_width: int, parent=None):
         super().__init__(parent)
         self._content = content
         self._max_width = max(1, int(max_width))
         self.setStyleSheet("background: transparent;")
         self.setMinimumWidth(0)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        lay.addStretch(1)
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(0, 0, 0, 0)
+        self._lay.setSpacing(0)
         content.setParent(self)
+        content.setMinimumWidth(0)
+        content.setMaximumWidth(self._max_width)
         content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        lay.addWidget(content)
-        lay.addStretch(1)
+        self._lay.addWidget(content)
+
+    def _sync_margins(self):
+        avail_w = self.width()
+        side_pad = max(0, (avail_w - self._max_width) // 2)
+        cur = self._lay.contentsMargins()
+        if cur.left() != side_pad or cur.right() != side_pad:
+            self._lay.setContentsMargins(side_pad, 0, side_pad, 0)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._sync_margins()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        target_w = max(1, min(self.width(), self._max_width))
-        if self._content.width() != target_w or self._content.maximumWidth() != target_w:
-            self._content.setFixedWidth(target_w)
+        self._sync_margins()
 
 
 class SettingsDialog(FramelessWindowMixin, _BaseDialog):
@@ -475,8 +484,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self._build_ui()
 
         pad_extra = (getattr(self, '_csd_shadow_margin', 14) * 2) if getattr(self, '_use_linux_csd_shadow', False) else 0
-        init_w = config.SETTINGS_WINDOW_W + pad_extra
-        init_h = config.SETTINGS_WINDOW_H + pad_extra
+        init_w = max(config.SETTINGS_WINDOW_W, 740) + pad_extra
+        init_h = max(config.SETTINGS_WINDOW_H, 550) + pad_extra
         _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
         self.init_normal_geometry(
             saved_w=self.width(),
@@ -486,6 +495,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             min_w=config.S(640),
             min_h=config.S(460),
             apply_geometry=False,
+            always_restore_default=True,
         )
 
     def _compute_ideal_sidebar_width(self) -> int:
@@ -774,11 +784,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         row.setSpacing(config.S(10) if has_toggle else config.S(4))
         row.setAlignment(Qt.AlignVCenter)
         if not has_toggle:
-            row.addStretch()
-            widget.setFixedWidth(config.S(240))
+            row.addStretch(1)
+            widget.setMinimumWidth(config.S(160))
+            widget.setMaximumWidth(config.S(240))
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         else:
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        row.addWidget(widget)
+        row.addWidget(widget, 3 if not has_toggle else 1)
         btn_rev = ReloadButton(size=30)
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
         def create_reset_handler(s_func, d_val):
@@ -786,7 +798,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         btn_rev.clicked.connect(create_reset_handler(setter_func, default_val))
         row.addWidget(btn_rev)
         lbl = QLabel(label_text)
-        lbl.setMinimumWidth(config.S(160))
+        lbl.setMinimumWidth(config.S(110))
         lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
 
         if info_key:
@@ -3356,9 +3368,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 target.get('btn_ok', 'OK')
             ).exec()
 
-    def reject(self):
-        # FIX: Validate against the exact snapshot of how the UI was built
-        # rather than the raw preferences file which may be missing keys.
+    def _compute_unsaved_diff(self):
+        """Returns (diff_dict, new_prefs) comparing current UI state against initial snapshot."""
         old_prefs = getattr(self, '_initial_state', self.engine.load_preferences() or {})
         new_prefs = self._get_current_state_dict()
         diff = {}
@@ -3371,7 +3382,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                     elif k == 'gui_lang': old_val = 'en'
                     elif k == 'hidden_panels': old_val = []
                     elif k == 'custom_markers': old_val = []
-            
+
             if k == 'shortcuts':
                 old_dict = old_val if isinstance(old_val, dict) else {}
                 for sub_k, sub_new in new_val.items():
@@ -3393,6 +3404,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         is_different = True
                 if is_different:
                     diff[k] = (old_val, new_val)
+        return diff, new_prefs
+
+    def has_unsaved_changes(self) -> bool:
+        """True if Settings contains unapplied changes compared to its open/apply snapshot."""
+        try:
+            diff, _ = self._compute_unsaved_diff()
+            return bool(diff)
+        except Exception:
+            return False
+
+    def reject(self):
+        # FIX: Validate against the exact snapshot of how the UI was built
+        # rather than the raw preferences file which may be missing keys.
+        diff, new_prefs = self._compute_unsaved_diff()
                 
         if diff:
             key_name_map = {
