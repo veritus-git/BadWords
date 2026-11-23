@@ -12,8 +12,8 @@ Shared consent-dialog base and first-launch privacy & diagnostics dialog for
 new users, covering anonymous telemetry and automatic error reporting.
 """
 
-from PySide6.QtCore import Qt, QVariantAnimation, QEasingCurve
-from PySide6.QtGui import QColor, QPainter, QPalette
+from PySide6.QtCore import Qt, QTimer, QVariantAnimation, QEasingCurve
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame,
     QGraphicsDropShadowEffect
@@ -29,16 +29,15 @@ from gui.utils import _app_icon, _txt, _center_on_screen, get_svg_icon
 _CARD_BG_HEX = "#151515"
 
 
-def _blend_qcolor(fg_hex: str, bg_hex: str, factor: float) -> QColor:
-    """Blends fg_hex toward bg_hex by factor (0.0..1.0) for flicker-free fading."""
+def _blend_hex(fg_hex: str, bg_hex: str, factor: float) -> str:
+    """Blends fg_hex toward bg_hex by factor (0.0..1.0) into a #rrggbb string for QSS-proof fading."""
     t = max(0.0, min(1.0, float(factor)))
     fg = QColor(fg_hex)
     bg = QColor(bg_hex)
-    return QColor(
-        int(round(bg.red() + (fg.red() - bg.red()) * t)),
-        int(round(bg.green() + (fg.green() - bg.green()) * t)),
-        int(round(bg.blue() + (fg.blue() - bg.blue()) * t)),
-    )
+    r = int(round(bg.red() + (fg.red() - bg.red()) * t))
+    g = int(round(bg.green() + (fg.green() - bg.green()) * t))
+    b = int(round(bg.blue() + (fg.blue() - bg.blue()) * t))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 class _FadeIconLabel(QLabel):
@@ -257,7 +256,7 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
         self._btn_no = QPushButton("", parent)
         self._btn_no.setObjectName("btn_no")
         self._btn_no.setCursor(Qt.PointingHandCursor)
-        self._btn_no.clicked.connect(self._on_no)
+        self._btn_no.clicked.connect(lambda: self._on_no())
         btn_row.addWidget(self._btn_no)
 
         self._btn_yes = QPushButton("", parent)
@@ -372,6 +371,8 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
 
     def __init__(self, engine, parent=None):
         super().__init__(engine, parent=parent, dialog_width=600)
+        self._closing_anim_active = False
+        self._label_color_cache = {}
         container = self._container
         content_layout = self._content_layout
 
@@ -479,26 +480,31 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         content_layout.addLayout(self._build_footer_buttons(container))
         self._refresh_texts()
 
-    @staticmethod
-    def _set_label_color(lbl: QLabel, color: QColor):
-        pal = lbl.palette()
-        pal.setColor(QPalette.WindowText, color)
-        lbl.setPalette(pal)
+    def _set_label_hex_color(self, lbl: QLabel, hex_color: str, pt_size: float, bold: bool = False):
+        """Sets explicit per-label QSS color so global QApplication/MainWindow stylesheets cannot override dimming."""
+        if self._label_color_cache.get(id(lbl)) == hex_color:
+            return
+        self._label_color_cache[id(lbl)] = hex_color
+        weight = "bold" if bold else "normal"
+        lbl.setStyleSheet(
+            f"color: {hex_color}; font-size: {pt_size}pt; font-weight: {weight}; "
+            f"font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
+        )
 
     def _apply_telemetry_card_dim(self, val):
         factor = max(0.0, min(1.0, float(val)))
         self._telem_dim_val = factor
         self._telem_icon.set_opacity(factor)
-        self._set_label_color(self._lbl_telem_title, _blend_qcolor("#ffffff", _CARD_BG_HEX, factor))
-        self._set_label_color(self._lbl_msg, _blend_qcolor("#c8c8c8", _CARD_BG_HEX, factor))
+        self._set_label_hex_color(self._lbl_telem_title, _blend_hex("#ffffff", _CARD_BG_HEX, factor), config.FS(10.5), bold=True)
+        self._set_label_hex_color(self._lbl_msg, _blend_hex("#c8c8c8", _CARD_BG_HEX, factor), config.FS(9.5), bold=False)
         self._chk_geo.set_dim_opacity(factor, bg_hex=_CARD_BG_HEX)
 
     def _apply_crash_card_dim(self, val):
         factor = max(0.0, min(1.0, float(val)))
         self._crash_dim_val = factor
         self._crash_icon.set_opacity(factor)
-        self._set_label_color(self._lbl_crash_title, _blend_qcolor("#ffffff", _CARD_BG_HEX, factor))
-        self._set_label_color(self._lbl_crash_msg, _blend_qcolor("#c8c8c8", _CARD_BG_HEX, factor))
+        self._set_label_hex_color(self._lbl_crash_title, _blend_hex("#ffffff", _CARD_BG_HEX, factor), config.FS(10.5), bold=True)
+        self._set_label_hex_color(self._lbl_crash_msg, _blend_hex("#c8c8c8", _CARD_BG_HEX, factor), config.FS(9.5), bold=False)
 
     def _on_telemetry_toggled(self, checked: bool):
         target = 1.0 if checked else 0.35
@@ -531,7 +537,15 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
             btn_texts=(self._t("btn_consent_disable_all"), self._t("btn_consent_save")),
         )
 
+    def _finish_accept(self):
+        try:
+            self.accept()
+        except RuntimeError:
+            pass
+
     def _on_yes(self):
+        if self._closing_anim_active:
+            return
         self._decision_saved = True
         telem_on = bool(self._tgl_telemetry.isChecked())
         geo_on = bool(telem_on and self._chk_geo.isChecked())
@@ -544,9 +558,31 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
             self._engine.send_telemetry_ping("app_started")
         self.accept()
 
-    def _on_no(self):
+    def _on_no(self, immediate: bool = False):
+        if self._closing_anim_active:
+            return
         self._decision_saved = True
         self._engine.os_doc.set_telemetry_pref("telemetry_opt_in", False)
         self._engine.os_doc.set_telemetry_pref("telemetry_allow_geo", False)
         self._engine.os_doc.set_telemetry_pref("auto_crash_report", False)
+
+        any_on = bool(self._tgl_telemetry.isChecked() or self._tgl_crash_report.isChecked())
+        if not immediate and self.isVisible() and any_on:
+            self._closing_anim_active = True
+            self._btn_no.setEnabled(False)
+            self._btn_yes.setEnabled(False)
+            self._tgl_telemetry.setEnabled(False)
+            self._tgl_crash_report.setEnabled(False)
+            if self._tgl_telemetry.isChecked():
+                self._tgl_telemetry.setChecked(False, animated=True)
+            if self._tgl_crash_report.isChecked():
+                self._tgl_crash_report.setChecked(False, animated=True)
+            QTimer.singleShot(340, self._finish_accept)
+            return
+
         self.accept()
+
+    def closeEvent(self, event):
+        if not getattr(self, "_decision_saved", False):
+            self._on_no(immediate=True)
+        super().closeEvent(event)

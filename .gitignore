@@ -40,3 +40,6 @@ installer/target/
 
 # Working directory / scratch reports
 raport/
+
+#Test video
+test.mov

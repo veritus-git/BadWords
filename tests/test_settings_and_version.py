@@ -336,58 +336,81 @@ class TestSettingsAndVersion(unittest.TestCase):
     # 5. TelemetryPopup & CrashReportConsentDialog Tests + Visual Renders
     # -------------------------------------------------------------------------
     def test_telemetry_popup_drop_shadow_and_defaults(self):
-        """Verify new-user popup defaults auto_crash_report=True, dims geo when off, and renders cleanly."""
-        engine = self._create_mock_engine()
-        popup = TelemetryPopup(engine)
+        """Verify new-user popup defaults auto_crash_report=True, dims entire cards even under global QSS, and animates Disable All."""
+        prev_qss = app.styleSheet()
+        # Simulate live MainWindow/QApplication global dark QSS that overrides QPalette
+        app.setStyleSheet("QWidget { color: #e0e0e0; } QLabel { color: #e0e0e0; }")
+        try:
+            engine = self._create_mock_engine()
+            popup = TelemetryPopup(engine)
 
-        shadow = popup.inner_frame.graphicsEffect()
-        self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
-        self.assertGreaterEqual(shadow.blurRadius(), 20)
+            shadow = popup.inner_frame.graphicsEffect()
+            self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
+            self.assertGreaterEqual(shadow.blurRadius(), 20)
 
-        # Default state for new users: auto_crash_report MUST be ON, no default badge, no nested QGraphicsOpacityEffect
-        self.assertTrue(popup._tgl_crash_report.isChecked())
-        self.assertTrue(popup._tgl_telemetry.isChecked())
-        self.assertFalse(hasattr(popup, "_lbl_default_badge"))
-        self.assertIsNone(popup._geo_container.graphicsEffect())
+            # Default state for new users: auto_crash_report MUST be ON, no default badge, no nested QGraphicsOpacityEffect
+            self.assertTrue(popup._tgl_crash_report.isChecked())
+            self.assertTrue(popup._tgl_telemetry.isChecked())
+            self.assertFalse(hasattr(popup, "_lbl_default_badge"))
+            self.assertIsNone(popup._geo_container.graphicsEffect())
 
-        art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
-        os.makedirs(art_dir, exist_ok=True)
-        popup.show()
-        app.processEvents()
-        self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup.png")))
+            art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+            os.makedirs(art_dir, exist_ok=True)
+            popup.show()
+            app.processEvents()
+            self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup.png")))
 
-        # Verify Polish layout & entire Telemetry card dims smoothly when toggled OFF (Crash Report still ON)
-        popup._on_lang_selected("pl")
-        popup._tgl_telemetry.setChecked(False, animated=False)
-        popup._telem_anim.stop()
-        popup._apply_telemetry_card_dim(0.35)
-        app.processEvents()
-        self.assertFalse(popup._chk_geo.isEnabled())
-        self.assertAlmostEqual(popup._telem_dim_val, 0.35, places=2)
-        self.assertAlmostEqual(popup._crash_dim_val, 1.0, places=2)
-        self.assertTrue(popup._tgl_crash_report.isChecked())
-        self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_pl.png")))
+            # Verify Polish layout & entire Telemetry card (including title & body QSS) dims smoothly when OFF
+            popup._on_lang_selected("pl")
+            popup._tgl_telemetry.setChecked(False, animated=False)
+            popup._telem_anim.stop()
+            popup._apply_telemetry_card_dim(0.35)
+            app.processEvents()
+            self.assertFalse(popup._chk_geo.isEnabled())
+            self.assertAlmostEqual(popup._telem_dim_val, 0.35, places=2)
+            self.assertIn("color: #676767", popup._lbl_telem_title.styleSheet().lower())
+            self.assertIn("color: #545454", popup._lbl_msg.styleSheet().lower())
+            self.assertAlmostEqual(popup._crash_dim_val, 1.0, places=2)
+            self.assertTrue(popup._tgl_crash_report.isChecked())
+            self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_pl.png")))
 
-        # Verify Crash Report card also dims smoothly when toggled OFF
-        popup._tgl_crash_report.setChecked(False, animated=False)
-        popup._crash_anim.stop()
-        popup._apply_crash_card_dim(0.35)
-        app.processEvents()
-        self.assertAlmostEqual(popup._crash_dim_val, 0.35, places=2)
-        self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_both_dimmed.png")))
+            # Verify Crash Report card also dims smoothly under global QSS when toggled OFF
+            popup._tgl_crash_report.setChecked(False, animated=False)
+            popup._crash_anim.stop()
+            popup._apply_crash_card_dim(0.35)
+            app.processEvents()
+            self.assertAlmostEqual(popup._crash_dim_val, 0.35, places=2)
+            self.assertIn("color: #676767", popup._lbl_crash_title.styleSheet().lower())
+            self.assertIn("color: #545454", popup._lbl_crash_msg.styleSheet().lower())
+            self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_both_dimmed.png")))
 
-        # Re-enable Crash Report before saving to test independent persistence
-        popup._tgl_crash_report.setChecked(True, animated=False)
-        popup._crash_anim.stop()
-        popup._apply_crash_card_dim(1.0)
-        app.processEvents()
+            # Re-enable Crash Report before saving to test independent persistence
+            popup._tgl_crash_report.setChecked(True, animated=False)
+            popup._crash_anim.stop()
+            popup._apply_crash_card_dim(1.0)
+            app.processEvents()
 
-        # Saving while telemetry is OFF and crash report is ON persists independently
-        popup._on_yes()
-        engine.os_doc.set_telemetry_pref.assert_any_call("telemetry_opt_in", False)
-        engine.os_doc.set_telemetry_pref.assert_any_call("telemetry_allow_geo", False)
-        engine.os_doc.set_telemetry_pref.assert_any_call("auto_crash_report", True)
-        engine.send_telemetry_ping.assert_not_called()
+            # Saving while telemetry is OFF and crash report is ON persists independently
+            popup._on_yes()
+            engine.os_doc.set_telemetry_pref.assert_any_call("telemetry_opt_in", False)
+            engine.os_doc.set_telemetry_pref.assert_any_call("telemetry_allow_geo", False)
+            engine.os_doc.set_telemetry_pref.assert_any_call("auto_crash_report", True)
+            engine.send_telemetry_ping.assert_not_called()
+
+            # Verify Disable All animates both switches OFF before closing
+            engine2 = self._create_mock_engine()
+            popup2 = TelemetryPopup(engine2)
+            popup2.show()
+            app.processEvents()
+            popup2._on_no()
+            self.assertTrue(popup2._closing_anim_active)
+            self.assertFalse(popup2._tgl_telemetry.isChecked())
+            self.assertFalse(popup2._tgl_crash_report.isChecked())
+            engine2.os_doc.set_telemetry_pref.assert_any_call("telemetry_opt_in", False)
+            engine2.os_doc.set_telemetry_pref.assert_any_call("telemetry_allow_geo", False)
+            engine2.os_doc.set_telemetry_pref.assert_any_call("auto_crash_report", False)
+        finally:
+            app.setStyleSheet(prev_qss)
 
     def test_existing_user_crash_report_consent_dialog(self):
         """Verify dedicated CrashReportConsentDialog shows for existing users regardless of telemetry choice."""
