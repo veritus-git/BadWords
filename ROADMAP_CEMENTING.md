@@ -15,7 +15,7 @@
 
 - [x] **Punkt 1** - Start aplikacji, dobór środowiska Pythona i „samoleczenie” przy uruchomieniu *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 6)*
 - [x] **Punkt 2** - Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 8)*
-- [ ] **Punkt 3** - Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
+- [x] **Punkt 3** - Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 4)*
 - [ ] **Punkt 4** - Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu
 - [ ] **Punkt 5** - Wyciąganie dźwięku z wideo/osi, normalizacja głośności i wstępne wykrywanie ciszy
 - [ ] **Punkt 6** - Wykrywanie karty graficznej (NVIDIA / Apple Silicon / procesor) i bezpieczny powrót na procesor
@@ -43,7 +43,7 @@
 
 ## Przegląd etapów
 
-1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** - punkty 1-4 *(ukończono: 2/4)*
+1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** - punkty 1-4 *(ukończono: 3/4)*
 2. **Etap 2 (v4.2): Dźwięk, transkrypcja AI i analiza tekstu** - punkty 5-9 *(ukończono: 0/5)*
 3. **Etap 3 (v4.3): Ekran powitalny, edytor, podgląd audio/wideo i okna ustawień** - punkty 10A-10C, 11, 12A-12B, 13-15 *(ukończono: 0/9)*
 4. **Etap 4 (v4.4): DaVinci Resolve, montaż osi czasu, eksport i zapis projektów** - punkty 16-19 *(ukończono: 0/4)*
@@ -145,13 +145,19 @@ Po mojej akceptacji i wdrożeniu: napisz testy ochronne (w tests/ i uruchom run_
 
 ---
 
-### 3. Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
+### 3. ✅ [ZAKOŃCZONO 2026-11-23] Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
 
-- **Co obejmuje:** Wygląd i zachowanie głównego okna oraz wyskakujących okienek: przeciąganie za górny pasek, powiększanie na pełny ekran na wybranym monitorze, chowanie białych mignięć przy otwieraniu okien, **wyeliminowanie ~3 mignięć mikro-okienek na Windows 11 podczas startu aplikacji (powiązanych z inicjalizacją okna ustawień - zanotowane z testów VM 2026-11-23)**, znikająca ikona aplikacji, przycisk „Zawsze na wierzchu” oraz dopasowanie płynności animacji do odświeżania monitora (60 Hz / 120 Hz / 144 Hz+).
-- **Dlaczego to ważne:** Każdy z trzech systemów (Windows 11, macOS, Linux z X11 lub Waylandem) traktuje okna bez systemowej ramki zupełnie inaczej. To jedno z najczęstszych źródeł wizualnych usterek, zacinania przeciągania okna lub błędów przy zmianie monitora.
-- **Porządki „pod spodem” pod przyszłe funkcje:** **Tak.** Część sztuczek do okien i ikon siedzi w głównym oknie i w oknie ustawień zamiast w jednym wspólnym miejscu. Uporządkowanie ich w jednym wspólnym mechanizmie okien sprawi, że każde nowe okienko dodane w przyszłości od razu dostanie dobry wygląd i zachowanie na wszystkich trzech systemach.
+> **Status:** ✅ **ZAKOŃCZONO I ZACEMENTOWANO (2026-11-23)**
+> **Co zostało naprawione dla użytkownika:**
+> - Wyeliminowano mignięcia mikro-okienek przy starcie Windows 11 (usunięto przedwczesne pokazywanie nieprzypiętych nagłówków paneli bocznych oraz tworzenie ukrytego uchwytu okna Ustawień podczas uruchamiania).
+> - Dodano pełne rozciąganie ze wszystkich 8 krawędzi i rogów (Windows i Linux), obsługę Windows 11 Snap Layouts i menu systemowego na pasku tytułu, dokładne pozycjonowanie i wyśrodkowywanie na wielu monitorach o różnym skalowaniu (również z ujemnymi współrzędnymi), pamięć rozmiaru użytkownika (domyślnie 70% x 70% monitora) przy wyjściu z maksymalizacji także po „zerwaniu” okna za pasek, poprawiono rozmiar ikony maksymalizacji, ochronę przed nakładaniem napisu źródła na menu oraz zachowano neutralny szary hover przycisku „X”.
+> - Przebudowano okno Ustawień na niezależne okno najwyższego poziomu (osobny Alt+Tab, minimalizacja, maksymalizacja, cień na każdym z 3 systemów, automatyczne poszerzanie lewego menu i wyśrodkowana kolumna treści w stylu czatów AI).
+> - Naprawiono natychmiastowe odświeżanie wybranej ikony aplikacji i przełączanie „Zawsze na wierzchu” bez wymuszania restartu (z komunikatem dla użytkowników Linux Wayland, dziedziczeniem przez okna pomocnicze, ikoną paska zadań na Waylandzie, startem w dużym oknie na macOS i pełną obsługą 120 Hz ProMotion / dynamicznej synchronizacji odświeżania między monitorami).
+> **Gdzie opisano szczegóły i testy:** `docs/CEMENTED.md` (Sekcja 4), `docs/DEV_STATE.md` (Sekcja 4, pkt 13), testy i zrzuty w `tests/test_window_titlebar_vsync.py`.
 
-**Prompt do wklejenia:**
+<details>
+<summary>Archiwalny prompt zrealizowanego punktu 3 (punkt zamknięty - nie uruchamiaj ponownie)</summary>
+
 ```text
 Przeanalizuj punkt 3 planu cementowania: Zachowanie okien bez ramki, paska tytułu, ikony aplikacji, trybu „Zawsze na wierzchu” oraz synchronizacji odświeżania ekranu.
 
@@ -173,6 +179,8 @@ ZASADY PRACY:
 
 Po mojej akceptacji i wdrożeniu: napisz testy i zweryfikuj na żywo działanie prawdziwego okna (rozmiary, kliknięcia, płynność), wygeneruj zrzuty ekranu (PNG) zmienionych okien i sam je obejrzyj przed odpowiedzią, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3-4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 3 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
+
+</details>
 
 ---
 

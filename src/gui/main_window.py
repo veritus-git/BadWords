@@ -64,7 +64,7 @@ _QPushButton = QPushButton
 
 _QRadioButton = QRadioButton
 
-from .utils import _app_icon, _txt, get_layout_icon_path
+from .utils import _app_icon, _txt, get_layout_icon_path, apply_app_icon_everywhere
 from .components.dialogs import (
     TelemetryPopup, CrashReportConsentDialog, CustomMsgBox, UpdateNotifyDialog,
     SettingsDialog, GlobalAppFilter, SidebarDragZone, UpdateCheckThread
@@ -322,16 +322,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # --- Window basics ---
         self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
         self.setWindowIcon(_app_icon())
-        screen = QGuiApplication.primaryScreen()
-        if screen:
-            avail = screen.availableGeometry()
-            init_w = avail.width()
-            init_h = avail.height()
-        else:
-            is_more_accurate = prefs.get('ai_more_accurate', config.DEFAULT_SETTINGS.get('ai_more_accurate', False))
-            init_w = config.S(780) if is_more_accurate else config.CFG_WINDOW_W_BASE
-            init_h = config.CFG_WINDOW_H_BASE
-        self.resize(init_w, init_h)
         self.setMinimumSize(config.S(330), config.S(400))
         from gui.views.welcome_view import is_embedded_in_resolve
         self.is_standalone = not is_embedded_in_resolve()
@@ -404,10 +394,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._mac_menu_transcript.menuAction().setVisible(False)
 
             # Source Info Menu
-            self._mac_menu_source = self._mac_menu_bar.addMenu("Source")
-            self._mac_action_timeline = self._mac_menu_source.addAction("Timeline: None")
+            self._mac_menu_source = self._mac_menu_bar.addMenu(self.txt("menu_source", "Source"))
+            self._mac_action_timeline = self._mac_menu_source.addAction(
+                self.txt("menu_timeline", "Timeline: {name}").format(name="-")
+            )
             self._mac_action_timeline.setEnabled(False)
-            self._mac_action_track = self._mac_menu_source.addAction("Track: None")
+            self._mac_action_track = self._mac_menu_source.addAction(
+                self.txt("menu_track", "Track: {name}").format(name="-")
+            )
             self._mac_action_track.setEnabled(False)
             self._mac_menu_source.menuAction().setVisible(False)
             
@@ -417,16 +411,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             
             self._mac_menu_bar.setNativeMenuBar(True)
             try:
-                import sys
-                is_standalone = not (
-                    hasattr(sys.modules.get('__main__'), 'resolve') or
-                    hasattr(sys.modules.get('builtins'), 'resolve') or
-                    hasattr(sys.modules.get('__main__'), 'bmd') or
-                    hasattr(sys.modules.get('builtins'), 'bmd') or
-                    'fscript' in sys.executable.lower() or
-                    os.environ.get('RESOLVE_SCRIPT_API') is not None
-                )
-                if is_standalone:
+                if self.is_standalone:
                     from .utils import setup_macos_standalone_identity
                     setup_macos_standalone_identity(config.APP_NAME)
             except Exception:
@@ -560,22 +545,31 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _get_settings_dialog(self):
         if not hasattr(self, '_settings_dialog') or self._settings_dialog is None:
             self._settings_dialog = SettingsDialog(self.engine, self)
+            self._settings_dialog.finished.connect(self._on_settings_dialog_finished)
         else:
             self._settings_dialog._reload_preferences()
         is_top = getattr(self, '_always_on_top_active', False) or bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
-        if bool(self._settings_dialog.windowFlags() & Qt.WindowStaysOnTopHint) != is_top:
-            self._settings_dialog.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
+        self._settings_dialog.set_always_on_top_state(is_top)
         return self._settings_dialog
 
     def _preload_settings(self):
         try:
             if not hasattr(self, '_settings_dialog') or self._settings_dialog is None:
                 self._settings_dialog = SettingsDialog(self.engine, self)
-                # Pre-build all pages into RAM so open is 0ms
+                self._settings_dialog.finished.connect(self._on_settings_dialog_finished)
+                # Pre-build all pages into RAM so opening Settings is instant (zero winId/DWM side effects)
                 for i in range(self._settings_dialog.category_list.count()):
                     self._settings_dialog._ensure_page_built(i)
         except Exception:
             pass
+
+    def _on_settings_dialog_finished(self, _result=0):
+        self._build_marker_radio_buttons()
+        self._apply_dynamic_shortcuts()
+        if hasattr(self, 'text_canvas') and self.text_canvas:
+            self.text_canvas.update()
+        self.activateWindow()
+        self.setFocus()
 
     def update_silence_panel_ranges(self):
         """Refreshes the silence panel's minimum duration range to match current settings."""
@@ -654,15 +648,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def changeEvent(self, event):
         super().changeEvent(event)
-        if event.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
+        if event.type() == QEvent.WindowStateChange:
             self._enforce_native_always_on_top()
 
     def _enforce_native_always_on_top(self):
         try:
-            prefs = self.engine.load_preferences() or {}
-            is_top = getattr(self, '_always_on_top_active', False) or prefs.get('always_on_top', False)
-            if is_top and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-                self.engine.os_doc.set_always_on_top(int(self.winId()), True)
+            if getattr(self, '_always_on_top_active', False) and self.isVisible():
+                if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                    self.engine.os_doc.set_always_on_top(int(self.winId()), True)
         except Exception:
             pass
 
@@ -670,13 +663,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._always_on_top_active = bool(enable)
         native_ok = False
         try:
-            win_id = int(self.winId())
+            win_id = int(self.winId()) if self.testAttribute(Qt.WA_WState_Created) else 0
             if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
                 native_ok = self.engine.os_doc.set_always_on_top(win_id, enable)
         except Exception:
             native_ok = False
 
-        # If native method was not supported (e.g. Wayland) or window isn't created/visible yet, use Qt window flags
         if not native_ok or not self.isVisible():
             self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
             if self.isVisible():
@@ -686,6 +678,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self.showFullScreen()
                 else:
                     self.show()
+
+        dlg = getattr(self, '_settings_dialog', None)
+        if dlg is not None and hasattr(dlg, 'set_always_on_top_state'):
+            dlg.set_always_on_top_state(self._always_on_top_active)
 
     def set_panel_headers_visible(self, visible: bool) -> None:
         """Show or hide all sidebar panel headers (titles, descriptions, dividers)."""
@@ -943,6 +939,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             while layout.count():
                 item = layout.takeAt(0)
                 if item.widget():
+                    item.widget().hide()
                     item.widget().setParent(None)
                     
             layout.addWidget(activity_widget)
@@ -4437,16 +4434,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._title_bar.activate_transcription_mode()
         self._title_bar.set_source_info(selected_tl_name, tracks_str)
         
-        # On macOS native title bar: update the OS window title too
+        # On macOS native title bar: update the OS window title and localized menu labels
         if platform.system() == "Darwin":
-            self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
+            base_title = config.TRANS[self.lang].get("title", config.APP_NAME)
+            self.setWindowTitle(f"{base_title} - {selected_tl_name}" if selected_tl_name else base_title)
             if hasattr(self, '_mac_action_timeline'):
                 self._mac_menu_project.menuAction().setVisible(True)
                 self._mac_menu_transcript.menuAction().setVisible(True)
                 self._mac_menu_source.menuAction().setVisible(True)
                 self._mac_menu_edits.menuAction().setVisible(True)
-                self._mac_action_timeline.setText(f"Timeline: {selected_tl_name}")
-                self._mac_action_track.setText(f"Track: {tracks_str}")
+                self._mac_action_timeline.setText(
+                    self.txt("menu_timeline", "Timeline: {name}").format(name=selected_tl_name)
+                )
+                self._mac_action_track.setText(
+                    self.txt("menu_track", "Track: {name}").format(name=tracks_str)
+                )
 
         # ── CAPTURE SOURCE SNAPSHOT ──────────────────────────────────────────
         if is_file_source:
@@ -4532,35 +4534,41 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # Positioning
     # ------------------------------------------------------------------
 
+    def _on_user_normal_size_changed(self, w: int, h: int):
+        if not hasattr(self, '_normal_size_save_timer'):
+            self._normal_size_save_timer = QTimer(self)
+            self._normal_size_save_timer.setSingleShot(True)
+            self._normal_size_save_timer.timeout.connect(self._flush_user_normal_size)
+        self._pending_normal_size = (int(w), int(h))
+        self._normal_size_save_timer.start(350)
+
+    def _flush_user_normal_size(self):
+        sz = getattr(self, '_pending_normal_size', None)
+        if not sz:
+            return
+        try:
+            self.engine.save_preferences({"window_normal_w": sz[0], "window_normal_h": sz[1]})
+        except Exception:
+            pass
+
     def _maximize_on_active_screen(self, show: bool = True):
         """
-        Move the window to the monitor that currently has the cursor and maximize.
+        Prepare 70% x 70% (or user-remembered) normal geometry on the cursor's monitor,
+        and maximize cleanly across Windows, Linux, and macOS (Decision 1A & 2A).
         """
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        w, h = config.S(580), config.S(670)
-        if screen is None:
-            self.resize(w, h)
-            if show:
-                if getattr(self, '_is_mac', False):
-                    self.showFullScreen()
-                else:
-                    self.showMaximized()
-            return
-        sg = screen.availableGeometry()
-        if not getattr(self, '_is_mac', False):
-            self.setGeometry(sg)
-            self.setWindowState(self.windowState() | Qt.WindowMaximized)
-        else:
-            self.setGeometry(
-                sg.x() + (sg.width()  - w) // 2,
-                sg.y() + (sg.height() - h) // 2,
-                w, h
-            )
+        prefs = self.engine.load_preferences() or {}
+        self.init_normal_geometry(
+            saved_w=prefs.get('window_normal_w'),
+            saved_h=prefs.get('window_normal_h'),
+            screen=screen,
+            ratio=0.70,
+            min_w=config.S(640),
+            min_h=config.S(460),
+            apply_geometry=True,
+        )
         if show:
-            if getattr(self, '_is_mac', False):
-                self.showFullScreen()
-            else:
-                self.showMaximized()
+            self.showMaximized()
 
     # ------------------------------------------------------------------
     # Action handlers (stubs - logic added in later stages)
@@ -4606,23 +4614,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.waveform_timeline.set_words_data(self.text_canvas.words_data)
 
     def _on_add_custom_marker(self):
-        from PySide6.QtWidgets import QApplication
         dlg = self._get_settings_dialog()
-        # Navigate to Custom Markers tab dynamically by matching the translated tab name
         custom_markers_label = dlg.txt("tab_custom_markers")
         for i in range(dlg.category_list.count()):
             if dlg.category_list.item(i).text() == custom_markers_label:
                 dlg.stack.setCurrentIndex(i)
                 dlg.category_list.setCurrentRow(i)
                 break
-        dlg.exec()
-        
-        # WORKAROUND: Restore main window icon after dialog closes
-        from PySide6.QtWidgets import QApplication
-        QApplication.setWindowIcon(_app_icon())
-        self.setWindowIcon(_app_icon())
-        self._build_marker_radio_buttons()
-        self.text_canvas.update()
+        dlg.show()
+        if dlg.isMinimized():
+            dlg.showNormal()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _build_marker_radio_buttons(self):
         # Clear layout
@@ -4755,6 +4758,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.sc_redo_shift_z = QShortcut(QKeySequence("Ctrl+Shift+Z"), self, context=Qt.ApplicationShortcut)
         self.sc_redo_shift_z.activated.connect(self.undo_manager.redo)
 
+        if getattr(self, '_is_mac', False):
+            self.sc_mac_prefs = QShortcut(QKeySequence.Preferences, self, context=Qt.ApplicationShortcut)
+            self.sc_mac_prefs.activated.connect(self._on_settings)
+            self.sc_mac_min = QShortcut(QKeySequence("Ctrl+M"), self, context=Qt.ApplicationShortcut)
+            self.sc_mac_min.activated.connect(self.showMinimized)
+
     def _apply_dynamic_shortcuts(self):
         """
         Build (or rebuilds) all dynamic QShortcuts from the saved preferences.
@@ -4882,22 +4891,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
 
     def _on_settings(self):
-        """Open settings panel."""
+        """Open independent Settings window cleanly (non-modal so Alt+Tab works freely)."""
         dlg = self._get_settings_dialog()
-        dlg.exec()
-        
-        # WORKAROUND: Restore main window icon after dialog closes
-        from PySide6.QtWidgets import QApplication
-        QApplication.setWindowIcon(_app_icon())
-        self.setWindowIcon(_app_icon())
-        
-        self._build_marker_radio_buttons()
-        self._apply_dynamic_shortcuts()
-        self.text_canvas.update()
-        
-        # Explicitly reactivate the main window to ensure ApplicationShortcut context binds properly
-        self.activateWindow()
-        self.setFocus()
+        dlg.show()
+        if dlg.isMinimized():
+            dlg.showNormal()
+        dlg.raise_()
+        dlg.activateWindow()
 
 
 
@@ -4967,14 +4967,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         if opt_in is None:
             popup = TelemetryPopup(self.engine, parent=self)
-            self.engine.os_doc.force_dark_titlebar(int(popup.winId()))
             popup.exec()  # ApplicationModal - sets both telemetry and crash-report decisions
         else:
             if opt_in is True:
                 self.engine.send_telemetry_ping("app_started")
             if auto_crash is None:
                 dlg = CrashReportConsentDialog(self.engine, parent=self)
-                self.engine.os_doc.force_dark_titlebar(int(dlg.winId()))
                 dlg.exec()
 
         # Check if one-time milestone notice for 3.x -> 4.x migration is needed
@@ -5174,7 +5172,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 install_dir=install_dir,
                 release_notes=release_notes,
             )
-            self.engine.os_doc.force_dark_titlebar(int(dlg.winId()))
             dlg.exec()
         except Exception as e:
             from osdoc import log_error
@@ -5194,6 +5191,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def closeEvent(self, event):
         msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
         if msg_box.exec() == QDialog.Accepted:
+            self._flush_user_normal_size()
+            if getattr(self, '_settings_dialog', None) is not None:
+                try:
+                    self._settings_dialog.hide()
+                    self._settings_dialog.deleteLater()
+                except Exception:
+                    pass
+                self._settings_dialog = None
             # Prevent crashes by unhooking global signals during teardown
             try:
                 QApplication.instance().focusChanged.disconnect(self._on_app_focus_changed)

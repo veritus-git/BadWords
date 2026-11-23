@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "Compartilhar sua localização geral (país/cidade)",
   "tab_interface": "Interface",
   "lbl_always_on_top": "Sempre no topo",
-  "tt_always_on_top": "Mantém a janela do aplicativo sempre no topo das outras (mesmo que você clique fora dela).\n\nObservação: No Windows, alterar esta opção pode exigir a reinicialização do aplicativo para ter efeito completo.",
+  "tt_always_on_top": "Mantém a janela do aplicativo sempre no topo das outras (mesmo que você clique fora dela).",
   "lbl_hidden_panels": "Painéis ocultos",
   "btn_export_settings": "Exportar Configurações",
   "btn_import_settings": "Importar Configurações",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "Agora não",
   "chk_auto_crash_report": "Relatórios automáticos de erros e falhas",
   "tt_auto_crash_report": "Envia automaticamente relatórios técnicos sanitizados quando o BadWords trava ou encontra um erro não tratado. Nomes de usuário, caminhos privados, arquivos de mídia e roteiros nunca são enviados. Independente da telemetria.",
-  "startup_report_auto_sent": "O envio automático de relatórios de erro está ativado - um relatório de diagnóstico anônimo está sendo enviado automaticamente ao desenvolvedor."
+  "startup_report_auto_sent": "O envio automático de relatórios de erro está ativado - um relatório de diagnóstico anônimo está sendo enviado automaticamente ao desenvolvedor.",
+  "lbl_always_on_top_wayland_hint": "* Nota: Em uma sessão Linux Wayland, o sistema pode ignorar esta opção. Se necessário, clique com o botão direito na barra de tarefas e ative 'Manter acima'.",
+  "menu_source": "Origem",
+  "menu_timeline": "Linha do tempo: {name}",
+  "menu_track": "Faixa: {name}"
 }

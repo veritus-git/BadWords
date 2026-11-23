@@ -8,34 +8,36 @@
 MODULE: titlebar.py
 ROLE: GUI Component
 DESCRIPTION:
-Custom window titlebar with window control buttons.
+Custom window titlebar with window control buttons, menu dropdowns,
+centered source label with overlap protection, and cross-OS window actions.
 """
 
-import os
 from PySide6.QtWidgets import (
     QWidget, QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QFrame, QListWidget
 )
 from PySide6.QtCore import Qt, QSize, QVariantAnimation, QEasingCurve, Signal, QPoint
-from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter
+from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter, QGuiApplication
 import config
 from ..widgets.buttons import TitleDropdown
 from ..utils import _app_icon, _titlebar_icon
 
+
 class AnimatedTitleButton(QPushButton):
     """
-    Title-bar control button with a 150ms QVariantAnimation colour transition
-    on hover. The close button uses a red hover (#c42b1c) to match Discord/
-    Spotify conventions; all other buttons use HOVER from config.
-    Optimized with direct QPainter painting to eliminate Qt stylesheet parsing latency.
+    Title-bar control button with a 150ms QVariantAnimation colour transition on hover.
+    # INVARIANT: Never change the close button hover color to red; keep neutral
+    # COLOR_TITLEBAR_HOVER across minimize, maximize, and close buttons.
     """
 
     def __init__(self, icon_path: str, tooltip_key: str, lang: str, parent=None):
         super().__init__(parent)
         self.setObjectName("TitleBarBtn")
-        self._bg    = config.COLOR_TITLEBAR_BG
+        self._bg = config.COLOR_TITLEBAR_BG
         self._hover = config.COLOR_TITLEBAR_HOVER
         self._press = "#3a3a3d"
-        self._cur   = self._bg
+        self._cur = self._bg
+        self._native_hovered = False
+        self._native_pressed = False
 
         s_sz = config.S(32)
         self.setFixedSize(s_sz, s_sz)
@@ -66,24 +68,42 @@ class AnimatedTitleButton(QPushButton):
             }}
         """)
 
-    def change_base_icon(self, new_icon_path):
+    def change_base_icon(self, new_icon_path: str):
         self._icon_path = new_icon_path
         self.setIcon(QIcon(new_icon_path))
         self.update()
 
-    # ── internal ─────────────────────────────────────────────────────────────
+    def set_native_hover(self, hovered: bool):
+        hovered = bool(hovered)
+        if hovered == self._native_hovered:
+            return
+        self._native_hovered = hovered
+        self._anim.stop()
+        self._anim.setStartValue(QColor(self._cur))
+        self._anim.setEndValue(QColor(self._hover if hovered else self._bg))
+        self._anim.start()
+
+    def set_native_pressed(self, pressed: bool):
+        pressed = bool(pressed)
+        if pressed == self._native_pressed:
+            return
+        self._native_pressed = pressed
+        self.update()
+
     def _on_color_changed(self, color):
         self._cur = color.name() if hasattr(color, 'name') else str(color)
         self.update()
 
     def reset_state(self):
         self._anim.stop()
+        self._native_hovered = False
+        self._native_pressed = False
         self._cur = self._bg
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        bg = QColor(self._press if self.isDown() else self._cur)
+        bg = QColor(self._press if (self.isDown() or self._native_pressed) else self._cur)
         painter.fillRect(self.rect(), bg)
         icon = self.icon()
         if not icon.isNull():
@@ -100,7 +120,6 @@ class AnimatedTitleButton(QPushButton):
         self.reset_state()
         super().showEvent(event)
 
-    # ── events ────────────────────────────────────────────────────────────────
     def enterEvent(self, event):
         self._anim.stop()
         self._anim.setStartValue(QColor(self._cur))
@@ -109,6 +128,8 @@ class AnimatedTitleButton(QPushButton):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        self._native_hovered = False
+        self._native_pressed = False
         self._anim.stop()
         self._anim.setStartValue(QColor(self._cur))
         self._anim.setEndValue(QColor(self._bg))
@@ -119,21 +140,8 @@ class AnimatedTitleButton(QPushButton):
 class CustomTitleBar(QWidget):
     """
     Cross-platform custom title bar.
-
-    macOS / Linux
-    -------------
-    • Dragging  → QWindow.startSystemMove()  (native OS behaviour)
-    • Dbl-click → toggle maximized             (native OS behaviour)
-
-    Windows (with qframelesswindow library)
-    ----------------------------------------
-    • Dragging  → win32gui.ReleaseCapture + WM_SYSCOMMAND SC_MOVE|HTCAPTION
-                  (full Aero Snap, drag-detach from maximized, snap layouts)
-    • Dbl-click → toggle maximized via WM_SYSCOMMAND SC_MAXIMIZE/SC_RESTORE
-    • Resize    → handled by library's nativeEvent (WM_NCHITTEST border edges)
     """
 
-    # ── Shared titlebar menu button style ────────────────────────────────────
     _MENU_BTN_QSS = """
         QPushButton {{
             background: transparent;
@@ -148,7 +156,6 @@ class CustomTitleBar(QWidget):
         QPushButton:pressed {{ background: #333333; color: #ffffff; }}
     """
 
-    # Signal emitted when the user picks an action from a menu dropdown
     projectExportRequested = Signal()
     projectImportRequested = Signal()
     transcriptExportTxtRequested = Signal()
@@ -156,9 +163,9 @@ class CustomTitleBar(QWidget):
 
     def __init__(self, window: QWidget, lang: str, parent=None):
         super().__init__(parent)
-        self._win  = window
+        self._win = window
         self._lang = lang
-        self._transcription_active = False  # True after first transcription
+        self._transcription_active = False
         self.setObjectName("CustomTitleBar")
         self.setFixedHeight(config.S(32))
         self.setAutoFillBackground(True)
@@ -171,7 +178,6 @@ class CustomTitleBar(QWidget):
         lay.setContentsMargins(config.S(12), 0, 0, 0)
         lay.setSpacing(0)
 
-        # Small app-icon (no background version)
         self._icon_lbl = QLabel()
         self._icon_lbl.setFixedSize(config.S(18), config.S(32))
         self._icon_lbl.setStyleSheet("background: transparent;")
@@ -179,7 +185,6 @@ class CustomTitleBar(QWidget):
         lay.addWidget(self._icon_lbl)
         lay.addSpacing(config.S(6))
 
-        # ── DEFAULT title label (shown before transcription) ──
         self._lbl_title = QLabel(config.APP_NAME)
         self._full_title = config.APP_NAME
         self._lbl_title.setTextFormat(Qt.RichText)
@@ -190,7 +195,6 @@ class CustomTitleBar(QWidget):
         )
         lay.addWidget(self._lbl_title)
 
-        # ── POST-TRANSCRIPTION menu buttons container ──
         self._menu_container = QWidget(self)
         self._menu_container.setStyleSheet("background: transparent;")
         menu_lay = QHBoxLayout(self._menu_container)
@@ -203,7 +207,7 @@ class CustomTitleBar(QWidget):
             font_size=config.FS(9),
             pad_y=config.S(2),
             pad_x=config.S(8),
-            radius=config.S(3)
+            radius=config.S(3),
         )
 
         def _t(key):
@@ -221,20 +225,16 @@ class CustomTitleBar(QWidget):
         self.btn_menu_transcript.clicked.connect(self._show_transcript_menu)
         menu_lay.addWidget(self.btn_menu_transcript)
 
-        # Edit dropdown — always visible after transcription with at least "Original"
         self.btn_menu_edit = QPushButton(_t("titlebar_edit"))
         self.btn_menu_edit.setStyleSheet(_btn_qss)
         self.btn_menu_edit.setCursor(Qt.PointingHandCursor)
         self.btn_menu_edit.clicked.connect(self._show_edit_menu)
         menu_lay.addWidget(self.btn_menu_edit)
 
-        self._menu_container.hide()  # hidden until transcription
-
+        self._menu_container.hide()
         lay.addWidget(self._menu_container)
-
         lay.addStretch()
 
-        # ── CENTERED source info label (replaces old left-aligned title after transcription) ──
         self._lbl_source_info = QLabel(self)
         self._lbl_source_info.setTextFormat(Qt.RichText)
         self._lbl_source_info.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -244,25 +244,26 @@ class CustomTitleBar(QWidget):
         )
         self._lbl_source_info.hide()
         self._full_source_info = ""
-        # Absolutely positioned — updated in resizeEvent
 
-        # Chapter Dropdown — kept for backwards compat but now internal to Edit menu
         _orig_label = config.get_trans("titlebar_original", lang)
         self.chapter_dropdown = TitleDropdown([_orig_label], parent=self)
         self.chapter_dropdown.setFixedHeight(config.S(24))
         self.chapter_dropdown.setMinimumWidth(config.S(100))
-        self.chapter_dropdown.hide()  # Always hidden — Edit menu now owns this
-        
+        self.chapter_dropdown.hide()
+
         from ..utils import get_layout_icon_path
         self.btn_min = AnimatedTitleButton(
             get_layout_icon_path("minimize.png"),
-            "btn_minimize", lang, parent=self)
+            "btn_minimize", lang, parent=self
+        )
         self.btn_max = AnimatedTitleButton(
             get_layout_icon_path("maximize.png"),
-            "btn_maximize", lang, parent=self)
-        self.btn_close    = AnimatedTitleButton(
+            "btn_maximize", lang, parent=self
+        )
+        self.btn_close = AnimatedTitleButton(
             get_layout_icon_path("exit.png"),
-            "btn_close",    lang, parent=self)
+            "btn_close", lang, parent=self
+        )
 
         self.btn_min.clicked.connect(self._minimize_window)
         self.btn_max.clicked.connect(self._toggle_maximize)
@@ -277,10 +278,36 @@ class CustomTitleBar(QWidget):
             if not pix.isNull():
                 self._icon_lbl.setPixmap(pix)
 
-    # ── Titlebar menu dropdowns ───────────────────────────────────────────────
+    def _popup_flags_for_window(self):
+        flags = Qt.Popup | Qt.FramelessWindowHint
+        win = self.window()
+        if win is not None and (
+            getattr(win, '_always_on_top_active', False) or bool(win.windowFlags() & Qt.WindowStaysOnTopHint)
+        ):
+            flags |= Qt.WindowStaysOnTopHint
+        return flags
+
+    def _position_popup_on_screen(self, popup: QWidget, global_pos: QPoint):
+        win = self.window()
+        scr = (
+            QGuiApplication.screenAt(global_pos)
+            or (win.screen() if win else None)
+            or QGuiApplication.primaryScreen()
+        )
+        x, y = global_pos.x(), global_pos.y()
+        if scr is not None:
+            sg = scr.availableGeometry()
+            pw = max(popup.width(), popup.sizeHint().width())
+            ph = max(popup.height(), popup.sizeHint().height())
+            x = max(sg.left() + 4, min(x, sg.right() - pw - 4))
+            if y + ph > sg.bottom() - 4:
+                y = max(sg.top() + 4, global_pos.y() - ph - self.height() - 4)
+            y = max(sg.top() + 4, min(y, sg.bottom() - ph - 4))
+        popup.move(x, y)
+
     def _show_titlebar_popup(self, anchor_btn, items):
         """Generic popup for titlebar menus. items = [(label, callback), ...]"""
-        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        popup = QFrame(self, self._popup_flags_for_window())
         popup.setAttribute(Qt.WA_DeleteOnClose)
         popup.setStyleSheet(f"""
             QFrame {{
@@ -316,7 +343,8 @@ class CustomTitleBar(QWidget):
         global_pos = anchor_btn.mapToGlobal(QPoint(0, anchor_btn.height() + 2))
         popup.adjustSize()
         popup.setMinimumWidth(max(anchor_btn.width(), popup.sizeHint().width()))
-        popup.move(global_pos)
+        popup.adjustSize()
+        self._position_popup_on_screen(popup, global_pos)
         popup.show()
 
     def _show_project_menu(self):
@@ -336,8 +364,8 @@ class CustomTitleBar(QWidget):
         ])
 
     def _show_edit_menu(self):
-        """Shows the edit/chapter selection popup (same as old chapter_dropdown)."""
-        popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
+        """Shows the edit/chapter selection popup."""
+        popup = QFrame(self, self._popup_flags_for_window())
         popup.setAttribute(Qt.WA_DeleteOnClose)
         popup.setStyleSheet(f"""
             QFrame {{
@@ -386,19 +414,19 @@ class CustomTitleBar(QWidget):
         list_height = display_count * row_h
         list_widget.setFixedHeight(list_height)
         popup.setFixedHeight(list_height + 2)
+        popup.setFixedWidth(max(self.btn_menu_edit.width(), config.S(140)))
 
         global_pos = self.btn_menu_edit.mapToGlobal(QPoint(0, self.btn_menu_edit.height() + 2))
-        popup.move(global_pos)
-        popup.setFixedWidth(max(self.btn_menu_edit.width(), config.S(140)))
+        self._position_popup_on_screen(popup, global_pos)
         popup.show()
 
-    # ── Activate post-transcription mode ──────────────────────────────────────
     def activate_transcription_mode(self):
         """Switch from simple 'BadWords' title to [Project] [Transcript] [Edit] menus."""
         self._transcription_active = True
         self._lbl_title.hide()
         self._menu_container.show()
         self._lbl_source_info.show()
+        self._update_source_info_placement()
 
     def deactivate_transcription_mode(self):
         """Switch back to simple 'BadWords' title."""
@@ -417,17 +445,28 @@ class CustomTitleBar(QWidget):
         if "{tl}" in msg:
             text = msg.replace("{tl}", tl_name).replace("{tr}", tracks_str)
         else:
-            text = f"Source: <i>{tl_name}</i> — Tracks: <i>{tracks_str}</i>"
+            text = f"Source: <i>{tl_name}</i> - Tracks: <i>{tracks_str}</i>"
         self._full_source_info = text
         self._lbl_source_info.setText(text)
         self._update_source_info_placement()
 
     def set_title(self, text):
-        """Legacy title setter — for backward compat. Now also updates source info if in transcription mode."""
+        """Legacy title setter."""
         self._full_title = text
         if not self._transcription_active:
             self._lbl_title.setText(text)
             self.update_elision()
+
+    def _right_controls_left_edge(self) -> int:
+        visible_xs = [
+            btn.x()
+            for btn in (self.btn_min, self.btn_max, self.btn_close)
+            if not btn.isHidden() and btn.x() > 0
+        ]
+        if visible_xs:
+            return min(visible_xs)
+        visible_count = sum(1 for btn in (self.btn_min, self.btn_max, self.btn_close) if not btn.isHidden())
+        return max(0, self.width() - visible_count * self.btn_close.width())
 
     def update_elision(self):
         from PySide6.QtGui import QFontMetrics, QTextDocument
@@ -435,10 +474,10 @@ class CustomTitleBar(QWidget):
             self._update_source_info_placement()
             return
 
-        btn_area = self.btn_min.width() * 3 + 4
-        max_w = max(10, self.width() - self._lbl_title.x() - btn_area - 4)
+        right_bound = self._right_controls_left_edge() - config.S(8)
+        left_x = max(config.S(36), self._lbl_title.x())
+        max_w = max(10, right_bound - left_x)
 
-        # Measure using plain text (HTML tags would inflate the pixel width)
         doc = QTextDocument()
         doc.setHtml(self._full_title)
         plain = doc.toPlainText()
@@ -451,29 +490,46 @@ class CustomTitleBar(QWidget):
             self._lbl_title.setText(elided)
 
     def _update_source_info_placement(self):
-        """Centers the source info label between menu buttons and window controls."""
-        if not self._lbl_source_info.isVisible():
+        """Centers the source info label cleanly without ever overlapping menu or control buttons."""
+        if not self._transcription_active:
             return
         from PySide6.QtGui import QFontMetrics, QTextDocument
+
+        pad = config.S(12)
+        if not self._menu_container.isHidden():
+            menu_hint_w = max(self._menu_container.width(), self._menu_container.sizeHint().width())
+            menu_x = self._menu_container.x() if self._menu_container.x() > 0 else config.S(36)
+            left_bound = menu_x + menu_hint_w + pad
+        else:
+            left_bound = self._icon_lbl.x() + self._icon_lbl.width() + pad
+
+        right_bound = self._right_controls_left_edge() - pad
+        avail_space = right_bound - left_bound
+        if avail_space < config.S(40):
+            self._lbl_source_info.hide()
+            return
+
+        self._lbl_source_info.show()
         doc = QTextDocument()
         doc.setHtml(self._full_source_info)
         plain = doc.toPlainText()
         fm = QFontMetrics(self._lbl_source_info.font())
-        text_w = min(fm.horizontalAdvance(plain) + 10, self.width() // 2)
 
-        # Center in the title bar
-        lbl_x = (self.width() - text_w) // 2
+        desired_w = fm.horizontalAdvance(plain) + config.S(8)
+        text_w = min(desired_w, avail_space)
+
+        # Ideal centered X, then clamped strictly into [left_bound, right_bound - text_w]
+        centered_x = (self.width() - text_w) // 2
+        lbl_x = max(left_bound, min(centered_x, right_bound - text_w))
         self._lbl_source_info.setGeometry(lbl_x, 0, text_w, self.height())
 
-        # Elide if needed
-        avail = text_w - 4
+        avail = max(4, text_w - config.S(4))
         if fm.horizontalAdvance(plain) > avail:
             self._lbl_source_info.setText(fm.elidedText(plain, Qt.ElideRight, avail))
         else:
             self._lbl_source_info.setText(self._full_source_info)
 
     def update_dropdown_placement(self):
-        # Chapter dropdown is now hidden — Edit menu owns this
         self._update_source_info_placement()
         if not self._transcription_active:
             self.update_elision()
@@ -486,18 +542,15 @@ class CustomTitleBar(QWidget):
         icon_name = 'windowed.png' if is_maximized else 'maximize.png'
         from ..utils import get_layout_icon_path
         icon_path = get_layout_icon_path(icon_name)
-
-        # Używamy nowej metody, która zabezpiecza ikonę przed resetem przez animację hover!
         self.btn_max.change_base_icon(icon_path)
-        self.btn_max.setIconSize(QSize(14, 14))
+        self.btn_max.setIconSize(QSize(config.S(12), config.S(12)))
 
-    # ── helpers ───────────────────────────────────────────────────────────────
     def _minimize_window(self):
         win = self.window()
         if getattr(win, '_is_win', False):
             try:
                 import ctypes
-                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF020, 0) # SC_MINIMIZE
+                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF020, 0)  # SC_MINIMIZE
                 return
             except Exception:
                 pass
@@ -508,15 +561,13 @@ class CustomTitleBar(QWidget):
         if getattr(win, '_is_win', False) and getattr(win, '_is_root', False):
             try:
                 import ctypes
-                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF060, 0) # SC_CLOSE
+                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF060, 0)  # SC_CLOSE
                 return
             except Exception:
                 pass
         win.close()
 
     def _toggle_maximize(self):
-        # Zapis/odczyt stanu przed maksymalizacją, aby przycisk "windowed"
-        # przywracał dokładny poprzedni rozmiar i położenie.
         win = self.window()
         if not getattr(win, '_is_root', False):
             return
@@ -526,25 +577,23 @@ class CustomTitleBar(QWidget):
                 import ctypes
                 hwnd = int(win.winId())
                 if win.isMaximized():
-                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0) # SC_RESTORE
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0)  # SC_RESTORE
                 else:
-                    win._pre_max_geometry = win.geometry()
-                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0) # SC_MAXIMIZE
+                    if hasattr(win, '_sync_win_normal_placement'):
+                        win._sync_win_normal_placement()
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0)  # SC_MAXIMIZE
                 return
             except Exception:
                 pass
 
         if win.isMaximized():
             win.showNormal()
-            saved_geo = getattr(win, '_pre_max_geometry', None)
-            if saved_geo and saved_geo.isValid():
-                win.setGeometry(saved_geo)
+            if hasattr(win, '_restore_user_normal_size'):
+                win._restore_user_normal_size()
         else:
-            win._pre_max_geometry = win.geometry()  # zapamiętaj przed max
-            if getattr(win, '_is_mac', False):
-                win.showFullScreen()
-            else:
-                win.showMaximized()
+            if not getattr(win, '_user_normal_size', None):
+                win._user_normal_size = win.size()
+            win.showMaximized()
 
     def mousePressEvent(self, event):
         if not getattr(self, 'movable', True):
@@ -555,7 +604,6 @@ class CustomTitleBar(QWidget):
             self._click_pos = event.position().toPoint()
             event.accept()
             return
-
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -568,11 +616,7 @@ class CustomTitleBar(QWidget):
 
         win = self.window()
         self._is_dragging = False
-        
-        # Native window dragging
-        # Modern Window Managers (DWM, Mutter, KWin, Wayland) natively un-maximize 
-        # the window if startSystemMove is called while maximized, providing seamless 
-        # cursor proportional attachment and edge-snapping (Aero Snap) out of the box.
+
         if hasattr(win, 'windowHandle') and win.windowHandle():
             try:
                 win.windowHandle().startSystemMove()

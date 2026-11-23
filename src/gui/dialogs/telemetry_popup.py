@@ -279,9 +279,9 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
             self._set_btn_text(self._btn_no, btn_texts[0])
             self._set_btn_text(self._btn_yes, btn_texts[1])
         self._btn_lang.setText(self._lang.upper())
-        if hasattr(self, '_tb') and hasattr(self._tb, '_lbl_title'):
-            self._tb._lbl_title.setText(title_txt)
+        if hasattr(self, '_tb'):
             self._tb._lang = self._lang
+            self._tb.set_title(title_txt)
 
         dialog_w = config.S(self._dialog_width)
         text_max_w = dialog_w - config.S(15 + 15 + 20 + 20 + 28)

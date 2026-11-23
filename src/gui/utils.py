@@ -165,27 +165,49 @@ def get_layout_icon_path(icon_name: str) -> str:
     return os.path.join(layout_dir, icon_name)
 
 
-def _app_icon() -> QIcon:
+def _read_saved_app_icon_name() -> str:
+    """Returns configured app_icon name from active OSDoctor, DEV workspace, install dir, or user profile."""
+    try:
+        import osdoc as _osdoc
+        active = getattr(_osdoc, "_ACTIVE_OS_DOC", None)
+        if active is not None and isinstance(getattr(active, "settings", None), dict):
+            return active.settings.get("app_icon", "default") or "default"
+    except Exception:
+        pass
+
     try:
         import json
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        icon_name = "default"
-        settings_candidates = [
+        candidates = [
             os.path.join(os.path.dirname(install_dir), ".dev_workspace", "settings.json"),
             os.path.join(install_dir, "settings.json"),
             os.path.join(os.path.dirname(install_dir), "settings.json"),
         ]
-        for sc in settings_candidates:
+        try:
+            from config.runtime_data import get_user_profile_data_dir
+            candidates.append(
+                os.path.join(get_user_profile_data_dir(platform.system(), os.path.expanduser("~")), "settings.json")
+            )
+        except Exception:
+            pass
+        for sc in candidates:
             if os.path.isfile(sc):
                 try:
-                    with open(sc, 'r', encoding='utf-8') as f:
+                    with open(sc, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        icon_name = data.get('app_icon', 'default')
-                        break
+                        if isinstance(data, dict) and data.get("app_icon"):
+                            return str(data["app_icon"])
                 except Exception:
                     pass
+    except Exception:
+        pass
+    return "default"
 
-        icon_path = get_icon_path(icon_name)
+
+def _app_icon(icon_name: str = None) -> QIcon:
+    try:
+        name = icon_name or _read_saved_app_icon_name()
+        icon_path = get_icon_path(name)
         if icon_path and os.path.exists(icon_path):
             return QIcon(icon_path)
     except Exception:
@@ -196,58 +218,99 @@ def _app_icon() -> QIcon:
 def _titlebar_icon(icon_name: str = None) -> QIcon:
     """Returns the no-background icon for titlebars, falling back to app_icon if missing."""
     try:
-        if not icon_name:
-            import json
-            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            icon_name = "default"
-            settings_candidates = [
-                os.path.join(os.path.dirname(install_dir), ".dev_workspace", "settings.json"),
-                os.path.join(install_dir, "settings.json"),
-                os.path.join(os.path.dirname(install_dir), "settings.json"),
-            ]
-            for sc in settings_candidates:
-                if os.path.isfile(sc):
-                    try:
-                        with open(sc, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
-                            icon_name = data.get('app_icon', 'default')
-                            break
-                    except Exception:
-                        pass
-
+        name = icon_name or _read_saved_app_icon_name()
         install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         candidates = [
-            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}_nobg.png"),
-            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}_nobg.png"),
-            os.path.join(install_dir, "icons", f"icon_{icon_name}_nobg.png"),
+            os.path.join(install_dir, "assets", "icons", f"icon_{name}_nobg.png"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{name}_nobg.png"),
+            os.path.join(install_dir, "icons", f"icon_{name}_nobg.png"),
         ]
         for p in candidates:
             if os.path.isfile(p):
                 return QIcon(p)
+        return _app_icon(name)
     except Exception:
         pass
     return _app_icon()
 
 
+def apply_app_icon_everywhere(icon_name: str = None):
+    """Updates QApplication icon, all top-level windows, all titlebars, and macOS Dock/bundle icon live."""
+    name = icon_name or _read_saved_app_icon_name()
+    icon = _app_icon(name)
+    app = QApplication.instance()
+    if app is not None:
+        if not icon.isNull():
+            app.setWindowIcon(icon)
+        for w in app.topLevelWidgets():
+            try:
+                if not icon.isNull():
+                    w.setWindowIcon(icon)
+                tb = getattr(w, "_title_bar", getattr(w, "_tb", None))
+                if tb is not None and hasattr(tb, "update_titlebar_icon"):
+                    tb.update_titlebar_icon(name)
+            except Exception:
+                pass
+    if platform.system() == "Darwin":
+        set_macos_runtime_icon(name)
+        import threading
+        threading.Thread(
+            target=update_macos_bundle_icon,
+            args=(name,),
+            daemon=True,
+        ).start()
+
+
 def apply_dark_title_bar(window: QWidget):
-    """Forces the native Windows title bar to dark mode."""
-    if platform.system() == "Windows":
+    """Forces the native Windows title bar to dark mode without forcing premature winId creation."""
+    if platform.system() == "Windows" and window is not None:
         try:
+            from PySide6.QtCore import Qt
+            if not window.testAttribute(Qt.WA_WState_Created):
+                return
             import ctypes
-            # 20 is DWMWA_USE_IMMERSIVE_DARK_MODE in Windows 10/11
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(window.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4)
+            hwnd = int(window.winId())
+            val = ctypes.c_int(1)
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val), 4) != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(val), 4)
         except Exception:
             pass
 
-def _center_on_screen(widget: QWidget, w: int, h: int):
-    """Center *widget* on the screen under cursor (or primary screen)."""
+
+def clamp_rect_to_screen(w: int, h: int, screen_geo, ref_geo=None):
+    """Clamps size (w, h) to fit inside screen_geo and centers over ref_geo (supporting negative coords)."""
+    avail_w = max(1, screen_geo.width())
+    avail_h = max(1, screen_geo.height())
+    cw = min(max(1, int(w)), max(1, avail_w - 20)) if avail_w > 40 else min(max(1, int(w)), avail_w)
+    ch = min(max(1, int(h)), max(1, avail_h - 20)) if avail_h > 40 else min(max(1, int(h)), avail_h)
+
+    if ref_geo is not None and ref_geo.isValid():
+        x = ref_geo.x() + (ref_geo.width() - cw) // 2
+        y = ref_geo.y() + (ref_geo.height() - ch) // 2
+    else:
+        x = screen_geo.x() + (avail_w - cw) // 2
+        y = screen_geo.y() + (avail_h - ch) // 2
+
+    x = max(screen_geo.left(), min(x, screen_geo.right() - cw + 1))
+    y = max(screen_geo.top(), min(y, screen_geo.bottom() - ch + 1))
+    return x, y, cw, ch
+
+
+def _center_on_screen(widget: QWidget, w: int, h: int, reference_window: QWidget = None):
+    """Centers *widget* over *reference_window* or active cursor monitor, clamping to screen bounds."""
     from PySide6.QtGui import QGuiApplication, QCursor
-    screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+    ref = reference_window or (widget.parentWidget() if widget is not None else None)
+    screen = None
+    ref_geo = None
+    if ref is not None and hasattr(ref, "isVisible") and ref.isVisible():
+        ref_geo = ref.geometry()
+        screen = QGuiApplication.screenAt(ref_geo.center()) or (ref.screen() if hasattr(ref, "screen") else None)
+    if screen is None:
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
     if screen:
         geo = screen.availableGeometry()
-        x = geo.x() + (geo.width()  - w) // 2
-        y = geo.y() + (geo.height() - h) // 2
-        widget.setGeometry(x, y, w, h)
+        x, y, cw, ch = clamp_rect_to_screen(w, h, geo, ref_geo=ref_geo)
+        widget.setGeometry(x, y, cw, ch)
 
 
 def _txt(lang: str, key: str, default: str = None, **kwargs) -> str:
@@ -344,22 +407,7 @@ def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str =
 
     # If icon_name was not explicitly specified, load user choice from settings.json
     if icon_name == "default":
-        try:
-            import json
-            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            for cand_settings in [
-                os.path.join(os.path.dirname(install_dir), ".dev_workspace", "settings.json"),
-                os.path.join(install_dir, "settings.json"),
-                os.path.join(os.path.dirname(install_dir), "settings.json"),
-                os.path.join(os.path.expanduser("~"), "Library", "Application Support", "BadWords", "settings.json"),
-            ]:
-                if os.path.isfile(cand_settings):
-                    with open(cand_settings, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        icon_name = data.get('app_icon', 'default')
-                        break
-        except Exception:
-            pass
+        icon_name = _read_saved_app_icon_name()
 
     try:
         import ctypes, ctypes.util
@@ -416,33 +464,32 @@ def setup_macos_standalone_identity(app_name: str = "BadWords", icon_name: str =
 
 
 def update_macos_bundle_icon(icon_name: str):
-    """Updates the icon.icns inside ~/Applications/BadWords.app, re-signs ad-hoc, and updates runtime icon."""
+    """Updates icon.icns inside ~/Applications or writable /Applications BadWords.app, re-signs ad-hoc, and updates runtime icon."""
     if platform.system() != "Darwin":
         return
     try:
         import shutil, subprocess
         home = os.path.expanduser("~")
-        app_bundle = os.path.join(home, "Applications", "BadWords.app")
-        if os.path.isdir(app_bundle):
-            install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            icns_candidates = [
-                os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
-                os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
-                os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
-            ]
-            target_icns = None
-            for c in icns_candidates:
-                if os.path.isfile(c):
-                    target_icns = c
-                    break
+        install_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        icns_candidates = [
+            os.path.join(install_dir, "assets", "icons", f"icon_{icon_name}.icns"),
+            os.path.join(os.path.dirname(install_dir), "assets", "icons", f"icon_{icon_name}.icns"),
+            os.path.join(install_dir, "icons", f"icon_{icon_name}.icns"),
+        ]
+        target_icns = next((c for c in icns_candidates if os.path.isfile(c)), None)
 
-            if target_icns:
-                dest_icns = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
-                shutil.copy2(target_icns, dest_icns)
-                subprocess.run(["touch", app_bundle], capture_output=True)
-                subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
+        if target_icns:
+            for app_bundle in (
+                os.path.join(home, "Applications", "BadWords.app"),
+                "/Applications/BadWords.app",
+            ):
+                if os.path.isdir(app_bundle) and os.access(app_bundle, os.W_OK):
+                    dest_icns = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
+                    if os.path.isdir(os.path.dirname(dest_icns)):
+                        shutil.copy2(target_icns, dest_icns)
+                        subprocess.run(["touch", app_bundle], capture_output=True)
+                        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", app_bundle], capture_output=True)
 
-        # Also update running process icon immediately in Dock & WindowServer
         set_macos_runtime_icon(icon_name)
     except Exception:
         pass

@@ -15,7 +15,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
-from gui.vsync import get_refresh_interval_ms
+from gui.vsync import get_refresh_interval_ms, subscribe_timer
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 
 from PySide6.QtCore import (
@@ -49,7 +49,7 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         self._hovered_row = -1
 
         self._timer = QTimer(self)
-        self._timer.setInterval(get_refresh_interval_ms())
+        subscribe_timer(self._timer)
         self._timer.timeout.connect(self._tick)
 
         # Install event filter on the viewport to catch mouse moves

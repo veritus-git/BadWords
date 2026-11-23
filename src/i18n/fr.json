@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "Partager votre position générale (pays/ville)",
   "tab_interface": "Interface",
   "lbl_always_on_top": "Toujours au premier plan",
-  "tt_always_on_top": "Garde la fenêtre de l'application toujours au premier plan (même si vous cliquez en dehors).\n\nRemarque : Sous Windows, la modification de cette option peut nécessiter le redémarrage de l'application pour prendre pleinement effet.",
+  "tt_always_on_top": "Garde la fenêtre de l'application toujours au premier plan (même si vous cliquez en dehors).",
   "lbl_hidden_panels": "Panneaux masqués",
   "btn_export_settings": "Exporter les paramètres",
   "btn_import_settings": "Importer les paramètres",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "Pas maintenant",
   "chk_auto_crash_report": "Rapports automatiques d'erreurs et de plantages",
   "tt_auto_crash_report": "Envoie automatiquement des rapports techniques nettoyés lorsque BadWords plante ou rencontre une erreur imprévue. Noms d'utilisateur, chemins privés, médias et scripts exclus. Indépendant de la télémétrie.",
-  "startup_report_auto_sent": "Les rapports d'erreurs automatiques sont activés - un rapport de diagnostic anonyme est envoyé automatiquement au développeur."
+  "startup_report_auto_sent": "Les rapports d'erreurs automatiques sont activés - un rapport de diagnostic anonyme est envoyé automatiquement au développeur.",
+  "lbl_always_on_top_wayland_hint": "* Remarque : Sous Linux Wayland, le système peut ignorer cette option. Si besoin, faites un clic droit dans la barre des tâches et activez 'Toujours au-dessus'.",
+  "menu_source": "Source",
+  "menu_timeline": "Timeline : {name}",
+  "menu_track": "Piste : {name}"
 }

@@ -215,7 +215,6 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._update_done.connect(self._on_update_done)
 
         self.frameless_init(is_popup=True)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
 
         self.setStyleSheet(f"""
@@ -395,7 +394,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         body.addLayout(btn_row)
 
         self.setFixedSize(config.S(640), config.S(530))
-        _center_on_screen(self, config.S(640), config.S(530))
+        _center_on_screen(self, config.S(640), config.S(530), reference_window=self.parentWidget())
 
     def _on_update_now(self):
         self._btn_primary.setEnabled(False)

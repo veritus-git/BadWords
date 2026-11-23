@@ -16,7 +16,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
-from gui.vsync import get_refresh_interval_ms
+from gui.vsync import get_refresh_interval_ms, subscribe_timer
 import os
 
 # Aliases for original standard classes we override
@@ -30,7 +30,7 @@ class QPushButton(_QPushButton):
         super().__init__(*args, **kwargs)
         self._mq_timer = QTimer(self)
         self._mq_timer.timeout.connect(self._mq_scroll)
-        self._mq_timer.setInterval(get_refresh_interval_ms())
+        subscribe_timer(self._mq_timer)
         self._mq_pos = 0.0
         self._mq_alpha = 1.0
         self._mq_hovered = False
@@ -182,7 +182,7 @@ class MarqueeRadioButton(_QRadioButton):
         super().__init__(*args, **kwargs)
         self._mq_timer = QTimer(self)
         self._mq_timer.timeout.connect(self._mq_scroll)
-        self._mq_timer.setInterval(get_refresh_interval_ms())
+        subscribe_timer(self._mq_timer)
         self._mq_pos = 0.0
         self._mq_alpha = 1.0
         self._mq_hovered = False

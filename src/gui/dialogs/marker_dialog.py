@@ -40,7 +40,6 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         self.result_color = ''
 
         self.frameless_init(is_popup=True)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setWindowModality(Qt.ApplicationModal)
 
@@ -97,8 +96,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         self._tb.btn_min.hide()
         self._tb.btn_max.hide()
         title_text = _txt(lang, title_key)
-        if hasattr(self._tb, '_lbl_title'):
-            self._tb._lbl_title.setText(title_text)
+        self._tb.set_title(title_text)
         root_layout.addWidget(self._tb)
 
         content = QWidget(self.inner_frame)
@@ -164,7 +162,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         self.adjustSize()
         self.setFixedWidth(380)
         self.adjustSize()
-        _center_on_screen(self, self.width(), self.height())
+        _center_on_screen(self, self.width(), self.height(), reference_window=self.parentWidget())
 
     def _on_ok(self):
         name = self._name_edit.text().strip()

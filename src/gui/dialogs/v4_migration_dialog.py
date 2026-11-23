@@ -19,6 +19,8 @@ from PySide6.QtGui import QMouseEvent, QCursor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QWidget
 )
+from gui.components.mixins import FramelessWindowMixin, _BaseDialog
+from gui.utils import _app_icon, _center_on_screen
 
 _MIGRATION_TEXTS = {
     "pl": {
@@ -154,7 +156,7 @@ _MIGRATION_TEXTS = {
 }
 
 
-class V4MigrationDialog(QDialog):
+class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
     def __init__(self, lang: str = "en", parent=None):
         super().__init__(parent)
         self.user_choice = "close"
@@ -163,8 +165,8 @@ class V4MigrationDialog(QDialog):
         t = _MIGRATION_TEXTS.get(lang, _MIGRATION_TEXTS["en"])
 
         self.setWindowTitle(t["heading"])
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.frameless_init(is_popup=True)
+        self.setWindowIcon(_app_icon())
         self.setFixedWidth(680)
 
         self.setStyleSheet("""
@@ -296,6 +298,8 @@ class V4MigrationDialog(QDialog):
 
         card_layout.addLayout(btn_row)
         outer.addWidget(card)
+        self.adjustSize()
+        _center_on_screen(self, self.width(), self.height(), reference_window=parent)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:

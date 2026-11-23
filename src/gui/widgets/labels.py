@@ -16,7 +16,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 from PySide6.QtMultimedia import *
 import config
-from gui.vsync import get_refresh_interval_ms
+from gui.vsync import get_refresh_interval_ms, subscribe_timer
 
 # Aliases for original standard classes we override
 _QPushButton = QPushButton
@@ -31,7 +31,7 @@ class QLabel(_QLabel):
         super().__init__(*args, **kwargs)
         self._mq_timer = QTimer(self)
         self._mq_timer.timeout.connect(self._mq_scroll)
-        self._mq_timer.setInterval(get_refresh_interval_ms())
+        subscribe_timer(self._mq_timer)
         self._mq_pos = 0.0
         self._mq_alpha = 1.0
         self._mq_hovered = False
@@ -285,14 +285,21 @@ class IDETooltip(QLabel):
             x = global_pos.x() - self.width() - 5
 
         y = global_pos.y() + (rect.height() - self.height()) // 2
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-        if x + self.width() > screen.right() - 10:
-            x = max(10, screen.right() - self.width() - 10)
-        if y + self.height() > screen.bottom() - 10:
-            y = max(10, screen.bottom() - self.height() - 10)
-        if y < screen.top() + 10:
-            y = screen.top() + 10
+        scr = (
+            QGuiApplication.screenAt(global_pos)
+            or (widget.screen() if hasattr(widget, 'screen') else None)
+            or QGuiApplication.primaryScreen()
+        )
+        if scr:
+            screen = scr.availableGeometry()
+            if x + self.width() > screen.right() - 10:
+                x = max(screen.left() + 10, screen.right() - self.width() - 10)
+            if x < screen.left() + 10:
+                x = screen.left() + 10
+            if y + self.height() > screen.bottom() - 10:
+                y = max(screen.top() + 10, screen.bottom() - self.height() - 10)
+            if y < screen.top() + 10:
+                y = screen.top() + 10
         self.move(x, y)
         self.show()
 
@@ -300,14 +307,17 @@ class IDETooltip(QLabel):
         self.prepare_content(text)
         x = pos.x()
         y = pos.y() + 15
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-        if x + self.width() > screen.right() - 10:
-            x = max(10, screen.right() - self.width() - 10)
-        if y + self.height() > screen.bottom() - 10:
-            y = max(10, pos.y() - self.height() - 10)
-        if y < screen.top() + 10:
-            y = screen.top() + 10
+        scr = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
+        if scr:
+            screen = scr.availableGeometry()
+            if x + self.width() > screen.right() - 10:
+                x = max(screen.left() + 10, screen.right() - self.width() - 10)
+            if x < screen.left() + 10:
+                x = screen.left() + 10
+            if y + self.height() > screen.bottom() - 10:
+                y = max(screen.top() + 10, pos.y() - self.height() - 10)
+            if y < screen.top() + 10:
+                y = screen.top() + 10
         self.move(x, y)
         self.show()
 
@@ -316,7 +326,7 @@ class MarqueeLabel(QLabel):
         super().__init__(text, parent)
         self._full_text = text
         self._mq_timer = QTimer(self)
-        self._mq_timer.setInterval(get_refresh_interval_ms())
+        subscribe_timer(self._mq_timer)
         self._mq_timer.timeout.connect(self._scroll_step)
         self._mq_pos = 0.0
         self._hovered = False

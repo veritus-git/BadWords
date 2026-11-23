@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "Teilen Sie Ihren ungefähren Standort (Land/Stadt)",
   "tab_interface": "Benutzeroberfläche",
   "lbl_always_on_top": "Immer im Vordergrund",
-  "tt_always_on_top": "Hält das Anwendungsfenster immer im Vordergrund (selbst wenn Sie außerhalb klicken).\n\nHinweis: Unter Windows erfordert diese Option möglicherweise einen Neustart der Anwendung, um wirksam zu werden.",
+  "tt_always_on_top": "Hält das Anwendungsfenster immer im Vordergrund (selbst wenn Sie außerhalb klicken).",
   "lbl_hidden_panels": "Versteckte Panels",
   "btn_export_settings": "Einstellungen exportieren",
   "btn_import_settings": "Einstellungen importieren",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "Nicht jetzt",
   "chk_auto_crash_report": "Automatische Fehler- & Absturzberichte",
   "tt_auto_crash_report": "Sendet automatisch bereinigte technische Fehlerberichte bei Abstürzen oder unbehandelten Fehlern. Benutzernamen, private Pfade, Mediendateien und Skripte werden niemals übertragen. Unabhängig von der Telemetrie.",
-  "startup_report_auto_sent": "Automatische Fehlerberichte sind aktiviert - ein anonymer Diagnosebericht wird automatisch an den Entwickler gesendet."
+  "startup_report_auto_sent": "Automatische Fehlerberichte sind aktiviert - ein anonymer Diagnosebericht wird automatisch an den Entwickler gesendet.",
+  "lbl_always_on_top_wayland_hint": "* Hinweis: In einer Linux-Wayland-Sitzung kann das System diese Option ignorieren. Nutzen Sie bei Bedarf das Kontextmenü der Fensterleiste ('Immer im Vordergrund').",
+  "menu_source": "Quelle",
+  "menu_timeline": "Zeitleiste: {name}",
+  "menu_track": "Spur: {name}"
 }

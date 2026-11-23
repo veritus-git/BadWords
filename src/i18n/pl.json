@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "Udostępnij swoją ogólną lokalizację (kraj/miasto)",
   "tab_interface": "Interfejs",
   "lbl_always_on_top": "Zawsze na wierzchu",
-  "tt_always_on_top": "Utrzymuje okno aplikacji zawsze na wierzchu innych okien (nawet jeśli klikniesz poza jego obszar).\n\nUwaga: Na systemie Windows zmiana tej opcji może wymagać ponownego uruchomienia aplikacji, aby została w pełni zastosowana.",
+  "tt_always_on_top": "Utrzymuje okno aplikacji zawsze na wierzchu innych okien (nawet jeśli klikniesz poza jego obszar).",
   "lbl_hidden_panels": "Ukryte panele",
   "btn_export_settings": "Eksportuj Ustawienia",
   "btn_import_settings": "Importuj Ustawienia",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "Nie teraz",
   "chk_auto_crash_report": "Automatyczne raporty o błędach i awariach",
   "tt_auto_crash_report": "Automatycznie wysyła oczyszczony techniczny raport błędu w razie awarii lub nieobsłużonego błędu aplikacji. Prywatne ścieżki, nazwa użytkownika, multimedia i scenariusze nigdy nie są dołączane. Działa niezależnie od telemetrii.",
-  "startup_report_auto_sent": "Automatyczne raporty błędów są włączone - anonimowy raport diagnostyczny jest właśnie wysyłany automatycznie do twórcy."
+  "startup_report_auto_sent": "Automatyczne raporty błędów są włączone - anonimowy raport diagnostyczny jest właśnie wysyłany automatycznie do twórcy.",
+  "lbl_always_on_top_wayland_hint": "* Uwaga: W sesji Linux Wayland system może zignorować przypięcie na wierzchu przez aplikację. W razie potrzeby kliknij prawym przyciskiem na pasku zadań i wybierz 'Zawsze na wierzchu'.",
+  "menu_source": "Źródło",
+  "menu_timeline": "Oś czasu: {name}",
+  "menu_track": "Ścieżka: {name}"
 }

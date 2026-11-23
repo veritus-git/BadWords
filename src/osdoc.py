@@ -1356,28 +1356,29 @@ class OSDoctor:
             return
         try:
             set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
-            # Try attribute 20 (Windows 10 20H1 and newer)
-            res = set_window_attribute(window_id, 20, ctypes.byref(ctypes.c_int(2)), ctypes.sizeof(ctypes.c_int))
+            # Attribute 20 (Windows 10 20H1+), fallback to 19; value 1 enables dark mode
+            val = ctypes.c_int(1)
+            res = set_window_attribute(window_id, 20, ctypes.byref(val), ctypes.sizeof(val))
             if res != 0:
-                # Try attribute 19 for older Windows 10 versions
-                set_window_attribute(window_id, 19, ctypes.byref(ctypes.c_int(2)), ctypes.sizeof(ctypes.c_int))
+                set_window_attribute(window_id, 19, ctypes.byref(val), ctypes.sizeof(val))
         except Exception:
             pass
 
     def set_always_on_top(self, window_id: int, top: bool) -> bool:
         """
         Sets the window to always on top using native OS API without recreating the Qt window.
-        - Windows: SetWindowPos with HWND_TOPMOST / HWND_NOTOPMOST
+        - Windows: SetWindowPos with HWND_TOPMOST / HWND_NOTOPMOST (no SWP_FRAMECHANGED flicker)
         - macOS: NSWindow setLevel: NSFloatingWindowLevel (3) & collection behavior
-        - Linux (X11): _NET_WM_STATE_ABOVE via XClientMessageEvent
+        - Linux (X11): _NET_WM_STATE_ABOVE via XClientMessageEvent (wmctrl fallback)
+        - Linux (Wayland): returns False (compositor prohibits app-forced topmost)
         """
         if self.is_win:
             try:
                 import ctypes
                 # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
-                # SWP_NOSIZE(1) | SWP_NOMOVE(2) | SWP_NOACTIVATE(0x10) | SWP_FRAMECHANGED(0x20) = 0x0033
+                # SWP_NOSIZE(1) | SWP_NOMOVE(2) | SWP_NOACTIVATE(0x10)
                 hwnd_insert_after = -1 if top else -2
-                flags = 0x0001 | 0x0002 | 0x0010 | 0x0020
+                flags = 0x0001 | 0x0002 | 0x0010
                 ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, flags)
                 return True
             except Exception:
@@ -1420,7 +1421,80 @@ class OSDoctor:
                 return False
 
         elif self.is_linux:
-            # 1. Try wmctrl if available (works 100% reliably in Mutter/Cinnamon/KWin/XFCE)
+            try:
+                from PySide6.QtGui import QGuiApplication
+                if QGuiApplication.platformName() == 'wayland':
+                    return False
+            except Exception:
+                pass
+
+            # 1. Direct X11 ClientMessage via XSendEvent (zero subprocess spawn)
+            try:
+                import ctypes, ctypes.util
+                x11_path = ctypes.util.find_library('X11')
+                if x11_path:
+                    x11 = ctypes.cdll.LoadLibrary(x11_path)
+                    x11.XOpenDisplay.restype = ctypes.c_void_p
+                    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+                    display = x11.XOpenDisplay(None)
+                    if display:
+                        try:
+                            x11.XDefaultRootWindow.restype = ctypes.c_ulong
+                            x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+                            x11.XInternAtom.restype = ctypes.c_ulong
+                            x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+                            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+                            x11.XFlush.argtypes = [ctypes.c_void_p]
+                            x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
+
+                            atom_state = x11.XInternAtom(display, b'_NET_WM_STATE', False)
+                            atom_above = x11.XInternAtom(display, b'_NET_WM_STATE_ABOVE', False)
+                            root = x11.XDefaultRootWindow(display)
+
+                            class XClientMessageEvent(ctypes.Structure):
+                                _fields_ = [
+                                    ('type', ctypes.c_int),
+                                    ('serial', ctypes.c_ulong),
+                                    ('send_event', ctypes.c_int),
+                                    ('display', ctypes.c_void_p),
+                                    ('window', ctypes.c_ulong),
+                                    ('message_type', ctypes.c_ulong),
+                                    ('format', ctypes.c_int),
+                                    ('data', ctypes.c_long * 5)
+                                ]
+
+                            class XEvent(ctypes.Union):
+                                _fields_ = [
+                                    ('type', ctypes.c_int),
+                                    ('xclient', XClientMessageEvent),
+                                    ('pad', ctypes.c_long * 24)
+                                ]
+
+                            event = XEvent()
+                            event.type = 33  # ClientMessage
+                            event.xclient.type = 33
+                            event.xclient.serial = 0
+                            event.xclient.send_event = 1
+                            event.xclient.display = display
+                            event.xclient.window = window_id
+                            event.xclient.message_type = atom_state
+                            event.xclient.format = 32
+                            event.xclient.data[0] = 1 if top else 0
+                            event.xclient.data[1] = atom_above
+                            event.xclient.data[2] = 0
+                            event.xclient.data[3] = 1
+                            event.xclient.data[4] = 0
+
+                            mask = 0x00180000  # SubstructureRedirectMask | SubstructureNotifyMask
+                            x11.XSendEvent(display, root, False, mask, ctypes.byref(event))
+                            x11.XFlush(display)
+                            return True
+                        finally:
+                            x11.XCloseDisplay(display)
+            except Exception:
+                pass
+
+            # 2. Fallback to wmctrl if direct libX11 call was unavailable
             try:
                 import subprocess, shutil
                 if shutil.which('wmctrl'):
@@ -1434,77 +1508,7 @@ class OSDoctor:
                         return True
             except Exception:
                 pass
-
-            # 2. Direct X11 ClientMessage fallback via XSendEvent
-            try:
-                from PySide6.QtGui import QGuiApplication
-                if QGuiApplication.platformName() == 'wayland':
-                    return False
-
-                import ctypes, ctypes.util
-                x11_path = ctypes.util.find_library('X11')
-                if not x11_path:
-                    return False
-                x11 = ctypes.cdll.LoadLibrary(x11_path)
-                x11.XOpenDisplay.restype = ctypes.c_void_p
-                x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-                display = x11.XOpenDisplay(None)
-                if not display:
-                    return False
-
-                x11.XDefaultRootWindow.restype = ctypes.c_ulong
-                x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-                x11.XInternAtom.restype = ctypes.c_ulong
-                x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
-                x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-                x11.XFlush.argtypes = [ctypes.c_void_p]
-                x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
-
-                atom_state = x11.XInternAtom(display, b'_NET_WM_STATE', False)
-                atom_above = x11.XInternAtom(display, b'_NET_WM_STATE_ABOVE', False)
-                root = x11.XDefaultRootWindow(display)
-
-                class XClientMessageEvent(ctypes.Structure):
-                    _fields_ = [
-                        ('type', ctypes.c_int),
-                        ('serial', ctypes.c_ulong),
-                        ('send_event', ctypes.c_int),
-                        ('display', ctypes.c_void_p),
-                        ('window', ctypes.c_ulong),
-                        ('message_type', ctypes.c_ulong),
-                        ('format', ctypes.c_int),
-                        ('data', ctypes.c_long * 5)
-                    ]
-
-                class XEvent(ctypes.Union):
-                    _fields_ = [
-                        ('type', ctypes.c_int),
-                        ('xclient', XClientMessageEvent),
-                        ('pad', ctypes.c_long * 24)
-                    ]
-
-                event = XEvent()
-                event.type = 33  # ClientMessage
-                event.xclient.type = 33
-                event.xclient.serial = 0
-                event.xclient.send_event = 1
-                event.xclient.display = display
-                event.xclient.window = window_id
-                event.xclient.message_type = atom_state
-                event.xclient.format = 32
-                event.xclient.data[0] = 1 if top else 0  # 1 = _NET_WM_STATE_ADD, 0 = _NET_WM_STATE_REMOVE
-                event.xclient.data[1] = atom_above
-                event.xclient.data[2] = 0
-                event.xclient.data[3] = 1
-                event.xclient.data[4] = 0
-
-                mask = 0x00180000  # SubstructureRedirectMask | SubstructureNotifyMask
-                x11.XSendEvent(display, root, False, mask, ctypes.byref(event))
-                x11.XFlush(display)
-                x11.XCloseDisplay(display)
-                return True
-            except Exception:
-                return False
+            return False
 
         return False
 

@@ -49,8 +49,10 @@ def create_panel_header(win, title_key: str, desc_key: str, default_title: str =
         win._panel_headers = []
     win._panel_headers.append(header)
 
+    # INVARIANT: Never call setVisible(True) on a parentless PanelHeaderWidget before layout attachment (prevents Win11 startup flashes).
     prefs = getattr(win, 'prefs', {}) or {}
-    header.setVisible(bool(prefs.get('show_panel_headers', True)))
+    if not bool(prefs.get('show_panel_headers', True)):
+        header.hide()
 
     return header
 

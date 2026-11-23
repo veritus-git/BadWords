@@ -23,7 +23,7 @@ from PySide6.QtGui import (
     QPainter, QColor, QFont, QPen, QBrush, QPainterPath, QFontMetrics
 )
 import config
-from gui.vsync import get_refresh_interval_ms
+from gui.vsync import get_refresh_interval_ms, subscribe_timer
 
 
 class TopStatusIsland(QWidget):
@@ -65,9 +65,9 @@ class TopStatusIsland(QWidget):
         self._fm_lbl = QFontMetrics(self._f_lbl)
         self._fm_bold = QFontMetrics(self._f_bold)
 
-        # Gentle 30 FPS timer for vector spinner animation (prevents timer flooding)
+        # VSync-paced timer for vector spinner animation
         self._spinner_timer = QTimer(self)
-        self._spinner_timer.setInterval(33)
+        subscribe_timer(self._spinner_timer)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
 
         # Width morphing animation
@@ -115,7 +115,8 @@ class TopStatusIsland(QWidget):
 
     def _on_spinner_tick(self):
         if self._state == "working" and self.isVisible():
-            self._spinner_angle = (self._spinner_angle + 12) % 360
+            iv = max(1, self._spinner_timer.interval())
+            self._spinner_angle = (self._spinner_angle + 360.0 * (iv / 1000.0)) % 360.0
             self.update()
 
     def _ensure_z_order(self):
@@ -175,7 +176,7 @@ class TopStatusIsland(QWidget):
         self._percent_text = f"{percent}%" if percent >= 0 else ""
 
         if not self._spinner_timer.isActive():
-            self._spinner_timer.start(33)
+            self._spinner_timer.start()
 
         # Set stable comfortable width (e.g. 215px) up front to avoid width morphing animation during transcription
         self._target_width = max(float(config.S(215)), self._calculate_target_width())

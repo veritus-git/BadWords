@@ -27,7 +27,6 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
     def __init__(self, parent, diff_dict, key_name_map):
         super().__init__(parent)
         self.frameless_init(is_popup=True)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint | Qt.Dialog)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         
         self.setStyleSheet(parent.styleSheet() + f"""
@@ -58,7 +57,13 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         root_layout = QVBoxLayout(self.inner_frame)
         root_layout.setContentsMargins(0, 0, 0, 0)
         
-        self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
+        tb_lang = getattr(parent, 'lang', None) or getattr(parent, '_lang', None)
+        if not tb_lang and hasattr(parent, 'engine') and parent.engine:
+            try:
+                tb_lang = (parent.engine.load_preferences() or {}).get('gui_lang', 'en')
+            except Exception:
+                tb_lang = 'en'
+        self._tb = CustomTitleBar(self, tb_lang or "en", parent=self.inner_frame)
         if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
             self.setTitleBar(self._tb)
         self._tb.btn_min.hide()
@@ -154,7 +159,7 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         content_layout.addLayout(bot_layout)
         
         self.resize(config.S(630), config.S(480))
-        _center_on_screen(self, config.S(630), config.S(480))
+        _center_on_screen(self, config.S(630), config.S(480), reference_window=parent)
         
     def _make_decision(self, key, decision):
         self.decisions[key] = decision

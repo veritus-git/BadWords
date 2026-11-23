@@ -34,9 +34,10 @@ class VideoLoadingWidget(QWidget):
         self._spinner_angle = 0
         self._text = ""
 
-        # Gentle 30 FPS timer for vector spinner animation
+        # VSync-paced timer for vector spinner animation
+        from gui.vsync import subscribe_timer
         self._timer = QTimer(self)
-        self._timer.setInterval(33)
+        subscribe_timer(self._timer)
         self._timer.timeout.connect(self._on_tick)
 
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -62,7 +63,8 @@ class VideoLoadingWidget(QWidget):
 
     def _on_tick(self):
         if self.isVisible():
-            self._spinner_angle = (self._spinner_angle + 12) % 360
+            iv = max(1, self._timer.interval())
+            self._spinner_angle = (self._spinner_angle + 360.0 * (iv / 1000.0)) % 360.0
             self.update()
 
     def paintEvent(self, event):

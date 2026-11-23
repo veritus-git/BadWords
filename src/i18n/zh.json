@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "分享大致位置（国家/城市）",
   "tab_interface": "界面",
   "lbl_always_on_top": "窗口置顶",
-  "tt_always_on_top": "让应用窗口始终保持在其他窗口之上\n（即使你点击了应用之外）。",
+  "tt_always_on_top": "让应用窗口始终保持在其他窗口之上（即使你点击了应用之外）。",
   "lbl_hidden_panels": "已隐藏面板",
   "btn_export_settings": "导出设置",
   "btn_import_settings": "导入设置",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "暂不启用",
   "chk_auto_crash_report": "自动错误与崩溃报告",
   "tt_auto_crash_report": "在 BadWords 崩溃或发生未捕获错误时自动发送脱敏后的技术报告。绝不包含用户名、私人路径、媒体文件或剧本。与匿名统计完全独立。",
-  "startup_report_auto_sent": "已启用自动错误报告 - 正在自动向开发者发送匿名诊断报告。"
+  "startup_report_auto_sent": "已启用自动错误报告 - 正在自动向开发者发送匿名诊断报告。",
+  "lbl_always_on_top_wayland_hint": "* 注意: 在 Linux Wayland 会话中，系统可能会忽略应用请求的置顶。如有需要，请右键任务栏窗口并启用“总在最前”。",
+  "menu_source": "媒体源",
+  "menu_timeline": "时间线: {name}",
+  "menu_track": "轨道: {name}"
 }

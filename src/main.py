@@ -164,10 +164,7 @@ class AppController:
         self.main_win = gui.BadWordsGUI(audio_engine, resolve)
         self.main_win.closeEvent_callback = self._on_close
 
-        if getattr(self.main_win, "_is_mac", False):
-            self.main_win.showFullScreen()
-        else:
-            self.main_win.showMaximized()
+        self.main_win.showMaximized()
         self.main_win.raise_()
         self.main_win.activateWindow()
 
@@ -248,6 +245,8 @@ def main():
         app.setApplicationDisplayName(config.APP_NAME)
         app.setOrganizationName("Veritus")
         app.setOrganizationDomain("veritus.badwords")
+        if sys.platform.startswith("linux"):
+            app.setDesktopFileName("badwords")
 
         init_high_refresh_sync(app)
         config.init_ui_scaling(app)

@@ -11,15 +11,16 @@ DESCRIPTION:
 Settings dialog with multi-tab layout and real-time preferences management.
 """
 
+import os
 import sys
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import (
-    QFont
+    QFont, QFontMetrics, QGuiApplication
 )
 from PySide6.QtWidgets import (
     QApplication, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QSizePolicy, QFrame, QScrollArea,
-    QStackedWidget, QFormLayout, QLineEdit, QButtonGroup, QGraphicsOpacityEffect
+    QStackedWidget, QFormLayout, QLineEdit, QButtonGroup
 )
 
 import config
@@ -35,7 +36,8 @@ from gui.widgets.sliders import JumpSlider
 from gui.widgets.labels import QLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
 from gui.widgets.delegates import MarqueeItemDelegate
-from gui.utils import _txt
+from gui.utils import _txt, _app_icon, _center_on_screen, apply_app_icon_everywhere
+from gui.vsync import track_window_screen
 
 from gui.dialogs.msgbox import CustomMsgBox
 from gui.dialogs.update_dialog import UpdateCheckThread
@@ -106,6 +108,30 @@ def _get_mouse_mode_from_text(text: str, default: str = 'box') -> str:
     return default
 
 
+class _CenteredPageHost(QWidget):
+    """Centers settings page content up to max_width when widened/maximized while keeping 100% width when narrow."""
+    def __init__(self, content: QWidget, max_width: int, parent=None):
+        super().__init__(parent)
+        self._content = content
+        self._max_width = max(1, int(max_width))
+        self.setStyleSheet("background: transparent;")
+        self.setMinimumWidth(0)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addStretch(1)
+        content.setParent(self)
+        content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        lay.addWidget(content)
+        lay.addStretch(1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        target_w = max(1, min(self.width(), self._max_width))
+        if self._content.width() != target_w or self._content.maximumWidth() != target_w:
+            self._content.setFixedWidth(target_w)
+
+
 class SettingsDialog(FramelessWindowMixin, _BaseDialog):
     """Settings Dialog - left category menu + right stacked pages.
     All I/O goes through engine.load_preferences / engine.save_preferences
@@ -126,58 +152,53 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         'hidden_panels':      [],
     }
 
-    def txt(self, key: str, **kwargs) -> str:
+    def txt(self, key: str, default: str = None, **kwargs) -> str:
         prefs = self.engine.load_preferences() or {}
         lang = prefs.get("gui_lang", "en")
-        text = config.TRANS.get(lang, config.TRANS["en"]).get(key, key)
-        if kwargs: return text.format(**kwargs)
-        return text
+        return _txt(lang, key, default=default, **kwargs)
+
+    def _get_main_window(self):
+        return getattr(self, '_main_window', None) or self.parent()
+
+    def set_always_on_top_state(self, enable: bool):
+        enable = bool(enable)
+        self._always_on_top_active = enable
+        native_ok = False
+        try:
+            if self.testAttribute(Qt.WA_WState_Created) and self.isVisible():
+                win_id = int(self.winId())
+                if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                    native_ok = self.engine.os_doc.set_always_on_top(win_id, enable)
+        except Exception:
+            native_ok = False
+        if not native_ok or not self.isVisible():
+            if bool(self.windowFlags() & Qt.WindowStaysOnTopHint) != enable:
+                self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
+                if self.isVisible():
+                    self.show()
 
     def __init__(self, engine, parent=None):
-        super().__init__(parent)
+        # Independent top-level window (same Python process) for Alt+Tab & maximize/minimize support
+        # INVARIANT: Never set Qt.Tool or call winId() in __init__ (prevents hidden Win11 startup micro-window flashes).
+        super().__init__(None)
+        self._main_window = parent
         self.engine = engine
         self.setWindowTitle(self.txt("tool_settings"))
-        self.frameless_init(is_popup=True)
-        self.setWindowFlags(self.windowFlags() | Qt.Tool | Qt.Dialog)
-        self.setFixedSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
+        self.frameless_init(is_popup=False, use_linux_csd_shadow=True)
+        self.setWindowIcon(_app_icon())
+        self.setMinimumSize(config.S(640), config.S(460))
 
-        # Center over active main window or active screen
-        if parent:
-            geo = parent.geometry()
-            x = geo.x() + (geo.width() - config.SETTINGS_WINDOW_W) // 2
-            y = geo.y() + (geo.height() - config.SETTINGS_WINDOW_H) // 2
-            self.move(max(0, x), max(0, y))
-        else:
-            from PySide6.QtGui import QGuiApplication
-            screen = QGuiApplication.primaryScreen()
-            if screen:
-                sg = screen.availableGeometry()
-                self.move(sg.x() + (sg.width() - config.SETTINGS_WINDOW_W) // 2,
-                          sg.y() + (sg.height() - config.SETTINGS_WINDOW_H) // 2)
-
-        # Inherit always on top from parent if active
+        # Inherit always on top from main window if active
         if parent and (getattr(parent, '_always_on_top_active', False) or bool(parent.windowFlags() & Qt.WindowStaysOnTopHint)):
-            self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-
-        # Eliminate white flash on Windows before Qt finishes dark styling
-        if getattr(self, '_is_win', False):
-            try:
-                import ctypes
-                hwnd = int(self.winId())
-                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-                val = ctypes.c_int(1)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
-                )
-            except Exception:
-                pass
+            self.set_always_on_top_state(True)
 
         self._search_rows = []
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
+        dialog_bg = "transparent" if getattr(self, '_use_linux_csd_shadow', False) else config.BG_COLOR
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {config.BG_COLOR}; }}
+            QDialog {{ background-color: {dialog_bg}; }}
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
                 border: 1px solid #1a1a1a;
@@ -300,49 +321,54 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         # Root layout: [LEFT menu | RIGHT content]
         # ─────────────────────────────────────────────────────────────────
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        
+        if getattr(self, '_use_linux_csd_shadow', False):
+            m = getattr(self, '_csd_shadow_margin', 14)
+            main_layout.setContentsMargins(m, m, m, m)
+        else:
+            main_layout.setContentsMargins(0, 0, 0, 0)
+
         class SolidFrame(QFrame):
             def paintEvent(self, e):
                 from PySide6.QtGui import QPainter, QColor
                 p = QPainter(self)
                 p.fillRect(self.rect(), QColor(config.BG_COLOR))
                 super().paintEvent(e)
-                
+
         self.inner_frame = SolidFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-        
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
-        from PySide6.QtGui import QColor
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
-        
+
+        if getattr(self, '_use_linux_csd_shadow', False):
+            from PySide6.QtWidgets import QGraphicsDropShadowEffect
+            from PySide6.QtGui import QColor
+            shadow = QGraphicsDropShadowEffect(self)
+            shadow.setBlurRadius(28)
+            shadow.setColor(QColor(0, 0, 0, 150))
+            shadow.setOffset(0, 0)
+            self.inner_frame.setGraphicsEffect(shadow)
+
         main_layout.addWidget(self.inner_frame)
-        
+
         outer_layout = QVBoxLayout(self.inner_frame)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
-        
+
         self._tb = CustomTitleBar(self, prefs.get("gui_lang", "en"), parent=self.inner_frame)
         if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
             self.setTitleBar(self._tb)
-        # Manually force the title into toolbars that normally get theirs from windowTitle()
-        if hasattr(self._tb, "_lbl_title"):
-            self._tb._lbl_title.setText(self.txt("tool_settings"))
-        self._tb.btn_min.hide()
-        self._tb.btn_max.hide()
+        self._tb.set_title(self.txt("tool_settings"))
+        if getattr(self, '_is_mac', False):
+            self._tb.setVisible(False)
+            self._tb.setFixedHeight(0)
         outer_layout.addWidget(self._tb)
-        
+
         root = QHBoxLayout()
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         outer_layout.addLayout(root)
 
         # ── LEFT: Search bar + Category list ─────────────────────────────
-        left_panel = QWidget()
+        self.left_panel = QWidget()
+        left_panel = self.left_panel
         left_panel.setFixedWidth(config.S(165))
         left_panel.setStyleSheet(f"""
             QWidget {{
@@ -448,10 +474,59 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         self._build_ui()
 
+        pad_extra = (getattr(self, '_csd_shadow_margin', 14) * 2) if getattr(self, '_use_linux_csd_shadow', False) else 0
+        init_w = config.SETTINGS_WINDOW_W + pad_extra
+        init_h = config.SETTINGS_WINDOW_H + pad_extra
+        _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
+        self.init_normal_geometry(
+            saved_w=self.width(),
+            saved_h=self.height(),
+            screen=self.screen() or QGuiApplication.primaryScreen(),
+            ratio=0.70,
+            min_w=config.S(640),
+            min_h=config.S(460),
+            apply_geometry=False,
+        )
+
+    def _compute_ideal_sidebar_width(self) -> int:
+        min_w = config.S(165)
+        max_w = config.S(320)
+        if not hasattr(self, 'category_list'):
+            return min_w
+        fm = QFontMetrics(self.category_list.font())
+        longest = 0
+        for i in range(self.category_list.count()):
+            it = self.category_list.item(i)
+            if it is not None and not it.isHidden():
+                longest = max(longest, fm.horizontalAdvance(it.text()))
+        if longest <= 0:
+            return min_w
+        return max(min_w, min(max_w, longest + config.S(76)))
+
+    def _update_responsive_layout(self):
+        if not hasattr(self, 'left_panel') or self.left_panel is None:
+            return
+        min_w = config.S(165)
+        ideal_w = self._compute_ideal_sidebar_width()
+        if self.isMaximized() or self.isFullScreen() or self.width() >= config.S(960):
+            target_w = ideal_w
+        elif self.width() <= config.SETTINGS_WINDOW_W:
+            target_w = min_w
+        else:
+            span = max(1, config.S(960) - config.SETTINGS_WINDOW_W)
+            t = min(1.0, max(0.0, (self.width() - config.SETTINGS_WINDOW_W) / float(span)))
+            target_w = int(round(min_w + (ideal_w - min_w) * t))
+        if self.left_panel.width() != target_w:
+            self.left_panel.setFixedWidth(target_w)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _get_info_icon(self, info_key):
-        parent = self.parent()
+        parent = self._get_main_window()
         if parent and hasattr(parent, '_create_info_icon'):
             return parent._create_info_icon(info_key)
         lbl_info = QLabel("ⓘ")
@@ -577,14 +652,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 for w in self._advanced_widgets:
                     if w:
                         w.setVisible(not self._is_basic_mode)
+            self._update_responsive_layout()
         finally:
             self.setUpdatesEnabled(True)
+
     def showEvent(self, event):
         super().showEvent(event)
+        track_window_screen(self)
         # Ensure all pages are built so all controls exist in RAM
         if hasattr(self, '_ensure_page_built') and hasattr(self, 'category_list'):
             for i in range(self.category_list.count()):
                 self._ensure_page_built(i)
+        self._update_responsive_layout()
         # Reset title bar buttons to clear any stuck hover/pressed state
         tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
         if tb:
@@ -595,17 +674,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Snapshot the exact state of all widgets as they appear to the user
         self._initial_state = self._get_current_state_dict()
-
-        # WORKAROUND: Force OS to refresh the main application icon
-        from PySide6.QtWidgets import QApplication
-        try:
-            from gui.utils import _app_icon
-            QApplication.setWindowIcon(_app_icon())
-            parent_window = self.parentWidget()
-            if parent_window:
-                parent_window.setWindowIcon(_app_icon())
-        except Exception:
-            pass
 
         self.raise_()
         self.activateWindow()
@@ -775,7 +843,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         if method:
             page_widget = method(prefs)
             if page_widget:
-                scroll.setWidget(page_widget)
+                max_content_w = config.S(660)
+                scroll.setWidget(_CenteredPageHost(page_widget, max_content_w, parent=scroll))
 
     def _build_page_general(self, prefs):
         # PAGE 0 - GENERAL
@@ -906,7 +975,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         def _on_update_known_for_card(latest_ver, gh_url, gl_url, release_notes=""):
             # If auto-update already ran silently this session, just show restart notice
-            main_win = self.parent()
+            main_win = self._get_main_window()
             pending = getattr(main_win, '_pending_update_ver', None)
             if pending and pending == latest_ver:
                 self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
@@ -1536,6 +1605,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_ontop.addWidget(self.chk_ontop)
         self._add_row(form, self.txt("lbl_always_on_top"), w_ontop, False, lambda v: self.chk_ontop.setChecked(v, animated=True))
 
+        is_wayland = getattr(self, '_is_wayland', False) or (os.environ.get('XDG_SESSION_TYPE', '').lower() == 'wayland')
+        if is_wayland:
+            self.lbl_always_on_top_wayland_hint = QLabel(
+                self.txt(
+                    "lbl_always_on_top_wayland_hint",
+                    "* Note: On Linux Wayland, the system may ignore application-requested Always on Top. "
+                    "If needed, right-click the window taskbar icon and enable 'Keep Above Others'."
+                )
+            )
+            self.lbl_always_on_top_wayland_hint.setWordWrap(True)
+            self.lbl_always_on_top_wayland_hint.setStyleSheet(
+                f"color: #d4a64a; font-size: {config.FS(8.5)}pt; background: transparent; padding-left: {config.S(2)}px;"
+            )
+            form.addRow(QWidget(), self.lbl_always_on_top_wayland_hint)
+
         # 3. Transcript font family, size, line height
         self.combo_font = SearchableDropdown(_get_system_font_families)
         self.combo_font.setText(prefs.get('editor_font_family', self.DEFAULTS['editor_font_family']))
@@ -1861,12 +1945,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             self._curr_linking_op = target_op
             self._apply_linking_opacity(target_op)
 
-        parent_main = self.parent() or getattr(self, 'main_window', None)
+        parent_main = self._get_main_window() or getattr(self, 'main_window', None)
         if parent_main and hasattr(parent_main, 'w_track_options'):
             try:
-                parent_main.w_track_options.load_config()
-            except Exception:
-                pass
                 parent_main.w_track_options.load_config()
             except Exception:
                 pass
@@ -2666,19 +2747,20 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         prefs['custom_markers'] = list(self.current_custom_markers)
         self.engine.save_preferences(prefs)
 
-        # Walk the widget parent hierarchy to find BadWordsGUI
-        # (self.parent() alone is not reliable when SettingsDialog is modal)
+        # Walk widget hierarchy or fall back to stored _main_window reference
         w = self
-        main_win = None
-        while w is not None:
-            try:
-                if hasattr(w, '_build_marker_radio_buttons') \
-                        and hasattr(w, '_apply_dynamic_shortcuts'):
-                    main_win = w
+        main_win = self._get_main_window()
+        if not (main_win and hasattr(main_win, '_build_marker_radio_buttons')):
+            main_win = None
+            while w is not None:
+                try:
+                    if hasattr(w, '_build_marker_radio_buttons') \
+                            and hasattr(w, '_apply_dynamic_shortcuts'):
+                        main_win = w
+                        break
+                    w = w.parent()
+                except RuntimeError:
                     break
-                w = w.parent()
-            except RuntimeError:
-                break
 
         if main_win is not None:
             try:
@@ -3223,8 +3305,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             for k in config.RESTART_REQUIRED_KEYS
             if k in new_prefs
         )
-        if sys.platform.startswith("win") and (new_prefs.get("always_on_top") != old_prefs.get("always_on_top")):
-            restart_needed = True
 
         self.engine.save_preferences(new_prefs)
         self.initial_prefs = self.engine.load_preferences() or {}
@@ -3234,42 +3314,36 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         from PySide6.QtCore import QTimer
         def restore_btn():
             self.btn_apply.setText(self.txt("btn_apply"))
-            self.btn_apply.setStyleSheet("") # Przywraca domyślny arkusz CSS
+            self.btn_apply.setStyleSheet("")
         QTimer.singleShot(1500, restore_btn)
 
-        main_win = self.parent()
+        main_win = self._get_main_window()
         icon_changed = new_prefs.get('app_icon') != old_prefs.get('app_icon')
-        if icon_changed and main_win:
+        if icon_changed:
             new_icon_name = new_prefs.get('app_icon', 'default')
-            if hasattr(main_win, 'titlebar') and hasattr(main_win.titlebar, 'update_titlebar_icon'):
-                main_win.titlebar.update_titlebar_icon(new_icon_name)
-            from gui.utils import update_macos_bundle_icon
-            update_macos_bundle_icon(new_icon_name)
+            apply_app_icon_everywhere(new_icon_name)
 
-        if hasattr(main_win, 'text_canvas'):
+        if main_win and hasattr(main_win, 'text_canvas'):
             main_win.text_canvas.invalidate_font_cache()
             main_win.text_canvas._calculate_layout()
             main_win.text_canvas.update()
 
-        if hasattr(main_win, 'update_silence_panel_ranges'):
+        if main_win and hasattr(main_win, 'update_silence_panel_ranges'):
             main_win.update_silence_panel_ranges()
 
-        if hasattr(main_win, 'set_panel_headers_visible'):
+        if main_win and hasattr(main_win, 'set_panel_headers_visible'):
             main_win.set_panel_headers_visible(new_prefs.get('show_panel_headers', True))
 
         aot_changed = new_prefs.get('always_on_top', False) != bool(old_prefs.get('always_on_top', False))
-        if aot_changed and main_win:
+        if aot_changed:
             is_top = bool(new_prefs.get('always_on_top'))
-            if hasattr(main_win, '_apply_always_on_top'):
-                main_win._apply_always_on_top(is_top)
-            else:
-                main_win.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
-                main_win.show()
-            try:
-                if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-                    self.engine.os_doc.set_always_on_top(int(self.winId()), is_top)
-            except Exception:
-                pass
+            if main_win:
+                if hasattr(main_win, '_apply_always_on_top'):
+                    main_win._apply_always_on_top(is_top)
+                else:
+                    main_win.setWindowFlag(Qt.WindowStaysOnTopHint, is_top)
+                    main_win.show()
+            self.set_always_on_top_state(is_top)
 
 
         if restart_needed:

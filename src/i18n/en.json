@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "Share your general location (country/city)",
   "tab_interface": "Interface",
   "lbl_always_on_top": "Always on top",
-  "tt_always_on_top": "Keeps the application window always on top of other windows (even if you click outside of it).\n\nNote: On Windows, changing this setting may require restarting the application to take full effect.",
+  "tt_always_on_top": "Keeps the application window always on top of other windows (even if you click outside of it).",
   "lbl_hidden_panels": "Hidden panels",
   "btn_export_settings": "Export Settings",
   "btn_import_settings": "Import Settings",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "Not Now",
   "chk_auto_crash_report": "Automatic Error & Crash Reports",
   "tt_auto_crash_report": "Automatically sends sanitized technical error reports when BadWords crashes or encounters an unhandled error. Usernames, personal paths, media files, and scripts are never included. Independent of anonymous telemetry.",
-  "startup_report_auto_sent": "Automatic error reporting is enabled - an anonymous diagnostic report is being sent automatically to the developer."
+  "startup_report_auto_sent": "Automatic error reporting is enabled - an anonymous diagnostic report is being sent automatically to the developer.",
+  "lbl_always_on_top_wayland_hint": "* Note: In a Linux Wayland session, the system may ignore application-requested Always on Top. If needed, right-click the window title/taskbar icon and enable 'Keep Above Others'.",
+  "menu_source": "Source",
+  "menu_timeline": "Timeline: {name}",
+  "menu_track": "Track: {name}"
 }

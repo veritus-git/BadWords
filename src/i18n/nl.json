@@ -247,7 +247,7 @@
   "chk_telemetry_geo": "Deel uw algemene locatie (land/stad)",
   "tab_interface": "Interface",
   "lbl_always_on_top": "Altijd op de voorgrond",
-  "tt_always_on_top": "Houdt het applicatievenster altijd boven andere vensters (zelfs als u erbuiten klikt).\n\nOpmerking: Op Windows kan het wijzigen van deze optie een herstart van de applicatie vereisen om volledig van kracht te worden.",
+  "tt_always_on_top": "Houdt het applicatievenster altijd boven andere vensters (zelfs als u erbuiten klikt).",
   "lbl_hidden_panels": "Verborgen panelen",
   "btn_export_settings": "Instellingen exporteren",
   "btn_import_settings": "Instellingen importeren",
@@ -628,5 +628,9 @@
   "btn_crash_consent_later": "Niet nu",
   "chk_auto_crash_report": "Automatische fout- en crashrapporten",
   "tt_auto_crash_report": "Verstuurt automatisch opgeschoonde technische foutrapporten bij crashes of onverwerkte fouten. Gebruikersnamen, privémappen, mediabestanden en scripts worden nooit verzonden. Onafhankelijk van telemetrie.",
-  "startup_report_auto_sent": "Automatische foutrapportage is ingeschakeld - een anoniem diagnoserapport wordt automatisch naar de ontwikkelaar verzonden."
+  "startup_report_auto_sent": "Automatische foutrapportage is ingeschakeld - een anoniem diagnoserapport wordt automatisch naar de ontwikkelaar verzonden.",
+  "lbl_always_on_top_wayland_hint": "* Opmerking: In een Linux Wayland-sessie kan het systeem deze optie negeren. Klik zo nodig met de rechtermuisknop op de taakbalk en kies 'Altijd bovenop'.",
+  "menu_source": "Bron",
+  "menu_timeline": "Tijdlijn: {name}",
+  "menu_track": "Spoor: {name}"
 }

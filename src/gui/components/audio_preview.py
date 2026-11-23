@@ -459,9 +459,9 @@ class AudioPreviewWidget(QFrame):
         self.cb_speed.currentTextChanged.connect(self.change_speed)
         self._on_volume_changed(100)
 
-        from gui.vsync import get_refresh_interval_ms
+        from gui.vsync import subscribe_timer
         self.update_timer = QTimer(self)
-        self.update_timer.setInterval(get_refresh_interval_ms())
+        subscribe_timer(self.update_timer)
         self.update_timer.timeout.connect(self.sync_playback)
 
         self.player.playbackStateChanged.connect(self.on_state_changed)

@@ -29,7 +29,7 @@ from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import CustomDropdown, ToggleSwitch
 from gui.widgets.labels import IDETooltip
 from gui.dialogs.msgbox import CustomMsgBox
-from gui.utils import _app_icon, _txt, get_export_icon, get_export_pixmap, get_layout_icon_path
+from gui.utils import _app_icon, _txt, _center_on_screen, get_export_icon, get_export_pixmap, get_layout_icon_path
 import assembler
 
 
@@ -61,20 +61,9 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         win_h = config.S(415)
         self.setFixedSize(win_w, win_h)
 
-        # Center over active main window or active screen
+        # Center over active main window or active screen (supports negative secondary coordinates)
         parent_w = parent or parent_gui
-        if parent_w:
-            geo = parent_w.geometry()
-            x = geo.x() + (geo.width() - win_w) // 2
-            y = geo.y() + (geo.height() - win_h) // 2
-            self.move(max(0, x), max(0, y))
-        else:
-            from PySide6.QtGui import QGuiApplication
-            screen = QGuiApplication.primaryScreen()
-            if screen:
-                sg = screen.availableGeometry()
-                self.move(sg.x() + (sg.width() - win_w) // 2,
-                          sg.y() + (sg.height() - win_h) // 2)
+        _center_on_screen(self, win_w, win_h, reference_window=parent_w)
 
         self._init_metadata()
         self._build_ui()
@@ -279,8 +268,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             self.setTitleBar(self._tb)
         self._tb.btn_min.hide()
         self._tb.btn_max.hide()
-        if hasattr(self._tb, '_lbl_title'):
-            self._tb._lbl_title.setText(self._t("dlg_export_title", "Export Timeline"))
+        self._tb.set_title(self._t("dlg_export_title", "Export Timeline"))
         root_l.addWidget(self._tb)
 
         # Body container

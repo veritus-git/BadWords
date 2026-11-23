@@ -26,7 +26,6 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
     def __init__(self, parent, title: str, message: str, btn_yes_text: str, btn_no_text: str = None, btn_cancel_text: str = None, checkbox_text: str = None, checkbox_checked: bool = False):
         super().__init__(parent)
         self.frameless_init(is_popup=True)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         
         self.setStyleSheet(f"""
             QDialog {{ background-color: transparent; }}
@@ -65,7 +64,8 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         root_layout = QVBoxLayout(self.inner_frame)
         root_layout.setContentsMargins(0, 0, 0, 0)
         
-        self._tb = CustomTitleBar(self, "en", parent=self.inner_frame)
+        tb_lang = getattr(parent, 'lang', None) or getattr(parent, '_lang', None) or 'en'
+        self._tb = CustomTitleBar(self, tb_lang, parent=self.inner_frame)
         if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
             self.setTitleBar(self._tb)
         self._tb.btn_min.hide()
@@ -119,14 +119,7 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         content_layout.addLayout(btn_layout)
         
         self.adjustSize()
-        if parent and hasattr(parent, 'window') and parent.window().isVisible():
-            p_win = parent.window()
-            p_geo = p_win.geometry()
-            x = p_geo.x() + (p_geo.width() - self.width()) // 2
-            y = p_geo.y() + (p_geo.height() - self.height()) // 2
-            self.move(x, y)
-        else:
-            _center_on_screen(self, self.width(), self.height())
+        _center_on_screen(self, self.width(), self.height(), reference_window=parent)
 
     def reject(self):
         # Esc key and window close route through reject()

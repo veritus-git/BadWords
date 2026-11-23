@@ -12,8 +12,9 @@
 - **Completed Roadmap Items**:
   - ✅ **Point 1** (*Startup pipeline, Python env gate & consent-based self-heal*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 6 and `ROADMAP_CEMENTING.md`).
   - ✅ **Point 2** (*DEV vs Installed separation, runtime paths, atomic config, single-write logging & session temp cleanup*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 2 & Sec. 8 and `ROADMAP_CEMENTING.md`).
+  - ✅ **Point 3** (*Frameless windows, custom titlebar, Always on Top, app icon refresh, zero startup micro-window flashes & cross-OS VSync*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 4 and `ROADMAP_CEMENTING.md`).
 - **Next Pending Roadmap Item**:
-  - ⬜ **Point 3** (*Frameless window, custom title bar, Always on Top & cross-OS refresh/animation smoothness*).
+  - ⬜ **Point 4** (*i18n consistency, zero hardcodes/emojis, QPalette immunity, progress bar rounding & UI scaling redesign*).
 - **Recent Process / Rules Changes (`2026-11-23`)**:
   - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
   - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.
@@ -46,10 +47,11 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **74 tests** across 9 modules, plus **18 Cargo tests** in `installer/`).
+Test Runner: `run_tests.py` using Python `unittest` (total: **82 tests** across 10 modules, plus **18 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
+| `tests/test_window_titlebar_vsync.py` | Point 3 window/titlebar/VSync regression & visual suite: 8-edge Win32 `WM_NCHITTEST` + `HTMAXBUTTON` Snap Layouts + `HTCAPTION`, 70% x 70% default & user normal-size restoration, zero orphan startup `Show`/`WinIdChange` flashes, independent `SettingsDialog` top-level window + responsive sidebar + centered 660px content + Wayland hint + PNG renders, neutral close-button hover, live `apply_app_icon_everywhere`, negative-coord multi-monitor clamping & popup Always-on-Top inheritance, macOS `QtCore.framework` VSync & dynamic subscriber pacing. | **PASS** |
 | `tests/test_runtime_data_and_isolation.py` | DEV vs Installed isolation, one-time stray `src/` migration to `.dev_workspace/`, persistent per-user profile fallback on read-only install directories, concurrent atomic JSON writes + `.bak` corrupt config recovery and key salvage, single-write log deduplication under native launcher `stdout`/`stderr` redirection, 5 MB startup log trimming, session-protected 24h temp cleanup (`SessionTempManager`), Mac App Store DaVinci Resolve container discovery, Windows 8.3 short paths in `BadWords Bridge.lua`, and `osdoc` module helpers (`log_warning`, `load_preferences`). | **PASS** |
 | `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), new-user dual privacy/crash welcome popup (default ON, geo dimming), existing-user crash report consent dialog, About & Privacy `auto_crash_report` toggle, `check_telemetry` routing, and shared Discord relay support upload validation. | **PASS** |
 | `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, CUDA functionality probing, GitHub issue #19 (`cublas64_12.dll` missing probe detection), and silent Resolve decoupling when Resolve is not installed. | **PASS** |
@@ -152,20 +154,24 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **74 tests** across 
 12. **Clean-OS Installer Fixes Found in KVM VMs (`badwords-linux-kde` Fedora 44 & `badwords-win11`, 2026-11-23)**:
    - **Fedora 44 / Modern Linux & macOS (Zero-Sudo Portable Python 3.12)**: Replaced failing detached `sudo dnf install -y python3` / `sudo installer -pkg` flows in `installer/src/os/linux.rs`, `macos.rs`, `mod.rs`, and `engine.rs` with automatic relocatable CPython 3.12 (`astral-sh/python-build-standalone`, stored in `~/.local/share/BadWords-runtime/python312` or `~/Library/Application Support/BadWords-runtime/python312`) requiring zero root password, plus verified `venv` + `ensurepip` capability and Wayland clipboard fallback (`wl-copy`/`xclip`/`xsel`) + visible log path for `Copy All Logs`.
    - **Clean Windows 11 (`VCRUNTIME140.dll` Fix)**: Added static CRT linking (`+crt-static` in `installer/.cargo/config.toml` and `.github/workflows/build-installer.yml`, plus `/MT` for `BadWords.exe` and a CI `dumpbin /dependents` gate forbidding dynamic `VCRUNTIME140`/`MSVCP140` imports). Added automatic `vc_redist.x64.exe` check/install in `installer/src/os/windows.rs` and `setupfiles/setup.py` for PySide6/ctranslate2, and upgraded `setupfiles/windows-setup.ps1` to pre-detect missing `VCRUNTIME140.dll` or immediate startup exit codes and drop cleanly into the Python terminal fallback.
+13. **Point 3 Cementing: Frameless Windows, Custom Titlebar, Always on Top, App Icons, Zero Startup Flashes & Cross-OS VSync (2026-11-23)**:
+    - Hardened `src/gui/components/mixins.py` with pure testable `compute_win_nchittest()` (all 8 resize edges/corners, `HTMAXBUTTON` Snap Layouts, `HTCAPTION`), `WM_GETMINMAXINFO` active-monitor work area bounds, `WM_NCRBUTTONUP` system menu, `GetWindowRect` mixed-DPI coordinate conversion, 8 Linux `ResizeGrip` edges/corners, `init_normal_geometry()` (70% x 70% default + user size persistence & `SetWindowPlacement` drag-detach restore), and Linux CSD shadow margin collapsing when maximized.
+    - Eliminated Windows 11 startup micro-window flashes (`create_panel_header()` no longer calls `setVisible(True)` before layout attachment; `SettingsDialog` removed `Qt.Tool | Qt.Dialog` and premature `winId()` in `__init__`).
+    - Upgraded `SettingsDialog` into an independent, non-modal, resizable/minimizable/maximizable top-level `Qt.Window` (native shadow on Win/macOS, collapsible `14px` CSD shadow on Linux, responsive sidebar widening to longest tab label, AI-chat-style centered `660px` max content width, Wayland Always-on-Top hint), fixed `CustomTitleBar` (`set_title`, `config.S(12)` maximize icon, zero source-info overlap, neutral gray `X` hover preserved), fixed live `apply_app_icon_everywhere()` without restart, removed Always-on-Top restart requirement, unified popup Always-on-Top inheritance and negative-coordinate multi-monitor clamping, added Linux `setDesktopFileName("badwords")` and macOS `showMaximized()` + localized menus + `Cmd+,`/`Cmd+M`, and fixed `vsync.py` for macOS `QtCore.framework`, Windows ABI arity, active-screen filtering, and dynamic `subscribe_timer()` updates across all animated widgets. Documented in `docs/CEMENTED.md` (Section 4) and verified with 8 tests + 5 PNG renders in `tests/test_window_titlebar_vsync.py`.
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. **Known Deferred Startup Issue (Recorded for Point 3 / Point 15 - DO NOT TOUCH YET)**:
-   - On Windows 11 startup, ~3 brief micro-windows flash on screen during launch (caused by `SettingsDialog` / hidden window pre-initialization). Logged per PO instruction to be investigated and fixed cleanly during Point 3 (frameless window lifecycle) / Point 15 (`SettingsDialog`).
+1. **UI Scaling Slider Redesign (Recorded for Point 4 / Point 15)**:
+   - PO noted the Settings UI scaling slider is currently broken; target design is for its default to equal native OS display scaling and scale cleanly like native OS apps.
 2. **Release Hygiene Reminder**:
    - Before cutting the next release tag (e.g., `v4.0.2` / `v4.1.0`), update `src/config/release_notes.json` with all real user-facing changes since `v4.0.1` so the Update dialog displays the complete changelog.
-3. **Continue Roadmap Cementing**: Next uncompleted item is **Point 3** in `ROADMAP_CEMENTING.md` (Frameless window, custom title bar, Always on Top, and cross-OS animation smoothness).
-3. **Baseline Verification Commands**:
-   - `python3 run_tests.py` (74 tests)
+3. **Continue Roadmap Cementing**: Next uncompleted item is **Point 4** in `ROADMAP_CEMENTING.md` (i18n consistency, zero hardcodes/emojis, QPalette immunity, progress bar rounding & UI scaling).
+4. **Baseline Verification Commands**:
+   - `python3 run_tests.py` (82 tests)
    - `python3 -m compileall src`
    - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
    - `cd installer && cargo check && cargo test` (18 tests)
-3. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
-4. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.
+5. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
+6. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.

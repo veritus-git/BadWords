@@ -24,7 +24,7 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 1. Startup & runtime guard
 2. Resolve stream proxy
 3. CUDA/CPU isolation
-4. Frameless window mixin
+4. Frameless windows & VSync
 5. Global filter debounce
 6. Auto crash reporting
 7. Runtime data & isolation
