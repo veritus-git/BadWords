@@ -11,8 +11,9 @@
 - **Current Phase**: Stage 1 (v4.1 - Foundations, startup, and system consistency)
 - **Completed Roadmap Items**:
   - ✅ **Point 1** (*Startup pipeline, Python env gate & consent-based self-heal*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 6 and `ROADMAP_CEMENTING.md`).
+  - ✅ **Point 2** (*DEV vs Installed separation, runtime paths, atomic config, single-write logging & session temp cleanup*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 2 & Sec. 8 and `ROADMAP_CEMENTING.md`).
 - **Next Pending Roadmap Item**:
-  - ⬜ **Point 2** (*DEV vs Installed separation, runtime paths, logging & temp cleanup*).
+  - ⬜ **Point 3** (*Frameless window, custom title bar, Always on Top & cross-OS refresh/animation smoothness*).
 - **Recent Process / Rules Changes (`2026-11-23`)**:
   - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
   - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.
@@ -45,10 +46,11 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **66 tests** across 8 modules, plus **18 Cargo tests** in `installer/`).
+Test Runner: `run_tests.py` using Python `unittest` (total: **74 tests** across 9 modules, plus **18 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
+| `tests/test_runtime_data_and_isolation.py` | DEV vs Installed isolation, one-time stray `src/` migration to `.dev_workspace/`, persistent per-user profile fallback on read-only install directories, concurrent atomic JSON writes + `.bak` corrupt config recovery and key salvage, single-write log deduplication under native launcher `stdout`/`stderr` redirection, 5 MB startup log trimming, session-protected 24h temp cleanup (`SessionTempManager`), Mac App Store DaVinci Resolve container discovery, Windows 8.3 short paths in `BadWords Bridge.lua`, and `osdoc` module helpers (`log_warning`, `load_preferences`). | **PASS** |
 | `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), new-user dual privacy/crash welcome popup (default ON, geo dimming), existing-user crash report consent dialog, About & Privacy `auto_crash_report` toggle, `check_telemetry` routing, and shared Discord relay support upload validation. | **PASS** |
 | `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, CUDA functionality probing, GitHub issue #19 (`cublas64_12.dll` missing probe detection), and silent Resolve decoupling when Resolve is not installed. | **PASS** |
 | `tests/test_visual_progress_bar.py` | Visual regression test for `LiquidProgressBar`: renders screenshots into `tests/artifacts/`, verifies all 4 rounded corners and anti-aliasing clipping across determinate (50%, 100%) and 3-phase indeterminate states (entering, centered, exiting) to prevent squared-off corner regressions (`setClipRect`). | **PASS** |
@@ -144,15 +146,18 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **66 tests** across 
    - Implemented independent `auto_crash_report` consent (`user.json`) and separated it from `telemetry_opt_in`: expanded `TelemetryPopup` for new users (two cards, auto crash reports ON by default, animated geo dimming, `Save & Continue` / `Disable All`) and created dedicated `CrashReportConsentDialog` for existing users regardless of prior telemetry choice (`Enable Error Reports` / `Not Now`).
    - Added `chk_auto_crash_report` toggle to Settings -> About & Privacy, replaced remaining emojis (`👋`, `☕`) with vector SVG/clean text across UI and all 11 `src/i18n/*.json` files (630 keys per language).
    - Added runtime `sys.excepthook` + `threading.excepthook` capture (`install_runtime_crash_hooks`), startup auto-send support in `fatal_dialog.py`, privacy scrubbing (`sanitize_crash_text`), and multi-layer anti-spam rate limiting (`_CrashRateLimiter`) unified on Discord `post_support_report`. Documented in `docs/CEMENTED.md` (Section 7).
+11. **Point 2 Cementing: DEV vs Installed Workspace Isolation, Atomic Config, Single-Write Logging & Session Temp Manager (2026-11-23)**:
+   - Created `src/config/runtime_data.py` decoupling DEV/Installed detection, stray `src/` migration, dynamic sibling `BadWords FILES` discovery, empirical directory write probing (`is_dir_writable`), persistent OS user-profile fallback (`get_user_profile_data_dir`), atomic JSON persistence (`atomic_write_json`), `.bak` corruption backup and regex key salvage (`load_json_with_recovery`), 5 MB startup log trimming (`trim_log_file_if_needed`), launcher stream redirect detection (`is_stream_redirected_to_file`), session-protected 24h temp cleanup (`SessionTempManager`), and Mac App Store DaVinci Resolve container discovery (`get_macos_app_store_resolve_dirs`).
+   - Eliminated duplicate log lines when `stdout`/`stderr` are redirected to `badwords_debug.log` by native C launchers (`launcher.c`), moved `offset=0.133` / `pad=0.0` / `snap_max=0.25` migration to a one-time `< 4.0.0` upgrade step in `OSDoctor.load_settings()`, added Windows 8.3 `__BADWORDS_SHORT_INSTALL_DIR__` to `BadWords Bridge.lua`, removed hardcoded `/mnt/dump` paths, fixed `osdoc.log_warning` and `osdoc.load_preferences()`, added 8 live tests in `tests/test_runtime_data_and_isolation.py`, and documented in `docs/CEMENTED.md` (Section 2 & Section 8).
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
 1. **Complete OS Setup Inside Local VMs (Interactive)**: Finish clicking through the OS setup wizards in `virt-manager` for `badwords-win11` and `badwords-linux-kde` (instructions provided to PO).
-2. **Continue Roadmap Cementing**: Next uncompleted item is **Point 2** in `ROADMAP_CEMENTING.md` (DEV vs Installed isolation, runtime paths, logging, and temp cleanup).
+2. **Continue Roadmap Cementing**: Next uncompleted item is **Point 3** in `ROADMAP_CEMENTING.md` (Frameless window, custom title bar, Always on Top, and cross-OS animation smoothness).
 3. **Baseline Verification Commands**:
-   - `python3 run_tests.py` (66 tests)
+   - `python3 run_tests.py` (74 tests)
    - `python3 -m compileall src`
    - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
    - `cd installer && cargo check && cargo test` (18 tests)

@@ -364,6 +364,8 @@ class PreferencesMixin:
             temp_dir = self.os_doc.get_temp_folder()
             bws_extract_dir = os.path.join(temp_dir, f"bws_import_{int(time.time())}")
             os.makedirs(bws_extract_dir, exist_ok=True)
+            if hasattr(self.os_doc, "register_active_temp_path"):
+                self.os_doc.register_active_temp_path(bws_extract_dir)
 
             manifest = {}
             audio_path = None

@@ -35,13 +35,14 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 - **Why Removed:** BadWords 4.x requires Python 3.10-3.12 (enforced at startup before any third-party import). The obsolete runtime patch on `PySide6/__init__.py` was removed in Point 1 cementing.
 
 ### 2. Resolve Headless Console Stream Buffering (`ResolveStreamProxy`)
-- **Status:** Protected Workaround (Pending full Stage 1 audit in Point 2)
-- **Files:** `src/osdoc.py` (lines 67-104)
-- **How It Works:** Wraps `stdout`/`stderr` streams, accumulates partial writes in `self._buffer` until `\n`, strips redundant `[INFO]`/`[ERROR]`/`[STDOUT/ERR]` prefixes, forwards complete lines to the logger, and swallows stream write/flush errors intentionally.
-- **Why It Exists:** Prevents crashes or dropped tracebacks when running inside DaVinci Resolve's embedded Python console or headless launchers.
+- **Status:** Cemented (2026-11-23 - see Section 8 for full Point 2 documentation)
+- **Files:** `src/osdoc.py` (`ResolveStreamProxy`, `log_info`, `log_warn`, `log_warning`, `log_error`), `src/config/runtime_data.py` (`is_stream_redirected_to_file`, `trim_log_file_if_needed`)
+- **How It Works:** Wraps `stdout`/`stderr` streams, accumulates partial writes in `self._buffer` until `\n`, strips redundant `[INFO]`/`[WARN]`/`[ERROR]`/`[STDOUT/ERR]` prefixes, forwards complete lines to the logger, and suppresses raw stream echoing (`suppress_stream_echo=True`) whenever `sys.__stdout__` or `sys.__stderr__` already points to `badwords_debug.log` via native C launcher `dup2`.
+- **Why It Exists:** Prevents crashes or dropped tracebacks when running inside DaVinci Resolve's embedded Python console or headless launchers while eliminating duplicate log lines when launched from desktop binaries.
 - **Invariants (DO NOT BREAK):**
   - `# INVARIANT:` Must implement `write`, `flush`, and `__getattr__` delegation so callers expecting standard file-like stream attributes keep working.
-- **Regression Tests:** Covered in Stage 1 Point 2 cementing.
+  - `# INVARIANT:` When `stdout`/`stderr` is redirected to `badwords_debug.log`, `log_info`/`log_warn`/`log_error` and `ResolveStreamProxy` must not echo a second raw copy to the redirected descriptor.
+- **Regression Tests:** `tests/test_runtime_data_and_isolation.py` (`test_live_launcher_redirected_logging_writes_each_line_once`, `test_5mb_log_trimming_on_startup`)
 
 ### 3. CUDA / cuDNN Dynamic DLL Injection & CPU Isolation
 - **Status:** Protected Workaround & Tested (`tests/test_host_env_fixes.py`; pending full Stage 2 audit in Point 6)
@@ -125,3 +126,36 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
   - `# INVARIANT:` All automatic crash reports must pass through `sanitize_crash_text()`, `_CrashRateLimiter`, and `post_support_report()` (matching Settings -> Support webhook format).
 - **Regression Tests:** `tests/test_startup_guard.py` (`test_privacy_scrubbing_rate_limit_and_live_http_relay`), `tests/test_settings_and_version.py` (`test_telemetry_popup_drop_shadow_and_defaults`, `test_existing_user_crash_report_consent_dialog`, `test_settings_about_page_crash_toggle_and_render`, `test_check_telemetry_routing_new_vs_existing_users`).
 - **Do Not Change Without Product Owner Approval:** New-user default ON state for `auto_crash_report`, existing-user telemetry independence, anti-spam rate-limit caps, and Discord relay payload compatibility.
+
+### 8. DEV vs Installed Workspace Isolation, Atomic Config, Single-Write Logging & Session Temp Manager
+- **Status:** Cemented (2026-11-23)
+- **Files:** `src/config/runtime_data.py`, `src/osdoc.py`, `src/engine/audio_engine.py`, `src/engine/audio_extraction.py`, `src/engine/preferences.py`, `src/api/resolve_bridge.py`, `src/gui/main_window.py`, `src/main.py`, `src/startup/crash_report.py`, `setupfiles/BadWords Bridge.lua`, `setupfiles/windows/launcher.c`, `setupfiles/linux/launcher.c`, `setupfiles/macos/launcher.c`, `tests/test_runtime_data_and_isolation.py`
+- **How It Works:**
+  1. **Decoupled Data & Path Layer (`src/config/runtime_data.py`)**: Extracted DEV/Installed detection (`detect_dev_mode`), one-time stray `src/` file cleanup (`migrate_stray_src_files_to_dev_workspace`), dynamic sibling `BadWords FILES` discovery (`discover_sibling_installed_dir`), empirical directory write probing (`is_dir_writable`), persistent OS user-profile fallback (`get_user_profile_data_dir`), atomic JSON persistence (`atomic_write_json`), corruption backup & key salvage (`load_json_with_recovery`), startup log trimming (`trim_log_file_if_needed`), stream redirection detection (`is_stream_redirected_to_file`), session-protected temp management (`SessionTempManager`), and Mac App Store container discovery (`get_macos_app_store_resolve_dirs`) out of `src/osdoc.py`.
+  2. **Persistent User-Profile Fallback on Read-Only Install Dirs**: When `install_dir` is read-only in Installed mode (e.g., `C:\Program Files\BadWords` tested via empirical file probe `is_dir_writable`, avoiding Windows `os.access` NTFS ACL false positives), `OSDoctor` routes `app_data_dir` to the persistent per-user OS profile (`%LOCALAPPDATA%\BadWords` on Windows, `~/Library/Application Support/BadWords` on macOS, `$XDG_DATA_HOME/BadWords` or `~/.local/share/BadWords` on Linux) before falling back to `Temp/BadWords_Fallback`. Log filename is uniformly `badwords_debug.log`.
+  3. **Atomic JSON Config Writes, `.bak` Backup & One-Time Calibration Migration**:
+     - All `user.json` and `settings.json` writes go through `atomic_write_json()` (re-entrant lock -> sibling `.tmp` file -> `flush` + `os.fsync` -> `os.replace`).
+     - If `user.json` or `settings.json` is corrupted on startup, `load_json_with_recovery()` copies the damaged file to `<file>.bak` and salvages readable primitive key-value pairs via regex before merging with defaults.
+     - Legacy `< 4.0.0` configs migrate internal calibration constants (`offset=0.133`, `pad=0.0`, `snap_max=0.25`) once in `OSDoctor.load_settings()`; the per-startup forced disk overwrite in `AudioEngine.__init__()` was removed.
+  4. **Single-Write Logging & 5 MB Startup Trimming**:
+     - Native C launchers (`windows/launcher.c`, `linux/launcher.c`, `macos/launcher.c`) set `BADWORDS_STDIO_REDIRECTED=1` upon `dup2` redirection to `badwords_debug.log`, and `is_stream_redirected_to_file()` also verifies descriptor identity via `os.path.sameopenfile`.
+     - When `sys.__stdout__` / `sys.__stderr__` points to `badwords_debug.log`, `log_info`, `log_warn` (plus alias `log_warning`), `log_error`, and `ResolveStreamProxy` suppress secondary console echoing so every log line and traceback is written **exactly once**.
+     - On startup, `trim_log_file_if_needed()` checks if `badwords_debug.log` exceeds `5 MB`; if so, it atomically retains the newest `2.5 MB` aligned to a line boundary.
+  5. **Session-Protected Temp Directory & 24h Stale Cleanup (`SessionTempManager`)**:
+     - `OSDoctor` registers active project temp files/folders (`wav_path`, `_direct_wav`, `bws_import_*`, background `BW_proxy_*.mp4`) via `register_active_temp_path()` and persists `.bw_session_<pid>.json`.
+     - `cleanup_temp(max_age_seconds=86400, close_session=...)` runs on startup (`close_session=False`) and shutdown (`close_session=True`): it never deletes files belonging to any live PID's active session, deletes unreferenced temp files older than **24 hours** (`86400s`), and immediately deletes one-shot helper scripts (`fw_downloader.py`, `bw_runner_*.py`, `bw_drt_probe_*.drt`, concat lists) and the session lock when closing.
+  6. **Mac App Store Resolve Sandbox & Windows 8.3 Bridge Paths**:
+     - On macOS, `get_macos_app_store_resolve_dirs()` discovers existing `~/Library/Containers/<bundle-id>/Data/Library/Application Support/Blackmagic Design/DaVinci Resolve` directories across Free (`DaVinciResolveLite`) and Studio (`DaVinciResolveAppStore`) MAS containers, adding their `Fusion/Scripts/Utility` and `Fusion/Profiles/*/Fusion.prefs` to `OSDoctor` and `ResolveBridgeClient`.
+     - On Windows, `sync_resolve_scripts()` injects both `__BADWORDS_INSTALL_DIR__` and 8.3 `__BADWORDS_SHORT_INSTALL_DIR__` into `BadWords Bridge.lua` so Lua 5.1 `loadfile()` succeeds even when the Windows username contains Polish/Unicode characters.
+- **OS-Specific Behavior:**
+  - **Windows:** Empirical write probe detects NTFS ACL read-only dirs (`C:\Program Files`); 8.3 short path (`get_short_path`) injected into `BadWords Bridge.lua`; `_is_pid_alive` uses Win32 `OpenProcess` + `GetExitCodeProcess`.
+  - **Linux:** Installed mode uses `~/Videos/BadWords_Temp` when `~/Videos` exists so sandboxed/containerized DaVinci Resolve can read exported XML/audio files; DEV mode always isolates temp inside `.dev_workspace/temp`.
+  - **macOS:** Supports both standard Blackmagic installer paths and Mac App Store sandbox container paths (`~/Library/Containers/...`) for script deployment, in-container mailbox, and `Fusion.prefs` polling.
+- **Invariants (DO NOT BREAK):**
+  - `# INVARIANT:` DEV mode must never leave `settings.json`, `user.json`, `saves/`, `temp/`, or `badwords_debug.log` inside `src/`.
+  - `# INVARIANT:` All `user.json` and `settings.json` writes must use `atomic_write_json()`, and corrupt files must be backed up to `.bak` with key salvage before healing.
+  - `# INVARIANT:` Never echo duplicate `[INFO]`/`[WARN]`/`[ERROR]` lines to `stdout`/`stderr` when redirected to `badwords_debug.log`.
+  - `# INVARIANT:` `cleanup_temp()` must never delete files registered to an active session (`register_active_temp_path`), and default stale retention is 24 hours (`86400s`).
+  - `# INVARIANT:` `osdoc` must expose both `log_warn` and `log_warning`, as well as module-level `load_preferences()`.
+- **Regression Tests:** `tests/test_runtime_data_and_isolation.py` (8 comprehensive live empirical tests).
+- **Do Not Change Without Product Owner Approval:** 24-hour temp retention threshold, 5 MB log cap, persistent user-profile fallback priority, and internal calibration constants (`offset=0.133`, `pad=0.0`, `snap_max=0.25`).

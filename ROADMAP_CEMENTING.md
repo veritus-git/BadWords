@@ -14,7 +14,7 @@
 > *Poniższa lista pozwala od razu sprawdzić, co zostało już w pełni zamknięte i zabezpieczone, a co czeka na swoją sesję.*
 
 - [x] **Punkt 1** - Start aplikacji, dobór środowiska Pythona i „samoleczenie” przy uruchomieniu *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 6)*
-- [ ] **Punkt 2** - Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych
+- [x] **Punkt 2** - Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 8)*
 - [ ] **Punkt 3** - Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
 - [ ] **Punkt 4** - Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu
 - [ ] **Punkt 5** - Wyciąganie dźwięku z wideo/osi, normalizacja głośności i wstępne wykrywanie ciszy
@@ -43,7 +43,7 @@
 
 ## Przegląd etapów
 
-1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** - punkty 1-4 *(ukończono: 1/4)*
+1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** - punkty 1-4 *(ukończono: 2/4)*
 2. **Etap 2 (v4.2): Dźwięk, transkrypcja AI i analiza tekstu** - punkty 5-9 *(ukończono: 0/5)*
 3. **Etap 3 (v4.3): Ekran powitalny, edytor, podgląd audio/wideo i okna ustawień** - punkty 10A-10C, 11, 12A-12B, 13-15 *(ukończono: 0/9)*
 4. **Etap 4 (v4.4): DaVinci Resolve, montaż osi czasu, eksport i zapis projektów** - punkty 16-19 *(ukończono: 0/4)*
@@ -106,13 +106,20 @@ Po mojej akceptacji i wdrożeniu zmian pamiętaj o:
 
 ---
 
-### 2. Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych
+### 2. ✅ [ZAKOŃCZONO 2026-11-23] Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych
 
-- **Co obejmuje:** Sposób, w jaki BadWords decyduje, gdzie zapisywać ustawienia, pamięć o użytkowniku, zapisy projektów, pliki tymczasowe i dzienniki błędów (logi) - osobno podczas Twojej pracy w repozytorium, a osobno u zwykłego użytkownika po instalacji. Obejmuje też sprzątanie starych plików tymczasowych oraz przenoszenie starych ustawień z poprzednich wersji.
-- **Dlaczego to ważne:** Chroni repozytorium przed zaśmiecaniem plikami prywatnymi i gwarantuje, że czyszczenie plików tymczasowych nie skasuje czegoś ważnego w trakcie pracy ani nie zepsuje ścieżek z polskimi znakami czy spacjami na Windowsie.
-- **Porządki „pod spodem” pod przyszłe funkcje:** **Tak.** Główny plik zarządzający ścieżkami systemowymi urósł do ogromnych rozmiarów i zajmuje się jednocześnie ścieżkami dyskowymi, zapisem ustawień, wykrywaniem DaVinci Resolve, sprawdzaniem karty graficznej i przycinaniem okien. Warto wydzielić osobny, czysty obszar tylko dla zarządzania danymi i ścieżkami dyskowymi, żeby nie trzeba było dotykać kodu systemowego przy dodawaniu nowych ustawień.
+> **Status:** ✅ **ZAKOŃCZONO I ZACEMENTOWANO (2026-11-23)**
+> **Co zostało naprawione dla użytkownika:**
+> - Wydzielono czysty moduł zarządzania danymi, ścieżkami, atomowym zapisem ustawień, logowaniem i plikami tymczasowymi (`src/config/runtime_data.py`), odciążając `src/osdoc.py`.
+> - Wprowadzono atomowy zapis `settings.json` i `user.json` z automatyczną kopią `.bak` i odzyskiwaniem kluczy w razie uszkodzenia pliku (np. po nagłym wyłączeniu prądu) oraz bezpieczny folder zapasowy w stałym profilu użytkownika (`AppData\Local\BadWords`, `~/Library/Application Support/BadWords`, `~/.local/share/BadWords`) zamiast ulotnego katalogu `Temp` przy braku praw zapisu w folderze instalacji.
+> - Wyeliminowano podwójne zapisywanie tych samych linijek i błędów w `badwords_debug.log` po uruchomieniu przez natywny uruchamiacz oraz dodano przycinanie pliku logu powyżej 5 MB na starcie (z zachowaniem najnowszych 2,5 MB historii).
+> - Zabezpieczono pliki tymczasowe aktywnie otwartego projektu przed skasowaniem podczas wielogodzinnych sesji montażowych (domyślny próg sprzątania starych, nieużywanych plików to 24 godziny, a jednorazowe skrypty pomocnicze znikają od razu po zamknięciu).
+> - Dodano automatyczną obsługę kontenerów DaVinci Resolve z Mac App Store (`~/Library/Containers/...`), krótkie ścieżki Windows 8.3 w `BadWords Bridge.lua` dla kont z polskimi znakami, usunięto sztywne ścieżki `/mnt/dump/...` oraz naprawiono odwołania `log_warning` i `osdoc.load_preferences()`.
+> **Gdzie opisano szczegóły i testy:** `docs/CEMENTED.md` (Sekcja 2 i Sekcja 8), `docs/DEV_STATE.md` (Sekcja 4, pkt 11), testy w `tests/test_runtime_data_and_isolation.py`.
 
-**Prompt do wklejenia:**
+<details>
+<summary>Archiwalny prompt zrealizowanego punktu 2 (punkt zamknięty - nie uruchamiaj ponownie)</summary>
+
 ```text
 Przeanalizuj punkt 2 planu cementowania: Rozdzielenie trybu deweloperskiego od wersji zainstalowanej oraz zarządzanie plikami danych, zapisami i logami.
 
@@ -133,6 +140,8 @@ ZASADY PRACY:
 
 Po mojej akceptacji i wdrożeniu: napisz testy ochronne (w tests/ i uruchom run_tests.py), przetestuj na żywo realny zapis/migrację/czyszczenie w bezpiecznym folderze testowym (nie tylko na makietach), wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3-4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 2 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
+
+</details>
 
 ---
 

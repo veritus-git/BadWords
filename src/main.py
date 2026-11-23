@@ -201,7 +201,7 @@ class AppController:
             except Exception:
                 pass
         if self.os_doc:
-            self.os_doc.cleanup_temp()
+            self.os_doc.cleanup_temp(close_session=True)
         crash_report.wait_for_pending_reports(timeout=2.0)
         app = QApplication.instance()
         if app is not None:

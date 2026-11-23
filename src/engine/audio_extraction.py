@@ -392,6 +392,8 @@ class AudioExtractionMixin:
             _direct_wav = os.path.join(temp_dir, f"{unique_id}_direct.wav")
             ok_direct = self._extract_audio_direct(direct_info, _direct_wav, callback_status=callback_status)
             if ok_direct and os.path.exists(_direct_wav) and os.path.getsize(_direct_wav) > 0:
+                if hasattr(self.os_doc, "register_active_temp_path"):
+                    self.os_doc.register_active_temp_path(_direct_wav)
                 log_info(f"[PreviewAudio] Direct source clip audio extraction successful → {_direct_wav}")
                 return _direct_wav
 
@@ -416,6 +418,8 @@ class AudioExtractionMixin:
                 end_frame_override=end_frame_override,
             )
             if wav_path and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                if hasattr(self.os_doc, "register_active_temp_path"):
+                    self.os_doc.register_active_temp_path(wav_path)
                 log_info(f"[PreviewAudio] Resolve audio render successful → {wav_path}")
                 return wav_path
         except Exception as e:

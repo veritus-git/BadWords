@@ -143,6 +143,7 @@ int main(int argc, char *argv[]) {
         dup2(log_fd, STDERR_FILENO);
         setvbuf(stdout, NULL, _IONBF, 0);
         setvbuf(stderr, NULL, _IONBF, 0);
+        setenv("BADWORDS_STDIO_REDIRECTED", "1", 1);
     }
     fprintf(stderr, "\n=== BadWords macOS Native Launcher (PID %d) ===\n", getpid());
     fprintf(stderr, "[LAUNCHER] Contents dir: %s\n", contents_dir);

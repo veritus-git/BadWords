@@ -25,6 +25,24 @@ import json
 import hashlib
 import ctypes
 
+from config.runtime_data import (
+    DEFAULT_TEMP_MAX_AGE_SECONDS,
+    SessionTempManager,
+    atomic_write_json,
+    detect_dev_mode,
+    get_macos_app_store_resolve_dirs,
+    get_user_profile_data_dir,
+    is_dir_writable,
+    is_stream_redirected_to_file,
+    load_json_with_recovery,
+    migrate_stray_src_files_to_dev_workspace,
+    trim_log_file_if_needed,
+)
+
+_ACTIVE_OS_DOC = None
+_STDOUT_IS_LOG_FILE = False
+_STDERR_IS_LOG_FILE = False
+
 # ==========================================
 # 0. WINDOWS SUBPROCESS SAFETY HOOK
 # ==========================================
@@ -73,10 +91,13 @@ class ResolveStreamProxy:
     """
     Captures stdout/stderr streams so error messages
     go both to the DaVinci console and the log file.
+    # INVARIANT: When stdout/stderr is already redirected to badwords_debug.log by the native launcher,
+    suppress_stream_echo prevents writing every line a second time to the same file.
     """
-    def __init__(self, stream, log_func):
+    def __init__(self, stream, log_func, suppress_stream_echo: bool = False):
         self.stream = stream
         self.log_func = log_func
+        self.suppress_stream_echo = bool(suppress_stream_echo)
         self._buffer = ""
     
     def write(self, data):
@@ -87,9 +108,16 @@ class ResolveStreamProxy:
                 self._buffer = lines.pop()
                 for line in lines:
                     txt = line.rstrip("\r\n")
-                    if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt:
+                    if (
+                        txt
+                        and not txt.startswith("[INFO]")
+                        and not txt.startswith("[WARN]")
+                        and not txt.startswith("[ERROR]")
+                        and "[STDOUT/ERR]" not in txt
+                    ):
                         self.log_func(f"[STDOUT/ERR] {txt}")
-            self.stream.write(data)
+            if not self.suppress_stream_echo and self.stream is not None:
+                self.stream.write(data)
         except Exception:
             pass  # StreamProxy: intentional silencing of logging errors
     
@@ -97,10 +125,17 @@ class ResolveStreamProxy:
         try:
             if self._buffer:
                 txt = self._buffer.rstrip("\r\n")
-                if txt and not txt.startswith("[INFO]") and not txt.startswith("[ERROR]") and "[STDOUT/ERR]" not in txt:
+                if (
+                    txt
+                    and not txt.startswith("[INFO]")
+                    and not txt.startswith("[WARN]")
+                    and not txt.startswith("[ERROR]")
+                    and "[STDOUT/ERR]" not in txt
+                ):
                     self.log_func(f"[STDOUT/ERR] {txt}")
                 self._buffer = ""
-            if hasattr(self.stream, 'flush'): self.stream.flush()
+            if not self.suppress_stream_echo and hasattr(self.stream, 'flush'):
+                self.stream.flush()
         except Exception:
             pass  # StreamProxy: flush may not be supported by all streams
     
@@ -109,6 +144,8 @@ class ResolveStreamProxy:
 
 def log_info(msg):
     logging.info(msg)
+    if _STDOUT_IS_LOG_FILE:
+        return
     try:
         print(f"[INFO] {msg}")
         sys.stdout.flush()
@@ -117,6 +154,8 @@ def log_info(msg):
 
 def log_error(msg):
     logging.error(msg)
+    if _STDERR_IS_LOG_FILE:
+        return
     try:
         if sys.__stderr__ is not None:
             print(f"[ERROR] {msg}", file=sys.__stderr__)
@@ -126,11 +165,45 @@ def log_error(msg):
 
 def log_warn(msg):
     logging.warning(msg)
+    if _STDOUT_IS_LOG_FILE:
+        return
     try:
         print(f"[WARN] {msg}")
         sys.stdout.flush()
     except Exception:
         pass
+
+# Backwards-compatible alias for callers importing log_warning from osdoc
+log_warning = log_warn
+
+
+def load_preferences() -> dict:
+    """
+    Module-level helper returning merged user & application preferences.
+    Uses the active OSDoctor instance when initialized, or reads safely from disk.
+    """
+    if _ACTIVE_OS_DOC is not None:
+        try:
+            return _ACTIVE_OS_DOC.get_all_prefs()
+        except Exception:
+            pass
+    try:
+        import config as _cfg
+        merged = dict(_cfg.DEFAULT_USER_DATA)
+        merged.update(_cfg.DEFAULT_SETTINGS)
+        inst_dir = os.path.dirname(os.path.abspath(__file__))
+        is_dev, repo_root = detect_dev_mode(inst_dir)
+        data_dir = os.path.join(repo_root, ".dev_workspace") if is_dev else inst_dir
+        for fn in ("user.json", "settings.json"):
+            fp = os.path.join(data_dir, fn)
+            if os.path.isfile(fp):
+                with open(fp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if isinstance(d, dict):
+                    merged.update(d)
+        return merged
+    except Exception:
+        return {}
 
 # ==========================================
 # 2. OS DOCTOR CLASS
@@ -169,6 +242,7 @@ class OSDoctor:
         Initializes the system doctor.
         Now forces paths to be relative to the installation folder (Self-Contained).
         """
+        global _ACTIVE_OS_DOC
         self.os_type = platform.system()
         self.is_mac = (self.os_type == "Darwin")
         self.is_win = (self.os_type == "Windows")
@@ -191,90 +265,51 @@ class OSDoctor:
             except Exception as e:
                 print(f"[WARN] Failed to create dev workspace directory: {e}")
             self.app_data_dir = self.dev_data_dir
-
-            # One-time migration: if legacy config exists in src/ but not in .dev_workspace/, migrate it
-            for fn in ("settings.json", "user.json", "pref.json"):
-                src_cand = os.path.join(self.install_dir, fn)
-                dst_cand = os.path.join(self.dev_data_dir, fn)
-                if os.path.isfile(src_cand) and not os.path.isfile(dst_cand):
-                    try:
-                        shutil.copy2(src_cand, dst_cand)
-                    except Exception:
-                        pass
-                if os.path.isfile(src_cand):
-                    try:
-                        os.remove(src_cand)
-                    except Exception:
-                        pass
-
-            # One-time migration: migrate legacy saves/temp from src/ to .dev_workspace/
-            legacy_saves = os.path.join(self.install_dir, "saves")
-            target_saves = os.path.join(self.dev_data_dir, "saves")
-            if os.path.isdir(legacy_saves):
-                try:
-                    os.makedirs(target_saves, exist_ok=True)
-                    for item in os.listdir(legacy_saves):
-                        s = os.path.join(legacy_saves, item)
-                        d = os.path.join(target_saves, item)
-                        if not os.path.exists(d):
-                            shutil.move(s, d)
-                    shutil.rmtree(legacy_saves)
-                except Exception:
-                    pass
-
-            legacy_temp = os.path.join(self.install_dir, "temp")
-            if os.path.isdir(legacy_temp):
-                try:
-                    shutil.rmtree(legacy_temp)
-                except Exception:
-                    pass
-
-            legacy_models = os.path.join(self.install_dir, "models")
-            if os.path.isdir(legacy_models) and not os.listdir(legacy_models):
-                try:
-                    os.rmdir(legacy_models)
-                except Exception:
-                    pass
+            migrate_stray_src_files_to_dev_workspace(self.install_dir, self.dev_data_dir)
         else:
             # Installed Mode: Self-Contained next to installation files
             self.dev_data_dir = ""
             self.app_data_dir = self.install_dir
         
+        # Fallback check: if app_data_dir is read-only (e.g. C:\Program Files),
+        # prefer persistent per-user OS profile data dir before volatile OS temp dir.
+        if not is_dir_writable(self.app_data_dir):
+            profile_fallback = get_user_profile_data_dir(self.os_type, self.home_dir)
+            if is_dir_writable(profile_fallback):
+                self.app_data_dir = profile_fallback
+            else:
+                self.app_data_dir = os.path.join(tempfile.gettempdir(), "BadWords_Fallback")
+                try:
+                    os.makedirs(self.app_data_dir, exist_ok=True)
+                except Exception as e:
+                    print(f"[ERROR] OSDoctor: cannot create fallback AppData directory: {e}")
+
         # Define internal structure paths
         self.bin_dir = os.path.join(self.install_dir, "bin")
         self.log_file = os.path.join(self.app_data_dir, "badwords_debug.log")
-        # Split config: user identity/consent → user.json, app prefs → settings.json
+        # Split config: user identity/consent -> user.json, app prefs -> settings.json
         self.user_file     = os.path.join(self.app_data_dir, 'user.json')
         self.settings_file = os.path.join(self.app_data_dir, 'settings.json')
         # Legacy path for one-time migration
         self.legacy_pref_file = os.path.join(self.app_data_dir, 'pref.json')
         self.saves_dir = os.path.join(self.app_data_dir, "saves")
-        
-        # Fallback check
-        target_check_dir = self.app_data_dir
-        if not os.access(target_check_dir, os.W_OK):
-            self.app_data_dir = os.path.join(tempfile.gettempdir(), "BadWords_Fallback")
-            self.log_file = os.path.join(self.app_data_dir, "badwords.log")
-            self.user_file     = os.path.join(self.app_data_dir, 'user.json')
-            self.settings_file = os.path.join(self.app_data_dir, 'settings.json')
-            self.legacy_pref_file = os.path.join(self.app_data_dir, 'pref.json')
-            self.saves_dir = os.path.join(self.app_data_dir, "saves")
-            try: os.makedirs(self.app_data_dir, exist_ok=True)
-            except Exception as e:
-                log_error(f"OSDoctor: cannot create fallback AppData directory: {e}")
 
-        # Init Temp
+        # Init Temp & Session Protection
         self.temp_dir = self._init_smart_temp_dir()
+        self._temp_manager = SessionTempManager(self.temp_dir)
         
-        # Init Logging
+        # Init Logging (includes 5 MB startup log trimming and stream redirect detection)
         self._setup_logging()
         self._log_system_info()
+
+        # Startup sweep of stale temp files (>24h) from previous closed/crashed sessions
+        self.cleanup_temp(max_age_seconds=DEFAULT_TEMP_MAX_AGE_SECONDS, close_session=False)
 
         # Windows-specific system bootstrapping: CUDA DLL injection
         if self.is_win:
             self.setup_cuda_dll_paths()
         
-        # --- MIGRATE LEGACY CONFIG (pref.json → user.json + settings.json) ---
+        # --- MIGRATE LEGACY CONFIG (pref.json -> user.json + settings.json) ---
         self._migrate_legacy_config()
         
         # --- LOAD CONFIG INTO MEMORY (deep-merge with defaults) ---
@@ -283,6 +318,7 @@ class OSDoctor:
         
         # --- ENSURE TELEMETRY UUID IS GENERATED ---
         self._ensure_telemetry_prefs()
+        _ACTIVE_OS_DOC = self
 
     def _detect_dev_mode(self) -> tuple:
         """
@@ -399,12 +435,10 @@ class OSDoctor:
         else:
             settings['v4_migration_notified'] = True
 
-        # --- Save both new files ---
+        # --- Save both new files atomically ---
         try:
-            with open(self.user_file, 'w', encoding='utf-8') as f:
-                json.dump(user_data, f, indent=4)
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, indent=4)
+            atomic_write_json(self.user_file, user_data)
+            atomic_write_json(self.settings_file, settings)
         except Exception as e:
             log_error(f"Migration: failed to write new config files: {e}")
             return
@@ -415,24 +449,19 @@ class OSDoctor:
         except Exception as e:
             log_error(f"Migration: could not remove pref.json: {e}")
 
-        log_info("Config migrated: pref.json → user.json + settings.json")
+        log_info("Config migrated: pref.json -> user.json + settings.json")
 
     def load_user_data(self) -> dict:
-        """Loads user.json with self-healing deep-merge against DEFAULT_USER_DATA."""
+        """Loads user.json with self-healing deep-merge against DEFAULT_USER_DATA and corrupt .bak recovery."""
         import config as _cfg
         defaults = dict(_cfg.DEFAULT_USER_DATA)
 
-        loaded = {}
-        if os.path.exists(self.user_file):
-            try:
-                with open(self.user_file, 'r', encoding='utf-8') as f:
-                    loaded = json.load(f)
-            except json.JSONDecodeError as e:
-                log_error(f"load_user_data: corrupt user.json, using defaults. ({e})")
-                loaded = {}
+        loaded, was_corrupt = load_json_with_recovery(
+            self.user_file, defaults, log_err_fn=log_error, log_info_fn=log_info
+        )
 
         # Deep-merge: add any keys that were introduced in a new version
-        needs_save = False
+        needs_save = was_corrupt
         for key, default_val in defaults.items():
             if key not in loaded:
                 loaded[key] = default_val
@@ -440,8 +469,7 @@ class OSDoctor:
 
         if needs_save:
             try:
-                with open(self.user_file, 'w', encoding='utf-8') as f:
-                    json.dump(loaded, f, indent=4)
+                atomic_write_json(self.user_file, loaded)
                 log_info("load_user_data: self-healed missing keys in user.json")
             except Exception as e:
                 log_error(f"load_user_data: could not persist self-heal: {e}")
@@ -449,18 +477,13 @@ class OSDoctor:
         return loaded
 
     def load_settings(self) -> dict:
-        """Loads settings.json with self-healing deep-merge against DEFAULT_SETTINGS."""
+        """Loads settings.json with self-healing deep-merge against DEFAULT_SETTINGS and corrupt .bak recovery."""
         import config as _cfg
         defaults = dict(_cfg.DEFAULT_SETTINGS)
 
-        loaded = {}
-        if os.path.exists(self.settings_file):
-            try:
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
-                    loaded = json.load(f)
-            except json.JSONDecodeError as e:
-                log_error(f"load_settings: corrupt settings.json, using defaults. ({e})")
-                loaded = {}
+        loaded, was_corrupt = load_json_with_recovery(
+            self.settings_file, defaults, log_err_fn=log_error, log_info_fn=log_info
+        )
 
         # Force migration for AI parameters for versions < 3.1.0
         current_version = getattr(_cfg, "VERSION", "3.1.0")
@@ -473,9 +496,9 @@ class OSDoctor:
             except Exception:
                 return (0, 0, 0)
                 
-        needs_save = False
+        needs_save = was_corrupt
         
-        if loaded and version_tuple(saved_version) < version_tuple("3.1.0"):
+        if loaded and not was_corrupt and version_tuple(saved_version) < version_tuple("3.1.0"):
             log_info(f"Migrating AI settings from {saved_version} to {current_version} (forcing new optimized defaults)")
             loaded["ai_compression_ratio_threshold"] = 2.4
             loaded["ai_no_speech_threshold"] = 0.7
@@ -484,8 +507,8 @@ class OSDoctor:
             loaded["settings_version"] = current_version
             needs_save = True
 
-        # Force migration for default system fonts and milestone notice when upgrading from v3.x
-        if loaded and version_tuple(saved_version) < version_tuple("4.0.0"):
+        # Force migration for default system fonts, calibration constants, and milestone notice when upgrading from v3.x
+        if loaded and not was_corrupt and version_tuple(saved_version) < version_tuple("4.0.0"):
             old_font = loaded.get("editor_font_family", "")
             legacy_default_fonts = {"Segoe UI", "Segoe UI Variable", "Segoe UI Variable Display", "Noto Sans", "Ubuntu", "Helvetica Neue", "Arial", "sans-serif", "Sans"}
             if old_font in legacy_default_fonts or not old_font:
@@ -493,6 +516,11 @@ class OSDoctor:
                 if old_font != new_font:
                     log_info(f"Migrating default editor_font_family from '{old_font}' to '{new_font}' (v3 -> v4 upgrade)")
                     loaded["editor_font_family"] = new_font
+                    needs_save = True
+
+            for cal_key, cal_val in (("offset", 0.133), ("pad", 0.0), ("snap_max", 0.25)):
+                if loaded.get(cal_key) != cal_val:
+                    loaded[cal_key] = cal_val
                     needs_save = True
 
             if self.is_legacy_updater_migration():
@@ -519,8 +547,7 @@ class OSDoctor:
 
         if needs_save:
             try:
-                with open(self.settings_file, 'w', encoding='utf-8') as f:
-                    json.dump(loaded, f, indent=4)
+                atomic_write_json(self.settings_file, loaded)
                 log_info("load_settings: self-healed missing keys in settings.json")
             except Exception as e:
                 log_error(f"load_settings: could not persist self-heal: {e}")
@@ -537,8 +564,7 @@ class OSDoctor:
             stable_uuid = str(uuid.UUID(hashed_node[:32]))
             self.user_data["uuid"] = stable_uuid
             try:
-                with open(self.user_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.user_data, f, indent=4)
+                atomic_write_json(self.user_file, self.user_data)
             except Exception as e:
                 log_error(f"_ensure_telemetry_prefs: cannot write user.json: {e}")
 
@@ -553,7 +579,7 @@ class OSDoctor:
         return self.user_data.get(resolved)
 
     def set_telemetry_pref(self, key, value):
-        """Writes a telemetry/user preference to in-memory user_data and persists to user.json.
+        """Writes a telemetry/user preference to in-memory user_data and persists atomically to user.json.
         Maps legacy key names used by engine.py to the new schema."""
         key_alias = {
             "analytics_uuid":    "uuid",
@@ -562,31 +588,28 @@ class OSDoctor:
         resolved = key_alias.get(key, key)
         self.user_data[resolved] = value
         try:
-            with open(self.user_file, 'w', encoding='utf-8') as f:
-                json.dump(self.user_data, f, indent=4)
+            atomic_write_json(self.user_file, self.user_data)
         except Exception as e:
             log_error(f"set_telemetry_pref: cannot write user.json: {e}")
 
     def set_pref(self, key, value):
         """Universal preference router.
-        User identity/consent keys → user.json.
-        Everything else (app settings, UI prefs) → settings.json.
-        Both in-memory dicts and the respective files are updated.
+        User identity/consent keys -> user.json.
+        Everything else (app settings, UI prefs) -> settings.json.
+        Both in-memory dicts and the respective files are updated atomically.
         """
         import config as _cfg
         if key in _cfg.DEFAULT_USER_DATA:
             self.user_data[key] = value
             try:
-                with open(self.user_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.user_data, f, indent=4)
+                atomic_write_json(self.user_file, self.user_data)
                 log_info(f"set_pref: '{key}' saved to user.json")
             except Exception as e:
                 log_error(f"set_pref: cannot write user.json ({key}): {e}")
         else:
             self.settings[key] = value
             try:
-                with open(self.settings_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.settings, f, indent=4)
+                atomic_write_json(self.settings_file, self.settings)
                 log_info(f"set_pref: '{key}' saved to settings.json")
             except Exception as e:
                 log_error(f"set_pref: cannot write settings.json ({key}): {e}")
@@ -602,7 +625,7 @@ class OSDoctor:
         return merged
 
     def save_all_prefs(self, prefs_dict: dict):
-        """Bulk preference router: routes each key to user.json or settings.json.
+        """Bulk preference router: routes each key to user.json or settings.json atomically.
         engine.py and gui.py should call this instead of writing JSON directly.
         """
         import config as _cfg
@@ -623,16 +646,14 @@ class OSDoctor:
 
         if user_modified:
             try:
-                with open(self.user_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.user_data, f, indent=4)
+                atomic_write_json(self.user_file, self.user_data)
                 log_info("save_all_prefs: user.json updated")
             except Exception as e:
                 log_error(f"save_all_prefs: cannot write user.json: {e}")
 
         if settings_modified:
             try:
-                with open(self.settings_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.settings, f, indent=4)
+                atomic_write_json(self.settings_file, self.settings)
                 log_info("save_all_prefs: settings.json updated")
             except Exception as e:
                 log_error(f"save_all_prefs: cannot write settings.json: {e}")
@@ -672,23 +693,34 @@ class OSDoctor:
         return os.path.join(self.app_data_dir, "temp")
 
     def _setup_logging(self):
-        """Configures logging to file and stream redirection."""
+        """Configures logging to file, 5 MB startup log trimming, and non-duplicating stream redirection."""
+        global _STDOUT_IS_LOG_FILE, _STDERR_IS_LOG_FILE
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
+
+        trim_log_file_if_needed(self.log_file)
         
         try:
             logging.basicConfig(
                 filename=self.log_file,
                 filemode='a',
+                encoding='utf-8',
                 level=logging.INFO,
                 format='%(asctime)s [%(levelname)s] %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
         except PermissionError:
-             print(f"CRITICAL: Cannot write to log file {self.log_file}. Logging disabled.")
+            print(f"CRITICAL: Cannot write to log file {self.log_file}. Logging disabled.")
+
+        _STDOUT_IS_LOG_FILE = is_stream_redirected_to_file(sys.__stdout__, self.log_file)
+        _STDERR_IS_LOG_FILE = is_stream_redirected_to_file(sys.__stderr__, self.log_file)
         
-        sys.stdout = ResolveStreamProxy(sys.__stdout__, logging.info)
-        sys.stderr = ResolveStreamProxy(sys.__stderr__, logging.error)
+        sys.stdout = ResolveStreamProxy(
+            sys.__stdout__, logging.info, suppress_stream_echo=_STDOUT_IS_LOG_FILE
+        )
+        sys.stderr = ResolveStreamProxy(
+            sys.__stderr__, logging.error, suppress_stream_echo=_STDERR_IS_LOG_FILE
+        )
 
     def _log_system_info(self):
         """Logs fast system path info on startup without running GPU/CPU probing subprocesses.
@@ -1061,7 +1093,9 @@ class OSDoctor:
                     dirs.append(os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Support", "Fusion", "Scripts", "Utility"))
                     dirs.append(os.path.join(base, "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
         elif self.is_mac:
-            dirs.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+            dirs.append(os.path.join(self.home_dir, "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
+            for mas_resolve_dir in get_macos_app_store_resolve_dirs(self.home_dir):
+                dirs.append(os.path.join(mas_resolve_dir, "Fusion", "Scripts", "Utility"))
             dirs.append(os.path.join("/Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "Fusion", "Scripts", "Utility"))
         elif self.is_linux:
             dirs.append(os.path.join(os.path.expanduser("~"), ".local", "share", "DaVinciResolve", "Fusion", "Scripts", "Utility"))
@@ -1185,14 +1219,20 @@ class OSDoctor:
                     if lua_src and os.path.isfile(lua_src):
                         if not primary_installed:
                             try:
-                                with open(lua_src, "r", encoding="utf-8") as lf:
-                                    l_code = lf.read()
-                                clean_inst = self.install_dir.replace('\\', '/')
-                                l_code = l_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
-
                                 bridge_dir = os.path.join(self.install_dir, "bridge")
                                 try: os.makedirs(bridge_dir, exist_ok=True)
                                 except Exception: pass
+
+                                if "/Library/Containers/" in ud.replace("\\", "/"):
+                                    try: os.makedirs(os.path.join(ud, "bridge"), exist_ok=True)
+                                    except Exception: pass
+
+                                with open(lua_src, "r", encoding="utf-8") as lf:
+                                    l_code = lf.read()
+                                clean_inst = self.install_dir.replace('\\', '/')
+                                short_inst = self.get_short_path(self.install_dir).replace('\\', '/') if self.is_win else clean_inst
+                                l_code = l_code.replace("__BADWORDS_INSTALL_DIR__", clean_inst)
+                                l_code = l_code.replace("__BADWORDS_SHORT_INSTALL_DIR__", short_inst)
 
                                 should_write = force or not os.path.isfile(lua_file)
                                 if not should_write and os.path.isfile(lua_file):
@@ -1498,11 +1538,33 @@ class OSDoctor:
             return icon_path
         return None
 
-    def cleanup_temp(self, max_age_seconds: int = 3600):
+    def register_active_temp_path(self, path: str) -> None:
+        """Registers a file or folder in temp_dir as actively in use by the open project."""
+        if hasattr(self, "_temp_manager") and self._temp_manager:
+            self._temp_manager.register_path(path)
+
+    def unregister_active_temp_path(self, path: str) -> None:
+        """Unregisters a temporary file or folder when no longer needed by the open project."""
+        if hasattr(self, "_temp_manager") and self._temp_manager:
+            self._temp_manager.unregister_path(path)
+
+    def cleanup_temp(
+        self,
+        max_age_seconds: int = DEFAULT_TEMP_MAX_AGE_SECONDS,
+        close_session: bool = False,
+    ):
         """
-        Safely clears stale temporary files older than max_age_seconds (default 1 hour).
-        Preserves active temp files being read/rendered by parallel instances or threads.
+        Safely clears stale temporary files older than max_age_seconds (default 24 hours).
+        Preserves active temp files registered to the current project or other live BadWords sessions.
         """
+        if hasattr(self, "_temp_manager") and self._temp_manager:
+            self._temp_manager.temp_dir = os.path.abspath(self.temp_dir)
+            self._temp_manager.cleanup(
+                max_age_seconds=max_age_seconds,
+                close_session=close_session,
+                log_err_fn=log_error,
+            )
+            return
         try:
             if not os.path.exists(self.temp_dir):
                 os.makedirs(self.temp_dir, exist_ok=True)

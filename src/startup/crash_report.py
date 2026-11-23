@@ -71,6 +71,18 @@ def _is_dev_checkout(src_dir):
     return os.path.exists(os.path.join(base, ".git")) or os.path.exists(os.path.join(parent, ".git"))
 
 
+def _user_profile_fallback_dir():
+    """Return OS-standard per-user BadWords data directory without importing osdoc."""
+    home = os.path.expanduser("~")
+    if sys.platform == "win32" or os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.join(home, "AppData", "Local")
+        return os.path.join(base, "BadWords")
+    if sys.platform == "darwin":
+        return os.path.join(home, "Library", "Application Support", "BadWords")
+    xdg = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+    return os.path.join(xdg, "BadWords")
+
+
 def _resolve_app_data_candidates(src_dir=None, app_data_dir=None):
     """Return ordered list of candidate runtime data directories."""
     cands = []
@@ -84,6 +96,7 @@ def _resolve_app_data_candidates(src_dir=None, app_data_dir=None):
     else:
         cands.append(base)
         cands.append(parent)
+        cands.append(_user_profile_fallback_dir())
     cands.append(os.path.join(tempfile.gettempdir(), "BadWords_Fallback"))
     seen = set()
     unique = []

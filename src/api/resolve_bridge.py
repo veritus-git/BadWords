@@ -30,6 +30,11 @@ import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, Union
 
+from config.runtime_data import (
+    discover_sibling_installed_dir,
+    get_macos_app_store_resolve_dirs,
+)
+
 # Logger fallbacks
 try:
     from osdoc import log_error, log_info, log_warn
@@ -88,21 +93,29 @@ class ResolveBridgeClient:
 
     @classmethod
     def _get_mailbox_dir(cls, install_dir: Optional[Union[str, Path]] = None) -> Path:
-        """Determines the mailbox directory placed inside the BadWords installation directory."""
+        """Determines the mailbox directory placed inside the BadWords installation directory or Mac App Store container."""
         candidates = []
+        base_str = str(install_dir) if install_dir else ""
         if install_dir:
             p = Path(install_dir)
             candidates.append(p / "bridge")
             if p.name == "src":
                 candidates.append(p.parent / "bridge")
 
-        candidates.extend([
-            Path("/mnt/dump/BadWords/src/bridge"),
-            Path("/mnt/dump/BadWords/bridge"),
-            Path("/mnt/dump/BadWords FILES/src/bridge"),
-            Path("/mnt/dump/BadWords FILES/bridge"),
-            cls._get_fallback_mailbox_dir(),
-        ])
+        sibling_dir = discover_sibling_installed_dir(base_str)
+        if sibling_dir:
+            sp = Path(sibling_dir)
+            candidates.append(sp / "src" / "bridge")
+            candidates.append(sp / "bridge")
+
+        if sys.platform == "darwin":
+            for mas_resolve in get_macos_app_store_resolve_dirs():
+                mas_p = Path(mas_resolve)
+                candidates.append(mas_p / "Fusion" / "Scripts" / "Utility" / "bridge")
+                # Container Data/Library/Application Support/BadWords/bridge
+                candidates.append(mas_p.parent.parent / "BadWords" / "bridge")
+
+        candidates.append(cls._get_fallback_mailbox_dir())
 
         # 1. Prioritize any candidate directory that currently has bridge_status.json (active Bridge)
         for c in candidates:
@@ -137,42 +150,52 @@ class ResolveBridgeClient:
 
     @staticmethod
     def get_fusion_support_dir() -> Optional[Path]:
-        """Returns per-user Resolve support directory containing Fusion/Profiles and Fusion/Scripts."""
+        """Returns the primary per-user Resolve support directory containing Fusion/Profiles and Fusion/Scripts."""
+        dirs = ResolveBridgeClient.get_fusion_support_dirs()
+        for d in dirs:
+            if d.is_dir():
+                return d
+        return dirs[0] if dirs else None
+
+    @staticmethod
+    def get_fusion_support_dirs(home_dir: Optional[Union[str, Path]] = None) -> list:
+        """Returns all candidate per-user Resolve support directories (standard + Mac App Store containers)."""
+        home = Path(home_dir) if home_dir else Path.home()
+        dirs = []
         if sys.platform == "win32":
             appdata = os.environ.get("APPDATA")
             if appdata:
-                return Path(appdata) / "Blackmagic Design" / "DaVinci Resolve" / "Support"
+                dirs.append(Path(appdata) / "Blackmagic Design" / "DaVinci Resolve" / "Support")
         elif sys.platform == "darwin":
-            return Path.home() / "Library" / "Application Support" / "Blackmagic Design" / "DaVinci Resolve"
+            dirs.append(home / "Library" / "Application Support" / "Blackmagic Design" / "DaVinci Resolve")
+            for mas_dir in get_macos_app_store_resolve_dirs(str(home)):
+                dirs.append(Path(mas_dir))
         else:
-            # Linux
-            return Path.home() / ".local" / "share" / "DaVinciResolve"
-        return None
+            dirs.append(home / ".local" / "share" / "DaVinciResolve")
+        return dirs
 
-    def find_fusion_prefs_path(self) -> Optional[Path]:
-        """Locates Fusion.prefs (picks the most recently modified profile)."""
-        support_dir = self.get_fusion_support_dir()
-        if not support_dir or not support_dir.is_dir():
-            return None
-
-        profiles_dir = support_dir / "Fusion" / "Profiles"
-        if not profiles_dir.is_dir():
-            return None
-
+    def find_fusion_prefs_path(self, home_dir: Optional[Union[str, Path]] = None) -> Optional[Path]:
+        """Locates Fusion.prefs across standard and Mac App Store container profiles (picks the most recently modified)."""
         best_path: Optional[Path] = None
         best_mtime: float = -1.0
 
-        try:
-            for entry in profiles_dir.iterdir():
-                if entry.is_dir():
-                    prefs_file = entry / "Fusion.prefs"
-                    if prefs_file.is_file():
-                        mtime = prefs_file.stat().st_mtime
-                        if mtime > best_mtime:
-                            best_mtime = mtime
-                            best_path = prefs_file
-        except Exception as e:
-            log_error(f"Error scanning Fusion profiles: {e}")
+        for support_dir in self.get_fusion_support_dirs(home_dir=home_dir):
+            if not support_dir or not support_dir.is_dir():
+                continue
+            profiles_dir = support_dir / "Fusion" / "Profiles"
+            if not profiles_dir.is_dir():
+                continue
+            try:
+                for entry in profiles_dir.iterdir():
+                    if entry.is_dir():
+                        prefs_file = entry / "Fusion.prefs"
+                        if prefs_file.is_file():
+                            mtime = prefs_file.stat().st_mtime
+                            if mtime > best_mtime:
+                                best_mtime = mtime
+                                best_path = prefs_file
+            except Exception as e:
+                log_error(f"Error scanning Fusion profiles in {support_dir}: {e}")
 
         return best_path
 

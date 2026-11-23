@@ -29,6 +29,7 @@ import config
 import algorithms
 from osdoc import log_info, log_error
 
+from config.runtime_data import discover_sibling_installed_dir
 from .preferences import PreferencesMixin
 from .audio_extraction import AudioExtractionMixin
 from .transcription import TranscriptionMixin, ModelDownloadError
@@ -39,12 +40,17 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
         self.resolve_handler = resolve_handler
         self.ffmpeg_cmd = self.os_doc.get_ffmpeg_cmd() or "ffmpeg"
         
+        sibling_files_dir = discover_sibling_installed_dir(
+            self.os_doc.install_dir, getattr(self.os_doc, "repo_root", "")
+        )
+
         # Determine path to local libs for subprocess injection
         cand_libs = [
             os.path.abspath(os.path.join(self.os_doc.install_dir, "libs")),
             os.path.abspath(os.path.join(os.path.dirname(self.os_doc.install_dir), "libs")),
-            "/mnt/dump/BadWords FILES/libs",
         ]
+        if sibling_files_dir:
+            cand_libs.append(os.path.join(sibling_files_dir, "libs"))
         self.libs_dir = cand_libs[0]
         for lb in cand_libs:
             if os.path.isdir(lb):
@@ -52,18 +58,21 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                 break
 
         if getattr(self.os_doc, 'is_dev', False):
-            cand_models = [
-                "/mnt/dump/BadWords FILES/models",
+            cand_models = []
+            if sibling_files_dir:
+                cand_models.append(os.path.join(sibling_files_dir, "models"))
+            cand_models.extend([
                 os.path.join(os.path.dirname(self.os_doc.install_dir), "models"),
                 os.path.join(self.os_doc.app_data_dir, "models"),
-            ]
+            ])
             self.models_dir = os.path.join(self.os_doc.app_data_dir, "models")
         else:
             cand_models = [
                 os.path.join(self.os_doc.install_dir, "models"),
                 os.path.join(os.path.dirname(self.os_doc.install_dir), "models"),
-                "/mnt/dump/BadWords FILES/models",
             ]
+            if sibling_files_dir:
+                cand_models.append(os.path.join(sibling_files_dir, "models"))
             self.models_dir = cand_models[0]
         for m in cand_models:
             if os.path.isdir(m) and any(e.startswith("models--") for e in os.listdir(m)):
@@ -74,13 +83,6 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             os.makedirs(self.models_dir, exist_ok=True)
         except Exception as e:
             log_error(f"Failed to create models dir: {e}")
-            
-        # FORCE OVERRIDE FIX FOR TIMESTAMPS
-        # Migrate all legacy users to the new exact synchronization settings
-        prefs = self.load_preferences() or {}
-        if prefs.get('offset') != 0.133 or prefs.get('pad') != 0.0 or prefs.get('snap_max') != 0.25:
-            self.save_preferences({'offset': 0.133, 'pad': 0.0, 'snap_max': 0.25})
-            log_info("Forced offset/pad/snap override applied successfully.")
 
         self.current_proxy_video_path = None
         self.current_clips_info = None
@@ -549,12 +551,16 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
             self.current_analysis_audio_path = wav_path
             self.last_audio_path = wav_path
+            if hasattr(self.os_doc, "register_active_temp_path"):
+                self.os_doc.register_active_temp_path(wav_path)
 
             update_progress(25)
 
             # STEP 1: Normalize — prepare audio for silence detection
             normalized_wav = self.normalize_audio(wav_path)
             target_wav = normalized_wav
+            if hasattr(self.os_doc, "register_active_temp_path"):
+                self.os_doc.register_active_temp_path(target_wav)
 
             update_progress(55)
             update_status(self.txt("status_silence"))
@@ -853,6 +859,9 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             normalized_wav = self.normalize_audio(current_wav_path)
             target_wav = normalized_wav
             self.current_analysis_audio_path = target_wav
+            if hasattr(self.os_doc, "register_active_temp_path"):
+                self.os_doc.register_active_temp_path(current_wav_path)
+                self.os_doc.register_active_temp_path(target_wav)
             self.last_audio_path = target_wav
 
             update_progress(100)

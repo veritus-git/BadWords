@@ -90,6 +90,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         (void)_dup2(log_fd, 2);
         setvbuf(stdout, NULL, _IONBF, 0);
         setvbuf(stderr, NULL, _IONBF, 0);
+        SetEnvironmentVariableW(L"BADWORDS_STDIO_REDIRECTED", L"1");
+        _wputenv_s(L"BADWORDS_STDIO_REDIRECTED", L"1");
     }
     fwprintf(stderr, L"\n=== BadWords Windows Native Launcher (PID %lu) ===\n", GetCurrentProcessId());
     fwprintf(stderr, L"[LAUNCHER] Executable:   %s\n", real_exe);

@@ -270,6 +270,22 @@ local sep = (platform == "Windows") and "\\" or "/"
 
 -- Configuration: BadWords Installation Directory (injected by installer / auto-healer)
 local INSTALL_DIR = [[__BADWORDS_INSTALL_DIR__]]
+local SHORT_INSTALL_DIR = [[__BADWORDS_SHORT_INSTALL_DIR__]]
+
+local function get_script_dir()
+    local ok, info = pcall(function() return debug and debug.getinfo and debug.getinfo(1, "S") end)
+    if ok and info and type(info.source) == "string" then
+        local src = info.source
+        if src:sub(1, 1) == "@" then
+            src = src:sub(2)
+        end
+        local d = src:match("^(.*)[/\\][^/\\]+$")
+        if d and d ~= "" then
+            return d
+        end
+    end
+    return nil
+end
 
 local function get_all_mailbox_dirs()
     local dirs = {}
@@ -281,9 +297,19 @@ local function get_all_mailbox_dirs()
         end
     end
 
+    if SHORT_INSTALL_DIR and SHORT_INSTALL_DIR ~= "" and not SHORT_INSTALL_DIR:find("^__") then
+        add(SHORT_INSTALL_DIR .. sep .. "bridge")
+        add(SHORT_INSTALL_DIR .. sep .. ".." .. sep .. "bridge")
+    end
+
     if INSTALL_DIR and INSTALL_DIR ~= "" and not INSTALL_DIR:find("^__") then
         add(INSTALL_DIR .. sep .. "bridge")
         add(INSTALL_DIR .. sep .. ".." .. sep .. "bridge")
+    end
+
+    local script_dir = get_script_dir()
+    if script_dir then
+        add(script_dir .. sep .. "bridge")
     end
 
     if platform == "Windows" then
@@ -292,10 +318,6 @@ local function get_all_mailbox_dirs()
     elseif platform == "OSX" then
         add((os.getenv("HOME") or "") .. "/Library/Application Support/BadWords/bridge")
     else
-        add("/mnt/dump/BadWords/src/bridge")
-        add("/mnt/dump/BadWords/bridge")
-        add("/mnt/dump/BadWords FILES/src/bridge")
-        add("/mnt/dump/BadWords FILES/bridge")
         local xdg = os.getenv("XDG_DATA_HOME") or ((os.getenv("HOME") or "") .. "/.local/share")
         add(xdg .. "/BadWords/bridge")
     end

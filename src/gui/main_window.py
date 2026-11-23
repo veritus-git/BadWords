@@ -4033,8 +4033,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             elif not is_file_source and hasattr(self.engine, 'resolve_handler') and self.engine.resolve_handler:
                 layout = self.engine.resolve_handler.get_timeline_clips_layout(selected_tl_name, track_indices)
         except Exception as e:
-            from osdoc import log_warning
-            log_warning(f"_detect_and_store_clips_layout: {e}")
+            from osdoc import log_warn
+            log_warn(f"_detect_and_store_clips_layout: {e}")
 
         self._current_clips_layout = layout
         wf_tl = getattr(self, 'waveform_timeline', None) or getattr(getattr(self, 'audio_preview', None), 'waveform_timeline', None)
@@ -4057,6 +4057,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         temp_dir = self.engine.os_doc.get_temp_folder()
         os.makedirs(temp_dir, exist_ok=True)
         proxy_path = os.path.join(temp_dir, f"BW_proxy_{os.getpid()}_{len(source_files)}.mp4")
+        if hasattr(self.engine.os_doc, "register_active_temp_path"):
+            self.engine.os_doc.register_active_temp_path(proxy_path)
 
         if hasattr(self, "_proxy_worker") and self._proxy_worker and self._proxy_worker.isRunning():
             try:
@@ -4073,6 +4075,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_bg_proxy_ready(self, proxy_path: str):
         self.engine.current_proxy_video_path = proxy_path
+        if hasattr(self.engine.os_doc, "register_active_temp_path"):
+            self.engine.os_doc.register_active_temp_path(proxy_path)
         ap = getattr(self, "audio_preview", None) or getattr(self, "media_preview_bar", None)
         if ap:
             ap.set_background_proxy_video(proxy_path)
@@ -4095,14 +4099,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         # Check if timeline has complex video (cuts, trims, multiple tracks, titles)
         try:
-            from osdoc import log_info, log_warning
+            from osdoc import log_info
             is_complex = self.engine.resolve_handler.has_complex_timeline_video(tl_name)
             log_info(f"_maybe_start_resolve_timeline_proxy: tl_name='{tl_name}', is_complex={is_complex}")
             if not is_complex:
                 return
         except Exception as e:
-            from osdoc import log_warning
-            log_warning(f"has_complex_timeline_video error: {e}")
+            from osdoc import log_warn
+            log_warn(f"has_complex_timeline_video error: {e}")
             return
 
         import time
@@ -4130,13 +4134,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_resolve_proxy_ready(self, proxy_path: str):
         self.engine.current_proxy_video_path = proxy_path
+        if hasattr(self.engine.os_doc, "register_active_temp_path"):
+            self.engine.os_doc.register_active_temp_path(proxy_path)
         ap = getattr(self, "audio_preview", None) or getattr(self, "media_preview_bar", None)
         if ap:
             ap.set_background_proxy_video(proxy_path)
 
     def _on_resolve_proxy_failed(self, err_msg: str):
-        from osdoc import log_warning
-        log_warning(f"Resolve timeline proxy failed: {err_msg}")
+        from osdoc import log_warn
+        log_warn(f"Resolve timeline proxy failed: {err_msg}")
         ap = getattr(self, "audio_preview", None)
         if ap and hasattr(ap, 'video_preview_widget'):
             ap.video_preview_widget.show_loading(False)
