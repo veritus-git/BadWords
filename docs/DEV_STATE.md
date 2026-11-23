@@ -6,6 +6,20 @@
 
 ---
 
+## 0. Current Focus & Roadmap Position
+
+- **Current Phase**: Stage 1 (v4.1 — Foundations, startup, and system consistency)
+- **Completed Roadmap Items**:
+  - ✅ **Point 1** (*Startup pipeline, Python env gate & consent-based self-heal*) — Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 6 and `ROADMAP_CEMENTING.md`).
+- **Next Pending Roadmap Item**:
+  - ⬜ **Point 2** (*DEV vs Installed separation, runtime paths, logging & temp cleanup*).
+- **Recent Process / Rules Changes (`2026-11-23`)**:
+  - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
+  - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.
+  - Clarified `docs/DEV_STATE.md` read-first & end-of-task update lifecycle in `.agents/rules/architecture.md`.
+
+---
+
 ## 1. Architectural Zones Status
 
 | Zone | Path | Responsibility | Status |
@@ -30,11 +44,11 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest`.
+Test Runner: `run_tests.py` using Python `unittest` (total: **62 tests** across 8 modules).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
-| `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), and telemetry popup drop shadow. | **PASS** |
+| `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), telemetry popup drop shadow, and shared Discord relay support upload validation. | **PASS** |
 | `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, CUDA functionality probing, GitHub issue #19 (`cublas64_12.dll` missing probe detection), and silent Resolve decoupling when Resolve is not installed. | **PASS** |
 | `tests/test_visual_progress_bar.py` | Visual regression test for `LiquidProgressBar`: renders screenshots into `tests/artifacts/`, verifies all 4 rounded corners and anti-aliasing clipping across determinate (50%, 100%) and 3-phase indeterminate states (entering, centered, exiting) to prevent squared-off corner regressions (`setClipRect`). | **PASS** |
 | `tests/test_timeline_cuts.py` | Multi-framerate calculation across standard & drop rates (23.976, 29.97, 47.952, 59.94, 60.0, 25.0 fps), exact rational drop-frame timebases (24000/1001, 30000/1001), silence cut ripple deletion, color cut extraction, timeline end capping. | **PASS** |
@@ -59,7 +73,7 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - Implemented automatic migration of legacy config, saves, and temp from `src/` to `.dev_workspace/`.
 3. **Automated Test Suite**:
    - Created test framework in `tests/` and test runner `run_tests.py`.
-   - 33 comprehensive unit & visual regression tests implemented and passing.
+   - 33 comprehensive unit & visual regression tests implemented and passing (expanded to 62 by 2026-11-23).
 4. **School PC Crash & Environment Fixes (2026-11-17)**:
    - **DaVinci Resolve Script Sync (`_host_ver` undefined & ctypes.CDLL cleanup)**: Fixed f-string interpolation bug in `generate_davinci_wrapper_content()` in `src/osdoc.py`, and removed remaining unsafe `ctypes.CDLL` preload loop in generated wrapper.
    - **Feedback / Bug Report Form Crash (`No module named 'requests'`)**: Replaced `requests.post()` in `src/gui/dialogs/settings_dialog.py` with zero-dependency standard library `urllib.request` multipart/form-data POST.
@@ -118,13 +132,21 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - Hardened `windows/launcher.c`, `linux/launcher.c`, and `macos/launcher.c` to load only the exact matching Python library version, strip `PYTHONHOME`/foreign `PYTHONPATH`, set `PYTHONNOUSERSITE=1`, and respect `EXIT_FATAL_REPORTED = 3`.
    - Added 11-language startup/self-heal i18n keys, dark Qt startup/heal dialogs, unified `crash_report.post_support_report` relay uploader across startup crash reporting and `SettingsDialog` (Contact tab), `tests/test_startup_guard.py`, and documented invariants in `docs/CEMENTED.md` (Section 6).
    - Strengthened `.agents/rules/architecture.md` Rules 6 and 8 with general end-to-end verification and proactive visual/UX polish mandates.
+9. **Workflow, Self-Learning, Resolve 21.1+ & Roadmap Tracking Upgrade (2026-11-23)**:
+   - Updated `.agents/rules/architecture.md` (kept under 4,000 chars) to mandate concrete real-world user scenarios, proactive self-learning capture, DaVinci Resolve 21.1+ documentation checks, `ROADMAP_CEMENTING.md` completion check-offs, and explicit `docs/DEV_STATE.md` read-first + update-after lifecycle.
+   - Created `.agents/rules/lessons_and_standards.md` (`always_on`) with continuous feedback capture protocol and mandatory live mechanism testing, proactive screenshot inspection, user-case storytelling, and roadmap/state tracking rules.
+   - Created `.agents/skills/davinci-resolve-current/SKILL.md` with up-to-date DaVinci Resolve 21.1+ / 22+ & Free vs Studio documentation and verification workflow.
+   - Updated `ROADMAP_CEMENTING.md` to mark Point 1 as `✅ ZAKOŃCZONO (2026-11-23)`, added top progress checklist `[x]`/`[ ]` for Points 1–22, and upgraded all remaining prompts (2–22) with concrete user-side case reporting, Resolve 21.1+ checks, live mechanism tests, screenshots, and closing updates.
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 62 tests pass.
-2. Run `python3 -m compileall src` to ensure bytecode consistency.
-3. Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
-4. Ensure files are synchronized with `/mnt/dump/BadWords FILES/`.
-
+1. **Continue Roadmap Cementing**: Next uncompleted item is **Point 2** in `ROADMAP_CEMENTING.md` (DEV vs Installed isolation, runtime paths, logging, and temp cleanup).
+2. **Baseline Verification Commands**:
+   - `python3 run_tests.py` (62 tests)
+   - `python3 -m compileall src`
+   - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
+   - `cd installer && cargo check && cargo test` (when Rust/installer files change)
+3. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
+4. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.

@@ -2,17 +2,52 @@
 
 > **Cel dokumentu:** Uporządkowanie, dopracowanie i zabezpieczenie **obecnie istniejących** funkcji BadWords tak, aby działały niezawodnie na Windowsie, Linuksie i macOS oraz nie psuły się przy kolejnych zmianach.
 >
-> **Jak z tego korzystać:** Wybierasz jeden punkt na jedną sesję, kopiujesz gotowy **Prompt do wklejenia** do nowej rozmowy z AI i idziesz zrobić herbatę. Agent najpierw tylko analizuje wskazany obszar i przedstawia Ci zwięzły raport z pytaniami decyzyjnymi. Dopiero po Twoich odpowiedziach wdraża zmiany, dopisuje testy ochronne, zapisuje pełny opis w `docs/CEMENTED.md` oraz krótki 3–4 wyrazowy wpis w `.agents/rules/architecture.md` (Sekcja 3).
+> **Jak z tego korzystać:** Wybierasz jeden otwarty punkt (`[ ]`) na jedną sesję, kopiujesz gotowy **Prompt do wklejenia** do nowej rozmowy z AI i idziesz zrobić herbatę.
+> - Agent najpierw **tylko analizuje** obszar (z uwzględnieniem **aktualnej dokumentacji DaVinci Resolve 21.1+ i ograniczeń wersji Free**) i przedstawia raport oparty na **konkretnych, życiowych przypadkach od strony użytkownika** (bez suchych haseł i żargonu) wraz z pytaniami decyzyjnymi.
+> - Dopiero po Twoich odpowiedziach wdraża zmiany, **testuje mechanizmy na żywo** (nie tylko na makietach), robi i ogląda **zrzuty ekranu** zmian widocznych dla użytkownika, wpisuje pełną dokumentację do `docs/CEMENTED.md`, aktualizuje `docs/DEV_STATE.md`, dopisuje krótkie hasło w `.agents/rules/architecture.md` (Sekcja 3) **oraz odhacza zakończony punkt tutaj (`[x]` + `✅ ZAKOŃCZONO`)**.
+> - Gdy podczas rozmowy wskażesz jakąś uwagę albo brakujący krok, agent automatycznie zapisuje tę lekcję w `.agents/rules/lessons_and_standards.md`, abyś w kolejnych sesjach nie musiał prosić o to samo.
+
+---
+
+## Postęp prac (Checklista punktów 1–22)
+
+> *Poniższa lista pozwala od razu sprawdzić, co zostało już w pełni zamknięte i zabezpieczone, a co czeka na swoją sesję.*
+
+- [x] **Punkt 1** — Start aplikacji, dobór środowiska Pythona i „samoleczenie” przy uruchomieniu *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 6)*
+- [ ] **Punkt 2** — Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych
+- [ ] **Punkt 3** — Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
+- [ ] **Punkt 4** — Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu
+- [ ] **Punkt 5** — Wyciąganie dźwięku z wideo/osi, normalizacja głośności i wstępne wykrywanie ciszy
+- [ ] **Punkt 6** — Wykrywanie karty graficznej (NVIDIA / Apple Silicon / procesor) i bezpieczny powrót na procesor
+- [ ] **Punkt 7** — Pobieranie modeli AI, uruchamianie transkrypcji i strumieniowanie słów na żywo
+- [ ] **Punkt 8** — Wykrywanie powtórek, słów-wypełniaczy, fragmentów niezrozumiałych i ochrona ręcznych oznaczeń
+- [ ] **Punkt 9** — Wczytywanie scenariuszy (DOCX/PDF/TXT), porównanie ze scenariuszem i widok obok siebie (Side-by-Side)
+- [ ] **Punkt 10A** — Odchudzenie głównego okna (cz. 1): statystyki cięć, legenda kolorów, podgląd przekreśleń i eksport tekstu
+- [ ] **Punkt 10B** — Odchudzenie głównego okna (cz. 2): paski boczne, skróty klawiszowe, obsługa zdarzeń i przyciski markerów
+- [ ] **Punkt 10C** — Odchudzenie głównego okna (cz. 3): zadania w tle, sprawdzanie aktualizacji, komunikaty statusu i zamykanie
+- [ ] **Punkt 11** — Ekran powitalny: przełączanie źródła, kolejka plików lokalnych, wybór ścieżek i Szybka Cisza
+- [ ] **Punkt 12A** — Płótno transkrypcji: zaznaczanie ramką i tekstem, malowanie, przekreślenia, wyszukiwarka i Cofnij/Ponów
+- [ ] **Punkt 12B** — Wydajność edycji i przeliczania cięć na wielogodzinnych nagraniach (zgłoszenie GitHub `#20`)
+- [ ] **Punkt 13** — Dolny odtwarzacz audio/wideo, omijanie cięć w czasie rzeczywistym i regulacja głośności
+- [ ] **Punkt 14** — Wykres fali dźwiękowej, podgląd wideo 360p (proxy) oraz suwaki ciszy na żywo
+- [ ] **Punkt 15** — Okno Ustawień i biblioteka własnych kontrolek interfejsu
+- [ ] **Punkt 16** — Łączność z DaVinci Resolve, mostek dla darmowej wersji 21.1+ i praca całkowicie bez Resolve
+- [ ] **Punkt 17** — Dokładność klatkowa i montaż osi czasu w DaVinci Resolve (XML vs natywny DRT)
+- [ ] **Punkt 18** — Eksport dla innych programów montażowych w trybie niezależnym (XML, FCPXML, OTIO, EDL i cięcie pliku)
+- [ ] **Punkt 19** — Zapis projektu (`.bws`), autozapis, odzyskiwanie po awarii i okno niezapisanych zmian
+- [ ] **Punkt 20** — Nowoczesny instalator, uruchamiacze (launchery) i porządek ze starym instalatorem
+- [ ] **Punkt 21** — Jedna, spójna ścieżka aktualizacji aplikacji i usunięcie powielonych skryptów
+- [ ] **Punkt 22** — Telemetria, zgłaszanie błędów z logami oraz automatyczne testy i kontrola wydań
 
 ---
 
 ## Przegląd etapów
 
-1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** — punkty 1–4
-2. **Etap 2 (v4.2): Dźwięk, transkrypcja AI i analiza tekstu** — punkty 5–9
-3. **Etap 3 (v4.3): Ekran powitalny, edytor, podgląd audio/wideo i okna ustawień** — punkty 10A–10C, 11, 12A–12B, 13–15
-4. **Etap 4 (v4.4): DaVinci Resolve, montaż osi czasu, eksport i zapis projektów** — punkty 16–19
-5. **Etap 5 (v4.5): Instalator, aktualizacje, zgłaszanie błędów i sprzątanie** — punkty 20–22
+1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** — punkty 1–4 *(ukończono: 1/4)*
+2. **Etap 2 (v4.2): Dźwięk, transkrypcja AI i analiza tekstu** — punkty 5–9 *(ukończono: 0/5)*
+3. **Etap 3 (v4.3): Ekran powitalny, edytor, podgląd audio/wideo i okna ustawień** — punkty 10A–10C, 11, 12A–12B, 13–15 *(ukończono: 0/9)*
+4. **Etap 4 (v4.4): DaVinci Resolve, montaż osi czasu, eksport i zapis projektów** — punkty 16–19 *(ukończono: 0/4)*
+5. **Etap 5 (v4.5): Instalator, aktualizacje, zgłaszanie błędów i sprzątanie** — punkty 20–22 *(ukończono: 0/3)*
 
 ---
 
@@ -20,7 +55,7 @@
 
 - **Otwarte zgłoszenie `#20`** (*lagowanie aplikacji przy filmach trwających ponad 3–5 godzin za każdym razem, gdy słowo jest zaznaczane na czerwono*) → wpięte bezpośrednio do **Punktu 12B** (oraz powiązane z **Punktem 10A** i **14**).
 - **Otwarte zgłoszenie `#8`** (*propozycja nowej dużej funkcji: nieliniowe dopasowanie scenariusza i obsługa pracy z AI przy wywiadach*) → uwzględnione jako kontekst przyszłego rozwoju przy porządkowaniu „pod spodem” w **Punkcie 9** (nie wdrażamy tej nowej funkcji podczas cementowania i nie zamykamy zgłoszenia `#8`).
-- **Zamknięte zgłoszenia do weryfikacji, czy nic nie wróciło (`#19`, `#18`, `#7`, `#5`, `#3`)** → wplecione w odpowiednie punkty (`1`, `6`, `7`, `16`, `20`), aby upewnić się, że dawne poprawki są kompletne i zabezpieczone testami.
+- **Zamknięte zgłoszenia do weryfikacji, czy nic nie wróciło (`#19`, `#18`, `#7`, `#5`, `#3`)** → wplecione w odpowiednie punkty (`1` [zweryfikowano i zamknięto w Punkcie 1], `6`, `7`, `16`, `20`), aby upewnić się, że dawne poprawki są kompletne i zabezpieczone testami.
 
 ---
 
@@ -30,13 +65,19 @@
 
 ---
 
-### 1. Start aplikacji, dobór środowiska Pythona i „samoleczenie” przy uruchomieniu
+### 1. ✅ [ZAKOŃCZONO 2026-11-23] Start aplikacji, dobór środowiska Pythona i „samoleczenie” przy uruchomieniu
 
-- **Co obejmuje:** Moment kliknięcia ikony BadWords lub uruchomienia z DaVinci Resolve aż do pokazania ekranu powitalnego. Obejmuje ochronę przed różnymi wersjami Pythona w systemie, ukrywanie migających czarnych okienek na Windowsie, pilnowanie kolejności uruchamiania na starszym Pythonie w Resolve oraz mechanizm automatycznego doinstalowywania brakujących składników przy starcie.
-- **Dlaczego to ważne:** To tutaj zdarzają się krytyczne awarie jeszcze zanim zobaczysz okno aplikacji (np. gdy DaVinci Resolve albo systemowy Python próbuje uruchomić BadWords ze swoją niekompatybilną wersją bibliotek albo pojawia się błąd uruchamiania jak w historycznym zgłoszeniu `#18`).
-- **Porządki „pod spodem” pod przyszłe funkcje:** **Tak.** Mechanizm startowy łączy w jednym miejscu sprawdzanie środowiska, naprawę braków i automatyczną aktualizację przy starcie. Warto wyraźnie rozdzielić sam start okna od napraw i aktualizacji, żeby w przyszłości łatwo dodawać nowe tryby uruchamiania bez ryzyka zawieszenia startu.
+> **Status:** ✅ **ZAKOŃCZONO I ZACEMENTOWANO (2026-11-23)**
+> **Co zostało naprawione dla użytkownika:**
+> - Ekran powitalny pojawia się natychmiast po kliknięciu ikony (bez czekania na ciężkie ładowanie reszty aplikacji i skanowanie karty graficznej na starcie).
+> - Program twardo odcina się od obcych instalacji Pythona / Conda na komputerze, a w razie brakujących składników najpierw pyta użytkownika o zgodę w stylizowanym ciemnym oknie w jego języku.
+> - W razie krytycznego błędu startu pokazuje czytelne okno z powodem, ścieżką do logu i opcjonalnym wysyłaniem raportu za zgodą (spójnym z zakładką Kontakt).
+> - Ujednolicono uruchamianie z DaVinci Resolve (z zachowaniem zgodności z Resolve Free 21.1+, gdzie skrypt Pythona nie uruchamia się ze środka Resolve, ale nie jest też kasowany) oraz zabezpieczono natywne uruchamiacze na Windowsie, Linuksie i macOS.
+> **Gdzie opisano szczegóły i testy:** `docs/CEMENTED.md` (Sekcja 6), `docs/DEV_STATE.md` (Sekcja 4, pkt 8), testy w `tests/test_startup_guard.py`.
 
-**Prompt do wklejenia:**
+<details>
+<summary>Archiwalny prompt zrealizowanego punktu 1 (punkt zamknięty — nie uruchamiaj ponownie)</summary>
+
 ```text
 Przeanalizuj punkt 1 planu cementowania: Start aplikacji, środowisko uruchomieniowe i mechanizm samoleczenia przy starcie.
 
@@ -61,6 +102,8 @@ Po mojej akceptacji i wdrożeniu zmian pamiętaj o:
 - wpisaniu pełnej dokumentacji technicznej (działanie, niezmienniki, testy) do docs/CEMENTED.md oraz dopisaniu wyłącznie krótkiego, 3–4 wyrazowego hasła z odesłaniem do docs/CEMENTED.md w .agents/rules/architecture.md (Sekcja 3, z zachowaniem limitu poniżej 4 000 znaków).
 ```
 
+</details>
+
 ---
 
 ### 2. Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych
@@ -82,13 +125,13 @@ ZASADY PRACY:
    - raport/logi_macOS_prawdopodobnie_blad_pobierania_ffmpega.log (zwróć uwagę na powielone wpisy w logach)
    - sprawdź przez `gh issue list --state open`, czy któreś otwarte zgłoszenie dotyczy ścieżek danych lub logów.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność zachowania na Windowsie, Linuksie i macOS (uprawnienia do folderów, długie ścieżki i polskie znaki, podwójne zapisywanie wpisów w logu, bezpieczne czyszczenie folderu tymczasowego przy otwartych kilku projektach lub długich sesjach).
-4. Przygotuj dla mnie po polsku, całkowicie prostym, nietechnicznym językiem (bez żargonu i bez kodu), zwięzły raport z 3 sekcjami:
-   (A) Co w tym miejscu wygląda dziwnie lub podejrzanie (jakie są obecne obejścia, migracje i przestarzałe ścieżki — czy mają zostać)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. utrata ustawień, przepełnianie dysku plikami tymczasowymi, podwójne wpisy w dziennikach błędów, rozjazd między wersją z repozytorium a zainstalowaną)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak dokładnie mają być przechowywane dane, jak długo trzymać pliki tymczasowe, czego ma NIE robić migracja).
+3. Sprawdź spójność zachowania na Windowsie, Linuksie i macOS (uprawnienia do folderów, długie ścieżki i polskie znaki np. w nazwie użytkownika Windowsa, podwójne zapisywanie wpisów w logu, bezpieczne czyszczenie folderu tymczasowego przy otwartych kilku projektach lub długich sesjach oraz ścieżki wymiany dla aktualnego DaVinci Resolve 21.1+ i wersji z Mac App Store).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA (zamiast suchych haseł opisz krok po kroku, co użytkownik robi, co dokładnie widzi na ekranie i co mu przestaje działać):
+   (A) Co w tym miejscu wygląda dziwnie lub podejrzanie (dla każdego obejścia i starej migracji opisz realny przypadek: jaka katastrofa lub strata danych wydarzyłaby się u użytkownika, gdybyśmy to wyłączyli, i czy da się to bezpiecznie uprościć)?
+   (B) Co obecnie może się psuć albo działać nieoptymalnie w oczach użytkownika (konkretne scenariusze krok po kroku: np. użytkownik na Windowsie z polskim nazwiskiem w ścieżce traci ustawienia po aktualizacji, na macOS po błędzie FFmpeg dostaje zdublowane logi nieczytelne dla wsparcia, albo po kilku długich filmach kończy mu się miejsce na dysku bo czyszczenie pomija albo kasuje aktywny projekt)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz wprost, jak dokładnie zmieni się zachowanie widziane przez użytkownika (jak długo trzymamy pliki tymczasowe, czego migracja ma NIE dotykać).
 
-Po mojej akceptacji i wdrożeniu pamiętaj o napisaniu testów blokujących regresję (w tests/ i uruchomieniu run_tests.py), wpisaniu pełnej dokumentacji do docs/CEMENTED.md oraz dopisaniu krótkiego 3–4 wyrazowego hasła w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy ochronne (w tests/ i uruchom run_tests.py), przetestuj na żywo realny zapis/migrację/czyszczenie w bezpiecznym folderze testowym (nie tylko na makietach), wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 2 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -114,12 +157,12 @@ ZASADY PRACY:
    - fragmenty dotyczące odświeżania ikony, pełnego ekranu i „Zawsze na wierzchu” w src/gui/main_window.py oraz src/gui/dialogs/settings_dialog.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność między Windows, Linux (X11 i Wayland, KDE/GNOME) oraz macOS (ikona w Docku, skróty okna, brak białego błysku przy otwieraniu, zachowanie na wielu monitorach o różnym skalowaniu i odświeżaniu).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie systemowe obejścia i niskopoziomowe sztuczki są tu użyte — które są niezbędne na danym systemie, a które wyglądają ryzykownie)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. zrywanie przeciągania okna, obcięte krawędzie, znikająca ikona, migotanie lub brak działania „Zawsze na wierzchu”)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma zachowywać się okno przy maksymalizacji, na drugim monitorze, na macOS i Linuksie).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA (krok po kroku, co widzi i klika człowiek przed ekranem):
+   (A) Co wygląda dziwnie lub podejrzanie (dla każdej systemowej sztuczki opisz, jaki konkretny brzydki błąd ekranu pojawiłby się u użytkownika bez niej — np. białe mignięcie, brak przyciągania do krawędzi, brak paska na ekranie)?
+   (B) Co obecnie może się psuć albo działać nieoptymalnie w oczach użytkownika (konkretne scenariusze: np. użytkownik przeciąga okno z ekranu laptopa 150% na monitor 100% i okno ucina przyciski, na Linuksie Wayland klika maksymalizację i okno przykrywa pasek zadań, albo włącza „Zawsze na wierzchu” nad DaVinci Resolve i okno i tak chowa się pod spód)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wyjaśnij dokładnie, jak okno ma się zachować przed oczami użytkownika (na drugim monitorze, po maksymalizacji, na macOS i Linuksie).
 
-Po mojej akceptacji i wdrożeniu napisz testy (dla zmian widocznych na ekranie wygeneruj zrzuty ekranu i sam je obejrzyj), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy i zweryfikuj na żywo działanie prawdziwego okna (rozmiary, kliknięcia, płynność), wygeneruj zrzuty ekranu (PNG) zmienionych okien i sam je obejrzyj przed odpowiedzią, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 3 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -144,12 +187,12 @@ ZASADY PRACY:
    - raport/raport.md (zgłoszenia testerów o czarnym tekście na czarnym tle, języku podpowiedzi i przyciętych rogach paska postępu)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność między Windows, Linux (zwłaszcza KDE/GTK narzucające własną paletę) i macOS przy różnych poziomach powiększenia interfejsu (75%–150%).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (gdzie ominięto główny system tłumaczeń, gdzie zostały doraźne łaty lub duplikaty ikon)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (mieszanie języków, nieczytelne napisy na jasnych motywach systemu, obcięte zaokrąglenia, emoji w komunikatach)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jakie zachowanie jest docelowe przy braku tłumaczenia, zamianie emotek na ikony i skalowaniu ekranu).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA (wskaż konkretne miejsca na ekranach, które widzi użytkownik):
+   (A) Co wygląda dziwnie lub podejrzanie (gdzie ominięto system tłumaczeń albo powielono rysowanie ikon i dlaczego ktoś to tak zostawił)?
+   (B) Co obecnie psuje doświadczenie użytkownika (konkretne sytuacje z życia i raportów testerów: np. użytkownik wybiera język angielski, najeżdża na ikonkę usuwania pliku lub podpowiedź i nadal czyta tekst po polsku; ma jasny motyw systemu i widzi czarny napis na czarnym przycisku; przy 125%–150% powiększenia ucina mu rogi paska lub widzi systemową emotkę zamiast ikony aplikacji)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz, co dokładnie zobaczy użytkownik (np. jak wygląda ikona zamiast emotki, jak zachowuje się aplikacja przy brakującym tłumaczeniu lub nietypowym skalowaniu).
 
-Po mojej akceptacji i wdrożeniu napisz/rozszerz testy wizualne i regresyjne (w tests/ i uruchom run_tests.py), wygeneruj zrzuty ekranu zmienionych elementów do sprawdzenia, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: uruchom testy regresyjne i wizualne (tests/ + run_tests.py), sprawdź na żywo przełączanie języków i skali (75%–150%) w uruchomionym oknie, wygeneruj zrzuty ekranu wszystkich zmienionych ekranów/pasków i sam je obejrzyj przed odpowiedzią, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 4 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -178,13 +221,13 @@ ZASADY PRACY:
    - wyszukiwanie narzędzia FFmpeg w src/osdoc.py
    - raport/logi_macOS_prawdopodobnie_blad_pobierania_ffmpega.log
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź, czy rozwiązanie jest optymalne i spójne między Windows, Linux i macOS (różne formaty wideo/audio, ścieżki ze spacjami lub polskimi znakami, bardzo długie nagrania, pliki bez dźwięku albo z kilkoma ścieżkami audio).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są obejścia przy wykrywaniu ciszy, normalizacji i szukaniu FFmpeg — czy powinny zostać)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. błąd braku FFmpeg, zbyt długie mielenie przy dużych plikach, zrywanie przy nietypowych kodekach lub pustych ścieżkach)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma reagować program przy braku dźwięku, nietypowych ścieżkach i braku FFmpeg).
+3. Sprawdź, czy rozwiązanie jest optymalne i spójne między Windows, Linux i macOS (różne formaty wideo/audio, ścieżki ze spacjami lub polskimi znakami, bardzo długie nagrania, pliki bez dźwięku albo z kilkoma ścieżkami audio, oraz ścieżki klipów przekazywane z DaVinci Resolve w tym przez mostek Lua w wersji Free 21.1+).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia siedzą przy szukaniu FFmpeg, normalizacji i łączeniu „wysp mowy” — co realnie zepsułoby się w nagraniu użytkownika, gdybyśmy je wyjęli)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne przypadki: np. użytkownik na macOS wrzuca film i po kliknięciu Analizuj widzi błąd FFmpeg mimo że program go pobierał; wrzuca nagranie ekranu bez ścieżki audio albo grę z 2 ścieżkami audio i transkrypcja analizuje pustkę lub grę zamiast mikrofonu; przy 3-godzinnym pliku czeka bardzo długo bez informacji o etapie)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno, co zobaczy użytkownik i co dostanie na ekranie (komunikat przy braku dźwięku, wybór ścieżki, brak FFmpeg).
 
-Po mojej akceptacji i wdrożeniu napisz testy blokujące regresję (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy blokujące regresję (tests/ + run_tests.py) oraz przetestuj na żywo prawdziwy przebieg FFmpeg na próbce audio/wideo (nie tylko testy na makietach), wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 5 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -208,12 +251,12 @@ ZASADY PRACY:
    - zamknięte zgłoszenie GitHub #19 (`gh issue view 19`) i sprawdź otwarte zgłoszenia (`gh issue list --state open`), czy coś nowego dotyczy CUDA/GPU.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność i bezpieczeństwo na Windowsie, Linuksie i macOS (tryb Auto, ręcznie wymuszone GPU bez karty lub ze starym sterownikiem, komputer z małą ilością pamięci RAM, różnice między Intel Mac a Apple Silicon).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są teraz obejścia dla sterowników, bibliotek graficznych i pamięci — które chronią przed awarią i muszą zostać)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. długie opóźnienie przed transkrypcją na testowanie sprzętu, mylące komunikaty dla użytkownika, błędny wybór precyzji)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (kiedy program ma informować o przejściu na wolniejszy procesor, a kiedy robić to po cichu).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (które obecne zabezpieczenia sterowników i bibliotek chronią użytkownika przed nagłym zamknięciem całego programu przy starcie AI — opisz konkretny przypadek np. szkolnego komputera, gdzie to ratuje pracę)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne scenariusze: np. użytkownik ze słabszą kartą albo starszym sterownikiem klika Analizuj, program długo sprawdza sprzęt lub w ogóle znika bez wyjaśnienia; albo w ustawieniach ręcznie wymusił GPU na komputerze bez karty i zamiast czytelnej podpowiedzi dostaje tajemniczy błąd)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wyjaśnij, co zobaczy użytkownik (np. dyskretne powiadomienie vs ciche przełączenie na procesor, co zrobić gdy ręcznie wybrał GPU a karta nie działa).
 
-Po mojej akceptacji i wdrożeniu napisz/rozbuduj testy w tests/ (uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: rozbuduj testy w tests/ (uruchom run_tests.py), przetestuj na żywo prawdziwe sondowanie sprzętu i bezpieczny powrót awaryjny na procesor, a jeśli zmienisz okienka/komunikaty ostrzeżeń — wygeneruj i obejrzyj zrzuty ekranu, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 6 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -238,12 +281,12 @@ ZASADY PRACY:
    - historyczne zgłoszenia GitHub #7, #3 i #19 (`gh issue view 7`, `gh issue view 3`) — sprawdź szczególnie, czy propozycja czytelnego komunikatu przy zablokowanym internecie/pobieraniu modelu ze zgłoszenia #7 została w pełni i wielojęzycznie wdrożona.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź działanie i spójność na Windows, Linux i macOS (pobieranie przy słabym internecie lub przerwaniu w połowie, ścieżki z polskimi znakami, równoległe przetwarzanie kawałków, zachowanie przycisku zatrzymania analizy, czyszczenie plików tymczasowych).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (sklejane w locie skrypty, udawanie konsoli przy pobieraniu, poprawki zgodności — co musi zostać, a co jest bardzo kruche)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. zacięty pasek pobierania, niejasny komunikat przy braku sieci lub miejsca na dysku, różnice w języku komunikatów podczas pobierania modelu)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma działać przerwanie pobierania/analizy, komunikaty o braku pamięci lub sieci).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie kruche obejścia — typu udawanie okna konsoli czy sklejane w locie skrypty — tu działają i jaki realny problem użytkownika dziś łatają)?
+   (B) Co obecnie może się psuć z perspektywy użytkownika (konkretne scenariusze: np. użytkownik za firmową zaporą lub z wolnym internetem klika Analizuj, pobiera model pierwszy raz i widzi zacięty pasek albo obcojęzyczny błąd zamiast jasnej instrukcji; albo wciska Zatrzymaj w połowie pobierania i zostaje uszkodzony model, który psuje kolejne próby)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz, co dokładnie zobaczy i zrobi użytkownik (przerwanie w połowie, brak sieci/miejsca na dysku, komunikaty podczas pobierania).
 
-Po mojej akceptacji i wdrożeniu napisz testy blokujące regresję (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy blokujące regresję (tests/ + run_tests.py), przetestuj na żywo uruchamianie potoku transkrypcji/anulowania i obsługę błędów sieci, wygeneruj i obejrzyj zrzuty ekranu okien pobierania/błędów, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 7 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -266,12 +309,12 @@ ZASADY PRACY:
    - testy w tests/test_algorithms.py i tests/test_data_contracts.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź poprawność działania na skrajnych przypadkach (puste nagrania, brak wykrytej mowy, bardzo długie powtórzenia, przełączanie filtrów po ręcznej edycji, nieangielskie znaki i interpunkcja).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie specjalne wyjątki i nieoczywiste powiązania przy pierwszym słowie listy albo między warstwami kolorów tu występują)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. niechciane skasowanie ręcznej decyzji po włączeniu wypełniaczy, gubienie fragmentów `(...)`, dziwne cięcie zdań)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak dokładnie mają się zachowywać ręczne poprawki wobec automatycznych przełączników).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (gdzie siedzą ukryte zasady kolejności warstw kolorów i pamięci pierwszego elementu listy — co dokładnie rozjechałoby się na montażu, gdyby ktoś to naruszył)?
+   (B) Co obecnie może się psuć z perspektywy montażysty (konkretne przykłady zdań/nagrań: np. użytkownik ręcznie zostawia jedno „eee” bo pasuje do żartu, potem przestawia suwak albo filtr wypełniaczy i jego ręczna decyzja znika; albo lektor zacina się 3 razy na jednym zdaniu z przerwą `(...)` i wycięcie ucina początek właściwego zdania)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji podaj konkretny przykład na zdaniu, jak zachowa się tekst po kliknięciu użytkownika i zmianie automatu.
 
-Po mojej akceptacji i wdrożeniu rozbuduj testy w tests/ (uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: rozbuduj testy w tests/ (run_tests.py) z prawdziwymi przypadkami zdań/powtórek/pustych nagrań, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 8 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -296,12 +339,12 @@ ZASADY PRACY:
    - zobacz też otwarte zgłoszenie GitHub #8 (`gh issue view 8`) wyłącznie jako kontekst przyszłego kierunku rozwoju — NIE wdrażaj teraz funkcji z #8 i NIE zamykaj #8; sprawdź tylko, czy obecne porządki ułatwią jego realizację w przyszłości.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź zachowanie na Windows, Linux i macOS (kodowanie polskich i międzynarodowych znaków w plikach TXT/PDF/DOCX, bardzo duże dokumenty, sytuacja gdy lektor przeczytał fragment w innej kolejności albo zaimprowizował długi blok).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie skróty lub osobne sposoby uruchamiania tu siedzą i czy są potrzebne)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. zacięcia przy dużych PDF-ach, rozjazd zaznaczenia w widoku obok siebie, błędne oznaczanie brakujących zdań)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak program ma traktować uszkodzone PDF-y, wielkie scenariusze, brakujące akapity i synchronizację po kliknięciu słowa).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie skróty albo osobne sposoby odpalania analizy scenariusza tu siedzą i dlaczego są — czy ułatwią przyszłe nieliniowe dopasowanie z `#8`)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne scenariusze: np. użytkownik wrzuca scenariusz PDF z polskimi znakami i zamiast liter widzi krzaczki przez co nic się nie dopasowuje; lektor robi 2-minutową dygresję od scenariusza i widok Obok siebie zaczyna podświetlać złe linijki; albo duży scenariusz w DOCX wiesza okno na kilkanaście sekund)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wyjaśnij, co zobaczy użytkownik w panelu scenariusza i widoku Obok siebie.
 
-Po mojej akceptacji i wdrożeniu napisz testy regresyjne (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy regresyjne (tests/ + run_tests.py) na realnych plikach DOCX/PDF/TXT z polskimi znakami, jeśli zmienisz widok Side-by-Side/panel scenariusza — wygeneruj i obejrzyj zrzuty ekranu, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 9 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -330,12 +373,12 @@ ZASADY PRACY:
    - otwarte zgłoszenie GitHub #20 (`gh issue view 20`) — sprawdź, czy przeliczanie statystyk i legendy przy każdym kliknięciu słowa dokłada się do lagów na nagraniach 3–5+ godzinnych.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej elementami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź, gdzie statystyki i legenda są wywoływane z zewnątrz (np. panel ciszy, płótno transkrypcji, cofanie zmian, montaż) i jak zachowują się na długich projektach.
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie obliczenia siedzą w głównym oknie mimo że powinny działać osobno, i czy przy każdym zaznaczeniu słowa przelicza się cały dokument)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. opóźnienia po kliknięciu, niespójne liczniki między panelem ciszy a legendą kolorów)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak dokładnie ma wyglądać wydzielenie tego obszaru i czy przy okazji poprawić drobne niespójności w licznikach lub eksporcie tekstu).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (co ciężkiego wykonuje się dziś niepotrzebnie w oknie głównym przy pojedynczym kliknięciu słowa)?
+   (B) Co obecnie może się psuć z perspektywy użytkownika (konkretne sytuacje: np. użytkownik ma 4-godzinny film, zaznacza jedno słowo i program przelicza cały tekst od zera powodując przycięcie; w panelu ciszy widzi inne minuty cięć niż w legendzie; albo eksportuje czysty tekst i dostaje wycięte już powtórki zamiast samej mowy)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno, co zmienia się dla użytkownika w licznikach, legendzie i eksporcie tekstu.
 
-Po mojej akceptacji i wdrożeniu napisz testy dla liczników, legendy i eksportu tekstu (w tests/ i uruchom run_tests.py oraz kontrolę GUI), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy dla liczników, legendy i eksportu tekstu (tests/ + run_tests.py + kontrola GUI), zweryfikuj na żywo spójność liczników przy klikaniu i cofaniu zmian, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 10A jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -358,12 +401,12 @@ ZASADY PRACY:
    - src/gui/dialogs/overlay.py (styk z globalnym przechwytywaniem kliknięć i klawisza Enter)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej elementami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność na Windows, Linux i macOS (skróty klawiszowe podczas pisania w wyszukiwarce lub polu scenariusza, zapamiętywanie układu pasków bocznych, kolejność rysowania przejść między ekranami).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie ręczne obejścia dla skrótów, fokusu lub przycisków markerów siedzą obecnie w głównym oknie)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. uruchamianie skrótu koloru podczas wpisywania tekstu, gubienie zapisanego układu paneli bocznych)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma zachowywać się przełączanie pasków bocznych i skróty w oknach pomocniczych).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie ręczne sztuczki przechwytujące klawisze i kliknięcia siedzą dziś w oknie głównym — co przestałoby działać na ekranie, gdyby je usunąć)?
+   (B) Co obecnie może się psuć w codziennej pracy (konkretne scenariusze: np. użytkownik wpisuje szukane słowo w wyszukiwarce lub wkleja scenariusz i naciśnięcie litery albo Spacji niespodziewanie uruchamia skrót malowania lub włącza dźwięk; zamyka program z otwartym panelem bocznym i po restarcie układ nie wraca)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — dla każdego pytania wskaż dokładnie, jak skróty i paski mają reagować przy pisaniu i w oknach pomocniczych.
 
-Po mojej akceptacji i wdrożeniu napisz testy (w tests/ i uruchom run_tests.py oraz kontrolę GUI), zrób zrzut ekranu układu edytora z paskami do weryfikacji, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy (tests/ + run_tests.py + kontrola GUI), przetestuj na żywo zdarzenia klawiszy i zapamiętywanie układu paneli w oknie Qt, zrób zrzuty ekranu układu edytora z paskami i sam je obejrzyj, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 10B jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -386,12 +429,12 @@ ZASADY PRACY:
    - src/gui/components/top_status_island.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej elementami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność między Windows, Linux i macOS (co się dzieje, gdy użytkownik zamknie okno podczas trwającej transkrypcji lub budowania podglądu wideo, czy blokada edytora podczas strumieniowania na żywo zawsze zdejmuje się po błędzie).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są obejścia przy wczytywaniu w tle, blokowaniu okna na czas analizy lub sprawdzaniu aktualizacji na starcie)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. zostające w tle procesy po zamknięciu okna, zablokowany interfejs po nieudanej analizie, nakładające się komunikaty statusu)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma zachowywać się zamykanie podczas pracy w tle i kolejność okienek powitalnych/aktualizacji po uruchomieniu).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia przy przełączaniu zadań w tle, blokowaniu edycji czy okienkach po starcie tu siedzą)?
+   (B) Co obecnie może się psuć z perspektywy użytkownika (konkretne scenariusze: np. użytkownik zamyka okno w trakcie analizy lub robienia proxy 360p — okno znika, a w tle dalej działa proces zjadający procesor i blokujący pliki; po nieudanej analizie edytor zostaje wyszarzony na stałe; albo na górnej wyspie nakładają się komunikaty)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno zachowanie na ekranie (czy przy zamykaniu podczas analizy pytamy o przerwanie, w jakiej kolejności pojawiają się okienka po starcie).
 
-Po mojej akceptacji i wdrożeniu napisz testy (w tests/ i uruchom run_tests.py oraz kontrolę GUI), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy (tests/ + run_tests.py + kontrola GUI), przetestuj na żywo cykl startu/anulowania/zamykania wątków w tle oraz wygeneruj i obejrzyj zrzuty ekranu górnej wyspy statusu, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 10C jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -414,13 +457,13 @@ ZASADY PRACY:
    - src/gui/components/track_options_drawer.py
    - obsługa ekranu powitalnego, wyboru osi/ścieżek i Szybkiej Ciszy w src/gui/main_window.py i src/engine/audio_engine.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS (przeciąganie plików z eksploratora/Findera/menedżera plików, uruchamianie ze środka DaVinci Resolve vs samodzielne, zachowanie gdy DaVinci Resolve nie jest zainstalowane, płynność animacji zwijania i rozwijania).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (obejścia w animacjach, wykrywaniu otwartego Resolve czy odświeżaniu listy ścieżek)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. wrzucenie nieobsługiwanego pliku, utrata zaznaczenia ścieżek po przełączeniu osi czasu, zacinające się animacje lub ucięte napisy)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma reagować lista na duplikaty plików, brak Resolve, mieszane rozdzielczości w kolejce i tryb Szybka Cisza).
+3. Sprawdź spójność między Windows, Linux i macOS (przeciąganie plików z eksploratora/Findera/menedżera plików, aktualne zasady DaVinci Resolve 21.1+ — gdzie wersja Free łączy się wyłącznie przez mostek Lua bez bezpośredniego Pythona, a wersja Studio pozwala na natywne połączenie, zachowanie bez zainstalowanego Resolve, płynność animacji zwijania i rozwijania).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (obejścia przy animacji szuflady ścieżek, rozpoznawaniu otwartego Resolve Free 21.1+ / Studio czy kolejce plików)?
+   (B) Co obecnie może się psuć z punktu widzenia użytkownika (konkretne scenariusze: np. użytkownik darmowego Resolve 21.1+ włącza ekran powitalny przed uruchomieniem mostka Lua i widzi mylące komunikaty lub puste ścieżki; wrzuca do kolejki 2 filmy oraz nieobsługiwany dokument i nie dostaje jasnego sygnału; zmienia kolejność w kolejce lub wybiera Szybką Ciszę i szuflada przycina napisy)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno reakcję na ekranie (duplikaty plików, mieszane rozdzielczości, brak otwartego mostka Resolve, Szybka Cisza).
 
-Po mojej akceptacji i wdrożeniu napisz testy (w tests/ i uruchom run_tests.py), wygeneruj zrzuty ekranu obu trybów ekranu powitalnego i sam je sprawdź, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy (tests/ + run_tests.py), przetestuj na żywo przełączanie trybów i animację szuflady w oknie Qt, wygeneruj zrzuty ekranu obu trybów ekranu powitalnego i szuflady ścieżek i sam je obejrzyj, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 11 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -446,12 +489,12 @@ ZASADY PRACY:
    - połączenie edytora z legendą i skrótami w src/gui/main_window.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność na Windows, Linux i macOS (różnice w skrótach Ctrl vs Cmd na Macu, szybkie przewijanie kółkiem myszy i gładzikiem, klikanie podczas strumieniowania słów na żywo, intuicyjność przełączania trybów myszy).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (obejścia w układaniu tekstu, obsłudze kliknięć poza polami lub w rysowaniu przekreśleń)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. Cofnij/Ponów nieodświeżające statystyk lub podglądu audio, problemy z wyszukiwarką lub własnymi markerami)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak dokładnie ma działać zaznaczanie ramką vs tekstem, jak mają wyglądać przekreślenia przy nakładających się kolorach, co ma obejmować Cofnij/Ponów).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia siedzą w rysowaniu przekreśleń, przeskoku z dymkami czy układaniu słów i co popsulibyśmy usuwając je bez planu)?
+   (B) Co obecnie może się psuć z perspektywy użytkownika (konkretne przypadki z raportów i codziennej pracy: np. nowy użytkownik nie może znaleźć zaznaczania ramką; przy szybkim malowaniu myszą gubi słowa na zakrętach wiersza; klika Ctrl+Z i kolor słowa znika, ale odtwarzacz dalej przeskakuje to słowo; albo podczas strumieniowania na żywo klika słowo i edytor rozjeżdża zaznaczenie)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wskaż wprost, jak rysuje się i zaznacza tekst pod kursorem użytkownika.
 
-Po mojej akceptacji i wdrożeniu napisz testy regresyjne (w tests/ i uruchom run_tests.py), wygeneruj zrzuty ekranu edytora do weryfikacji, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy regresyjne (tests/ + run_tests.py), przetestuj na żywo operacje zaznaczania, szukania i Cofnij/Ponów w uruchomionym płótnie Qt, wygeneruj zrzuty ekranu edytora (w tym ramki, przekreśleń, wyszukiwarki i markerów) i sam je obejrzyj, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 12A jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -475,17 +518,17 @@ ZASADY PRACY:
    - src/gui/components/waveform_timeline.py oraz src/gui/components/audio_preview.py (reakcja wykresu fali i odtwarzacza na zmianę koloru słowa)
    - src/handlers/autosave_manager.py (czy przy każdym słowie nie kopiuje się w pamięci dziesiątek tysięcy słów)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku w tym łańcuchu reakcji (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź zachowanie i zmierz lub oszacuj czas reakcji dla nagrania 1-godzinnego vs 5-godzinnego (dziesiątki tysięcy słów) na Windows, Linux i macOS.
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co w tym łańcuchu odświeżania wygląda dziwnie lub nadmiarowo (co ciężkiego wykonuje się niepotrzebnie przy zaznaczeniu pojedynczego słowa)?
-   (B) Co dokładnie powoduje zacinanie z punktu widzenia użytkownika w zgłoszeniu #20 i czy są jeszcze inne ukryte wąskie gardła przy 5-godzinnych plikach?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (np. czy przy szybkim malowaniu wystarczy odświeżyć statystyki i falę z minimalnym opóźnieniem po puszczeniu myszy, jakie opóźnienie jest dla mnie akceptowalne).
+3. Zmierz realnie (na żywo w pamięci / oknie Qt na wygenerowanym 5-godzinnym projekcie z dziesiątkami tysięcy słów) czas reakcji dla 1 godziny vs 5 godzin na pojedyncze zaznaczenie i szybkie malowanie myszą.
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co w tym łańcuchu odświeżania wygląda dziwnie lub nadmiarowo (dlaczego przy kliknięciu jednego słowa program wykonuje ciężką pracę jak dla całego filmu)?
+   (B) Co dokładnie odczuwa użytkownik ze zgłoszenia #20 (opisz krok po kroku: ile milisekund/sekund stoi ekran przy kliknięciu słowa na 5-godzinnym podcaście, co dzieje się przy przeciąganiu pędzlem i jakie inne miejsca także przytną program przy długim nagraniu)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji podaj odczuwalną dla użytkownika różnicę (np. czy przy malowaniu statystyki i wykres fali odświeżają się natychmiast po puszczeniu przycisku myszy z opóźnieniem 50–100 ms, a samo słowo podświetla się w ułamku milisekundy).
 
 Po mojej akceptacji i wdrożeniu:
-- napisz test wydajnościowy / regresyjny na dużym zestawie słów (odpowiadającym 5 godzinom mowy) w tests/ i uruchom run_tests.py,
-- sprawdź czy wygląd na ekranie (przekreślenia, legenda, wykres fali) nadal odświeża się bezbłędnie (wygeneruj zrzuty ekranu),
+- napisz i uruchom realny test wydajnościowy na żywo na zestawie słów odpowiadającym 5 godzinom mowy (zmierz dokładny czas przed i po) oraz uruchom run_tests.py,
+- wygeneruj zrzuty ekranu i obejrzyj je samodzielnie, aby potwierdzić, że przekreślenia, legenda i wykres fali odświeżają się bezbłędnie,
 - zamknij zgłoszenie #20 na GitHubie przez `gh issue close 20` z krótkim podaniem przyczyny i naprawy,
-- wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+- wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 12B jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -510,13 +553,13 @@ ZASADY PRACY:
    - powiązania odtwarzacza z edytorem i oknem głównym w src/gui/main_window.py
    - raport/raport.md (zgłoszenie testera o problemach z odtwarzaczem)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS (różne silniki multimedialne wbudowane w system, działanie regulacji głośności i suwaka na Linuksie bez narzędzi systemowego miksera, płynność przeskoku nad wieloma krótkimi wycięciami pod rząd bez trzasków ani zawieszeń, synchronizacja napisu czasu i podświetlanego słowa w tekście).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie systemowe obejścia głośności, zapobiegania trzaskom i uruchamiania odtwarzania są tu zastosowane)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. niedziałające przyciski w określonym stanie, utrata synchronizacji podświetlenia słów przy prędkości 1.5x/2x, zacinanie przy serii gęstych cięć, ostrzeżenia stylu w logu)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak dokładnie ma zachowywać się przycisk Play po końcu nagrania, po kliknięciu wyciętego słowa i przy braku wygenerowanego dźwięku podglądu).
+3. Sprawdź spójność między Windows, Linux i macOS (różne silniki multimedialne, regulacja głośności na Linuksie bez systemowego miksera, płynność przeskoku nad wieloma krótkimi wycięciami bez trzasków, synchronizacja czasu i podświetlanego słowa, a także skok głowicy na osi DaVinci Resolve z uwzględnieniem mostka Lua w darmowym Resolve 21.1+ vs Studio).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia dla głośności na Linuksie, wyciszania trzasków przy skoku czy dogrywania brakującego audio ze starego projektu tu siedzą)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne sytuacje z raportu testera i codziennego montażu: np. użytkownik klika Play/Pauza w dolnym pasku i nic się nie dzieje; włącza prędkość 1.5x/2x z omijaniem cięć i podświetlane słowo rozjeżdża się z głosem albo słychać trzask w słuchawkach przy serii powtórek; wczytuje stary projekt bez dźwięku podglądu i odtwarzacz milczy bez wskazówki)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz, co użytkownik usłyszy i zobaczy po kliknięciu Play, kliknięciu wyciętego słowa i dojściu do końca nagrania.
 
-Po mojej akceptacji i wdrożeniu napisz testy dla wyliczania przedziałów do pominięcia i czasu odtwarzania (w tests/ i uruchom run_tests.py), zweryfikuj wygląd na zrzutach ekranu, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy dla przedziałów pomijania i czasu (tests/ + run_tests.py), przetestuj na żywo sterowanie dolnym odtwarzaczem i logikę omijania cięć, wygeneruj i obejrzyj zrzuty ekranu odtwarzacza (zwinięty/rozwinięty/podgląd wideo), wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 13 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -540,13 +583,13 @@ ZASADY PRACY:
    - generowanie podglądu wideo 360p i dostrajanie przedziałów ciszy w src/engine/audio_engine.py oraz src/handlers/analysis_worker.py
    - uruchamianie przeliczania ciszy i proxy w tle w src/gui/main_window.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność na Windows, Linux i macOS (sprzętowe vs programowe tworzenie wideo 360p, zachowanie przy wielokrotnym zmienianiu suwaków bez zacinania, synchronizacja przybliżenia fali z podglądem cięć i wieloma klipami w kolejce).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia przy wykrywaniu sprzętu wideo, buforowaniu wykresu lub wygaszaniu statystyk są w środku)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. błąd przy tworzeniu wideo podglądu na starszych kartach, rozjazd fali dźwiękowej i wskaźnika pozycji przy zoomie, nieoczekiwane zużycie pamięci przy długich podcastach)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma działać generowanie proxy dla wielu plików o różnych proporcjach, jak zachować przybliżenie fali po przeliczeniu ciszy).
+3. Sprawdź spójność na Windows, Linux i macOS (sprzętowe vs programowe tworzenie wideo 360p, płynność przy wielokrotnym przesuwaniu suwaków ciszy, synchronizacja przybliżenia fali z podglądem cięć i wieloma klipami oraz tworzenie podglądu z osi DaVinci Resolve w tym Free 21.1+ przez mostek Lua).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia przy wyborze kodeka karty graficznej do proxy 360p, pamięci podręcznej wykresu fali czy płynnym wygaszaniu statystyk są zastosowane)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne scenariusze: np. użytkownik na starszej karcie graficznej otwiera projekt i w tle cicho wysypuje się podgląd wideo 360p; przybliża falę dźwiękową kółkiem i kliknięcie na fali przenosi w inne miejsce niż zaznaczona kreska; albo na godzinnym wywiadzie przesuwa suwak ciszy i wskaźniki zaczną skakać lub zatykają pamięć)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wskaż wprost, co zmieni się na ekranie przy kolejce filmów o różnych proporcjach i przy zoomie fali.
 
-Po mojej akceptacji i wdrożeniu napisz testy regresyjne (w tests/ i uruchom run_tests.py), zrób zrzuty ekranu wykresu fali oraz panelu ciszy do sprawdzenia, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy regresyjne (tests/ + run_tests.py), przetestuj na żywo generowanie fali/proxy i reakcję suwaków ciszy, zrób zrzuty ekranu wykresu fali oraz panelu ciszy i sam je obejrzyj, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 14 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -571,13 +614,13 @@ ZASADY PRACY:
    - src/gui/widgets/language_selector.py
    - src/gui/widgets/layouts.py i splitters.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność na Windows, Linux i macOS (zwłaszcza działanie list rozwijanych w oknach bez ramki, skalowanie 75%–150%, wyszukiwarka ustawień, rozpoznawanie trybów myszki niezależnie od języka interfejsu, skróty z klawiszem Cmd na macOS).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są obejścia np. z przełączaniem języka w locie, odświeżaniem ikony, wbudowanym własnym updaterem lub sprawdzaniem trybu myszki po tekście)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. znikające lub zasłonięte menu rozwijane na Linuksie/macOS, źle zapamiętane ustawienie po anulowaniu, niedziałający skrót po zmianie)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma działać zapis vs Anuluj, wyszukiwanie opcji podstawowych i zaawansowanych oraz dzielenie pliku kontrolek).
+3. Sprawdź spójność na Windows, Linux i macOS (listy rozwijane w oknach bez ramki, skalowanie 75%–150%, wyszukiwarka ustawień, rozpoznawanie trybów myszki niezależnie od języka UI, skróty Cmd na macOS oraz poprawne blokowanie opcji DRT w zakładce DaVinci Resolve dla darmowej wersji 21.1+ z aktualną dokumentacją).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (dlaczego w oknie Ustawień zostały obejścia przy przełączaniu języka na żywo, sprawdzaniu nazw opcji po przetłumaczonym tekście czy kawałku starej logiki aktualizacji)?
+   (B) Co obecnie może się psuć z perspektywy użytkownika (konkretne sytuacje: np. użytkownik na Linuksie lub macOS otwiera listę rozwijaną i lista chowa się za oknem; zmienia 3 ustawienia i klika Anuluj, a mimo to część zmian zostaje albo przy wyszukiwaniu opcji zaawansowanej nie widzi wyniku; ustawia skrót na Macu i zamiast Cmd dostaje dziwny symbol)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji napisz wyraźnie, co zobaczy i odczuje użytkownik po kliknięciu Zapisz, Anuluj czy wpisaniu hasła w wyszukiwarkę.
 
-Po mojej akceptacji i wdrożeniu sprawdź/rozszerz testy w tests/test_settings_and_version.py (uruchom run_tests.py), wygeneruj i obejrzyj zrzuty ekranu zakładek Ustawień, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: rozbuduj testy w tests/test_settings_and_version.py (uruchom run_tests.py), przetestuj na żywo otwieranie zakładek, wyszukiwarkę, przełącznik XML/DRT i animację przyciemniania, wygeneruj i obejrzyj zrzuty ekranu wszystkich zmienionych zakładek i kontrolek, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 15 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -608,13 +651,13 @@ ZASADY PRACY:
    - testy odizolowania od Resolve w tests/test_host_env_fixes.py
    - historyczne zgłoszenie GitHub #5 (`gh issue view 5`) oraz sprawdź otwarte zgłoszenia (`gh issue list --state open`), czy pojawiły się nowe problemy z łącznością Resolve.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów; sprawdź też, czy w src/bridge/ nie zostały jakieś puste/stare ślady).
-3. Sprawdź spójność między Windows, Linux i macOS (w tym wersja Mac App Store w piaskownicy systemowej, kodowanie polskich znaków między Lua a Pythonem w skrzynce plików, blokowanie dostępu do pliku w tym samym ułamku sekundy na Windowsie).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia dla darmowego Resolve 21.1+, odczytu zablokowanych plików na Windowsie lub wersji z Mac App Store są tu zastosowane)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. zawieszenie podczas skoku na osi, błędne rozpoznanie edycji Free vs Studio, rozłączenie mostka w połowie długiego renderowania)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma się zachowywać program przy utracie połączenia z Resolve w trakcie pracy, czy i kiedy przypominać o uruchomieniu mostka).
+3. Sprawdź OBOWIĄZKOWO aktualną dokumentację oraz najświeższe zmiany DaVinci Resolve (21.1+, 21.2+, 22+ — lokalne README SDK jeśli jest na dysku oraz aktualne informacje z sieci) oraz spójność między Windows, Linux i macOS (w tym brak Python API i zewnętrznego socketa w darmowym Resolve 21.1+, ograniczenia piaskownicy Lua bez io/ffi/require, współdzielona paczka na macOS dla Free/Studio i wersja z Mac App Store, polskie znaki między Lua a Pythonem, jednoczesny dostęp do pliku na Windowsie).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (dlaczego w darmowym Resolve 21.1+ potrzebny jest cały mechanizm skrzynki Lua i odczyt współdzielony na Windowsie — opisz, co użytkownik zobaczyłby na ekranie bez tych obejść)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne scenariusze: np. użytkownik zaktualizował darmowe Resolve do 21.1+/22, w menu ma i BadWords i BadWords Bridge i nie wie co kliknąć; albo podczas długiego renderowania/skoku na osi traci połączenie z mostkiem; na Macu program błędnie zgaduje wersję Free dla Studio i omija szybkie połączenie; albo nazwy klipów z polskimi znakami zniekształcają się w komunikacji)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno doświadczenie użytkownika (co widzi w menu, jakie okienko podpowiada uruchomienie mostka, co robi program gdy Resolve zostanie zamknięte w trakcie pracy).
 
-Po mojej akceptacji i wdrożeniu dopisz testy symulujące brak Resolve i komunikację mostka (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy symulujące wszystkie tryby (brak Resolve, Free 21.1+, Studio) oraz przetestuj na żywo komunikację mostka (prawdziwy zapis/odczyt pliku request.lua i odpowiedź w stylu Fusion.prefs), wygeneruj i obejrzyj zrzuty ekranu ewentualnych komunikatów połączenia, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 16 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -639,13 +682,13 @@ ZASADY PRACY:
    - testy w tests/test_timeline_cuts.py i tests/test_assembler_xml.py
    - raport/raport.md (uwaga o rozjechanych cięciach na osi subframowej)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS oraz dla skrajnych osi czasu (ułamkowe klatkaże, różne przesunięcia początkowego kodu czasowego np. 01:00:00:00, wiele ścieżek audio i wideo, klipy złożone / napisy / przejścia, napisy w językach narodowych w nazwach klipów).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia przy poprawianiu plików DRT, ukrywaniu ekranu w Resolve podczas importu lub obsłudze Media Pool są obecnie używane)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. rozjazd przy podklatkach, problem z odlinkowanymi ścieżkami, duble plików w Media Pool lub zablokowane opcje między XML a DRT)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma działać montaż na pustych lukach, jak zachowywać nieoznaczone ścieżki tła / muzyki i co robić przy złożonych klipach).
+3. Zweryfikuj aktualną dokumentację DaVinci Resolve 21.1+ / 22+ (wymuszone ominięcie DRT na korzyść XML w darmowym Resolve 21.1+, ograniczenia ImportTimelineFromFile dla DRT vs XML) oraz sprawdź spójność między Windows, Linux i macOS dla skrajnych osi czasu (ułamkowe klatkaże 23.976/29.97/59.94, przesunięcia kodu czasowego np. 01:00:00:00, wiele ścieżek audio i wideo, klipy złożone / napisy / przejścia, polskie znaki w nazwach klipów).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia przy łataniu plików DRT, ukrywaniu migotania Resolve przy imporcie czy sprzątaniu Media Pool są używane i co zepsułoby się w montażu użytkownika bez nich)?
+   (B) Co obecnie może się psuć w gotowym montażu użytkownika (konkretne scenariusze z raportów i praktyki: np. użytkownik montuje godzinny wywiad 29.97 fps i pod koniec filmu dźwięk wyprzedza ruch ust; w darmowym Resolve 21.1+ czeka 30 sekund zanim program przejdzie z DRT na XML; na wielościeżkowej osi znika lub przycina mu ścieżkę z muzyką w tle; albo po montażu w Media Pool zostają dziesiątki zduplikowanych klipów)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wyjaśnij dokładnie, jak będzie wyglądać zmontowana oś czasu w DaVinci Resolve (puste luki, ścieżki z muzyką, klipy złożone, markery).
 
-Po mojej akceptacji i wdrożeniu rozbuduj testy dokładności klatkowej i wygenerowanych osi czasu (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: rozbuduj testy dokładności klatkowej i wygenerowanych osi (tests/ + run_tests.py), zweryfikuj na żywo strukturę realnie wygenerowanych plików XML/DRT i przejść na osi czasu, jeśli zmienisz panel montażu — wygeneruj i obejrzyj zrzuty ekranu, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 17 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -668,13 +711,13 @@ ZASADY PRACY:
    - przygotowanie przepisu cięcia i wykonanie w src/engine/audio_engine.py
    - wywołanie okna eksportu i montażu w trybie plikowym w src/gui/main_window.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS (zapisywanie ścieżek do plików ze spacjami, polskimi znakami i literami dysków Windowsa jako poprawnych adresów dla Premiere/FCP/Resolve, wieloklipowa kolejka plików o różnych parametrach, przypadek gdy brakuje biblioteki OTIO).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są skróty, powielone fragmenty lub obejścia w formacie ścieżek, emotka zapasowa w oknie eksportu czy bezstratnym cięciu)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. błąd przy mieszanych klatkażach w kolejce, nieotwierający się plik w Premiere/Final Cut, źle dobrane ścieżki audio w EDL/FCPXML)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma działać mieszana kolejka plików o różnej rozdzielczości/klatkażu, nadpisywanie istniejącego pliku eksportu i bezpośrednie cięcie pliku).
+3. Sprawdź spójność między Windows, Linux i macOS oraz zgodność wygenerowanych plików z aktualnym DaVinci Resolve 21.1+, Premiere Pro i Final Cut Pro (ścieżki ze spacjami, polskimi znakami i literami dysków Windowsa, wieloklipowa kolejka o różnych parametrach, przypadek braku biblioteki OTIO).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (dlaczego w formatach eksportu są obejścia ścieżek, powielone fragmenty podpowiedzi czy zapasowa emotka w oknie eksportu — i gdzie na ekranie widać te pozostałości)?
+   (B) Co obecnie może się psuć dla użytkownika (konkretne scenariusze: np. użytkownik na Windowsie eksportuje montaż z folderu o polskiej nazwie, otwiera XML w DaVinci Resolve albo Premiere i program widzi „Media Offline” lub co gorsza podpina lekkie wideo podglądu 360p zamiast oryginału; albo wrzuca klipy 30 fps i 60 fps do kolejki i bezpośrednie cięcie wywala się w połowie)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wskaż wprost, co zobaczy użytkownik w oknie eksportu i co otworzy potem w swoim programie montażowym.
 
-Po mojej akceptacji i wdrożeniu napisz testy dla każdego z formatów eksportu (w tests/ i uruchom run_tests.py), sprawdź wizualnie okno eksportu na zrzucie ekranu, wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy dla wszystkich formatów (XML, FCPXML, OTIO, EDL) w tests/ + run_tests.py, przetestuj na żywo generowanie realnych plików eksportu i cięcie FFmpeg na próbce wideo, wygeneruj i obejrzyj zrzuty ekranu okna eksportu, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 18 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -697,13 +740,13 @@ ZASADY PRACY:
    - src/gui/dialogs/unsaved_changes_dialog.py
    - obsługa eksportu/importu projektu, wątku wczytywania, sprawdzania odzyskiwania po starcie oraz zamykania w src/gui/main_window.py
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS (duże archiwa `.bws` z osadzonym audio, bezpieczne zapisywanie żeby awaria w połowie nie zniszczyła poprzedniego pliku, przenoszenie projektu `.bws` na inny komputer lub inny dysk, działanie w trybie lokalnym vs w Resolve).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są skróty przy pakowaniu danych, sprawdzaniu czystego wyjścia albo odbudowie segmentów po wczytaniu)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. fałszywe ostrzeżenie o niezapisanych zmianach albo jego brak po edycji kolorów, odzyskiwanie nieaktualnej sesji, gubienie ścieżki pliku po przeniesieniu projektu)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (co dokładnie ma się zapisywać w `.bws`, kiedy autozapis ma się usuwać i jakie akcje oznaczają „projekt zmieniony”).
+3. Sprawdź spójność między Windows, Linux i macOS (duże archiwa `.bws` z osadzonym audio, bezpieczne atomowe zapisywanie żeby awaria prądu w połowie nie zniszczyła starego pliku, przenoszenie `.bws` na inny komputer, działanie w trybie lokalnym vs w Resolve — w tym zapasowe `source.xml` dla darmowego Resolve 21.1+ zamiast DRT).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie skróty siedzą przy pakowaniu plików `.bws`, rozpoznawaniu czystego zamknięcia programu czy ratowaniu osi z darmowego Resolve 21.1+)?
+   (B) Co obecnie może się psuć w oczach użytkownika (konkretne scenariusze: np. użytkownik kończy godzinny montaż, zamyka czysto program, otwiera następnego dnia i znów dostaje pytanie o odzyskanie starej sesji; albo pokolorował 50 słów, zamyka krzyżykiem i program nie ostrzega przed utratą zmian; albo wysyła `.bws` koledze na inny komputer i po otwarciu program nie potrafi odnaleźć wideo)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno, kiedy program zapyta o zapis, co trafi do `.bws` i kiedy pokaże okno odzyskiwania.
 
-Po mojej akceptacji i wdrożeniu napisz testy zapisu, odczytu i odzyskiwania projektów (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy zapisu/odczytu/odzyskiwania (tests/ + run_tests.py), przetestuj na żywo pełny zapis, rozpakowanie i symulację nagłego przerwania na realnym pliku `.bws`, wygeneruj i obejrzyj zrzuty ekranu okna niezapisanych zmian oraz odzyskiwania sesji, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 19 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -733,13 +776,13 @@ ZASADY PRACY:
    - natywne uruchamiacze i ikony: setupfiles/windows/, setupfiles/linux/, setupfiles/macos/, setupfiles/pe_patcher.py
    - raport/logi_macOS_prawdopodobnie_blad_pobierania_ffmpega.log oraz zgłoszenie GitHub #18 (`gh issue view 18` — uruchamianie `BadWords.exe` i błąd ścieżki)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (zwłaszcza w .github/workflows/, README.md i src/ — nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS (blokady SmartScreen/Smart App Control i Apple Gatekeeper, zamykanie okna terminala po uruchomieniu instalatora, pobieranie FFmpeg na wszystkie architektury w tym Apple Silicon, skróty na pulpicie i w menu oraz bezpieczne usuwanie bez kasowania cudzych folderów).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (duplikaty między dwoma instalatorami, ręczne łaty plików wykonywalnych, ścieżki awaryjne)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. błąd pobierania FFmpeg na macOS, problem z zamykaniem terminala, brak lub zepsucie skrótów, ryzyko rozjazdu między instalatorem a aplikacją)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (czy zamykamy i usuwamy stary instalator w Pythonie, jak ma zachowywać się przenoszenie instalacji i pobieranie brakującego Pythona).
+3. Sprawdź spójność między Windows, Linux i macOS (blokady SmartScreen/Smart App Control i Apple Gatekeeper, zamykanie okna terminala po uruchomieniu instalatora, pobieranie FFmpeg na wszystkie architektury w tym Apple Silicon, wdrażanie skryptów do aktualnego DaVinci Resolve 21.1+ — `BadWords Bridge.lua` + nieszkodliwe `BadWords.py` przy współdzielonej paczce na macOS, skróty na pulpicie/w menu oraz bezpieczne usuwanie bez kasowania cudzych folderów).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (dlaczego w repozytorium nadal siedzą dwa osobne instalatory, ręczne łaty programów startowych czy ścieżki awaryjne i czy usunięcie starego instalatora komukolwiek dziś zaszkodzi)?
+   (B) Co obecnie może się psuć dla nowego użytkownika (konkretne scenariusze: np. użytkownik na Macu odpala instalator i dostaje błąd pobierania FFmpeg z logów; na Linuksie wkleja komendę z README i zostaje wiszące czarne okno terminala; po aktualizacji ze starej wersji v3 skrót nadal odpala popsute ścieżki; albo instalator w Rust robi coś inaczej niż sam program przy wykrywaniu Resolve 21.1+)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wskaż konkretną różnicę w doświadczeniu instalującego użytkownika (stary instalator, przenoszenie folderu, pobieranie Pythona).
 
-Po mojej akceptacji i wdrożeniu sprawdź budowanie i testy instalatora (cargo check i cargo test w folderze installer/ oraz testy w run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: sprawdź budowanie i testy instalatora (`cargo check && cargo test` w installer/ + `run_tests.py`), przetestuj na żywo działanie binarnego instalatora/uruchamiaczy na bezpiecznym folderze testowym (i sprawdź wizualnie okno instalatora na zrzucie ekranu jeśli zmienisz GUI), wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 20 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -765,13 +808,13 @@ ZASADY PRACY:
    - setupfiles/update-windows.bat, setupfiles/update-linux.sh, setupfiles/update-mac.sh, setupfiles/legacy/, oraz cały folder updaters/
    - raport/raport.md (zgłoszenie testera po aktualizacji z wersji 3 do 4)
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu oraz w .github/workflows/ (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
-3. Sprawdź spójność między Windows, Linux i macOS (zabezpieczenie przy wyłączonej samoaktualizacji, brak wymaganej biblioteki certyfikatów SSL na starszych maszynach, zachowanie uprawnień plików po podmianie, odświeżenie skrótów do Resolve po aktualizacji oraz zachowanie przy aktualizacji z wersji 3.x do 4.x).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (gdzie logika aktualizacji jest powielona w kilku plikach i które foldery/skrypty wyglądają na zapomniane duble)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika (np. częściowa aktualizacja zostawiająca zepsute środowisko, ciche aktualizacje bez zgody lub blokujące zamykanie, niespójny wygląd lub brak tłumaczenia przy aktualizacji)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jak ma działać aktualizacja automatyczna vs ręczna, co zrobić z plikami z updaters/ i legacy/, kiedy pokazywać powiadomienie migracyjne).
+3. Sprawdź spójność między Windows, Linux i macOS (zabezpieczenie przy wyłączonej samoaktualizacji, brak certyfikatów na starszych maszynach, uprawnienia plików po podmianie, odświeżenie skryptów dla aktualnego DaVinci Resolve 21.1+ po aktualizacji oraz przejście z wersji 3.x do 4.x).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA:
+   (A) Co wygląda dziwnie lub podejrzanie (w ilu miejscach dziś siedzą osobne kopie aktualizacji i stare skrypty — i który użytkownik wciąż mógłby przez przypadek w nie trafić)?
+   (B) Co obecnie może się psuć u użytkownika (konkretne scenariusze z raportu testera: np. użytkownik klika Aktualizuj na wersji v3 zamiast świeżej instalacji i po restarcie ma mieszankę starych plików z nowymi oraz nieuruchamiającą się aplikację; zamyka okno a aktualizacja w tle przerywa pliki w połowie; albo klika Sprawdź aktualizacje w Ustawieniach i zachowuje się to inaczej niż okienko przy starcie)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji wskaż wprost, jak ma wyglądać aktualizacja dla użytkownika (automatyczna vs ręczna, usuwanie starych folderów aktualizacji, okno powitalne po przejściu z v3).
 
-Po mojej akceptacji i wdrożeniu napisz testy sprawdzania wersji i bezpiecznego uruchamiania aktualizacji (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: napisz testy sprawdzania wersji i aktualizacji (tests/ + run_tests.py), przetestuj na żywo ścieżkę sprawdzania nowej wersji i dialogów aktualizacji/migracji, wygeneruj i obejrzyj zrzuty ekranu okien aktualizacji i migracji v4, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 21 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -797,12 +840,12 @@ ZASADY PRACY:
    - przejrzyj przez `gh issue list --state open`, czy zostały jeszcze jakiekolwiek otwarte zgłoszenia wymagające podpięcia do automatyzacji testów lub zamknięcia.
    Sprawdź wyłącznie bezpośrednie powiązania, wywołania i miejsca styku z wymienionymi wyżej plikami w pozostałych częściach projektu (nie czytaj niepowiązanych plików w całości, żeby nie marnować limitów).
 3. Sprawdź spójność między Windows, Linux i macOS (otwieranie folderu z logami na każdym systemie, działanie bez dodatkowych bibliotek sieciowych i certyfikatów, zgodność komunikatów telemetrii we wszystkich językach bez emoji).
-4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, zwięzły raport z 3 sekcjami:
-   (A) Co wygląda dziwnie lub podejrzanie (jakie są obejścia przy certyfikatach sieciowych, adresach serwerów lub pomijaniu testów)?
-   (B) Co obecnie może się psuć albo działać nieoptymalnie z punktu widzenia użytkownika i właściciela produktu (np. brak prywatności lub zbyt duże logi w zgłoszeniu błędu, otwieranie folderu logów nie działające w części środowisk Linuksa, luki w automatycznych testach przy zmianach w aplikacji)?
-   (C) Ponumerowana lista krótkich pytań decyzyjnych do mnie (jakie dane wolno dołączać do paczki błędu, czy automat na GitHubie ma blokować zmiany przy każdym błędzie testów aplikacji).
+4. Przygotuj dla mnie po polsku, prostym językiem bez żargonu i bez kodu, konkretny raport oparty na REALNYCH PRZYPADKACH Z ŻYCIA UŻYTKOWNIKA I WŁAŚCICIELA PRODUKTU:
+   (A) Co wygląda dziwnie lub podejrzanie (jakie obejścia sieciowe, limity wysyłania albo luki w automatach testowych na GitHubie tu występują)?
+   (B) Co obecnie może się psuć w praktyce (konkretne scenariusze: np. użytkownik ma problem, otwiera Kontakt, wysyła zgłoszenie i paczka przekracza limit serwera lub zawiera wrażliwe nazwy ścieżek; na Linuksie klika Otwórz folder logów i nic się nie otwiera; albo ktoś wprowadza zmianę w kodzie, testy instalatora przechodzą, a zepsucie aplikacji nie blokuje wydania)?
+   (C) Ponumerowana lista pytań decyzyjnych do mnie — przy każdej opcji opisz jasno, co użytkownik widzi przy wysyłaniu zgłoszenia/telemetrii i co blokuje automat na GitHubie.
 
-Po mojej akceptacji i wdrożeniu uzupełnij testy (w tests/ i uruchom run_tests.py), wpisz pełną dokumentację do docs/CEMENTED.md oraz dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit poniżej 4 000 znaków).
+Po mojej akceptacji i wdrożeniu: uzupełnij testy (tests/ + run_tests.py), przetestuj na żywo pakowanie raportu i jego format wysyłki (oraz otwieranie logów), wygeneruj i obejrzyj zrzuty ekranu okna telemetrii i wsparcia, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3–4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 22 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
 
 ---
@@ -810,4 +853,8 @@ Po mojej akceptacji i wdrożeniu uzupełnij testy (w tests/ i uruchom run_tests.
 ## Wskazówka końcowa dotycząca kolejności pracy
 
 - **Kolejność ma znaczenie:** Zacznij od Etapu 1 i 2 (fundamenty startu, pliki danych, silnik audio/AI) oraz Punktu 10A–10C (odchudzenie głównego okna) przed głębokim grzebaniem w ekranach edytora i montażu — dzięki temu kolejne sesje będą znacznie szybsze i bezpieczniejsze.
-- **Zasada jednego punktu na sesję:** Nie łącz dwóch punktów w jednej rozmowie. Po skończonej sesji upewnij się, że agent zaktualizował wpis w `docs/CEMENTED.md`, krótki wpis w `.agents/rules/architecture.md` (Sekcja 3, poniżej 4 000 znaków) i `docs/DEV_STATE.md` oraz uruchomił pełen komplet testów.
+- **Zasada jednego punktu na sesję:** Nie łącz dwóch punktów w jednej rozmowie. Po skończonej sesji upewnij się, że agent:
+  1. przetestował zmienione mechanizmy **na żywo** (nie tylko testy jednostkowe) oraz wygenerował i obejrzał **zrzuty ekranu** zmian widocznych dla użytkownika,
+  2. zaktualizował `docs/CEMENTED.md`, `docs/DEV_STATE.md` oraz dopisał krótkie 3–4 wyrazowe hasło w `.agents/rules/architecture.md` (Sekcja 3, poniżej 4 000 znaków),
+  3. **odhaczył zakończony punkt w tym pliku (`ROADMAP_CEMENTING.md`)** (`[x]` na checkliście + `✅ ZAKOŃCZONO` przy nagłówku),
+  4. zapisał ewentualne Twoje uwagi lub nowe wymagania z rozmowy do `.agents/rules/lessons_and_standards.md`.
