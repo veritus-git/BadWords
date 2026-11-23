@@ -37,8 +37,7 @@ _MAX_TB_CHARS = 4000
 _MAX_PER_SESSION = 3
 _MAX_PER_HOUR = 5
 _HOUR_WINDOW_SEC = 3600
-_FP_COOLDOWN_SEC = 86400
-_LEDGER_RETENTION_SEC = 7 * 86400
+_MAX_STORED_FINGERPRINTS = 500
 
 _MEDIA_EXT_PATTERN = (
     r"mp4|mov|mkv|avi|webm|mxf|mts|m2ts|wmv|flv|"
@@ -328,11 +327,12 @@ class _CrashRateLimiter:
                 if isinstance(raw, dict):
                     fps = raw.get("fingerprints", {})
                     if isinstance(fps, dict):
-                        state["fingerprints"] = dict(
-                            (str(k), float(v))
-                            for k, v in fps.items()
-                            if (now - float(v)) < _LEDGER_RETENTION_SEC
-                        )
+                        items = sorted(
+                            ((str(k), float(v)) for k, v in fps.items()),
+                            key=lambda kv: kv[1],
+                            reverse=True,
+                        )[:_MAX_STORED_FINGERPRINTS]
+                        state["fingerprints"] = dict(items)
                     ts_list = raw.get("timestamps", [])
                     if isinstance(ts_list, list):
                         state["timestamps"] = [
@@ -353,7 +353,10 @@ class _CrashRateLimiter:
             pass
 
     def try_acquire(self, fingerprint, src_dir=None, app_data_dir=None):
-        """Return (allowed: bool, reason: str) and reserve slot if allowed."""
+        """Return (allowed: bool, reason: str) and reserve slot if allowed.
+
+        Identical fingerprints are permanently deduplicated (never sent twice).
+        """
         now = time.time()
         with self._lock:
             if self._session_count >= _MAX_PER_SESSION:
@@ -363,10 +366,9 @@ class _CrashRateLimiter:
 
             ledger_path = self._ledger_path(src_dir, app_data_dir)
             state = self._load_ledger(ledger_path, now)
-            last_fp = state["fingerprints"].get(fingerprint)
-            if last_fp is not None and (now - last_fp) < _FP_COOLDOWN_SEC:
+            if fingerprint in state["fingerprints"]:
                 self._seen_session.add(fingerprint)
-                return False, "cooldown_duplicate"
+                return False, "already_reported"
 
             recent_ts = [t for t in state["timestamps"] if (now - t) < _HOUR_WINDOW_SEC]
             if len(recent_ts) >= _MAX_PER_HOUR:
@@ -375,6 +377,9 @@ class _CrashRateLimiter:
             self._seen_session.add(fingerprint)
             self._session_count += 1
             state["fingerprints"][fingerprint] = now
+            if len(state["fingerprints"]) > _MAX_STORED_FINGERPRINTS:
+                keep = sorted(state["fingerprints"].items(), key=lambda kv: kv[1], reverse=True)[:_MAX_STORED_FINGERPRINTS]
+                state["fingerprints"] = dict(keep)
             recent_ts.append(now)
             state["timestamps"] = recent_ts
             self._save_ledger(ledger_path, state)

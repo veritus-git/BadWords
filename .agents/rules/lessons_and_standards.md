@@ -19,7 +19,7 @@ Whenever the Product Owner (PO) corrects an output, highlights a missing check, 
 ### A. Live Mechanism & End-to-End Verification (Never Rely on Mocks Alone)
 - `python3 run_tests.py` (unit tests with mocks) is the baseline, **not** sufficient proof when a mechanism interacts with external processes, files, OS APIs, network relays, installers, Qt event loops, or DaVinci Resolve.
 - Whenever you touch or audit a real mechanism, run a **live/empirical verification** of the actual path (safely isolated from real user data in DEV mode):
-  - **UI / Dialogs / Animations**: Instantiate real `QApplication` + real widgets (`QT_QPA_PLATFORM=offscreen`), drive clicks/search/toggles/scaling (75%–150%), verify opacity/geometry/text states, and render PNGs.
+  - **UI / Dialogs / Animations**: Instantiate real `QApplication` + real widgets (`QT_QPA_PLATFORM=offscreen`), drive clicks/search/toggles/scaling (75%-150%), verify opacity/geometry/text states, and render PNGs.
   - **IPC / Bridge / Subprocesses / Launchers**: Execute real subprocess invocations, real atomic file roundtrips (`request.lua` -> Lua/Python parser or real `Fusion.prefs` parsing), real `launcher.c` / Rust binary checks.
   - **Audio / FFmpeg / Export / XML / DRT**: Run real FFmpeg commands on sample media, validate generated XML/FCPXML/OTIO/EDL files structurally, verify frame math across drop-frame rates.
   - **Network / Relay / Crash Reports**: Test real payload serialization/validation against the actual endpoint or local test server as permitted and safe.
@@ -56,7 +56,7 @@ Whenever the Product Owner (PO) corrects an output, highlights a missing check, 
 ## 3. State Tracking & Roadmap Hygiene
 - **`docs/DEV_STATE.md` (Live Session Memory)**:
   - **Start of Task**: Read `docs/DEV_STATE.md` to see current focus, recent fixes, architectural status, and test baseline.
-  - **End of Task**: Update `docs/DEV_STATE.md` whenever code, tests, rules, or roadmap progress change — keep `Last Updated`, `Current Active Focus & Roadmap Position`, `Automated Test Suite` (exact test count), `Completed Milestone Record`, and `Next Steps` accurate.
+  - **End of Task**: Update `docs/DEV_STATE.md` whenever code, tests, rules, or roadmap progress change - keep `Last Updated`, `Current Active Focus & Roadmap Position`, `Automated Test Suite` (exact test count), `Completed Milestone Record`, and `Next Steps` accurate.
 - **`ROADMAP_CEMENTING.md` (Progress Ledger)**:
   - When a roadmap item is **fully completed and closed** (verified, tests added, documented in `docs/CEMENTED.md`, Sec. 3 bullet added to `architecture.md`):
     1. Check off `[x]` in the top **Postęp cementowania** checklist in `ROADMAP_CEMENTING.md`.
@@ -65,11 +65,13 @@ Whenever the Product Owner (PO) corrects an output, highlights a missing check, 
 ---
 
 ## 4. Learned PO Preferences & Corrections (Auto-Updated Ledger)
-- **2026-11-23 — Styled Startup & Error Dialogs**: Never ship bare/unstyled OS or Qt dialogs; match BadWords dark theme, localized 11-language fallback, and verify visually via PNGs.
-- **2026-11-23 — Unify & Test Real Pipelines**: Shared features (e.g., crash report + Support contact upload) must use one contract/helper and be verified end-to-end, not via mocks alone.
-- **2026-11-23 — Current Resolve 21.1+ Reality**: Always verify against up-to-date DaVinci Resolve docs (21.1+ Free removes Python scripting, external socket, and DRT export; relies on sandboxed Lua bridge; keep `BadWords.py` harmlessly).
-- **2026-11-23 — Vivid User Cases Over Dry Prompts**: PO needs concrete real-world user stories ("what happens on screen, step by step"), never dry abstract summaries.
-- **2026-11-23 — Mark Closed Roadmap Items**: Always check off finished points in `ROADMAP_CEMENTING.md` so the PO never repeats already-completed points.
-- **2026-11-23 — Explicit `DEV_STATE.md` Lifecycle**: Always read `docs/DEV_STATE.md` at start and update active focus, milestones, test counts, and next steps at completion.
-- **2026-11-23 — KVM VM Test Verification & Polish Checklists**: For Win11 or clean Linux/Wayland changes, verify everything automatable inside `badwords-win11` / `badwords-linux-kde` first, and provide a short Polish click-through checklist for manual/visual/Resolve steps.
-- **2026-11-23 — Separate Crash Reporting From Telemetry**: Automatic error reporting (`auto_crash_report`) is completely independent from analytics (`telemetry_opt_in`), defaults ON for new users, prompts existing users once regardless of telemetry choice, scrubs paths/usernames/media names, rate-limits duplicates, and sends via Discord relay.
+- **2026-11-23 - Styled Startup & Error Dialogs**: Never ship bare/unstyled OS or Qt dialogs; match BadWords dark theme, localized 11-language fallback, and verify visually via PNGs.
+- **2026-11-23 - Unify & Test Real Pipelines**: Shared features (e.g., crash report + Support contact upload) must use one contract/helper and be verified end-to-end, not via mocks alone.
+- **2026-11-23 - Current Resolve 21.1+ Reality**: Always verify against up-to-date DaVinci Resolve docs (21.1+ Free removes Python scripting, external socket, and DRT export; relies on sandboxed Lua bridge; keep `BadWords.py` harmlessly).
+- **2026-11-23 - Vivid User Cases Over Dry Prompts**: PO needs concrete real-world user stories ("what happens on screen, step by step"), never dry abstract summaries.
+- **2026-11-23 - Mark Closed Roadmap Items**: Always check off finished points in `ROADMAP_CEMENTING.md` so the PO never repeats already-completed points.
+- **2026-11-23 - Explicit `DEV_STATE.md` Lifecycle**: Always read `docs/DEV_STATE.md` at start and update active focus, milestones, test counts, and next steps at completion.
+- **2026-11-23 - KVM VM Test Verification & Polish Checklists**: For Win11 or clean Linux/Wayland changes, verify everything automatable inside `badwords-win11` / `badwords-linux-kde` first, and provide a short Polish click-through checklist for manual/visual/Resolve steps.
+- **2026-11-23 - Separate Crash Reporting From Telemetry**: Automatic error reporting (`auto_crash_report`) is completely independent from analytics (`telemetry_opt_in`), defaults ON for new users, prompts existing users once regardless of telemetry choice, scrubs paths/usernames/media names, permanently deduplicates each unique error fingerprint (never re-sending the same error), and sends via Discord relay.
+- **2026-11-23 - No Long Dashes (`-` Only)**: NEVER use em-dashes (`\u2014`) or en-dashes (`\u2013`) anywhere in PO replies, UI texts, translations, docs, or comments; ALWAYS use plain ASCII `-`.
+- **2026-11-23 - Live Endpoint Verification & Local SSD VMs**: For external relay/Discord features, always run a real sanitized live delivery test against the real endpoint during verification (while keeping `run_tests.py` offline-safe). Store VM disks and ISOs on the internal SSD (`startupPolicy='optional'`) so VMs work after external USB drives are unplugged.

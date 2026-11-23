@@ -35,7 +35,7 @@ Never rely purely on memory for DaVinci Resolve capabilities, API methods, or ed
   - **DRT Export/Import BLOCKED in Free 21.1+**:
     - Native `.drt` container export/import fails or hangs in Free 21.1+.
     - BadWords must disable DRT mode in UI (`SettingsDialog`), bypass `.drt` paths (`is_free_21_1_or_newer()`), and use **FCP7 XML** (`TIER 2` XML assembly).
-  - **Deployment Invariant**: Keep deploying `BadWords.py` harmlessly in primary `Utility` script dir even on Free 21.1+ (never delete `BadWords.py` based on edition — protects macOS shared-bundle installs and users upgrading to Studio or downgrading to `< 21.1`). Install `BadWords Bridge.lua` on Free/Unknown, never on verified Studio.
+  - **Deployment Invariant**: Keep deploying `BadWords.py` harmlessly in primary `Utility` script dir even on Free 21.1+ (never delete `BadWords.py` based on edition - protects macOS shared-bundle installs and users upgrading to Studio or downgrading to `< 21.1`). Install `BadWords Bridge.lua` on Free/Unknown, never on verified Studio.
 
 ### 2. DaVinci Resolve Free `< 21.1` vs Studio
 - **Free `< 21.1`**: Internal `Workspace -> Scripts -> BadWords` Python execution can still pass `resolve`/`fusion`/`bmd` in-process when host Python matches venv Python. External scripting still requires Studio or the Lua bridge.
@@ -44,7 +44,7 @@ Never rely purely on memory for DaVinci Resolve capabilities, API methods, or ed
 ### 3. OS-Specific Quirks to Always Verify
 - **macOS**:
   - Free and Studio share the **same app bundle path** (`/Applications/DaVinci Resolve/DaVinci Resolve.app`), so edition detection must NOT blindly guess `"Free"` when uncertain on macOS (otherwise `_connect()` skips native Studio connections).
-  - **Mac App Store** version runs inside an Apple App Sandbox container — check container paths and file access permissions for mailbox/scripts/media.
+  - **Mac App Store** version runs inside an Apple App Sandbox container - check container paths and file access permissions for mailbox/scripts/media.
   - External launcher fallback inside Resolve uses `open -n ... --args --embedded` for `BadWords.app`.
 - **Windows**:
   - Simultaneous read/write on `Fusion.prefs` requires `CreateFileW` with `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`.

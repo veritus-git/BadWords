@@ -8,7 +8,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 > **Purpose:** Authoritative technical reference for all **protected workarounds** and **cemented modules** in BadWords.
 > Whenever a roadmap item is audited, fixed, verified, and approved by the Product Owner:
 > 1. Add full technical documentation below (exact paths, behavior, `# INVARIANT:` contracts, OS quirks, protecting tests, and "DO NOT CHANGE" rules).
-> 2. Add **only a 3–4 word index bullet** pointing to this file in `.agents/rules/architecture.md` Section 3 (to keep `architecture.md` strictly under 4,000 characters).
+> 2. Add **only a 3-4 word index bullet** pointing to this file in `.agents/rules/architecture.md` Section 3 (to keep `architecture.md` strictly under 4,000 characters).
 
 ---
 
@@ -32,11 +32,11 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 ### 1. Python < 3.9 PySide6 Typings Hotfix
 - **Status:** Removed (replaced by Section 6 on 2026-11-23)
-- **Why Removed:** BadWords 4.x requires Python 3.10–3.12 (enforced at startup before any third-party import). The obsolete runtime patch on `PySide6/__init__.py` was removed in Point 1 cementing.
+- **Why Removed:** BadWords 4.x requires Python 3.10-3.12 (enforced at startup before any third-party import). The obsolete runtime patch on `PySide6/__init__.py` was removed in Point 1 cementing.
 
 ### 2. Resolve Headless Console Stream Buffering (`ResolveStreamProxy`)
 - **Status:** Protected Workaround (Pending full Stage 1 audit in Point 2)
-- **Files:** `src/osdoc.py` (lines 67–104)
+- **Files:** `src/osdoc.py` (lines 67-104)
 - **How It Works:** Wraps `stdout`/`stderr` streams, accumulates partial writes in `self._buffer` until `\n`, strips redundant `[INFO]`/`[ERROR]`/`[STDOUT/ERR]` prefixes, forwards complete lines to the logger, and swallows stream write/flush errors intentionally.
 - **Why It Exists:** Prevents crashes or dropped tracebacks when running inside DaVinci Resolve's embedded Python console or headless launchers.
 - **Invariants (DO NOT BREAK):**
@@ -45,7 +45,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 ### 3. CUDA / cuDNN Dynamic DLL Injection & CPU Isolation
 - **Status:** Protected Workaround & Tested (`tests/test_host_env_fixes.py`; pending full Stage 2 audit in Point 6)
-- **Files:** `src/engine/transcription.py` (lines 620–680), `src/osdoc.py` (`has_nvidia_support`, `setup_cuda_dll_paths`, `get_short_path`), `tests/test_host_env_fixes.py`
+- **Files:** `src/engine/transcription.py` (lines 620-680), `src/osdoc.py` (`has_nvidia_support`, `setup_cuda_dll_paths`, `get_short_path`), `tests/test_host_env_fixes.py`
 - **How It Works:** Before initializing Faster-Whisper in GPU mode (`fw_device == "cuda"`), injects venv/libs `nvidia/{cublas,cudnn,cuda_nvrtc,cuda_runtime}/bin`, `torch/lib`, and `bin` paths into `PATH` and `os.add_dll_directory` (Windows) or `LD_LIBRARY_PATH` (Linux). Rejects NVIDIA drivers `< 525` and probes loadability of `cublas64_12.dll`/`cublas64_11.dll` (Windows) or `libcublas.so.12`/`11` (Linux) via `is_cuda_functional()`.
 - **OS-Specific Behavior:**
   - Windows: Uses `os.add_dll_directory` + `PATH` + 8.3 short paths (`get_short_path`) for Unicode paths; never runs blind `ctypes.CDLL` preloading loops.
@@ -69,7 +69,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 ### 5. Global Input Focus Clear & Tooltip Debounce (`GlobalAppFilter`)
 - **Status:** Protected Workaround (Pending full Stage 3 audit in Point 12A)
-- **Files:** `src/gui/dialogs/overlay.py` (lines 21–86)
+- **Files:** `src/gui/dialogs/overlay.py` (lines 21-86)
 - **How It Works:** Installed globally on the Qt application to clear focus from active input widgets on outside mouse clicks or `Return`/`Enter`, and replaces native tooltips with a shared debounced custom tooltip (`750ms` single-shot `QTimer` triggered on `Enter`/`Leave`).
 - **Invariants (DO NOT BREAK):**
   - `# INVARIANT:` Must ignore transient `RuntimeError` on deleted Qt objects and cancel/hide tooltip timers on `Leave`, `Hide`, `MouseButtonPress`, and `WindowDeactivate`.
@@ -101,7 +101,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
   - `# INVARIANT:` `sync_resolve_scripts` never deletes `BadWords.py` based on Resolve edition and never writes to real Resolve script directories in DEV mode.
   - `# INVARIANT:` All Discord relay uploads (`crash_report.post_support_report` and `SettingsDialog` Support tab) must use Polish content markers (`Wersja:`, `Tytuł:`, `Treść:`), `<= 1900` chars content truncation, and `User-Agent: BadWords/<ver>`.
 - **Regression Tests:** `tests/test_startup_guard.py`, `tests/test_host_env_fixes.py`, `installer/src/engine.rs` (`test_generate_davinci_wrapper_template_and_isolation`)
-- **Do Not Change Without Product Owner Approval:** Supported Python range (3.10–3.12), consent-only self-heal & crash reporting policy, in-process wrapper priority for Resolve Free < 21.1, `EXIT_FATAL_REPORTED = 3` contract.
+- **Do Not Change Without Product Owner Approval:** Supported Python range (3.10-3.12), consent-only self-heal & crash reporting policy, in-process wrapper priority for Resolve Free < 21.1, `EXIT_FATAL_REPORTED = 3` contract.
 
 ### 7. Automatic Crash Reporting & Dual Consent Flow
 - **Status:** Cemented (2026-11-23)
@@ -109,13 +109,13 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 - **How It Works:**
   1. **Independent Consent Keys (`user.json`)**: `DEFAULT_USER_DATA` stores `auto_crash_report` (`None | bool`) completely independently from `telemetry_opt_in` (`None | bool`) and `telemetry_geo`. `OSDoctor.load_settings()` strips any lingering `auto_crash_report` key from `settings.json` so all consent state lives exclusively in `user.json`.
   2. **New-User vs Existing-User Consent Routing (`MainWindow.check_telemetry`)**:
-     - Brand-new user (`telemetry_opt_in is None`): opens `TelemetryPopup` with two separate cards — Anonymous Telemetry (with geo checkbox that smoothly dims to `0.35` when off) and Automatic Error Reports (**default ON**) — plus `Save & Continue` / `Disable All`.
+     - Brand-new user (`telemetry_opt_in is None`): opens `TelemetryPopup` with two separate cards - Anonymous Telemetry (with geo checkbox that smoothly dims to `0.35` when off) and Automatic Error Reports (**default ON**) - plus `Save & Continue` / `Disable All`.
      - Existing user (`telemetry_opt_in is not None` and `auto_crash_report is None`): opens `CrashReportConsentDialog` **regardless** of whether `telemetry_opt_in` was `True` or `False`, offering one-click `Enable Error Reports` / `Not Now` (closing/Esc persists `False`).
      - Settings Page 8 (`About & Privacy`) exposes `chk_auto_crash_report` (`ToggleSwitch`) alongside telemetry toggles with `(i)` tooltip and search indexing.
   3. **Runtime & Startup Capture + Privacy + Anti-Spam (`src/startup/crash_report.py`)**:
      - `install_runtime_crash_hooks()` installs idempotent `sys.excepthook` and `threading.excepthook` in `src/main.py` before Qt event loop startup (catching main-thread, Qt-slot, `QThread`, and `threading.Thread` uncaught exceptions).
      - `sanitize_crash_text()` strips user home paths, OS usernames/hostnames, private media/script filenames (preserving extension as `<MEDIA_FILE>.<ext>`), email addresses, and webhook URLs across both report bodies and `logs.zip` diagnostic log tails (`_MAX_LOG_BYTES = 256 KB`). Automatic reports never attach `user.json` or `settings.json`.
-     - `_CrashRateLimiter` enforces in-session fingerprint deduplication, per-session cap (`3`), 24h per-fingerprint cooldown (`86400s`), hourly cap (`5/hour`) via `crash_guard_state.json`, recursion guard, and DEV-mode suppression (`BADWORDS_FORCE_CRASH_SEND=1` to override).
+     - `_CrashRateLimiter` enforces in-session fingerprint deduplication, per-session cap (`3`), permanent per-fingerprint deduplication (`500` newest fingerprints stored in `crash_guard_state.json`, so an identical error is never sent twice), hourly cap (`5/hour`) for distinct errors, recursion guard, and DEV-mode suppression (`BADWORDS_FORCE_CRASH_SEND=1` to override).
      - `fatal_dialog.show_fatal()` checks `get_auto_crash_report_pref()`: if `True`, starts non-blocking background upload via shared `post_support_report()` Discord relay contract and notifies user; if `False` or `None`, shows manual consent prompt.
 - **OS-Specific Behavior:**
   - **Windows / Linux / macOS:** Scrubs `C:\Users\<name>\...`, `Documents and Settings`, `/home/<name>`, `/Users/<name>`, and active env/OS user tokens uniformly. Zero system emojis across dialogs and all 11 `src/i18n/*.json` files (vector SVG icons only); `TrackSquareCheckbox` updates minimum dimensions on `setText()` and `_PrivacyConsentDialogBase` disables `QGraphicsOpacityEffect` when opacity is `1.0` to prevent Qt offscreen caching invisibility.

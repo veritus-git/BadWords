@@ -107,7 +107,7 @@ def _get_mouse_mode_from_text(text: str, default: str = 'box') -> str:
 
 
 class SettingsDialog(FramelessWindowMixin, _BaseDialog):
-    """Settings Dialog — left category menu + right stacked pages.
+    """Settings Dialog - left category menu + right stacked pages.
     All I/O goes through engine.load_preferences / engine.save_preferences
     which delegate to osdoc's smart router.
     """
@@ -384,7 +384,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         self.category_list = QListWidget()
         self.category_list.setFocusPolicy(Qt.NoFocus)
         self.category_list.setFont(QFont(config.UI_FONT_NAME, config.FS(10)))
-        # Disable horizontal scrollbar — marquee handles overflow instead
+        # Disable horizontal scrollbar - marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
         self.category_list.setItemDelegate(self._marquee_delegate)
@@ -778,7 +778,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 scroll.setWidget(page_widget)
 
     def _build_page_general(self, prefs):
-        # PAGE 0 — GENERAL
+        # PAGE 0 - GENERAL
         # ─────────────────────────────────────────────────────────────────
         self._current_building_page_idx = 0
         page_gen = QWidget()
@@ -1048,7 +1048,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
             # Disconnect any previous connections, then wire up.
             # PySide6 emits RuntimeWarning (not RuntimeError) when no connections
-            # exist — catch_warnings suppresses it cleanly without hiding real bugs.
+            # exist - catch_warnings suppresses it cleanly without hiding real bugs.
             import warnings
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -1223,7 +1223,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_gen
 
     def _build_page_shortcuts(self, prefs):
-        # PAGE 4 — SHORTCUTS
+        # PAGE 4 - SHORTCUTS
         self._current_building_page_idx = 4
         # ─────────────────────────────────────────────────────────────────
         page_shorts = QWidget()
@@ -1404,7 +1404,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_shorts
 
     def _build_page_custom_markers(self, prefs):
-        # PAGE 5 — CUSTOM MARKERS
+        # PAGE 5 - CUSTOM MARKERS
         self._current_building_page_idx = 5
         # ─────────────────────────────────────────────────────────────────
         page_markers = QWidget()
@@ -1475,7 +1475,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_markers
 
     def _build_page_appearance(self, prefs):
-        # PAGE 1 — APPEARANCE & SCALING
+        # PAGE 1 - APPEARANCE & SCALING
         self._current_building_page_idx = 1
         page_app = QWidget()
         page_app.setStyleSheet("background: transparent;")
@@ -1585,7 +1585,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_app
 
     def _build_page_editor(self, prefs):
-        # PAGE 2 — EDITOR & CANVAS
+        # PAGE 2 - EDITOR & CANVAS
         self._current_building_page_idx = 2
         page_ed = QWidget()
         page_ed.setStyleSheet("background: transparent;")
@@ -1663,7 +1663,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_ed
 
     def _build_page_davinci(self, prefs):
-        # PAGE 3 — DAVINCI RESOLVE
+        # PAGE 3 - DAVINCI RESOLVE
         self._current_building_page_idx = 3
         page_dav = QWidget()
         page_dav.setStyleSheet("background: transparent;")
@@ -1872,7 +1872,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 pass
 
     def _build_page_ai_engine(self, prefs):
-        # PAGE 6 — AI ENGINE
+        # PAGE 6 - AI ENGINE
         self._current_building_page_idx = 6
         # ─────────────────────────────────────────────────────────────────
         page_ai = QWidget()
@@ -2057,7 +2057,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_ai
 
     def _build_page_support(self, prefs):
-        # PAGE 7 — SUPPORT & BUG REPORT
+        # PAGE 7 - SUPPORT & BUG REPORT
         self._current_building_page_idx = 7
         page_support = QWidget()
         page_support.setStyleSheet("background: transparent;")
@@ -2298,7 +2298,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         return page_support
 
     def _build_page_about(self, prefs):
-        # PAGE 8 — ABOUT & PRIVACY
+        # PAGE 8 - ABOUT & PRIVACY
         self._current_building_page_idx = 8
         page_about = QWidget()
         page_about.setStyleSheet("background: transparent;")
@@ -2475,7 +2475,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             import config
             old_prefs = self.engine.load_preferences() or {}
             delete_markers = msg_box.is_checkbox_checked()
-            # Build a full default state — start with DEFAULT_SETTINGS then keep
+            # Build a full default state - start with DEFAULT_SETTINGS then keep
             # lang and settings_view_mode so the UI doesn't switch language/mode.
             default_state = config.DEFAULT_SETTINGS.copy()
             default_state['gui_lang'] = old_prefs.get('gui_lang', 'en')
@@ -2729,7 +2729,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
 
     def _on_remove_marker(self):
-        """Legacy method — kept for safety but no longer wired to any button."""
+        """Legacy method - kept for safety but no longer wired to any button."""
         pass
 
     def _on_export_markers(self):
@@ -2831,7 +2831,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         """
         Rebuilds the custom-marker shortcut rows in the unified Shortcuts form.
         Uses insertRow(pos) / removeRow(pos) on the single QFormLayout so all
-        rows always have identical 14px spacing — no separate widget needed.
+        rows always have identical 14px spacing - no separate widget needed.
         """
         form       = getattr(self, '_custom_sc_unified', None)
         make_fn    = getattr(self, '_make_shortcut_widgets_fn', None)

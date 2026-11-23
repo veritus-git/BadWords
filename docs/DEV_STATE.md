@@ -8,9 +8,9 @@
 
 ## 0. Current Focus & Roadmap Position
 
-- **Current Phase**: Stage 1 (v4.1 — Foundations, startup, and system consistency)
+- **Current Phase**: Stage 1 (v4.1 - Foundations, startup, and system consistency)
 - **Completed Roadmap Items**:
-  - ✅ **Point 1** (*Startup pipeline, Python env gate & consent-based self-heal*) — Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 6 and `ROADMAP_CEMENTING.md`).
+  - ✅ **Point 1** (*Startup pipeline, Python env gate & consent-based self-heal*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 6 and `ROADMAP_CEMENTING.md`).
 - **Next Pending Roadmap Item**:
   - ⬜ **Point 2** (*DEV vs Installed separation, runtime paths, logging & temp cleanup*).
 - **Recent Process / Rules Changes (`2026-11-23`)**:
@@ -56,7 +56,7 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **66 tests** across 
 | `tests/test_algorithms.py` | Heuristic repetition/retake detection, 2-layer visual priority (`manual_status` > `algo_status` across both repeat and auto-filler passes), fuzzy string comparison. | **PASS** |
 | `tests/test_assembler_xml.py` | Final Cut Pro 7 XML generation (`<xmeml version="5">`), XML schema and frame accuracy validation. | **PASS** |
 | `tests/test_data_contracts.py` | Invariant preservation of `words_data[0]` metadata (`meta_global_silence`, session tags, custom metadata), required word keys, empty dataset safety. | **PASS** |
-| `tests/test_startup_guard.py` | Startup pipeline: Python 3.10–3.12 gate, Python 3.8 grammar compatibility for `src/startup/`, foreign `sys.path` pruning, consent-only self-heal, Resolve process safety, Discord multipart crash report + opt-out, privacy scrubbing & rate-limited live HTTP/ZIP relay, `sys.excepthook` + `threading.excepthook` runtime capture, startup auto-send decision (`auto_crash_report=True`), unified Resolve wrapper isolation, DEV Resolve sync protection, lazy `gui` / instant `BootSplash` visual render. | **PASS** |
+| `tests/test_startup_guard.py` | Startup pipeline: Python 3.10-3.12 gate, Python 3.8 grammar compatibility for `src/startup/`, foreign `sys.path` pruning, consent-only self-heal, Resolve process safety, Discord multipart crash report + opt-out, privacy scrubbing & rate-limited live HTTP/ZIP relay, `sys.excepthook` + `threading.excepthook` runtime capture, startup auto-send decision (`auto_crash_report=True`), unified Resolve wrapper isolation, DEV Resolve sync protection, lazy `gui` / instant `BootSplash` visual render. | **PASS** |
 
 ---
 
@@ -109,7 +109,7 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **66 tests** across 
    - **Terminal Auto-Closure on Linux & macOS**:
      * Updated `setupfiles/linux-setup.sh` and `setupfiles/mac-setup.sh` to launch native installer executable detached (`nohup "$EXE" "$@" >/dev/null 2>&1 &` / `setsid`) and exit 0 immediately so terminal closes.
    - **Settings Dialog Overhaul (`SettingsDialog`)**:
-     * Split overcrowded Interface tab into "Appearance & Scaling" (Theme, UI Scaling slider 75%–150%, Font selector) and "Editor & Canvas" (Segmented/Continuous flow, line height, text select mode, marquee).
+     * Split overcrowded Interface tab into "Appearance & Scaling" (Theme, UI Scaling slider 75%-150%, Font selector) and "Editor & Canvas" (Segmented/Continuous flow, line height, text select mode, marquee).
      * Added dedicated "DaVinci Resolve" tab featuring `AssemblyModeSelector` (`[ XML ]` vs `[ DRT ]` clickable segment blocks).
      * Integrated DaVinci Free 21.1+ check (`is_free_21_1_or_newer`): DRT is locked/disabled with informative tooltip on Free 21.1+, while older Free (< 21.1) and Studio retain DRT support.
      * Implemented animated smooth dimming (0.35 opacity) and interaction blocking on XML-dependent settings (`xml_preserve_track_order`, `link_av_clips`, `link_all_cut_tracks`) when DRT is active, matching silence panel UX.
@@ -137,10 +137,10 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **66 tests** across 
    - Updated `.agents/rules/architecture.md` (kept under 4,000 chars) to mandate concrete real-world user scenarios, proactive self-learning capture, DaVinci Resolve 21.1+ documentation checks, `ROADMAP_CEMENTING.md` completion check-offs, and explicit `docs/DEV_STATE.md` read-first + update-after lifecycle.
    - Created `.agents/rules/lessons_and_standards.md` (`always_on`) with continuous feedback capture protocol and mandatory live mechanism testing, proactive screenshot inspection, user-case storytelling, and roadmap/state tracking rules.
    - Created `.agents/skills/davinci-resolve-current/SKILL.md` with up-to-date DaVinci Resolve 21.1+ / 22+ & Free vs Studio documentation and verification workflow.
-   - Updated `ROADMAP_CEMENTING.md` to mark Point 1 as `✅ ZAKOŃCZONO (2026-11-23)`, added top progress checklist `[x]`/`[ ]` for Points 1–22, and upgraded all remaining prompts (2–22) with concrete user-side case reporting, Resolve 21.1+ checks, live mechanism tests, screenshots, and closing updates.
+   - Updated `ROADMAP_CEMENTING.md` to mark Point 1 as `✅ ZAKOŃCZONO (2026-11-23)`, added top progress checklist `[x]`/`[ ]` for Points 1-22, and upgraded all remaining prompts (2-22) with concrete user-side case reporting, Resolve 21.1+ checks, live mechanism tests, screenshots, and closing updates.
 10. **KVM Test VMs & Automatic Crash Reporting System (2026-11-23)**:
-   - Installed KVM/QEMU/libvirt/OVMF/swtpm/virt-manager/virtiofsd stack on host and configured two VMs: `badwords-win11` (Windows 11 ISO `/media/linux/ISO Files/windows-11-en.iso`, UEFI Secure Boot + TPM 2.0 `swtpm`, 4 GB RAM, 4 vCPUs, 64 GB SATA qcow2) and `badwords-linux-kde` (Fedora KDE 44 Wayland ISO, UEFI, 4 GB RAM, 4 vCPUs, 40 GB virtio qcow2, `virtiofs` mount of `/mnt/dump/BadWords`). Verified both boot cleanly via `virsh screenshot`.
-   - Added VM auto-verification + Polish manual checklist rule across `.agents/rules/architecture.md` (strictly `< 4,000` chars), `.agents/rules/lessons_and_standards.md`, and `ROADMAP_CEMENTING.md`.
+   - Installed KVM/QEMU/libvirt/OVMF/swtpm/virt-manager/virtiofsd stack on host and configured two self-contained SSD VMs: `badwords-win11` (Windows 11 ISO copied to `/var/lib/libvirt/iso/windows-11-en.iso` with `startupPolicy='optional'`, UEFI Secure Boot + TPM 2.0 `swtpm`, 4 GB RAM, 4 vCPUs, 64 GB SATA qcow2) and `badwords-linux-kde` (Fedora KDE 44 Wayland ISO copied to `/var/lib/libvirt/iso/`, UEFI, 4 GB RAM, 4 vCPUs, 40 GB virtio qcow2, `virtiofs` mount of `/mnt/dump/BadWords`). Verified both boot cleanly via `virsh screenshot`.
+   - Added VM auto-verification, Polish manual checklist, `-`-only typography (no em/en dashes), and live endpoint verification rules across `.agents/rules/architecture.md` (strictly `< 4,000` chars), `.agents/rules/lessons_and_standards.md`, and `ROADMAP_CEMENTING.md`.
    - Implemented independent `auto_crash_report` consent (`user.json`) and separated it from `telemetry_opt_in`: expanded `TelemetryPopup` for new users (two cards, auto crash reports ON by default, animated geo dimming, `Save & Continue` / `Disable All`) and created dedicated `CrashReportConsentDialog` for existing users regardless of prior telemetry choice (`Enable Error Reports` / `Not Now`).
    - Added `chk_auto_crash_report` toggle to Settings -> About & Privacy, replaced remaining emojis (`👋`, `☕`) with vector SVG/clean text across UI and all 11 `src/i18n/*.json` files (630 keys per language).
    - Added runtime `sys.excepthook` + `threading.excepthook` capture (`install_runtime_crash_hooks`), startup auto-send support in `fatal_dialog.py`, privacy scrubbing (`sanitize_crash_text`), and multi-layer anti-spam rate limiting (`_CrashRateLimiter`) unified on Discord `post_support_report`. Documented in `docs/CEMENTED.md` (Section 7).

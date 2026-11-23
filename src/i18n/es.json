@@ -241,7 +241,7 @@
   "btn_yes": "Sí",
   "btn_no": "No",
   "title_telemetry": "Analítica de BadWords",
-  "msg_telemetry": "Para ayudar a mejorar BadWords, ¿aceptas enviar un ping único y 100 % anónimo tras la instalación o actualización?\n\nSolo se envían la versión de la app y el tipo de sistema operativo (p. ej., Windows). NUNCA se recopilan archivos de audio, guiones ni datos personales.\n\nLa geolocalización (país/ciudad) es opcional — desmarca la casilla inferior para desactivarla.\n\nPuedes cambiar estas preferencias en cualquier momento en Ajustes -> Acerca de y Privacidad.",
+  "msg_telemetry": "Para ayudar a mejorar BadWords, ¿aceptas enviar un ping único y 100 % anónimo tras la instalación o actualización?\n\nSolo se envían la versión de la app y el tipo de sistema operativo (p. ej., Windows). NUNCA se recopilan archivos de audio, guiones ni datos personales.\n\nLa geolocalización (país/ciudad) es opcional - desmarca la casilla inferior para desactivarla.\n\nPuedes cambiar estas preferencias en cualquier momento en Ajustes -> Acerca de y Privacidad.",
   "btn_telemetry_yes": "Acepto",
   "btn_telemetry_no": "No, gracias",
   "chk_telemetry_geo": "Compartir tu ubicación general (país/ciudad)",
@@ -385,7 +385,7 @@
   "lbl_ver_installed": "Versión instalada",
   "lbl_ver_up_to_date": "✓ Al día",
   "lbl_ver_update_avail": "↑ Actualización disponible:",
-  "lbl_ver_pending_restart": "↓ Actualización instalada — reiniciar para aplicar",
+  "lbl_ver_pending_restart": "↓ Actualización instalada - reiniciar para aplicar",
   "btn_settings_update_now": "Actualizar ahora",
   "update_notify_auto_updating": "Buscando actualizaciones…",
   "update_notify_title": "Actualización disponible",
@@ -622,11 +622,11 @@
   "btn_consent_save": "Guardar y continuar",
   "btn_consent_disable_all": "Desactivar todo",
   "title_crash_consent": "Informes automáticos de errores",
-  "subtitle_crash_consent": "Novedad de esta actualización — independiente de la telemetría",
+  "subtitle_crash_consent": "Novedad de esta actualización - independiente de la telemetría",
   "msg_crash_consent_body": "Ahora BadWords puede enviar automáticamente un informe anónimo cuando ocurre un cierre inesperado o un error en segundo plano.\n\nQué se envía: detalles técnicos del error, versión del SO y de BadWords, y un registro de diagnóstico saneado.\nProtección de privacidad: tu nombre de usuario, rutas de carpetas privadas, nombres de archivos multimedia, audios/vídeos y guiones se eliminan automáticamente y nunca se envían. Los errores repetidos se limitan automáticamente.\n\nEsta opción es totalmente independiente de la telemetría y puede activarse o desactivarse en Ajustes -> Acerca de y Privacidad.",
   "btn_enable_crash_reports": "Activar informes de errores",
   "btn_crash_consent_later": "Ahora no",
   "chk_auto_crash_report": "Informes automáticos de errores y fallos",
   "tt_auto_crash_report": "Envía automáticamente informes técnicos saneados cuando BadWords falla o sufre un error no controlado. Nunca incluye nombres de usuario, rutas privadas, archivos multimedia ni guiones. Independiente de la telemetría.",
-  "startup_report_auto_sent": "El envío automático de informes de errores está activado — se está enviando un informe diagnóstico anónimo al desarrollador."
+  "startup_report_auto_sent": "El envío automático de informes de errores está activado - se está enviando un informe diagnóstico anónimo al desarrollador."
 }

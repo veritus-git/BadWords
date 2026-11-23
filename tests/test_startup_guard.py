@@ -293,17 +293,37 @@ class TestStartupGuard(unittest.TestCase):
                     self.assertNotIn("TopSecretAd", log_content)
                     self.assertNotIn("/Users/alice", log_content)
 
+                    # Simulate app restart (clear in-memory cache) -> SAME error is STILL permanently blocked!
+                    crash_report.reset_rate_limiter_for_tests()
+                    def _same_crash():
+                        raise ValueError("Cannot open /home/bob/client_video.mp4")
+
+                    for _restart in range(2):
+                        try:
+                            _same_crash()
+                        except ValueError:
+                            et, ev, tb = sys.exc_info()
+                            th2 = crash_report.send_runtime_crash_async(
+                                et, ev, tb, context_label="TestThread",
+                                src_dir=SRC_DIR, app_data_dir=tmp, allow_dev=True
+                            )
+                            if th2 is not None:
+                                th2.join(timeout=3.0)
+                        crash_report.reset_rate_limiter_for_tests()
+                    # First _same_crash call has a new stack site (total 2), second restart hit is blocked (still 2)
+                    self.assertEqual(len(received), 2)
+
                     # Distinct exceptions capped at _MAX_PER_SESSION (3 total per session)
                     for idx in range(5):
                         ok = crash_report.send_report(
                             f"UniqueError_{idx}", tb_text=f'File "x.py", line {10 + idx}, in fn',
                             src_dir=SRC_DIR, app_data_dir=tmp, allow_dev=True, suppress_in_dev=True, category="Auto crash"
                         )
-                        if idx < 2:
+                        if idx < 3:
                             self.assertTrue(ok)
                         else:
                             self.assertFalse(ok)
-                    self.assertEqual(len(received), 3)
+                    self.assertEqual(len(received), 5)
             finally:
                 srv.shutdown()
                 srv.server_close()

@@ -51,7 +51,7 @@ _BUILTIN_EN = {
     "startup_report_send": "Send Report",
     "startup_report_close": "Close",
     "startup_report_sent": "Thank you. The diagnostic report has been sent to the developer.",
-    "startup_report_auto_sent": "Automatic error reporting is enabled — an anonymous diagnostic report is being sent automatically to the developer.",
+    "startup_report_auto_sent": "Automatic error reporting is enabled - an anonymous diagnostic report is being sent automatically to the developer.",
     "startup_report_failed": (
         "Could not send the diagnostic report automatically.\n"
         "You can attach the log file manually:\n{log}"

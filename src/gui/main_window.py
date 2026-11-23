@@ -36,7 +36,7 @@ from gui.widgets.splitters import GripSplitter
 
 
 # ==========================================
-# QFRAMELESSWINDOW — NATIVE CSD LIBRARY
+# QFRAMELESSWINDOW - NATIVE CSD LIBRARY
 # ==========================================
 # On Windows, use the battle-tested qframelesswindow library for proper
 # Aero Snap, DWM shadows, resize, drag-detach, and snap layouts.
@@ -273,11 +273,11 @@ class WorkspaceWarningOverlay(QFrame):
 
 class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     """
-    Stage 3 — QMainWindow implementing the "VS Code" unified workspace:
+    Stage 3 - QMainWindow implementing the "VS Code" unified workspace:
       - Opens maximized on the monitor under the cursor
       - NO top toolbar; left and right vertical activity bars instead
       - QStackedWidget as the central widget (3 pages)
-        Page 0: Welcome / Config   (flat, borderless — default view)
+        Page 0: Welcome / Config   (flat, borderless - default view)
         Page 1: Processing         (progress placeholder)
         Page 2: Editor             (editor placeholder)
       - Right dock starts hidden; revealed when analysis begins
@@ -379,7 +379,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._root_layout.addWidget(self._title_bar)
         self.top_island = TopStatusIsland(parent_frame=self._root_frame, main_window=self)
 
-        # On macOS: hide custom CSD title bar — native title bar handles close/min/max/fullscreen.
+        # On macOS: hide custom CSD title bar - native title bar handles close/min/max/fullscreen.
         # The native window title is set to show source timeline info (updated dynamically).
         if _is_mac_root:
             self._title_bar.setVisible(False)
@@ -2160,11 +2160,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         Non-Destructive Two-Layer Engine.
 
-        BASE LAYER  — what the word 'is' permanently:
+        BASE LAYER  - what the word 'is' permanently:
             manual_status (if set by user) > hard auto (hallucination/is_bad) >
             algo repeat > normal
 
-        OVERLAY LAYER — a transient algo highlight that floats on top:
+        OVERLAY LAYER - a transient algo highlight that floats on top:
             active only when the matching toggle is ON and the user hasn't
             manually painted over it (overlay_suppressed == False).
 
@@ -2206,7 +2206,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         Reload for 'Mark inaudible fragments with brown'.
         Turning ON: clears overlay_suppressed so the brown overlay resurfaces on top.
-        manual_status is NEVER touched — base layer stays intact.
+        manual_status is NEVER touched - base layer stays intact.
         """
         if not hasattr(self, 'text_canvas') or not getattr(self.text_canvas, 'words_data', None):
             return
@@ -2228,7 +2228,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         Reload for 'Show detected typos'.
         Turning ON: clears overlay_suppressed so the green overlay resurfaces on top.
-        manual_status is NEVER touched — base layer stays intact.
+        manual_status is NEVER touched - base layer stays intact.
         """
         if not hasattr(self, 'text_canvas') or not getattr(self.text_canvas, 'words_data', None):
             return
@@ -2701,7 +2701,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 break
 
     def _toggle_favorite(self, target_id: str, source_toggle, label_text: str, pin_btn):
-        """Proxy Favorites system — creates or destroys a mirrored ToggleSwitch in layout_favorites."""
+        """Proxy Favorites system - creates or destroys a mirrored ToggleSwitch in layout_favorites."""
         if not hasattr(self, 'layout_favorites') or not hasattr(self, '_favorite_proxies'):
             return
 
@@ -3410,7 +3410,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             dlg.exec()
             return
 
-        # UI PREP — infinite bar starts immediately so it animates during assembly
+        # UI PREP - infinite bar starts immediately so it animates during assembly
         self._panel_left.hide()
         self._panel_right.hide()
         self.go_to_page(1)
@@ -3493,7 +3493,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         else:
             self._on_assembly_error(self.txt("msg_assembly_failed"))
 
-        # RAM cleanup — MUST happen AFTER success/error handler so _assembly_prefs is available
+        # RAM cleanup - MUST happen AFTER success/error handler so _assembly_prefs is available
         try:
             import gc
             self._assembly_thread = None
@@ -4557,7 +4557,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.showMaximized()
 
     # ------------------------------------------------------------------
-    # Action handlers (stubs — logic added in later stages)
+    # Action handlers (stubs - logic added in later stages)
     # ------------------------------------------------------------------
 
     def _on_clear_transcript(self):
@@ -4771,7 +4771,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         prefs = self.engine.load_preferences() or {}
         shortcuts = {**config.DEFAULT_SETTINGS.get('shortcuts', {}), **prefs.get('shortcuts', {})}
 
-        # Keys that are informational only — never register as QShortcut
+        # Keys that are informational only - never register as QShortcut
         DISPLAY_ONLY_KEYS = {'jump_to_word'}
 
         def _make(seq, slot):
@@ -4785,10 +4785,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             except Exception:
                 pass
 
-        # search — open search overlay
+        # search - open search overlay
         _make(shortcuts.get('search', 'Ctrl+F'), self.search_overlay.toggle_search)
 
-        # open_settings — open settings dialog (default: Escape)
+        # open_settings - open settings dialog (default: Escape)
         # Note: Escape also closes search; handled by priority in event chain
         _make(shortcuts.get('open_settings', 'Escape'), self._on_settings)
         
@@ -4825,7 +4825,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         _make(shortcuts.get('skip_backward', 'Left'), safe_skip_backward)
         _make(shortcuts.get('skip_forward', 'Right'), safe_skip_forward)
 
-        # Marker shortcuts — click the corresponding radio button
+        # Marker shortcuts - click the corresponding radio button
         def _check_rb(rb):
             """Click (check) the given radio button if it exists."""
             def _do():
@@ -4846,7 +4846,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'rb_mark_inaudible'):
             _make(shortcuts.get('mark_eraser', '4'), _check_rb(self.rb_mark_inaudible))
 
-        # Custom marker shortcuts — each registered key selects the matching radio button
+        # Custom marker shortcuts - each registered key selects the matching radio button
         custom_markers = prefs.get('custom_markers', [])
         for cm in custom_markers:
             name  = cm.get('name', '')
@@ -4962,7 +4962,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if opt_in is None:
             popup = TelemetryPopup(self.engine, parent=self)
             self.engine.os_doc.force_dark_titlebar(int(popup.winId()))
-            popup.exec()  # ApplicationModal — sets both telemetry and crash-report decisions
+            popup.exec()  # ApplicationModal - sets both telemetry and crash-report decisions
         else:
             if opt_in is True:
                 self.engine.send_telemetry_ping("app_started")
@@ -5055,7 +5055,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         is_win = self.engine.os_doc.is_win
         urls   = [UpdateNotifyDialog._UPDATE_SCRIPT, UpdateNotifyDialog._UPDATE_SCRIPT_GL]
 
-        # Signal bridge — safe cross-thread UI callback
+        # Signal bridge - safe cross-thread UI callback
         class _Bridge(QObject):
             done = Signal(bool, str)
         _bridge = _Bridge(self)
@@ -5063,7 +5063,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         def _on_done(success, err):
             if success:
                 log_info(f"[AutoUpdate] Update to {latest_ver} applied silently. Restart to load new version.")
-                # Store flag — settings card will show "restart to apply" when opened
+                # Store flag - settings card will show "restart to apply" when opened
                 self._pending_update_ver = latest_ver
             else:
                 log_error(f"[AutoUpdate] Silent update failed: {err}")
