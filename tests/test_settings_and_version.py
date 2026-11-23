@@ -262,6 +262,75 @@ class TestSettingsAndVersion(unittest.TestCase):
         # Tab 0 should be visible
         self.assertFalse(dialog.category_list.item(0).isHidden())
 
+    def test_settings_dialog_support_send_and_render(self):
+        """Verify Support/Contact tab renders cleanly and sends relay-compatible payload."""
+        import tempfile, time, urllib.request
+        from PySide6.QtWidgets import QApplication
+
+        engine = self._create_mock_engine()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False, encoding="utf-8") as tf:
+            tf.write("sample log entry\n")
+            tmp_log = tf.name
+        try:
+            engine.os_doc.log_file = tmp_log
+            engine.os_doc.install_dir = os.path.dirname(tmp_log)
+            engine.os_doc.user_file = ""
+            engine.os_doc.settings_file = ""
+            engine.os_doc.legacy_pref_file = ""
+
+            dialog = SettingsDialog(engine)
+            dialog.category_list.setCurrentRow(7)
+            dialog.show()
+            QApplication.processEvents()
+
+            art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+            os.makedirs(art_dir, exist_ok=True)
+            out_png = os.path.join(art_dir, "settings_dialog_support.png")
+            self.assertTrue(dialog.grab().save(out_png))
+
+            captured = {}
+
+            class _Resp:
+                def __enter__(self):
+                    return self
+                def __exit__(self, *a):
+                    return False
+                def getcode(self):
+                    return 200
+                def read(self):
+                    return b'{"ok": true}'
+
+            def _fake_urlopen(req, timeout=30, context=None):
+                captured["data"] = req.data
+                captured["headers"] = dict(req.header_items())
+                return _Resp()
+
+            dialog.input_support_title.setText("Contact test title")
+            dialog.input_support_body.setPlainText("Contact test body")
+            dialog.input_support_email.setText("user@example.com")
+
+            with patch.object(config, "SUPPORT_WEBHOOK_URL", "https://example.invalid/", create=True):
+                with patch.object(urllib.request, "urlopen", side_effect=_fake_urlopen):
+                    dialog.btn_send_report.click()
+                    deadline = time.time() + 3.0
+                    while "data" not in captured and time.time() < deadline:
+                        QApplication.processEvents()
+                        time.sleep(0.01)
+
+            self.assertIn("data", captured)
+            self.assertIn("**Wersja:**".encode("utf-8"), captured["data"])
+            self.assertIn("**Tytuł:** Contact test title".encode("utf-8"), captured["data"])
+            self.assertIn("**Treść:**\nContact test body".encode("utf-8"), captured["data"])
+            self.assertIn(b"filename=\"logs.zip\"", captured["data"])
+            ua = captured["headers"].get("User-agent") or captured["headers"].get("User-Agent", "")
+            self.assertTrue(ua.startswith("BadWords/"), f"Unexpected User-Agent: {ua}")
+            dialog.close()
+        finally:
+            try:
+                os.remove(tmp_log)
+            except OSError:
+                pass
+
     # -------------------------------------------------------------------------
     # 5. TelemetryPopup Drop Shadow Test
     # -------------------------------------------------------------------------

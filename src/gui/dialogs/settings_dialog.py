@@ -2169,6 +2169,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l_send.addStretch()
 
         btn_send = QPushButton(self.txt("btn_send_report"))
+        self.btn_send_report = btn_send
         btn_send.setCursor(Qt.PointingHandCursor)
         btn_send.setStyleSheet(f"background-color: {config.BTN_BG}; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold;")
 
@@ -2191,7 +2192,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             signals = SendSignals(self)
 
             def _worker():
-                import os, zipfile, tempfile, uuid, urllib.request, urllib.error, ssl
+                import os, zipfile, tempfile
                 from osdoc import log_info, log_error
                 tmp_logs = ""
                 try:
@@ -2234,59 +2235,24 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                         log_info("Webhook URL not defined in config.py, skipping actual HTTP POST.")
                         return True, ""
 
-                    content_msg = f"@here\n>>> **Version:** {getattr(config, 'VERSION', 'Unknown')}\n**Email:** {email if email else 'None'}\n**Title:** {title}\n\n**Body:**\n{body}"
-                    data_payload = {
-                        'title': title,
-                        'body': body,
-                        'email': email,
-                        'version': getattr(config, 'VERSION', 'Unknown'),
-                        'content': content_msg
-                    }
-
-                    boundary = f"----BadWordsBoundary{uuid.uuid4().hex}"
-                    body_bytes = bytearray()
-                    crlf = chr(13).encode() + chr(10).encode()
-                    for k, v in data_payload.items():
-                        body_bytes.extend(b"--" + boundary.encode() + crlf)
-                        body_bytes.extend(b'Content-Disposition: form-data; name="' + k.encode() + b'"' + crlf + crlf)
-                        body_bytes.extend(str(v).encode("utf-8"))
-                        body_bytes.extend(crlf)
-
+                    zip_bytes = None
                     if os.path.exists(tmp_logs):
-                        body_bytes.extend(b"--" + boundary.encode() + crlf)
-                        body_bytes.extend(b'Content-Disposition: form-data; name="file"; filename="logs.zip"' + crlf)
-                        body_bytes.extend(b'Content-Type: application/zip' + crlf + crlf)
                         with open(tmp_logs, "rb") as f_zip:
-                            body_bytes.extend(f_zip.read())
-                        body_bytes.extend(crlf)
+                            zip_bytes = f_zip.read()
 
-                    body_bytes.extend(b"--" + boundary.encode() + b"--" + crlf)
-
-                    headers = {
-                        "Content-Type": f"multipart/form-data; boundary={boundary}",
-                        "Content-Length": str(len(body_bytes)),
-                        "User-Agent": f"BadWords/{getattr(config, 'VERSION', '1.0')}"
-                    }
-
-                    try:
-                        import certifi
-                        ctx = ssl.create_default_context(cafile=certifi.where())
-                    except Exception:
-                        ctx = ssl.create_default_context()
-
-                    req = urllib.request.Request(webhook_url, data=bytes(body_bytes), headers=headers, method="POST")
-                    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-                        code = resp.getcode()
-                        resp_text = resp.read().decode("utf-8", errors="replace")
-                        success = code in (200, 201, 202, 204)
-                        if not success:
-                            log_error(f"Support report send failed: {code} {resp_text}")
-                        return success, resp_text
-                except urllib.error.HTTPError as he:
-                    from osdoc import log_error
-                    err_msg = f"HTTP {he.code}: {he.reason}"
-                    log_error(f"Support report HTTP error: {err_msg}")
-                    return False, err_msg
+                    from startup.crash_report import post_support_report
+                    success, detail = post_support_report(
+                        webhook_url,
+                        version=getattr(config, 'VERSION', 'Unknown'),
+                        title=title,
+                        body=body,
+                        email=email,
+                        zip_bytes=zip_bytes,
+                        timeout=30,
+                    )
+                    if not success:
+                        log_error(f"Support report send failed: {detail}")
+                    return success, detail
                 except Exception as e:
                     from osdoc import log_error
                     log_error(f"Support report exception: {e}")

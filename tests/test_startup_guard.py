@@ -169,6 +169,7 @@ class TestStartupGuard(unittest.TestCase):
 
         def _fake_urlopen(req, timeout=20, context=None):
             captured["data"] = req.data
+            captured["headers"] = dict(req.header_items())
             return _FakeResp()
 
         with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
@@ -178,6 +179,28 @@ class TestStartupGuard(unittest.TestCase):
         self.assertIn("**Wersja:**".encode("utf-8"), captured["data"])
         self.assertIn("**Tytuł:**".encode("utf-8"), captured["data"])
         self.assertIn("**Treść:**".encode("utf-8"), captured["data"])
+        ua = captured["headers"].get("User-agent") or captured["headers"].get("User-Agent", "")
+        self.assertTrue(ua.startswith("BadWords/"), f"Unexpected User-Agent: {ua}")
+
+        # Verify shared uploader handles empty email, custom email, >1900 char truncation, and SettingsDialog parity
+        with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
+            ok2, _ = crash_report.post_support_report(
+                "https://example.invalid/",
+                version="4.0.1",
+                title="Test Title",
+                body="X" * 3000,
+                email="user@example.com",
+                zip_bytes=b"PK\x03\x04dummy",
+            )
+        self.assertTrue(ok2)
+        self.assertIn(b"**Email:** user@example.com", captured["data"])
+        content_part = captured["data"].split(b'name="content"\r\n\r\n', 1)[1].split(b"\r\n--", 1)[0]
+        self.assertLessEqual(len(content_part.decode("utf-8")), 1900)
+
+        with open(os.path.join(SRC_DIR, "gui", "dialogs", "settings_dialog.py"), "r", encoding="utf-8") as f:
+            sd_src = f.read()
+        self.assertIn("post_support_report", sd_src)
+        self.assertNotIn("**Version:**", sd_src)
 
         with patch.dict(os.environ, {"BADWORDS_FORCE_INSTALLED": "1"}, clear=False):
             with patch.object(fatal_dialog, "ask_choice", return_value=1):

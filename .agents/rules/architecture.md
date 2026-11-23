@@ -33,7 +33,7 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 3. **GitHub CLI**: `gh` is authenticated for issues, PRs, releases.
 4. **UI & Animation**: App QSS/themes; **ZERO system emojis** (SVG/Qt icons only); dim disabled controls (`200–250ms`, `1.0 <-> 0.35`, `Qt.WA_TransparentForMouseEvents`).
 5. **State & Releases**: Log progress in `docs/DEV_STATE.md`; update `src/config/release_notes.json` on releases.
-6. **Empirical & Git**: Verify empirically. Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`.
+6. **Empirical & E2E**: Verify end-to-end on real integrations whenever possible (never rely on mocks alone when live endpoints, IPC, installers, or runtime paths can be tested safely). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`.
 7. **Checks**: Run `python3 run_tests.py`, `python3 -m compileall src`, `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`, and in `installer/`: `cargo check && cargo test`.
-8. **Visual Check**: GUI changes MUST render PNGs (`tests/artifacts/` or `raport/screenshots/`); inspect every PNG yourself before reporting.
+8. **Proactive UX & Visuals**: Never ship bare/unstyled defaults or wait to be asked for screenshots; proactively render PNGs (`tests/artifacts/` or `raport/screenshots/`), inspect, and polish every changed UI/modal/error state before reporting.
 9. **Sync & Push**: Sync `src/`, `installer/`, `setupfiles/` to `/mnt/dump/BadWords FILES/`, conventional commit, `git push all <branch>`.

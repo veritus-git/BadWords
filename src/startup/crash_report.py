@@ -19,6 +19,7 @@ import re
 import ssl
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import uuid
 import zipfile
@@ -172,6 +173,61 @@ def _build_logs_zip(body_text, src_dir):
     return buf.getvalue()
 
 
+def post_support_report(webhook_url, version, title, body, email="Brak", zip_bytes=None, timeout=20):
+    """Format and POST support or crash report to SUPPORT_WEBHOOK_URL. Return (ok, detail)."""
+    if not webhook_url:
+        return False, "Missing webhook URL"
+
+    safe_ver = str(version or "Unknown").strip() or "Unknown"
+    safe_email = str(email or "").strip() or "Brak"
+    safe_title = str(title or "").strip() or "No title"
+    safe_body = str(body or "").strip()
+
+    # Relay server at SUPPORT_WEBHOOK_URL validates the original Polish header markers.
+    raw_content = (
+        "@here\n>>> **Wersja:** {0}\n**Email:** {1}\n**Tytuł:** {2}\n\n**Treść:**\n{3}"
+    ).format(safe_ver, safe_email, safe_title, safe_body)
+    content_msg = raw_content[:1900]
+
+    fields = {
+        "title": safe_title,
+        "body": safe_body,
+        "email": safe_email,
+        "version": safe_ver,
+        "content": content_msg,
+    }
+    payload, content_type = build_multipart(fields, zip_bytes)
+
+    headers = {
+        "Content-Type": content_type,
+        "Content-Length": str(len(payload)),
+        "User-Agent": "BadWords/{0}".format(safe_ver),
+    }
+
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        ctx = ssl.create_default_context()
+
+    try:
+        req = urllib.request.Request(webhook_url, data=payload, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            code = resp.getcode()
+            resp_text = resp.read().decode("utf-8", errors="replace") if hasattr(resp, "read") else ""
+            return (code in (200, 201, 202, 204)), resp_text
+    except urllib.error.HTTPError as he:
+        err_body = ""
+        try:
+            err_body = he.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            pass
+        detail = "HTTP {0}: {1}".format(he.code, err_body or he.reason)
+        return False, detail
+    except Exception as e:
+        return False, str(e)
+
+
 def send_report(error_text, tb_text="", src_dir=None, timeout=20):
     """Package startup diagnostics and POST to SUPPORT_WEBHOOK_URL. Never raises."""
     try:
@@ -180,36 +236,16 @@ def send_report(error_text, tb_text="", src_dir=None, timeout=20):
             return False
 
         title, body = build_report(error_text, tb_text=tb_text, src_dir=src_dir)
-        # Relay server at SUPPORT_WEBHOOK_URL validates the original Polish header markers.
-        raw_content = (
-            "@here\n>>> **Wersja:** {0}\n**Email:** Brak\n**Tytuł:** {1}\n\n**Treść:**\n{2}"
-        ).format(version, title, body)
-        content_msg = raw_content[:1900]
-
-        fields = {
-            "title": title,
-            "body": body,
-            "email": "Brak",
-            "version": version,
-            "content": content_msg,
-        }
         zip_bytes = _build_logs_zip(body, src_dir)
-        payload, content_type = build_multipart(fields, zip_bytes)
-
-        headers = {
-            "Content-Type": content_type,
-            "Content-Length": str(len(payload)),
-            "User-Agent": "BadWords/{0}".format(version),
-        }
-
-        try:
-            import certifi
-            ctx = ssl.create_default_context(cafile=certifi.where())
-        except Exception:
-            ctx = ssl.create_default_context()
-
-        req = urllib.request.Request(webhook_url, data=payload, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            return resp.getcode() in (200, 201, 202, 204)
+        ok, _ = post_support_report(
+            webhook_url,
+            version=version,
+            title=title,
+            body=body,
+            email="Brak",
+            zip_bytes=zip_bytes,
+            timeout=timeout,
+        )
+        return ok
     except Exception:
         return False

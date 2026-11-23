@@ -116,13 +116,14 @@ Test Runner: `run_tests.py` using Python `unittest`.
    - Deferred `OSDoctor` GPU/CPU probing to `log_hardware_info()` inside `InitThread`; removed hardcoded paths and runtime `venv/Scripts/BadWords.exe` copying/patching (`pe_patcher.ensure_badwords_exe`); guarded `sync_resolve_scripts` in DEV mode and stopped deleting `BadWords.py` on Free 21.1+.
    - Unified all 4 Resolve wrapper generators (`osdoc.py`, `installer/src/engine.rs`, `setupfiles/setup.py`, `setupfiles/updater.py`) onto `setupfiles/resolve_wrapper_template.py` with full foreign Python/Conda isolation and macOS `.app` external fallback.
    - Hardened `windows/launcher.c`, `linux/launcher.c`, and `macos/launcher.c` to load only the exact matching Python library version, strip `PYTHONHOME`/foreign `PYTHONPATH`, set `PYTHONNOUSERSITE=1`, and respect `EXIT_FATAL_REPORTED = 3`.
-   - Added 11-language startup/self-heal i18n keys, `tests/test_startup_guard.py`, and documented invariants in `docs/CEMENTED.md` (Section 6).
+   - Added 11-language startup/self-heal i18n keys, dark Qt startup/heal dialogs, unified `crash_report.post_support_report` relay uploader across startup crash reporting and `SettingsDialog` (Contact tab), `tests/test_startup_guard.py`, and documented invariants in `docs/CEMENTED.md` (Section 6).
+   - Strengthened `.agents/rules/architecture.md` Rules 6 and 8 with general end-to-end verification and proactive visual/UX polish mandates.
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. Run `python3 run_tests.py` to verify all 60 tests pass.
+1. Run `python3 run_tests.py` to verify all 62 tests pass.
 2. Run `python3 -m compileall src` to ensure bytecode consistency.
 3. Verify headless GUI import: `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`.
 4. Ensure files are synchronized with `/mnt/dump/BadWords FILES/`.
