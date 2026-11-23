@@ -344,9 +344,11 @@ class TestSettingsAndVersion(unittest.TestCase):
         self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
         self.assertGreaterEqual(shadow.blurRadius(), 20)
 
-        # Default state for new users: auto_crash_report MUST be ON
+        # Default state for new users: auto_crash_report MUST be ON, no default badge, no nested QGraphicsOpacityEffect
         self.assertTrue(popup._tgl_crash_report.isChecked())
         self.assertTrue(popup._tgl_telemetry.isChecked())
+        self.assertFalse(hasattr(popup, "_lbl_default_badge"))
+        self.assertIsNone(popup._geo_container.graphicsEffect())
 
         art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
         os.makedirs(art_dir, exist_ok=True)
@@ -354,13 +356,31 @@ class TestSettingsAndVersion(unittest.TestCase):
         app.processEvents()
         self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup.png")))
 
-        # Verify Polish layout & telemetry off with crash report still ON
+        # Verify Polish layout & entire Telemetry card dims smoothly when toggled OFF (Crash Report still ON)
         popup._on_lang_selected("pl")
         popup._tgl_telemetry.setChecked(False, animated=False)
+        popup._telem_anim.stop()
+        popup._apply_telemetry_card_dim(0.35)
         app.processEvents()
         self.assertFalse(popup._chk_geo.isEnabled())
+        self.assertAlmostEqual(popup._telem_dim_val, 0.35, places=2)
+        self.assertAlmostEqual(popup._crash_dim_val, 1.0, places=2)
         self.assertTrue(popup._tgl_crash_report.isChecked())
         self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_pl.png")))
+
+        # Verify Crash Report card also dims smoothly when toggled OFF
+        popup._tgl_crash_report.setChecked(False, animated=False)
+        popup._crash_anim.stop()
+        popup._apply_crash_card_dim(0.35)
+        app.processEvents()
+        self.assertAlmostEqual(popup._crash_dim_val, 0.35, places=2)
+        self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_both_dimmed.png")))
+
+        # Re-enable Crash Report before saving to test independent persistence
+        popup._tgl_crash_report.setChecked(True, animated=False)
+        popup._crash_anim.stop()
+        popup._apply_crash_card_dim(1.0)
+        app.processEvents()
 
         # Saving while telemetry is OFF and crash report is ON persists independently
         popup._on_yes()

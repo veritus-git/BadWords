@@ -2550,12 +2550,14 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
             sys_root = os.environ.get("SystemRoot", r"C:\Windows")
             sys32 = os.path.join(sys_root, "System32")
             if not (os.path.isfile(os.path.join(sys32, "vcruntime140.dll")) and os.path.isfile(os.path.join(sys32, "msvcp140.dll"))):
-                log_warn("Microsoft Visual C++ 2015-2022 Runtime not found in System32. Downloading vc_redist.x64.exe...")
+                log_warn("Microsoft Visual C++ 2015-2022 Runtime is missing on this PC.")
+                log_info("This official Microsoft component is required for BadWords GUI and AI libraries.")
+                log_info("Administrator approval (Windows UAC prompt) will be requested - please click 'Yes'.")
                 try:
                     vc_url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
                     vc_exe = os.path.join(tempfile.gettempdir(), "bw_vc_redist.x64.exe")
                     if download(vc_url, vc_exe) and os.path.getsize(vc_exe) > 10_000_000:
-                        log_step("Installing Microsoft Visual C++ Runtime (approve UAC prompt if asked)...")
+                        log_step("Installing Microsoft Visual C++ Runtime (confirm the Windows admin prompt)...")
                         vc_res = subprocess.run([vc_exe, "/install", "/passive", "/norestart"])
                         if vc_res.returncode in (0, 1638, 3010):
                             log_ok("Microsoft Visual C++ Runtime installed successfully.")
@@ -2947,23 +2949,59 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         # ── Done ─────────────────────────────────────────────
         console.print()
-        console.print(Text(f"{PAD}✓  INSTALLATION SUCCESSFUL!", style="bold green"), no_wrap=True)
-        console.print(Text(f"{PAD}   Mode : {mode_name}", style="green"), no_wrap=True)
-        console.print(Text(f"{PAD}   Path : {install_dir}", style="green"), no_wrap=True)
-        console.print(Text(f"{PAD}   Log  : {log_file}", style="green"), no_wrap=True)
-        console.print()
-        console.print(Text(f"{PAD}   IMPORTANT FOR DAVINCI RESOLVE:", style="bold yellow"), no_wrap=True)
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.padding import Padding
+
+        summary_tbl = Table.grid(padding=(0, 2))
+        summary_tbl.add_column(style="bold green", justify="right", no_wrap=True)
+        summary_tbl.add_column(style="white", overflow="fold")
+        summary_tbl.add_row("Mode:", mode_name)
+        summary_tbl.add_row("Path:", str(install_dir))
+        summary_tbl.add_row("Log:", str(log_file))
+
+        console.print(
+            Padding(
+                Panel(
+                    summary_tbl,
+                    title="[bold green]INSTALLATION SUCCESSFUL[/bold green]",
+                    title_align="left",
+                    border_style="green",
+                    padding=(1, 2),
+                ),
+                (0, 4, 0, 4),
+            )
+        )
+
         if py_auto_installed:
-            console.print(Text(f"{PAD}   1. Python was installed in the background.", style="yellow"), no_wrap=True)
-            console.print(Text(f"{PAD}   2. You MUST restart DaVinci Resolve to detect it", style="bold yellow"), no_wrap=True)
-            console.print(Text(f"{PAD}      If that fails, a reboot might be required", style="bold yellow"), no_wrap=True)
-            console.print(Text(f"{PAD}   3. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
+            resolve_lines = (
+                "1. Python 3.12 was installed automatically in the background.\n"
+                "2. Restart DaVinci Resolve so it detects the new environment (a PC reboot may help if needed).\n"
+                "3. Open in Resolve via: Workspace -> Scripts -> BadWords"
+            )
         else:
-            console.print(Text(f"{PAD}   1. A restart of DaVinci Resolve might be required.", style="yellow"), no_wrap=True)
-            console.print(Text(f"{PAD}   2. Find the script in: Workspace -> Scripts -> BadWords", style="yellow"), no_wrap=True)
+            resolve_lines = (
+                "1. Restart DaVinci Resolve if it was running during installation.\n"
+                "2. Open in Resolve via: Workspace -> Scripts -> BadWords"
+            )
+
+        console.print(
+            Padding(
+                Panel(
+                    Text(resolve_lines, style="yellow"),
+                    title="[bold yellow]DaVinci Resolve Note[/bold yellow]",
+                    title_align="left",
+                    border_style="yellow",
+                    padding=(0, 2),
+                ),
+                (1, 4, 0, 4),
+            )
+        )
+
         if ARGS.non_interactive or ARGS.no_launch:
             return
 
+        console.print()
         console.print(Text(f"{PAD}Launch BadWords now? [Y/n]: ", style="bold green"), end="", no_wrap=True)
         sys.stdout.flush()
         launched = False

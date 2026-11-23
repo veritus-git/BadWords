@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Szymon Wolarz
+# Copyright (c) 2026 Szymon Wolarz
 # Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 # ============================================================
@@ -164,7 +164,7 @@ function Invoke-PythonFallback($ReasonText = "") {
     }
 }
 
-# ── Helper: Start Native Executable Safely ─────────────────────
+# -- Helper: Start Native Executable Safely ---------------------
 function Clear-FileZoneIdentifier($path) {
     if (-not $path -or -not (Test-Path $path)) { return }
     try { Unblock-File -LiteralPath $path -ErrorAction SilentlyContinue } catch {}

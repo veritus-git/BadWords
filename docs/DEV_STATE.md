@@ -157,8 +157,11 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **74 tests** across 
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. **Complete OS Setup Inside Local VMs (Interactive)**: Finish clicking through the OS setup wizards in `virt-manager` for `badwords-win11` and `badwords-linux-kde` (instructions provided to PO).
-2. **Continue Roadmap Cementing**: Next uncompleted item is **Point 3** in `ROADMAP_CEMENTING.md` (Frameless window, custom title bar, Always on Top, and cross-OS animation smoothness).
+1. **Known Deferred Startup Issue (Recorded for Point 3 / Point 15 - DO NOT TOUCH YET)**:
+   - On Windows 11 startup, ~3 brief micro-windows flash on screen during launch (caused by `SettingsDialog` / hidden window pre-initialization). Logged per PO instruction to be investigated and fixed cleanly during Point 3 (frameless window lifecycle) / Point 15 (`SettingsDialog`).
+2. **Release Hygiene Reminder**:
+   - Before cutting the next release tag (e.g., `v4.0.2` / `v4.1.0`), update `src/config/release_notes.json` with all real user-facing changes since `v4.0.1` so the Update dialog displays the complete changelog.
+3. **Continue Roadmap Cementing**: Next uncompleted item is **Point 3** in `ROADMAP_CEMENTING.md` (Frameless window, custom title bar, Always on Top, and cross-OS animation smoothness).
 3. **Baseline Verification Commands**:
    - `python3 run_tests.py` (74 tests)
    - `python3 -m compileall src`

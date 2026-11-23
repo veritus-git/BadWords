@@ -2540,41 +2540,63 @@ class TrackSquareCheckbox(QWidget):
         self.box.setAlignment(Qt.AlignCenter)
         self.box.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-        fs = font_size if font_size is not None else config.FS(9.5)
+        self._font_size = font_size if font_size is not None else config.FS(9.5)
+        self._dim_opacity = 1.0
+        self._dim_bg_hex = "#151515"
+
         self.lbl = QLabel(self.text_label)
         self.lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.lbl.setStyleSheet(
-            f"color: #d4d4d4; font-size: {fs}pt; "
-            f"font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;"
-        )
 
         lay.addWidget(self.box)
         lay.addWidget(self.lbl)
         lay.addStretch()
 
-        self._style_checked = f"""
-            background-color: #111111;
-            border: 1px solid #1a7a3e;
-            color: #1a7a3e;
-            font-weight: bold;
-            font-size: {config.S(10)}px;
-            border-radius: {config.S(2)}px;
-        """
-        self._style_unchecked = f"""
-            background-color: #111111;
-            border: 1px solid #3a3a3a;
-            border-radius: {config.S(2)}px;
-        """
+        self.update_ui()
 
+    @staticmethod
+    def _blend_hex(fg_hex: str, bg_hex: str, factor: float) -> str:
+        t = max(0.0, min(1.0, float(factor)))
+        fg = QColor(fg_hex)
+        bg = QColor(bg_hex)
+        r = int(round(bg.red() + (fg.red() - bg.red()) * t))
+        g = int(round(bg.green() + (fg.green() - bg.green()) * t))
+        b = int(round(bg.blue() + (fg.blue() - bg.blue()) * t))
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def set_dim_opacity(self, opacity: float, bg_hex: str = "#151515"):
+        """Smoothly dims checkbox and text via direct color interpolation (zero nested QGraphicsEffect)."""
+        self._dim_opacity = max(0.0, min(1.0, float(opacity)))
+        self._dim_bg_hex = bg_hex
         self.update_ui()
 
     def update_ui(self):
+        t = self._dim_opacity
+        bg = self._dim_bg_hex
+        lbl_col = self._blend_hex("#d4d4d4", bg, t)
+        self.lbl.setStyleSheet(
+            f"color: {lbl_col}; font-size: {self._font_size}pt; "
+            f"font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;"
+        )
+        box_bg = self._blend_hex("#111111", bg, t)
         if self.is_checked:
+            accent = self._blend_hex("#1a7a3e", bg, t)
             self.box.setText("✔")
-            self.box.setStyleSheet(self._style_checked)
+            self.box.setStyleSheet(f"""
+                background-color: {box_bg};
+                border: 1px solid {accent};
+                color: {accent};
+                font-weight: bold;
+                font-size: {config.S(10)}px;
+                border-radius: {config.S(2)}px;
+            """)
         else:
+            border = self._blend_hex("#3a3a3a", bg, t)
             self.box.setText("")
-            self.box.setStyleSheet(self._style_unchecked)
+            self.box.setStyleSheet(f"""
+                background-color: {box_bg};
+                border: 1px solid {border};
+                border-radius: {config.S(2)}px;
+            """)
 
     def setText(self, text: str):
         self.text_label = str(text)

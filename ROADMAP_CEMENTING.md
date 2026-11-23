@@ -147,7 +147,7 @@ Po mojej akceptacji i wdrożeniu: napisz testy ochronne (w tests/ i uruchom run_
 
 ### 3. Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
 
-- **Co obejmuje:** Wygląd i zachowanie głównego okna oraz wyskakujących okienek: przeciąganie za górny pasek, powiększanie na pełny ekran na wybranym monitorze, chowanie białych mignięć przy otwieraniu okien, znikająca ikona aplikacji, przycisk „Zawsze na wierzchu” oraz dopasowanie płynności animacji do odświeżania monitora (60 Hz / 120 Hz / 144 Hz+).
+- **Co obejmuje:** Wygląd i zachowanie głównego okna oraz wyskakujących okienek: przeciąganie za górny pasek, powiększanie na pełny ekran na wybranym monitorze, chowanie białych mignięć przy otwieraniu okien, **wyeliminowanie ~3 mignięć mikro-okienek na Windows 11 podczas startu aplikacji (powiązanych z inicjalizacją okna ustawień - zanotowane z testów VM 2026-11-23)**, znikająca ikona aplikacji, przycisk „Zawsze na wierzchu” oraz dopasowanie płynności animacji do odświeżania monitora (60 Hz / 120 Hz / 144 Hz+).
 - **Dlaczego to ważne:** Każdy z trzech systemów (Windows 11, macOS, Linux z X11 lub Waylandem) traktuje okna bez systemowej ramki zupełnie inaczej. To jedno z najczęstszych źródeł wizualnych usterek, zacinania przeciągania okna lub błędów przy zmianie monitora.
 - **Porządki „pod spodem” pod przyszłe funkcje:** **Tak.** Część sztuczek do okien i ikon siedzi w głównym oknie i w oknie ustawień zamiast w jednym wspólnym miejscu. Uporządkowanie ich w jednym wspólnym mechanizmie okien sprawi, że każde nowe okienko dodane w przyszłości od razu dostanie dobry wygląd i zachowanie na wszystkich trzech systemach.
 

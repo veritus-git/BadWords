@@ -13,10 +13,10 @@ new users, covering anonymous telemetry and automatic error reporting.
 """
 
 from PySide6.QtCore import Qt, QVariantAnimation, QEasingCurve
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame,
-    QGraphicsDropShadowEffect, QGraphicsOpacityEffect
+    QGraphicsDropShadowEffect
 )
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -24,6 +24,54 @@ from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import ToggleSwitch, TrackSquareCheckbox
 from gui.widgets.language_selector import _LangPickerDialog
 from gui.utils import _app_icon, _txt, _center_on_screen, get_svg_icon
+
+
+_CARD_BG_HEX = "#151515"
+
+
+def _blend_qcolor(fg_hex: str, bg_hex: str, factor: float) -> QColor:
+    """Blends fg_hex toward bg_hex by factor (0.0..1.0) for flicker-free fading."""
+    t = max(0.0, min(1.0, float(factor)))
+    fg = QColor(fg_hex)
+    bg = QColor(bg_hex)
+    return QColor(
+        int(round(bg.red() + (fg.red() - bg.red()) * t)),
+        int(round(bg.green() + (fg.green() - bg.green()) * t)),
+        int(round(bg.blue() + (fg.blue() - bg.blue()) * t)),
+    )
+
+
+class _FadeIconLabel(QLabel):
+    """Transparent SVG icon label with flicker-free QPainter opacity (no nested QGraphicsEffect)."""
+
+    def __init__(self, svg_xml: str, size_px: int, parent=None):
+        super().__init__(parent)
+        self._opacity = 1.0
+        self._size_px = config.S(size_px)
+        self._pixmap = get_svg_icon(svg_xml, size=size_px).pixmap(self._size_px, self._size_px)
+        self.setFixedSize(self._size_px, self._size_px)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+    def set_opacity(self, opacity: float):
+        val = max(0.0, min(1.0, float(opacity)))
+        if abs(self._opacity - val) > 1e-4:
+            self._opacity = val
+            self.update()
+
+    def opacity(self) -> float:
+        return self._opacity
+
+    def paintEvent(self, event):
+        if self._pixmap.isNull():
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        p.setOpacity(self._opacity)
+        x = (self.width() - self._pixmap.width()) // 2
+        y = (self.height() - self._pixmap.height()) // 2
+        p.drawPixmap(x, y, self._pixmap)
+        p.end()
 
 
 _SVG_ANALYTICS = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
@@ -90,28 +138,26 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
+            QLabel {{
+                background: transparent;
+                border: none;
+            }}
             QLabel#lbl_card_title {{
-                color: #ffffff;
                 font-size: {config.FS(10.5)}pt;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
-            QLabel#lbl_card_body, QLabel#lbl_body {{
-                color: #c8c8c8;
+            QLabel#lbl_card_body {{
                 font-size: {config.FS(9.5)}pt;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
-            QLabel#lbl_default_badge {{
-                background-color: #0f301d;
-                color: #39d377;
-                border: 1px solid #1d5c37;
-                border-radius: {config.S(3)}px;
-                padding: {config.S(2)}px {config.S(7)}px;
-                font-size: {config.FS(8)}pt;
-                font-weight: bold;
+            QLabel#lbl_body {{
+                color: #c8c8c8;
+                font-size: {config.FS(9.5)}pt;
                 font-family: "{config.UI_FONT_NAME}";
+                background: transparent;
             }}
             QPushButton#btn_lang {{
                 color: {config.GEAR_COLOR};
@@ -356,10 +402,8 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
 
         telem_hdr = QHBoxLayout()
         telem_hdr.setSpacing(config.S(8))
-        telem_icon = QLabel(card_telem)
-        telem_icon.setFixedSize(config.S(18), config.S(18))
-        telem_icon.setPixmap(get_svg_icon(_SVG_ANALYTICS, size=18).pixmap(config.S(18), config.S(18)))
-        telem_hdr.addWidget(telem_icon)
+        self._telem_icon = _FadeIconLabel(_SVG_ANALYTICS, size_px=18, parent=card_telem)
+        telem_hdr.addWidget(self._telem_icon)
 
         self._lbl_telem_title = QLabel("", card_telem)
         self._lbl_telem_title.setObjectName("lbl_card_title")
@@ -376,28 +420,26 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         telem_lay.addWidget(self._lbl_msg)
 
         self._geo_container = QWidget(card_telem)
-        self._geo_container.setStyleSheet("background: transparent;")
+        self._geo_container.setStyleSheet("background: transparent; border: none;")
         geo_layout = QHBoxLayout(self._geo_container)
         geo_layout.setContentsMargins(0, config.S(2), 0, 0)
         self._chk_geo = TrackSquareCheckbox("", is_checked=True, font_size=config.FS(9.5), parent=self._geo_container)
         geo_layout.addWidget(self._chk_geo)
         geo_layout.addStretch()
-
-        self._geo_opacity = QGraphicsOpacityEffect(self._geo_container)
-        self._geo_opacity.setOpacity(1.0)
-        self._geo_opacity.setEnabled(False)
-        self._geo_container.setGraphicsEffect(self._geo_opacity)
-        self._geo_anim = QVariantAnimation(self)
-        self._geo_anim.setDuration(220)
-        self._geo_anim.setEasingCurve(QEasingCurve.InOutQuad)
-        self._geo_anim.valueChanged.connect(lambda v: self._geo_opacity.setOpacity(float(v)))
-        self._geo_anim.finished.connect(self._on_geo_anim_finished)
         telem_lay.addWidget(self._geo_container)
+
+        # Smooth flicker-free fade for entire Telemetry card (NO nested QGraphicsOpacityEffect!)
+        self._telem_dim_val = 1.0
+        self._telem_anim = QVariantAnimation(self)
+        self._telem_anim.setDuration(220)
+        self._telem_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._telem_anim.valueChanged.connect(self._apply_telemetry_card_dim)
+        self._apply_telemetry_card_dim(1.0)
 
         self._tgl_telemetry.toggled.connect(self._on_telemetry_toggled)
         content_layout.addWidget(card_telem)
 
-        # --- Card 2: Automatic Crash & Error Reports (DEFAULT ON) ---
+        # --- Card 2: Automatic Crash & Error Reports (DEFAULT ON, no badge) ---
         card_crash = QFrame(container)
         card_crash.setObjectName("CardCrashReport")
         crash_lay = QVBoxLayout(card_crash)
@@ -406,19 +448,12 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
 
         crash_hdr = QHBoxLayout()
         crash_hdr.setSpacing(config.S(8))
-        crash_icon = QLabel(card_crash)
-        crash_icon.setFixedSize(config.S(18), config.S(18))
-        crash_icon.setPixmap(get_svg_icon(_SVG_SHIELD, size=18).pixmap(config.S(18), config.S(18)))
-        crash_hdr.addWidget(crash_icon)
+        self._crash_icon = _FadeIconLabel(_SVG_SHIELD, size_px=18, parent=card_crash)
+        crash_hdr.addWidget(self._crash_icon)
 
         self._lbl_crash_title = QLabel("", card_crash)
         self._lbl_crash_title.setObjectName("lbl_card_title")
-        crash_hdr.addWidget(self._lbl_crash_title)
-
-        self._lbl_default_badge = QLabel("", card_crash)
-        self._lbl_default_badge.setObjectName("lbl_default_badge")
-        crash_hdr.addWidget(self._lbl_default_badge)
-        crash_hdr.addStretch(1)
+        crash_hdr.addWidget(self._lbl_crash_title, 1)
 
         self._tgl_crash_report = ToggleSwitch(card_crash)
         self._tgl_crash_report.setChecked(True, animated=False)
@@ -430,24 +465,56 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         self._lbl_crash_msg.setWordWrap(True)
         crash_lay.addWidget(self._lbl_crash_msg)
 
+        # Smooth flicker-free fade for entire Crash Report card (NO nested QGraphicsOpacityEffect!)
+        self._crash_dim_val = 1.0
+        self._crash_anim = QVariantAnimation(self)
+        self._crash_anim.setDuration(220)
+        self._crash_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._crash_anim.valueChanged.connect(self._apply_crash_card_dim)
+        self._apply_crash_card_dim(1.0)
+
+        self._tgl_crash_report.toggled.connect(self._on_crash_toggled)
         content_layout.addWidget(card_crash)
         content_layout.addSpacing(config.S(4))
         content_layout.addLayout(self._build_footer_buttons(container))
         self._refresh_texts()
 
-    def _on_geo_anim_finished(self):
-        if self._tgl_telemetry.isChecked():
-            self._geo_opacity.setEnabled(False)
+    @staticmethod
+    def _set_label_color(lbl: QLabel, color: QColor):
+        pal = lbl.palette()
+        pal.setColor(QPalette.WindowText, color)
+        lbl.setPalette(pal)
+
+    def _apply_telemetry_card_dim(self, val):
+        factor = max(0.0, min(1.0, float(val)))
+        self._telem_dim_val = factor
+        self._telem_icon.set_opacity(factor)
+        self._set_label_color(self._lbl_telem_title, _blend_qcolor("#ffffff", _CARD_BG_HEX, factor))
+        self._set_label_color(self._lbl_msg, _blend_qcolor("#c8c8c8", _CARD_BG_HEX, factor))
+        self._chk_geo.set_dim_opacity(factor, bg_hex=_CARD_BG_HEX)
+
+    def _apply_crash_card_dim(self, val):
+        factor = max(0.0, min(1.0, float(val)))
+        self._crash_dim_val = factor
+        self._crash_icon.set_opacity(factor)
+        self._set_label_color(self._lbl_crash_title, _blend_qcolor("#ffffff", _CARD_BG_HEX, factor))
+        self._set_label_color(self._lbl_crash_msg, _blend_qcolor("#c8c8c8", _CARD_BG_HEX, factor))
 
     def _on_telemetry_toggled(self, checked: bool):
         target = 1.0 if checked else 0.35
         self._geo_container.setAttribute(Qt.WA_TransparentForMouseEvents, not checked)
         self._chk_geo.setEnabled(checked)
-        self._geo_opacity.setEnabled(True)
-        self._geo_anim.stop()
-        self._geo_anim.setStartValue(self._geo_opacity.opacity())
-        self._geo_anim.setEndValue(target)
-        self._geo_anim.start()
+        self._telem_anim.stop()
+        self._telem_anim.setStartValue(self._telem_dim_val)
+        self._telem_anim.setEndValue(target)
+        self._telem_anim.start()
+
+    def _on_crash_toggled(self, checked: bool):
+        target = 1.0 if checked else 0.35
+        self._crash_anim.stop()
+        self._crash_anim.setStartValue(self._crash_dim_val)
+        self._crash_anim.setEndValue(target)
+        self._crash_anim.start()
 
     def _refresh_texts(self):
         title_txt = self._t("title_privacy_welcome")
@@ -457,7 +524,6 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         self._lbl_msg.setText(self._t("msg_telemetry_card"))
         self._chk_geo.setText(self._t("chk_telemetry_geo"))
         self._lbl_crash_title.setText(self._t("title_crash_report_card"))
-        self._lbl_default_badge.setText(self._t("badge_default_on"))
         self._lbl_crash_msg.setText(self._t("msg_crash_report_card"))
         self._finalize_geometry(
             title_txt,

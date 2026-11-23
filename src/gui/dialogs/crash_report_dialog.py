@@ -16,8 +16,7 @@ telemetry consent).
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame
 import config
-from gui.dialogs.telemetry_popup import _PrivacyConsentDialogBase, _SVG_SHIELD
-from gui.utils import get_svg_icon
+from gui.dialogs.telemetry_popup import _PrivacyConsentDialogBase, _SVG_SHIELD, _FadeIconLabel
 
 
 class CrashReportConsentDialog(_PrivacyConsentDialogBase):
@@ -36,9 +35,7 @@ class CrashReportConsentDialog(_PrivacyConsentDialogBase):
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(config.S(12))
 
-        icon_lbl = QLabel(container)
-        icon_lbl.setFixedSize(config.S(30), config.S(30))
-        icon_lbl.setPixmap(get_svg_icon(_SVG_SHIELD, size=30).pixmap(config.S(30), config.S(30)))
+        icon_lbl = _FadeIconLabel(_SVG_SHIELD, size_px=30, parent=container)
         header.addWidget(icon_lbl, 0, Qt.AlignTop)
 
         title_col = QVBoxLayout()
