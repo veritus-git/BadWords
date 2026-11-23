@@ -610,5 +610,7 @@
   "heal_done": "Composants réparés avec succès. Redémarrage de BadWords...",
   "heal_done_resolve": "Composants réparés avec succès.\nRelancez BadWords depuis DaVinci Resolve (Workspace -> Scripts -> BadWords).",
   "heal_failed": "La réparation des composants a échoué :\n\n{error}\n\nLancez l'installateur officiel de BadWords pour réparer l'installation.",
-  "heal_offline": "Impossible de réparer les composants sans connexion internet.\nConnectez-vous à internet ou utilisez l'installateur officiel."
+  "heal_offline": "Impossible de réparer les composants sans connexion internet.\nConnectez-vous à internet ou utilisez l'installateur officiel.",
+  "startup_btn_show_details": "Afficher les détails",
+  "startup_btn_hide_details": "Masquer les détails"
 }

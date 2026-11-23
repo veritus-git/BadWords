@@ -180,15 +180,16 @@ def send_report(error_text, tb_text="", src_dir=None, timeout=20):
             return False
 
         title, body = build_report(error_text, tb_text=tb_text, src_dir=src_dir)
+        # Relay server at SUPPORT_WEBHOOK_URL validates the original Polish header markers.
         raw_content = (
-            "@here\n>>> **Version:** {0}\n**Email:** None\n**Title:** {1}\n\n**Body:**\n{2}"
+            "@here\n>>> **Wersja:** {0}\n**Email:** Brak\n**Tytuł:** {1}\n\n**Treść:**\n{2}"
         ).format(version, title, body)
         content_msg = raw_content[:1900]
 
         fields = {
             "title": title,
             "body": body,
-            "email": "",
+            "email": "Brak",
             "version": version,
             "content": content_msg,
         }

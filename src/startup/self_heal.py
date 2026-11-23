@@ -145,9 +145,64 @@ def _append_log(log_path, text):
         pass
 
 
+def build_dark_progress_dialog(title, label):
+    """Build a dark-themed indeterminate progress dialog for component repair."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QDialog, QLabel, QProgressBar, QVBoxLayout
+    from startup.native_dialogs import _apply_dark_titlebar_if_win, _find_window_icon
+
+    dlg = QDialog()
+    dlg.setWindowTitle(str(title))
+    dlg.setWindowModality(Qt.ApplicationModal)
+    dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowCloseButtonHint)
+    dlg.setMinimumWidth(440)
+    dlg.setStyleSheet(
+        """
+        QDialog { background-color: #161616; color: #e6e6e6; }
+        QLabel#HealTitle { color: #ffffff; font-size: 12pt; font-weight: 700; }
+        QLabel#HealLabel { color: #d0d0d0; font-size: 10pt; }
+        QProgressBar {
+            background-color: #242424;
+            border: 1px solid #343434;
+            border-radius: 6px;
+            height: 12px;
+        }
+        QProgressBar::chunk {
+            background-color: #1f7a4c;
+            border-radius: 5px;
+        }
+        """
+    )
+    _apply_dark_titlebar_if_win(dlg)
+    win_icon = _find_window_icon()
+    if win_icon is not None:
+        dlg.setWindowIcon(win_icon)
+
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(22, 20, 22, 22)
+    layout.setSpacing(12)
+
+    lbl_title = QLabel(str(title), dlg)
+    lbl_title.setObjectName("HealTitle")
+    layout.addWidget(lbl_title)
+
+    lbl_desc = QLabel(str(label), dlg)
+    lbl_desc.setObjectName("HealLabel")
+    lbl_desc.setWordWrap(True)
+    layout.addWidget(lbl_desc)
+
+    bar = QProgressBar(dlg)
+    bar.setTextVisible(False)
+    bar.setRange(0, 0)
+    layout.addWidget(bar)
+
+    dlg.adjustSize()
+    return dlg
+
+
 def _run_pip_with_qt_progress(cmd, title, label, log_path):
-    from PySide6.QtCore import Qt, QThread, Signal
-    from PySide6.QtWidgets import QApplication, QProgressDialog
+    from PySide6.QtCore import QThread, Signal
+    from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:
@@ -170,21 +225,14 @@ def _run_pip_with_qt_progress(cmd, title, label, log_path):
             except Exception as exc:
                 self.finished_signal.emit(1, str(exc))
 
-    dlg = QProgressDialog(label, None, 0, 0)
-    dlg.setWindowTitle(title)
-    dlg.setWindowModality(Qt.ApplicationModal)
-    dlg.setCancelButton(None)
-    dlg.setMinimumDuration(0)
-    dlg.setAutoClose(False)
-    dlg.setAutoReset(False)
-
+    dlg = build_dark_progress_dialog(title, label)
     outcome = {"code": 1, "out": ""}
     worker = _RepairWorker()
 
     def _on_done(code, out):
         outcome["code"] = code
         outcome["out"] = out
-        dlg.close()
+        dlg.accept()
 
     worker.finished_signal.connect(_on_done)
     worker.start()
@@ -294,7 +342,9 @@ def ensure_components(src_dir):
     if hard_missing:
         buttons = [btn_repair, btn_close]
         win_map = t("startup_win_button_map", src_dir=abs_src, yes=btn_repair, no=btn_close, cancel="")
-        choice = ask_choice(title, prompt, buttons, default=0, error=False, win_button_map_text=win_map)
+        choice = ask_choice(
+            title, prompt, buttons, default=0, error=False, win_button_map_text=win_map, src_dir=abs_src
+        )
         if choice != 0:
             sys.exit(EXIT_FATAL_REPORTED)
     else:
@@ -306,7 +356,9 @@ def ensure_components(src_dir):
             no=btn_skip,
             cancel=", Cancel = {0}".format(btn_close),
         )
-        choice = ask_choice(title, prompt, buttons, default=0, error=False, win_button_map_text=win_map)
+        choice = ask_choice(
+            title, prompt, buttons, default=0, error=False, win_button_map_text=win_map, src_dir=abs_src
+        )
         if choice == 1:
             return
         if choice != 0:

@@ -14,7 +14,10 @@ render coherently even if src/i18n JSON files are missing or damaged.
 """
 
 import json
+import locale
 import os
+
+_SUPPORTED_LANGS = ("en", "pl", "de", "es", "fr", "it", "nl", "pt", "ru", "uk", "zh")
 
 _BUILTIN_EN = {
     "startup_err_title": "BadWords - Startup Error",
@@ -52,6 +55,8 @@ _BUILTIN_EN = {
         "Could not send the diagnostic report automatically.\n"
         "You can attach the log file manually:\n{log}"
     ),
+    "startup_btn_show_details": "Show Details",
+    "startup_btn_hide_details": "Hide Details",
     "startup_win_button_map": "Buttons: Yes = {yes}, No = {no}{cancel}",
     "heal_title": "BadWords - Component Repair",
     "heal_prompt": (
@@ -87,8 +92,45 @@ def _default_src_dir():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _detect_os_language():
+    """Detect best matching supported language from OS locale when settings.json is absent."""
+    try:
+        import sys
+        if sys.platform == "win32" or os.name == "nt":
+            import ctypes
+            lang_id = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+            primary = lang_id & 0x3FF
+            win_map = {
+                0x15: "pl", 0x07: "de", 0x0A: "es", 0x0C: "fr",
+                0x10: "it", 0x13: "nl", 0x16: "pt", 0x19: "ru",
+                0x22: "uk", 0x04: "zh", 0x09: "en",
+            }
+            if primary in win_map:
+                return win_map[primary]
+    except Exception:
+        pass
+
+    candidates = []
+    for env_key in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        val = os.environ.get(env_key, "")
+        if val:
+            candidates.append(val)
+    try:
+        loc = locale.getlocale()
+        if loc and loc[0]:
+            candidates.append(loc[0])
+    except Exception:
+        pass
+
+    for raw in candidates:
+        code = str(raw).split(".")[0].split("_")[0].split("-")[0].strip().lower()
+        if code in _SUPPORTED_LANGS:
+            return code
+    return "en"
+
+
 def detect_language(src_dir=None):
-    """Read gui_lang from settings.json without importing config or osdoc."""
+    """Read gui_lang from settings.json, falling back to OS locale then 'en'."""
     base = os.path.abspath(src_dir) if src_dir else _default_src_dir()
     parent = os.path.dirname(base)
     candidates = [
@@ -102,11 +144,11 @@ def detect_language(src_dir=None):
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 lang = str(data.get("gui_lang", "")).strip().lower()
-                if lang:
+                if lang in _SUPPORTED_LANGS:
                     return lang
             except Exception:
                 pass
-    return "en"
+    return _detect_os_language()
 
 
 def _load_lang_dict(lang, src_dir):

@@ -610,5 +610,7 @@
   "heal_done": "组件修复成功。正在重启 BadWords...",
   "heal_done_resolve": "组件修复成功。\n请再次从 DaVinci Resolve 启动 BadWords (Workspace -> Scripts -> BadWords)。",
   "heal_failed": "组件修复失败：\n\n{error}\n\n请运行官方 BadWords 安装程序以修复安装。",
-  "heal_offline": "未检测到网络连接，无法修复缺失的组件。\n请连接网络后重试，或使用官方安装程序。"
+  "heal_offline": "未检测到网络连接，无法修复缺失的组件。\n请连接网络后重试，或使用官方安装程序。",
+  "startup_btn_show_details": "显示详细信息",
+  "startup_btn_hide_details": "隐藏详细信息"
 }

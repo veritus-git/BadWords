@@ -87,7 +87,7 @@ def show_fatal(kind, error_text="", tb_text="", src_dir=None, allow_report=True)
     use_qt = (kind != "python_version")
     can_offer_report = bool(allow_report and not _is_dev_checkout(base))
     if not can_offer_report:
-        show_message(title, msg, error=True, details=tb_text or None, prefer_qt=use_qt)
+        show_message(title, msg, error=True, details=tb_text or None, prefer_qt=use_qt, src_dir=base)
         return
 
     consent_text = t("startup_report_consent", src_dir=base)
@@ -111,15 +111,17 @@ def show_fatal(kind, error_text="", tb_text="", src_dir=None, allow_report=True)
         error=True,
         win_button_map_text=win_map,
         prefer_qt=use_qt,
+        src_dir=base,
     )
     if choice == 0:
         ok = send_report(error_text or msg, tb_text=tb_text, src_dir=base)
         if ok:
-            show_message(title, t("startup_report_sent", src_dir=base), error=False, prefer_qt=use_qt)
+            show_message(title, t("startup_report_sent", src_dir=base), error=False, prefer_qt=use_qt, src_dir=base)
         else:
             show_message(
                 title,
                 t("startup_report_failed", src_dir=base, log=log_path),
                 error=True,
                 prefer_qt=use_qt,
+                src_dir=base,
             )

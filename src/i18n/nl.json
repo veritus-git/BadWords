@@ -610,5 +610,7 @@
   "heal_done": "Onderdelen hersteld. BadWords wordt opnieuw gestart...",
   "heal_done_resolve": "Onderdelen hersteld.\nStart BadWords opnieuw vanuit DaVinci Resolve (Workspace -> Scripts -> BadWords).",
   "heal_failed": "Herstel van onderdelen mislukt:\n\n{error}\n\nStart de officiële BadWords-installer om de installatie te herstellen.",
-  "heal_offline": "Kan ontbrekende onderdelen niet herstellen omdat er geen internetverbinding is.\nMaak verbinding met internet of gebruik de officiële installer."
+  "heal_offline": "Kan ontbrekende onderdelen niet herstellen omdat er geen internetverbinding is.\nMaak verbinding met internet of gebruik de officiële installer.",
+  "startup_btn_show_details": "Details tonen",
+  "startup_btn_hide_details": "Details verbergen"
 }

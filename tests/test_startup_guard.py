@@ -175,6 +175,9 @@ class TestStartupGuard(unittest.TestCase):
             ok = crash_report.send_report("Boom\ndetails", tb_text="Trace", src_dir=SRC_DIR)
         self.assertTrue(ok)
         self.assertIn(b'name="content"', captured["data"])
+        self.assertIn("**Wersja:**".encode("utf-8"), captured["data"])
+        self.assertIn("**Tytuł:**".encode("utf-8"), captured["data"])
+        self.assertIn("**Treść:**".encode("utf-8"), captured["data"])
 
         with patch.dict(os.environ, {"BADWORDS_FORCE_INSTALLED": "1"}, clear=False):
             with patch.object(fatal_dialog, "ask_choice", return_value=1):
@@ -297,6 +300,69 @@ class TestStartupGuard(unittest.TestCase):
         self.assertEqual(splash.width(), config.S(345) + config.S(24))
         self.assertEqual(splash.height(), config.S(194) + config.S(24))
         splash.close()
+
+    def test_dark_startup_dialogs_visual_render(self):
+        from PySide6.QtWidgets import QApplication
+        from startup.i18n_lite import t
+        from startup.native_dialogs import build_dark_qt_dialog
+        from startup.self_heal import build_dark_progress_dialog
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        artifacts_dir = os.path.join(REPO_ROOT, "tests", "artifacts")
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        # 1. Fatal error dialog with consent & details (PL)
+        msg_fatal = (
+            t("startup_err_generic", src_dir=SRC_DIR, lang="pl", error="RuntimeError: Przykładowy błąd testowy przy starcie", log="/home/user/BadWords/badwords_debug.log")
+            + "\n\n"
+            + t("startup_report_consent", src_dir=SRC_DIR, lang="pl")
+        )
+        dlg1, _ = build_dark_qt_dialog(
+            t("startup_err_title", src_dir=SRC_DIR, lang="pl"),
+            msg_fatal,
+            [t("startup_report_send", src_dir=SRC_DIR, lang="pl"), t("startup_report_close", src_dir=SRC_DIR, lang="pl")],
+            default=1,
+            details='Traceback (most recent call last):\n  File "main.py", line 123, in main\nRuntimeError: Example',
+            kind="error",
+            src_dir=SRC_DIR,
+            lang="pl",
+        )
+        dlg1.show()
+        app.processEvents()
+        p1 = os.path.join(artifacts_dir, "dialog_fatal_pl.png")
+        self.assertTrue(dlg1.grab().save(p1))
+        dlg1.close()
+
+        # 2. Component repair consent dialog (PL)
+        msg_heal = t("heal_prompt", src_dir=SRC_DIR, lang="pl", packages="PySide6, faster-whisper, av<19, pypdf", size="~400 MB + ~1200 MB (NVIDIA CUDA)")
+        dlg2, _ = build_dark_qt_dialog(
+            t("heal_title", src_dir=SRC_DIR, lang="pl"),
+            msg_heal,
+            [
+                t("heal_btn_repair", src_dir=SRC_DIR, lang="pl"),
+                t("heal_btn_skip", src_dir=SRC_DIR, lang="pl"),
+                t("heal_btn_close", src_dir=SRC_DIR, lang="pl"),
+            ],
+            default=0,
+            kind="question",
+            src_dir=SRC_DIR,
+        )
+        dlg2.show()
+        app.processEvents()
+        p2 = os.path.join(artifacts_dir, "dialog_heal_pl.png")
+        self.assertTrue(dlg2.grab().save(p2))
+        dlg2.close()
+
+        # 3. Repair progress dialog (PL)
+        dlg3 = build_dark_progress_dialog(
+            t("heal_title", src_dir=SRC_DIR, lang="pl"),
+            t("heal_progress", src_dir=SRC_DIR, lang="pl"),
+        )
+        dlg3.show()
+        app.processEvents()
+        p3 = os.path.join(artifacts_dir, "dialog_heal_progress_pl.png")
+        self.assertTrue(dlg3.grab().save(p3))
+        dlg3.close()
 
 
 if __name__ == "__main__":

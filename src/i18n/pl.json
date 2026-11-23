@@ -610,5 +610,7 @@
   "heal_done": "Składniki zostały naprawione. Ponowne uruchamianie BadWords...",
   "heal_done_resolve": "Składniki zostały naprawione.\nUruchom BadWords ponownie z menu DaVinci Resolve (Workspace -> Scripts -> BadWords).",
   "heal_failed": "Naprawa składników nie powiodła się:\n\n{error}\n\nUruchom oficjalny instalator BadWords, aby naprawić instalację.",
-  "heal_offline": "Nie można naprawić brakujących składników, ponieważ nie wykryto połączenia z internetem.\nPołącz się z siecią i spróbuj ponownie lub użyj oficjalnego instalatora."
+  "heal_offline": "Nie można naprawić brakujących składników, ponieważ nie wykryto połączenia z internetem.\nPołącz się z siecią i spróbuj ponownie lub użyj oficjalnego instalatora.",
+  "startup_btn_show_details": "Pokaż szczegóły",
+  "startup_btn_hide_details": "Ukryj szczegóły"
 }
