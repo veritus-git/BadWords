@@ -2308,16 +2308,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         # Title & version info card
         info_card = QFrame()
-        info_card.setStyleSheet("QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }")
+        info_card.setObjectName("AboutInfoCard")
+        info_card.setStyleSheet("QFrame#AboutInfoCard { background-color: #111; border: 1px solid #242424; border-radius: 8px; }")
         card_lay = QVBoxLayout(info_card)
         card_lay.setContentsMargins(config.S(16), config.S(14), config.S(16), config.S(14))
         card_lay.setSpacing(config.S(8))
 
         lbl_app = QLabel(f"BadWords v{config.VERSION}")
-        lbl_app.setStyleSheet(f"font-size: {config.FS(13)}pt; font-weight: bold; color: #fff;")
+        lbl_app.setStyleSheet(f"font-size: {config.FS(13)}pt; font-weight: bold; color: #fff; background: transparent; border: none;")
         lbl_desc = QLabel("Local AI-powered video editing and silence removal for DaVinci Resolve.")
         lbl_desc.setWordWrap(True)
-        lbl_desc.setStyleSheet(f"font-size: {config.FS(9.5)}pt; color: #888;")
+        lbl_desc.setStyleSheet(f"font-size: {config.FS(9.5)}pt; color: #888; background: transparent; border: none;")
         card_lay.addWidget(lbl_app)
         card_lay.addWidget(lbl_desc)
         layout.addWidget(info_card)
@@ -2326,7 +2327,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         links_row = QHBoxLayout()
         links_row.setSpacing(config.S(8))
 
-        btn_coffee = QPushButton("☕ Buy Me a Coffee")
+        from gui.utils import get_svg_icon
+        coffee_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+            '<path d="M5 9h11v6a5 5 0 01-5 5H10a5 5 0 01-5-5V9z" stroke="#d4d4d4" stroke-width="1.8"/>'
+            '<path d="M16 10h2a2.5 2.5 0 010 5h-2" stroke="#d4d4d4" stroke-width="1.8" stroke-linecap="round"/>'
+            '<path d="M8 4.5c0 1 .8 1.5.8 2.5M12 4.5c0 1 .8 1.5.8 2.5" stroke="#d4d4d4" stroke-width="1.6" stroke-linecap="round"/>'
+            '</svg>'
+        )
+        btn_coffee = QPushButton(self.txt("link_coffee_label"))
+        btn_coffee.setIcon(get_svg_icon(coffee_svg, size=14))
         btn_coffee.setCursor(Qt.PointingHandCursor)
         btn_coffee.setStyleSheet("QPushButton { background: #1e1e1e; border: 1px solid #333; border-radius: 4px; padding: 6px 12px; color: #ccc; } QPushButton:hover { background: #282828; color: #fff; border-color: #555; }")
         btn_coffee.clicked.connect(lambda: self._open_external_url("https://buymeacoffee.com/badwords"))
@@ -2408,7 +2418,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         form_telem.setSpacing(config.S(14))
         form_telem.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        user_data = getattr(self.engine.os_doc, 'user_data', {})
+        raw_user_data = getattr(self.engine.os_doc, 'user_data', {})
+        user_data = raw_user_data if isinstance(raw_user_data, dict) else {}
 
         self.chk_telemetry_opt_in = ToggleSwitch()
         self.chk_telemetry_opt_in.setChecked(bool(user_data.get('telemetry_opt_in', False)), animated=False)
@@ -2427,6 +2438,24 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         l2.addStretch()
         l2.addWidget(self.chk_telemetry_geo)
         self._add_row(form_telem, self.txt("chk_telemetry_geo"), w2, True, lambda v: self.chk_telemetry_geo.setChecked(v, animated=True))
+
+        raw_crash = user_data.get('auto_crash_report', prefs.get('auto_crash_report'))
+        crash_checked = True if raw_crash is None else bool(raw_crash)
+        self.chk_auto_crash_report = ToggleSwitch()
+        self.chk_auto_crash_report.setChecked(crash_checked, animated=False)
+        w3 = QWidget()
+        l3 = QHBoxLayout(w3)
+        l3.setContentsMargins(0, config.S(2), config.S(4), config.S(2))
+        l3.addStretch()
+        l3.addWidget(self.chk_auto_crash_report)
+        self._add_row(
+            form_telem,
+            self.txt("chk_auto_crash_report"),
+            w3,
+            True,
+            lambda v: self.chk_auto_crash_report.setChecked(v, animated=True),
+            info_key="tt_auto_crash_report",
+        )
 
         layout.addLayout(form_telem)
         layout.addStretch(1)
@@ -2993,6 +3022,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
             'custom_markers':     getattr(self, 'current_custom_markers', old_prefs.get('custom_markers', [])),
             'telemetry_opt_in':   self._safe_get('chk_telemetry_opt_in', bool(old_prefs.get('telemetry_opt_in', False)), 'isChecked'),
             'telemetry_geo':      self._safe_get('chk_telemetry_geo', bool(old_prefs.get('telemetry_geo', False)), 'isChecked'),
+            'auto_crash_report':  self._safe_get('chk_auto_crash_report', bool(old_prefs.get('auto_crash_report') if old_prefs.get('auto_crash_report') is not None else False), 'isChecked'),
             'view_mode':          view_mode,
             'mouse_lmb_mode':     lmb_mode,
             'mouse_rmb_mode':     rmb_mode,
@@ -3069,6 +3099,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         is_basic = _g('settings_view_mode', 'basic') == 'basic'
         self._safe_set('chk_telemetry_opt_in', bool(_g('telemetry_opt_in', False)), 'setChecked')
         self._safe_set('chk_telemetry_geo', bool(_g('telemetry_geo', False)), 'setChecked')
+        self._safe_set('chk_auto_crash_report', bool(_g('auto_crash_report', True)), 'setChecked')
         
         try:
             if hasattr(self, 'icon_group'):
@@ -3313,6 +3344,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
                 'telemetry_opt_in': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_opt_in')}",
                 'telemetry_geo': f"{self.txt('tab_telemetry')}: {self.txt('chk_telemetry_geo')}",
+                'auto_crash_report': f"{self.txt('header_privacy_telemetry')}: {self.txt('chk_auto_crash_report')}",
                 'auto_check_updates': f"{self.txt('tab_general')}: {self.txt('lbl_auto_check_updates')}",
                 'custom_markers': self.txt('tab_custom_markers')
             }

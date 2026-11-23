@@ -505,8 +505,8 @@ class OSDoctor:
             loaded["settings_version"] = current_version
             needs_save = True
 
-        # Remove lingering telemetry keys from settings if present (they belong exclusively in user.json)
-        for key_to_remove in ("telemetry_opt_in", "telemetry_geo"):
+        # Remove lingering user-consent keys from settings if present (they belong exclusively in user.json)
+        for key_to_remove in ("telemetry_opt_in", "telemetry_geo", "auto_crash_report"):
             if key_to_remove in loaded:
                 loaded.pop(key_to_remove, None)
                 needs_save = True

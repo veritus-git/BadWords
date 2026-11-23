@@ -65,7 +65,10 @@ _QPushButton = QPushButton
 _QRadioButton = QRadioButton
 
 from .utils import _app_icon, _txt, get_layout_icon_path
-from .components.dialogs import TelemetryPopup, CustomMsgBox, UpdateNotifyDialog, SettingsDialog, GlobalAppFilter, SidebarDragZone, UpdateCheckThread
+from .components.dialogs import (
+    TelemetryPopup, CrashReportConsentDialog, CustomMsgBox, UpdateNotifyDialog,
+    SettingsDialog, GlobalAppFilter, SidebarDragZone, UpdateCheckThread
+)
 from .components.search_overlay import SearchOverlayWidget
 from .components.mixins import FramelessWindowMixin, _HAS_QFRAMELESS, _BaseMainWindow
 from .components.titlebar import CustomTitleBar
@@ -4952,14 +4955,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # ------------------------------------------------------------------
 
     def check_telemetry(self):
-        """Show TelemetryPopup if consent has never been recorded."""
+        """Show first-launch consent for new users or dedicated crash-report prompt for existing users."""
         opt_in = self.engine.os_doc.get_telemetry_pref("telemetry_opt_in")
+        auto_crash = self.engine.os_doc.get_telemetry_pref("auto_crash_report")
+
         if opt_in is None:
             popup = TelemetryPopup(self.engine, parent=self)
             self.engine.os_doc.force_dark_titlebar(int(popup.winId()))
-            popup.exec()  # ApplicationModal — blocks until user responds
-        elif opt_in is True:
-            self.engine.send_telemetry_ping("app_started")
+            popup.exec()  # ApplicationModal — sets both telemetry and crash-report decisions
+        else:
+            if opt_in is True:
+                self.engine.send_telemetry_ping("app_started")
+            if auto_crash is None:
+                dlg = CrashReportConsentDialog(self.engine, parent=self)
+                self.engine.os_doc.force_dark_titlebar(int(dlg.winId()))
+                dlg.exec()
 
         # Check if one-time milestone notice for 3.x -> 4.x migration is needed
         self.check_v4_migration_notice()

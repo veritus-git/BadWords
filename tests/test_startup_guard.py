@@ -172,9 +172,10 @@ class TestStartupGuard(unittest.TestCase):
             captured["headers"] = dict(req.header_items())
             return _FakeResp()
 
-        with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
-            ok = crash_report.send_report("Boom\ndetails", tb_text="Trace", src_dir=SRC_DIR)
-        self.assertTrue(ok)
+        with tempfile.TemporaryDirectory() as tmp_data:
+            with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
+                ok = crash_report.send_report("Boom\ndetails", tb_text="Trace", src_dir=SRC_DIR, app_data_dir=tmp_data)
+            self.assertTrue(ok)
         self.assertIn(b'name="content"', captured["data"])
         self.assertIn("**Wersja:**".encode("utf-8"), captured["data"])
         self.assertIn("**Tytuł:**".encode("utf-8"), captured["data"])
@@ -203,10 +204,162 @@ class TestStartupGuard(unittest.TestCase):
         self.assertNotIn("**Version:**", sd_src)
 
         with patch.dict(os.environ, {"BADWORDS_FORCE_INSTALLED": "1"}, clear=False):
-            with patch.object(fatal_dialog, "ask_choice", return_value=1):
-                with patch.object(fatal_dialog, "send_report") as mock_send:
-                    fatal_dialog.show_fatal("generic", error_text="err", src_dir=SRC_DIR, allow_report=True)
-                    mock_send.assert_not_called()
+            with patch.object(fatal_dialog, "get_auto_crash_report_pref", return_value=None):
+                with patch.object(fatal_dialog, "ask_choice", return_value=1):
+                    with patch.object(fatal_dialog, "send_report") as mock_send:
+                        fatal_dialog.show_fatal("generic", error_text="err", src_dir=SRC_DIR, allow_report=True)
+                        mock_send.assert_not_called()
+
+    def test_privacy_scrubbing_rate_limit_and_live_http_relay(self):
+        import io, json, socketserver, threading, urllib.request, zipfile
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        crash_report.reset_rate_limiter_for_tests()
+        sample_err = (
+            r'File "C:\Users\SecretClientUser\Videos\Confidential_Launch.mp4" failed; '
+            r'log at /home/secret_linux_user/docs/raw_take.mov user=secret_linux_user'
+        )
+        scrubbed = crash_report.sanitize_crash_text(sample_err, src_dir=SRC_DIR)
+        self.assertNotIn("SecretClientUser", scrubbed)
+        self.assertNotIn("Confidential_Launch", scrubbed)
+        self.assertNotIn("secret_linux_user", scrubbed)
+        self.assertNotIn("raw_take", scrubbed)
+        self.assertIn(".mp4", scrubbed)
+        self.assertIn(".mov", scrubbed)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            user_json = os.path.join(tmp, "user.json")
+            with open(user_json, "w", encoding="utf-8") as f:
+                json.dump({"telemetry_opt_in": False, "auto_crash_report": True}, f)
+            with open(os.path.join(tmp, "settings.json"), "w", encoding="utf-8") as f:
+                json.dump({"gui_lang": "pl"}, f)
+            log_path = os.path.join(tmp, "badwords_debug.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("[INFO] Extracting /Users/alice/Movies/TopSecretAd.mov\n")
+
+            self.assertIs(crash_report.get_auto_crash_report_pref(src_dir=SRC_DIR, app_data_dir=tmp), True)
+
+            received = []
+
+            class _Handler(BaseHTTPRequestHandler):
+                def do_POST(self):
+                    length = int(self.headers.get("Content-Length", "0"))
+                    body = self.rfile.read(length)
+                    received.append((dict(self.headers), body))
+                    self.send_response(204)
+                    self.end_headers()
+
+                def log_message(self, *args):
+                    pass
+
+            srv = HTTPServer(("127.0.0.1", 0), _Handler)
+            srv_thread = threading.Thread(target=srv.serve_forever, daemon=True)
+            srv_thread.start()
+            relay_url = f"http://127.0.0.1:{srv.server_port}/"
+            try:
+                with patch.object(crash_report, "_read_app_constants", return_value=(relay_url, "4.0.1")):
+                    # Same crash repeated 4 times -> anti-spam sends only 1
+                    for _ in range(4):
+                        try:
+                            raise ValueError("Cannot open /home/bob/client_video.mp4")
+                        except ValueError:
+                            et, ev, tb = sys.exc_info()
+                            th = crash_report.send_runtime_crash_async(
+                                et, ev, tb, context_label="TestThread",
+                                src_dir=SRC_DIR, app_data_dir=tmp, allow_dev=True
+                            )
+                            if th is not None:
+                                th.join(timeout=3.0)
+
+                    self.assertEqual(len(received), 1)
+                    hdrs, raw = received[0]
+                    self.assertTrue((hdrs.get("User-Agent") or "").startswith("BadWords/"))
+                    self.assertIn("**Wersja:**".encode("utf-8"), raw)
+                    self.assertNotIn(b"client_video", raw)
+                    self.assertNotIn(b"/home/bob", raw)
+
+                    # Extract attached zip from multipart body and verify log scrubbing & no user.json/settings.json leak
+                    ct_header = hdrs.get("Content-Type") or hdrs.get("Content-type") or ""
+                    boundary_bytes = ct_header.split("boundary=", 1)[1].strip().encode("ascii")
+                    zip_start = raw.index(b"PK\x03\x04")
+                    zip_end = raw.index(b"\r\n--" + boundary_bytes, zip_start)
+                    zf = zipfile.ZipFile(io.BytesIO(raw[zip_start:zip_end]))
+                    names = zf.namelist()
+                    self.assertIn("system_info.txt", names)
+                    self.assertIn("badwords_debug.log", names)
+                    self.assertNotIn("user.json", names)
+                    self.assertNotIn("settings.json", names)
+                    log_content = zf.read("badwords_debug.log").decode("utf-8")
+                    self.assertNotIn("TopSecretAd", log_content)
+                    self.assertNotIn("/Users/alice", log_content)
+
+                    # Distinct exceptions capped at _MAX_PER_SESSION (3 total per session)
+                    for idx in range(5):
+                        ok = crash_report.send_report(
+                            f"UniqueError_{idx}", tb_text=f'File "x.py", line {10 + idx}, in fn',
+                            src_dir=SRC_DIR, app_data_dir=tmp, allow_dev=True, suppress_in_dev=True, category="Auto crash"
+                        )
+                        if idx < 2:
+                            self.assertTrue(ok)
+                        else:
+                            self.assertFalse(ok)
+                    self.assertEqual(len(received), 3)
+            finally:
+                srv.shutdown()
+                srv.server_close()
+
+        # Verify Decision 5A in fatal_dialog when auto_crash_report=True
+        with patch.dict(os.environ, {"BADWORDS_FORCE_INSTALLED": "1"}, clear=False):
+            with patch.object(fatal_dialog, "get_auto_crash_report_pref", return_value=True):
+                with patch.object(fatal_dialog, "send_report_async") as mock_auto_send:
+                    mock_th = MagicMock()
+                    mock_th.is_alive.return_value = False
+                    mock_auto_send.return_value = (mock_th, {"done": True, "ok": True})
+                    with patch.object(fatal_dialog, "show_message") as mock_msg:
+                        fatal_dialog.show_fatal("generic", error_text="boom", src_dir=SRC_DIR, allow_report=True)
+                        mock_auto_send.assert_called_once()
+                        mock_msg.assert_called_once()
+                        self.assertIn("automat", mock_msg.call_args[0][1].lower())
+
+        # Verify live sys.excepthook + threading.excepthook installation & capture in subprocess
+        hook_script = (
+            "import json, os, sys, tempfile, threading, time\n"
+            "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+            "from unittest.mock import patch\n"
+            f"sys.path.insert(0, {SRC_DIR!r})\n"
+            "from startup import crash_report\n"
+            "with tempfile.TemporaryDirectory() as tmp:\n"
+            "    with open(os.path.join(tmp, 'user.json'), 'w') as f:\n"
+            "        json.dump({'auto_crash_report': True}, f)\n"
+            "    hits = []\n"
+            "    class H(BaseHTTPRequestHandler):\n"
+            "        def do_POST(self):\n"
+            "            hits.append(self.rfile.read(int(self.headers.get('Content-Length', 0))))\n"
+            "            self.send_response(204); self.end_headers()\n"
+            "        def log_message(self, *a): pass\n"
+            "    srv = HTTPServer(('127.0.0.1', 0), H)\n"
+            "    threading.Thread(target=srv.serve_forever, daemon=True).start()\n"
+            "    url = f'http://127.0.0.1:{srv.server_port}/'\n"
+            "    with patch.object(crash_report, '_read_app_constants', return_value=(url, '4.0.1')):\n"
+            "        crash_report.install_runtime_crash_hooks(src_dir=sys.path[0], app_data_dir=tmp, allow_dev=True)\n"
+            "        def boom_thread():\n"
+            "            raise RuntimeError('bg_thread_failure')\n"
+            "        t = threading.Thread(target=boom_thread, name='WorkerBG')\n"
+            "        t.start(); t.join(timeout=2.0)\n"
+            "        try:\n"
+            "            raise KeyError('main_slot_failure')\n"
+            "        except KeyError:\n"
+            "            sys.excepthook(*sys.exc_info())\n"
+            "        crash_report.wait_for_pending_reports(timeout=3.0)\n"
+            "    srv.shutdown(); srv.server_close()\n"
+            "    assert len(hits) == 2, f'Expected 2 hits, got {len(hits)}'\n"
+            "    print('HOOKS_OK')\n"
+        )
+        res = subprocess.run([sys.executable, "-c", hook_script], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stderr + res.stdout)
+        self.assertIn("HOOKS_OK", res.stdout)
+
+        crash_report.reset_rate_limiter_for_tests()
 
     def test_resolve_wrapper_template_and_generators(self):
         doc = osdoc.OSDoctor()
@@ -386,6 +539,28 @@ class TestStartupGuard(unittest.TestCase):
         p3 = os.path.join(artifacts_dir, "dialog_heal_progress_pl.png")
         self.assertTrue(dlg3.grab().save(p3))
         dlg3.close()
+
+        # 4. Auto-sent fatal startup crash dialog (PL)
+        msg_auto = (
+            t("startup_err_generic", src_dir=SRC_DIR, lang="pl", error="RuntimeError: Krytyczny błąd startu", log="/home/<USER>/BadWords/badwords_debug.log")
+            + "\n\n"
+            + t("startup_report_auto_sent", src_dir=SRC_DIR, lang="pl")
+        )
+        dlg4, _ = build_dark_qt_dialog(
+            t("startup_err_title", src_dir=SRC_DIR, lang="pl"),
+            msg_auto,
+            ["OK"],
+            default=0,
+            details='Traceback (most recent call last):\n  File "main.py", line 123, in main\nRuntimeError: Example',
+            kind="error",
+            src_dir=SRC_DIR,
+            lang="pl",
+        )
+        dlg4.show()
+        app.processEvents()
+        p4 = os.path.join(artifacts_dir, "dialog_fatal_auto_pl.png")
+        self.assertTrue(dlg4.grab().save(p4))
+        dlg4.close()
 
 
 if __name__ == "__main__":

@@ -16,7 +16,13 @@ import os
 import sys
 
 from startup import RELEASES_URL
-from startup.crash_report import primary_log_hint, send_report
+from startup.crash_report import (
+    get_auto_crash_report_pref,
+    primary_log_hint,
+    send_report,
+    send_report_async,
+    wait_for_pending_reports,
+)
 from startup.i18n_lite import t
 from startup.native_dialogs import ask_choice, show_message
 
@@ -90,6 +96,24 @@ def show_fatal(kind, error_text="", tb_text="", src_dir=None, allow_report=True)
         show_message(title, msg, error=True, details=tb_text or None, prefer_qt=use_qt, src_dir=base)
         return
 
+    if get_auto_crash_report_pref(base) is True:
+        th, _ = send_report_async(
+            error_text or msg,
+            tb_text=tb_text,
+            src_dir=base,
+            timeout=15,
+            category="Startup crash",
+        )
+        auto_msg = "{0}\n\n{1}".format(msg, t("startup_report_auto_sent", src_dir=base))
+        show_message(title, auto_msg, error=True, details=tb_text or None, prefer_qt=use_qt, src_dir=base)
+        try:
+            if th is not None and th.is_alive():
+                th.join(timeout=3.5)
+        except Exception:
+            pass
+        wait_for_pending_reports(timeout=1.5)
+        return
+
     consent_text = t("startup_report_consent", src_dir=base)
     full_msg = "{0}\n\n{1}".format(msg, consent_text)
     send_label = t("startup_report_send", src_dir=base)
@@ -114,7 +138,7 @@ def show_fatal(kind, error_text="", tb_text="", src_dir=None, allow_report=True)
         src_dir=base,
     )
     if choice == 0:
-        ok = send_report(error_text or msg, tb_text=tb_text, src_dir=base)
+        ok = send_report(error_text or msg, tb_text=tb_text, src_dir=base, bypass_rate_limit=True)
         if ok:
             show_message(title, t("startup_report_sent", src_dir=base), error=False, prefer_qt=use_qt, src_dir=base)
         else:

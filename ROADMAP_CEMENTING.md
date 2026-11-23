@@ -4,7 +4,7 @@
 >
 > **Jak z tego korzystać:** Wybierasz jeden otwarty punkt (`[ ]`) na jedną sesję, kopiujesz gotowy **Prompt do wklejenia** do nowej rozmowy z AI i idziesz zrobić herbatę.
 > - Agent najpierw **tylko analizuje** obszar (z uwzględnieniem **aktualnej dokumentacji DaVinci Resolve 21.1+ i ograniczeń wersji Free**) i przedstawia raport oparty na **konkretnych, życiowych przypadkach od strony użytkownika** (bez suchych haseł i żargonu) wraz z pytaniami decyzyjnymi.
-> - Dopiero po Twoich odpowiedziach wdraża zmiany, **testuje mechanizmy na żywo** (nie tylko na makietach), robi i ogląda **zrzuty ekranu** zmian widocznych dla użytkownika, wpisuje pełną dokumentację do `docs/CEMENTED.md`, aktualizuje `docs/DEV_STATE.md`, dopisuje krótkie hasło w `.agents/rules/architecture.md` (Sekcja 3) **oraz odhacza zakończony punkt tutaj (`[x]` + `✅ ZAKOŃCZONO`)**.
+> - Dopiero po Twoich odpowiedziach wdraża zmiany, **testuje mechanizmy na żywo** (nie tylko na makietach), sprawdza automatycznie wszystko, co dotyczy Windowsa 11 lub czystego Linuksa w lokalnych wirtualkach (`badwords-win11`, `badwords-linux-kde`), przygotowuje **krótką instrukcję krok po kroku po polsku** dla testów ręcznych/wizualnych lub z programem zewnętrznym, robi i ogląda **zrzuty ekranu** zmian widocznych dla użytkownika, wpisuje pełną dokumentację do `docs/CEMENTED.md`, aktualizuje `docs/DEV_STATE.md`, dopisuje krótkie hasło w `.agents/rules/architecture.md` (Sekcja 3) **oraz odhacza zakończony punkt tutaj (`[x]` + `✅ ZAKOŃCZONO`)**.
 > - Gdy podczas rozmowy wskażesz jakąś uwagę albo brakujący krok, agent automatycznie zapisuje tę lekcję w `.agents/rules/lessons_and_standards.md`, abyś w kolejnych sesjach nie musiał prosić o to samo.
 
 ---
@@ -855,6 +855,7 @@ Po mojej akceptacji i wdrożeniu: uzupełnij testy (tests/ + run_tests.py), prze
 - **Kolejność ma znaczenie:** Zacznij od Etapu 1 i 2 (fundamenty startu, pliki danych, silnik audio/AI) oraz Punktu 10A–10C (odchudzenie głównego okna) przed głębokim grzebaniem w ekranach edytora i montażu — dzięki temu kolejne sesje będą znacznie szybsze i bezpieczniejsze.
 - **Zasada jednego punktu na sesję:** Nie łącz dwóch punktów w jednej rozmowie. Po skończonej sesji upewnij się, że agent:
   1. przetestował zmienione mechanizmy **na żywo** (nie tylko testy jednostkowe) oraz wygenerował i obejrzał **zrzuty ekranu** zmian widocznych dla użytkownika,
-  2. zaktualizował `docs/CEMENTED.md`, `docs/DEV_STATE.md` oraz dopisał krótkie 3–4 wyrazowe hasło w `.agents/rules/architecture.md` (Sekcja 3, poniżej 4 000 znaków),
-  3. **odhaczył zakończony punkt w tym pliku (`ROADMAP_CEMENTING.md`)** (`[x]` na checkliście + `✅ ZAKOŃCZONO` przy nagłówku),
-  4. zapisał ewentualne Twoje uwagi lub nowe wymagania z rozmowy do `.agents/rules/lessons_and_standards.md`.
+  2. przy zmianach wymagających sprawdzenia na Windowsie 11 lub czystym Linuksie/Waylandzie uruchomił najpierw testy automatyczne w lokalnych maszynach wirtualnych (`badwords-win11`, `badwords-linux-kde`), a dla ręcznego przeklikania / oceny wizualnej / testów z DaVinci Resolve podał krótką instrukcję krok po kroku po polsku,
+  3. zaktualizował `docs/CEMENTED.md`, `docs/DEV_STATE.md` oraz dopisał krótkie 3–4 wyrazowe hasło w `.agents/rules/architecture.md` (Sekcja 3, poniżej 4 000 znaków),
+  4. **odhaczył zakończony punkt w tym pliku (`ROADMAP_CEMENTING.md`)** (`[x]` na checkliście + `✅ ZAKOŃCZONO` przy nagłówku),
+  5. zapisał ewentualne Twoje uwagi lub nowe wymagania z rozmowy do `.agents/rules/lessons_and_standards.md`.

@@ -24,6 +24,7 @@ DEFAULT_USER_DATA = {
     "telemetry_opt_in": None,   # None = not yet asked, True/False = user decision
     "telemetry_geo": True,      # Whether to include country/city in telemetry ping
     "last_pinged_version": "",  # Version string of the last successful telemetry ping
+    "auto_crash_report": None,  # None = not yet asked, True/False = automatic error reporting
 }
 
 # ==========================================

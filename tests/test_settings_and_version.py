@@ -25,6 +25,7 @@ from config.app_constants import _detect_version, _DEFAULT_VERSION
 from gui.widgets.buttons import AssemblyModeSelector
 from gui.dialogs.settings_dialog import SettingsDialog
 from gui.dialogs.telemetry_popup import TelemetryPopup
+from gui.dialogs.crash_report_dialog import CrashReportConsentDialog
 
 
 class TestSettingsAndVersion(unittest.TestCase):
@@ -332,17 +333,137 @@ class TestSettingsAndVersion(unittest.TestCase):
                 pass
 
     # -------------------------------------------------------------------------
-    # 5. TelemetryPopup Drop Shadow Test
+    # 5. TelemetryPopup & CrashReportConsentDialog Tests + Visual Renders
     # -------------------------------------------------------------------------
-    def test_telemetry_popup_drop_shadow(self):
-        """Verify TelemetryPopup uses drop shadow effect on inner frame without outer border."""
+    def test_telemetry_popup_drop_shadow_and_defaults(self):
+        """Verify new-user popup defaults auto_crash_report=True, dims geo when off, and renders cleanly."""
         engine = self._create_mock_engine()
         popup = TelemetryPopup(engine)
 
-        # Verify inner frame has QGraphicsDropShadowEffect
         shadow = popup.inner_frame.graphicsEffect()
         self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
         self.assertGreaterEqual(shadow.blurRadius(), 20)
+
+        # Default state for new users: auto_crash_report MUST be ON
+        self.assertTrue(popup._tgl_crash_report.isChecked())
+        self.assertTrue(popup._tgl_telemetry.isChecked())
+
+        art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+        os.makedirs(art_dir, exist_ok=True)
+        popup.show()
+        app.processEvents()
+        self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup.png")))
+
+        # Verify Polish layout & telemetry off with crash report still ON
+        popup._on_lang_selected("pl")
+        popup._tgl_telemetry.setChecked(False, animated=False)
+        app.processEvents()
+        self.assertFalse(popup._chk_geo.isEnabled())
+        self.assertTrue(popup._tgl_crash_report.isChecked())
+        self.assertTrue(popup.grab().save(os.path.join(art_dir, "telemetry_popup_pl.png")))
+
+        # Saving while telemetry is OFF and crash report is ON persists independently
+        popup._on_yes()
+        engine.os_doc.set_telemetry_pref.assert_any_call("telemetry_opt_in", False)
+        engine.os_doc.set_telemetry_pref.assert_any_call("telemetry_allow_geo", False)
+        engine.os_doc.set_telemetry_pref.assert_any_call("auto_crash_report", True)
+        engine.send_telemetry_ping.assert_not_called()
+
+    def test_existing_user_crash_report_consent_dialog(self):
+        """Verify dedicated CrashReportConsentDialog shows for existing users regardless of telemetry choice."""
+        for prior_telem in (True, False):
+            engine = self._create_mock_engine()
+            engine.os_doc.get_telemetry_pref.side_effect = (
+                lambda k, pt=prior_telem: pt if k == "telemetry_opt_in" else None
+            )
+            dlg = CrashReportConsentDialog(engine)
+            shadow = dlg.inner_frame.graphicsEffect()
+            self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
+
+            if prior_telem is False:
+                art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+                os.makedirs(art_dir, exist_ok=True)
+                dlg.show()
+                app.processEvents()
+                self.assertTrue(dlg.grab().save(os.path.join(art_dir, "crash_report_dialog_en.png")))
+                dlg._on_lang_selected("pl")
+                app.processEvents()
+                self.assertTrue(dlg.grab().save(os.path.join(art_dir, "crash_report_dialog_pl.png")))
+                dlg._on_yes()
+                engine.os_doc.set_telemetry_pref.assert_called_with("auto_crash_report", True)
+            else:
+                dlg._on_no()
+                engine.os_doc.set_telemetry_pref.assert_called_with("auto_crash_report", False)
+
+    def test_settings_about_page_crash_toggle_and_render(self):
+        """Verify About & Privacy page exposes auto_crash_report toggle and zero emojis."""
+        engine = self._create_mock_engine()
+        engine.os_doc.user_data = {
+            "telemetry_opt_in": False,
+            "telemetry_geo": True,
+            "auto_crash_report": True,
+        }
+        dialog = SettingsDialog(engine)
+        dialog.category_list.setCurrentRow(8)
+        dialog.show()
+        app.processEvents()
+
+        self.assertTrue(hasattr(dialog, "chk_auto_crash_report"))
+        self.assertTrue(dialog.chk_auto_crash_report.isChecked())
+        dialog.chk_auto_crash_report.setChecked(False, animated=False)
+        state = dialog._get_current_state_dict()
+        self.assertFalse(state["auto_crash_report"])
+
+        # Restore back for clean render
+        dialog.chk_auto_crash_report.setChecked(True, animated=False)
+        app.processEvents()
+        art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+        os.makedirs(art_dir, exist_ok=True)
+        self.assertTrue(dialog.grab().save(os.path.join(art_dir, "settings_dialog_about.png")))
+        dialog.close()
+
+    def test_check_telemetry_routing_new_vs_existing_users(self):
+        """Verify MainWindow.check_telemetry shows correct popup for new vs existing users."""
+        from gui.main_window import BadWordsGUI
+
+        class _DummyWin:
+            def __init__(self, telem_val, crash_val):
+                self.engine = MagicMock()
+                self.engine.os_doc.get_telemetry_pref.side_effect = (
+                    lambda k: telem_val if k == "telemetry_opt_in" else crash_val
+                )
+            def check_v4_migration_notice(self):
+                pass
+
+        # 1. Brand new user -> TelemetryPopup only
+        w_new = _DummyWin(None, None)
+        with patch("gui.main_window.TelemetryPopup") as mock_tp, patch("gui.main_window.CrashReportConsentDialog") as mock_cr:
+            BadWordsGUI.check_telemetry(w_new)
+            mock_tp.assert_called_once()
+            mock_cr.assert_not_called()
+
+        # 2. Existing user who REJECTED telemetry -> CrashReportConsentDialog MUST show
+        w_old_no = _DummyWin(False, None)
+        with patch("gui.main_window.TelemetryPopup") as mock_tp, patch("gui.main_window.CrashReportConsentDialog") as mock_cr:
+            BadWordsGUI.check_telemetry(w_old_no)
+            mock_tp.assert_not_called()
+            mock_cr.assert_called_once()
+            w_old_no.engine.send_telemetry_ping.assert_not_called()
+
+        # 3. Existing user who ACCEPTED telemetry -> ping + CrashReportConsentDialog
+        w_old_yes = _DummyWin(True, None)
+        with patch("gui.main_window.TelemetryPopup") as mock_tp, patch("gui.main_window.CrashReportConsentDialog") as mock_cr:
+            BadWordsGUI.check_telemetry(w_old_yes)
+            mock_tp.assert_not_called()
+            mock_cr.assert_called_once()
+            w_old_yes.engine.send_telemetry_ping.assert_called_once_with("app_started")
+
+        # 4. Existing user who already answered crash report -> neither popup shows
+        w_done = _DummyWin(False, True)
+        with patch("gui.main_window.TelemetryPopup") as mock_tp, patch("gui.main_window.CrashReportConsentDialog") as mock_cr:
+            BadWordsGUI.check_telemetry(w_done)
+            mock_tp.assert_not_called()
+            mock_cr.assert_not_called()
 
 
 if __name__ == "__main__":

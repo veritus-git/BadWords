@@ -26,6 +26,7 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 3. CUDA/CPU isolation
 4. Frameless window mixin
 5. Global filter debounce
+6. Auto crash reporting
 
 ## 4. Coding & Verification Rules
 1. **No Monoliths**: Keep subpackages focused; do not bloat `main_window.py`.
@@ -36,4 +37,5 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 6. **Empirical, Resolve & Git**: Test live mechanisms end-to-end (not mocks alone). Check current **DaVinci Resolve 21.1+** docs & Free limits (`davinci-resolve-current` skill). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`.
 7. **Checks**: Run `python3 run_tests.py`, `python3 -m compileall src`, `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`, and in `installer/`: `cargo check && cargo test`.
 8. **Proactive UX & Visuals**: Never ship bare defaults or wait for screenshot requests; render PNGs (`tests/artifacts/` or `raport/screenshots/`), inspect every PNG, and polish UI/modals/errors first.
-9. **Sync & Push**: Sync `src/`, `installer/`, `setupfiles/` to `/mnt/dump/BadWords FILES/`, conventional commit, `git push all <branch>`.
+9. **VM Verification**: For Win11 or clean-Linux changes, run auto-verifiable checks inside KVM VMs (`badwords-win11`, `badwords-linux-kde`) first, then give the PO a short step-by-step Polish checklist for manual clicks, visual checks, or external-app tests.
+10. **Sync & Push**: Sync `src/`, `installer/`, `setupfiles/` to `/mnt/dump/BadWords FILES/`, conventional commit, `git push all <branch>`.

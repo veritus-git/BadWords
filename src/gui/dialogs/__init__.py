@@ -13,6 +13,7 @@ Package initialization for all dialog components.
 
 from .splash_screen import SplashScreen
 from .telemetry_popup import TelemetryPopup
+from .crash_report_dialog import CrashReportConsentDialog
 from .msgbox import CustomMsgBox
 from .update_dialog import UpdateCheckThread, UpdateNotifyDialog
 from .marker_dialog import MarkerDialog
@@ -27,6 +28,7 @@ from .overlay import (
 __all__ = [
     "SplashScreen",
     "TelemetryPopup",
+    "CrashReportConsentDialog",
     "CustomMsgBox",
     "UpdateCheckThread",
     "UpdateNotifyDialog",

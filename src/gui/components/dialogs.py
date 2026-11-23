@@ -14,6 +14,7 @@ Forwarding facade to gui.dialogs package for full backward compatibility.
 from gui.dialogs import (
     SplashScreen,
     TelemetryPopup,
+    CrashReportConsentDialog,
     CustomMsgBox,
     UpdateCheckThread,
     UpdateNotifyDialog,
@@ -30,6 +31,7 @@ from gui.dialogs import (
 __all__ = [
     "SplashScreen",
     "TelemetryPopup",
+    "CrashReportConsentDialog",
     "CustomMsgBox",
     "UpdateCheckThread",
     "UpdateNotifyDialog",

@@ -46,6 +46,11 @@ Whenever the Product Owner (PO) corrects an output, highlights a missing check, 
     3. **Why Workaround Exists**: What real failure occurs if a workaround is removed.
     4. **Decision Outcome**: In numbered questions `(C)`, describe the tangible screen behavior difference between Option 1 and Option 2.
 
+### E. Verification Inside Local KVM Virtual Machines (`badwords-win11`, `badwords-linux-kde`)
+- When a change affects Windows 11 behavior, clean Linux/Wayland behavior, installers, launchers, or cross-OS paths:
+  1. **Automated First**: Boot or check everything automatically verifiable inside the local KVM VMs (`badwords-win11`, `badwords-linux-kde`) before finishing.
+  2. **Short Polish Checklist for Manual Checks**: For anything that cannot be automated (interactive GUI clicks, live visual smoothness/DPI checks on Windows 11 or KDE Wayland, external DaVinci Resolve UI tests), always provide a short, concrete step-by-step Polish checklist telling the PO which VM to open and what exact clicks and visual details to verify.
+
 ---
 
 ## 3. State Tracking & Roadmap Hygiene
@@ -66,3 +71,5 @@ Whenever the Product Owner (PO) corrects an output, highlights a missing check, 
 - **2026-11-23 — Vivid User Cases Over Dry Prompts**: PO needs concrete real-world user stories ("what happens on screen, step by step"), never dry abstract summaries.
 - **2026-11-23 — Mark Closed Roadmap Items**: Always check off finished points in `ROADMAP_CEMENTING.md` so the PO never repeats already-completed points.
 - **2026-11-23 — Explicit `DEV_STATE.md` Lifecycle**: Always read `docs/DEV_STATE.md` at start and update active focus, milestones, test counts, and next steps at completion.
+- **2026-11-23 — KVM VM Test Verification & Polish Checklists**: For Win11 or clean Linux/Wayland changes, verify everything automatable inside `badwords-win11` / `badwords-linux-kde` first, and provide a short Polish click-through checklist for manual/visual/Resolve steps.
+- **2026-11-23 — Separate Crash Reporting From Telemetry**: Automatic error reporting (`auto_crash_report`) is completely independent from analytics (`telemetry_opt_in`), defaults ON for new users, prompts existing users once regardless of telemetry choice, scrubs paths/usernames/media names, rate-limits duplicates, and sends via Discord relay.

@@ -2579,6 +2579,13 @@ class TrackSquareCheckbox(QWidget):
     def setText(self, text: str):
         self.text_label = str(text)
         self.lbl.setText(self.text_label)
+        self.lbl.adjustSize()
+        sh = self.lbl.sizeHint()
+        self.lbl.setMinimumWidth(sh.width())
+        self.setMinimumHeight(max(config.S(22), sh.height() + config.S(4)))
+        self.setMinimumWidth(config.S(28) + sh.width())
+        self.updateGeometry()
+        self.adjustSize()
 
     def text(self) -> str:
         return self.text_label

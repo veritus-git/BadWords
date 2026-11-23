@@ -17,6 +17,7 @@
   - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
   - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.
   - Clarified `docs/DEV_STATE.md` read-first & end-of-task update lifecycle in `.agents/rules/architecture.md`.
+  - Configured local KVM/QEMU test VMs (`badwords-win11` with TPM 2.0 + Secure Boot; `badwords-linux-kde` with Fedora KDE 44 Wayland + `virtiofs` repo share) and added VM verification + Polish manual checklist rules across `.agents/rules/` and `ROADMAP_CEMENTING.md`.
 
 ---
 
@@ -44,18 +45,18 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **62 tests** across 8 modules).
+Test Runner: `run_tests.py` using Python `unittest` (total: **66 tests** across 8 modules, plus **18 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
-| `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), telemetry popup drop shadow, and shared Discord relay support upload validation. | **PASS** |
+| `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), new-user dual privacy/crash welcome popup (default ON, geo dimming), existing-user crash report consent dialog, About & Privacy `auto_crash_report` toggle, `check_telemetry` routing, and shared Discord relay support upload validation. | **PASS** |
 | `tests/test_host_env_fixes.py` | Regression suite for school PC environment crashes: DaVinci Resolve wrapper generation syntax (`_host_ver`), Kepler/legacy GPU rejection (`driver < 525`), `nvidia-smi` query error parsing resilience, CPU mode CUDA preinit suppression, Windows 8.3 short path fallback, CUDA functionality probing, GitHub issue #19 (`cublas64_12.dll` missing probe detection), and silent Resolve decoupling when Resolve is not installed. | **PASS** |
 | `tests/test_visual_progress_bar.py` | Visual regression test for `LiquidProgressBar`: renders screenshots into `tests/artifacts/`, verifies all 4 rounded corners and anti-aliasing clipping across determinate (50%, 100%) and 3-phase indeterminate states (entering, centered, exiting) to prevent squared-off corner regressions (`setClipRect`). | **PASS** |
 | `tests/test_timeline_cuts.py` | Multi-framerate calculation across standard & drop rates (23.976, 29.97, 47.952, 59.94, 60.0, 25.0 fps), exact rational drop-frame timebases (24000/1001, 30000/1001), silence cut ripple deletion, color cut extraction, timeline end capping. | **PASS** |
 | `tests/test_algorithms.py` | Heuristic repetition/retake detection, 2-layer visual priority (`manual_status` > `algo_status` across both repeat and auto-filler passes), fuzzy string comparison. | **PASS** |
 | `tests/test_assembler_xml.py` | Final Cut Pro 7 XML generation (`<xmeml version="5">`), XML schema and frame accuracy validation. | **PASS** |
 | `tests/test_data_contracts.py` | Invariant preservation of `words_data[0]` metadata (`meta_global_silence`, session tags, custom metadata), required word keys, empty dataset safety. | **PASS** |
-| `tests/test_startup_guard.py` | Startup pipeline: Python 3.10–3.12 gate, Python 3.8 grammar compatibility for `src/startup/`, foreign `sys.path` pruning, consent-only self-heal, Resolve process safety, Discord multipart crash report + opt-out, unified Resolve wrapper isolation, DEV Resolve sync protection, lazy `gui` / instant `BootSplash` visual render. | **PASS** |
+| `tests/test_startup_guard.py` | Startup pipeline: Python 3.10–3.12 gate, Python 3.8 grammar compatibility for `src/startup/`, foreign `sys.path` pruning, consent-only self-heal, Resolve process safety, Discord multipart crash report + opt-out, privacy scrubbing & rate-limited live HTTP/ZIP relay, `sys.excepthook` + `threading.excepthook` runtime capture, startup auto-send decision (`auto_crash_report=True`), unified Resolve wrapper isolation, DEV Resolve sync protection, lazy `gui` / instant `BootSplash` visual render. | **PASS** |
 
 ---
 
@@ -137,16 +138,23 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **62 tests** across 
    - Created `.agents/rules/lessons_and_standards.md` (`always_on`) with continuous feedback capture protocol and mandatory live mechanism testing, proactive screenshot inspection, user-case storytelling, and roadmap/state tracking rules.
    - Created `.agents/skills/davinci-resolve-current/SKILL.md` with up-to-date DaVinci Resolve 21.1+ / 22+ & Free vs Studio documentation and verification workflow.
    - Updated `ROADMAP_CEMENTING.md` to mark Point 1 as `✅ ZAKOŃCZONO (2026-11-23)`, added top progress checklist `[x]`/`[ ]` for Points 1–22, and upgraded all remaining prompts (2–22) with concrete user-side case reporting, Resolve 21.1+ checks, live mechanism tests, screenshots, and closing updates.
+10. **KVM Test VMs & Automatic Crash Reporting System (2026-11-23)**:
+   - Installed KVM/QEMU/libvirt/OVMF/swtpm/virt-manager/virtiofsd stack on host and configured two VMs: `badwords-win11` (Windows 11 ISO `/media/linux/ISO Files/windows-11-en.iso`, UEFI Secure Boot + TPM 2.0 `swtpm`, 4 GB RAM, 4 vCPUs, 64 GB SATA qcow2) and `badwords-linux-kde` (Fedora KDE 44 Wayland ISO, UEFI, 4 GB RAM, 4 vCPUs, 40 GB virtio qcow2, `virtiofs` mount of `/mnt/dump/BadWords`). Verified both boot cleanly via `virsh screenshot`.
+   - Added VM auto-verification + Polish manual checklist rule across `.agents/rules/architecture.md` (strictly `< 4,000` chars), `.agents/rules/lessons_and_standards.md`, and `ROADMAP_CEMENTING.md`.
+   - Implemented independent `auto_crash_report` consent (`user.json`) and separated it from `telemetry_opt_in`: expanded `TelemetryPopup` for new users (two cards, auto crash reports ON by default, animated geo dimming, `Save & Continue` / `Disable All`) and created dedicated `CrashReportConsentDialog` for existing users regardless of prior telemetry choice (`Enable Error Reports` / `Not Now`).
+   - Added `chk_auto_crash_report` toggle to Settings -> About & Privacy, replaced remaining emojis (`👋`, `☕`) with vector SVG/clean text across UI and all 11 `src/i18n/*.json` files (630 keys per language).
+   - Added runtime `sys.excepthook` + `threading.excepthook` capture (`install_runtime_crash_hooks`), startup auto-send support in `fatal_dialog.py`, privacy scrubbing (`sanitize_crash_text`), and multi-layer anti-spam rate limiting (`_CrashRateLimiter`) unified on Discord `post_support_report`. Documented in `docs/CEMENTED.md` (Section 7).
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. **Continue Roadmap Cementing**: Next uncompleted item is **Point 2** in `ROADMAP_CEMENTING.md` (DEV vs Installed isolation, runtime paths, logging, and temp cleanup).
-2. **Baseline Verification Commands**:
-   - `python3 run_tests.py` (62 tests)
+1. **Complete OS Setup Inside Local VMs (Interactive)**: Finish clicking through the OS setup wizards in `virt-manager` for `badwords-win11` and `badwords-linux-kde` (instructions provided to PO).
+2. **Continue Roadmap Cementing**: Next uncompleted item is **Point 2** in `ROADMAP_CEMENTING.md` (DEV vs Installed isolation, runtime paths, logging, and temp cleanup).
+3. **Baseline Verification Commands**:
+   - `python3 run_tests.py` (66 tests)
    - `python3 -m compileall src`
    - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
-   - `cd installer && cargo check && cargo test` (when Rust/installer files change)
+   - `cd installer && cargo check && cargo test` (18 tests)
 3. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
 4. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.

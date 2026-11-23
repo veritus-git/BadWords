@@ -44,7 +44,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
 os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
 
 # --- Early startup guard (stdlib-only, Python 3.8+ parseable) ---
-from startup import EXIT_FATAL_REPORTED, env_guard, fatal_dialog
+from startup import EXIT_FATAL_REPORTED, crash_report, env_guard, fatal_dialog
 
 env_guard.prune_mismatched_version_paths()
 if not env_guard.check_python_version():
@@ -57,6 +57,7 @@ import osdoc
 from startup import legacy_cleanup, qt_env, runtime_mode, self_heal
 
 legacy_cleanup.run(_SRC)
+crash_report.install_runtime_crash_hooks(src_dir=_SRC)
 qt_env.isolate_linux_qt_env(_SRC)
 self_heal.ensure_components(_SRC)
 
@@ -201,6 +202,7 @@ class AppController:
                 pass
         if self.os_doc:
             self.os_doc.cleanup_temp()
+        crash_report.wait_for_pending_reports(timeout=2.0)
         app = QApplication.instance()
         if app is not None:
             app.quit()
