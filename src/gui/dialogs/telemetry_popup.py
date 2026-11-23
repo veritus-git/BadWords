@@ -537,7 +537,16 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
             btn_texts=(self._t("btn_consent_disable_all"), self._t("btn_consent_save")),
         )
 
-    def _finish_accept(self):
+    def _persist_disabled(self):
+        if self._decision_saved:
+            return
+        self._decision_saved = True
+        self._engine.os_doc.set_telemetry_pref("telemetry_opt_in", False)
+        self._engine.os_doc.set_telemetry_pref("telemetry_allow_geo", False)
+        self._engine.os_doc.set_telemetry_pref("auto_crash_report", False)
+
+    def _finish_disable_all(self):
+        self._persist_disabled()
         try:
             self.accept()
         except RuntimeError:
@@ -561,28 +570,26 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
     def _on_no(self, immediate: bool = False):
         if self._closing_anim_active:
             return
-        self._decision_saved = True
-        self._engine.os_doc.set_telemetry_pref("telemetry_opt_in", False)
-        self._engine.os_doc.set_telemetry_pref("telemetry_allow_geo", False)
-        self._engine.os_doc.set_telemetry_pref("auto_crash_report", False)
 
         any_on = bool(self._tgl_telemetry.isChecked() or self._tgl_crash_report.isChecked())
         if not immediate and self.isVisible() and any_on:
+            # Start switch slide & card fade INSTANTLY (0 ms) before any disk fsync I/O
             self._closing_anim_active = True
-            self._btn_no.setEnabled(False)
-            self._btn_yes.setEnabled(False)
-            self._tgl_telemetry.setEnabled(False)
-            self._tgl_crash_report.setEnabled(False)
+            self._btn_no.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self._btn_yes.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self._tgl_telemetry.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self._tgl_crash_report.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             if self._tgl_telemetry.isChecked():
                 self._tgl_telemetry.setChecked(False, animated=True)
             if self._tgl_crash_report.isChecked():
                 self._tgl_crash_report.setChecked(False, animated=True)
-            QTimer.singleShot(340, self._finish_accept)
+            QTimer.singleShot(420, self._finish_disable_all)
             return
 
+        self._persist_disabled()
         self.accept()
 
     def closeEvent(self, event):
         if not getattr(self, "_decision_saved", False):
-            self._on_no(immediate=True)
+            self._persist_disabled()
         super().closeEvent(event)

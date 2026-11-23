@@ -397,7 +397,7 @@ class TestSettingsAndVersion(unittest.TestCase):
             engine.os_doc.set_telemetry_pref.assert_any_call("auto_crash_report", True)
             engine.send_telemetry_ping.assert_not_called()
 
-            # Verify Disable All animates both switches OFF before closing
+            # Verify Disable All starts switch & fade animations INSTANTLY before any disk fsync, then persists on finish
             engine2 = self._create_mock_engine()
             popup2 = TelemetryPopup(engine2)
             popup2.show()
@@ -406,6 +406,9 @@ class TestSettingsAndVersion(unittest.TestCase):
             self.assertTrue(popup2._closing_anim_active)
             self.assertFalse(popup2._tgl_telemetry.isChecked())
             self.assertFalse(popup2._tgl_crash_report.isChecked())
+            # Disk writes must NOT have blocked the animation start
+            engine2.os_doc.set_telemetry_pref.assert_not_called()
+            popup2._finish_disable_all()
             engine2.os_doc.set_telemetry_pref.assert_any_call("telemetry_opt_in", False)
             engine2.os_doc.set_telemetry_pref.assert_any_call("telemetry_allow_geo", False)
             engine2.os_doc.set_telemetry_pref.assert_any_call("auto_crash_report", False)
